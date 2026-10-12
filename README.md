@@ -30,6 +30,18 @@ cargo run
 
 Tool calls are logged to stderr, local tools in yellow and web searches in magenta. The final answer goes to stdout. In the REPL the conversation history is kept until you exit, but nothing is saved between runs.
 
+## Web chat
+
+`chat/` holds **cedar-chat**, a separate Rust service with a Claude.ai-style web UI for talking to
+the agent: a conversation sidebar, live tool calls, and stop and rename buttons. It calls cedar's
+HTTP API with a key it keeps on the server.
+
+```sh
+CEDAR_API_KEY=devkey cargo run -p cedar-chat   # then open http://127.0.0.1:3000
+```
+
+See [chat/README.md](chat/README.md) for configuration and how conversations map onto runs.
+
 ## Configuration
 
 | Setting | Where | Default |
