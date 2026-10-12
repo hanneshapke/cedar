@@ -51,7 +51,11 @@ pub async fn run_agent(
     events: &Emitter,
     cancel: &CancellationToken,
 ) -> Result<Completion, AgentError> {
-    let ctx = ToolContext { sandbox, timeout: env.tool_timeout, max_output: env.tool_output_max_bytes };
+    let ctx = ToolContext {
+        sandbox,
+        timeout: env.tool_timeout,
+        max_output: env.tool_output_max_bytes,
+    };
     let tool_defs = env.tools.definitions();
     // A continuation starts with a copy of its parent's conversation (made when it was created).
     let mut messages: Vec<Value> = env
@@ -86,7 +90,14 @@ pub async fn run_agent(
                 json!({ "turn": turn, "input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens }),
             )
             .await?;
-        push_message(env, run, &mut messages, "assistant", Value::Array(resp.content.clone())).await?;
+        push_message(
+            env,
+            run,
+            &mut messages,
+            "assistant",
+            Value::Array(resp.content.clone()),
+        )
+        .await?;
 
         let mut final_text = String::new();
         let mut tool_calls = Vec::new();
@@ -96,7 +107,9 @@ pub async fn run_agent(
                     let text = block["text"].as_str().unwrap_or_default();
                     final_text.push_str(text);
                     if !text.is_empty() {
-                        events.emit(event::ASSISTANT_TEXT, json!({ "turn": turn, "text": text })).await?;
+                        events
+                            .emit(event::ASSISTANT_TEXT, json!({ "turn": turn, "text": text }))
+                            .await?;
                     }
                 }
                 Some("tool_use") => tool_calls.push(block),
@@ -104,7 +117,10 @@ pub async fn run_agent(
                 // result blocks are already in `content` and go back unmodified with the history.
                 Some("server_tool_use") => {
                     events
-                        .emit(event::WEB_SEARCH, json!({ "turn": turn, "name": block["name"], "input": block["input"] }))
+                        .emit(
+                            event::WEB_SEARCH,
+                            json!({ "turn": turn, "name": block["name"], "input": block["input"] }),
+                        )
                         .await?;
                 }
                 _ => {}
@@ -121,25 +137,44 @@ pub async fn run_agent(
             }
             // The server paused a long-running server-tool loop; resend as-is.
             Some("pause_turn") => {}
-            other => return Ok(Completion { final_text, stop_reason: other.map(String::from) }),
+            other => {
+                return Ok(Completion {
+                    final_text,
+                    stop_reason: other.map(String::from),
+                })
+            }
         }
     }
-    Err(AgentError::Failed(format!("run did not finish within {} turns", run.max_turns)))
+    Err(AgentError::Failed(format!(
+        "run did not finish within {} turns",
+        run.max_turns
+    )))
 }
 
 const INTERRUPTED: &str = "The run ended before this tool call finished, so it has no result.";
-const WORKSPACE_LOST: &str = "(Note: the sandbox workspace from earlier in this conversation has expired. \
+const WORKSPACE_LOST: &str =
+    "(Note: the sandbox workspace from earlier in this conversation has expired. \
     Files created before this message no longer exist.)";
 
 /// The user message that starts a run: the prompt, after anything needed to make the inherited
 /// history valid. If the parent stopped between asking for tools and getting their results, those
 /// `tool_use` blocks still need matching `tool_result` blocks before the conversation can go on.
 pub fn opening_message(history: &[Value], prompt: &str, workspace_lost: bool) -> Value {
-    let text = if workspace_lost { format!("{WORKSPACE_LOST}\n\n{prompt}") } else { prompt.to_string() };
+    let text = if workspace_lost {
+        format!("{WORKSPACE_LOST}\n\n{prompt}")
+    } else {
+        prompt.to_string()
+    };
     let unanswered: Vec<&Value> = match history.last() {
         Some(last) if last["role"] == "assistant" => last["content"]
             .as_array()
-            .map(|blocks| blocks.iter().filter(|b| b["type"] == "tool_use").map(|b| &b["id"]).collect())
+            .map(|blocks| {
+                blocks
+                    .iter()
+                    .filter(|b| b["type"] == "tool_use")
+                    .map(|b| &b["id"])
+                    .collect()
+            })
             .unwrap_or_default(),
         _ => Vec::new(),
     };
@@ -165,7 +200,12 @@ async fn execute_tool_call(
     let id = block["id"].as_str().unwrap_or_default();
     let name = block["name"].as_str().unwrap_or_default();
     let input = &block["input"];
-    events.emit(event::TOOL_CALL, json!({ "id": id, "name": name, "input": input })).await?;
+    events
+        .emit(
+            event::TOOL_CALL,
+            json!({ "id": id, "name": name, "input": input }),
+        )
+        .await?;
 
     let started = Instant::now();
     let call = async {
@@ -182,7 +222,9 @@ async fn execute_tool_call(
 
     let (output, is_error) = match result {
         Ok(out) => (out, false),
-        Err(e) if e.downcast_ref::<SandboxFatal>().is_some() => return Err(AgentError::Failed(e.to_string())),
+        Err(e) if e.downcast_ref::<SandboxFatal>().is_some() => {
+            return Err(AgentError::Failed(e.to_string()))
+        }
         // Errors go back to the model so it can recover.
         Err(e) => (format!("{e:#}"), true),
     };
@@ -201,7 +243,13 @@ async fn execute_tool_call(
 }
 
 /// Append to the in-memory history sent to the API and to the stored copy.
-async fn push_message(env: &AgentEnv, run: &Run, history: &mut Vec<Value>, role: &str, content: Value) -> Result<()> {
+async fn push_message(
+    env: &AgentEnv,
+    run: &Run,
+    history: &mut Vec<Value>,
+    role: &str,
+    content: Value,
+) -> Result<()> {
     env.store.append_message(run.id, role, &content).await?;
     history.push(json!({ "role": role, "content": content }));
     Ok(())
@@ -218,7 +266,10 @@ mod tests {
 
     #[test]
     fn a_lost_workspace_is_mentioned() {
-        let history = [json!({ "role": "user", "content": "a" }), json!({ "role": "assistant", "content": [{ "type": "text", "text": "b" }] })];
+        let history = [
+            json!({ "role": "user", "content": "a" }),
+            json!({ "role": "assistant", "content": [{ "type": "text", "text": "b" }] }),
+        ];
         let opening = opening_message(&history, "next", true);
         let text = opening.as_str().unwrap();
         assert!(text.starts_with(WORKSPACE_LOST) && text.ends_with("next"));

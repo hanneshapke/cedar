@@ -45,11 +45,19 @@ pub struct ScriptedLlm {
 
 impl ScriptedLlm {
     pub fn new(steps: Vec<Step>) -> Arc<Self> {
-        Arc::new(Self { script: Mutex::new(steps.into()), requests: Mutex::new(vec![]) })
+        Arc::new(Self {
+            script: Mutex::new(steps.into()),
+            requests: Mutex::new(vec![]),
+        })
     }
 
     pub fn call_count(&self) -> usize {
         self.requests.lock().unwrap().len()
+    }
+
+    /// A snapshot of every request made so far (cloned, so no lock is held by the caller).
+    pub fn requests(&self) -> Vec<Value> {
+        self.requests.lock().unwrap().clone()
     }
 }
 
@@ -64,7 +72,9 @@ impl LlmClient for ScriptedLlm {
             let mut script = self.script.lock().unwrap();
             match script.front() {
                 Some(Step::Repeat(r)) => Step::Reply(r.clone()),
-                _ => script.pop_front().ok_or_else(|| anyhow!("script exhausted"))?,
+                _ => script
+                    .pop_front()
+                    .ok_or_else(|| anyhow!("script exhausted"))?,
             }
         };
         match step {
@@ -84,7 +94,10 @@ pub fn reply(content: Vec<Value>, stop_reason: &str) -> LlmResponse {
     LlmResponse {
         content,
         stop_reason: Some(stop_reason.into()),
-        usage: Usage { input_tokens: 10, output_tokens: 5 },
+        usage: Usage {
+            input_tokens: 10,
+            output_tokens: 5,
+        },
     }
 }
 
@@ -93,7 +106,10 @@ pub fn text(t: &str) -> LlmResponse {
 }
 
 pub fn tool_use(id: &str, name: &str, input: Value) -> LlmResponse {
-    reply(vec![json!({ "type": "tool_use", "id": id, "name": name, "input": input })], "tool_use")
+    reply(
+        vec![json!({ "type": "tool_use", "id": id, "name": name, "input": input })],
+        "tool_use",
+    )
 }
 
 // -- fake sandbox ----------------------------------------------------------------------------
@@ -112,7 +128,12 @@ pub struct FakeSandbox {
 
 #[async_trait]
 impl Sandbox for FakeSandbox {
-    async fn exec(&self, command: &str, _timeout: Duration, max_output: usize) -> Result<ExecOutput> {
+    async fn exec(
+        &self,
+        command: &str,
+        _timeout: Duration,
+        max_output: usize,
+    ) -> Result<ExecOutput> {
         self.commands.lock().unwrap().push(command.to_string());
         match command {
             "fatal" => Err(SandboxFatal("wedged".into()).into()),
@@ -131,19 +152,32 @@ impl Sandbox for FakeSandbox {
             }),
             other => {
                 let out = format!("ran: {other}");
-                Ok(ExecOutput { stdout_total: out.len(), stdout: out.into_bytes(), exit_code: Some(0), ..Default::default() })
+                Ok(ExecOutput {
+                    stdout_total: out.len(),
+                    stdout: out.into_bytes(),
+                    exit_code: Some(0),
+                    ..Default::default()
+                })
             }
         }
     }
 
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent> {
         let files = self.files.lock().unwrap();
-        let bytes = files.get(path).ok_or_else(|| anyhow!("head: cannot open '{path}' for reading: No such file or directory"))?;
-        Ok(FileContent { bytes: bytes[..bytes.len().min(max_bytes)].to_vec(), truncated: bytes.len() > max_bytes })
+        let bytes = files.get(path).ok_or_else(|| {
+            anyhow!("head: cannot open '{path}' for reading: No such file or directory")
+        })?;
+        Ok(FileContent {
+            bytes: bytes[..bytes.len().min(max_bytes)].to_vec(),
+            truncated: bytes.len() > max_bytes,
+        })
     }
 
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
-        self.files.lock().unwrap().insert(path.to_string(), content.to_vec());
+        self.files
+            .lock()
+            .unwrap()
+            .insert(path.to_string(), content.to_vec());
         Ok(())
     }
 
@@ -159,6 +193,8 @@ pub struct FakeFactory {
     pub removed_workspaces: Mutex<Vec<Uuid>>,
     pub cleanups: AtomicUsize,
     pub healthy: AtomicBool,
+    /// Make `create` fail with an error full of "internal" detail.
+    pub fail_create: AtomicBool,
 }
 
 impl FakeFactory {
@@ -169,6 +205,7 @@ impl FakeFactory {
             removed_workspaces: Mutex::default(),
             cleanups: AtomicUsize::new(0),
             healthy: AtomicBool::new(true),
+            fail_create: AtomicBool::new(false),
         })
     }
 
@@ -177,15 +214,33 @@ impl FakeFactory {
     }
 
     pub fn all_destroyed(&self) -> bool {
-        self.created.lock().unwrap().iter().all(|(_, s)| s.destroyed.load(Ordering::SeqCst))
+        self.created
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(_, s)| s.destroyed.load(Ordering::SeqCst))
     }
 }
 
 #[async_trait]
 impl SandboxFactory for FakeFactory {
     async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>> {
-        let files = self.workspaces.lock().unwrap().entry(workspace_id).or_default().clone();
-        let sandbox = Arc::new(FakeSandbox { files, ..Default::default() });
+        if self.fail_create.load(Ordering::SeqCst) {
+            return Err(anyhow!(
+                "dial unix /Users/someone/.docker/run/docker.sock: connect: no such file"
+            ));
+        }
+        let files = self
+            .workspaces
+            .lock()
+            .unwrap()
+            .entry(workspace_id)
+            .or_default()
+            .clone();
+        let sandbox = Arc::new(FakeSandbox {
+            files,
+            ..Default::default()
+        });
         self.created.lock().unwrap().push((run_id, sandbox.clone()));
         Ok(sandbox)
     }
@@ -258,13 +313,29 @@ impl TestApp {
         Self::build(store, ScriptedLlm::new(script), FakeFactory::new(), extra)
     }
 
-    pub fn build(store: Store, llm: Arc<ScriptedLlm>, factory: Arc<FakeFactory>, extra: &[(&str, &str)]) -> Self {
+    pub fn build(
+        store: Store,
+        llm: Arc<ScriptedLlm>,
+        factory: Arc<FakeFactory>,
+        extra: &[(&str, &str)],
+    ) -> Self {
         let state = AppState::new(test_config(extra), store, llm.clone(), factory.clone());
         let router = api::router(state.clone());
-        Self { state, router, llm, factory }
+        Self {
+            state,
+            router,
+            llm,
+            factory,
+        }
     }
 
-    pub async fn call(&self, method: Method, uri: &str, key: Option<&str>, body: Option<Value>) -> (StatusCode, axum::http::HeaderMap, String) {
+    pub async fn call(
+        &self,
+        method: Method,
+        uri: &str,
+        key: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, axum::http::HeaderMap, String) {
         let mut req = Request::builder().method(method).uri(uri);
         if let Some(key) = key {
             req = req.header("authorization", format!("Bearer {key}"));
@@ -276,15 +347,34 @@ impl TestApp {
             }
             None => Body::empty(),
         };
-        let resp = self.router.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+        let resp = self
+            .router
+            .clone()
+            .oneshot(req.body(body).unwrap())
+            .await
+            .unwrap();
         let (parts, body) = resp.into_parts();
         let bytes = body.collect().await.unwrap().to_bytes();
-        (parts.status, parts.headers, String::from_utf8(bytes.to_vec()).unwrap())
+        (
+            parts.status,
+            parts.headers,
+            String::from_utf8(bytes.to_vec()).unwrap(),
+        )
     }
 
-    pub async fn json(&self, method: Method, uri: &str, key: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+    pub async fn json(
+        &self,
+        method: Method,
+        uri: &str,
+        key: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
         let (status, _, text) = self.call(method, uri, key, body).await;
-        let value = if text.is_empty() { Value::Null } else { serde_json::from_str(&text).unwrap_or_else(|_| panic!("not JSON: {text}")) };
+        let value = if text.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(&text).unwrap_or_else(|_| panic!("not JSON: {text}"))
+        };
         (status, value)
     }
 
@@ -297,7 +387,9 @@ impl TestApp {
     }
 
     pub async fn create_run_with(&self, key: &str, body: Value) -> Value {
-        let (status, run) = self.json(Method::POST, "/v1/runs", Some(key), Some(body)).await;
+        let (status, run) = self
+            .json(Method::POST, "/v1/runs", Some(key), Some(body))
+            .await;
         assert_eq!(status, StatusCode::ACCEPTED, "{run}");
         run
     }
@@ -325,11 +417,61 @@ impl TestApp {
         if let Some(n) = last_event_id {
             req = req.header("last-event-id", n.to_string());
         }
-        let resp = self.router.clone().oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+        let resp = self
+            .router
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers()["content-type"], "text/event-stream");
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         parse_sse(std::str::from_utf8(&bytes).unwrap())
+    }
+}
+
+/// An SSE response read incrementally, so a test can observe events while a run is still going.
+pub struct LiveStream {
+    body: Body,
+    buf: String,
+}
+
+impl LiveStream {
+    pub async fn open(app: &TestApp, key: &str, id: &str, last_event_id: Option<i64>) -> Self {
+        let mut req = Request::builder()
+            .uri(format!("/v1/runs/{id}/events"))
+            .header("authorization", format!("Bearer {key}"));
+        if let Some(n) = last_event_id {
+            req = req.header("last-event-id", n.to_string());
+        }
+        let resp = app
+            .router
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        Self {
+            body: resp.into_body(),
+            buf: String::new(),
+        }
+    }
+
+    /// The next event, or `None` once the server has closed the stream.
+    pub async fn next_event(&mut self) -> Option<SseEvent> {
+        loop {
+            while let Some(end) = self.buf.find("\n\n") {
+                let block: String = self.buf.drain(..end + 2).collect();
+                // Keep-alive comments don't parse into events; skip them.
+                if let Some(event) = parse_sse(&block).pop() {
+                    return Some(event);
+                }
+            }
+            let frame = self.body.frame().await?.expect("stream error");
+            if let Ok(data) = frame.into_data() {
+                self.buf.push_str(std::str::from_utf8(&data).unwrap());
+            }
+        }
     }
 }
 
@@ -346,7 +488,11 @@ pub fn parse_sse(raw: &str) -> Vec<SseEvent> {
                     data = Some(serde_json::from_str(v.trim()).unwrap());
                 }
             }
-            Some(SseEvent { id: id?, event: event?, data: data? })
+            Some(SseEvent {
+                id: id?,
+                event: event?,
+                data: data?,
+            })
         })
         .collect()
 }

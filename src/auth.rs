@@ -42,7 +42,11 @@ impl AuthKeys {
     }
 }
 
-pub async fn require_auth(State(keys): State<AuthKeys>, mut req: Request, next: Next) -> Result<Response, AppError> {
+pub async fn require_auth(
+    State(keys): State<AuthKeys>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, AppError> {
     let token = req
         .headers()
         .get(AUTHORIZATION)
@@ -50,7 +54,9 @@ pub async fn require_auth(State(keys): State<AuthKeys>, mut req: Request, next: 
         .and_then(|v| v.split_once(' '))
         .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
         .map(|(_, token)| token.trim());
-    let owner = token.and_then(|t| keys.authenticate(t)).ok_or(AppError::Unauthorized)?;
+    let owner = token
+        .and_then(|t| keys.authenticate(t))
+        .ok_or(AppError::Unauthorized)?;
     req.extensions_mut().insert(owner);
     Ok(next.run(req).await)
 }

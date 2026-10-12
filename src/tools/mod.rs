@@ -50,12 +50,19 @@ pub struct ToolSet {
 
 impl ToolSet {
     pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
-        Self { tools, server_tools: vec![] }
+        Self {
+            tools,
+            server_tools: vec![],
+        }
     }
 
     /// `bash`, `read_file`, `write_file`, and (if `web_search_max_uses > 0`) `web_search`.
     pub fn standard(web_search_max_uses: u32) -> Self {
-        let set = Self::new(vec![Box::new(Bash), Box::new(ReadFile), Box::new(WriteFile)]);
+        let set = Self::new(vec![
+            Box::new(Bash),
+            Box::new(ReadFile),
+            Box::new(WriteFile),
+        ]);
         if web_search_max_uses > 0 {
             set.with_web_search(web_search_max_uses)
         } else {
@@ -74,11 +81,18 @@ impl ToolSet {
     }
 
     pub fn definitions(&self) -> Vec<Value> {
-        self.tools.iter().map(|t| t.definition()).chain(self.server_tools.iter().cloned()).collect()
+        self.tools
+            .iter()
+            .map(|t| t.definition())
+            .chain(self.server_tools.iter().cloned())
+            .collect()
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Tool> {
-        self.tools.iter().find(|t| t.name() == name).map(|t| t.as_ref())
+        self.tools
+            .iter()
+            .find(|t| t.name() == name)
+            .map(|t| t.as_ref())
     }
 }
 
@@ -97,7 +111,11 @@ pub fn truncate_with_total(s: &str, total: usize, max: usize) -> String {
     if end == s.len() && total <= end {
         return s.to_string();
     }
-    format!("{}\n[truncated {} bytes]", &s[..end], total.saturating_sub(end))
+    format!(
+        "{}\n[truncated {} bytes]",
+        &s[..end],
+        total.saturating_sub(end)
+    )
 }
 
 #[cfg(test)]
@@ -112,7 +130,10 @@ mod tests {
 
     #[test]
     fn long_output_is_cut_and_marked() {
-        assert_eq!(truncate_output("hello world", 5), "hello\n[truncated 6 bytes]");
+        assert_eq!(
+            truncate_output("hello world", 5),
+            "hello\n[truncated 6 bytes]"
+        );
     }
 
     #[test]
@@ -132,7 +153,10 @@ mod tests {
 
     #[test]
     fn prefix_with_larger_total_reports_the_remainder() {
-        assert_eq!(truncate_with_total("abc", 1000, 3), "abc\n[truncated 997 bytes]");
+        assert_eq!(
+            truncate_with_total("abc", 1000, 3),
+            "abc\n[truncated 997 bytes]"
+        );
     }
 
     #[test]

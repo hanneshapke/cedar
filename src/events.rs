@@ -25,12 +25,20 @@ impl EventHub {
 
     /// Mark a run as live in this process.
     pub fn register(&self, run_id: Uuid) {
-        self.channels.lock().unwrap().entry(run_id).or_insert_with(|| watch::channel(0).0);
+        self.channels
+            .lock()
+            .unwrap()
+            .entry(run_id)
+            .or_insert_with(|| watch::channel(0).0);
     }
 
     /// Follow a live run. `None` means the run isn't live here (finished, or from an earlier process).
     pub fn subscribe(&self, run_id: Uuid) -> Option<watch::Receiver<i64>> {
-        self.channels.lock().unwrap().get(&run_id).map(|tx| tx.subscribe())
+        self.channels
+            .lock()
+            .unwrap()
+            .get(&run_id)
+            .map(|tx| tx.subscribe())
     }
 
     pub fn notify(&self, run_id: Uuid, seq: i64) {
@@ -97,6 +105,9 @@ mod tests {
         hub.register(id);
         let mut rx = hub.subscribe(id).unwrap();
         hub.notify(id, 1); // lands while the subscriber is still reading its backlog
-        tokio::time::timeout(std::time::Duration::from_secs(1), rx.changed()).await.unwrap().unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), rx.changed())
+            .await
+            .unwrap()
+            .unwrap();
     }
 }

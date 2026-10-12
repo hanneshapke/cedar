@@ -67,13 +67,21 @@ impl RunManager {
     pub async fn recover(&self) -> Result<()> {
         let failed = self.0.store.fail_orphans().await?;
         if !failed.is_empty() {
-            tracing::warn!(count = failed.len(), "marked runs left over from a previous process as failed");
+            tracing::warn!(
+                count = failed.len(),
+                "marked runs left over from a previous process as failed"
+            );
         }
         match self.0.sandboxes.cleanup_orphans().await {
             Ok(0) => {}
-            Ok(n) => tracing::warn!(count = n, "removed sandbox containers left over from a previous process"),
+            Ok(n) => tracing::warn!(
+                count = n,
+                "removed sandbox containers left over from a previous process"
+            ),
             // Docker may simply be down right now; /readyz reports that.
-            Err(e) => tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover sandboxes"),
+            Err(e) => {
+                tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover sandboxes")
+            }
         }
         if let Err(e) = self.remove_stray_workspaces().await {
             tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover workspaces");
@@ -84,7 +92,8 @@ impl RunManager {
     /// Remove workspace volumes the database no longer considers live (expired or deleted while
     /// docker was unreachable, or from a database that was reset).
     async fn remove_stray_workspaces(&self) -> Result<()> {
-        let live: std::collections::HashSet<Uuid> = self.0.store.live_workspaces().await?.into_iter().collect();
+        let live: std::collections::HashSet<Uuid> =
+            self.0.store.live_workspaces().await?.into_iter().collect();
         for ws in self.0.sandboxes.list_workspaces().await? {
             if !live.contains(&ws) {
                 self.remove_workspace(ws).await;
@@ -136,7 +145,9 @@ impl RunManager {
         self.0.hub.register(run.id);
         self.0.active.lock().unwrap().insert(run.id, token.clone());
         let inner = self.0.clone();
-        self.0.tracker.spawn(async move { inner.execute(run, token).await });
+        self.0
+            .tracker
+            .spawn(async move { inner.execute(run, token).await });
     }
 
     /// Ask a queued/running run to stop. Returns false if it isn't active in this process.
@@ -163,7 +174,10 @@ impl RunManager {
     /// Second phase: wait (up to `grace`) for run tasks to finish recording their final state.
     pub async fn drain(&self, grace: Duration) {
         self.0.tracker.close();
-        if tokio::time::timeout(grace, self.0.tracker.wait()).await.is_err() {
+        if tokio::time::timeout(grace, self.0.tracker.wait())
+            .await
+            .is_err()
+        {
             tracing::warn!("runs were still finishing after the shutdown grace period");
         }
     }
@@ -175,7 +189,8 @@ impl Inner {
         // destroyed sandbox, instead of a run stuck `running` with streams that never close.
         let sandbox = SandboxSlot::default();
         let child = {
-            let (inner, run, token, slot) = (self.clone(), run.clone(), token.clone(), sandbox.clone());
+            let (inner, run, token, slot) =
+                (self.clone(), run.clone(), token.clone(), sandbox.clone());
             tokio::spawn(async move { inner.drive(&run, &token, &slot).await })
         };
         let outcome = match child.await {
@@ -192,7 +207,12 @@ impl Inner {
         self.finalize(&run, outcome).await;
     }
 
-    async fn drive(&self, run: &Run, token: &CancellationToken, slot: &SandboxSlot) -> Result<Completion, AgentError> {
+    async fn drive(
+        &self,
+        run: &Run,
+        token: &CancellationToken,
+        slot: &SandboxSlot,
+    ) -> Result<Completion, AgentError> {
         let _slot = tokio::select! {
             biased;
             _ = token.cancelled() => return Err(AgentError::Cancelled),
@@ -215,12 +235,29 @@ impl Inner {
             .await?;
 
         // Parked in `slot` so `execute` can destroy it whichever way this function ends.
-        let sandbox = self.sandboxes.create(run.id, run.workspace_id).await?;
+        let sandbox = match self.sandboxes.create(run.id, run.workspace_id).await {
+            Ok(sandbox) => sandbox,
+            Err(e) => {
+                // The detail (daemon socket paths, image names, ...) is for operators, not API clients.
+                tracing::error!(run_id = %run.id, error = %format!("{e:#}"), "could not create sandbox");
+                return Err(AgentError::Failed(
+                    "could not start the sandbox for this run".into(),
+                ));
+            }
+        };
         *slot.lock().unwrap() = Some(sandbox.clone());
 
-        match tokio::time::timeout(self.run_timeout, run_agent(&self.env, run, sandbox, &events, token)).await {
+        match tokio::time::timeout(
+            self.run_timeout,
+            run_agent(&self.env, run, sandbox, &events, token),
+        )
+        .await
+        {
             Ok(result) => result,
-            Err(_) => Err(AgentError::Failed(format!("run exceeded the {}s time limit", self.run_timeout.as_secs()))),
+            Err(_) => Err(AgentError::Failed(format!(
+                "run exceeded the {}s time limit",
+                self.run_timeout.as_secs()
+            ))),
         }
     }
 
@@ -259,7 +296,9 @@ impl Inner {
             Ok(Some(seq)) => self.hub.notify(run.id, seq),
             Ok(None) => {}
             // The run stays `running` in the database until the next startup recovery fails it.
-            Err(e) => tracing::error!(run_id = %run.id, error = ?e, "could not record the run's final state"),
+            Err(e) => {
+                tracing::error!(run_id = %run.id, error = ?e, "could not record the run's final state")
+            }
         }
         // Dropping the hub entry wakes any stream one last time so it can drain and close.
         self.hub.remove(run.id);

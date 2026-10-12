@@ -22,7 +22,9 @@ impl Tool for Bash {
     }
 
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
-        let cmd = input["command"].as_str().ok_or_else(|| anyhow!("missing command"))?;
+        let cmd = input["command"]
+            .as_str()
+            .ok_or_else(|| anyhow!("missing command"))?;
         let out = ctx.sandbox.exec(cmd, ctx.timeout, ctx.max_output).await?;
 
         let stream = |bytes: &[u8], total: usize| {

@@ -25,7 +25,9 @@ impl Tool for ReadFile {
     }
 
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
-        let path = input["path"].as_str().ok_or_else(|| anyhow!("missing path"))?;
+        let path = input["path"]
+            .as_str()
+            .ok_or_else(|| anyhow!("missing path"))?;
         let file = ctx.sandbox.read_file(path, ctx.max_output).await?;
         let text = match std::str::from_utf8(&file.bytes) {
             Ok(s) => s,
@@ -37,7 +39,10 @@ impl Tool for ReadFile {
         };
         let mut out = text.to_string();
         if file.truncated {
-            out.push_str(&format!("\n[truncated: file is longer than {} bytes]", ctx.max_output));
+            out.push_str(&format!(
+                "\n[truncated: file is longer than {} bytes]",
+                ctx.max_output
+            ));
         }
         Ok(out)
     }
@@ -62,10 +67,17 @@ impl Tool for WriteFile {
     }
 
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
-        let path = input["path"].as_str().ok_or_else(|| anyhow!("missing path"))?;
-        let content = input["content"].as_str().ok_or_else(|| anyhow!("missing content"))?;
+        let path = input["path"]
+            .as_str()
+            .ok_or_else(|| anyhow!("missing path"))?;
+        let content = input["content"]
+            .as_str()
+            .ok_or_else(|| anyhow!("missing content"))?;
         if content.len() > MAX_WRITE_BYTES {
-            bail!("content is {} bytes; the limit is {MAX_WRITE_BYTES}", content.len());
+            bail!(
+                "content is {} bytes; the limit is {MAX_WRITE_BYTES}",
+                content.len()
+            );
         }
         ctx.sandbox.write_file(path, content.as_bytes()).await?;
         Ok(format!("wrote {} bytes to {path}", content.len()))

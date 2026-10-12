@@ -53,16 +53,33 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", self.to_string()),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found", (*m).to_string()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone()),
-            AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, "too_many_requests", m.clone()),
-            AppError::PayloadTooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large", m.clone()),
+            AppError::TooManyRequests(m) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                m.clone(),
+            ),
+            AppError::PayloadTooLarge(m) => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "payload_too_large",
+                m.clone(),
+            ),
             AppError::Internal(e) => {
                 tracing::error!(error = ?e, "internal error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal",
+                    "internal server error".to_string(),
+                )
             }
         };
-        let mut resp = (status, Json(json!({ "error": { "code": code, "message": message } }))).into_response();
+        let mut resp = (
+            status,
+            Json(json!({ "error": { "code": code, "message": message } })),
+        )
+            .into_response();
         if status == StatusCode::UNAUTHORIZED {
-            resp.headers_mut().insert(header::WWW_AUTHENTICATE, "Bearer".parse().unwrap());
+            resp.headers_mut()
+                .insert(header::WWW_AUTHENTICATE, "Bearer".parse().unwrap());
         }
         resp
     }

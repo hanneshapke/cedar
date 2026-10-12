@@ -41,7 +41,8 @@ pub struct FileContent {
 #[async_trait]
 pub trait Sandbox: Send + Sync {
     /// Run `command` with `sh -c`, killing it after `timeout`. Exit code 124 means it timed out.
-    async fn exec(&self, command: &str, timeout: Duration, max_output: usize) -> Result<ExecOutput>;
+    async fn exec(&self, command: &str, timeout: Duration, max_output: usize)
+        -> Result<ExecOutput>;
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent>;
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
     /// Stop and remove the execution environment, keeping the workspace for a later continuation.
@@ -130,13 +131,27 @@ pub fn run_args(cfg: &SandboxConfig, run_id: Uuid, workspace_id: Uuid) -> Vec<St
 /// Arguments for `docker exec` that run `command` under an in-container `timeout`.
 /// `-k 2` escalates to SIGKILL if SIGTERM is ignored; exit code 124 means the command timed out.
 pub fn exec_args(container: &str, timeout_secs: u64, command: &str) -> Vec<String> {
-    ["exec", container, "timeout", "-k", "2", &timeout_secs.to_string(), "sh", "-c", command]
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+    [
+        "exec",
+        container,
+        "timeout",
+        "-k",
+        "2",
+        &timeout_secs.to_string(),
+        "sh",
+        "-c",
+        command,
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
 }
 
-async fn docker_output(bin: &str, args: &[String], timeout: Duration) -> Result<std::process::Output> {
+async fn docker_output(
+    bin: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<std::process::Output> {
     let child = Command::new(bin)
         .args(args)
         .stdin(Stdio::null())
@@ -147,7 +162,12 @@ async fn docker_output(bin: &str, args: &[String], timeout: Duration) -> Result<
         .with_context(|| format!("failed to run `{bin}`"))?;
     tokio::time::timeout(timeout, child.wait_with_output())
         .await
-        .map_err(|_| anyhow!("`{bin} {}` timed out", args.first().map(String::as_str).unwrap_or("")))?
+        .map_err(|_| {
+            anyhow!(
+                "`{bin} {}` timed out",
+                args.first().map(String::as_str).unwrap_or("")
+            )
+        })?
         .map_err(Into::into)
 }
 
@@ -167,7 +187,10 @@ async fn docker_checked(bin: &str, args: &[String], timeout: Duration) -> Result
 
 /// Read a stream to the end, keeping only the first `cap` bytes but counting all of them.
 /// Draining the rest (instead of stopping) keeps a chatty command from blocking on a full pipe.
-async fn read_capped<R: AsyncRead + Unpin>(mut reader: R, cap: usize) -> std::io::Result<(Vec<u8>, usize)> {
+async fn read_capped<R: AsyncRead + Unpin>(
+    mut reader: R,
+    cap: usize,
+) -> std::io::Result<(Vec<u8>, usize)> {
     let mut kept = Vec::new();
     let mut total = 0;
     let mut chunk = [0u8; 8192];
@@ -190,7 +213,12 @@ pub struct DockerSandbox {
 
 #[async_trait]
 impl Sandbox for DockerSandbox {
-    async fn exec(&self, command: &str, timeout: Duration, max_output: usize) -> Result<ExecOutput> {
+    async fn exec(
+        &self,
+        command: &str,
+        timeout: Duration,
+        max_output: usize,
+    ) -> Result<ExecOutput> {
         let args = exec_args(&self.container, timeout.as_secs().max(1), command);
         let mut child = Command::new(&self.docker)
             .args(&args)
@@ -204,7 +232,11 @@ impl Sandbox for DockerSandbox {
         let stderr = child.stderr.take().expect("stderr is piped");
 
         let finished = tokio::time::timeout(timeout + EXEC_BACKSTOP, async {
-            tokio::join!(read_capped(stdout, max_output), read_capped(stderr, max_output), child.wait())
+            tokio::join!(
+                read_capped(stdout, max_output),
+                read_capped(stderr, max_output),
+                child.wait()
+            )
         })
         .await;
 
@@ -212,7 +244,13 @@ impl Sandbox for DockerSandbox {
             Ok((out, err, status)) => {
                 let (stdout, stdout_total) = out?;
                 let (stderr, stderr_total) = err?;
-                Ok(ExecOutput { stdout, stderr, stdout_total, stderr_total, exit_code: status?.code() })
+                Ok(ExecOutput {
+                    stdout,
+                    stderr,
+                    stdout_total,
+                    stderr_total,
+                    exit_code: status?.code(),
+                })
             }
             Err(_) => {
                 // The in-container timeout should have fired long ago, so the container is wedged.
@@ -225,10 +263,18 @@ impl Sandbox for DockerSandbox {
 
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent> {
         check_path(path)?;
-        let args: Vec<String> = ["exec", &self.container, "head", "-c", &(max_bytes + 1).to_string(), "--", path]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let args: Vec<String> = [
+            "exec",
+            &self.container,
+            "head",
+            "-c",
+            &(max_bytes + 1).to_string(),
+            "--",
+            path,
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         let out = docker_output(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
         if !out.status.success() {
             bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
@@ -242,7 +288,16 @@ impl Sandbox for DockerSandbox {
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
         check_path(path)?;
         let mut child = Command::new(&self.docker)
-            .args(["exec", "-i", &self.container, "sh", "-c", WRITE_SCRIPT, "sh", path])
+            .args([
+                "exec",
+                "-i",
+                &self.container,
+                "sh",
+                "-c",
+                WRITE_SCRIPT,
+                "sh",
+                path,
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -255,9 +310,11 @@ impl Sandbox for DockerSandbox {
             drop(stdin); // EOF for `cat`
             res
         };
-        let (written, out) = tokio::time::timeout(DOCKER_CALL_TIMEOUT, async { tokio::join!(write, child.wait_with_output()) })
-            .await
-            .map_err(|_| anyhow!("writing {path} timed out"))?;
+        let (written, out) = tokio::time::timeout(DOCKER_CALL_TIMEOUT, async {
+            tokio::join!(write, child.wait_with_output())
+        })
+        .await
+        .map_err(|_| anyhow!("writing {path} timed out"))?;
         let out = out?;
         if !out.status.success() {
             bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
@@ -268,6 +325,7 @@ impl Sandbox for DockerSandbox {
     }
 
     async fn destroy(&self) {
+        // Only the container: the workspace volume outlives the run so it can be continued.
         let args = vec!["rm".to_string(), "-f".into(), self.container.clone()];
         if let Err(e) = docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
             tracing::warn!(error = %e, container = %self.container, "removing sandbox container failed");
@@ -292,7 +350,10 @@ pub struct DockerSandboxFactory {
 
 impl DockerSandboxFactory {
     pub fn new(cfg: SandboxConfig) -> Self {
-        Self { docker: "docker".into(), cfg }
+        Self {
+            docker: "docker".into(),
+            cfg,
+        }
     }
 
     fn label_filter() -> String {
@@ -303,7 +364,10 @@ impl DockerSandboxFactory {
 #[async_trait]
 impl SandboxFactory for DockerSandboxFactory {
     async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>> {
-        let sandbox = DockerSandbox { docker: self.docker.clone(), container: container_name(run_id) };
+        let sandbox = DockerSandbox {
+            docker: self.docker.clone(),
+            container: container_name(run_id),
+        };
         let started: Result<()> = async {
             // Creating a volume that already exists is a no-op, which is what a continuation wants.
             let volume_args = [
@@ -315,7 +379,12 @@ impl SandboxFactory for DockerSandboxFactory {
             ]
             .map(String::from);
             docker_checked(&self.docker, &volume_args, DOCKER_CALL_TIMEOUT).await?;
-            docker_checked(&self.docker, &run_args(&self.cfg, run_id, workspace_id), DOCKER_CREATE_TIMEOUT).await?;
+            docker_checked(
+                &self.docker,
+                &run_args(&self.cfg, run_id, workspace_id),
+                DOCKER_CREATE_TIMEOUT,
+            )
+            .await?;
             Ok(())
         }
         .await;
@@ -355,19 +424,39 @@ impl SandboxFactory for DockerSandboxFactory {
     }
 
     async fn list_workspaces(&self) -> Result<Vec<Uuid>> {
-        let ls = ["volume", "ls", "-q", "--filter", &format!("label={WORKSPACE_LABEL}")].map(String::from);
+        let ls = [
+            "volume",
+            "ls",
+            "-q",
+            "--filter",
+            &format!("label={WORKSPACE_LABEL}"),
+        ]
+        .map(String::from);
         let names = docker_checked(&self.docker, &ls, DOCKER_CALL_TIMEOUT).await?;
-        Ok(names.split_whitespace().filter_map(|n| n.strip_prefix(VOLUME_PREFIX)?.parse().ok()).collect())
+        Ok(names
+            .split_whitespace()
+            .filter_map(|n| n.strip_prefix(VOLUME_PREFIX)?.parse().ok())
+            .collect())
     }
 
     async fn health(&self) -> Result<()> {
-        docker_checked(&self.docker, &["info", "--format", "{{.ServerVersion}}"].map(String::from), DOCKER_CALL_TIMEOUT)
+        docker_checked(
+            &self.docker,
+            &["info", "--format", "{{.ServerVersion}}"].map(String::from),
+            DOCKER_CALL_TIMEOUT,
+        )
+        .await
+        .context("docker daemon is not reachable")?;
+        let inspect =
+            ["image", "inspect", "--format", "{{.Id}}", &self.cfg.image].map(String::from);
+        docker_checked(&self.docker, &inspect, DOCKER_CALL_TIMEOUT)
             .await
-            .context("docker daemon is not reachable")?;
-        let inspect = ["image", "inspect", "--format", "{{.Id}}", &self.cfg.image].map(String::from);
-        docker_checked(&self.docker, &inspect, DOCKER_CALL_TIMEOUT).await.with_context(|| {
-            format!("sandbox image {} is missing; build it with `docker build -t {} sandbox/`", self.cfg.image, self.cfg.image)
-        })?;
+            .with_context(|| {
+                format!(
+                    "sandbox image {} is missing; build it with `docker build -t {} sandbox/`",
+                    self.cfg.image, self.cfg.image
+                )
+            })?;
         Ok(())
     }
 }
@@ -377,7 +466,12 @@ mod tests {
     use super::*;
 
     fn cfg() -> SandboxConfig {
-        SandboxConfig { image: "img:1".into(), network: "none".into(), memory: "256m".into(), cpus: "2".into() }
+        SandboxConfig {
+            image: "img:1".into(),
+            network: "none".into(),
+            memory: "256m".into(),
+            cpus: "2".into(),
+        }
     }
 
     #[test]
@@ -392,7 +486,10 @@ mod tests {
         assert!(joined.contains("--user 1000:1000"));
         assert!(joined.contains("--memory 256m --memory-swap 256m"));
         assert!(joined.contains(&format!("--name cedar-run-{id}")));
-        assert!(joined.contains(&format!("-v cedar-ws-{ws}:/workspace")), "the workspace, not the run, names the volume");
+        assert!(
+            joined.contains(&format!("-v cedar-ws-{ws}:/workspace")),
+            "the workspace, not the run, names the volume"
+        );
         // Image and the idle command come last, so nothing after the image is parsed as a docker flag.
         assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
         assert!(!joined.contains("ANTHROPIC"));
@@ -402,7 +499,10 @@ mod tests {
     fn exec_args_keep_the_command_as_a_single_argv_element() {
         let cmd = "echo 'hi'; rm -rf / # $(whoami)";
         let args = exec_args("c1", 30, cmd);
-        assert_eq!(args, ["exec", "c1", "timeout", "-k", "2", "30", "sh", "-c", cmd]);
+        assert_eq!(
+            args,
+            ["exec", "c1", "timeout", "-k", "2", "30", "sh", "-c", cmd]
+        );
     }
 
     #[tokio::test]

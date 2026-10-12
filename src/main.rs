@@ -18,12 +18,17 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),
+        )
         .init();
 
     let cfg = Config::from_env()?;
     let store = Store::connect(&cfg.database_url).await?;
-    let llm = Arc::new(AnthropicClient::new(cfg.anthropic_api_key.clone(), cfg.anthropic_base_url.clone())?);
+    let llm = Arc::new(AnthropicClient::new(
+        cfg.anthropic_api_key.clone(),
+        cfg.anthropic_base_url.clone(),
+    )?);
     let sandboxes = Arc::new(DockerSandboxFactory::new(cfg.sandbox.clone()));
     let bind_addr = cfg.bind_addr;
     let workspace_ttl = cfg.workspace_ttl;

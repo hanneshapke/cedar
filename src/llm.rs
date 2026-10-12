@@ -47,7 +47,13 @@ impl AnthropicClient {
             .timeout(Duration::from_secs(300))
             .build()
             .context("building HTTP client")?;
-        Ok(Self { http, api_key, base_url, max_attempts: 4, retry_base: Duration::from_secs(1) })
+        Ok(Self {
+            http,
+            api_key,
+            base_url,
+            max_attempts: 4,
+            retry_base: Duration::from_secs(1),
+        })
     }
 
     /// Total tries (first attempt included) and the first backoff delay, which doubles each time.
@@ -58,8 +64,13 @@ impl AnthropicClient {
     }
 
     fn backoff(&self, attempt: u32, retry_after: Option<Duration>) -> Duration {
-        let delay = retry_after.unwrap_or_else(|| self.retry_base * 2u32.saturating_pow(attempt - 1));
-        let jitter_ms = u64::from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos())) % 250;
+        let delay =
+            retry_after.unwrap_or_else(|| self.retry_base * 2u32.saturating_pow(attempt - 1));
+        let jitter_ms = u64::from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos()),
+        ) % 250;
         delay.min(MAX_RETRY_DELAY) + Duration::from_millis(jitter_ms).min(self.retry_base)
     }
 }
@@ -133,7 +144,10 @@ fn error_message(body: &str) -> String {
 
 fn parse_response(body: &str) -> Result<LlmResponse> {
     let v: Value = serde_json::from_str(body).context("API returned invalid JSON")?;
-    let content = v["content"].as_array().cloned().ok_or_else(|| anyhow!("API response has no content array"))?;
+    let content = v["content"]
+        .as_array()
+        .cloned()
+        .ok_or_else(|| anyhow!("API response has no content array"))?;
     Ok(LlmResponse {
         content,
         stop_reason: v["stop_reason"].as_str().map(String::from),
@@ -155,23 +169,37 @@ mod tests {
         let r = parse_response(body).unwrap();
         assert_eq!(r.content.len(), 1);
         assert_eq!(r.stop_reason.as_deref(), Some("end_turn"));
-        assert_eq!(r.usage, Usage { input_tokens: 12, output_tokens: 3 });
+        assert_eq!(
+            r.usage,
+            Usage {
+                input_tokens: 12,
+                output_tokens: 3
+            }
+        );
         assert!(parse_response("{}").is_err());
         assert!(parse_response("nope").is_err());
     }
 
     #[test]
     fn extracts_api_error_messages() {
-        assert_eq!(error_message(r#"{"error":{"type":"x","message":"bad model"}}"#), "bad model");
+        assert_eq!(
+            error_message(r#"{"error":{"type":"x","message":"bad model"}}"#),
+            "bad model"
+        );
         assert_eq!(error_message("gateway timeout"), "gateway timeout");
     }
 
     #[test]
     fn backoff_grows_and_honors_retry_after() {
-        let c = AnthropicClient::new("k".into(), "http://x".into()).unwrap().with_retry(4, Duration::from_millis(100));
+        let c = AnthropicClient::new("k".into(), "http://x".into())
+            .unwrap()
+            .with_retry(4, Duration::from_millis(100));
         assert!(c.backoff(1, None) >= Duration::from_millis(100));
         assert!(c.backoff(3, None) >= Duration::from_millis(400));
         assert!(c.backoff(1, Some(Duration::from_secs(7))) >= Duration::from_secs(7));
-        assert!(c.backoff(1, Some(Duration::from_secs(9999))) < MAX_RETRY_DELAY + Duration::from_secs(1));
+        assert!(
+            c.backoff(1, Some(Duration::from_secs(9999)))
+                < MAX_RETRY_DELAY + Duration::from_secs(1)
+        );
     }
 }

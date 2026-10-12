@@ -6,7 +6,9 @@ use crate::models::{event, Event, NewRun, Run, RunStatus, StoredMessage, Usage};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow, SqliteSynchronous};
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow, SqliteSynchronous,
+};
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
 use std::time::Duration;
@@ -43,8 +45,15 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
             input_tokens: r.try_get::<i64, _>("input_tokens")? as u64,
             output_tokens: r.try_get::<i64, _>("output_tokens")? as u64,
         },
-        parent_id: r.try_get::<Option<&str>, _>("parent_id")?.map(Uuid::parse_str).transpose()?,
-        workspace_id: r.try_get::<Option<&str>, _>("workspace_id")?.map(Uuid::parse_str).transpose()?.unwrap_or(id),
+        parent_id: r
+            .try_get::<Option<&str>, _>("parent_id")?
+            .map(Uuid::parse_str)
+            .transpose()?,
+        workspace_id: r
+            .try_get::<Option<&str>, _>("workspace_id")?
+            .map(Uuid::parse_str)
+            .transpose()?
+            .unwrap_or(id),
         workspace_reused: r.try_get("workspace_reused")?,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
@@ -111,7 +120,10 @@ impl Store {
     }
 
     async fn migrated(pool: SqlitePool) -> Result<Self> {
-        sqlx::migrate!("./migrations").run(&pool).await.context("running migrations")?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .context("running migrations")?;
         Ok(Self { pool })
     }
 
@@ -134,16 +146,22 @@ impl Store {
     ///
     /// Everything happens in one write transaction, so concurrent requests can't both slip past a
     /// check, and a workspace can't expire between being picked and being used.
-    pub async fn insert_run(&self, new: &NewRun, max_active: i64) -> Result<Result<Run, InsertRefused>> {
+    pub async fn insert_run(
+        &self,
+        new: &NewRun,
+        max_active: i64,
+    ) -> Result<Result<Run, InsertRefused>> {
         let id = Uuid::now_v7();
         let now = now_ms();
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let active: i64 = sqlx::query("SELECT COUNT(*) AS n FROM runs WHERE owner = ? AND status IN ('queued', 'running')")
-            .bind(&new.owner)
-            .fetch_one(&mut *tx)
-            .await?
-            .try_get("n")?;
+        let active: i64 = sqlx::query(
+            "SELECT COUNT(*) AS n FROM runs WHERE owner = ? AND status IN ('queued', 'running')",
+        )
+        .bind(&new.owner)
+        .fetch_one(&mut *tx)
+        .await?
+        .try_get("n")?;
         if active >= max_active {
             return Ok(Err(InsertRefused::TooManyActive));
         }
@@ -154,7 +172,9 @@ impl Store {
                 .bind(parent_id.to_string())
                 .fetch_optional(&mut *tx)
                 .await?;
-            let Some(parent) = parent.filter(|p| p.try_get::<&str, _>("owner").ok() == Some(new.owner.as_str())) else {
+            let Some(parent) =
+                parent.filter(|p| p.try_get::<&str, _>("owner").ok() == Some(new.owner.as_str()))
+            else {
                 return Ok(Err(InsertRefused::ParentNotFound));
             };
             if matches!(parent.try_get::<&str, _>("status")?, "queued" | "running") {
@@ -165,15 +185,19 @@ impl Store {
                 .fetch_optional(&mut *tx)
                 .await?;
             if let Some(child) = child {
-                return Ok(Err(InsertRefused::ParentContinued(Uuid::parse_str(child.try_get("id")?)?)));
+                return Ok(Err(InsertRefused::ParentContinued(Uuid::parse_str(
+                    child.try_get("id")?,
+                )?)));
             }
             let parent_ws: Option<String> = parent.try_get("workspace_id")?;
             if let Some(ws) = parent_ws {
-                let reserved = sqlx::query("UPDATE workspaces SET last_used_at = ? WHERE id = ? AND expired_at IS NULL")
-                    .bind(now)
-                    .bind(&ws)
-                    .execute(&mut *tx)
-                    .await?;
+                let reserved = sqlx::query(
+                    "UPDATE workspaces SET last_used_at = ? WHERE id = ? AND expired_at IS NULL",
+                )
+                .bind(now)
+                .bind(&ws)
+                .execute(&mut *tx)
+                .await?;
                 if reserved.rows_affected() == 1 {
                     workspace = Some(Uuid::parse_str(&ws)?);
                 }
@@ -218,7 +242,9 @@ impl Store {
                 .await?;
         }
         tx.commit().await?;
-        Ok(Ok(self.get_run(id).await?.ok_or_else(|| anyhow!("run {id} vanished after insert"))?))
+        Ok(Ok(self.get_run(id).await?.ok_or_else(|| {
+            anyhow!("run {id} vanished after insert")
+        })?))
     }
 
     pub async fn get_run(&self, id: Uuid) -> Result<Option<Run>> {
@@ -252,11 +278,13 @@ impl Store {
     }
 
     pub async fn mark_running(&self, id: Uuid) -> Result<()> {
-        sqlx::query("UPDATE runs SET status = 'running', started_at = ? WHERE id = ? AND status = 'queued'")
-            .bind(now_ms())
-            .bind(id.to_string())
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE runs SET status = 'running', started_at = ? WHERE id = ? AND status = 'queued'",
+        )
+        .bind(now_ms())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -334,19 +362,22 @@ impl Store {
     }
 
     pub async fn count_active(&self, owner: &str) -> Result<i64> {
-        let row = sqlx::query("SELECT COUNT(*) AS n FROM runs WHERE owner = ? AND status IN ('queued', 'running')")
-            .bind(owner)
-            .fetch_one(&self.pool)
-            .await?;
+        let row = sqlx::query(
+            "SELECT COUNT(*) AS n FROM runs WHERE owner = ? AND status IN ('queued', 'running')",
+        )
+        .bind(owner)
+        .fetch_one(&self.pool)
+        .await?;
         Ok(row.try_get("n")?)
     }
 
     /// Delete a run (and, by cascade, its messages and events) if it is terminal.
     pub async fn delete_finished_run(&self, id: Uuid) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM runs WHERE id = ? AND status NOT IN ('queued', 'running')")
-            .bind(id.to_string())
-            .execute(&self.pool)
-            .await?;
+        let res =
+            sqlx::query("DELETE FROM runs WHERE id = ? AND status NOT IN ('queued', 'running')")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await?;
         Ok(res.rows_affected() == 1)
     }
 
@@ -375,13 +406,19 @@ impl Store {
         .bind(cutoff.timestamp_millis())
         .fetch_all(&self.pool)
         .await?;
-        rows.iter().map(|r| Ok(Uuid::parse_str(r.try_get("id")?)?)).collect()
+        rows.iter()
+            .map(|r| Ok(Uuid::parse_str(r.try_get("id")?)?))
+            .collect()
     }
 
     /// Workspaces whose volumes should exist.
     pub async fn live_workspaces(&self) -> Result<Vec<Uuid>> {
-        let rows = sqlx::query("SELECT id FROM workspaces WHERE expired_at IS NULL").fetch_all(&self.pool).await?;
-        rows.iter().map(|r| Ok(Uuid::parse_str(r.try_get("id")?)?)).collect()
+        let rows = sqlx::query("SELECT id FROM workspaces WHERE expired_at IS NULL")
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter()
+            .map(|r| Ok(Uuid::parse_str(r.try_get("id")?)?))
+            .collect()
     }
 
     // -- events -----------------------------------------------------------------------------
@@ -429,10 +466,11 @@ impl Store {
     }
 
     pub async fn list_messages(&self, run_id: Uuid) -> Result<Vec<StoredMessage>> {
-        let rows = sqlx::query("SELECT seq, role, content FROM messages WHERE run_id = ? ORDER BY seq")
-            .bind(run_id.to_string())
-            .fetch_all(&self.pool)
-            .await?;
+        let rows =
+            sqlx::query("SELECT seq, role, content FROM messages WHERE run_id = ? ORDER BY seq")
+                .bind(run_id.to_string())
+                .fetch_all(&self.pool)
+                .await?;
         rows.iter()
             .map(|r| {
                 Ok(StoredMessage {
@@ -446,7 +484,12 @@ impl Store {
 }
 
 /// `seq` is computed inside the INSERT, so it is atomic with respect to other writers.
-async fn insert_event(conn: &mut sqlx::SqliteConnection, run_id: Uuid, kind: &str, data: &Value) -> Result<i64> {
+async fn insert_event(
+    conn: &mut sqlx::SqliteConnection,
+    run_id: Uuid,
+    kind: &str,
+    data: &Value,
+) -> Result<i64> {
     let row = sqlx::query(
         "INSERT INTO events (run_id, seq, type, data, created_at) \
          SELECT ?1, COALESCE(MAX(seq), 0) + 1, ?2, ?3, ?4 FROM events WHERE run_id = ?1 RETURNING seq",
@@ -488,8 +531,14 @@ mod tests {
 
     #[tokio::test]
     async fn runs_from_before_continuations_migrate_and_can_be_continued() {
-        let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap().foreign_keys(true);
-        let pool = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
         let mut first_only = sqlx::migrate!("./migrations");
         first_only.migrations = first_only.migrations[..1].to_vec().into();
         first_only.run(&pool).await.unwrap();
@@ -505,10 +554,23 @@ mod tests {
 
         let store = Store::migrated(pool).await.unwrap();
         let run = store.get_run(old).await.unwrap().unwrap();
-        assert_eq!((run.workspace_id, run.parent_id, run.workspace_reused), (old, None, false));
+        assert_eq!(
+            (run.workspace_id, run.parent_id, run.workspace_reused),
+            (old, None, false)
+        );
 
         // Its workspace is long gone, so a continuation gets a new one.
-        let child = store.insert_run(&NewRun { parent_id: Some(old), ..new_run("a") }, 5).await.unwrap().unwrap();
+        let child = store
+            .insert_run(
+                &NewRun {
+                    parent_id: Some(old),
+                    ..new_run("a")
+                },
+                5,
+            )
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(child.parent_id, Some(old));
         assert!(!child.workspace_reused);
         assert_eq!(child.workspace_id, child.id);
@@ -517,25 +579,62 @@ mod tests {
     #[tokio::test]
     async fn active_run_limit_is_enforced_per_owner() {
         let store = Store::connect_memory().await.unwrap();
-        let a = store.insert_run_limited(&new_run("a"), 2).await.unwrap().unwrap();
-        store.insert_run_limited(&new_run("a"), 2).await.unwrap().unwrap();
-        assert!(store.insert_run_limited(&new_run("a"), 2).await.unwrap().is_none());
+        let a = store
+            .insert_run_limited(&new_run("a"), 2)
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .insert_run_limited(&new_run("a"), 2)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(store
+            .insert_run_limited(&new_run("a"), 2)
+            .await
+            .unwrap()
+            .is_none());
         // Another owner is unaffected, and finishing a run frees a slot.
-        assert!(store.insert_run_limited(&new_run("b"), 2).await.unwrap().is_some());
-        store.finish_run(a.id, completed("done")).await.unwrap().unwrap();
-        assert!(store.insert_run_limited(&new_run("a"), 2).await.unwrap().is_some());
+        assert!(store
+            .insert_run_limited(&new_run("b"), 2)
+            .await
+            .unwrap()
+            .is_some());
+        store
+            .finish_run(a.id, completed("done"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(store
+            .insert_run_limited(&new_run("a"), 2)
+            .await
+            .unwrap()
+            .is_some());
         assert_eq!(store.count_active("a").await.unwrap(), 2);
     }
 
     #[tokio::test]
     async fn finish_is_idempotent_and_records_terminal_event() {
         let store = Store::connect_memory().await.unwrap();
-        let run = store.insert_run_limited(&new_run("a"), 5).await.unwrap().unwrap();
+        let run = store
+            .insert_run_limited(&new_run("a"), 5)
+            .await
+            .unwrap()
+            .unwrap();
         store.mark_running(run.id).await.unwrap();
-        store.append_event(run.id, event::RUN_STARTED, &json!({})).await.unwrap();
+        store
+            .append_event(run.id, event::RUN_STARTED, &json!({}))
+            .await
+            .unwrap();
 
-        assert_eq!(store.finish_run(run.id, completed("ok")).await.unwrap(), Some(2));
-        assert_eq!(store.finish_run(run.id, completed("again")).await.unwrap(), None);
+        assert_eq!(
+            store.finish_run(run.id, completed("ok")).await.unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            store.finish_run(run.id, completed("again")).await.unwrap(),
+            None
+        );
 
         let got = store.get_run(run.id).await.unwrap().unwrap();
         assert_eq!(got.status, RunStatus::Completed);
@@ -549,10 +648,21 @@ mod tests {
     #[tokio::test]
     async fn orphans_are_failed_and_deleting_cascades() {
         let store = Store::connect_memory().await.unwrap();
-        let queued = store.insert_run_limited(&new_run("a"), 5).await.unwrap().unwrap();
-        let running = store.insert_run_limited(&new_run("a"), 5).await.unwrap().unwrap();
+        let queued = store
+            .insert_run_limited(&new_run("a"), 5)
+            .await
+            .unwrap()
+            .unwrap();
+        let running = store
+            .insert_run_limited(&new_run("a"), 5)
+            .await
+            .unwrap()
+            .unwrap();
         store.mark_running(running.id).await.unwrap();
-        store.append_message(running.id, "user", &json!("hi")).await.unwrap();
+        store
+            .append_message(running.id, "user", &json!("hi"))
+            .await
+            .unwrap();
 
         let mut failed = store.fail_orphans().await.unwrap();
         failed.sort();
@@ -566,7 +676,11 @@ mod tests {
         assert!(store.delete_finished_run(running.id).await.unwrap());
         assert!(store.get_run(running.id).await.unwrap().is_none());
         assert!(store.list_messages(running.id).await.unwrap().is_empty());
-        assert!(store.events_after(running.id, 0, 10).await.unwrap().is_empty());
+        assert!(store
+            .events_after(running.id, 0, 10)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -574,25 +688,59 @@ mod tests {
         let store = Store::connect_memory().await.unwrap();
         let mut ids = Vec::new();
         for _ in 0..3 {
-            ids.push(store.insert_run_limited(&new_run("a"), 10).await.unwrap().unwrap().id);
+            ids.push(
+                store
+                    .insert_run_limited(&new_run("a"), 10)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id,
+            );
         }
         assert!(!store.delete_finished_run(ids[0]).await.unwrap());
 
         let page1 = store.list_runs("a", None, None, 2).await.unwrap();
-        assert_eq!(page1.iter().map(|r| r.id).collect::<Vec<_>>(), [ids[2], ids[1]]);
-        let page2 = store.list_runs("a", None, Some(page1[1].id), 2).await.unwrap();
+        assert_eq!(
+            page1.iter().map(|r| r.id).collect::<Vec<_>>(),
+            [ids[2], ids[1]]
+        );
+        let page2 = store
+            .list_runs("a", None, Some(page1[1].id), 2)
+            .await
+            .unwrap();
         assert_eq!(page2.iter().map(|r| r.id).collect::<Vec<_>>(), [ids[0]]);
-        assert!(store.list_runs("b", None, None, 10).await.unwrap().is_empty());
-        assert_eq!(store.list_runs("a", Some(RunStatus::Failed), None, 10).await.unwrap().len(), 0);
+        assert!(store
+            .list_runs("b", None, None, 10)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            store
+                .list_runs("a", Some(RunStatus::Failed), None, 10)
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
     }
 
     #[tokio::test]
     async fn messages_keep_order_and_content_verbatim() {
         let store = Store::connect_memory().await.unwrap();
-        let run = store.insert_run_limited(&new_run("a"), 5).await.unwrap().unwrap();
+        let run = store
+            .insert_run_limited(&new_run("a"), 5)
+            .await
+            .unwrap()
+            .unwrap();
         let blocks = json!([{ "type": "web_search_tool_result", "content": [{ "encrypted_content": "abc==" }] }]);
-        store.append_message(run.id, "user", &json!("hi")).await.unwrap();
-        store.append_message(run.id, "assistant", &blocks).await.unwrap();
+        store
+            .append_message(run.id, "user", &json!("hi"))
+            .await
+            .unwrap();
+        store
+            .append_message(run.id, "assistant", &blocks)
+            .await
+            .unwrap();
         let msgs = store.list_messages(run.id).await.unwrap();
         assert_eq!(msgs.iter().map(|m| m.seq).collect::<Vec<_>>(), [1, 2]);
         assert_eq!(msgs[1].content, blocks);
