@@ -170,7 +170,7 @@ async fn the_sandbox_cannot_see_the_host_even_through_symlinks() {
 #[tokio::test]
 #[ignore = "needs Docker and the cedar-sandbox image"]
 async fn the_sandbox_is_unprivileged_offline_and_free_of_secrets() {
-    std::env::set_var("ANTHROPIC_API_KEY", "sk-should-not-leak");
+    std::env::set_var("LLM_API_KEY", "sk-should-not-leak");
     let (f, id, sb) = sandbox().await;
 
     let out = sb.exec("id -u", 10 * SECOND, 100).await.unwrap();

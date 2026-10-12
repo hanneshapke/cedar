@@ -2,7 +2,7 @@
 name = "cedar"
 version = "0.1.0"
 edition = "2021"
-description = "A backend service for running Claude agents in sandboxed containers"
+description = "A backend service for running LLM agents in sandboxed containers"
 license = "Apache-2.0"
 
 [dependencies]

@@ -55,7 +55,7 @@ impl AppState {
         let hub = Arc::new(EventHub::new());
         let env = AgentEnv {
             llm,
-            tools: Arc::new(ToolSet::standard(cfg.web_search_max_uses)),
+            tools: Arc::new(ToolSet::standard()),
             store: store.clone(),
             max_tokens: cfg.max_tokens,
             tool_timeout: cfg.tool_timeout,

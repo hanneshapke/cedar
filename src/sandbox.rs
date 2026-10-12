@@ -492,7 +492,7 @@ mod tests {
         );
         // Image and the idle command come last, so nothing after the image is parsed as a docker flag.
         assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
-        assert!(!joined.contains("ANTHROPIC"));
+        assert!(!joined.contains("LLM_API_KEY"));
     }
 
     #[test]

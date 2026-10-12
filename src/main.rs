@@ -1,12 +1,12 @@
 //! cedar: a backend service for agent runs.
 //!
-//! Run:  ANTHROPIC_API_KEY=... CEDAR_API_KEYS=devkey cargo run
+//! Run:  CEDAR_API_KEYS=devkey cargo run   (needs an OpenAI-compatible LLM server, e.g. vLLM)
 //! See README.md for the HTTP API and configuration.
 
 use anyhow::{Context, Result};
 use cedar::api::{self, AppState};
 use cedar::config::Config;
-use cedar::llm::AnthropicClient;
+use cedar::llm::ChatCompletionsClient;
 use cedar::sandbox::DockerSandboxFactory;
 use cedar::store::Store;
 use std::sync::Arc;
@@ -25,9 +25,9 @@ async fn main() -> Result<()> {
 
     let cfg = Config::from_env()?;
     let store = Store::connect(&cfg.database_url).await?;
-    let llm = Arc::new(AnthropicClient::new(
-        cfg.anthropic_api_key.clone(),
-        cfg.anthropic_base_url.clone(),
+    let llm = Arc::new(ChatCompletionsClient::new(
+        cfg.llm_base_url.clone(),
+        cfg.llm_api_key.clone(),
     )?);
     let sandboxes = Arc::new(DockerSandboxFactory::new(cfg.sandbox.clone()));
     let bind_addr = cfg.bind_addr;

@@ -159,9 +159,6 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .tool-body pre { margin: 0; padding: 6px 12px 10px; max-height: 360px; overflow: auto; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool.err .output { color: var(--error-text); }
 
-.search-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; margin: 6px 0; padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 13px; color: var(--muted); }
-.search-chip span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.search-chip svg { width: 14px; height: 14px; }
 
 .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 

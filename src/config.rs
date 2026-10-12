@@ -5,7 +5,8 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
-pub const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
+pub const DEFAULT_MODEL: &str = "deepseek-ai/DeepSeek-V4-Flash";
+pub const DEFAULT_LLM_BASE_URL: &str = "http://localhost:8000/v1";
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful coding agent. Your tools run inside an \
     isolated sandbox whose working directory is /workspace. Use tools when they help; keep answers concise.";
 
@@ -20,8 +21,10 @@ pub struct SandboxConfig {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub anthropic_api_key: String,
-    pub anthropic_base_url: String,
+    /// Base URL of the OpenAI-compatible server (vLLM), including the `/v1` prefix.
+    pub llm_base_url: String,
+    /// Bearer token for the LLM server; only needed if it was started with `--api-key`.
+    pub llm_api_key: Option<String>,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
     pub database_url: String,
@@ -33,7 +36,6 @@ pub struct Config {
     pub default_system_prompt: String,
     pub max_tokens: u32,
     pub max_turns_cap: u32,
-    pub web_search_max_uses: u32,
 
     pub max_concurrent_runs: usize,
     pub max_active_runs_per_key: i64,
@@ -54,7 +56,6 @@ impl Config {
     /// Build a config from any key lookup, so tests don't have to touch the process environment.
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self> {
         let get = |k: &str| get(k).filter(|v| !v.trim().is_empty());
-        let required = |k: &str| get(k).ok_or_else(|| anyhow!("{k} must be set"));
         fn parse<T: FromStr>(name: &str, raw: Option<String>, default: T) -> Result<T>
         where
             T::Err: std::fmt::Display,
@@ -84,9 +85,8 @@ impl Config {
         }
 
         let cfg = Config {
-            anthropic_api_key: required("ANTHROPIC_API_KEY")?,
-            anthropic_base_url: get("ANTHROPIC_BASE_URL")
-                .unwrap_or_else(|| "https://api.anthropic.com".into()),
+            llm_base_url: get("LLM_BASE_URL").unwrap_or_else(|| DEFAULT_LLM_BASE_URL.into()),
+            llm_api_key: get("LLM_API_KEY").map(|k| k.trim().to_string()),
             api_keys,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -96,13 +96,12 @@ impl Config {
             )
             .context("BIND_ADDR")?,
 
-            default_model: get("ANTHROPIC_MODEL").unwrap_or_else(|| DEFAULT_MODEL.into()),
+            default_model: get("LLM_MODEL").unwrap_or_else(|| DEFAULT_MODEL.into()),
             allowed_models: list("ALLOWED_MODELS"),
             default_system_prompt: get("SYSTEM_PROMPT")
                 .unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.into()),
             max_tokens: parse("MAX_TOKENS", get("MAX_TOKENS"), 4096)?,
             max_turns_cap: parse("MAX_TURNS_CAP", get("MAX_TURNS_CAP"), 25)?,
-            web_search_max_uses: parse("WEB_SEARCH_MAX_USES", get("WEB_SEARCH_MAX_USES"), 5)?,
 
             max_concurrent_runs: parse("MAX_CONCURRENT_RUNS", get("MAX_CONCURRENT_RUNS"), 4)?,
             max_active_runs_per_key: parse(
@@ -177,32 +176,39 @@ mod tests {
 
     #[test]
     fn defaults_and_required() {
-        let cfg = Config::from_lookup(lookup(&[
-            ("ANTHROPIC_API_KEY", "sk"),
-            ("CEDAR_API_KEYS", "a, b ,,"),
-        ]))
-        .unwrap();
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a, b ,,")])).unwrap();
         assert_eq!(cfg.api_keys, ["a", "b"]);
         assert_eq!(cfg.default_model, DEFAULT_MODEL);
+        assert_eq!(cfg.llm_base_url, DEFAULT_LLM_BASE_URL);
+        assert_eq!(cfg.llm_api_key, None);
         assert_eq!(cfg.sandbox.network, "none");
         assert_eq!(cfg.max_turns_cap, 25);
         assert_eq!(cfg.workspace_ttl, Duration::from_secs(86_400));
     }
 
     #[test]
+    fn llm_settings_come_from_the_environment() {
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("LLM_BASE_URL", "http://gpu-box:9000/v1"),
+            ("LLM_API_KEY", " secret "),
+            ("LLM_MODEL", "my-model"),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.llm_base_url, "http://gpu-box:9000/v1");
+        assert_eq!(cfg.llm_api_key.as_deref(), Some("secret"));
+        assert_eq!(cfg.default_model, "my-model");
+    }
+
+    #[test]
     fn missing_keys_fail_fast() {
-        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).is_err());
-        assert!(Config::from_lookup(lookup(&[("ANTHROPIC_API_KEY", "sk")])).is_err());
+        assert!(Config::from_lookup(lookup(&[])).is_err());
     }
 
     #[test]
     fn invalid_number_is_reported() {
-        let err = Config::from_lookup(lookup(&[
-            ("ANTHROPIC_API_KEY", "sk"),
-            ("CEDAR_API_KEYS", "a"),
-            ("MAX_TOKENS", "lots"),
-        ]))
-        .unwrap_err();
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAX_TOKENS", "lots")]))
+            .unwrap_err();
         assert!(err.to_string().contains("MAX_TOKENS"));
     }
 }

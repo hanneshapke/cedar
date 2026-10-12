@@ -30,7 +30,7 @@ pub trait Tool: Send + Sync {
     fn schema(&self) -> Value;
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String>;
 
-    /// The JSON block the API expects in the `tools` array.
+    /// This tool's entry in the `tools` array handed to the LLM client.
     fn definition(&self) -> Value {
         json!({
             "name": self.name(),
@@ -40,52 +40,27 @@ pub trait Tool: Send + Sync {
     }
 }
 
-/// The tools available to every run: local tools plus optional server-side web search.
+/// The tools available to every run.
 pub struct ToolSet {
     tools: Vec<Box<dyn Tool>>,
-    /// Server-side tools (e.g. web search) that Anthropic executes for us.
-    /// These are raw JSON definitions appended to the `tools` array as-is.
-    server_tools: Vec<Value>,
 }
 
 impl ToolSet {
     pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
-        Self {
-            tools,
-            server_tools: vec![],
-        }
+        Self { tools }
     }
 
-    /// `bash`, `read_file`, `write_file`, and (if `web_search_max_uses > 0`) `web_search`.
-    pub fn standard(web_search_max_uses: u32) -> Self {
-        let set = Self::new(vec![
+    /// `bash`, `read_file`, and `write_file`.
+    pub fn standard() -> Self {
+        Self::new(vec![
             Box::new(Bash),
             Box::new(ReadFile),
             Box::new(WriteFile),
-        ]);
-        if web_search_max_uses > 0 {
-            set.with_web_search(web_search_max_uses)
-        } else {
-            set
-        }
-    }
-
-    /// Enable Anthropic's built-in web search. `max_uses` caps searches per request.
-    pub fn with_web_search(mut self, max_uses: u32) -> Self {
-        self.server_tools.push(json!({
-            "type": "web_search_20250305",
-            "name": "web_search",
-            "max_uses": max_uses,
-        }));
-        self
+        ])
     }
 
     pub fn definitions(&self) -> Vec<Value> {
-        self.tools
-            .iter()
-            .map(|t| t.definition())
-            .chain(self.server_tools.iter().cloned())
-            .collect()
+        self.tools.iter().map(|t| t.definition()).collect()
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Tool> {
@@ -160,13 +135,12 @@ mod tests {
     }
 
     #[test]
-    fn standard_set_exposes_local_and_server_tools() {
-        let defs = ToolSet::standard(3).definitions();
+    fn standard_set_exposes_the_local_tools() {
+        let set = ToolSet::standard();
+        let defs = set.definitions();
         let names: Vec<_> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["bash", "read_file", "write_file", "web_search"]);
-        assert_eq!(defs[3]["max_uses"], 3);
-        assert_eq!(ToolSet::standard(0).definitions().len(), 3);
-        assert!(ToolSet::standard(0).get("bash").is_some());
-        assert!(ToolSet::standard(0).get("nope").is_none());
+        assert_eq!(names, ["bash", "read_file", "write_file"]);
+        assert!(set.get("bash").is_some());
+        assert!(set.get("nope").is_none());
     }
 }

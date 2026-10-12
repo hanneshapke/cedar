@@ -291,7 +291,6 @@ pub struct SseEvent {
 
 pub fn test_config(extra: &[(&str, &str)]) -> Config {
     let mut env: HashMap<String, String> = [
-        ("ANTHROPIC_API_KEY", "sk-test"),
         ("CEDAR_API_KEYS", "key-a,key-b"),
         ("MAX_ACTIVE_RUNS_PER_KEY", "10"),
         ("MAX_TURNS_CAP", "10"),

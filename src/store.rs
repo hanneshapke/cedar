@@ -732,7 +732,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let blocks = json!([{ "type": "web_search_tool_result", "content": [{ "encrypted_content": "abc==" }] }]);
+        let blocks = json!([{ "type": "opaque", "content": [{ "payload": "abc==" }] }]);
         store
             .append_message(run.id, "user", &json!("hi"))
             .await

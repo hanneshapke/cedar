@@ -33,7 +33,6 @@ const ICONS = {
   file: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4"/></svg>',
   pencil: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg>',
   tool: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
-  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>',
   chevron: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   cross: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
@@ -505,14 +504,6 @@ function applyEvent(view, event) {
     }
     case 'tool.call': place(view, toolCall(view, d)); break;
     case 'tool.result': toolResult(view, d); break;
-    case 'web_search': {
-      const chip = h('div', 'search-chip', ICONS.search);
-      const label = h('span');
-      label.textContent = d.input?.query ? `Searched the web for “${d.input.query}”` : 'Searched the web';
-      chip.append(label);
-      place(view, chip);
-      break;
-    }
     case 'usage':
       view.usage.input += d.input_tokens || 0;
       view.usage.output += d.output_tokens || 0;

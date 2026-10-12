@@ -1,4 +1,4 @@
-//! cedar: a backend service that runs Claude agents in sandboxed containers.
+//! cedar: a backend service that runs LLM agents in sandboxed containers.
 //!
 //! The binary (`src/main.rs`) wires these modules together; they are a library so integration
 //! tests can substitute fakes for the LLM and the sandbox.

@@ -1,30 +1,37 @@
 # cedar
 
-A backend service in Rust for running Claude agents. Clients submit a task over HTTP, cedar runs the agent loop in the background, and clients follow progress live (Server-Sent Events), cancel, or read the result later. Every run's tools execute inside their own Docker container.
+A backend service in Rust for running LLM agents against any OpenAI-compatible server (built for DeepSeek V4 on a local vLLM). Clients submit a task over HTTP, cedar runs the agent loop in the background, and clients follow progress live (Server-Sent Events), cancel, or read the result later. Every run's tools execute inside their own Docker container.
 
 ## How it works
 
 1. `POST /v1/runs` stores a `queued` run and returns `202`.
 2. When a slot is free (`MAX_CONCURRENT_RUNS`), the run starts: cedar creates a sandbox container for it and runs the agent loop.
-3. The loop sends the conversation, system prompt, and tool definitions to the Anthropic Messages API. The reply is scanned for content blocks:
+3. The loop sends the conversation, system prompt, and tool definitions to the LLM server's chat-completions API. The reply is scanned for content blocks:
    - `text` is collected as the answer.
-   - `tool_use` is executed in the run's sandbox and the result is sent back as a `tool_result`. Errors are returned to the model with `is_error: true` so it can recover.
-   - `server_tool_use` (web search) is run by Anthropic. It is only reported as an event.
-4. If the stop reason is `tool_use` (or `pause_turn` for a paused server-tool loop), go back to step 3. Otherwise the run is `completed` with the text of the last turn.
+   - `tool_use` (a tool call) is executed in the run's sandbox and the result is sent back as a `tool_result`. Errors are returned to the model with `is_error: true` so it can recover.
+4. If the stop reason is `tool_use`, go back to step 3. Otherwise the run is `completed` with the text of the last turn.
 5. The sandbox is destroyed and the run ends in exactly one terminal state: `completed`, `failed`, or `cancelled`.
 
 Runs, the full conversation, and an append-only event log are stored in SQLite. A run gives up with `failed` after `max_turns` round trips (capped by `MAX_TURNS_CAP`) or `RUN_TIMEOUT_SECS` of wall-clock time.
 
 ## Quick start
 
-You need a recent Rust toolchain, Docker, and an Anthropic API key.
+You need a recent Rust toolchain, Docker, and an OpenAI-compatible LLM server. cedar defaults to a local [vLLM](https://docs.vllm.ai) serving DeepSeek V4:
+
+```sh
+# 0. Start vLLM (vLLM 0.20 or newer; see the vLLM recipe for flags that suit your GPUs:
+#    https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash)
+vllm serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --tokenizer-mode deepseek_v4 \
+  --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-parser deepseek_v4
+```
+
+The tool-call flags are required: without them the model's tool calls come back as plain text and the agent can't act. Check the registered model name with `curl localhost:8000/v1/models` and set `LLM_MODEL` if it differs from the default.
 
 ```sh
 # 1. Build the image the agent's tools run in
 docker build -t cedar-sandbox sandbox/
 
 # 2. Start the server (it listens on 127.0.0.1:8080 by default)
-export ANTHROPIC_API_KEY=sk-ant-...
 export CEDAR_API_KEYS=$(openssl rand -hex 24)
 cargo run --release
 
@@ -47,7 +54,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "system"?, "max_turns"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
-| `GET /v1/runs/{id}/messages` | The stored conversation, with content blocks exactly as exchanged with the API. |
+| `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`). |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
@@ -65,7 +72,6 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 | `assistant.text` | `turn`, `text` |
 | `tool.call` | `id`, `name`, `input` |
 | `tool.result` | `id`, `output`, `is_error`, `duration_ms` |
-| `web_search` | `turn`, `name`, `input` |
 | `usage` | `turn`, `input_tokens`, `output_tokens` |
 | `run.completed` | `final_text`, `stop_reason` |
 | `run.failed` | `error` |
@@ -89,7 +95,7 @@ curl -s localhost:8080/v1/runs -H "Authorization: Bearer devkey" \
   result so the conversation stays valid.
 - It mounts the parent's workspace, so files under `/workspace` are kept. Each run still gets a
   new container, so running processes are not.
-- The model and system prompt come from the parent unless the request sets them.
+- The model and system prompt come from the parent unless the request sets them. A run created before you switched `LLM_MODEL` keeps its old model name, so pass an explicit `"model"` when continuing it.
 - A run can be continued once, and only after it has finished, so a chain of runs is a straight
   line and never shares a workspace with a run that is still going. To keep going, continue from
   the latest run.
@@ -119,15 +125,15 @@ Settings come from environment variables. The important ones:
 
 | Setting | Default |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | required |
 | `CEDAR_API_KEYS` | required, comma-separated bearer tokens |
+| `LLM_BASE_URL` | `http://localhost:8000/v1` |
+| `LLM_API_KEY` | empty (only needed if the server runs with `--api-key`) |
 | `BIND_ADDR` | `127.0.0.1:8080` |
 | `DATABASE_URL` | `sqlite://cedar.db` |
-| `ANTHROPIC_MODEL` | `claude-sonnet-5-5` |
+| `LLM_MODEL` | `deepseek-ai/DeepSeek-V4-Flash` (must match the name the server registered) |
 | `ALLOWED_MODELS` | empty (any model may be requested) |
 | `MAX_TURNS_CAP` | 25 |
 | `MAX_TOKENS` | 4096 |
-| `WEB_SEARCH_MAX_USES` | 5 per request (0 turns web search off) |
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
@@ -142,7 +148,8 @@ Settings come from environment variables. The important ones:
 | `bash` | Runs a command with `sh -c` in the run's container and returns stdout, stderr, and the exit status if it was non-zero. Killed after `TOOL_TIMEOUT_SECS`. |
 | `read_file` | Reads a text file from the container. |
 | `write_file` | Writes content to a path in the container, creating parent directories and overwriting the file. |
-| `web_search` | Anthropic's server-side web search. It is executed by Anthropic, needs no local code, and works even though the container has no network. |
+
+There is no web search: the container has no network and vLLM has no server-side tools.
 
 Output is cut at `TOOL_OUTPUT_MAX_BYTES` per stream with a `[truncated N bytes]` marker, so a large file or noisy command can't fill the context window.
 
@@ -170,7 +177,7 @@ impl Tool for Now {
 Self::new(vec![Box::new(Bash), Box::new(ReadFile), Box::new(WriteFile), Box::new(Now)])
 ```
 
-The `definition()` method builds the JSON the API expects, so you do not write it by hand. A tool that touches files or runs processes must go through `ctx.sandbox`, never the host. Return `Err` for a failure the model can recover from; it is sent back with `is_error: true`.
+The `definition()` method builds the tool definition for the LLM client, so you do not write it by hand. A tool that touches files or runs processes must go through `ctx.sandbox`, never the host. Return `Err` for a failure the model can recover from; it is sent back with `is_error: true`.
 
 ## Safety
 
@@ -178,7 +185,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 
 - Each run gets its own container, created at the start and removed at the end, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Containers run as a non-root user with all capabilities dropped, `no-new-privileges`, and memory, CPU, and process limits. Networking is off (`SANDBOX_NETWORK=none`) unless you change it.
 - Every file and command operation goes through `docker exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
-- The Anthropic API key is never passed into a container.
+- `LLM_API_KEY` is never passed into a container.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
@@ -188,7 +195,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 
 - **Restarts:** SQLite file plus in-process queue means one instance only. Runs that were queued or running when the process stopped cannot be resumed, so at startup they are marked `failed` and leftover containers are removed. Workspace volumes that still belong to a run in the database are kept until `WORKSPACE_TTL_SECS` expires; any other workspace volume is removed.
 - **Shutdown:** on SIGTERM or Ctrl-C cedar stops accepting connections, cancels active runs (they end as `cancelled` with reason `server shutting down`), and waits up to 10 seconds for them to record their final state.
-- **API errors:** requests to Anthropic time out and retry on 429, 5xx, and connection errors (up to 4 attempts, exponential backoff, honoring `retry-after`). Other 4xx errors fail the run immediately with the API's message.
+- **API errors:** requests to the LLM server time out and retry on 429, 5xx, and connection errors (up to 4 attempts, exponential backoff, honoring `retry-after`). Other 4xx errors fail the run immediately with the API's message.
 - **Logs:** `RUST_LOG` controls verbosity (default `info`). Prompts and keys are not logged.
 
 ## Development
@@ -199,7 +206,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --test docker -- --ignored   # sandbox tests; need Docker and the cedar-sandbox image
 ```
 
-The integration tests drive the real router with a scripted LLM and a fake sandbox (`tests/common/mod.rs`), and the LLM client against a local mock of the Messages API.
+The integration tests drive the real router with a scripted LLM and a fake sandbox (`tests/common/mod.rs`), and the LLM client against a local mock of a chat-completions server.
 
 ## Limitations
 

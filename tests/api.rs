@@ -164,40 +164,6 @@ async fn a_run_executes_tools_and_completes() {
 }
 
 #[tokio::test]
-async fn server_tool_blocks_round_trip_unmodified() {
-    let search = reply(
-        vec![
-            json!({ "type": "server_tool_use", "id": "s1", "name": "web_search", "input": { "query": "rust" } }),
-            json!({ "type": "web_search_tool_result", "tool_use_id": "s1",
-                    "content": [{ "type": "web_search_result", "encrypted_content": "EnCrYpTeD==" }] }),
-        ],
-        "pause_turn",
-    );
-    let app = TestApp::new(vec![Step::Reply(search), Step::Reply(text("found it"))]).await;
-    let id = id_of(&app.create_run(KEY_A, "search").await);
-    app.wait_status(KEY_A, &id, "completed").await;
-
-    let requests = app.llm.requests();
-    let names: Vec<_> = requests[0]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| t["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, ["bash", "read_file", "write_file", "web_search"]);
-    // After pause_turn the assistant turn is resent exactly as received.
-    let resent = &requests[1]["messages"][1];
-    assert_eq!(resent["role"], "assistant");
-    assert_eq!(
-        resent["content"][1]["content"][0]["encrypted_content"],
-        "EnCrYpTeD=="
-    );
-
-    let events = app.events(KEY_A, &id, None).await;
-    assert!(kinds(&events).contains(&"web_search"));
-}
-
-#[tokio::test]
 async fn tool_errors_and_odd_output_reach_the_model() {
     let app = TestApp::new(vec![
         Step::Reply(tool_use("t1", "nope", json!({}))),
@@ -300,10 +266,10 @@ async fn exhausting_max_turns_fails_the_run() {
 
 #[tokio::test]
 async fn llm_errors_fail_the_run_with_the_message() {
-    let app = TestApp::new(vec![Step::Error("Anthropic API error 400: bad model")]).await;
+    let app = TestApp::new(vec![Step::Error("LLM API error 400: bad model")]).await;
     let id = id_of(&app.create_run(KEY_A, "x").await);
     let run = app.wait_status(KEY_A, &id, "failed").await;
-    assert_eq!(run["error"], "Anthropic API error 400: bad model");
+    assert_eq!(run["error"], "LLM API error 400: bad model");
     assert!(app.factory.all_destroyed());
 }
 
@@ -496,7 +462,7 @@ async fn active_runs_per_key_are_capped() {
 
 #[tokio::test]
 async fn invalid_requests_are_rejected_with_json_errors() {
-    let app = TestApp::with_env(vec![], &[("ALLOWED_MODELS", "claude-haiku-5-5")]).await;
+    let app = TestApp::with_env(vec![], &[("ALLOWED_MODELS", "small-model")]).await;
     let post = |body: Value| {
         let app = app.clone();
         async move {
@@ -547,19 +513,19 @@ async fn defaults_and_clamps_are_applied() {
             Step::Reply(text("b")),
             Step::Reply(text("c")),
         ],
-        &[("ALLOWED_MODELS", "claude-haiku-5-5")],
+        &[("ALLOWED_MODELS", "small-model")],
     )
     .await;
 
     let plain = app.create_run(KEY_A, "x").await;
-    assert_eq!(plain["model"], "claude-sonnet-5-5");
+    assert_eq!(plain["model"], "deepseek-ai/DeepSeek-V4-Flash");
     assert_eq!(plain["max_turns"], 10);
     assert!(plain["system"].as_str().unwrap().contains("/workspace"));
 
     let custom = app
-        .create_run_with(KEY_A, json!({ "prompt": "x", "model": "claude-haiku-5-5", "system": "be brief", "max_turns": 999 }))
+        .create_run_with(KEY_A, json!({ "prompt": "x", "model": "small-model", "system": "be brief", "max_turns": 999 }))
         .await;
-    assert_eq!(custom["model"], "claude-haiku-5-5");
+    assert_eq!(custom["model"], "small-model");
     assert_eq!(custom["system"], "be brief");
     assert_eq!(
         custom["max_turns"], 10,
@@ -569,7 +535,7 @@ async fn defaults_and_clamps_are_applied() {
     // The default model is always allowed, even when it isn't on the allow-list.
     app.create_run_with(
         KEY_A,
-        json!({ "prompt": "x", "model": "claude-sonnet-5-5" }),
+        json!({ "prompt": "x", "model": "deepseek-ai/DeepSeek-V4-Flash" }),
     )
     .await;
 
@@ -577,7 +543,7 @@ async fn defaults_and_clamps_are_applied() {
     let requests = app.llm.requests();
     assert!(requests
         .iter()
-        .any(|r| r["model"] == "claude-haiku-5-5" && r["system"] == "be brief"));
+        .any(|r| r["model"] == "small-model" && r["system"] == "be brief"));
 }
 
 // -- ownership, listing, deletion -------------------------------------------------------------
@@ -891,7 +857,7 @@ async fn a_continuation_picks_up_the_conversation_and_the_workspace() {
     let first = app
         .create_run_with(
             KEY_A,
-            json!({ "prompt": "save a note", "system": "be brief", "model": "claude-sonnet-5-5" }),
+            json!({ "prompt": "save a note", "system": "be brief", "model": "small-model" }),
         )
         .await;
     let first_id = id_of(&first);
@@ -911,7 +877,7 @@ async fn a_continuation_picks_up_the_conversation_and_the_workspace() {
     assert_eq!(second["workspace_id"], first["workspace_id"]);
     assert_eq!(second["workspace_reused"], true);
     assert_eq!(second["system"], "be brief", "system prompt is inherited");
-    assert_eq!(second["model"], "claude-sonnet-5-5", "model is inherited");
+    assert_eq!(second["model"], "small-model", "model is inherited");
     let run = app.wait_status(KEY_A, &second_id, "completed").await;
     assert_eq!(run["final_text"], "it says: remember me");
 

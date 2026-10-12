@@ -92,7 +92,6 @@ pub mod event {
     pub const ASSISTANT_TEXT: &str = "assistant.text";
     pub const TOOL_CALL: &str = "tool.call";
     pub const TOOL_RESULT: &str = "tool.result";
-    pub const WEB_SEARCH: &str = "web_search";
     pub const USAGE: &str = "usage";
     pub const RUN_COMPLETED: &str = "run.completed";
     pub const RUN_FAILED: &str = "run.failed";

@@ -113,16 +113,6 @@ pub async fn run_agent(
                     }
                 }
                 Some("tool_use") => tool_calls.push(block),
-                // Server tools (web search) are executed by Anthropic; just report them. Their
-                // result blocks are already in `content` and go back unmodified with the history.
-                Some("server_tool_use") => {
-                    events
-                        .emit(
-                            event::WEB_SEARCH,
-                            json!({ "turn": turn, "name": block["name"], "input": block["input"] }),
-                        )
-                        .await?;
-                }
                 _ => {}
             }
         }
@@ -135,8 +125,6 @@ pub async fn run_agent(
                 }
                 push_message(env, run, &mut messages, "user", Value::Array(results)).await?;
             }
-            // The server paused a long-running server-tool loop; resend as-is.
-            Some("pause_turn") => {}
             other => {
                 return Ok(Completion {
                     final_text,
