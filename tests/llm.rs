@@ -238,7 +238,8 @@ async fn the_agent_loop_drives_a_chat_completions_server() {
         cedar::store::Store::connect_memory().await.unwrap(),
         llm,
         factory.clone(),
-    );
+    )
+    .unwrap();
     let app = common::TestApp {
         router: api::router(state.clone()),
         state,

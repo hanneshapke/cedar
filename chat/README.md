@@ -12,8 +12,9 @@ The cedar API key stays on the server. The browser only talks to cedar-chat.
 ## Features
 
 - A conversation list in the sidebar, with new chat, rename (click the title), and delete
-- Replies stream in as the agent works. Text, tool calls (`bash`, `read_file`, `write_file`) with
-  their input and output, errors, and token usage are shown as they happen
+- Replies stream in as the agent works. Text, tool calls (`bash`, `read_file`, `write_file`, and
+  `web_search` when cedar has a Brave key) with their input and output, errors, and token usage are
+  shown as they happen
 - A stop button cancels the running response
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout

@@ -32,6 +32,7 @@ const ICONS = {
   terminal: '<svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg>',
   file: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4"/></svg>',
   pencil: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>',
   tool: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
   chevron: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
@@ -517,12 +518,13 @@ function toolSummary(name, input) {
   if (!input || typeof input !== 'object') return '';
   if (typeof input.command === 'string') return input.command.split('\n')[0];
   if (typeof input.path === 'string') return input.path;
+  if (typeof input.query === 'string') return input.query;
   return JSON.stringify(input);
 }
 
 function toolCall(view, d) {
   const icon = d.name === 'bash' ? ICONS.terminal : d.name === 'read_file' ? ICONS.file
-    : d.name === 'write_file' ? ICONS.pencil : ICONS.tool;
+    : d.name === 'write_file' ? ICONS.pencil : d.name === 'web_search' ? ICONS.search : ICONS.tool;
   const details = h('details', 'tool running');
   const summary = h('summary', '', `${icon}<span class="tool-name"></span><span class="tool-arg"></span>` +
     `<span class="meta"></span><span class="state"><span class="spinner"></span></span>${ICONS.chevron}`);

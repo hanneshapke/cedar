@@ -1,11 +1,15 @@
-//! Tools the model can call. Each one runs inside the run's sandbox.
+//! Tools the model can call. The file and shell tools run inside the run's sandbox; `web_search`
+//! runs in the cedar process, because the sandbox has no network.
 
 mod bash;
 mod files;
+mod web_search;
 
 pub use bash::Bash;
 pub use files::{ReadFile, WriteFile};
+pub use web_search::BraveSearch;
 
+use crate::config::Config;
 use crate::sandbox::Sandbox;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -57,6 +61,18 @@ impl ToolSet {
             Box::new(ReadFile),
             Box::new(WriteFile),
         ])
+    }
+
+    /// The standard tools, plus `web_search` if a Brave API key is configured.
+    pub fn from_config(cfg: &Config) -> Result<Self> {
+        let mut set = Self::standard();
+        if let Some(key) = &cfg.brave_api_key {
+            set.tools.push(Box::new(BraveSearch::new(
+                key.clone(),
+                cfg.brave_base_url.clone(),
+            )?));
+        }
+        Ok(set)
     }
 
     pub fn definitions(&self) -> Vec<Value> {
@@ -142,5 +158,36 @@ mod tests {
         assert_eq!(names, ["bash", "read_file", "write_file"]);
         assert!(set.get("bash").is_some());
         assert!(set.get("nope").is_none());
+    }
+
+    fn tool_names(cfg: &Config) -> Vec<String> {
+        ToolSet::from_config(cfg)
+            .unwrap()
+            .definitions()
+            .iter()
+            .map(|d| d["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn web_search_is_offered_only_with_a_brave_key() {
+        let cfg = |pairs: &[(&str, &str)]| {
+            let pairs: Vec<_> = pairs.to_vec();
+            Config::from_lookup(move |k| {
+                pairs
+                    .iter()
+                    .find(|(name, _)| *name == k)
+                    .map(|(_, v)| v.to_string())
+            })
+            .unwrap()
+        };
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a")])),
+            ["bash", "read_file", "write_file"]
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])),
+            ["bash", "read_file", "write_file", "web_search"]
+        );
     }
 }

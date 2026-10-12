@@ -130,7 +130,9 @@ The chat UI's HTML, CSS, and JavaScript are compiled into the `cedar-chat` binar
 nothing else to deploy.
 
 The sandbox has no network, so the agent can't install packages. If your tasks need more tools,
-add them to `sandbox/Dockerfile` and rebuild the image.
+add them to `sandbox/Dockerfile` and rebuild the image. Web search is the exception: the optional
+`web_search` tool (see `BRAVE_API_KEY` in step 4) runs in the cedar process, so the host needs
+outbound HTTPS to `api.search.brave.com`.
 
 ## 4. Configure
 
@@ -156,6 +158,7 @@ DATABASE_URL=sqlite:///var/lib/cedar/cedar.db
 LLM_BASE_URL=http://127.0.0.1:8000/v1
 LLM_MODEL=$MODEL
 # LLM_API_KEY=            # only if vLLM was started with --api-key
+# BRAVE_API_KEY=          # enables the web_search tool (key from api-dashboard.search.brave.com)
 
 # Tuned for one Spark running a large model (see "Memory" above)
 MAX_CONCURRENT_RUNS=2
@@ -186,6 +189,7 @@ Settings worth knowing on this hardware:
 | `MAX_TOKENS` | Cap on one model reply (default 4096). cedar waits for the full reply and gives up on a single request after **300 seconds** (fixed in `src/llm.rs`). If your Spark generates slowly enough that 4096 tokens takes longer than that, lower `MAX_TOKENS`. |
 | `MAX_CONCURRENT_RUNS` | How many agents run at once; the rest queue. |
 | `CHAT_MODELS` | Optional model picker in the UI. Leave unset to use only `LLM_MODEL`. |
+| `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox container. |
 
 ## 5. Try it by hand first
 

@@ -33,7 +33,9 @@ async fn main() -> Result<()> {
     let bind_addr = cfg.bind_addr;
     let workspace_ttl = cfg.workspace_ttl;
 
-    let state = AppState::new(cfg, store, llm, sandboxes);
+    tracing::info!(web_search = cfg.brave_api_key.is_some(), "tools configured");
+
+    let state = AppState::new(cfg, store, llm, sandboxes)?;
     state.manager.recover().await?;
     state.manager.start_janitor(workspace_ttl);
 

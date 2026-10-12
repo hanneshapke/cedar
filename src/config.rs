@@ -7,6 +7,7 @@ use std::time::Duration;
 
 pub const DEFAULT_MODEL: &str = "deepseek-ai/DeepSeek-V4-Flash";
 pub const DEFAULT_LLM_BASE_URL: &str = "http://localhost:8000/v1";
+pub const DEFAULT_BRAVE_BASE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful coding agent. Your tools run inside an \
     isolated sandbox whose working directory is /workspace. Use tools when they help; keep answers concise.";
 
@@ -25,6 +26,10 @@ pub struct Config {
     pub llm_base_url: String,
     /// Bearer token for the LLM server; only needed if it was started with `--api-key`.
     pub llm_api_key: Option<String>,
+    /// Brave Search API key. The `web_search` tool is only offered to the model when this is set.
+    pub brave_api_key: Option<String>,
+    /// Brave web search endpoint; overridable so tests can point at a mock.
+    pub brave_base_url: String,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
     pub database_url: String,
@@ -87,6 +92,9 @@ impl Config {
         let cfg = Config {
             llm_base_url: get("LLM_BASE_URL").unwrap_or_else(|| DEFAULT_LLM_BASE_URL.into()),
             llm_api_key: get("LLM_API_KEY").map(|k| k.trim().to_string()),
+            brave_api_key: get("BRAVE_API_KEY").map(|k| k.trim().to_string()),
+            brave_base_url: get("BRAVE_API_BASE_URL")
+                .unwrap_or_else(|| DEFAULT_BRAVE_BASE_URL.into()),
             api_keys,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -198,6 +206,30 @@ mod tests {
         assert_eq!(cfg.llm_base_url, "http://gpu-box:9000/v1");
         assert_eq!(cfg.llm_api_key.as_deref(), Some("secret"));
         assert_eq!(cfg.default_model, "my-model");
+    }
+
+    #[test]
+    fn brave_search_is_off_unless_a_key_is_set() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert_eq!(cfg.brave_api_key, None);
+        assert_eq!(cfg.brave_base_url, DEFAULT_BRAVE_BASE_URL);
+
+        let blank =
+            Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "  ")]))
+                .unwrap();
+        assert_eq!(blank.brave_api_key, None);
+    }
+
+    #[test]
+    fn brave_settings_come_from_the_environment() {
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("BRAVE_API_KEY", " BSA-secret "),
+            ("BRAVE_API_BASE_URL", "http://localhost:9999/search"),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.brave_api_key.as_deref(), Some("BSA-secret"));
+        assert_eq!(cfg.brave_base_url, "http://localhost:9999/search");
     }
 
     #[test]

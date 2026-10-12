@@ -318,7 +318,7 @@ impl TestApp {
         factory: Arc<FakeFactory>,
         extra: &[(&str, &str)],
     ) -> Self {
-        let state = AppState::new(test_config(extra), store, llm.clone(), factory.clone());
+        let state = AppState::new(test_config(extra), store, llm.clone(), factory.clone()).unwrap();
         let router = api::router(state.clone());
         Self {
             state,

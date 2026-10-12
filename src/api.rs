@@ -12,6 +12,7 @@ use crate::sandbox::SandboxFactory;
 use crate::sse;
 use crate::store::{InsertRefused, Store};
 use crate::tools::ToolSet;
+use anyhow::Result;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware;
@@ -45,17 +46,17 @@ pub struct AppState {
 
 impl AppState {
     /// Wire the services together. The LLM client and sandbox factory are injected so tests can
-    /// substitute fakes.
+    /// substitute fakes. Fails only if a tool can't be set up (e.g. the HTTP client for web search).
     pub fn new(
         cfg: Config,
         store: Store,
         llm: Arc<dyn LlmClient>,
         sandboxes: Arc<dyn SandboxFactory>,
-    ) -> Self {
+    ) -> Result<Self> {
         let hub = Arc::new(EventHub::new());
         let env = AgentEnv {
             llm,
-            tools: Arc::new(ToolSet::standard()),
+            tools: Arc::new(ToolSet::from_config(&cfg)?),
             store: store.clone(),
             max_tokens: cfg.max_tokens,
             tool_timeout: cfg.tool_timeout,
@@ -70,14 +71,14 @@ impl AppState {
             cfg.run_timeout,
         );
         let auth = AuthKeys::new(&cfg.api_keys);
-        Self {
+        Ok(Self {
             cfg: Arc::new(cfg),
             store,
             hub,
             manager,
             sandboxes,
             auth,
-        }
+        })
     }
 }
 

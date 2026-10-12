@@ -150,6 +150,8 @@ Settings come from environment variables. The important ones:
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
+| `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
+| `BRAVE_API_BASE_URL` | `https://api.search.brave.com/res/v1/web/search` |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
 
@@ -160,8 +162,9 @@ Settings come from environment variables. The important ones:
 | `bash` | Runs a command with `sh -c` in the run's container and returns stdout, stderr, and the exit status if it was non-zero. Killed after `TOOL_TIMEOUT_SECS`. |
 | `read_file` | Reads a text file from the container. |
 | `write_file` | Writes content to a path in the container, creating parent directories and overwriting the file. |
+| `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
 
-There is no web search: the container has no network and vLLM has no server-side tools.
+`web_search` runs in the cedar process, not in the container, because the container has no network. It returns snippets only; it does not fetch pages. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
 
 Output is cut at `TOOL_OUTPUT_MAX_BYTES` per stream with a `[truncated N bytes]` marker, so a large file or noisy command can't fill the context window.
 
@@ -189,7 +192,7 @@ impl Tool for Now {
 Self::new(vec![Box::new(Bash), Box::new(ReadFile), Box::new(WriteFile), Box::new(Now)])
 ```
 
-The `definition()` method builds the tool definition for the LLM client, so you do not write it by hand. A tool that touches files or runs processes must go through `ctx.sandbox`, never the host. Return `Err` for a failure the model can recover from; it is sent back with `is_error: true`.
+The `definition()` method builds the tool definition for the LLM client, so you do not write it by hand. A tool that touches files or runs processes must go through `ctx.sandbox`, never the host. A tool that needs credentials or the network (like `web_search`) runs host-side instead; register it in `ToolSet::from_config`, conditioned on its setting. Return `Err` for a failure the model can recover from; it is sent back with `is_error: true`.
 
 ## Safety
 
@@ -197,7 +200,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 
 - Each run gets its own container, created at the start and removed at the end, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Containers run as a non-root user with all capabilities dropped, `no-new-privileges`, and memory, CPU, and process limits. Networking is off (`SANDBOX_NETWORK=none`) unless you change it.
 - Every file and command operation goes through `docker exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
-- `LLM_API_KEY` is never passed into a container.
+- `LLM_API_KEY` and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
