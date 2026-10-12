@@ -7,8 +7,16 @@ installed in the browser image as `cedar-browser`:
 
 A request is a JSON object with an `action`:
 
-    {"action": "navigate", "url": "https://..."}    load a page, then take a snapshot
-    {"action": "snapshot"}                          snapshot the current page again
+    {"action": "navigate", "url": "https://..."}    load a page
+    {"action": "snapshot"}                          describe the current page again
+    {"action": "click", "ref": 12}                  click element [12] of the last snapshot
+    {"action": "type", "ref": 3, "text": "...", "submit": true}
+                                                    replace the text in a field; submit presses Enter
+    {"action": "scroll", "direction": "down"}       scroll the open dialog, or the page (also "up");
+                                                    with a ref, the area around that element
+    {"action": "back"}                              go back to the previous page
+
+Every action replies with a snapshot of the page as it is afterwards.
 
 The reply is one JSON object on stdout: `{"url", "title", "status", "text", "visible_chars"}`. `status` is the HTTP
 status of the last navigation's main document (null if there was none). `text` is the page as
@@ -33,6 +41,7 @@ NAVIGATE_TIMEOUT_MS = 30_000
 # After the load event, wait this long at most for the page's own requests to finish, since many
 # sites render their content from API calls made after load and some never go fully idle.
 SETTLE_TIMEOUT_MS = 3_000
+ACTION_TIMEOUT_MS = 5_000
 MAX_REQUEST_BYTES = 1_000_000
 BLOCKED_RESOURCES = {"image", "media", "font"}
 
@@ -171,6 +180,39 @@ SNAPSHOT_JS = r"""
 """
 
 
+# Scrolls by `screens` times most of a screen (0 only measures) and reports [moved, at_end].
+# `whole` (no ref given): the scrollable area of the open modal dialog if there is one (the
+# largest, since dialogs nest wrappers), else the page. Otherwise the nearest scrollable area
+# around the element, or the page if there is none.
+SCROLL_JS = r"""
+(el, [whole, screens]) => {
+  const scrollable = (e) => {
+    const style = getComputedStyle(e);
+    return /(auto|scroll|overlay)/.test(style.overflowY) && e.scrollHeight > e.clientHeight + 1;
+  };
+  let box = null;
+  if (whole) {
+    const modal = [...document.querySelectorAll('dialog:modal, [aria-modal="true"]')].pop();
+    if (modal) {
+      const inner = [modal, ...modal.querySelectorAll("*")].filter(scrollable);
+      box = inner.sort((a, b) => b.clientHeight - a.clientHeight)[0] || null;
+    }
+  } else {
+    for (let e = el; e && e !== document.documentElement; e = e.parentElement || e.getRootNode().host) {
+      if (e !== document.body && scrollable(e)) { box = e; break; }
+    }
+  }
+  box = box || document.scrollingElement || document.documentElement;
+  const view = box === document.scrollingElement ? window.innerHeight : box.clientHeight;
+  const before = box.scrollTop;
+  box.scrollTop += screens * Math.max(100, Math.round(view * 0.9));
+  const moved = Math.abs(box.scrollTop - before) >= 1;
+  const atEnd = box.scrollTop + view >= box.scrollHeight - 2;
+  return [moved, atEnd];
+}
+"""
+
+
 def fail(message):
     print(message, file=sys.stderr)
     sys.exit(1)
@@ -183,11 +225,27 @@ class Browser:
 
     async def handle(self, request):
         action = request.get("action")
+        note = None
         if action == "navigate":
             await self.navigate(request.get("url"))
+        elif action == "click":
+            await self.click(request.get("ref"))
+        elif action == "type":
+            await self.type(request.get("ref"), request.get("text"), request.get("submit"))
+        elif action == "scroll":
+            note = await self.scroll(request.get("ref"), request.get("direction", "down"))
+        elif action == "back":
+            await self.back()
         elif action != "snapshot":
-            raise ValueError(f"unknown action {action!r}; expected navigate or snapshot")
-        return await self.snapshot()
+            raise ValueError(
+                f"unknown action {action!r}; expected navigate, snapshot, click, type, scroll, or back"
+            )
+        return await self.snapshot(note)
+
+    def on_response(self, response):
+        """Track the status of every main-document load, including ones a click starts."""
+        if response.request.is_navigation_request() and response.frame == self.page.main_frame:
+            self.status = response.status
 
     async def navigate(self, url):
         if not isinstance(url, str) or not url.strip():
@@ -196,8 +254,73 @@ class Browser:
         if not url.lower().startswith(("http://", "https://")):
             raise ValueError(f"{url} is not an http or https URL")
         self.status = None
-        response = await self.page.goto(url, wait_until="load", timeout=NAVIGATE_TIMEOUT_MS)
-        self.status = response.status if response else None
+        await self.page.goto(url, wait_until="load", timeout=NAVIGATE_TIMEOUT_MS)
+        await self.settle()
+
+    async def element(self, ref):
+        """The element numbered `ref` in the last snapshot."""
+        if isinstance(ref, bool) or not isinstance(ref, int):
+            raise ValueError("this action needs a ref: an element number from the last snapshot")
+        locator = self.page.locator(f'[data-cedar-ref="{ref}"]')
+        if await locator.count() == 0:
+            raise ValueError(f"[{ref}] is not on the current page; take a snapshot to see what is")
+        return locator.first
+
+    async def click(self, ref):
+        element = await self.element(ref)
+        # Open links in this page: a new tab would be closed, and the click would seem to do nothing.
+        await element.evaluate("el => el.closest('a[target]')?.removeAttribute('target')")
+        try:
+            await element.click(timeout=ACTION_TIMEOUT_MS)
+        except Exception as e:
+            if "Timeout" not in str(e):
+                raise
+            raise ValueError(
+                f"could not click [{ref}]: it stayed covered, hidden, or disabled; take a snapshot "
+                "to see what is on top (a dialog or banner may need closing first)"
+            ) from None
+        await self.after_action()
+
+    async def type(self, ref, text, submit):
+        if not isinstance(text, str):
+            raise ValueError("type needs text")
+        element = await self.element(ref)
+        try:
+            await element.fill(text, timeout=ACTION_TIMEOUT_MS)
+            if submit:
+                await element.press("Enter", timeout=ACTION_TIMEOUT_MS)
+        except Exception as e:
+            raise ValueError(f"could not type into [{ref}]: {error_text(e)}") from None
+        await self.after_action()
+
+    async def scroll(self, ref, direction):
+        if direction not in ("down", "up"):
+            raise ValueError('direction must be "down" or "up"')
+        target = await self.element(ref) if ref is not None else self.page.locator("html")
+        args = [ref is None, 1 if direction == "down" else -1]
+        moved, _ = await target.evaluate(SCROLL_JS, args)
+        await self.after_action()
+        # Measured after the page had time to load more, as endless lists do near their bottom.
+        _, at_end = await target.evaluate(SCROLL_JS, [args[0], 0])
+        if not moved:
+            return f"[already at the {'bottom' if direction == 'down' else 'top'}; nothing scrolled]"
+        if at_end and direction == "down":
+            return "[scrolled to the bottom]"
+        return None
+
+    async def back(self):
+        self.status = None
+        if await self.page.go_back(wait_until="load", timeout=NAVIGATE_TIMEOUT_MS) is None:
+            raise ValueError("there is no previous page")
+        await self.settle()
+
+    async def after_action(self):
+        """Give the page a moment to react, and to finish loading if the action navigated."""
+        await self.page.wait_for_timeout(300)
+        try:
+            await self.page.wait_for_load_state("load", timeout=NAVIGATE_TIMEOUT_MS)
+        except Exception:
+            pass
         await self.settle()
 
     async def settle(self):
@@ -206,11 +329,13 @@ class Browser:
         except Exception:
             pass  # still busy: describe what is there now
 
-    async def snapshot(self):
+    async def snapshot(self, note=None):
         result = await self.page.evaluate(SNAPSHOT_JS)
         text = result["text"]
         if result["dialog"]:
             text = "[a dialog is open; only the dialog is shown]\n\n" + text
+        if note:
+            text = note + "\n\n" + text
         return {
             "url": self.page.url,
             "title": await self.page.title(),
@@ -253,6 +378,7 @@ async def serve():
         # Close popups instead of following them: one page per run keeps the refs meaningful.
         context.on("page", lambda popup: asyncio.ensure_future(popup.close()) if popup != page else None)
         browser = Browser(page)
+        page.on("response", browser.on_response)
         lock = asyncio.Lock()
 
         async def client(reader, writer):

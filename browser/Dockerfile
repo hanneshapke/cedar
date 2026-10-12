@@ -9,7 +9,7 @@
 #
 #     docker run -d --name cedar-browser-try --shm-size 256m cedar-browser
 #     docker exec cedar-browser-try cedar-browser call '{"action":"navigate","url":"https://example.com"}'
-#     docker exec cedar-browser-try cedar-browser call '{"action":"snapshot"}'
+#     docker exec cedar-browser-try cedar-browser call '{"action":"click","ref":3}'
 #     docker rm -f cedar-browser-try
 #
 # See driver.py for the request and reply format. It is a separate image from the sandbox because
