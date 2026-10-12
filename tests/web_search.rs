@@ -114,7 +114,13 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
 
     assert_eq!(
         tool_names(&app.llm.requests()[0]),
-        ["bash", "read_file", "write_file", "web_search"]
+        [
+            "bash",
+            "read_file",
+            "write_file",
+            "generate_pdf",
+            "web_search"
+        ]
     );
 
     let seen = mock.seen.lock().unwrap();
@@ -268,6 +274,6 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
 
     assert_eq!(
         tool_names(&app.llm.requests()[0]),
-        ["bash", "read_file", "write_file"]
+        ["bash", "read_file", "write_file", "generate_pdf"]
     );
 }

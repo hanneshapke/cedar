@@ -122,7 +122,7 @@ cd ~/cedar
 cargo build --release --workspace
 sudo install -m 0755 target/release/cedar target/release/cedar-chat /usr/local/bin/
 
-# The image the agent's tools run in (a small Debian with python3, pip, git, curl, jq)
+# The image the agent's tools run in (Debian with python3, pip, git, curl, jq, and the PDF renderer)
 docker build -t cedar-sandbox sandbox/
 ```
 

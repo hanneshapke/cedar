@@ -1,12 +1,14 @@
-//! Tools the model can call. The file and shell tools run inside the run's sandbox; `web_search`
-//! runs in the cedar process, because the sandbox has no network.
+//! Tools the model can call. The file, shell, and PDF tools run inside the run's sandbox;
+//! `web_search` runs in the cedar process, because the sandbox has no network.
 
 mod bash;
 mod files;
+mod pdf;
 mod web_search;
 
 pub use bash::Bash;
 pub use files::{ReadFile, WriteFile};
+pub use pdf::GeneratePdf;
 pub use web_search::BraveSearch;
 
 use crate::config::Config;
@@ -54,12 +56,13 @@ impl ToolSet {
         Self { tools }
     }
 
-    /// `bash`, `read_file`, and `write_file`.
+    /// `bash`, `read_file`, `write_file`, and `generate_pdf`.
     pub fn standard() -> Self {
         Self::new(vec![
             Box::new(Bash),
             Box::new(ReadFile),
             Box::new(WriteFile),
+            Box::new(GeneratePdf),
         ])
     }
 
@@ -155,7 +158,7 @@ mod tests {
         let set = ToolSet::standard();
         let defs = set.definitions();
         let names: Vec<_> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["bash", "read_file", "write_file"]);
+        assert_eq!(names, ["bash", "read_file", "write_file", "generate_pdf"]);
         assert!(set.get("bash").is_some());
         assert!(set.get("nope").is_none());
     }
@@ -183,11 +186,17 @@ mod tests {
         };
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a")])),
-            ["bash", "read_file", "write_file"]
+            ["bash", "read_file", "write_file", "generate_pdf"]
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])),
-            ["bash", "read_file", "write_file", "web_search"]
+            [
+                "bash",
+                "read_file",
+                "write_file",
+                "generate_pdf",
+                "web_search"
+            ]
         );
     }
 }

@@ -469,3 +469,56 @@ fn sandbox_fatal_is_a_distinct_error_type() {
     let err: anyhow::Error = SandboxFatal("x".into()).into();
     assert!(err.downcast_ref::<SandboxFatal>().is_some());
 }
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn generate_pdf_renders_markdown_in_the_sandbox() {
+    use cedar::tools::{GeneratePdf, Tool, ToolContext};
+    use serde_json::json;
+
+    let (f, id, sb) = sandbox().await;
+    let ctx = ToolContext {
+        sandbox: sb.clone(),
+        timeout: 60 * SECOND,
+        max_output: 32_768,
+    };
+    let input = json!({
+        "path": "out/it's a report.pdf",
+        "title": "Quarterly",
+        "content": "# Report\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n```py\nprint('hi')\n```\n\n![chart](missing.png)\n",
+    });
+    let msg = GeneratePdf.call(&ctx, &input).await.unwrap();
+    assert!(
+        msg.starts_with("wrote out/it's a report.pdf: 1 page, "),
+        "{msg}"
+    );
+    // The missing image is reported as a warning, not a failure.
+    assert!(
+        msg.contains("[warnings]") && msg.contains("missing.png"),
+        "{msg}"
+    );
+
+    let pdf = sb.read_file("out/it's a report.pdf", 16).await.unwrap();
+    assert!(pdf.bytes.starts_with(b"%PDF-"), "{:?}", pdf.bytes);
+
+    // Nothing but the PDF is left behind: the staged document is gone from /tmp.
+    let out = sb.exec("ls /tmp", 10 * SECOND, 1000).await.unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
+
+    let html = json!({ "path": "page.pdf", "format": "html", "content": "<p>hi</p>" });
+    let msg = GeneratePdf.call(&ctx, &html).await.unwrap();
+    assert!(
+        msg.starts_with("wrote page.pdf: 1 page, ") && msg.ends_with(" bytes"),
+        "{msg}"
+    );
+
+    // A renderer failure is a tool error carrying the renderer's reason.
+    let bad = json!({ "path": "/proc/x.pdf", "content": "# x" });
+    let err = GeneratePdf.call(&ctx, &bad).await.unwrap_err().to_string();
+    assert!(
+        err.starts_with("rendering /proc/x.pdf failed (exit status 1): cannot write"),
+        "{err}"
+    );
+
+    teardown(&f, id, &sb).await;
+}

@@ -13,8 +13,16 @@ FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates coreutils curl git jq python3 python3-pip python3-venv \
+        fonts-dejavu libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libharfbuzz-subset0 libfontconfig1 \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /usr/lib/python3*/EXTERNALLY-MANAGED
+
+# The renderer behind cedar's `generate_pdf` tool: Markdown or HTML in, PDF out, via WeasyPrint.
+# WeasyPrint comes from PyPI rather than apt because Debian's package pulls in scipy and a C++
+# toolchain (over 1 GB); the pango and fontconfig libraries above are all it needs from the OS.
+# The script is a plain command, so the agent can also call it from `bash`.
+RUN pip install --no-cache-dir weasyprint markdown
+COPY --chmod=0755 render_pdf.py /usr/local/bin/cedar-render-pdf
 
 # uid/gid 1000 must match the `--user` cedar passes to `docker run`. /workspace is created and
 # owned by that user so the per-run named volume mounted there inherits the right ownership.

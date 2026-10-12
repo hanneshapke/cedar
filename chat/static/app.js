@@ -42,6 +42,7 @@ const ICONS = {
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   spark: '<svg class="spark" viewBox="0 0 24 24"><path d="M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>',
+  document: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 12h6M9 16h6"/></svg>',
 };
 
 function escapeHtml(s) {
@@ -528,7 +529,8 @@ function toolSummary(name, input) {
 
 function toolCall(view, d) {
   const icon = d.name === 'bash' ? ICONS.terminal : d.name === 'read_file' ? ICONS.file
-    : d.name === 'write_file' ? ICONS.pencil : d.name === 'web_search' ? ICONS.search : ICONS.tool;
+    : d.name === 'write_file' ? ICONS.pencil : d.name === 'web_search' ? ICONS.search
+    : d.name === 'generate_pdf' ? ICONS.document : ICONS.tool;
   const details = h('details', 'tool running');
   const summary = h('summary', '', `${icon}<span class="tool-name"></span><span class="tool-arg"></span>` +
     `<span class="meta"></span><span class="state"><span class="spinner"></span></span>${ICONS.chevron}`);
@@ -538,13 +540,13 @@ function toolCall(view, d) {
   const input = d.input || {};
   let shown;
   if (d.name === 'bash' && typeof input.command === 'string') shown = `$ ${input.command}`;
-  else if (d.name === 'write_file' && typeof input.content === 'string') shown = `${input.path}\n\n${input.content}`;
+  else if ((d.name === 'write_file' || d.name === 'generate_pdf') && typeof input.content === 'string') shown = `${input.path}\n\n${input.content}`;
   else shown = JSON.stringify(input, null, 2);
   const inputPre = h('pre');
   inputPre.textContent = shown;
   body.append(h('div', 'label', 'Input'), inputPre);
   details.append(summary, body);
-  if (d.name === 'write_file' && typeof input.path === 'string') details.dataset.path = input.path;
+  if ((d.name === 'write_file' || d.name === 'generate_pdf') && typeof input.path === 'string') details.dataset.path = input.path;
   view.tools.set(d.id, details);
   return details;
 }
