@@ -34,6 +34,11 @@ async fn main() -> Result<()> {
     let workspace_ttl = cfg.workspace_ttl;
 
     tracing::info!(web_search = cfg.brave_api_key.is_some(), "tools configured");
+    if cfg.brave_api_key.is_none() {
+        tracing::warn!(
+            "BRAVE_API_KEY is not set: web_search is disabled and the model cannot search the web"
+        );
+    }
 
     let state = AppState::new(cfg, store, llm, sandboxes)?;
     state.manager.recover().await?;

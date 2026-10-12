@@ -78,6 +78,25 @@ impl ToolSet {
         Ok(set)
     }
 
+    /// A note for the system prompt saying what the sandbox can reach and how to search the web,
+    /// so the model doesn't try to fetch search engines with `curl`.
+    pub fn environment_note(&self, sandbox_network: &str) -> String {
+        let search = self.get("web_search").is_some();
+        let net = if sandbox_network == "none" {
+            "The sandbox has no internet access: curl, wget, and pip install cannot reach the network."
+        } else {
+            "The sandbox has outbound network access (e.g. for pip install)."
+        };
+        let how = if search {
+            "To look something up on the web, use the web_search tool; do not query search engines \
+             with curl or wget."
+        } else {
+            "No web search tool is available, and search engines block scripted requests, so do not \
+             query them with curl or wget. If a task needs information from the web, say so."
+        };
+        format!("{net} {how}")
+    }
+
     pub fn definitions(&self) -> Vec<Value> {
         self.tools.iter().map(|t| t.definition()).collect()
     }
@@ -161,6 +180,33 @@ mod tests {
         assert_eq!(names, ["bash", "read_file", "write_file", "generate_pdf"]);
         assert!(set.get("bash").is_some());
         assert!(set.get("nope").is_none());
+    }
+
+    #[test]
+    fn environment_note_points_to_web_search_when_offered() {
+        let cfg = |pairs: &[(&str, &str)]| {
+            let pairs: Vec<_> = pairs.to_vec();
+            Config::from_lookup(move |k| {
+                pairs
+                    .iter()
+                    .find(|(name, _)| *name == k)
+                    .map(|(_, v)| v.to_string())
+            })
+            .unwrap()
+        };
+        let plain = ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        let search =
+            ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])).unwrap();
+
+        let note = search.environment_note("none");
+        assert!(note.contains("no internet access"));
+        assert!(note.contains("use the web_search tool"));
+        let note = plain.environment_note("none");
+        assert!(note.contains("No web search tool is available"));
+        assert!(!note.contains("use the web_search tool"));
+        assert!(plain
+            .environment_note("bridge")
+            .contains("outbound network access"));
     }
 
     fn tool_names(cfg: &Config) -> Vec<String> {

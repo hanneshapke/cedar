@@ -541,9 +541,8 @@ async fn defaults_and_clamps_are_applied() {
 
     app.wait_status(KEY_A, &id_of(&custom), "completed").await;
     let requests = app.llm.requests();
-    assert!(requests
-        .iter()
-        .any(|r| r["model"] == "small-model" && r["system"] == "be brief"));
+    assert!(requests.iter().any(|r| r["model"] == "small-model"
+        && r["system"].as_str().unwrap().starts_with("be brief\n\n")));
 }
 
 // -- ownership, listing, deletion -------------------------------------------------------------
@@ -898,7 +897,12 @@ async fn a_continuation_picks_up_the_conversation_and_the_workspace() {
         msgs[4],
         json!({ "role": "user", "content": "what did you save?" })
     );
-    assert_eq!(requests[2]["system"], "be brief");
+    let system = requests[2]["system"].as_str().unwrap();
+    assert!(system.starts_with("be brief\n\n"), "{system}");
+    assert!(
+        system.contains("no internet access"),
+        "the environment note is appended"
+    );
 
     // The continuation's stored messages hold the full conversation; the parent's are unchanged.
     let (_, messages) = app

@@ -57,9 +57,11 @@ impl AppState {
         sandboxes: Arc<dyn SandboxFactory>,
     ) -> Result<Self> {
         let hub = Arc::new(EventHub::new());
+        let tools = ToolSet::from_config(&cfg)?;
         let env = AgentEnv {
             llm,
-            tools: Arc::new(ToolSet::from_config(&cfg)?),
+            environment_note: tools.environment_note(&cfg.sandbox.network),
+            tools: Arc::new(tools),
             store: store.clone(),
             max_tokens: cfg.max_tokens,
             tool_timeout: cfg.tool_timeout,

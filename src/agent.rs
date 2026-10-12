@@ -21,6 +21,8 @@ pub struct AgentEnv {
     pub max_tokens: u32,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
+    /// Appended to every run's system prompt: what the sandbox can reach and how to search.
+    pub environment_note: String,
 }
 
 #[derive(Debug)]
@@ -57,6 +59,7 @@ pub async fn run_agent(
         max_output: env.tool_output_max_bytes,
     };
     let tool_defs = env.tools.definitions();
+    let system = with_note(&run.system, &env.environment_note);
     // A continuation starts with a copy of its parent's conversation (made when it was created).
     let mut messages: Vec<Value> = env
         .store
@@ -73,7 +76,7 @@ pub async fn run_agent(
         let req = MessageRequest {
             model: &run.model,
             max_tokens: env.max_tokens,
-            system: &run.system,
+            system: &system,
             tools: &tool_defs,
             messages: &messages,
         };
@@ -137,6 +140,16 @@ pub async fn run_agent(
         "run did not finish within {} turns",
         run.max_turns
     )))
+}
+
+/// The run's system prompt followed by the environment note. The note is added per request, not
+/// stored, so it follows the server's current configuration.
+fn with_note(system: &str, note: &str) -> String {
+    match (system.trim().is_empty(), note.is_empty()) {
+        (_, true) => system.to_string(),
+        (true, false) => note.to_string(),
+        (false, false) => format!("{system}\n\n{note}"),
+    }
 }
 
 const INTERRUPTED: &str = "The run ended before this tool call finished, so it has no result.";
@@ -246,6 +259,13 @@ async fn push_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_environment_note_follows_the_system_prompt() {
+        assert_eq!(with_note("be brief", "offline"), "be brief\n\noffline");
+        assert_eq!(with_note("", "offline"), "offline");
+        assert_eq!(with_note("be brief", ""), "be brief");
+    }
 
     #[test]
     fn a_fresh_run_opens_with_the_plain_prompt() {

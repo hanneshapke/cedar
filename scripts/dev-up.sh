@@ -61,6 +61,9 @@ RUST_LOG=info,sqlx=warn
 # Give the sandbox network access so the agent can \`pip install\` packages. Set to "none" to keep
 # it offline (the agent then only has what sandbox/Dockerfile installs).
 SANDBOX_NETWORK=bridge
+# Brave Search API key (https://api-dashboard.search.brave.com/). Turns on the web_search tool,
+# which runs in cedar, not the sandbox. Without it the model has no way to search the web.
+# BRAVE_API_KEY=
 
 # cedar-chat (its CEDAR_API_KEY is the first of CEDAR_API_KEYS)
 # Set this to your Tailscale IP (e.g. 100.x.y.z:3000) to open the UI from other devices.
