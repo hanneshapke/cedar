@@ -8,6 +8,9 @@ use std::time::Duration;
 pub const DEFAULT_MODEL: &str = "deepseek-ai/DeepSeek-V4-Flash";
 pub const DEFAULT_LLM_BASE_URL: &str = "http://localhost:8000/v1";
 pub const DEFAULT_BRAVE_BASE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
+pub const DEFAULT_WEATHER_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
+pub const DEFAULT_WEATHER_GEOCODING_BASE_URL: &str =
+    "https://geocoding-api.open-meteo.com/v1/search";
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful coding agent. Your tools run inside an \
     isolated sandbox whose working directory is /workspace. Use tools when they help; keep answers concise.";
 
@@ -46,6 +49,15 @@ pub struct Config {
     /// Let those tools reach loopback, private, and link-local addresses. Off by default, since
     /// the requests come from the cedar host.
     pub web_fetch_allow_private: bool,
+    /// Offer the `weather_forecast` tool (on by default).
+    pub weather: bool,
+    /// Open-Meteo forecast endpoint; overridable for a self-hosted instance or so tests can mock it.
+    pub weather_base_url: String,
+    /// Open-Meteo geocoding endpoint, used to turn a place name into coordinates (for the weather
+    /// forecast and for map pins).
+    pub weather_geocoding_base_url: String,
+    /// Offer the `show_map` tool (on by default).
+    pub maps: bool,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
     pub database_url: String,
@@ -125,6 +137,12 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_BRAVE_BASE_URL.into()),
             web_fetch: flag("WEB_FETCH", true)?,
             web_fetch_allow_private: flag("WEB_FETCH_ALLOW_PRIVATE", false)?,
+            weather: flag("WEATHER", true)?,
+            weather_base_url: get("WEATHER_BASE_URL")
+                .unwrap_or_else(|| DEFAULT_WEATHER_BASE_URL.into()),
+            weather_geocoding_base_url: get("WEATHER_GEOCODING_BASE_URL")
+                .unwrap_or_else(|| DEFAULT_WEATHER_GEOCODING_BASE_URL.into()),
+            maps: flag("MAPS", true)?,
             api_keys,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -249,6 +267,43 @@ mod tests {
         let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "maybe")]))
             .unwrap_err();
         assert!(err.to_string().contains("WEB_FETCH"), "{err}");
+    }
+
+    #[test]
+    fn weather_is_on_by_default_and_points_at_open_meteo() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.weather && cfg.maps);
+        assert_eq!(cfg.weather_base_url, DEFAULT_WEATHER_BASE_URL);
+        assert_eq!(
+            cfg.weather_geocoding_base_url,
+            DEFAULT_WEATHER_GEOCODING_BASE_URL
+        );
+    }
+
+    #[test]
+    fn weather_settings_come_from_the_environment() {
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("WEATHER", "off"),
+            ("WEATHER_BASE_URL", "http://localhost:9999/forecast"),
+            ("WEATHER_GEOCODING_BASE_URL", "http://localhost:9999/geo"),
+        ]))
+        .unwrap();
+        assert!(!cfg.weather);
+        assert_eq!(cfg.weather_base_url, "http://localhost:9999/forecast");
+        assert_eq!(cfg.weather_geocoding_base_url, "http://localhost:9999/geo");
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("WEATHER", "maybe")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("WEATHER"), "{err}");
+    }
+
+    #[test]
+    fn maps_can_be_turned_off() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAPS", "off")])).unwrap();
+        assert!(!cfg.maps);
+        let err =
+            Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAPS", "maybe")])).unwrap_err();
+        assert!(err.to_string().contains("MAPS"), "{err}");
     }
 
     #[test]

@@ -60,9 +60,26 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
+| `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, usage}`. |
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (database + Docker). No auth. |
 
 A run belongs to the key that created it. Anyone else gets `404`.
+
+### Compacting a run into a prompt
+
+A client that wants to repeat what a conversation achieved (the chat UI's [scheduled
+agents](chat/README.md#scheduled-agents), say) needs one prompt rather than the back-and-forth that
+led there. `POST /v1/compact` with `{"run_id": "<a finished run of yours>"}` makes a single model
+call over the run's stored conversation, with no tools and no sandbox, asking the model to write a
+prompt a fresh agent could carry out unattended: the concrete inputs, the constraints, the output
+format, the files to produce, with the dead ends and dropped requests left out. The answer is
+returned as `prompt` and not stored. `409` while the run is still going. Tool results are cut to
+2,000 characters each and the oldest messages dropped to keep the call under about 60 KB, so a long
+run still compacts cheaply; a conversation that ended in the middle of a tool call gets error
+results for the open calls first, as a [continuation](#continuing-a-run) would. `{"transcript":
+"<text>"}` (at most 100 KB) compacts a plain-text conversation instead, for a run cedar no longer
+has. `"model"` works as for a run; without it the run's model (or the default) is used. If the
+model returns no text the response is `502 bad_gateway`.
 
 ### Events
 
@@ -125,9 +142,9 @@ outside `/workspace` is reported as missing.
 
 ## Web chat
 
-`chat/` holds **cedar-chat**, a separate Rust service with a Claude.ai-style web UI for talking to
-the agent: a conversation sidebar, live tool calls, a files panel for downloading what the agent
-produced, and stop and rename buttons. It calls cedar's HTTP API with a key it keeps on the server.
+`chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
+Claude-style or a Cedar-style ("desk") layout that you pick in Settings: your conversations, live
+tool calls, a files panel for downloading what the agent produced, and stop and rename buttons. It calls cedar's HTTP API with a key it keeps on the server.
 
 ```sh
 CEDAR_API_KEY=devkey cargo run -p cedar-chat   # then open http://127.0.0.1:3000
@@ -171,6 +188,9 @@ Settings come from environment variables. The important ones:
 | `BRAVE_API_BASE_URL` | `https://api.search.brave.com/res/v1/web/search` |
 | `WEB_FETCH` | `on` (set `off` to remove the `fetch_url` and `download_file` tools) |
 | `WEB_FETCH_ALLOW_PRIVATE` | `off` (set `on` to let those tools reach loopback and private addresses) |
+| `WEATHER` | `on` (set `off` to remove the `weather_forecast` tool) |
+| `WEATHER_BASE_URL` / `WEATHER_GEOCODING_BASE_URL` | `https://api.open-meteo.com/v1/forecast` / `https://geocoding-api.open-meteo.com/v1/search` (point both at a self-hosted Open-Meteo to avoid the public API; `show_map` uses the geocoding URL too) |
+| `MAPS` | `on` (set `off` to remove the `show_map` tool) |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
 | `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
@@ -191,13 +211,19 @@ Settings come from environment variables. The important ones:
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
 | `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
+| `weather_forecast` | Current conditions and a daily forecast from [Open-Meteo](https://open-meteo.com) (open source, open data, no API key). Takes a `location` (a place name or postal code, geocoded to its best match) or `latitude` and `longitude`, optional `days` (1–16, default 3) and optional `units` (`metric` or `imperial`). Returns the resolved place, current temperature, conditions, humidity, wind, and precipitation, then per day the conditions, low and high, precipitation and its chance, wind, UV index, and sunrise and sunset. Unless `WEATHER=off`. |
+| `show_map` | Shows the user a map in the chat, with a numbered pin for each place. Takes `markers` (1–25 objects, each with a `location` such as `Berlin` or `Paris, France`, or `latitude` and `longitude`, and an optional `label`) and an optional `title`. Names are looked up with Open-Meteo's geocoding API, which knows cities, towns, and regions but not street addresses or businesses. Returns JSON with the coordinates used; names that could not be found are listed under `not_found`, and a call where none are found is an error. The chat interfaces draw the JSON as a map ([chat/README.md](chat/README.md)); other clients just get the JSON. Unless `MAPS=off`. |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
-`web_search`, `fetch_url`, and `download_file` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
+`web_search`, `fetch_url`, `download_file`, `weather_forecast`, and `show_map` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
+
+`weather_forecast` talks only to the two Open-Meteo endpoints in the settings above, never to a URL the model picks, so it needs no address checks. A rate-limited request is retried once. Open-Meteo's public API is free for non-commercial use only; for commercial use, run your own instance or buy their commercial plan and set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to it. The forecast ends with Open-Meteo's CC BY 4.0 attribution line so the model can pass it on.
+
+`show_map` draws nothing itself: cedar only turns place names into coordinates, with the same geocoder and the same non-commercial terms as `weather_forecast`, and returns them as JSON. The chat front end draws the map in the browser, which loads the map tiles from OpenStreetMap (see [chat/README.md](chat/README.md)).
 
 `fetch_url` and `download_file` are on unless `WEB_FETCH=off`. Since their requests come from the cedar host, they only reach public addresses: hostnames are resolved by cedar and loopback, private, link-local, CGNAT, and other internal addresses are dropped (so DNS tricks don't get through), IP literals are checked the same way, every redirect is re-checked (at most 5), and proxy environment variables are ignored because a proxy would resolve names itself. `WEB_FETCH_ALLOW_PRIVATE=on` lifts that rule for tests or a trusted intranet.
 
-Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, and `browser` are available, so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY`, cedar logs a warning at startup.
+Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and `browser` are available, so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY`, cedar logs a warning at startup.
 
 `generate_pdf` runs in the sandbox like the file tools: the document is staged in the container's `/tmp`, rendered with `cedar-render-pdf` (a script in the sandbox image, built on [WeasyPrint](https://weasyprint.org)), and the staging file removed. Markdown gets a page template with A4 pages, margins, page numbers, and styles for headings, tables, code blocks, and footnotes; HTML that is already a full document (`<html>`) is rendered as-is with its own styles. Relative image URLs resolve against `/workspace`, so a chart the agent saved earlier can be embedded. The tool is always offered, so a custom `SANDBOX_IMAGE` must ship `cedar-render-pdf` or the model gets an error telling it so.
 
@@ -260,6 +286,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - Each run gets its own container, created at the start and removed at the end, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Containers run as a non-root user with all capabilities dropped, `no-new-privileges`, and memory, CPU, and process limits. Networking is off (`SANDBOX_NETWORK=none`) unless you change it.
 - Every file and command operation goes through `docker exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
 - `LLM_API_KEY` and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
+- With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. Set `WEATHER=off` and `MAPS=off` if that is not acceptable.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
@@ -290,6 +317,7 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 
 - No token-level streaming from the model; events arrive per model turn and per tool call.
 - A run is a single prompt. To follow up, start a new run that [continues](#continuing-a-run) the finished one.
+- cedar has no scheduler of its own: a run starts when a client asks for it. Recurring runs are a [cedar-chat](chat/README.md#scheduled-agents) feature.
 - Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload.
 - One instance: SQLite and the run queue live in the process.
 - Tool calls within a turn run one after another.

@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
+use uuid::Uuid;
 
 fn id_of(run: &Value) -> String {
     run["id"].as_str().unwrap().to_string()
@@ -1349,4 +1350,102 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         app.state.store.count_active(&running.owner).await.unwrap(),
         0
     );
+}
+
+// -- compaction -------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_finished_run_can_be_compacted_into_one_prompt() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("t1", "bash", json!({ "command": "echo hi" }))),
+        Step::Reply(text("all done")),
+        Step::Reply(text("  Write hello.py that prints hi and run it.  ")),
+    ])
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "say hi", "model": "small-model" }))
+        .await;
+    let id = id_of(&run);
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let (status, body) = app
+        .json(Method::POST, "/v1/compact", Some(KEY_A), Some(json!({ "run_id": id })))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["prompt"], "Write hello.py that prints hi and run it.");
+    assert_eq!(body["model"], "small-model", "the run's model is used");
+    assert_eq!(body["usage"], json!({ "input_tokens": 10, "output_tokens": 5 }));
+
+    // One call, no tools, a dedicated system prompt, the run's conversation, then the instruction.
+    let requests = app.llm.requests();
+    assert_eq!(requests.len(), 3);
+    let req = &requests[2];
+    assert_eq!(req["tools"], json!([]));
+    assert_eq!(req["system"], cedar::compact::SYSTEM);
+    let msgs = req["messages"].as_array().unwrap();
+    assert_eq!(msgs.len(), 5);
+    assert_eq!(msgs[0]["content"], "say hi");
+    assert_eq!(msgs[1]["content"][0]["type"], "tool_use");
+    assert_eq!(msgs[2]["content"][0]["content"], "ran: echo hi");
+    assert_eq!(msgs[3]["content"][0]["text"], "all done");
+    assert_eq!(msgs[4], json!({ "role": "user", "content": cedar::compact::INSTRUCTION }));
+
+    // Nothing was stored: the run is as it was.
+    let (_, messages) = app.get(&format!("/v1/runs/{id}/messages"), KEY_A).await;
+    assert_eq!(messages["messages"].as_array().unwrap().len(), 4);
+
+    // Other keys don't see the run.
+    let (status, _) = app
+        .json(Method::POST, "/v1/compact", Some(KEY_B), Some(json!({ "run_id": id })))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn compaction_needs_a_finished_run_or_a_transcript() {
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(text("DISTILLED")),
+            Step::Reply(reply(vec![], "end_turn")),
+            Step::Block,
+        ],
+        &[("ALLOWED_MODELS", "small-model")],
+    )
+    .await;
+    let post = |body: Value| app.json(Method::POST, "/v1/compact", Some(KEY_A), Some(body));
+
+    let (status, body) = post(json!({ "transcript": "<user>\nhi\n</user>\n<assistant>\nhello\n</assistant>" })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["prompt"], "DISTILLED");
+    let req = app.llm.requests().pop().unwrap();
+    let content = req["messages"][0]["content"].as_str().unwrap();
+    assert!(content.starts_with("<conversation>\n<user>\nhi\n</user>"), "{content}");
+    assert!(content.ends_with(cedar::compact::INSTRUCTION));
+
+    // A model that returns nothing is a gateway error, not a prompt.
+    let (status, body) = post(json!({ "transcript": "x" })).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY, "{body}");
+    assert_eq!(body["error"]["code"], "bad_gateway");
+
+    for bad in [
+        json!({}),
+        json!({ "run_id": Uuid::new_v4(), "transcript": "x" }),
+        json!({ "transcript": "   " }),
+        json!({ "transcript": "x", "model": "other-model" }),
+        json!({ "transcript": "x".repeat(100_001) }),
+    ] {
+        let (status, body) = post(bad.clone()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad} -> {body}");
+    }
+    let (status, _) = post(json!({ "run_id": Uuid::new_v4() })).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A run that is still going can't be compacted yet.
+    let run = app.create_run(KEY_A, "slow").await;
+    let id = id_of(&run);
+    app.wait_status(KEY_A, &id, "running").await;
+    let (status, body) = post(json!({ "run_id": id })).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    app.state.manager.cancel(Uuid::parse_str(&id).unwrap());
+    app.wait_status(KEY_A, &id, "cancelled").await;
 }

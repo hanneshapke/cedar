@@ -37,6 +37,7 @@ async fn main() -> Result<()> {
         web_search = cfg.brave_api_key.is_some(),
         web_fetch = cfg.web_fetch,
         browser = cfg.browser.enabled,
+        weather = cfg.weather,
         "tools configured"
     );
     if cfg.browser.enabled {

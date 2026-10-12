@@ -139,7 +139,11 @@ and survive follow-up messages until the workspace expires. Web search is separa
 outbound HTTPS to `api.search.brave.com`. So do `fetch_url` and `download_file`, which are on by
 default: the host needs outbound HTTP(S) to the sites the agent reads. They refuse private and
 loopback addresses, so the agent can't use them to reach vLLM or anything else on your network;
-set `WEB_FETCH=off` to remove them.
+set `WEB_FETCH=off` to remove them. The `weather_forecast` tool is also on by default and needs
+outbound HTTPS to `api.open-meteo.com` and `geocoding-api.open-meteo.com`; set `WEATHER=off` to
+remove it. So does `show_map` (which only needs the geocoding host); set `MAPS=off` to remove it.
+The map itself is drawn by the chat page in the user's browser, which loads the tiles from
+`tile.openstreetmap.org`, so the people using the chat need access to that host, not the server.
 
 ## 4. Configure
 
@@ -198,6 +202,8 @@ Settings worth knowing on this hardware:
 | `CHAT_MODELS` | Optional model picker in the UI. Leave unset to use only `LLM_MODEL`. |
 | `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox container. |
 | `WEB_FETCH` | `on` by default. `off` removes `fetch_url` and `download_file`, for a host that should make no outbound requests on the agent's behalf. |
+| `WEATHER` | `on` by default. `off` removes `weather_forecast`. It uses the public Open-Meteo API, which is free for non-commercial use only; for commercial use set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to a self-hosted or commercial Open-Meteo endpoint. Place names and coordinates the agent asks about are sent to that service. |
+| `MAPS` | `on` by default. `off` removes `show_map`. It finds places by name with the same Open-Meteo geocoding endpoint (`WEATHER_GEOCODING_BASE_URL`), so the same non-commercial terms apply. |
 
 ## 5. Try it by hand first
 

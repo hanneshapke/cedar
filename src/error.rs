@@ -20,6 +20,9 @@ pub enum AppError {
     TooManyRequests(String),
     #[error("{0}")]
     PayloadTooLarge(String),
+    /// The LLM server failed or answered with something unusable.
+    #[error("{0}")]
+    BadGateway(String),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -63,6 +66,10 @@ impl IntoResponse for AppError {
                 "payload_too_large",
                 m.clone(),
             ),
+            AppError::BadGateway(m) => {
+                tracing::warn!(error = %m, "LLM request failed");
+                (StatusCode::BAD_GATEWAY, "bad_gateway", m.clone())
+            }
             AppError::Internal(e) => {
                 tracing::error!(error = ?e, "internal error");
                 (

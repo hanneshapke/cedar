@@ -11,6 +11,7 @@ const els = {
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
+  scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'),
 };
 
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
@@ -42,6 +43,7 @@ const ICONS = {
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   spark: '<svg class="spark" viewBox="0 0 24 24"><path d="M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>',
+  eye: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   document: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 12h6M9 16h6"/></svg>',
   code: '<svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>',
   chart: '<svg viewBox="0 0 24 24"><path d="M4 4v16h16M8 16v-4M12 16V8M16 16v-6"/></svg>',
@@ -355,7 +357,16 @@ function setHeader() {
   els.title.textContent = c ? (c.title || 'New chat') : '';
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
+  els.scheduleBadge.hidden = !c?.schedule_id;
   document.title = c?.title ? `${c.title} – Cedar` : 'Cedar';
+}
+
+/** Whether the open conversation has a finished response to schedule. */
+function hasCompletedTurn() {
+  for (const view of state.views.values()) {
+    if (view.lastEvent === 'run.completed' || (!view.lastEvent && view.turn.status === 'completed')) return true;
+  }
+  return false;
 }
 
 function showNewChat() {
@@ -528,7 +539,8 @@ const WRITING_TOOLS = ['write_file', 'generate_pdf', 'generate_chart', 'download
 const TOOL_ICONS = {
   bash: 'terminal', read_file: 'file', write_file: 'pencil', web_search: 'search',
   generate_pdf: 'document', read_document: 'document', run_python: 'code',
-  generate_chart: 'chart', fetch_url: 'globe', download_file: 'download',
+  generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
+  show_map: 'globe',
 };
 
 function toolSummary(name, input) {
@@ -540,12 +552,17 @@ function toolSummary(name, input) {
   if (typeof input.url === 'string') return input.path ? `${input.url} → ${input.path}` : input.url;
   if (typeof input.path === 'string') return input.path;
   if (typeof input.query === 'string') return input.query;
+  if (typeof input.location === 'string') return input.location;
+  if (Array.isArray(input.markers)) {
+    return input.title || input.markers.map((m) => m?.location || m?.label || `${m?.latitude}, ${m?.longitude}`).join(' · ');
+  }
   return JSON.stringify(input);
 }
 
 function toolCall(view, d) {
   const icon = ICONS[TOOL_ICONS[d.name]] || ICONS.tool;
   const details = h('details', 'tool running');
+  details.dataset.tool = d.name;
   const summary = h('summary', '', `${icon}<span class="tool-name"></span><span class="tool-arg"></span>` +
     `<span class="meta"></span><span class="state"><span class="spinner"></span></span>${ICONS.chevron}`);
   summary.querySelector('.tool-name').textContent = d.name;
@@ -582,9 +599,21 @@ function toolResult(view, d) {
   const written = !d.is_error && workspacePath(details.dataset.path);
   if (written) {
     label.classList.add('with-action');
-    label.append(downloadButton(written));
+    const actions = h('span', 'label-actions');
+    const view = viewButton(written);
+    if (view) actions.append(view);
+    actions.append(downloadButton(written));
+    label.append(actions);
   }
   details.querySelector('.tool-body').append(label, out);
+  // A map is the point of show_map, so it sits under the call instead of inside the collapsed details.
+  if (details.dataset.tool === 'show_map' && !d.is_error) {
+    const spec = cedarMap.parse(text);
+    if (spec) {
+      details.after(cedarMap.element(spec));
+      scrollToBottom(false);
+    }
+  }
 }
 
 function finishTurn(view, event) {
@@ -623,12 +652,13 @@ function finishTurn(view, event) {
     footer.append(tokens);
   }
   if (footer.childElementCount) view.body.append(footer);
+  view.lastEvent = event.type;
 
   if (state.activeTurn === view) {
     state.activeTurn = null;
-    updateComposer();
     renderSidebar();
   }
+  updateComposer();
   if (els.filesDialog.open) loadFiles(); // the response may have added or changed files
   scrollToBottom(false);
 }
@@ -665,20 +695,30 @@ function downloadButton(path) {
   return button;
 }
 
+/** A button that previews the file (shared viewer), or null for files it can't show. */
+const viewButton = (path) => cedarViewer.viewButton(path, { icon: ICONS.eye });
+
+/** Fetch a workspace file with the access token. Returns the ok response, or throws. */
+async function fetchWorkspaceFile(path) {
+  if (!state.current) throw new Error('No conversation is open.');
+  let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
+  if (res.status === 401) {
+    await askToken(true);
+    res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error?.message || `Could not fetch the file (${res.status})`);
+  }
+  return res;
+}
+
 /** Fetch the file with the access token and hand it to the browser as a download. */
 async function downloadFile(path, button) {
   if (!state.current) return;
   if (button) button.disabled = true;
   try {
-    let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
-    if (res.status === 401) {
-      await askToken(true);
-      res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
-    }
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      throw new Error(data?.error?.message || `Download failed (${res.status})`);
-    }
+    const res = await fetchWorkspaceFile(path);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -710,7 +750,10 @@ function renderFiles(listing) {
     path.append(bdi);
     const size = h('span', 'size');
     size.textContent = formatSize(f.size);
-    row.append(path, size, downloadButton(f.path));
+    const view = viewButton(f.path);
+    row.append(path, size);
+    if (view) row.append(view);
+    row.append(downloadButton(f.path));
     els.filesList.append(row);
   }
   if (listing.truncated) els.filesList.append(h('div', 'empty-list', 'Only the first 1,000 files are shown.'));
@@ -749,6 +792,7 @@ function updateComposer() {
   els.send.disabled = state.sending || (!busy && !els.input.value.trim());
   els.input.placeholder = state.current ? 'Reply to Cedar…' : 'How can I help you today?';
   els.hint.textContent = busy ? 'Working… you can stop the response at any time.' : '';
+  els.scheduleBtn.hidden = !state.current || busy || state.sending || !hasCompletedTurn();
 }
 
 function autosize() {
@@ -860,6 +904,7 @@ els.titleInput.addEventListener('keydown', (e) => {
 els.titleInput.addEventListener('blur', () => finishRename(true));
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
+els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 $('new-chat').addEventListener('click', () => { toggleSidebar(false); location.hash = '#/'; if (!state.current) els.input.focus(); });
@@ -875,6 +920,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
+  cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
   try {
     const res = await fetch('/api/config');
     state.config = await res.json();

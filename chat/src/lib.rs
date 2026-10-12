@@ -9,4 +9,5 @@ pub mod cedar;
 pub mod config;
 pub mod error;
 pub mod prompt;
+pub mod schedule;
 pub mod store;

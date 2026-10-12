@@ -1,0 +1,81 @@
+/* Scheduled agents (schedule.js), shared by both UIs. Like map-view.css it only relies on
+   --accent and --muted, which both define, and on translucent greys for edges, so it reads in the
+   light and dark themes alike. Buttons reuse each UI's .copy-btn and .primary. */
+
+/* -- the schedule dialog --------------------------------------------------------------------- */
+
+.cedar-sched-dialog { width: min(600px, calc(100vw - 32px)); max-height: min(92vh, 900px); overflow-y: auto; }
+.cedar-sched-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.cedar-sched-head h3 { flex: 1; margin: 0; }
+
+.cedar-sched-review { display: flex; align-items: center; gap: 10px; min-height: 80px; color: var(--muted); font-size: 14px; }
+.cedar-sched-review[hidden], .cedar-sched-form[hidden], .cedar-sched-field[hidden] { display: none; }
+
+.cedar-sched-form { display: flex; flex-direction: column; gap: 12px; }
+.cedar-sched-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; color: var(--muted); }
+.cedar-sched-field > span { font-weight: 500; }
+.cedar-sched-field input, .cedar-sched-field textarea, .cedar-sched-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(128, 128, 128, .4);
+  border-radius: 8px;
+  background: rgba(128, 128, 128, .07);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.cedar-sched-field textarea { resize: vertical; min-height: 120px; line-height: 1.45; }
+.cedar-sched-field input:focus, .cedar-sched-field textarea:focus, .cedar-sched-field select:focus { border-color: var(--accent); }
+.cedar-sched-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.cedar-sched-row .cedar-sched-field[hidden] { display: none; }
+.cedar-sched-help { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-top: -6px; font-size: 12.5px; color: var(--muted); }
+.cedar-sched-zone { font-size: 12.5px; color: var(--muted); }
+.cedar-sched-error { padding: 8px 10px; border-radius: 8px; background: rgba(200, 60, 40, .1); color: #b63d2b; font-size: 13px; white-space: pre-wrap; }
+@media (prefers-color-scheme: dark) { .cedar-sched-error { color: #f09080; } }
+.cedar-sched-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* -- the Settings section -------------------------------------------------------------------- */
+
+/* The list needs more room than the interface choice; both UIs size .settings-dialog to 440px. */
+.settings-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(92vh, 960px); overflow-y: auto; }
+
+.cedar-sched-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(128, 128, 128, .25); }
+.cedar-sched-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.cedar-sched-heading > span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-sched-list, .cedar-sched-detail { display: flex; flex-direction: column; gap: 8px; }
+.cedar-sched-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 12px; padding: 10px 12px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; background: rgba(128, 128, 128, .05); }
+.cedar-sched-item.paused { opacity: .7; }
+.cedar-sched-item-main { flex: 1 1 220px; min-width: 0; font-size: 13.5px; }
+.cedar-sched-detail > .cedar-sched-item-main { flex: none; }
+.cedar-sched-item-main strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-sched-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.cedar-sched-item-actions { display: flex; flex-wrap: wrap; gap: 2px; }
+.cedar-sched-item-actions .copy-btn { padding: 4px 8px; }
+
+.cedar-sched-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; border: 1px solid rgba(128, 128, 128, .35); font-size: 11.5px; line-height: 1.5; color: var(--muted); text-transform: lowercase; }
+.cedar-sched-chip.ok { color: var(--accent); border-color: var(--accent); }
+.cedar-sched-chip.live { color: var(--accent); }
+.cedar-sched-chip.err { color: #b63d2b; border-color: rgba(182, 61, 43, .5); }
+@media (prefers-color-scheme: dark) { .cedar-sched-chip.err { color: #f09080; } }
+.cedar-sched-chip .spinner { width: 10px; height: 10px; border-width: 1.5px; }
+
+.cedar-sched-prompt { font-size: 13px; }
+.cedar-sched-prompt summary { cursor: pointer; color: var(--muted); }
+.cedar-sched-prompt pre { margin: 6px 0 0; padding: 10px 12px; max-height: 240px; overflow: auto; white-space: pre-wrap; border-radius: 8px; background: rgba(128, 128, 128, .08); font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.cedar-sched-runs-label { margin-top: 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.cedar-sched-run { padding: 8px 12px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; }
+.cedar-sched-run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.cedar-sched-run-head .copy-btn { margin-left: auto; }
+.cedar-sched-when { font-weight: 500; }
+.cedar-sched-run-body { margin-top: 6px; }
+.cedar-sched-result { max-height: 320px; overflow: auto; font-size: 14px; }
+.cedar-sched-run-body > .copy-btn { margin-top: 4px; }
+
+/* "Scheduled run" badge in the conversation header (both UIs) */
+.cedar-sched-badge { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); font-size: 11.5px; white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .cedar-sched-row { grid-template-columns: 1fr 1fr; }
+  .cedar-sched-dialog, .settings-dialog { width: calc(100vw - 16px); }
+}

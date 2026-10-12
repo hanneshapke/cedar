@@ -8,7 +8,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use cedar_chat::api::{self, AppState};
 use cedar_chat::config::Config;
+use cedar_chat::schedule;
 use cedar_chat::store::Store;
+use chrono::{DateTime, Duration, Utc};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -26,6 +28,9 @@ struct FakeCedar {
     deleted: Mutex<Vec<Uuid>>,
     expired: Mutex<Vec<Uuid>>,
     downloads: Mutex<Vec<(Uuid, String)>>,
+    compactions: Mutex<Vec<Value>>,
+    /// When set, `POST /v1/runs` answers with this status and message instead of a run.
+    refuse_runs: Mutex<Option<(StatusCode, &'static str)>>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -45,6 +50,9 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
     let prompt = body["prompt"].as_str().unwrap().to_string();
     if prompt.contains("TOO MANY") {
         return cedar_error(StatusCode::TOO_MANY_REQUESTS, "too_many_requests", "at most 2 runs");
+    }
+    if let Some((status, message)) = *s.refuse_runs.lock().unwrap() {
+        return cedar_error(status, "refused", message);
     }
     let parent = body["parent_id"].as_str().map(String::from);
     if let Some(p) = &parent {
@@ -80,6 +88,25 @@ async fn cancel_run(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::resp
 async fn delete_run(State(s): State<Shared>, Path(id): Path<Uuid>) -> StatusCode {
     s.deleted.lock().unwrap().push(id);
     StatusCode::NO_CONTENT
+}
+
+/// Compacts a known run's prompt, or a transcript, into "DO: <text>". Unknown runs are a 404.
+async fn compact(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
+    if !authorized(&headers) {
+        return cedar_error(StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key");
+    }
+    s.compactions.lock().unwrap().push(body.clone());
+    let text = match body["run_id"].as_str() {
+        Some(id) => match s.runs.lock().unwrap().get(&Uuid::parse_str(id).unwrap()) {
+            Some(run) => run["prompt"].as_str().unwrap().to_string(),
+            None => return cedar_error(StatusCode::NOT_FOUND, "not_found", "run not found"),
+        },
+        None => body["transcript"].as_str().unwrap().to_string(),
+    };
+    if text.contains("SILENCE") {
+        return cedar_error(StatusCode::BAD_GATEWAY, "bad_gateway", "the model returned no text");
+    }
+    Json(json!({ "prompt": format!("DO: {text}"), "model": body["model"], "usage": { "input_tokens": 1, "output_tokens": 1 } })).into_response()
 }
 
 async fn events(Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract::RawQuery) -> impl IntoResponse {
@@ -124,6 +151,7 @@ async fn download_file(State(s): State<Shared>, Path((id, path)): Path<(Uuid, St
 
 struct Harness {
     app: Router,
+    state: AppState,
     cedar: Shared,
 }
 
@@ -137,6 +165,7 @@ impl Harness {
             .route("/v1/runs/{id}/events", get(events))
             .route("/v1/runs/{id}/files", get(list_files))
             .route("/v1/runs/{id}/files/{*path}", get(download_file))
+            .route("/v1/compact", post(compact))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -149,7 +178,17 @@ impl Harness {
         }
         let cfg = Config::from_lookup(|k| env.get(k).cloned()).unwrap();
         let state = AppState::new(cfg, Store::connect_memory().await.unwrap()).unwrap();
-        Self { app: api::router(state), cedar }
+        Self { app: api::router(state.clone()), state, cedar }
+    }
+
+    /// A conversation with one finished exchange; returns its id and the run's id.
+    async fn finished_conversation(&self, prompt: &str, answer: &str) -> (String, String) {
+        let (_, conv) = self.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+        let cid = conv["id"].as_str().unwrap().to_string();
+        let (_, turn) = self.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": prompt }))).await;
+        let run_id = turn["run_id"].as_str().unwrap().to_string();
+        self.finish(&run_id, "completed", Some(answer));
+        (cid, run_id)
     }
 
     async fn call(&self, method: Method, uri: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, String) {
@@ -332,7 +371,69 @@ async fn access_token_guards_the_api_but_not_the_page() {
     assert!(cfg.contains("\"auth_required\":true"));
     let (status, page) = h.call(Method::GET, "/", None, None).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(page.contains("<script src=\"/app.js\">"));
+    assert!(page.contains("<script src=\"/ui-pref.js\">"));
+}
+
+async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
+    h.call_full(Request::builder().uri(uri).body(Body::empty()).unwrap()).await
+}
+
+#[tokio::test]
+async fn both_uis_are_served() {
+    let h = Harness::new(&[]).await;
+
+    for ui in ["v1", "v2"] {
+        // The page is reachable with and without the trailing slash and loads its own assets.
+        for uri in [format!("/{ui}"), format!("/{ui}/")] {
+            let (status, headers, page) = fetch(&h, &uri).await;
+            assert_eq!(status, StatusCode::OK, "{uri}");
+            assert_eq!(headers["content-type"], "text/html; charset=utf-8");
+            assert!(page.contains(&format!("data-ui=\"{ui}\"")), "{uri} names itself");
+            assert!(page.contains(&format!("<script src=\"/{ui}/app.js\">")));
+            assert!(page.contains(&format!("href=\"/{ui}/style.css\"")));
+            assert!(page.contains("<script src=\"/ui-pref.js\">"));
+            assert!(page.contains("<script src=\"/file-viewer.js\">"), "{uri} loads the file viewer");
+            assert!(page.contains("<script src=\"/map-view.js\">"), "{uri} loads the map view");
+            assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
+            assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
+            assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
+            assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
+            assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in Settings");
+            assert!(page.contains("id=\"schedule-btn\""), "{uri} has a Schedule button");
+        }
+        let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
+        assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
+        let (status, headers, _) = fetch(&h, &format!("/{ui}/style.css")).await;
+        assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/css; charset=utf-8"));
+    }
+
+    // The shared script holds the saved choice; `/` only sends the browser to the UI it names.
+    let (status, headers, script) = fetch(&h, "/ui-pref.js").await;
+    assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
+    assert!(script.contains("cedar-chat-ui"));
+
+    // So does the file viewer, which both pages load before their own script.
+    let (status, headers, script) = fetch(&h, "/file-viewer.js").await;
+    assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
+    assert!(script.contains("cedarViewer"));
+
+    // So does the map view for show_map results, with the Leaflet it loads on demand served from here.
+    for (uri, content_type, marker) in [
+        ("/map-view.js", "text/javascript; charset=utf-8", "cedarMap"),
+        ("/map-view.css", "text/css; charset=utf-8", ".cedar-map"),
+        ("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8", "Leaflet 1.9.4"),
+        ("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8", ".leaflet-container"),
+        ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),
+        ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
+    ] {
+        let (status, headers, body) = fetch(&h, uri).await;
+        assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
+        assert!(body.contains(marker), "{uri} is the expected file");
+    }
+
+    // The single-UI paths are gone.
+    assert_eq!(fetch(&h, "/app.js").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(fetch(&h, "/style.css").await.0, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -384,4 +485,271 @@ async fn workspace_files_are_listed_and_downloaded_through_the_latest_run() {
     let guarded = Harness::new(&[("CHAT_ACCESS_TOKEN", "letmein")]).await;
     let (status, _) = guarded.call(Method::GET, &files_url, None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+// -- scheduling ---------------------------------------------------------------------------------
+
+fn schedule_body(cid: &str) -> Value {
+    json!({
+        "title": "Morning digest", "prompt": "DO: summarize the news", "frequency": "weekdays",
+        "time": "09:00", "timezone": "Europe/Berlin", "conversation_id": cid,
+    })
+}
+
+fn ts(v: &Value) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(v.as_str().unwrap()).unwrap().with_timezone(&Utc)
+}
+
+#[tokio::test]
+async fn a_conversation_is_compacted_through_its_latest_run_or_its_history() {
+    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    let (_, empty) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{}/compact", empty["id"].as_str().unwrap()), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "nothing to compact yet");
+
+    let (cid, run1) = h.finished_conversation("What is 2+2?", "It is 4.").await;
+    let msgs = format!("/api/conversations/{cid}/messages");
+    let (_, t2) = h.json(Method::POST, &msgs, Some(json!({ "content": "Times 3?", "model": "model-a" }))).await;
+    let run2 = t2["run_id"].as_str().unwrap().to_string();
+    let compact = format!("/api/conversations/{cid}/compact");
+    let (status, _) = h.json(Method::POST, &compact, None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "not while a response is being generated");
+    h.finish(&run2, "completed", Some("12."));
+
+    let (status, body) = h.json(Method::POST, &compact, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "prompt": "DO: Times 3?", "source": "run" }));
+    let sent = h.cedar.compactions.lock().unwrap().last().unwrap().clone();
+    assert_eq!(sent, json!({ "run_id": run2, "model": "model-a" }), "the latest run, with the conversation's model");
+
+    // When cedar has lost the run, the remembered exchanges are compacted instead.
+    h.cedar.runs.lock().unwrap().remove(&Uuid::parse_str(&run2).unwrap());
+    let (status, body) = h.json(Method::POST, &compact, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["source"], "history");
+    let prompt = body["prompt"].as_str().unwrap();
+    assert!(prompt.starts_with("DO: <user>\nWhat is 2+2?\n</user>\n<assistant>\nIt is 4.\n</assistant>"), "{prompt}");
+    assert!(prompt.contains("Times 3?") && prompt.ends_with("12.\n</assistant>"), "{prompt}");
+    let _ = run1;
+
+    // cedar's failure to compact is relayed.
+    let (cid, _) = h.finished_conversation("SILENCE please", "ok").await;
+    let (status, body) = h.json(Method::POST, &format!("/api/conversations/{cid}/compact"), None).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY, "{body}");
+}
+
+#[tokio::test]
+async fn schedules_are_validated_created_updated_and_deleted() {
+    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let post = |body: Value| h.json(Method::POST, "/api/schedules", Some(body));
+
+    for (bad, why) in [
+        (json!({ "prompt": "x", "frequency": "daily", "time": "09:00", "timezone": "UTC" }), "title"),
+        (json!({ "title": "t", "prompt": "  ", "frequency": "daily", "time": "09:00", "timezone": "UTC" }), "prompt"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "hourly", "time": "09:00", "timezone": "UTC" }), "frequency"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "weekly", "time": "09:00", "timezone": "UTC" }), "weekday"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "9 am", "timezone": "UTC" }), "time"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00", "timezone": "Mars/Base" }), "time zone"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00", "timezone": "UTC", "model": "model-z" }), "model"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00" }), "timezone"),
+    ] {
+        let (status, err) = post(bad).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{why}: {err}");
+        assert!(err["error"]["message"].as_str().unwrap().contains(why), "{why}: {err}");
+    }
+
+    let before = Utc::now();
+    let (status, s) = post(schedule_body(&cid)).await;
+    assert_eq!(status, StatusCode::CREATED, "{s}");
+    let sid = s["id"].as_str().unwrap().to_string();
+    assert_eq!(s["title"], "Morning digest");
+    assert_eq!(s["frequency"], "weekdays");
+    assert_eq!(s["weekday"], Value::Null);
+    assert_eq!(s["time_of_day"], "09:00");
+    assert_eq!(s["timezone"], "Europe/Berlin");
+    assert_eq!(s["enabled"], true);
+    assert_eq!(s["model"], Value::Null);
+    assert_eq!(s["source_conversation_id"], cid);
+    assert_eq!(s["last_run_at"], Value::Null);
+    let next = ts(&s["next_run_at"]);
+    assert!(next > before && next < before + Duration::days(4), "{next}");
+
+    let (_, list) = h.json(Method::GET, "/api/schedules", None).await;
+    assert_eq!(list["schedules"].as_array().unwrap().len(), 1);
+    assert_eq!(list["schedules"][0]["id"], sid);
+    assert_eq!(list["schedules"][0]["last_run"], Value::Null);
+
+    // Updating the timing recomputes the next run; a weekly schedule needs its weekday.
+    let patch_url = format!("/api/schedules/{sid}");
+    let patch = |body: Value| h.json(Method::PATCH, &patch_url, Some(body));
+    let (status, err) = patch(json!({ "frequency": "weekly" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    let (status, s) = patch(json!({ "frequency": "weekly", "weekday": 6, "time": "23:00", "model": "model-a", "title": " Sunday digest " })).await;
+    assert_eq!(status, StatusCode::OK, "{s}");
+    assert_eq!((s["frequency"].as_str(), s["weekday"].as_u64(), s["time_of_day"].as_str()), (Some("weekly"), Some(6), Some("23:00")));
+    assert_eq!(s["model"], "model-a");
+    assert_eq!(s["title"], "Sunday digest");
+    let next = ts(&s["next_run_at"]);
+    assert_eq!(next.with_timezone(&chrono_tz::Europe::Berlin).format("%a %H:%M").to_string(), "Sun 23:00");
+
+    // Pausing keeps the schedule; resuming skips what was missed.
+    let (_, s) = patch(json!({ "enabled": false })).await;
+    assert_eq!(s["enabled"], false);
+    let stored = h.state.store.get_schedule(Uuid::parse_str(&sid).unwrap()).await.unwrap().unwrap();
+    assert!(!stored.enabled);
+    let (_, s) = patch(json!({ "enabled": true })).await;
+    assert_eq!(s["enabled"], true);
+    assert!(ts(&s["next_run_at"]) > Utc::now());
+
+    // The prompt can be edited; a blank model goes back to the default.
+    let (_, s) = patch(json!({ "prompt": " DO: something else ", "model": "" })).await;
+    assert_eq!((s["prompt"].as_str(), s["model"].as_str()), (Some("DO: something else"), None));
+
+    let (status, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(detail["schedule"]["id"], sid);
+    assert_eq!(detail["runs"], json!([]));
+
+    let (status, _) = h.json(Method::DELETE, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = h.json(Method::PATCH, &format!("/api/schedules/{}", Uuid::new_v4()), Some(json!({ "enabled": true }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn due_schedules_start_a_run_in_a_hidden_conversation() {
+    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let mut body = schedule_body(&cid);
+    body["model"] = json!("model-a");
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(body)).await;
+    let sid = Uuid::parse_str(s["id"].as_str().unwrap()).unwrap();
+
+    // Not due yet: nothing happens.
+    assert_eq!(schedule::tick(&h.state, Utc::now()).await.unwrap(), 0);
+
+    // Due (the process was down over the slot, say): exactly one run, and the next slot is in the future.
+    let due = ts(&s["next_run_at"]);
+    let later = due + Duration::hours(3);
+    assert_eq!(schedule::tick(&h.state, later).await.unwrap(), 1);
+    assert_eq!(schedule::tick(&h.state, later).await.unwrap(), 0, "a slot fires once");
+    let prompts = h.cedar.prompts.lock().unwrap().clone();
+    assert_eq!(prompts.last().map(String::as_str), Some("DO: summarize the news"));
+    assert_eq!(h.cedar.parents.lock().unwrap().last().unwrap(), &None, "a fresh run, not a continuation");
+    let stored = h.state.store.get_schedule(sid).await.unwrap().unwrap();
+    assert!(stored.next_run_at > Utc::now(), "{}", stored.next_run_at);
+    assert!(stored.last_run_at.is_some());
+
+    let (status, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    let runs = detail["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 1);
+    let run = &runs[0];
+    assert_eq!(ts(&run["due_at"]), due);
+    assert_eq!(run["manual"], false);
+    assert_eq!(run["error"], Value::Null);
+    assert_eq!(run["turn"]["status"], "queued");
+    assert_eq!(run["turn"]["prompt"], "DO: summarize the news");
+    let run_cid = run["conversation_id"].as_str().unwrap().to_string();
+    assert_eq!(run["turn"]["conversation_id"], run_cid);
+
+    // The run's conversation opens like any other, but is not in the main list.
+    let (status, conv) = h.json(Method::GET, &format!("/api/conversations/{run_cid}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(conv["conversation"]["schedule_id"], sid.to_string());
+    assert_eq!(conv["conversation"]["model"], "model-a");
+    let title = conv["conversation"]["title"].as_str().unwrap();
+    assert!(title.starts_with("Morning digest · "), "{title}");
+    assert_eq!(conv["turns"].as_array().unwrap().len(), 1);
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    let listed: Vec<&str> = list["conversations"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(listed, [cid.as_str()]);
+
+    // Once the run finishes, the schedule list shows its result.
+    h.finish(run["turn"]["run_id"].as_str().unwrap(), "completed", Some("Top story: …"));
+    let (_, list) = h.json(Method::GET, "/api/schedules", None).await;
+    assert_eq!(list["schedules"][0]["last_run"]["turn"]["status"], "completed");
+    assert_eq!(list["schedules"][0]["last_run"]["turn"]["final_text"], "Top story: …");
+
+    // Deleting the schedule deletes the runs' conversations and their cedar runs.
+    let (status, _) = h.json(Method::DELETE, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(h.cedar.deleted.lock().unwrap().len(), 1);
+    let (status, _) = h.json(Method::GET, &format!("/api/conversations/{run_cid}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn run_now_starts_a_run_without_moving_the_schedule() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let sid = s["id"].as_str().unwrap().to_string();
+    let run_now = format!("/api/schedules/{sid}/run");
+
+    let (status, run) = h.json(Method::POST, &run_now, None).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{run}");
+    assert_eq!(run["manual"], true);
+    assert_eq!(run["turn"]["status"], "queued");
+    let (status, err) = h.json(Method::POST, &run_now, None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{err}");
+    let (status, err) = h.json(Method::DELETE, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{err}");
+
+    let (_, after) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(after["schedule"]["next_run_at"], s["next_run_at"], "the next scheduled run is unchanged");
+    assert!(after["schedule"]["last_run_at"].is_string());
+
+    h.finish(run["turn"]["run_id"].as_str().unwrap(), "failed", None);
+    let (status, _) = h.json(Method::POST, &run_now, None).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    // A cedar refusal is reported and leaves nothing behind.
+    *h.cedar.refuse_runs.lock().unwrap() = Some((StatusCode::TOO_MANY_REQUESTS, "busy"));
+    h.finish(after["runs"][0]["turn"]["run_id"].as_str().unwrap(), "completed", Some("x"));
+    let (_, latest) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    h.finish(latest["runs"][0]["turn"]["run_id"].as_str().unwrap(), "completed", Some("x"));
+    let (status, err) = h.json(Method::POST, &run_now, None).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{err}");
+    let (_, latest) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(latest["runs"].as_array().unwrap().len(), 2);
+    assert_eq!(h.state.store.list_conversations(100).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_busy_cedar_is_retried_for_an_hour_then_the_slot_is_recorded_as_failed() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let sid = Uuid::parse_str(s["id"].as_str().unwrap()).unwrap();
+    let due = ts(&s["next_run_at"]);
+    *h.cedar.refuse_runs.lock().unwrap() = Some((StatusCode::TOO_MANY_REQUESTS, "busy"));
+
+    // Within the grace period the slot is kept for the next tick.
+    assert_eq!(schedule::tick(&h.state, due + Duration::minutes(5)).await.unwrap(), 0);
+    let stored = h.state.store.get_schedule(sid).await.unwrap().unwrap();
+    assert_eq!(stored.next_run_at, due);
+    assert!(h.state.store.list_schedule_runs(sid, 10).await.unwrap().is_empty());
+    assert!(h.state.store.list_schedule_turns(sid).await.unwrap().is_empty());
+
+    // Past it, the failure is recorded and the schedule moves on.
+    assert_eq!(schedule::tick(&h.state, due + Duration::hours(2)).await.unwrap(), 0);
+    let stored = h.state.store.get_schedule(sid).await.unwrap().unwrap();
+    assert!(stored.next_run_at > due + Duration::hours(2));
+    let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(detail["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(detail["runs"][0]["error"], "busy");
+    assert_eq!(detail["runs"][0]["turn"], Value::Null);
+    assert_eq!(detail["runs"][0]["conversation_id"], Value::Null);
+
+    // A validation error (not cedar being busy) is never retried.
+    *h.cedar.refuse_runs.lock().unwrap() = Some((StatusCode::BAD_REQUEST, "model not allowed"));
+    h.state.store.mark_fired(sid, Utc::now(), Some(Utc::now() - Duration::minutes(1))).await.unwrap();
+    assert_eq!(schedule::tick(&h.state, Utc::now()).await.unwrap(), 0);
+    let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    assert_eq!(detail["runs"].as_array().unwrap().len(), 2);
+    assert!(h.state.store.get_schedule(sid).await.unwrap().unwrap().next_run_at > Utc::now());
 }

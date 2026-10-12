@@ -95,6 +95,33 @@ impl CedarClient {
         self.send(self.http.get(self.url(&format!("/runs/{id}/events"))).query(&[("after", after)])).await
     }
 
+    /// Ask cedar to compact a finished run's conversation into one self-contained prompt.
+    pub async fn compact_run(&self, id: Uuid, model: Option<&str>) -> Result<String, AppError> {
+        self.compact(json!({ "run_id": id }), model).await
+    }
+
+    /// The same, over a plain-text transcript (for a run cedar no longer has).
+    pub async fn compact_transcript(&self, transcript: &str, model: Option<&str>) -> Result<String, AppError> {
+        self.compact(json!({ "transcript": transcript }), model).await
+    }
+
+    async fn compact(&self, mut body: Value, model: Option<&str>) -> Result<String, AppError> {
+        if let Some(m) = model {
+            body["model"] = Value::String(m.to_string());
+        }
+        // One model call, which can take a while on a busy server.
+        let resp: Value = self
+            .send(self.http.post(self.url("/compact")).json(&body).timeout(Duration::from_secs(300)))
+            .await?
+            .json()
+            .await
+            .map_err(|e| AppError::BadGateway(format!("unreadable response from cedar: {e}")))?;
+        match resp["prompt"].as_str().map(str::trim).filter(|p| !p.is_empty()) {
+            Some(prompt) => Ok(prompt.to_string()),
+            None => Err(AppError::BadGateway("cedar returned no prompt".into())),
+        }
+    }
+
     /// The files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`.
     pub async fn list_files(&self, id: Uuid) -> Result<Value, AppError> {
         self.json(self.http.get(self.url(&format!("/runs/{id}/files")))).await
