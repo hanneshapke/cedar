@@ -5,7 +5,7 @@
 //! the container's `/tmp`, rendered, and the staging file removed, so nothing but the PDF is left
 //! in the workspace.
 
-use super::{truncate_with_total, Tool, ToolContext};
+use super::{shell_quote, truncate_with_total, Tool, ToolContext};
 use crate::sandbox::ExecOutput;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -123,11 +123,6 @@ fn parse_input(input: &Value) -> Result<Document<'_>> {
     })
 }
 
-/// `s` as a single-quoted POSIX shell word.
-fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', r"'\''"))
-}
-
 /// Render `staged` to the document's path, then remove the staging file whatever happened,
 /// keeping the renderer's exit status.
 fn render_command(doc: &Document<'_>, staged: &str) -> String {
@@ -243,12 +238,6 @@ mod tests {
         assert!(err(json!({ "path": "a\0.pdf", "content": "x" })).contains("NUL"));
         let big = "x".repeat(MAX_CONTENT_BYTES + 1);
         assert!(err(json!({ "path": "a.pdf", "content": big })).contains("limit"));
-    }
-
-    #[test]
-    fn shell_words_are_single_quoted() {
-        assert_eq!(shell_quote("plain"), "'plain'");
-        assert_eq!(shell_quote("it's $(x) `y`"), r"'it'\''s $(x) `y`'");
     }
 
     #[test]

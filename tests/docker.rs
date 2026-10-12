@@ -522,3 +522,199 @@ async fn generate_pdf_renders_markdown_in_the_sandbox() {
 
     teardown(&f, id, &sb).await;
 }
+
+fn tool_ctx(sb: &Arc<dyn Sandbox>) -> cedar::tools::ToolContext {
+    cedar::tools::ToolContext {
+        sandbox: sb.clone(),
+        timeout: 60 * SECOND,
+        max_output: 32_768,
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn run_python_runs_code_and_lists_the_files_it_wrote() {
+    use cedar::tools::{RunPython, Tool};
+    use serde_json::json;
+
+    let (f, id, sb) = sandbox().await;
+    let ctx = tool_ctx(&sb);
+    sb.write_file("helper.py", b"GREETING = 'hi'\n")
+        .await
+        .unwrap();
+    sb.write_file("old.txt", b"untouched").await.unwrap();
+
+    // Quotes and backslashes need no escaping, workspace modules import, args arrive in argv.
+    let code = r#"
+import os, sys
+from helper import GREETING
+print(GREETING, sys.argv[1:], os.getcwd(), "it's \"quoted\" \\ fine")
+os.makedirs("out", exist_ok=True)
+open("out/result.txt", "w").write("42")
+os.makedirs(".cache", exist_ok=True)
+open(".cache/noise", "w").write("x")
+print("warn", file=sys.stderr)
+"#;
+    let msg = RunPython
+        .call(&ctx, &json!({ "code": code, "args": ["a b", "c"] }))
+        .await
+        .unwrap();
+    assert_eq!(
+        msg,
+        "hi ['a b', 'c'] /workspace it's \"quoted\" \\ fine\n\n[stderr]\nwarn\n\
+         \n[files created or modified]\n- out/result.txt"
+    );
+
+    let msg = RunPython
+        .call(&ctx, &json!({ "code": "raise SystemExit('bad input')" }))
+        .await
+        .unwrap();
+    assert_eq!(msg, "\n[stderr]\nbad input\n\n[exit status: 1]");
+
+    // Neither the staged script nor the marker is left in /tmp.
+    let out = sb.exec("ls -A /tmp", 10 * SECOND, 1000).await.unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
+
+    teardown(&f, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn read_document_extracts_office_files_csv_and_pdf() {
+    use cedar::tools::{ReadDocument, RunPython, Tool};
+    use serde_json::json;
+
+    let (f, id, sb) = sandbox().await;
+    let ctx = tool_ctx(&sb);
+    let make = r#"
+import docx, openpyxl, pptx
+from pypdf import PdfWriter
+d = docx.Document(); d.add_heading("Plan", 1); d.add_paragraph("Ship it.")
+t = d.add_table(rows=2, cols=2); t.cell(0, 0).text = "k"; t.cell(0, 1).text = "v"
+t.cell(1, 0).text = "a"; t.cell(1, 1).text = "1"; d.save("plan.docx")
+wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Data"; ws.append(["n", "sq"])
+for i in range(1, 6): ws.append([i, i * i])
+wb.save("data.xlsx")
+p = pptx.Presentation(); s = p.slides.add_slide(p.slide_layouts[1])
+s.shapes.title.text = "Hello"; s.placeholders[1].text = "point"; p.save("deck.pptx")
+open("t.csv", "w").write("a,b\n1,2\n")
+w = PdfWriter(); w.add_blank_page(100, 100); w.write("blank.pdf")
+"#;
+    RunPython
+        .call(&ctx, &json!({ "code": make }))
+        .await
+        .unwrap();
+
+    let docx = ReadDocument
+        .call(&ctx, &json!({ "path": "plan.docx" }))
+        .await
+        .unwrap();
+    assert_eq!(
+        docx,
+        "plan.docx: Word document, 1 table\n\n## Plan\n\nShip it.\n\n\n| k | v |\n|---|---|\n| a | 1 |\n\n"
+    );
+    let xlsx = ReadDocument
+        .call(&ctx, &json!({ "path": "data.xlsx", "rows": "4-" }))
+        .await
+        .unwrap();
+    assert!(
+        xlsx.contains("## Sheet: Data (5 data rows; showing 2 rows of rows 4-)\n\n| n | sq |\n|---|---|\n| 4 | 16 |\n| 5 | 25 |"),
+        "{xlsx}"
+    );
+    let pptx = ReadDocument
+        .call(&ctx, &json!({ "path": "deck.pptx" }))
+        .await
+        .unwrap();
+    assert_eq!(
+        pptx,
+        "deck.pptx: PowerPoint, 1 slide\n\n--- slide 1: Hello ---\n- point\n"
+    );
+    let csv = ReadDocument
+        .call(&ctx, &json!({ "path": "t.csv" }))
+        .await
+        .unwrap();
+    assert!(csv.contains("| a | b |\n|---|---|\n| 1 | 2 |"), "{csv}");
+
+    // A page without text is a warning, not a failure.
+    let pdf = ReadDocument
+        .call(&ctx, &json!({ "path": "blank.pdf" }))
+        .await
+        .unwrap();
+    assert!(
+        pdf.starts_with("blank.pdf: PDF, 1 page\n\n--- page 1 ---\n[no text]"),
+        "{pdf}"
+    );
+    assert!(
+        pdf.contains("[warnings]\nno text could be extracted"),
+        "{pdf}"
+    );
+
+    let err = ReadDocument
+        .call(&ctx, &json!({ "path": "nope.pdf" }))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert_eq!(err, "nope.pdf: no such file");
+    let err = ReadDocument
+        .call(&ctx, &json!({ "path": "data.xlsx", "sheet": "Other" }))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert_eq!(err, "data.xlsx has no sheet 'Other'; its sheets are: Data");
+
+    teardown(&f, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn generate_chart_draws_png_svg_and_pdf() {
+    use cedar::tools::{GenerateChart, Tool};
+    use serde_json::json;
+
+    let (f, id, sb) = sandbox().await;
+    let ctx = tool_ctx(&sb);
+    let bar = json!({ "path": "charts/sales.png", "kind": "bar", "labels": ["Q1", "Q2"],
+                      "series": [{ "name": "2025", "values": [1, 2] }, { "name": "2026", "values": [2, null] }],
+                      "title": "Sales" });
+    let msg = GenerateChart.call(&ctx, &bar).await.unwrap();
+    assert!(
+        msg.starts_with("wrote charts/sales.png: ") && msg.ends_with(" bytes"),
+        "{msg}"
+    );
+    let png = sb.read_file("charts/sales.png", 8).await.unwrap();
+    assert_eq!(png.bytes, b"\x89PNG\r\n\x1a\n");
+
+    let hist =
+        json!({ "path": "h.svg", "kind": "histogram", "series": [{ "values": [1, 2, 2, 3] }] });
+    GenerateChart.call(&ctx, &hist).await.unwrap();
+    let svg = sb.read_file("h.svg", 200).await.unwrap();
+    assert!(
+        String::from_utf8_lossy(&svg.bytes).contains("<svg"),
+        "{svg:?}"
+    );
+
+    let pie = json!({ "path": "p.pdf", "kind": "pie", "labels": ["a", "b"], "series": [{ "values": [1, 3] }] });
+    GenerateChart.call(&ctx, &pie).await.unwrap();
+    assert!(sb
+        .read_file("p.pdf", 5)
+        .await
+        .unwrap()
+        .bytes
+        .starts_with(b"%PDF-"));
+
+    // A renderer failure is a tool error carrying the reason; the staged spec is cleaned up.
+    let bad = json!({ "path": "/proc/x.png", "kind": "pie", "labels": ["a"], "series": [{ "values": [1] }] });
+    let err = GenerateChart
+        .call(&ctx, &bad)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.starts_with("drawing /proc/x.png failed (exit status 1): cannot write"),
+        "{err}"
+    );
+    let out = sb.exec("ls -A /tmp", 10 * SECOND, 1000).await.unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
+
+    teardown(&f, id, &sb).await;
+}

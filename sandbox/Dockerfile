@@ -24,6 +24,13 @@ RUN apt-get update \
 RUN pip install --no-cache-dir weasyprint markdown
 COPY --chmod=0755 render_pdf.py /usr/local/bin/cedar-render-pdf
 
+# The libraries behind `generate_chart` (matplotlib) and `read_document` (pypdf, python-docx,
+# openpyxl, python-pptx). They are ordinary packages too, so the agent can also use them directly
+# from `run_python`. MPLBACKEND keeps matplotlib off any display backend.
+RUN pip install --no-cache-dir matplotlib pypdf python-docx openpyxl python-pptx
+COPY --chmod=0755 render_chart.py /usr/local/bin/cedar-render-chart
+COPY --chmod=0755 read_document.py /usr/local/bin/cedar-read-document
+
 # uid/gid 1000 must match the `--user` cedar passes to `docker run`. /workspace is created and
 # owned by that user so the per-run named volume mounted there inherits the right ownership.
 RUN groupadd --gid 1000 agent \
@@ -36,7 +43,8 @@ RUN groupadd --gid 1000 agent \
 # one turn are still there in the next. Scripts the packages install land on PATH the same way.
 ENV PYTHONUSERBASE=/workspace/.local \
     PATH=/workspace/.local/bin:/usr/local/bin:/usr/bin:/bin \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    MPLBACKEND=Agg
 
 USER agent
 WORKDIR /workspace

@@ -118,8 +118,13 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "bash",
             "read_file",
             "write_file",
+            "run_python",
+            "read_document",
             "generate_pdf",
-            "web_search"
+            "generate_chart",
+            "web_search",
+            "fetch_url",
+            "download_file"
         ]
     );
 
@@ -274,6 +279,16 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
 
     assert_eq!(
         tool_names(&app.llm.requests()[0]),
-        ["bash", "read_file", "write_file", "generate_pdf"]
+        [
+            "bash",
+            "read_file",
+            "write_file",
+            "run_python",
+            "read_document",
+            "generate_pdf",
+            "generate_chart",
+            "fetch_url",
+            "download_file"
+        ]
     );
 }
