@@ -269,7 +269,15 @@ const TOOLS = {
     did: 'Checked the weather for',
     subject: (i) => i.location || (i.latitude != null ? `${i.latitude}, ${i.longitude}` : ''),
   },
+  show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i) },
 };
+
+/** What a show_map call is about: its title, else the places it names. */
+function mapSubject(input) {
+  if (input.title) return input.title;
+  const places = Array.isArray(input.markers) ? input.markers : [];
+  return places.map((m) => m?.location || m?.label || `${m?.latitude}, ${m?.longitude}`).join(' · ');
+}
 // Tools whose `path` input is a file they write, so a finished call gets a download button.
 const FILE_TOOLS = new Set(['write_file', 'generate_pdf', 'generate_chart', 'download_file']);
 
@@ -343,6 +351,29 @@ function searchClippings(tool, meta) {
     [hostOf(r.url), r.snippet, r.age].filter(Boolean).map(escapeHtml).join(' · ')));
 }
 
+/**
+ * The clipping for a show_map call: the map itself once the result is in. A map is a live widget, so
+ * it is built once and the same element is moved into each new clipping when the desk is redrawn.
+ */
+function mapClipping(tool, meta) {
+  const head = escapeHtml(mapSubject(tool.input || {}));
+  if (tool.output === undefined) {
+    const el = clipEl('show_map', meta, head, 'locating…');
+    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
+    return el;
+  }
+  if (tool.is_error) return clipEl('show_map', meta, head, '', tool.output, true);
+  const spec = cedarMap.parse(tool.output);
+  if (!spec) return clipEl('show_map', meta, head, '', tool.output);
+  tool.mapEl ??= cedarMap.element(spec);
+  // The map's own card shows the title, so the clipping's head only counts the pins.
+  const n = spec.markers.length;
+  const el = clipEl('show_map', meta, `${n} place${n === 1 ? '' : 's'}`, '');
+  el.classList.add('map');
+  el.append(tool.mapEl);
+  return el;
+}
+
 /** Clippings for one tool call; web_search gives one per result, and the page's document gives none. */
 function clippingsFor(tool) {
   if (isDocument(tool) && tool.is_error !== true) return [];
@@ -363,6 +394,8 @@ function clippingsFor(tool) {
       return [clipEl(tool.name, meta, escapeHtml(String(input.path || '')), '', raw, tool.is_error)];
     case 'fetch_url':
       return [clipEl('fetch_url', meta, linkHtml(String(input.url || '')), '', raw, tool.is_error)];
+    case 'show_map':
+      return [mapClipping(tool, meta)];
     default:
       if (FILE_TOOLS.has(tool.name)) {
         const path = String(input.path || '');

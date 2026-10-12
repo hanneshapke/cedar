@@ -268,8 +268,8 @@ async fn the_agent_loop_drives_a_chat_completions_server() {
     let seen = mock.seen.lock().unwrap();
     assert_eq!(seen.len(), 3);
     assert_eq!(roles(&seen[0].1), ["system", "user"]);
-    // The seven sandbox tools plus fetch_url, download_file, and weather_forecast.
-    assert_eq!(seen[0].1["tools"].as_array().unwrap().len(), 10);
+    // The seven sandbox tools plus fetch_url, download_file, weather_forecast, and show_map.
+    assert_eq!(seen[0].1["tools"].as_array().unwrap().len(), 11);
     // The tool call goes back as an assistant message plus a tool message with its output.
     assert_eq!(roles(&seen[1].1), ["system", "user", "assistant", "tool"]);
     let messages = seen[1].1["messages"].as_array().unwrap();

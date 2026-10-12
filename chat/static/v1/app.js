@@ -530,6 +530,7 @@ const TOOL_ICONS = {
   bash: 'terminal', read_file: 'file', write_file: 'pencil', web_search: 'search',
   generate_pdf: 'document', read_document: 'document', run_python: 'code',
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
+  show_map: 'globe',
 };
 
 function toolSummary(name, input) {
@@ -542,12 +543,16 @@ function toolSummary(name, input) {
   if (typeof input.path === 'string') return input.path;
   if (typeof input.query === 'string') return input.query;
   if (typeof input.location === 'string') return input.location;
+  if (Array.isArray(input.markers)) {
+    return input.title || input.markers.map((m) => m?.location || m?.label || `${m?.latitude}, ${m?.longitude}`).join(' · ');
+  }
   return JSON.stringify(input);
 }
 
 function toolCall(view, d) {
   const icon = ICONS[TOOL_ICONS[d.name]] || ICONS.tool;
   const details = h('details', 'tool running');
+  details.dataset.tool = d.name;
   const summary = h('summary', '', `${icon}<span class="tool-name"></span><span class="tool-arg"></span>` +
     `<span class="meta"></span><span class="state"><span class="spinner"></span></span>${ICONS.chevron}`);
   summary.querySelector('.tool-name').textContent = d.name;
@@ -591,6 +596,14 @@ function toolResult(view, d) {
     label.append(actions);
   }
   details.querySelector('.tool-body').append(label, out);
+  // A map is the point of show_map, so it sits under the call instead of inside the collapsed details.
+  if (details.dataset.tool === 'show_map' && !d.is_error) {
+    const spec = cedarMap.parse(text);
+    if (spec) {
+      details.after(cedarMap.element(spec));
+      scrollToBottom(false);
+    }
+  }
 }
 
 function finishTurn(view, event) {

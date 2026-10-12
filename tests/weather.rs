@@ -148,7 +148,7 @@ async fn a_place_name_is_geocoded_and_the_forecast_reaches_the_model() {
     run_to_completion(&app).await;
 
     let requests = app.llm.requests();
-    assert_eq!(tool_names(&requests[0]).last(), Some(&"weather_forecast"));
+    assert!(tool_names(&requests[0]).contains(&"weather_forecast"));
 
     let geo = mock.geocoding.seen.lock().unwrap();
     assert_eq!(geo.len(), 1);

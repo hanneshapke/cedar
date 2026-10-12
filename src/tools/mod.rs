@@ -1,12 +1,14 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
-//! run's sandbox; `web_search`, `fetch_url`, `download_file`, and `weather_forecast` run in the
-//! cedar process, because the sandbox has no network.
+//! run's sandbox; `web_search`, `fetch_url`, `download_file`, `weather_forecast`, and `show_map` run
+//! in the cedar process, because the sandbox has no network.
 
 mod bash;
 mod chart;
 mod document;
 mod fetch;
 mod files;
+mod map;
+mod open_meteo;
 mod pdf;
 mod python;
 mod weather;
@@ -17,6 +19,7 @@ pub use chart::GenerateChart;
 pub use document::ReadDocument;
 pub use fetch::{DownloadFile, FetchUrl, WebClient};
 pub use files::{ReadFile, WriteFile};
+pub use map::ShowMap;
 pub use pdf::GeneratePdf;
 pub use python::RunPython;
 pub use weather::WeatherForecast;
@@ -82,7 +85,8 @@ impl ToolSet {
     }
 
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
-    /// `download_file` unless `WEB_FETCH` is off, and `weather_forecast` unless `WEATHER` is off.
+    /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off, and
+    /// `show_map` unless `MAPS` is off.
     pub fn from_config(cfg: &Config) -> Result<Self> {
         let mut set = Self::standard();
         if let Some(key) = &cfg.brave_api_key {
@@ -99,6 +103,11 @@ impl ToolSet {
         if cfg.weather {
             set.tools.push(Box::new(WeatherForecast::new(
                 cfg.weather_base_url.clone(),
+                cfg.weather_geocoding_base_url.clone(),
+            )?));
+        }
+        if cfg.maps {
+            set.tools.push(Box::new(ShowMap::new(
                 cfg.weather_geocoding_base_url.clone(),
             )?));
         }
@@ -133,6 +142,9 @@ impl ToolSet {
             note.push_str(
                 " For the weather, use weather_forecast; do not search for it or scrape weather sites.",
             );
+        }
+        if self.get("show_map").is_some() {
+            note.push_str(" To show the user where places are, use show_map.");
         }
         note
     }
@@ -295,6 +307,7 @@ mod tests {
             ("CEDAR_API_KEYS", "a"),
             ("WEB_FETCH", "off"),
             ("WEATHER", "off"),
+            ("MAPS", "off"),
         ]))
         .unwrap();
         let search =
@@ -305,11 +318,13 @@ mod tests {
         assert!(note.contains("use the web_search tool"));
         assert!(note.contains("use fetch_url") && note.contains("use download_file"));
         assert!(note.contains("use weather_forecast"));
+        assert!(note.contains("use show_map"));
         let note = plain.environment_note("none");
         assert!(note.contains("No web search tool is available"));
         assert!(!note.contains("use the web_search tool"));
         assert!(!note.contains("fetch_url"));
         assert!(!note.contains("weather_forecast"));
+        assert!(!note.contains("show_map"));
         assert!(plain
             .environment_note("bridge")
             .contains("outbound network access"));
@@ -333,7 +348,7 @@ mod tests {
         };
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a")])),
-            with(&["fetch_url", "download_file", "weather_forecast"])
+            with(&["fetch_url", "download_file", "weather_forecast", "show_map"])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])),
@@ -341,22 +356,28 @@ mod tests {
                 "web_search",
                 "fetch_url",
                 "download_file",
-                "weather_forecast"
+                "weather_forecast",
+                "show_map"
             ])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "off")])),
-            with(&["weather_forecast"])
+            with(&["weather_forecast", "show_map"])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEATHER", "off")])),
-            with(&["fetch_url", "download_file"])
+            with(&["fetch_url", "download_file", "show_map"])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("MAPS", "off")])),
+            with(&["fetch_url", "download_file", "weather_forecast"])
         );
         assert_eq!(
             tool_names(&cfg(&[
                 ("CEDAR_API_KEYS", "a"),
                 ("WEB_FETCH", "off"),
-                ("WEATHER", "off")
+                ("WEATHER", "off"),
+                ("MAPS", "off")
             ])),
             with(&[])
         );

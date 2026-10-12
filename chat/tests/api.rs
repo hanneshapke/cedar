@@ -354,6 +354,8 @@ async fn both_uis_are_served() {
             assert!(page.contains(&format!("href=\"/{ui}/style.css\"")));
             assert!(page.contains("<script src=\"/ui-pref.js\">"));
             assert!(page.contains("<script src=\"/file-viewer.js\">"), "{uri} loads the file viewer");
+            assert!(page.contains("<script src=\"/map-view.js\">"), "{uri} loads the map view");
+            assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
         }
         let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
@@ -371,6 +373,18 @@ async fn both_uis_are_served() {
     let (status, headers, script) = fetch(&h, "/file-viewer.js").await;
     assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
     assert!(script.contains("cedarViewer"));
+
+    // So does the map view for show_map results, with the Leaflet it loads on demand served from here.
+    for (uri, content_type, marker) in [
+        ("/map-view.js", "text/javascript; charset=utf-8", "cedarMap"),
+        ("/map-view.css", "text/css; charset=utf-8", ".cedar-map"),
+        ("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8", "Leaflet 1.9.4"),
+        ("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8", ".leaflet-container"),
+    ] {
+        let (status, headers, body) = fetch(&h, uri).await;
+        assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
+        assert!(body.contains(marker), "{uri} is the expected file");
+    }
 
     // The single-UI paths are gone.
     assert_eq!(fetch(&h, "/app.js").await.0, StatusCode::NOT_FOUND);

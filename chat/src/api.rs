@@ -32,6 +32,13 @@ const LOADER_HTML: &str = include_str!("../static/index.html");
 const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
 /// Previews Markdown files and PDFs; both UIs load it.
 const FILE_VIEWER_JS: &str = include_str!("../static/file-viewer.js");
+/// Draws the `show_map` tool's result as a map; both UIs load it, and it loads Leaflet on demand.
+const MAP_VIEW_JS: &str = include_str!("../static/map-view.js");
+const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
+/// Leaflet 1.9.4 (BSD-2-Clause, see `static/vendor/leaflet/LICENSE`), served from here so no
+/// third-party code runs in the page. Only the map tiles come from another server.
+const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
+const LEAFLET_CSS: &str = include_str!("../static/vendor/leaflet/leaflet.css");
 
 /// One of the two front ends, served under its own prefix.
 struct Ui {
@@ -93,6 +100,10 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
         .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
+        .route("/map-view.js", get(|| async { asset(JS, MAP_VIEW_JS) }))
+        .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
+        .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
+        .route("/vendor/leaflet/leaflet.css", get(|| async { asset(CSS, LEAFLET_CSS) }))
         .route("/healthz", get(|| async { "ok" }));
     with_ui(with_ui(pages, V1), V2)
         .nest("/api", api)

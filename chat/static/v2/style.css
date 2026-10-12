@@ -137,6 +137,9 @@ a { color: var(--accent); }
 .clip .sub { color: var(--muted); font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .clip pre { margin: 6px 0 0; max-height: 220px; overflow: auto; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
 .clip.err { border-color: var(--error-line); } .clip.err pre { color: var(--error); }
+/* A map is a live widget: a tilted clipping would skew where Leaflet thinks the pointer is. */
+.clip.map:nth-child(n) { transform: none; margin-left: 0; }
+.clip.map .cedar-map { margin: 10px 0 0; }
 .clip.more { width: 100%; padding: 10px 16px; color: var(--muted); border-style: dashed; box-shadow: none; transform: none; margin-left: 0; text-align: left; font-size: 13px; cursor: pointer; }
 .clip.more:hover { background: var(--wash); }
 

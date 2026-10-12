@@ -42,6 +42,12 @@ Both interfaces have all of these, except where noted:
   browser's own PDF viewer, in a dialog. It is in the files panel, on finished file-tool calls, and
   on the page of a generated PDF. Files over 2 MB are not previewed. A file named `.pdf` that is not
   a PDF is refused. Images inside Markdown files are not rendered
+- A `show_map` tool call (when cedar offers the tool) is drawn as a map: a numbered pin for each
+  place on an OpenStreetMap map you can pan and zoom (click it first, so the wheel keeps scrolling
+  the conversation), a list of the places with their coordinates under it, and a note for any names
+  cedar could not find. Cedar style puts it on the desk as a clipping, Claude style under the tool
+  call. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
+  the tool call's raw output is shown
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
 - An optional model picker and an optional access token
@@ -57,10 +63,22 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat
 ```
 
 The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
-`ui-pref.js` for the saved choice, `file-viewer.js` for the file preview both interfaces share,
-and `index.html`, which sends `/` to the chosen one). It is
+`ui-pref.js` for the saved choice, `file-viewer.js` for the file preview and `map-view.js` and
+`map-view.css` for the maps, which both interfaces share, `vendor/leaflet/` for the map library, and
+`index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
 files.
+
+### Maps and privacy
+
+[Leaflet](https://leafletjs.com) 1.9.4 (BSD 2-Clause, license in `static/vendor/leaflet/LICENSE`) is
+served from this server and loaded the first time a map is shown, so no third-party code runs in
+the page, which holds your access token. The map tiles are the one thing that comes from elsewhere:
+the browser fetches them from `tile.openstreetmap.org`, which sees the viewer's IP address and the
+area shown. OpenStreetMap's [tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
+allows light use like this and asks for the attribution the map displays; a busy deployment should
+use its own tile server (the URL is `TILES` in `static/map-view.js`). The chat server itself makes
+no requests for maps; cedar looks the places up (see the top-level README).
 
 ## Configuration
 

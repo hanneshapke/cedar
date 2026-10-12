@@ -1,16 +1,12 @@
+use super::open_meteo::{coordinates, OpenMeteo, Place};
 use super::{truncate_output, Tool, ToolContext};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use chrono::NaiveDate;
-use reqwest::StatusCode;
 use serde_json::{json, Value};
-use std::time::Duration;
 
 const DEFAULT_DAYS: u64 = 3;
 const MAX_DAYS: u64 = 16;
-/// Open-Meteo answers 429 when a client is over its free-tier limit; one short pause is enough for
-/// the per-minute window to move on.
-const RATE_LIMIT_PAUSE: Duration = Duration::from_secs(1);
 const ATTRIBUTION: &str = "Weather data by Open-Meteo.com (CC BY 4.0)";
 const CURRENT_VARIABLES: &str = "temperature_2m,apparent_temperature,relative_humidity_2m,\
     precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m";
@@ -25,7 +21,7 @@ const DAILY_VARIABLES: &str = "weather_code,temperature_2m_max,temperature_2m_mi
 /// only supplies a place name or coordinates; the hosts are fixed by configuration, so there is no
 /// URL for it to point somewhere else.
 pub struct WeatherForecast {
-    http: reqwest::Client,
+    api: OpenMeteo,
     forecast_url: String,
     geocoding_url: String,
 }
@@ -34,77 +30,11 @@ impl WeatherForecast {
     /// `forecast_url` and `geocoding_url` are the full endpoints (see `DEFAULT_WEATHER_BASE_URL`
     /// and `DEFAULT_WEATHER_GEOCODING_BASE_URL`).
     pub fn new(forecast_url: String, geocoding_url: String) -> Result<Self> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .context("building HTTP client")?;
         Ok(Self {
-            http,
+            api: OpenMeteo::new()?,
             forecast_url,
             geocoding_url,
         })
-    }
-
-    async fn send(
-        &self,
-        url: &str,
-        params: &[(&str, String)],
-        timeout: Duration,
-    ) -> Result<reqwest::Response> {
-        self.http
-            .get(url)
-            .header("Accept", "application/json")
-            .query(params)
-            .timeout(timeout)
-            .send()
-            .await
-            .context("sending Open-Meteo request")
-    }
-
-    /// GET `url` and parse the JSON body, retrying once if rate limited.
-    async fn get_json(
-        &self,
-        url: &str,
-        params: &[(&str, String)],
-        timeout: Duration,
-    ) -> Result<Value> {
-        let mut resp = self.send(url, params, timeout).await?;
-        if resp.status() == StatusCode::TOO_MANY_REQUESTS {
-            tokio::time::sleep(RATE_LIMIT_PAUSE).await;
-            resp = self.send(url, params, timeout).await?;
-        }
-        let status = resp.status();
-        let text = resp.text().await.context("reading Open-Meteo response")?;
-        match status {
-            s if s.is_success() => {}
-            StatusCode::TOO_MANY_REQUESTS => {
-                bail!("Open-Meteo is rate limited; wait a moment before asking again")
-            }
-            _ => bail!("Open-Meteo error {status}: {}", error_message(&text)),
-        }
-        serde_json::from_str(&text).context("parsing Open-Meteo response")
-    }
-
-    /// The best match for a place name. Open-Meteo answers 200 without `results` when nothing matches.
-    async fn geocode(&self, name: &str, timeout: Duration) -> Result<Place> {
-        let params = [
-            ("name", name.to_string()),
-            ("count", "1".to_string()),
-            ("language", "en".to_string()),
-            ("format", "json".to_string()),
-        ];
-        let body = self.get_json(&self.geocoding_url, &params, timeout).await?;
-        let hit = &body["results"][0];
-        match (hit["latitude"].as_f64(), hit["longitude"].as_f64()) {
-            (Some(latitude), Some(longitude)) => Ok(Place {
-                label: Some(place_label(hit)),
-                latitude,
-                longitude,
-            }),
-            _ => bail!(
-                "no place found for {name:?}; try a larger nearby city or pass latitude and longitude"
-            ),
-        }
     }
 }
 
@@ -150,7 +80,15 @@ impl Tool for WeatherForecast {
                 latitude,
                 longitude,
             },
-            Target::Name(name) => self.geocode(name, ctx.timeout).await?,
+            Target::Name(name) => self
+                .api
+                .geocode(&self.geocoding_url, name, ctx.timeout)
+                .await?
+                .ok_or_else(|| {
+                    anyhow!(
+                        "no place found for {name:?}; try a larger nearby city or pass latitude and longitude"
+                    )
+                })?,
         };
 
         let mut params = vec![
@@ -167,6 +105,7 @@ impl Tool for WeatherForecast {
             params.push(("precipitation_unit", "inch".to_string()));
         }
         let body = self
+            .api
             .get_json(&self.forecast_url, &params, ctx.timeout)
             .await?;
         Ok(truncate_output(
@@ -194,42 +133,20 @@ struct Request<'a> {
     imperial: bool,
 }
 
-/// A resolved location.
-#[derive(Debug)]
-struct Place {
-    label: Option<String>,
-    latitude: f64,
-    longitude: f64,
-}
-
 fn parse_input(input: &Value) -> Result<Request<'_>> {
     let name = input["location"]
         .as_str()
         .map(str::trim)
         .filter(|l| !l.is_empty());
-    let coordinate = |key: &str, limit: f64| -> Result<Option<f64>> {
-        match &input[key] {
-            Value::Null => Ok(None),
-            v => match v.as_f64() {
-                Some(x) if x.abs() <= limit => Ok(Some(x)),
-                Some(x) => bail!("{key} must be between -{limit} and {limit}, got {x}"),
-                None => bail!("{key} must be a number"),
-            },
-        }
-    };
-    let target = match (
-        coordinate("latitude", 90.0)?,
-        coordinate("longitude", 180.0)?,
-    ) {
-        (Some(latitude), Some(longitude)) => Target::Coordinates {
+    let target = match coordinates(input)? {
+        Some((latitude, longitude)) => Target::Coordinates {
             latitude,
             longitude,
             label: name,
         },
-        (None, None) => Target::Name(
+        None => Target::Name(
             name.ok_or_else(|| anyhow!("give a location, or both latitude and longitude"))?,
         ),
-        _ => bail!("latitude and longitude must be given together"),
     };
     let days = input["days"]
         .as_u64()
@@ -245,19 +162,6 @@ fn parse_input(input: &Value) -> Result<Request<'_>> {
         days,
         imperial,
     })
-}
-
-/// "Berlin, State of Berlin, Germany" from a geocoding hit, without repeating a name.
-fn place_label(hit: &Value) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for key in ["name", "admin1", "country"] {
-        if let Some(s) = hit[key].as_str().filter(|s| !s.is_empty()) {
-            if parts.last() != Some(&s) {
-                parts.push(s);
-            }
-        }
-    }
-    parts.join(", ")
 }
 
 /// The report the model sees: a header, the current conditions, one line per day, and the
@@ -454,14 +358,6 @@ fn compass(degrees: f64) -> &'static str {
     POINTS[(degrees.rem_euclid(360.0) / 22.5).round() as usize % 16]
 }
 
-/// The `reason` from Open-Meteo's `{"error": true, "reason": ...}` body, or a prefix of the raw body.
-fn error_message(body: &str) -> String {
-    serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| v["reason"].as_str().map(String::from))
-        .unwrap_or_else(|| truncate_output(body.trim(), 300))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,16 +485,6 @@ mod tests {
     }
 
     #[test]
-    fn place_labels_skip_repeats_and_blanks() {
-        let hit = json!({ "name": "Berlin", "admin1": "State of Berlin", "country": "Germany" });
-        assert_eq!(place_label(&hit), "Berlin, State of Berlin, Germany");
-        let hit = json!({ "name": "Singapore", "admin1": "Singapore", "country": "Singapore" });
-        assert_eq!(place_label(&hit), "Singapore");
-        let hit = json!({ "name": "Nowhere", "country": "" });
-        assert_eq!(place_label(&hit), "Nowhere");
-    }
-
-    #[test]
     fn dates_get_a_weekday() {
         assert_eq!(weekday_and_date("2026-10-12"), "Mon 2026-10-12");
         assert_eq!(weekday_and_date("soon"), "soon");
@@ -656,16 +542,5 @@ mod tests {
         assert!(err(json!({ "latitude": 0, "longitude": -180.5 })).contains("longitude"));
         assert!(err(json!({ "latitude": "north", "longitude": 0 })).contains("must be a number"));
         assert!(err(json!({ "location": "x", "units": "kelvin" })).contains("units"));
-    }
-
-    #[test]
-    fn error_reason_is_extracted() {
-        let body =
-            r#"{"error":true,"reason":"Latitude must be in range of -90 to 90°. Given: 999.0."}"#;
-        assert_eq!(
-            error_message(body),
-            "Latitude must be in range of -90 to 90°. Given: 999.0."
-        );
-        assert_eq!(error_message("  upstream exploded "), "upstream exploded");
     }
 }

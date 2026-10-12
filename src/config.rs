@@ -42,8 +42,11 @@ pub struct Config {
     pub weather: bool,
     /// Open-Meteo forecast endpoint; overridable for a self-hosted instance or so tests can mock it.
     pub weather_base_url: String,
-    /// Open-Meteo geocoding endpoint, used to turn a place name into coordinates.
+    /// Open-Meteo geocoding endpoint, used to turn a place name into coordinates (for the weather
+    /// forecast and for map pins).
     pub weather_geocoding_base_url: String,
+    /// Offer the `show_map` tool (on by default).
+    pub maps: bool,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
     pub database_url: String,
@@ -127,6 +130,7 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_WEATHER_BASE_URL.into()),
             weather_geocoding_base_url: get("WEATHER_GEOCODING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_WEATHER_GEOCODING_BASE_URL.into()),
+            maps: flag("MAPS", true)?,
             api_keys,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -246,7 +250,7 @@ mod tests {
     #[test]
     fn weather_is_on_by_default_and_points_at_open_meteo() {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
-        assert!(cfg.weather);
+        assert!(cfg.weather && cfg.maps);
         assert_eq!(cfg.weather_base_url, DEFAULT_WEATHER_BASE_URL);
         assert_eq!(
             cfg.weather_geocoding_base_url,
@@ -269,6 +273,15 @@ mod tests {
         let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("WEATHER", "maybe")]))
             .unwrap_err();
         assert!(err.to_string().contains("WEATHER"), "{err}");
+    }
+
+    #[test]
+    fn maps_can_be_turned_off() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAPS", "off")])).unwrap();
+        assert!(!cfg.maps);
+        let err =
+            Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAPS", "maybe")])).unwrap_err();
+        assert!(err.to_string().contains("MAPS"), "{err}");
     }
 
     #[test]

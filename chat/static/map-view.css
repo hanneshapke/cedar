@@ -1,0 +1,129 @@
+/* The map card for the show_map tool (see map-view.js), shared by both UIs. It only relies on
+   --accent and --muted, which both define, and uses translucent greys for edges so it reads in the
+   light and dark themes alike. */
+
+.cedar-map {
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .06);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cedar-map-title {
+  padding: 9px 12px;
+  font-weight: 600;
+}
+
+/* z-index: 0 keeps Leaflet's panes (which use z-indexes up to 1000) inside the card, under dialogs. */
+.cedar-map-frame {
+  position: relative;
+  z-index: 0;
+  height: 280px;
+  border-top: 1px solid rgba(128, 128, 128, .2);
+}
+
+.cedar-map-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.cedar-map-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  text-align: center;
+  color: var(--muted, #6f6d66);
+}
+
+.cedar-map-status.failed {
+  color: inherit;
+}
+
+.cedar-map-note {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted, #6f6d66);
+}
+
+.cedar-map-legend {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px 10px;
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid rgba(128, 128, 128, .2);
+}
+
+.cedar-map-legend li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cedar-map-badge {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent, #c96442);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  align-self: center;
+}
+
+.cedar-map-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cedar-map-coords {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted, #6f6d66);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-map-popup .cedar-map-coords {
+  margin: 0;
+  display: block;
+}
+
+/* A teardrop pin drawn in CSS: a square with three round corners, turned so the point faces down. */
+.cedar-pin-icon {
+  background: none;
+  border: 0;
+}
+
+.cedar-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border-radius: 50% 50% 50% 0;
+  border: 2px solid #fff;
+  background: var(--accent, #c96442);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+  transform: rotate(-45deg);
+}
+
+.cedar-pin-n {
+  display: block;
+  transform: rotate(45deg);
+  color: #fff;
+  font: 600 12px/26px ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+}
