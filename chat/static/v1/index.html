@@ -7,6 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23c96442' d='M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/v1/style.css">
   <link rel="stylesheet" href="/map-view.css">
+  <link rel="stylesheet" href="/schedule.css">
 </head>
 <body>
   <div class="app">
@@ -37,7 +38,11 @@
         <div class="title-wrap">
           <button class="title" id="title" type="button" title="Rename"></button>
           <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
+          <span class="cedar-sched-badge" id="schedule-badge" hidden>Scheduled run</span>
         </div>
+        <button class="icon-btn" id="schedule-btn" type="button" aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </button>
         <button class="icon-btn" id="files-btn" type="button" aria-label="Workspace files" title="Workspace files" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         </button>
@@ -118,11 +123,13 @@
       </button>
     </div>
     <p class="settings-note">Saved in this browser. Switching keeps your open conversation.</p>
+    <div class="cedar-sched-section" id="schedules-section" aria-live="polite"></div>
   </dialog>
 
   <script src="/ui-pref.js"></script>
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>
+  <script src="/schedule.js"></script>
   <script src="/v1/app.js"></script>
 </body>
 </html>

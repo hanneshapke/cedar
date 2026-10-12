@@ -11,6 +11,7 @@ const els = {
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
+  scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'),
 };
 
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
@@ -356,7 +357,16 @@ function setHeader() {
   els.title.textContent = c ? (c.title || 'New chat') : '';
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
+  els.scheduleBadge.hidden = !c?.schedule_id;
   document.title = c?.title ? `${c.title} – Cedar` : 'Cedar';
+}
+
+/** Whether the open conversation has a finished response to schedule. */
+function hasCompletedTurn() {
+  for (const view of state.views.values()) {
+    if (view.lastEvent === 'run.completed' || (!view.lastEvent && view.turn.status === 'completed')) return true;
+  }
+  return false;
 }
 
 function showNewChat() {
@@ -642,12 +652,13 @@ function finishTurn(view, event) {
     footer.append(tokens);
   }
   if (footer.childElementCount) view.body.append(footer);
+  view.lastEvent = event.type;
 
   if (state.activeTurn === view) {
     state.activeTurn = null;
-    updateComposer();
     renderSidebar();
   }
+  updateComposer();
   if (els.filesDialog.open) loadFiles(); // the response may have added or changed files
   scrollToBottom(false);
 }
@@ -781,6 +792,7 @@ function updateComposer() {
   els.send.disabled = state.sending || (!busy && !els.input.value.trim());
   els.input.placeholder = state.current ? 'Reply to Cedar…' : 'How can I help you today?';
   els.hint.textContent = busy ? 'Working… you can stop the response at any time.' : '';
+  els.scheduleBtn.hidden = !state.current || busy || state.sending || !hasCompletedTurn();
 }
 
 function autosize() {
@@ -892,6 +904,7 @@ els.titleInput.addEventListener('keydown', (e) => {
 els.titleInput.addEventListener('blur', () => finishRename(true));
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
+els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 $('new-chat').addEventListener('click', () => { toggleSidebar(false); location.hash = '#/'; if (!state.current) els.input.focus(); });
@@ -908,6 +921,7 @@ document.addEventListener('keydown', (e) => {
 
 async function init() {
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
+  cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
   try {
     const res = await fetch('/api/config');
     state.config = await res.json();

@@ -10,11 +10,32 @@ pub struct Exchange<'a> {
     pub assistant: &'a str,
 }
 
+fn block(ex: &Exchange<'_>) -> String {
+    format!("<user>\n{}\n</user>\n<assistant>\n{}\n</assistant>\n", ex.user, ex.assistant)
+}
+
+/// The exchanges as a plain transcript, oldest first, cut to `max_bytes` by dropping the oldest.
+/// This is what gets compacted into a schedule's prompt when cedar no longer has the run.
+pub fn transcript(history: &[Exchange<'_>], max_bytes: usize) -> String {
+    let mut kept: Vec<String> = Vec::new();
+    let mut used = 0;
+    for ex in history.iter().rev() {
+        let b = block(ex);
+        if used + b.len() > max_bytes {
+            break;
+        }
+        used += b.len();
+        kept.push(b);
+    }
+    kept.reverse();
+    kept.concat()
+}
+
 pub fn compose(history: &[Exchange<'_>], message: &str, max_history_bytes: usize) -> String {
     let mut kept: Vec<String> = Vec::new();
     let mut used = 0;
     for ex in history.iter().rev() {
-        let block = format!("<user>\n{}\n</user>\n<assistant>\n{}\n</assistant>\n", ex.user, ex.assistant);
+        let block = block(ex);
         if used + block.len() > max_history_bytes {
             break;
         }
@@ -60,6 +81,14 @@ mod tests {
         assert!(i1 < i2 && i2 < i3);
         assert!(p.ends_with("q3"));
         assert!(!p.contains("omitted"));
+    }
+
+    #[test]
+    fn transcripts_keep_the_newest_exchanges() {
+        let h = [Exchange { user: "q1", assistant: "a1" }, Exchange { user: "q2", assistant: "a2" }];
+        assert_eq!(transcript(&h, 10_000), "<user>\nq1\n</user>\n<assistant>\na1\n</assistant>\n<user>\nq2\n</user>\n<assistant>\na2\n</assistant>\n");
+        assert_eq!(transcript(&h, 60), "<user>\nq2\n</user>\n<assistant>\na2\n</assistant>\n");
+        assert_eq!(transcript(&[], 100), "");
     }
 
     #[test]

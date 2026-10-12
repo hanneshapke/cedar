@@ -11,6 +11,7 @@ const els = {
   title: $('title'), titleInput: $('title-input'), when: $('when'), status: $('status'), statusText: $('status-text'),
   stop: $('stop'), newChat: $('new-chat'), deleteChat: $('delete-chat'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
+  scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'),
   notes: $('notes'), recents: $('recents'),
   page: $('page'), pageHead: $('page-head'), pageName: $('page-name'), pageBody: $('page-body'),
   pile: $('pile'), trail: $('trail'),
@@ -645,6 +646,14 @@ function finishTurn(view, event) {
 
 // -- chrome ------------------------------------------------------------------------------------
 
+/** Whether the open conversation has a finished response to schedule. */
+function hasCompletedTurn() {
+  for (const view of state.views.values()) {
+    if (view.lastEvent === 'run.completed' || (!view.lastEvent && view.turn.status === 'completed')) return true;
+  }
+  return false;
+}
+
 function updateChrome() {
   const c = state.current;
   const busy = Boolean(state.activeTurn);
@@ -652,6 +661,8 @@ function updateChrome() {
   els.title.textContent = c ? (c.title || 'New chat') : '';
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
+  els.scheduleBadge.hidden = !c?.schedule_id;
+  els.scheduleBtn.hidden = !c || busy || state.sending || !hasCompletedTurn();
   els.stop.hidden = !busy;
   els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }) : '';
   els.status.className = 'status' + (busy ? ' live' : latest?.lastEvent === 'run.failed' ? ' error' : '');
@@ -908,6 +919,7 @@ els.stop.addEventListener('click', stopActive);
 els.newChat.addEventListener('click', () => { location.hash = '#/'; if (!state.current) els.input.focus(); });
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
+els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 els.title.addEventListener('click', startRename);
@@ -924,6 +936,7 @@ document.addEventListener('keydown', (e) => {
 
 async function init() {
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
+  cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   if (state.config.models?.length) {
     els.model.append(new Option('Default model', ''));

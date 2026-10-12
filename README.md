@@ -60,9 +60,26 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
+| `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, usage}`. |
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (database + Docker). No auth. |
 
 A run belongs to the key that created it. Anyone else gets `404`.
+
+### Compacting a run into a prompt
+
+A client that wants to repeat what a conversation achieved (the chat UI's [scheduled
+agents](chat/README.md#scheduled-agents), say) needs one prompt rather than the back-and-forth that
+led there. `POST /v1/compact` with `{"run_id": "<a finished run of yours>"}` makes a single model
+call over the run's stored conversation, with no tools and no sandbox, asking the model to write a
+prompt a fresh agent could carry out unattended: the concrete inputs, the constraints, the output
+format, the files to produce, with the dead ends and dropped requests left out. The answer is
+returned as `prompt` and not stored. `409` while the run is still going. Tool results are cut to
+2,000 characters each and the oldest messages dropped to keep the call under about 60 KB, so a long
+run still compacts cheaply; a conversation that ended in the middle of a tool call gets error
+results for the open calls first, as a [continuation](#continuing-a-run) would. `{"transcript":
+"<text>"}` (at most 100 KB) compacts a plain-text conversation instead, for a run cedar no longer
+has. `"model"` works as for a run; without it the run's model (or the default) is used. If the
+model returns no text the response is `502 bad_gateway`.
 
 ### Events
 
@@ -276,6 +293,7 @@ The integration tests drive the real router with a scripted LLM and a fake sandb
 
 - No token-level streaming from the model; events arrive per model turn and per tool call.
 - A run is a single prompt. To follow up, start a new run that [continues](#continuing-a-run) the finished one.
+- cedar has no scheduler of its own: a run starts when a client asks for it. Recurring runs are a [cedar-chat](chat/README.md#scheduled-agents) feature.
 - Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload.
 - One instance: SQLite and the run queue live in the process.
 - Tool calls within a turn run one after another.
