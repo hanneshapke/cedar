@@ -249,3 +249,20 @@ dialog p code { padding: 1px 5px; border-radius: 5px; background: var(--code-bg)
   .bubble { max-width: 92%; }
   .conv .del { opacity: 1; }
 }
+
+/* file viewer (file-viewer.js) */
+.viewer-dialog { width: min(920px, calc(100vw - 32px)); height: min(86vh, 900px); padding: 0; flex-direction: column; overflow: hidden; }
+.viewer-dialog[open] { display: flex; }
+.viewer-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.viewer-title { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 600 16px var(--serif); }
+.viewer-actions { display: flex; flex-shrink: 0; gap: 4px; }
+.viewer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 28px; }
+.viewer-body.pdf { padding: 0; overflow: hidden; }
+.viewer-pdf { display: block; width: 100%; height: 100%; border: 0; background: var(--surface); }
+.viewer-message { color: var(--muted); font-size: 14px; }
+.label-actions { display: inline-flex; gap: 2px; }
+@media (max-width: 640px) {
+  .viewer-dialog { width: 100vw; max-width: none; height: 100dvh; max-height: none; border: 0; border-radius: 0; }
+  .viewer-head { padding: 10px 12px; }
+  .viewer-body { padding: 16px; }
+}

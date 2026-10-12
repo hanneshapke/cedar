@@ -42,6 +42,7 @@ const ICONS = {
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   spark: '<svg class="spark" viewBox="0 0 24 24"><path d="M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>',
+  eye: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   document: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 12h6M9 16h6"/></svg>',
   code: '<svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>',
   chart: '<svg viewBox="0 0 24 24"><path d="M4 4v16h16M8 16v-4M12 16V8M16 16v-6"/></svg>',
@@ -583,7 +584,11 @@ function toolResult(view, d) {
   const written = !d.is_error && workspacePath(details.dataset.path);
   if (written) {
     label.classList.add('with-action');
-    label.append(downloadButton(written));
+    const actions = h('span', 'label-actions');
+    const view = viewButton(written);
+    if (view) actions.append(view);
+    actions.append(downloadButton(written));
+    label.append(actions);
   }
   details.querySelector('.tool-body').append(label, out);
 }
@@ -666,20 +671,30 @@ function downloadButton(path) {
   return button;
 }
 
+/** A button that previews the file (shared viewer), or null for files it can't show. */
+const viewButton = (path) => cedarViewer.viewButton(path, { icon: ICONS.eye });
+
+/** Fetch a workspace file with the access token. Returns the ok response, or throws. */
+async function fetchWorkspaceFile(path) {
+  if (!state.current) throw new Error('No conversation is open.');
+  let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
+  if (res.status === 401) {
+    await askToken(true);
+    res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error?.message || `Could not fetch the file (${res.status})`);
+  }
+  return res;
+}
+
 /** Fetch the file with the access token and hand it to the browser as a download. */
 async function downloadFile(path, button) {
   if (!state.current) return;
   if (button) button.disabled = true;
   try {
-    let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
-    if (res.status === 401) {
-      await askToken(true);
-      res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
-    }
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      throw new Error(data?.error?.message || `Download failed (${res.status})`);
-    }
+    const res = await fetchWorkspaceFile(path);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -711,7 +726,10 @@ function renderFiles(listing) {
     path.append(bdi);
     const size = h('span', 'size');
     size.textContent = formatSize(f.size);
-    row.append(path, size, downloadButton(f.path));
+    const view = viewButton(f.path);
+    row.append(path, size);
+    if (view) row.append(view);
+    row.append(downloadButton(f.path));
     els.filesList.append(row);
   }
   if (listing.truncated) els.filesList.append(h('div', 'empty-list', 'Only the first 1,000 files are shown.'));
@@ -876,6 +894,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   try {
     const res = await fetch('/api/config');
     state.config = await res.json();

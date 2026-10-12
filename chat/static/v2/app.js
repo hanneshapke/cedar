@@ -369,7 +369,11 @@ function clippingsFor(tool) {
         const saved = done && !tool.is_error;
         const el = clipEl(tool.name, meta, escapeHtml(path), saved ? 'saved to the workspace' : '', tool.is_error ? String(tool.output) : undefined, tool.is_error);
         const rel = saved && workspacePath(path);
-        if (rel) el.querySelector('.sub').append(' · ', downloadLink(rel));
+        if (rel) {
+          const view = cedarViewer.viewButton(rel);
+          if (view) el.querySelector('.sub').append(' · ', view);
+          el.querySelector('.sub').append(' · ', downloadLink(rel));
+        }
         return [el];
       }
       // A tool this page doesn't know yet: still show what it was given and what it returned.
@@ -404,7 +408,12 @@ function renderDesk() {
     copy.addEventListener('click', () => copyText(doc.input.content || '', copy));
     actions.append(copy);
     const rel = written && workspacePath(path);
-    if (rel) actions.append(downloadLink(rel, true));
+    if (rel) {
+      // The page shows a PDF's Markdown source; the finished PDF opens in the viewer.
+      const view = doc.name === 'generate_pdf' ? cedarViewer.viewButton(rel, { label: 'View PDF' }) : null;
+      if (view) actions.append(view);
+      actions.append(downloadLink(rel, true));
+    }
     els.pageHead.append(actions);
     const content = String(doc.input.content ?? '');
     if (/\.txt$/i.test(path)) { const pre = h('pre', 'plain'); pre.textContent = content; els.pageBody.append(pre); }
@@ -713,7 +722,10 @@ function renderFiles(listing) {
     path.append(bdi);
     const size = h('span', 'size');
     size.textContent = formatSize(f.size);
-    row.append(path, size, downloadLink(f.path));
+    const view = cedarViewer.viewButton(f.path);
+    row.append(path, size);
+    if (view) row.append(view);
+    row.append(downloadLink(f.path));
     els.filesList.append(row);
   }
   if (listing.truncated) els.filesList.append(h('div', 'empty-list', 'Only the first 1,000 files are shown.'));
@@ -743,13 +755,20 @@ function openFiles() {
   loadFiles();
 }
 
+/** Fetch a workspace file with the access token. Returns the ok response, or throws. */
+async function fetchWorkspaceFile(path) {
+  if (!state.current) throw new Error('No conversation is open.');
+  let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
+  if (res.status === 401) { await askToken(true); res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() }); }
+  if (!res.ok) { const data = await res.json().catch(() => null); throw new Error(data?.error?.message || `Could not fetch the file (${res.status})`); }
+  return res;
+}
+
 async function downloadFile(path, button) {
   if (!state.current) return;
   if (button) button.disabled = true;
   try {
-    let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
-    if (res.status === 401) { await askToken(true); res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() }); }
-    if (!res.ok) { const data = await res.json().catch(() => null); throw new Error(data?.error?.message || `Download failed (${res.status})`); }
+    const res = await fetchWorkspaceFile(path);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -871,6 +890,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   if (state.config.models?.length) {
     els.model.append(new Option('Default model', ''));

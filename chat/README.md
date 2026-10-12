@@ -38,6 +38,10 @@ Both interfaces have all of these, except where noted:
   `download_file` calls get a download button too
 - In Cedar style, a Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
   as the page, with Copy and Download
+- A View button opens a workspace Markdown file (`.md`, `.markdown`) as rendered Markdown and a PDF in the
+  browser's own PDF viewer, in a dialog. It is in the files panel, on finished file-tool calls, and
+  on the page of a generated PDF. Files over 2 MB are not previewed. A file named `.pdf` that is not
+  a PDF is refused. Images inside Markdown files are not rendered
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
 - An optional model picker and an optional access token
@@ -53,7 +57,8 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat
 ```
 
 The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
-`ui-pref.js` for the saved choice, and `index.html`, which sends `/` to the chosen one). It is
+`ui-pref.js` for the saved choice, `file-viewer.js` for the file preview both interfaces share,
+and `index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
 files.
 

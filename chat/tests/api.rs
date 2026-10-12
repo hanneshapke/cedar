@@ -353,6 +353,7 @@ async fn both_uis_are_served() {
             assert!(page.contains(&format!("<script src=\"/{ui}/app.js\">")));
             assert!(page.contains(&format!("href=\"/{ui}/style.css\"")));
             assert!(page.contains("<script src=\"/ui-pref.js\">"));
+            assert!(page.contains("<script src=\"/file-viewer.js\">"), "{uri} loads the file viewer");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
         }
         let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
@@ -365,6 +366,11 @@ async fn both_uis_are_served() {
     let (status, headers, script) = fetch(&h, "/ui-pref.js").await;
     assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
     assert!(script.contains("cedar-chat-ui"));
+
+    // So does the file viewer, which both pages load before their own script.
+    let (status, headers, script) = fetch(&h, "/file-viewer.js").await;
+    assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
+    assert!(script.contains("cedarViewer"));
 
     // The single-UI paths are gone.
     assert_eq!(fetch(&h, "/app.js").await.0, StatusCode::NOT_FOUND);

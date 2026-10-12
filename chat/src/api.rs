@@ -30,6 +30,8 @@ const MAX_CONVERSATIONS: u32 = 500;
 /// `/` only redirects to the UI the browser has chosen (see `ui-pref.js`).
 const LOADER_HTML: &str = include_str!("../static/index.html");
 const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
+/// Previews Markdown files and PDFs; both UIs load it.
+const FILE_VIEWER_JS: &str = include_str!("../static/file-viewer.js");
 
 /// One of the two front ends, served under its own prefix.
 struct Ui {
@@ -90,6 +92,7 @@ pub fn router(state: AppState) -> Router {
     let pages = Router::new()
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
         .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
+        .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
         .route("/healthz", get(|| async { "ok" }));
     with_ui(with_ui(pages, V1), V2)
         .nest("/api", api)
