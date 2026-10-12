@@ -55,7 +55,10 @@ SNAPSHOT_JS = r"""
   // an overlay (a cookie banner, a dialog) is open, and on visible text that has a spoken twin.
   // An element that isn't rendered (display: none) takes its subtree with it, but one with
   // `visibility: hidden` doesn't: its children can be visible again, so that is checked per element.
-  const rendered = (el) => (el.checkVisibility ? el.checkVisibility() : true);
+  // checkVisibility() is false for `display: contents`, which has no box of its own although its
+  // children render normally (Airbnb wraps its whole app in one), so those are walked into.
+  const rendered = (el) =>
+    !el.checkVisibility || el.checkVisibility() || getComputedStyle(el).display === "contents";
   const shown = (el) => rendered(el) && getComputedStyle(el).visibility === "visible";
 
   const roleOf = (el) => {
