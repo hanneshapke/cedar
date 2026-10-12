@@ -10,7 +10,7 @@ A request is a JSON object with an `action`:
     {"action": "navigate", "url": "https://..."}    load a page, then take a snapshot
     {"action": "snapshot"}                          snapshot the current page again
 
-The reply is one JSON object on stdout: `{"url", "title", "status", "text"}`. `status` is the HTTP
+The reply is one JSON object on stdout: `{"url", "title", "status", "text", "visible_chars"}`. `status` is the HTTP
 status of the last navigation's main document (null if there was none). `text` is the page as
 readable text, with interactive elements numbered like `[12] button "Show all reviews"`; the
 numbers are stored on the elements (`data-cedar-ref`) so later actions can address them. When a
@@ -51,10 +51,9 @@ SNAPSHOT_JS = r"""
 
   document.querySelectorAll("[data-cedar-ref]").forEach((el) => el.removeAttribute("data-cedar-ref"));
 
-  const visible = (el) => {
-    if (el.getAttribute("aria-hidden") === "true") return false;
-    return el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : true;
-  };
+  // What is on screen, not what screen readers get: sites set aria-hidden on their whole app while
+  // an overlay (a cookie banner, a dialog) is open, and on visible text that has a spoken twin.
+  const visible = (el) => (el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : true);
 
   const roleOf = (el) => {
     const explicit = (el.getAttribute("role") || "").split(" ")[0];
@@ -158,7 +157,7 @@ SNAPSHOT_JS = r"""
 
   walk(root);
   flush();
-  return { dialog: Boolean(modal), text: lines.join("\n") };
+  return { dialog: Boolean(modal), text: lines.join("\n"), visibleChars: (document.body?.innerText || "").length };
 }
 """
 
@@ -208,6 +207,9 @@ class Browser:
             "title": await self.page.title(),
             "status": self.status,
             "text": text,
+            # The length of the page's rendered text, as a check on the snapshot: a snapshot far
+            # shorter than this (with no dialog open) means the walk above missed content.
+            "visible_chars": result["visibleChars"],
         }
 
 
