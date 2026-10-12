@@ -29,3 +29,6 @@ cedar.db-*
 .env
 cedar-chat.db
 cedar-chat.db-*
+
+# Python bytecode from the sandbox and browser scripts
+__pycache__/
