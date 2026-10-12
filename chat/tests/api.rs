@@ -332,7 +332,43 @@ async fn access_token_guards_the_api_but_not_the_page() {
     assert!(cfg.contains("\"auth_required\":true"));
     let (status, page) = h.call(Method::GET, "/", None, None).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(page.contains("<script src=\"/app.js\">"));
+    assert!(page.contains("<script src=\"/ui-pref.js\">"));
+}
+
+async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
+    h.call_full(Request::builder().uri(uri).body(Body::empty()).unwrap()).await
+}
+
+#[tokio::test]
+async fn both_uis_are_served() {
+    let h = Harness::new(&[]).await;
+
+    for ui in ["v1", "v2"] {
+        // The page is reachable with and without the trailing slash and loads its own assets.
+        for uri in [format!("/{ui}"), format!("/{ui}/")] {
+            let (status, headers, page) = fetch(&h, &uri).await;
+            assert_eq!(status, StatusCode::OK, "{uri}");
+            assert_eq!(headers["content-type"], "text/html; charset=utf-8");
+            assert!(page.contains(&format!("data-ui=\"{ui}\"")), "{uri} names itself");
+            assert!(page.contains(&format!("<script src=\"/{ui}/app.js\">")));
+            assert!(page.contains(&format!("href=\"/{ui}/style.css\"")));
+            assert!(page.contains("<script src=\"/ui-pref.js\">"));
+            assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
+        }
+        let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
+        assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
+        let (status, headers, _) = fetch(&h, &format!("/{ui}/style.css")).await;
+        assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/css; charset=utf-8"));
+    }
+
+    // The shared script holds the saved choice; `/` only sends the browser to the UI it names.
+    let (status, headers, script) = fetch(&h, "/ui-pref.js").await;
+    assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
+    assert!(script.contains("cedar-chat-ui"));
+
+    // The single-UI paths are gone.
+    assert_eq!(fetch(&h, "/app.js").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(fetch(&h, "/style.css").await.0, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

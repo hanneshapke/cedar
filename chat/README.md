@@ -1,7 +1,7 @@
 # cedar-chat
 
-A Claude.ai-style web chat for a cedar server. It is a separate Rust service (axum + SQLite) that
-serves a single-page UI and sits between the browser and cedar:
+A web chat for a cedar server, with two selectable looks. It is a separate Rust service
+(axum + SQLite) that serves a single-page UI and sits between the browser and cedar:
 
 ```
 browser  ──/api──▶  cedar-chat  ──/v1 (Bearer CEDAR_API_KEY)──▶  cedar  ──▶  vLLM + sandbox
@@ -9,9 +9,26 @@ browser  ──/api──▶  cedar-chat  ──/v1 (Bearer CEDAR_API_KEY)──
 
 The cedar API key stays on the server. The browser only talks to cedar-chat.
 
+## Two interfaces
+
+The settings button (sliders icon, top right) switches between:
+
+| | Style | Layout |
+| --- | --- | --- |
+| `/v1/` | **Claude style** | Conversations in a sidebar, one thread with tool calls inline |
+| `/v2/` | **Cedar style** | "The desk": the document the agent writes is the page, with web results and command output as clippings beside it and the conversation in a margin |
+
+Your choice is saved in this browser (`localStorage`, key `cedar-chat-ui`) and decides where `/`
+goes. Without a saved choice, `/` opens Cedar style. Switching keeps the open conversation and
+your access token. Opening `/v1/` or `/v2/` directly always shows that interface and does not
+change the saved choice.
+
 ## Features
 
-- A conversation list in the sidebar, with new chat, rename (click the title), and delete
+Both interfaces have all of these, except where noted:
+
+- A conversation list (a sidebar in Claude style, an "Earlier" list in Cedar style) with new chat,
+  rename (click the title), and delete. Cedar style deletes only the open conversation
 - Replies stream in as the agent works. Text, tool calls (`bash`, `run_python`, the file,
   document, chart, and web tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
@@ -19,6 +36,8 @@ The cedar API key stays on the server. The browser only talks to cedar-chat.
 - A files panel (the folder button in the header) lists what the agent saved under `/workspace`
   and downloads any of it; finished `write_file`, `generate_pdf`, `generate_chart`, and
   `download_file` calls get a download button too
+- In Cedar style, a Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
+  as the page, with Copy and Download
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
 - An optional model picker and an optional access token
@@ -33,8 +52,10 @@ CEDAR_API_KEYS=devkey cargo run -p cedar
 CEDAR_API_KEY=devkey cargo run -p cedar-chat
 ```
 
-The UI is plain HTML, CSS, and JavaScript in `static/`. It is compiled into the binary, so there
-is no Node build step. Restart the server after you edit those files.
+The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
+`ui-pref.js` for the saved choice, and `index.html`, which sends `/` to the chosen one). It is
+compiled into the binary, so there is no Node build step. Restart the server after you edit those
+files.
 
 ## Configuration
 

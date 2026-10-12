@@ -125,9 +125,9 @@ outside `/workspace` is reported as missing.
 
 ## Web chat
 
-`chat/` holds **cedar-chat**, a separate Rust service with a Claude.ai-style web UI for talking to
-the agent: a conversation sidebar, live tool calls, a files panel for downloading what the agent
-produced, and stop and rename buttons. It calls cedar's HTTP API with a key it keeps on the server.
+`chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
+Claude-style or a Cedar-style ("desk") layout that you pick in Settings: your conversations, live
+tool calls, a files panel for downloading what the agent produced, and stop and rename buttons. It calls cedar's HTTP API with a key it keeps on the server.
 
 ```sh
 CEDAR_API_KEY=devkey cargo run -p cedar-chat   # then open http://127.0.0.1:3000

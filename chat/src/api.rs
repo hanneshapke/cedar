@@ -27,9 +27,33 @@ const MAX_MESSAGE_BYTES: usize = 32_000;
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_CONVERSATIONS: u32 = 500;
 
-const INDEX_HTML: &str = include_str!("../static/index.html");
-const APP_JS: &str = include_str!("../static/app.js");
-const STYLE_CSS: &str = include_str!("../static/style.css");
+/// `/` only redirects to the UI the browser has chosen (see `ui-pref.js`).
+const LOADER_HTML: &str = include_str!("../static/index.html");
+const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
+
+/// One of the two front ends, served under its own prefix.
+struct Ui {
+    prefix: &'static str,
+    index: &'static str,
+    js: &'static str,
+    css: &'static str,
+}
+
+/// "Claude style".
+const V1: Ui = Ui {
+    prefix: "/v1",
+    index: include_str!("../static/v1/index.html"),
+    js: include_str!("../static/v1/app.js"),
+    css: include_str!("../static/v1/style.css"),
+};
+
+/// "Cedar style".
+const V2: Ui = Ui {
+    prefix: "/v2",
+    index: include_str!("../static/v2/index.html"),
+    js: include_str!("../static/v2/app.js"),
+    css: include_str!("../static/v2/style.css"),
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -63,16 +87,30 @@ pub fn router(state: AppState) -> Router {
         // Public: the page needs it to know whether to ask for a token.
         .route("/config", get(client_config));
 
-    Router::new()
-        .route("/", get(|| async { asset("text/html; charset=utf-8", INDEX_HTML) }))
-        .route("/app.js", get(|| async { asset("text/javascript; charset=utf-8", APP_JS) }))
-        .route("/style.css", get(|| async { asset("text/css; charset=utf-8", STYLE_CSS) }))
-        .route("/healthz", get(|| async { "ok" }))
+    let pages = Router::new()
+        .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
+        .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
+        .route("/healthz", get(|| async { "ok" }));
+    with_ui(with_ui(pages, V1), V2)
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+const HTML: &str = "text/html; charset=utf-8";
+const JS: &str = "text/javascript; charset=utf-8";
+const CSS: &str = "text/css; charset=utf-8";
+
+/// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.
+fn with_ui(router: Router<AppState>, ui: Ui) -> Router<AppState> {
+    let Ui { prefix, index, js, css } = ui;
+    router
+        .route(prefix, get(move || async move { asset(HTML, index) }))
+        .route(&format!("{prefix}/"), get(move || async move { asset(HTML, index) }))
+        .route(&format!("{prefix}/app.js"), get(move || async move { asset(JS, js) }))
+        .route(&format!("{prefix}/style.css"), get(move || async move { asset(CSS, css) }))
 }
 
 fn asset(content_type: &'static str, body: &'static str) -> Response {

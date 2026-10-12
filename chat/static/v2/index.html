@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" data-ui="v2">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cedar</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='7' y='7' width='10' height='10' transform='rotate(45 12 12)' fill='%231f7a5c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/v2/style.css">
+</head>
+<body>
+  <div class="desk-app" id="app">
+    <header class="top">
+      <a class="brand" href="#/" aria-label="Cedar, new conversation"><span class="mark" aria-hidden="true"></span><span class="brand-name">Cedar</span></a>
+      <div class="title-wrap">
+        <button class="title" id="title" type="button" title="Rename"></button>
+        <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
+      </div>
+      <span class="when" id="when"></span>
+      <span class="status" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Idle</span></span>
+      <button class="ghost" id="stop" type="button" hidden>Stop</button>
+      <button class="ghost" id="new-chat" type="button">New</button>
+      <button class="ghost" id="files-btn" type="button" hidden aria-label="Workspace files" title="Workspace files">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl">Files</span>
+      </button>
+      <button class="ghost danger" id="delete-chat" type="button" hidden aria-label="Delete conversation">Delete</button>
+      <button class="ghost icon" id="settings-btn" type="button" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
+      </button>
+    </header>
+
+    <aside class="margin" aria-label="Conversation">
+      <div class="label">Margin</div>
+      <div class="notes" id="notes"></div>
+      <div class="earlier">
+        <div class="label">Earlier</div>
+        <nav class="recents" id="recents"></nav>
+      </div>
+    </aside>
+
+    <main class="desk" id="desk">
+      <article class="page" id="page">
+        <div class="page-head" id="page-head"><span class="page-name" id="page-name">Nothing on the desk yet</span></div>
+        <div class="page-body" id="page-body">
+          <div class="page-empty" id="page-empty">
+            <div class="slot">your first file lands here</div>
+            <p>Give Cedar a task. It reads, writes, and leaves the results on the desk.</p>
+          </div>
+        </div>
+      </article>
+      <div class="pile" id="pile"></div>
+      <div class="trail" id="trail"></div>
+    </main>
+
+    <footer class="slip">
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="What should be on the desk?" aria-label="Message"></textarea>
+        <select id="model" aria-label="Model" hidden></select>
+        <button class="send" id="send" type="submit" aria-label="Send message" disabled>↑</button>
+      </form>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="token-dialog">
+    <form method="dialog" id="token-form">
+      <h3>Access token</h3>
+      <p id="token-message">This server requires an access token.</p>
+      <input id="token-input" type="password" autocomplete="current-password" required aria-label="Access token">
+      <div class="dialog-actions"><button type="submit" class="primary">Continue</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="files-dialog" class="files-dialog" aria-labelledby="files-title">
+    <div class="dialog-head">
+      <h3 id="files-title">Workspace files</h3>
+      <button class="ghost icon" id="files-refresh" type="button" aria-label="Refresh" title="Refresh">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+      </button>
+      <button class="ghost icon" id="files-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p>Files the agent saved under <code>/workspace</code>. They are removed once the workspace expires.</p>
+    <div class="files-list" id="files-list"></div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-head">
+      <h3 id="settings-title">Settings</h3>
+      <button class="ghost icon" id="settings-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="ui-choice" role="group" aria-label="Interface">
+      <div class="label">Interface</div>
+      <button class="ui-option" type="button" data-ui="v1" aria-pressed="false">
+        <strong>Claude style</strong>
+        <span>A familiar chat: conversations in a sidebar, tool calls inline in the thread.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v2" aria-pressed="false">
+        <strong>Cedar style</strong>
+        <span>The desk: the file Cedar writes is the page, with search results and output beside it.</span>
+      </button>
+    </div>
+    <p class="settings-note">Saved in this browser. Switching keeps your open conversation.</p>
+  </dialog>
+
+  <script src="/ui-pref.js"></script>
+  <script src="/v2/app.js"></script>
+</body>
+</html>
