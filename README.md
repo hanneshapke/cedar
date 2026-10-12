@@ -119,6 +119,8 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat   # then open http://127.0.0.1:3000
 Each follow-up message continues the previous run, so the agent keeps its conversation and its
 workspace files. See [chat/README.md](chat/README.md) for configuration.
 
+To run vLLM, cedar, and the chat UI together on an NVIDIA DGX Spark, with systemd services and access from your laptop, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ![A cedar-chat conversation: the agent writes a test file, runs pytest in its sandbox, and summarizes the result in a table](docs/screenshots/conversation-light.png)
 
 | Starting a conversation | A response in progress |
