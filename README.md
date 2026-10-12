@@ -173,6 +173,9 @@ Settings come from environment variables. The important ones:
 | `WEB_FETCH_ALLOW_PRIVATE` | `off` (set `on` to let those tools reach loopback and private addresses) |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
+| `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
+| `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the browser needs internet access, so `none` is refused) |
+| `BROWSER_MEMORY` / `BROWSER_CPUS` | `1g` / `1` |
 
 ## Tools
 
@@ -188,12 +191,13 @@ Settings come from environment variables. The important ones:
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
 | `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
+| `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
 `web_search`, `fetch_url`, and `download_file` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
 
 `fetch_url` and `download_file` are on unless `WEB_FETCH=off`. Since their requests come from the cedar host, they only reach public addresses: hostnames are resolved by cedar and loopback, private, link-local, CGNAT, and other internal addresses are dropped (so DNS tricks don't get through), IP literals are checked the same way, every redirect is re-checked (at most 5), and proxy environment variables are ignored because a proxy would resolve names itself. `WEB_FETCH_ALLOW_PRIVATE=on` lifts that rule for tests or a trusted intranet.
 
-Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, and `download_file` are available, so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY`, cedar logs a warning at startup.
+Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, and `browser` are available, so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY`, cedar logs a warning at startup.
 
 `generate_pdf` runs in the sandbox like the file tools: the document is staged in the container's `/tmp`, rendered with `cedar-render-pdf` (a script in the sandbox image, built on [WeasyPrint](https://weasyprint.org)), and the staging file removed. Markdown gets a page template with A4 pages, margins, page numbers, and styles for headings, tables, code blocks, and footnotes; HTML that is already a full document (`<html>`) is rendered as-is with its own styles. Relative image URLs resolve against `/workspace`, so a chart the agent saved earlier can be embedded. The tool is always offered, so a custom `SANDBOX_IMAGE` must ship `cedar-render-pdf` or the model gets an error telling it so.
 
@@ -204,6 +208,24 @@ Output is cut at `TOOL_OUTPUT_MAX_BYTES` per stream with a `[truncated N bytes]`
 ### The sandbox image
 
 `sandbox/Dockerfile` builds a Debian image with `python3`, `pip`, `venv`, `git`, `curl`, `jq`, `cedar-render-pdf` (WeasyPrint and python-markdown from PyPI, with the pango and DejaVu font packages they need), `cedar-render-chart` (matplotlib), and `cedar-read-document` (pypdf, python-docx, openpyxl, python-pptx). Those libraries are importable from `run_python` too. pip installs go to `/workspace/.local` (via `PYTHONUSERBASE`), so packages the agent installs in one run are still there in a [continuation](#continuing-a-run), and scripts they install are on `PATH`. Installing needs network access: with the default `SANDBOX_NETWORK=none` the container is offline and `pip install` fails to reach PyPI, so set `SANDBOX_NETWORK=bridge` if you want the agent to add packages itself (see [Safety](#safety)). Anything the agent should have offline goes into the Dockerfile.
+
+### The browser
+
+`fetch_url` reads the HTML a server sends, which is not enough for sites that build their pages with JavaScript or hide content behind buttons and dialogs (a listing's "Show all reviews", say). With `BROWSER=on`, the `browser` tool gives the model a real headless Chromium instead:
+
+- **One browser per run, started on first use.** The first `browser` call starts a container from `BROWSER_IMAGE` for the run; later calls talk to the same browser, so the page, open dialogs, and history carry over. The container is removed when the run ends (also on failure or cancellation), and leftovers from a crash are removed at startup. Runs that never browse start nothing.
+- **Pages as text.** Every call answers with the page's URL, title, HTTP status (when it isn't a success), and text: headings as Markdown, list items, and each visible interactive element numbered, like `[12] button "Show all 12 reviews"` or `[3] link "Next page" -> /search?page=2`. The model passes that number as `ref` to `click` or `type`. The numbers are reassigned on every call. When a modal dialog is open, only the dialog is described. `scroll` scrolls the open dialog (or the page) and says when it has reached the bottom, after giving the page time to load more. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES`, continued with `{"action": "snapshot", "start": N}`, and runs of look-alike numbered buttons (a calendar's days) are written as one line.
+- **Limits.** Only the six actions are passed to the browser; the model can't run scripts of its own in it. Images, media, and fonts are not loaded, downloads are refused, and links that would open a new tab open in the same one. A browser that hangs (no answer within 90 s) or dies (out of memory, say) is removed, the model is told to navigate again, and its next call starts a new one.
+
+The URL in a `navigate` call is checked like `fetch_url`'s: http(s) only, and it must resolve to public addresses unless `WEB_FETCH_ALLOW_PRIVATE=on`. Pages the browser reaches on its own (links, redirects, a page's scripts) are not checked, so it can reach whatever its Docker network reaches; see [Safety](#safety).
+
+`browser/Dockerfile` builds the image: Debian with Playwright and Chromium's headless shell, plus the driver (`browser/driver.py`, installed as `cedar-browser`) that keeps the browser running and answers one call at a time over a Unix socket. Build it with `docker build -t cedar-browser browser/`; `/readyz` reports whether it is present when the browser is on. You can drive it by hand to see what the model sees:
+
+```sh
+docker run -d --name cb --shm-size 256m cedar-browser
+docker exec cb cedar-browser call '{"action":"navigate","url":"https://example.com"}'
+docker rm -f cb
+```
 
 ## Adding a tool
 
@@ -243,6 +265,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
 - Turning networking on for the sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services.
+- The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
 ## Operations
@@ -258,9 +281,10 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 cargo test                        # unit + integration tests; no Docker or network needed
 cargo clippy --all-targets -- -D warnings
 cargo test --test docker -- --ignored   # sandbox tests; need Docker and the cedar-sandbox image
+cargo test --test docker_browser -- --ignored   # browser tests; need Docker and the cedar-browser image
 ```
 
-The integration tests drive the real router with a scripted LLM and a fake sandbox (`tests/common/mod.rs`), and the LLM client against a local mock of a chat-completions server.
+The integration tests drive the real router with a scripted LLM, a fake sandbox, and a fake browser (`tests/common/mod.rs`), and the LLM client against a local mock of a chat-completions server.
 
 ## Limitations
 

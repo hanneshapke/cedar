@@ -1,4 +1,4 @@
-# The browser behind cedar's (planned) `browser` tool: headless Chromium driven by Playwright, kept
+# The browser behind cedar's `browser` tool: headless Chromium driven by Playwright, kept
 # running for the length of a run so pages, dialogs, and scroll positions survive between calls.
 # Build with:
 #

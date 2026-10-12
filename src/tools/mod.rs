@@ -1,8 +1,9 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
 //! run's sandbox; `web_search`, `fetch_url`, and `download_file` run in the cedar process, because
-//! the sandbox has no network.
+//! the sandbox has no network; `browser` drives the run's browser container.
 
 mod bash;
+mod browser;
 mod chart;
 mod document;
 mod fetch;
@@ -12,6 +13,7 @@ mod python;
 mod web_search;
 
 pub use bash::Bash;
+pub use browser::BrowserTool;
 pub use chart::GenerateChart;
 pub use document::ReadDocument;
 pub use fetch::{DownloadFile, FetchUrl, WebClient};
@@ -20,6 +22,7 @@ pub use pdf::GeneratePdf;
 pub use python::RunPython;
 pub use web_search::BraveSearch;
 
+use crate::browser::BrowserSession;
 use crate::config::Config;
 use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
@@ -31,6 +34,8 @@ use std::time::Duration;
 /// Everything a tool needs to do its work for one run.
 pub struct ToolContext {
     pub sandbox: Arc<dyn Sandbox>,
+    /// The run's browser, started on first use. `None` when the browser is turned off.
+    pub browser: Option<Arc<BrowserSession>>,
     /// Per-command wall-clock limit.
     pub timeout: Duration,
     /// Cap on returned output, per stream.
@@ -79,8 +84,8 @@ impl ToolSet {
         ])
     }
 
-    /// The standard tools, plus `web_search` if a Brave API key is configured and `fetch_url` and
-    /// `download_file` unless `WEB_FETCH` is off.
+    /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
+    /// `download_file` unless `WEB_FETCH` is off, and `browser` if `BROWSER` is on.
     pub fn from_config(cfg: &Config) -> Result<Self> {
         let mut set = Self::standard();
         if let Some(key) = &cfg.brave_api_key {
@@ -93,6 +98,10 @@ impl ToolSet {
             let client = Arc::new(WebClient::new(cfg.web_fetch_allow_private)?);
             set.tools.push(Box::new(FetchUrl(client.clone())));
             set.tools.push(Box::new(DownloadFile(client)));
+        }
+        if cfg.browser.enabled {
+            set.tools
+                .push(Box::new(BrowserTool::new(cfg.web_fetch_allow_private)));
         }
         Ok(set)
     }
@@ -119,6 +128,12 @@ impl ToolSet {
             note.push_str(
                 " To read a web page, use fetch_url; to save a file from the web into the \
                  workspace, use download_file.",
+            );
+        }
+        if self.get("browser").is_some() {
+            note.push_str(
+                " For pages that only work in a real browser (content loaded by JavaScript, search \
+                 forms, buttons that open dialogs or load more), use the browser tool.",
             );
         }
         note
@@ -171,6 +186,43 @@ pub(crate) fn stderr_text(out: &ExecOutput, max_output: usize) -> String {
     )
     .trim()
     .to_string()
+}
+
+/// Append `text` from character `start` to `out`, cut so `out` stays within `max_bytes`. If the
+/// text doesn't fit, a note follows saying how much is left and how to read on: `how(next)` names
+/// the call, e.g. "call fetch_url with start=1234".
+pub(crate) fn append_window(
+    out: &mut String,
+    text: &str,
+    start: usize,
+    max_bytes: usize,
+    how: impl Fn(usize) -> String,
+) {
+    let total = text.chars().count();
+    if start > 0 && start >= total {
+        out.push_str(&format!(
+            "[start={start} is past the end of the text ({total} characters)]"
+        ));
+        return;
+    }
+    let rest = match text.char_indices().nth(start) {
+        Some((i, _)) => &text[i..],
+        None => "",
+    };
+    let budget = max_bytes.saturating_sub(out.len()).max(1);
+    let mut end = rest.len().min(budget);
+    while !rest.is_char_boundary(end) {
+        end -= 1;
+    }
+    out.push_str(&rest[..end]);
+    if end < rest.len() {
+        let next = start + rest[..end].chars().count();
+        out.push_str(&format!(
+            "\n[truncated: {} more characters; {} to continue]",
+            total - next,
+            how(next)
+        ));
+    }
 }
 
 /// Cut `s` to at most `max` bytes (on a char boundary), noting how much was dropped.
@@ -287,6 +339,11 @@ mod tests {
         assert!(note.contains("no internet access"));
         assert!(note.contains("use the web_search tool"));
         assert!(note.contains("use fetch_url") && note.contains("use download_file"));
+        assert!(!note.contains("browser tool"));
+        let browser = ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BROWSER", "on")]))
+            .unwrap()
+            .environment_note("none");
+        assert!(browser.contains("use the browser tool"), "{browser}");
         let note = plain.environment_note("none");
         assert!(note.contains("No web search tool is available"));
         assert!(!note.contains("use the web_search tool"));
@@ -323,6 +380,10 @@ mod tests {
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "off")])),
             with(&[])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("BROWSER", "on")])),
+            with(&["fetch_url", "download_file", "browser"])
         );
     }
 }

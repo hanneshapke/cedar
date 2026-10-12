@@ -7,7 +7,7 @@
 //! way. Proxy settings from the environment are ignored, since a proxy would resolve the name
 //! itself and bypass that check.
 
-use super::{Tool, ToolContext};
+use super::{append_window, Tool, ToolContext};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
@@ -155,6 +155,34 @@ fn request_error(url: &Url, e: reqwest::Error) -> anyhow::Error {
 fn parse_url(raw: &str, allow_private: bool) -> Result<Url> {
     let url = Url::parse(raw.trim()).map_err(|e| anyhow!("invalid url {raw:?}: {e}"))?;
     check_url(&url, allow_private)?;
+    Ok(url)
+}
+
+/// [`parse_url`], plus resolving the hostname now and refusing it unless every address is public.
+/// For requests cedar doesn't make itself (the browser's), where [`PublicOnly`] can't be applied
+/// at connection time. A name that changes its answer later is not caught by this.
+pub(crate) async fn check_public_url(raw: &str, allow_private: bool) -> Result<Url> {
+    let url = parse_url(raw, allow_private)?;
+    if allow_private {
+        return Ok(url);
+    }
+    let host = url.host_str().unwrap_or_default();
+    // IP literals were checked by `parse_url`; only names are left to resolve.
+    if host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<IpAddr>()
+        .is_err()
+    {
+        let port = url.port_or_known_default().unwrap_or(443);
+        let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
+            .await
+            .map_err(|e| anyhow!("could not resolve {host}: {e}"))?
+            .collect();
+        if addrs.is_empty() || addrs.iter().any(|a| !is_public(a.ip())) {
+            bail!("{host} does not resolve to a public address");
+        }
+    }
     Ok(url)
 }
 
@@ -408,31 +436,9 @@ fn format_page(
         ));
     }
     out.push('\n');
-
-    let total = text.chars().count();
-    if start > 0 && start >= total {
-        out.push_str(&format!(
-            "[start={start} is past the end of the text ({total} characters)]"
-        ));
-        return out;
-    }
-    let rest = match text.char_indices().nth(start) {
-        Some((i, _)) => &text[i..],
-        None => "",
-    };
-    let budget = max_bytes.saturating_sub(out.len()).max(1);
-    let mut end = rest.len().min(budget);
-    while !rest.is_char_boundary(end) {
-        end -= 1;
-    }
-    out.push_str(&rest[..end]);
-    if end < rest.len() {
-        let next = start + rest[..end].chars().count();
-        out.push_str(&format!(
-            "\n[truncated: {} more characters; call fetch_url with start={next} to continue]",
-            total - next
-        ));
-    }
+    append_window(&mut out, text, start, max_bytes, |next| {
+        format!("call fetch_url with start={next}")
+    });
     out
 }
 

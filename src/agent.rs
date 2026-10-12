@@ -1,6 +1,7 @@
 //! The agent loop: call the model, run the tools it asks for, feed the results back, and stop
 //! when the model stops asking for tools.
 
+use crate::browser::BrowserSession;
 use crate::events::Emitter;
 use crate::llm::{LlmClient, MessageRequest};
 use crate::models::{event, Run};
@@ -45,16 +46,18 @@ impl From<anyhow::Error> for AgentError {
 }
 
 /// Run `run` to completion. Persists the conversation and emits events as it goes; the caller owns
-/// the run's status, the sandbox's lifetime, and the terminal event.
+/// the run's status, the sandbox's and browser's lifetimes, and the terminal event.
 pub async fn run_agent(
     env: &AgentEnv,
     run: &Run,
     sandbox: Arc<dyn Sandbox>,
+    browser: Option<Arc<BrowserSession>>,
     events: &Emitter,
     cancel: &CancellationToken,
 ) -> Result<Completion, AgentError> {
     let ctx = ToolContext {
         sandbox,
+        browser,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
     };

@@ -1,7 +1,8 @@
 //! Owns the lifecycle of runs inside this process: queueing, cancellation, timeouts, and making
-//! sure every run ends in exactly one terminal state with its sandbox destroyed.
+//! sure every run ends in exactly one terminal state with its sandbox (and browser) destroyed.
 
 use crate::agent::{run_agent, AgentEnv, AgentError, Completion};
+use crate::browser::{BrowserFactory, BrowserSession};
 use crate::events::{Emitter, EventHub};
 use crate::models::{event, Run, RunStatus};
 use crate::sandbox::{Sandbox, SandboxFactory};
@@ -28,6 +29,8 @@ struct Inner {
     hub: Arc<EventHub>,
     env: AgentEnv,
     sandboxes: Arc<dyn SandboxFactory>,
+    /// `None` when the browser is turned off.
+    browsers: Option<Arc<dyn BrowserFactory>>,
     /// Bounds how many runs execute at once; the rest stay `queued`.
     slots: Arc<Semaphore>,
     run_timeout: Duration,
@@ -45,6 +48,7 @@ impl RunManager {
         hub: Arc<EventHub>,
         env: AgentEnv,
         sandboxes: Arc<dyn SandboxFactory>,
+        browsers: Option<Arc<dyn BrowserFactory>>,
         max_concurrent_runs: usize,
         run_timeout: Duration,
     ) -> Self {
@@ -53,6 +57,7 @@ impl RunManager {
             hub,
             env,
             sandboxes,
+            browsers,
             slots: Arc::new(Semaphore::new(max_concurrent_runs)),
             run_timeout,
             active: Mutex::new(HashMap::new()),
@@ -81,6 +86,18 @@ impl RunManager {
             // Docker may simply be down right now; /readyz reports that.
             Err(e) => {
                 tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover sandboxes")
+            }
+        }
+        if let Some(browsers) = &self.0.browsers {
+            match browsers.cleanup_orphans().await {
+                Ok(0) => {}
+                Ok(n) => tracing::warn!(
+                    count = n,
+                    "removed browser containers left over from a previous process"
+                ),
+                Err(e) => {
+                    tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover browsers")
+                }
             }
         }
         if let Err(e) = self.remove_stray_workspaces().await {
@@ -188,10 +205,20 @@ impl Inner {
         // The work runs in a child task so a panic still ends in a recorded failure and a
         // destroyed sandbox, instead of a run stuck `running` with streams that never close.
         let sandbox = SandboxSlot::default();
+        // Nothing starts until the model first uses the browser.
+        let browser = self
+            .browsers
+            .as_ref()
+            .map(|factory| Arc::new(BrowserSession::new(factory.clone(), run.id)));
         let child = {
-            let (inner, run, token, slot) =
-                (self.clone(), run.clone(), token.clone(), sandbox.clone());
-            tokio::spawn(async move { inner.drive(&run, &token, &slot).await })
+            let (inner, run, token, slot, browser) = (
+                self.clone(),
+                run.clone(),
+                token.clone(),
+                sandbox.clone(),
+                browser.clone(),
+            );
+            tokio::spawn(async move { inner.drive(&run, &token, &slot, browser).await })
         };
         let outcome = match child.await {
             Ok(outcome) => outcome,
@@ -204,6 +231,9 @@ impl Inner {
         if let Some(sandbox) = leftover {
             sandbox.destroy().await;
         }
+        if let Some(browser) = browser {
+            browser.destroy().await;
+        }
         self.finalize(&run, outcome).await;
     }
 
@@ -212,6 +242,7 @@ impl Inner {
         run: &Run,
         token: &CancellationToken,
         slot: &SandboxSlot,
+        browser: Option<Arc<BrowserSession>>,
     ) -> Result<Completion, AgentError> {
         let _slot = tokio::select! {
             biased;
@@ -249,7 +280,7 @@ impl Inner {
 
         match tokio::time::timeout(
             self.run_timeout,
-            run_agent(&self.env, run, sandbox, &events, token),
+            run_agent(&self.env, run, sandbox, browser, &events, token),
         )
         .await
         {

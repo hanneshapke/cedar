@@ -2,6 +2,7 @@
 
 use crate::agent::AgentEnv;
 use crate::auth::{self, AuthKeys, Owner};
+use crate::browser::{BrowserFactory, DockerBrowserFactory};
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
@@ -44,18 +45,35 @@ pub struct AppState {
     pub hub: Arc<EventHub>,
     pub manager: RunManager,
     pub sandboxes: Arc<dyn SandboxFactory>,
+    /// `None` when the browser is turned off.
+    pub browsers: Option<Arc<dyn BrowserFactory>>,
     pub auth: AuthKeys,
 }
 
 impl AppState {
     /// Wire the services together. The LLM client and sandbox factory are injected so tests can
-    /// substitute fakes. Fails only if a tool can't be set up (e.g. the HTTP client for web search).
+    /// substitute fakes; browsers run in Docker when the browser is on (see [`Self::with_browsers`]).
+    /// Fails only if a tool can't be set up (e.g. the HTTP client for web search).
     pub fn new(
         cfg: Config,
         store: Store,
         llm: Arc<dyn LlmClient>,
         sandboxes: Arc<dyn SandboxFactory>,
     ) -> Result<Self> {
+        let browsers = Arc::new(DockerBrowserFactory::new(cfg.browser.clone()));
+        Self::with_browsers(cfg, store, llm, sandboxes, browsers)
+    }
+
+    /// Like [`Self::new`], with the browser factory injected too. It is only used if the
+    /// configuration turns the browser on.
+    pub fn with_browsers(
+        cfg: Config,
+        store: Store,
+        llm: Arc<dyn LlmClient>,
+        sandboxes: Arc<dyn SandboxFactory>,
+        browsers: Arc<dyn BrowserFactory>,
+    ) -> Result<Self> {
+        let browsers = cfg.browser.enabled.then_some(browsers);
         let hub = Arc::new(EventHub::new());
         let tools = ToolSet::from_config(&cfg)?;
         let env = AgentEnv {
@@ -72,6 +90,7 @@ impl AppState {
             hub.clone(),
             env,
             sandboxes.clone(),
+            browsers.clone(),
             cfg.max_concurrent_runs,
             cfg.run_timeout,
         );
@@ -82,6 +101,7 @@ impl AppState {
             hub,
             manager,
             sandboxes,
+            browsers,
             auth,
         })
     }
@@ -470,21 +490,31 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Ready when the database answers and the sandbox runtime is usable. Details go to the log, not
-/// to this unauthenticated endpoint.
+/// Ready when the database answers and the sandbox runtime (and, if it is on, the browser image)
+/// is usable. Details go to the log, not to this unauthenticated endpoint.
 async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
-    let database = state.store.ping().await;
-    let sandbox = state.sandboxes.health().await;
-    for (name, result) in [
-        ("database", database.as_ref().err()),
-        ("sandbox", sandbox.as_ref().err()),
-    ] {
-        if let Some(e) = result {
+    let mut checks = vec![
+        ("database", state.store.ping().await),
+        ("sandbox", state.sandboxes.health().await),
+    ];
+    if let Some(browsers) = &state.browsers {
+        checks.push(("browser", browsers.health().await));
+    }
+    for (name, result) in &checks {
+        if let Err(e) = result {
             tracing::warn!(check = name, error = %format!("{e:#}"), "readiness check failed");
         }
     }
-    let status = |ok: bool| if ok { "ok" } else { "failed" };
-    let ready = database.is_ok() && sandbox.is_ok();
+    let ready = checks.iter().all(|(_, r)| r.is_ok());
+    let summary: serde_json::Map<String, serde_json::Value> = checks
+        .iter()
+        .map(|(name, r)| {
+            (
+                name.to_string(),
+                json!(if r.is_ok() { "ok" } else { "failed" }),
+            )
+        })
+        .collect();
     (
         if ready {
             StatusCode::OK
@@ -493,7 +523,7 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
         },
         Json(json!({
             "status": if ready { "ok" } else { "unavailable" },
-            "checks": { "database": status(database.is_ok()), "sandbox": status(sandbox.is_ok()) },
+            "checks": summary,
         })),
     )
 }

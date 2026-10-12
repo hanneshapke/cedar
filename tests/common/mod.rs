@@ -7,6 +7,7 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::Router;
 use cedar::api::{self, AppState};
+use cedar::browser::{Browser, BrowserFactory};
 use cedar::config::Config;
 use cedar::llm::{LlmClient, LlmResponse, MessageRequest};
 use cedar::models::Usage;
@@ -314,6 +315,74 @@ impl SandboxFactory for FakeFactory {
     }
 }
 
+// -- fake browser ----------------------------------------------------------------------------
+
+/// Answers every request with a page whose text echoes the request, so tests can see what
+/// reached the browser. A click on ref 99 fails like the driver does for a stale ref.
+#[derive(Default)]
+pub struct FakeBrowser {
+    pub requests: Mutex<Vec<Value>>,
+}
+
+#[async_trait]
+impl Browser for FakeBrowser {
+    async fn call(&self, request: &Value, _timeout: Duration) -> Result<Value> {
+        self.requests.lock().unwrap().push(request.clone());
+        if request["ref"] == 99 {
+            return Err(anyhow!(
+                "[99] is not on the current page; take a snapshot to see what is"
+            ));
+        }
+        Ok(json!({
+            "url": "https://example.com/listing",
+            "title": "A listing",
+            "status": 200,
+            "text": format!("# A listing\n[1] button \"Show all reviews\"\nlast request: {request}"),
+            "visible_chars": 40,
+        }))
+    }
+}
+
+#[derive(Default)]
+pub struct FakeBrowserFactory {
+    pub created: Mutex<Vec<(Uuid, Arc<FakeBrowser>)>>,
+    pub destroyed: Mutex<Vec<Uuid>>,
+    pub cleanups: AtomicUsize,
+    pub unhealthy: AtomicBool,
+}
+
+impl FakeBrowserFactory {
+    pub fn browser(&self, index: usize) -> Arc<FakeBrowser> {
+        self.created.lock().unwrap()[index].1.clone()
+    }
+}
+
+#[async_trait]
+impl BrowserFactory for FakeBrowserFactory {
+    async fn create(&self, run_id: Uuid) -> Result<Arc<dyn Browser>> {
+        let browser = Arc::new(FakeBrowser::default());
+        self.created.lock().unwrap().push((run_id, browser.clone()));
+        Ok(browser)
+    }
+
+    async fn destroy(&self, run_id: Uuid) {
+        self.destroyed.lock().unwrap().push(run_id);
+    }
+
+    async fn cleanup_orphans(&self) -> Result<usize> {
+        self.cleanups.fetch_add(1, Ordering::SeqCst);
+        Ok(0)
+    }
+
+    async fn health(&self) -> Result<()> {
+        if self.unhealthy.load(Ordering::SeqCst) {
+            Err(anyhow!("browser image is missing"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 // -- HTTP harness ----------------------------------------------------------------------------
 
 pub const KEY_A: &str = "key-a";
@@ -325,6 +394,7 @@ pub struct TestApp {
     pub router: Router,
     pub llm: Arc<ScriptedLlm>,
     pub factory: Arc<FakeFactory>,
+    pub browsers: Arc<FakeBrowserFactory>,
 }
 
 #[derive(Debug, Clone)]
@@ -363,13 +433,22 @@ impl TestApp {
         factory: Arc<FakeFactory>,
         extra: &[(&str, &str)],
     ) -> Self {
-        let state = AppState::new(test_config(extra), store, llm.clone(), factory.clone()).unwrap();
+        let browsers = Arc::new(FakeBrowserFactory::default());
+        let state = AppState::with_browsers(
+            test_config(extra),
+            store,
+            llm.clone(),
+            factory.clone(),
+            browsers.clone(),
+        )
+        .unwrap();
         let router = api::router(state.clone());
         Self {
             state,
             router,
             llm,
             factory,
+            browsers,
         }
     }
 
