@@ -98,11 +98,14 @@ pub fn tool_use(id: &str, name: &str, input: Value) -> LlmResponse {
 
 // -- fake sandbox ----------------------------------------------------------------------------
 
+/// A workspace's files, shared by every sandbox that mounts it.
+pub type Files = Arc<Mutex<HashMap<String, Vec<u8>>>>;
+
 /// Commands with special meaning: `fatal` (sandbox breaks), `fail` (exit 1 with stderr),
 /// `big` (output larger than the cap). Anything else echoes `ran: <command>`.
 #[derive(Default)]
 pub struct FakeSandbox {
-    pub files: Mutex<HashMap<String, Vec<u8>>>,
+    pub files: Files,
     pub commands: Mutex<Vec<String>>,
     pub destroyed: AtomicBool,
 }
@@ -149,15 +152,24 @@ impl Sandbox for FakeSandbox {
     }
 }
 
+/// Workspaces are shared file maps, so a continuation sees the files its parent wrote.
 pub struct FakeFactory {
     pub created: Mutex<Vec<(Uuid, Arc<FakeSandbox>)>>,
+    pub workspaces: Mutex<HashMap<Uuid, Files>>,
+    pub removed_workspaces: Mutex<Vec<Uuid>>,
     pub cleanups: AtomicUsize,
     pub healthy: AtomicBool,
 }
 
 impl FakeFactory {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self { created: Mutex::new(vec![]), cleanups: AtomicUsize::new(0), healthy: AtomicBool::new(true) })
+        Arc::new(Self {
+            created: Mutex::new(vec![]),
+            workspaces: Mutex::default(),
+            removed_workspaces: Mutex::default(),
+            cleanups: AtomicUsize::new(0),
+            healthy: AtomicBool::new(true),
+        })
     }
 
     pub fn sandbox(&self, index: usize) -> Arc<FakeSandbox> {
@@ -171,8 +183,9 @@ impl FakeFactory {
 
 #[async_trait]
 impl SandboxFactory for FakeFactory {
-    async fn create(&self, run_id: Uuid) -> Result<Arc<dyn Sandbox>> {
-        let sandbox = Arc::new(FakeSandbox::default());
+    async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>> {
+        let files = self.workspaces.lock().unwrap().entry(workspace_id).or_default().clone();
+        let sandbox = Arc::new(FakeSandbox { files, ..Default::default() });
         self.created.lock().unwrap().push((run_id, sandbox.clone()));
         Ok(sandbox)
     }
@@ -180,6 +193,16 @@ impl SandboxFactory for FakeFactory {
     async fn cleanup_orphans(&self) -> Result<usize> {
         self.cleanups.fetch_add(1, Ordering::SeqCst);
         Ok(0)
+    }
+
+    async fn remove_workspace(&self, workspace_id: Uuid) -> Result<()> {
+        self.workspaces.lock().unwrap().remove(&workspace_id);
+        self.removed_workspaces.lock().unwrap().push(workspace_id);
+        Ok(())
+    }
+
+    async fn list_workspaces(&self) -> Result<Vec<Uuid>> {
+        Ok(self.workspaces.lock().unwrap().keys().copied().collect())
     }
 
     async fn health(&self) -> Result<()> {

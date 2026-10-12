@@ -269,15 +269,26 @@ async fn send_message(
         return Err(AppError::Conflict("wait for the current response to finish, or stop it".into()));
     }
 
-    // Only answered exchanges are useful context; failed or stopped ones are left out.
-    let history: Vec<Exchange> = turns
-        .iter()
-        .filter(|t| t.status == "completed")
-        .filter_map(|t| Some(Exchange { user: &t.prompt, assistant: t.final_text.as_deref()? }))
-        .collect();
-    let run_prompt = prompt::compose(&history, content, state.cfg.history_max_bytes);
-
-    let run = state.cedar.create_run(&run_prompt, model).await?;
+    // Continue the previous run, so the agent keeps the whole conversation (tool calls included)
+    // and the files in its sandbox workspace.
+    let run = match turns.last() {
+        None => state.cedar.create_run(content, model, None).await?,
+        Some(last) => match state.cedar.create_run(content, model, Some(last.run_id)).await {
+            // cedar no longer has the previous run (deleted, or a reset database). Start over,
+            // carrying what this service remembers of the conversation in the prompt.
+            Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => {
+                tracing::warn!(run_id = %last.run_id, "previous run is gone from cedar; resending history as text");
+                let history: Vec<Exchange> = turns
+                    .iter()
+                    .filter(|t| t.status == "completed")
+                    .filter_map(|t| Some(Exchange { user: &t.prompt, assistant: t.final_text.as_deref()? }))
+                    .collect();
+                let run_prompt = prompt::compose(&history, content, state.cfg.history_max_bytes);
+                state.cedar.create_run(&run_prompt, model, None).await?
+            }
+            other => other?,
+        },
+    };
     let turn = state.store.insert_turn(conversation.id, run.id, content, &run.status, model).await?;
     Ok((StatusCode::CREATED, Json(turn)))
 }

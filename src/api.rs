@@ -10,7 +10,7 @@ use crate::manager::RunManager;
 use crate::models::{CreateRunRequest, NewRun, Run, RunStatus, StoredMessage};
 use crate::sandbox::SandboxFactory;
 use crate::sse;
-use crate::store::Store;
+use crate::store::{InsertRefused, Store};
 use crate::tools::ToolSet;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -126,7 +126,16 @@ async fn create_run(
         return Err(AppError::BadRequest(format!("prompt is longer than {MAX_PROMPT_BYTES} bytes")));
     }
 
-    let model = match req.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+    // A continuation inherits its parent's model and system prompt unless the request overrides them.
+    let parent = match req.parent_id {
+        None => None,
+        Some(id) => match state.store.get_run(id).await? {
+            Some(run) if run.owner == owner.0 => Some(run),
+            _ => return Err(AppError::NotFound("parent run not found")),
+        },
+    };
+    let requested_model = req.model.as_deref().map(str::trim).filter(|m| !m.is_empty());
+    let model = match requested_model.or(parent.as_ref().map(|p| p.model.as_str())) {
         None => cfg.default_model.clone(),
         Some(m) if m.len() > MAX_MODEL_LEN => return Err(AppError::BadRequest("model name is too long".into())),
         Some(m) if m == cfg.default_model || cfg.allowed_models.is_empty() || cfg.allowed_models.iter().any(|a| a == m) => {
@@ -136,7 +145,7 @@ async fn create_run(
     };
 
     let system = match req.system.filter(|s| !s.trim().is_empty()) {
-        None => cfg.default_system_prompt.clone(),
+        None => parent.as_ref().map_or_else(|| cfg.default_system_prompt.clone(), |p| p.system.clone()),
         Some(s) if s.len() > MAX_SYSTEM_BYTES => {
             return Err(AppError::BadRequest(format!("system is longer than {MAX_SYSTEM_BYTES} bytes")))
         }
@@ -149,17 +158,18 @@ async fn create_run(
         Some(n) => n.min(cfg.max_turns_cap),
     };
 
-    let new = NewRun { owner: owner.0, prompt: req.prompt, system, model, max_turns };
-    let run = state
-        .store
-        .insert_run_limited(&new, cfg.max_active_runs_per_key)
-        .await?
-        .ok_or_else(|| {
-            AppError::TooManyRequests(format!(
-                "at most {} runs may be queued or running per API key",
-                cfg.max_active_runs_per_key
-            ))
-        })?;
+    let new = NewRun { owner: owner.0, prompt: req.prompt, system, model, max_turns, parent_id: req.parent_id };
+    let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
+        InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
+            "at most {} runs may be queued or running per API key",
+            cfg.max_active_runs_per_key
+        )),
+        InsertRefused::ParentNotFound => AppError::NotFound("parent run not found"),
+        InsertRefused::ParentActive => AppError::Conflict("the parent run has not finished yet".into()),
+        InsertRefused::ParentContinued(child) => AppError::Conflict(format!(
+            "the parent run was already continued by run {child}; continue from the latest run instead"
+        )),
+    })?;
 
     state.manager.spawn(run.clone());
     Ok((StatusCode::ACCEPTED, Json(run)))
@@ -243,6 +253,10 @@ async fn delete_run(
     let run = owned_run(&state, &owner, &id).await?;
     if !state.store.delete_finished_run(run.id).await? {
         return Err(AppError::Conflict("run is still active; cancel it first".into()));
+    }
+    // The workspace goes with the last run that uses it.
+    if state.store.release_workspace_if_unused(run.workspace_id).await? {
+        state.manager.remove_workspace(run.workspace_id).await;
     }
     Ok(StatusCode::NO_CONTENT)
 }

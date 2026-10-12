@@ -53,8 +53,17 @@ pub async fn run_agent(
 ) -> Result<Completion, AgentError> {
     let ctx = ToolContext { sandbox, timeout: env.tool_timeout, max_output: env.tool_output_max_bytes };
     let tool_defs = env.tools.definitions();
-    let mut messages: Vec<Value> = Vec::new();
-    push_message(env, run, &mut messages, "user", Value::String(run.prompt.clone())).await?;
+    // A continuation starts with a copy of its parent's conversation (made when it was created).
+    let mut messages: Vec<Value> = env
+        .store
+        .list_messages(run.id)
+        .await?
+        .into_iter()
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect();
+    let workspace_lost = !messages.is_empty() && !run.workspace_reused;
+    let opening = opening_message(&messages, &run.prompt, workspace_lost);
+    push_message(env, run, &mut messages, "user", opening).await?;
 
     for turn in 1..=run.max_turns {
         let req = MessageRequest {
@@ -118,6 +127,33 @@ pub async fn run_agent(
     Err(AgentError::Failed(format!("run did not finish within {} turns", run.max_turns)))
 }
 
+const INTERRUPTED: &str = "The run ended before this tool call finished, so it has no result.";
+const WORKSPACE_LOST: &str = "(Note: the sandbox workspace from earlier in this conversation has expired. \
+    Files created before this message no longer exist.)";
+
+/// The user message that starts a run: the prompt, after anything needed to make the inherited
+/// history valid. If the parent stopped between asking for tools and getting their results, those
+/// `tool_use` blocks still need matching `tool_result` blocks before the conversation can go on.
+pub fn opening_message(history: &[Value], prompt: &str, workspace_lost: bool) -> Value {
+    let text = if workspace_lost { format!("{WORKSPACE_LOST}\n\n{prompt}") } else { prompt.to_string() };
+    let unanswered: Vec<&Value> = match history.last() {
+        Some(last) if last["role"] == "assistant" => last["content"]
+            .as_array()
+            .map(|blocks| blocks.iter().filter(|b| b["type"] == "tool_use").map(|b| &b["id"]).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    if unanswered.is_empty() {
+        return Value::String(text);
+    }
+    let mut blocks: Vec<Value> = unanswered
+        .into_iter()
+        .map(|id| json!({ "type": "tool_result", "tool_use_id": id, "content": INTERRUPTED, "is_error": true }))
+        .collect();
+    blocks.push(json!({ "type": "text", "text": text }));
+    Value::Array(blocks)
+}
+
 /// Execute one `tool_use` block and return the matching `tool_result` block.
 async fn execute_tool_call(
     env: &AgentEnv,
@@ -169,4 +205,41 @@ async fn push_message(env: &AgentEnv, run: &Run, history: &mut Vec<Value>, role:
     env.store.append_message(run.id, role, &content).await?;
     history.push(json!({ "role": role, "content": content }));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_fresh_run_opens_with_the_plain_prompt() {
+        assert_eq!(opening_message(&[], "hi", false), json!("hi"));
+    }
+
+    #[test]
+    fn a_lost_workspace_is_mentioned() {
+        let history = [json!({ "role": "user", "content": "a" }), json!({ "role": "assistant", "content": [{ "type": "text", "text": "b" }] })];
+        let opening = opening_message(&history, "next", true);
+        let text = opening.as_str().unwrap();
+        assert!(text.starts_with(WORKSPACE_LOST) && text.ends_with("next"));
+    }
+
+    #[test]
+    fn unanswered_tool_calls_get_error_results_first() {
+        let history = [
+            json!({ "role": "user", "content": "go" }),
+            json!({ "role": "assistant", "content": [
+                { "type": "text", "text": "running" },
+                { "type": "tool_use", "id": "t1", "name": "bash", "input": {} },
+                { "type": "tool_use", "id": "t2", "name": "bash", "input": {} },
+            ] }),
+        ];
+        let opening = opening_message(&history, "next", false);
+        let blocks = opening.as_array().unwrap();
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["tool_use_id"], "t1");
+        assert_eq!(blocks[1]["tool_use_id"], "t2");
+        assert_eq!(blocks[1]["is_error"], true);
+        assert_eq!(blocks[2], json!({ "type": "text", "text": "next" }));
+    }
 }

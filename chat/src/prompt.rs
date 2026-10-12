@@ -1,8 +1,8 @@
-//! Turning a conversation into a cedar prompt.
+//! Turning a conversation into a single cedar prompt.
 //!
-//! A cedar run takes a single prompt and starts in a fresh sandbox, so each new message is sent
-//! with the earlier exchanges inlined as context. The newest exchanges are kept first when the
-//! history has to be cut to fit.
+//! Normally a new message continues the previous cedar run, which carries the conversation. This
+//! is the fallback for when that run no longer exists on cedar: the earlier exchanges this service
+//! remembers are inlined as context, newest kept first when the history has to be cut to fit.
 
 /// One earlier exchange: what the user wrote and the agent's final answer.
 pub struct Exchange<'a> {

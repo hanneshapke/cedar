@@ -17,7 +17,8 @@ pub struct Config {
     pub access_token: Option<String>,
     /// Models offered in the picker. Empty means only cedar's default.
     pub models: Vec<String>,
-    /// How much earlier conversation is sent along with each new message.
+    /// How much earlier conversation is inlined into the prompt when the previous cedar run is gone
+    /// and can't be continued.
     pub history_max_bytes: usize,
 }
 

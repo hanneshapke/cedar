@@ -44,15 +44,23 @@ pub trait Sandbox: Send + Sync {
     async fn exec(&self, command: &str, timeout: Duration, max_output: usize) -> Result<ExecOutput>;
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent>;
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
-    /// Release everything. Best effort and idempotent: failures are logged, not returned.
+    /// Stop and remove the execution environment, keeping the workspace for a later continuation.
+    /// Best effort and idempotent: failures are logged, not returned.
     async fn destroy(&self);
 }
 
 #[async_trait]
 pub trait SandboxFactory: Send + Sync {
-    async fn create(&self, run_id: Uuid) -> Result<Arc<dyn Sandbox>>;
+    /// Start a sandbox for `run_id` with `workspace_id` mounted at /workspace. The workspace is
+    /// created if it doesn't exist; otherwise its files are picked up as they were left.
+    async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>>;
     /// Remove sandboxes left behind by a previous process. Returns how many were removed.
+    /// Workspaces are not touched; see [`SandboxFactory::list_workspaces`].
     async fn cleanup_orphans(&self) -> Result<usize>;
+    /// Delete a workspace and its files. Succeeds if it doesn't exist.
+    async fn remove_workspace(&self, workspace_id: Uuid) -> Result<()>;
+    /// Every workspace that currently exists.
+    async fn list_workspaces(&self) -> Result<Vec<Uuid>>;
     /// Is the backing runtime reachable and usable? (for `/readyz`)
     async fn health(&self) -> Result<()>;
 }
@@ -62,6 +70,8 @@ pub trait SandboxFactory: Send + Sync {
 // ---------------------------------------------------------------------------------------------
 
 const LABEL: &str = "cedar.run";
+const WORKSPACE_LABEL: &str = "cedar.workspace";
+const VOLUME_PREFIX: &str = "cedar-ws-";
 const DOCKER_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 const DOCKER_CREATE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Extra time beyond the in-container `timeout` before the host gives up on `docker exec`.
@@ -72,12 +82,12 @@ fn container_name(run_id: Uuid) -> String {
     format!("cedar-run-{run_id}")
 }
 
-fn volume_name(run_id: Uuid) -> String {
-    format!("cedar-ws-{run_id}")
+fn volume_name(workspace_id: Uuid) -> String {
+    format!("{VOLUME_PREFIX}{workspace_id}")
 }
 
 /// Arguments for `docker run` that start the (idle) sandbox container.
-pub fn run_args(cfg: &SandboxConfig, run_id: Uuid) -> Vec<String> {
+pub fn run_args(cfg: &SandboxConfig, run_id: Uuid, workspace_id: Uuid) -> Vec<String> {
     let mut args: Vec<String> = [
         "run",
         "-d",
@@ -105,7 +115,7 @@ pub fn run_args(cfg: &SandboxConfig, run_id: Uuid) -> Vec<String> {
         "-w",
         "/workspace",
         "-v",
-        &format!("{}:/workspace", volume_name(run_id)),
+        &format!("{}:/workspace", volume_name(workspace_id)),
         &cfg.image,
         "sleep",
         "infinity",
@@ -176,7 +186,6 @@ async fn read_capped<R: AsyncRead + Unpin>(mut reader: R, cap: usize) -> std::io
 pub struct DockerSandbox {
     docker: String,
     container: String,
-    volume: String,
 }
 
 #[async_trait]
@@ -259,14 +268,9 @@ impl Sandbox for DockerSandbox {
     }
 
     async fn destroy(&self) {
-        let steps = [
-            vec!["rm".to_string(), "-f".into(), self.container.clone()],
-            vec!["volume".to_string(), "rm".into(), "-f".into(), self.volume.clone()],
-        ];
-        for args in steps {
-            if let Err(e) = docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
-                tracing::warn!(error = %e, container = %self.container, "sandbox cleanup step failed");
-            }
+        let args = vec!["rm".to_string(), "-f".into(), self.container.clone()];
+        if let Err(e) = docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
+            tracing::warn!(error = %e, container = %self.container, "removing sandbox container failed");
         }
     }
 }
@@ -298,17 +302,20 @@ impl DockerSandboxFactory {
 
 #[async_trait]
 impl SandboxFactory for DockerSandboxFactory {
-    async fn create(&self, run_id: Uuid) -> Result<Arc<dyn Sandbox>> {
-        let sandbox = DockerSandbox {
-            docker: self.docker.clone(),
-            container: container_name(run_id),
-            volume: volume_name(run_id),
-        };
+    async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>> {
+        let sandbox = DockerSandbox { docker: self.docker.clone(), container: container_name(run_id) };
         let started: Result<()> = async {
-            let volume_args = ["volume", "create", "--label", &format!("{LABEL}={run_id}"), &sandbox.volume]
-                .map(String::from);
+            // Creating a volume that already exists is a no-op, which is what a continuation wants.
+            let volume_args = [
+                "volume",
+                "create",
+                "--label",
+                &format!("{WORKSPACE_LABEL}={workspace_id}"),
+                &volume_name(workspace_id),
+            ]
+            .map(String::from);
             docker_checked(&self.docker, &volume_args, DOCKER_CALL_TIMEOUT).await?;
-            docker_checked(&self.docker, &run_args(&self.cfg, run_id), DOCKER_CREATE_TIMEOUT).await?;
+            docker_checked(&self.docker, &run_args(&self.cfg, run_id, workspace_id), DOCKER_CREATE_TIMEOUT).await?;
             Ok(())
         }
         .await;
@@ -329,6 +336,7 @@ impl SandboxFactory for DockerSandboxFactory {
             docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
         }
 
+        // Volumes labelled per run come from before workspaces outlived their run.
         let ls = ["volume", "ls", "-q", "--filter", &Self::label_filter()].map(String::from);
         let volumes = docker_checked(&self.docker, &ls, DOCKER_CALL_TIMEOUT).await?;
         let volumes: Vec<String> = volumes.split_whitespace().map(String::from).collect();
@@ -338,6 +346,18 @@ impl SandboxFactory for DockerSandboxFactory {
             docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
         }
         Ok(ids.len())
+    }
+
+    async fn remove_workspace(&self, workspace_id: Uuid) -> Result<()> {
+        let args = ["volume", "rm", "-f", &volume_name(workspace_id)].map(String::from);
+        docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
+        Ok(())
+    }
+
+    async fn list_workspaces(&self) -> Result<Vec<Uuid>> {
+        let ls = ["volume", "ls", "-q", "--filter", &format!("label={WORKSPACE_LABEL}")].map(String::from);
+        let names = docker_checked(&self.docker, &ls, DOCKER_CALL_TIMEOUT).await?;
+        Ok(names.split_whitespace().filter_map(|n| n.strip_prefix(VOLUME_PREFIX)?.parse().ok()).collect())
     }
 
     async fn health(&self) -> Result<()> {
@@ -363,7 +383,8 @@ mod tests {
     #[test]
     fn run_args_lock_the_container_down() {
         let id = Uuid::nil();
-        let args = run_args(&cfg(), id);
+        let ws = Uuid::max();
+        let args = run_args(&cfg(), id, ws);
         let joined = args.join(" ");
         assert!(joined.contains("--network none"));
         assert!(joined.contains("--cap-drop ALL"));
@@ -371,7 +392,7 @@ mod tests {
         assert!(joined.contains("--user 1000:1000"));
         assert!(joined.contains("--memory 256m --memory-swap 256m"));
         assert!(joined.contains(&format!("--name cedar-run-{id}")));
-        assert!(joined.contains(&format!("-v cedar-ws-{id}:/workspace")));
+        assert!(joined.contains(&format!("-v cedar-ws-{ws}:/workspace")), "the workspace, not the run, names the volume");
         // Image and the idle command come last, so nothing after the image is parsed as a docker flag.
         assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
         assert!(!joined.contains("ANTHROPIC"));

@@ -546,6 +546,180 @@ async fn a_stream_opened_before_the_run_is_picked_up_still_sees_everything() {
     assert_eq!(kinds(&events), ["run.started", "usage", "assistant.text", "run.completed"]);
 }
 
+// -- continuations ----------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_continuation_picks_up_the_conversation_and_the_workspace() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("w", "write_file", json!({ "path": "notes.txt", "content": "remember me" }))),
+        Step::Reply(text("saved")),
+        Step::Reply(tool_use("r", "read_file", json!({ "path": "notes.txt" }))),
+        Step::Reply(text("it says: remember me")),
+    ])
+    .await;
+    let first = app
+        .create_run_with(KEY_A, json!({ "prompt": "save a note", "system": "be brief", "model": "claude-sonnet-5-5" }))
+        .await;
+    let first_id = id_of(&first);
+    app.wait_status(KEY_A, &first_id, "completed").await;
+    assert_eq!(first["parent_id"], Value::Null);
+    assert_eq!(first["workspace_id"], first["id"]);
+    assert_eq!(first["workspace_reused"], false);
+
+    let second = app.create_run_with(KEY_A, json!({ "prompt": "what did you save?", "parent_id": first_id })).await;
+    let second_id = id_of(&second);
+    assert_eq!(second["parent_id"], first["id"]);
+    assert_eq!(second["workspace_id"], first["workspace_id"]);
+    assert_eq!(second["workspace_reused"], true);
+    assert_eq!(second["system"], "be brief", "system prompt is inherited");
+    assert_eq!(second["model"], "claude-sonnet-5-5", "model is inherited");
+    let run = app.wait_status(KEY_A, &second_id, "completed").await;
+    assert_eq!(run["final_text"], "it says: remember me");
+
+    // The file written by the first run was there for the second.
+    let requests = app.llm.requests.lock().unwrap().clone();
+    let read_result = requests[3]["messages"].as_array().unwrap().last().unwrap()["content"][0].clone();
+    assert_eq!(read_result["content"], "remember me");
+    assert!(read_result.get("is_error").is_none());
+
+    // The model saw the whole earlier conversation, tool calls included, then the new prompt.
+    let msgs = requests[2]["messages"].as_array().unwrap();
+    assert_eq!(msgs.len(), 5);
+    assert_eq!(msgs[0]["content"], "save a note");
+    assert_eq!(msgs[1]["content"][0]["type"], "tool_use");
+    assert_eq!(msgs[3]["content"][0]["text"], "saved");
+    assert_eq!(msgs[4], json!({ "role": "user", "content": "what did you save?" }));
+    assert_eq!(requests[2]["system"], "be brief");
+
+    // The continuation's stored messages hold the full conversation; the parent's are unchanged.
+    let (_, messages) = app.get(&format!("/v1/runs/{second_id}/messages"), KEY_A).await;
+    assert_eq!(messages["messages"].as_array().unwrap().len(), 8);
+    let (_, messages) = app.get(&format!("/v1/runs/{first_id}/messages"), KEY_A).await;
+    assert_eq!(messages["messages"].as_array().unwrap().len(), 4);
+
+    let started = &app.events(KEY_A, &second_id, None).await[0];
+    assert_eq!(started.data["data"]["workspace_reused"], true);
+    assert_eq!(started.data["data"]["parent_id"], first["id"]);
+}
+
+#[tokio::test]
+async fn continuations_form_a_single_line_of_finished_runs() {
+    let gate = Arc::new(Semaphore::new(0));
+    let app = TestApp::new(vec![
+        Step::Gate(gate.clone(), text("one")),
+        Step::Reply(text("two")),
+        Step::Reply(text("three")),
+    ])
+    .await;
+    let first = id_of(&app.create_run(KEY_A, "1").await);
+    let continue_from = |parent: &str| json!({ "prompt": "next", "parent_id": parent });
+
+    let (status, err) = app.json(Method::POST, "/v1/runs", Some(KEY_A), Some(continue_from(&first))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "can't continue a run that is still going: {err}");
+    gate.add_permits(1);
+    app.wait_status(KEY_A, &first, "completed").await;
+
+    let (status, _) = app.json(Method::POST, "/v1/runs", Some(KEY_B), Some(continue_from(&first))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "other keys' runs can't be continued");
+    let missing = uuid::Uuid::new_v4().to_string();
+    let (status, _) = app.json(Method::POST, "/v1/runs", Some(KEY_A), Some(continue_from(&missing))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let second = id_of(&app.create_run_with(KEY_A, continue_from(&first)).await);
+    app.wait_status(KEY_A, &second, "completed").await;
+    let (status, err) = app.json(Method::POST, "/v1/runs", Some(KEY_A), Some(continue_from(&first))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(err["error"]["message"].as_str().unwrap().contains(&second), "{err}");
+
+    let third = id_of(&app.create_run_with(KEY_A, continue_from(&second)).await);
+    app.wait_status(KEY_A, &third, "completed").await;
+    let msgs = app.llm.requests.lock().unwrap()[2]["messages"].as_array().unwrap().len();
+    assert_eq!(msgs, 5, "three prompts and two answers");
+}
+
+#[tokio::test]
+async fn continuing_a_run_that_died_mid_tool_call_answers_the_dangling_call() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("t1", "bash", json!({ "command": "fatal" }))),
+        Step::Reply(text("recovered")),
+    ])
+    .await;
+    let first = id_of(&app.create_run(KEY_A, "x").await);
+    app.wait_status(KEY_A, &first, "failed").await;
+    let second = id_of(&app.create_run_with(KEY_A, json!({ "prompt": "try again", "parent_id": first })).await);
+    app.wait_status(KEY_A, &second, "completed").await;
+
+    let requests = app.llm.requests.lock().unwrap();
+    let opening = requests[1]["messages"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(opening["role"], "user");
+    assert_eq!(opening["content"][0]["type"], "tool_result");
+    assert_eq!(opening["content"][0]["tool_use_id"], "t1");
+    assert_eq!(opening["content"][0]["is_error"], true);
+    assert_eq!(opening["content"][1], json!({ "type": "text", "text": "try again" }));
+}
+
+#[tokio::test]
+async fn idle_workspaces_expire_and_continuations_then_start_fresh() {
+    let app = TestApp::new(vec![Step::Reply(text("one")), Step::Reply(text("two"))]).await;
+    let first = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &id_of(&first), "completed").await;
+    tokio::time::sleep(Duration::from_millis(5)).await;
+
+    assert_eq!(app.state.manager.expire_workspaces(Duration::ZERO).await.unwrap(), 1);
+    let workspace: uuid::Uuid = first["workspace_id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(*app.factory.removed_workspaces.lock().unwrap(), [workspace]);
+
+    let second = app.create_run_with(KEY_A, json!({ "prompt": "2", "parent_id": first["id"] })).await;
+    assert_eq!(second["workspace_reused"], false);
+    assert_ne!(second["workspace_id"], first["workspace_id"]);
+    app.wait_status(KEY_A, &id_of(&second), "completed").await;
+    let opening = app.llm.requests.lock().unwrap()[1]["messages"].as_array().unwrap().last().unwrap().clone();
+    let text = opening["content"].as_str().unwrap();
+    assert!(text.contains("workspace from earlier in this conversation has expired") && text.ends_with('2'), "{text}");
+}
+
+#[tokio::test]
+async fn active_workspaces_do_not_expire() {
+    let app = TestApp::new(vec![Step::Block]).await;
+    let id = id_of(&app.create_run(KEY_A, "x").await);
+    app.wait_status(KEY_A, &id, "running").await;
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert_eq!(app.state.manager.expire_workspaces(Duration::ZERO).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn a_workspace_is_removed_with_the_last_run_that_uses_it() {
+    let app = TestApp::new(vec![Step::Reply(text("one")), Step::Reply(text("two"))]).await;
+    let first = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &id_of(&first), "completed").await;
+    let second = id_of(&app.create_run_with(KEY_A, json!({ "prompt": "2", "parent_id": first["id"] })).await);
+    app.wait_status(KEY_A, &second, "completed").await;
+
+    let (status, _) = app.json(Method::DELETE, &format!("/v1/runs/{}", id_of(&first)), Some(KEY_A), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(app.factory.removed_workspaces.lock().unwrap().is_empty(), "the continuation still uses it");
+    let (_, run) = app.get(&format!("/v1/runs/{second}"), KEY_A).await;
+    assert_eq!(run["parent_id"], Value::Null, "a deleted parent is unlinked");
+    let (_, messages) = app.get(&format!("/v1/runs/{second}/messages"), KEY_A).await;
+    assert_eq!(messages["messages"].as_array().unwrap().len(), 4, "the copied history survives");
+
+    let (status, _) = app.json(Method::DELETE, &format!("/v1/runs/{second}"), Some(KEY_A), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(app.factory.removed_workspaces.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn startup_removes_workspaces_the_database_does_not_know() {
+    let app = TestApp::new(vec![Step::Reply(text("one"))]).await;
+    let kept = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &id_of(&kept), "completed").await;
+    let stray = uuid::Uuid::new_v4();
+    app.factory.workspaces.lock().unwrap().insert(stray, Default::default());
+
+    app.state.manager.recover().await.unwrap();
+    assert_eq!(*app.factory.removed_workspaces.lock().unwrap(), [stray]);
+}
+
 // -- startup recovery -------------------------------------------------------------------------
 
 #[tokio::test]
@@ -557,6 +731,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         system: "s".into(),
         model: "m".into(),
         max_turns: 3,
+        parent_id: None,
     };
     let running = store.insert_run_limited(&new("was running"), 10).await.unwrap().unwrap();
     store.mark_running(running.id).await.unwrap();

@@ -60,10 +60,14 @@ impl CedarClient {
             .map_err(|e| AppError::BadGateway(format!("unreadable response from cedar: {e}")))
     }
 
-    pub async fn create_run(&self, prompt: &str, model: Option<&str>) -> Result<RemoteRun, AppError> {
+    /// Start a run. With `parent`, it continues that run's conversation and sandbox workspace.
+    pub async fn create_run(&self, prompt: &str, model: Option<&str>, parent: Option<Uuid>) -> Result<RemoteRun, AppError> {
         let mut body = json!({ "prompt": prompt });
         if let Some(m) = model {
             body["model"] = Value::String(m.to_string());
+        }
+        if let Some(p) = parent {
+            body["parent_id"] = Value::String(p.to_string());
         }
         self.json(self.http.post(self.url("/runs")).json(&body)).await
     }

@@ -35,6 +35,8 @@ struct Inner {
     active: Mutex<HashMap<Uuid, CancellationToken>>,
     tracker: TaskTracker,
     shutting_down: AtomicBool,
+    /// Stops background housekeeping on shutdown.
+    stop: CancellationToken,
 }
 
 impl RunManager {
@@ -56,6 +58,7 @@ impl RunManager {
             active: Mutex::new(HashMap::new()),
             tracker: TaskTracker::new(),
             shutting_down: AtomicBool::new(false),
+            stop: CancellationToken::new(),
         }))
     }
 
@@ -72,7 +75,59 @@ impl RunManager {
             // Docker may simply be down right now; /readyz reports that.
             Err(e) => tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover sandboxes"),
         }
+        if let Err(e) = self.remove_stray_workspaces().await {
+            tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover workspaces");
+        }
         Ok(())
+    }
+
+    /// Remove workspace volumes the database no longer considers live (expired or deleted while
+    /// docker was unreachable, or from a database that was reset).
+    async fn remove_stray_workspaces(&self) -> Result<()> {
+        let live: std::collections::HashSet<Uuid> = self.0.store.live_workspaces().await?.into_iter().collect();
+        for ws in self.0.sandboxes.list_workspaces().await? {
+            if !live.contains(&ws) {
+                self.remove_workspace(ws).await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Delete a workspace's files. Failures are logged; startup recovery retries them.
+    pub async fn remove_workspace(&self, workspace_id: Uuid) {
+        if let Err(e) = self.0.sandboxes.remove_workspace(workspace_id).await {
+            tracing::warn!(%workspace_id, error = %format!("{e:#}"), "could not remove workspace");
+        }
+    }
+
+    /// Periodically remove workspaces that have been idle for longer than `ttl`.
+    pub fn start_janitor(&self, ttl: Duration) {
+        let manager = self.clone();
+        let every = ttl.min(Duration::from_secs(300));
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = manager.0.stop.cancelled() => return,
+                    _ = tokio::time::sleep(every) => {}
+                }
+                if let Err(e) = manager.expire_workspaces(ttl).await {
+                    tracing::warn!(error = %format!("{e:#}"), "workspace cleanup failed");
+                }
+            }
+        });
+    }
+
+    /// Expire and remove workspaces idle for longer than `ttl`. Returns how many were removed.
+    pub async fn expire_workspaces(&self, ttl: Duration) -> Result<usize> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::from_std(ttl)?;
+        let expired = self.0.store.expire_idle_workspaces(cutoff).await?;
+        for &ws in &expired {
+            self.remove_workspace(ws).await;
+        }
+        if !expired.is_empty() {
+            tracing::info!(count = expired.len(), "removed idle workspaces");
+        }
+        Ok(expired.len())
     }
 
     /// Start executing a freshly inserted (`queued`) run in the background.
@@ -99,6 +154,7 @@ impl RunManager {
     /// First phase of shutdown: cancel every active run so streams and tasks wind down.
     pub fn begin_shutdown(&self) {
         self.0.shutting_down.store(true, Ordering::SeqCst);
+        self.0.stop.cancel();
         for token in self.0.active.lock().unwrap().values() {
             token.cancel();
         }
@@ -145,10 +201,21 @@ impl Inner {
 
         let events = Emitter::new(self.store.clone(), self.hub.clone(), run.id);
         self.store.mark_running(run.id).await?;
-        events.emit(event::RUN_STARTED, json!({ "model": run.model, "max_turns": run.max_turns })).await?;
+        events
+            .emit(
+                event::RUN_STARTED,
+                json!({
+                    "model": run.model,
+                    "max_turns": run.max_turns,
+                    "parent_id": run.parent_id,
+                    "workspace_id": run.workspace_id,
+                    "workspace_reused": run.workspace_reused,
+                }),
+            )
+            .await?;
 
         // Parked in `slot` so `execute` can destroy it whichever way this function ends.
-        let sandbox = self.sandboxes.create(run.id).await?;
+        let sandbox = self.sandboxes.create(run.id, run.workspace_id).await?;
         *slot.lock().unwrap() = Some(sandbox.clone());
 
         match tokio::time::timeout(self.run_timeout, run_agent(&self.env, run, sandbox, &events, token)).await {

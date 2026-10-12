@@ -13,7 +13,8 @@ use std::time::Duration;
 use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model, max_turns, turns, final_text, \
-    stop_reason, error, input_tokens, output_tokens, created_at, started_at, finished_at";
+    stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, workspace_reused, \
+    created_at, started_at, finished_at";
 
 fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
@@ -25,8 +26,9 @@ fn to_dt(ms: i64) -> DateTime<Utc> {
 
 fn run_from_row(r: &SqliteRow) -> Result<Run> {
     let status: &str = r.try_get("status")?;
+    let id = Uuid::parse_str(r.try_get::<&str, _>("id")?)?;
     Ok(Run {
-        id: Uuid::parse_str(r.try_get::<&str, _>("id")?)?,
+        id,
         owner: r.try_get("owner")?,
         status: RunStatus::parse(status).ok_or_else(|| anyhow!("unknown run status {status:?}"))?,
         prompt: r.try_get("prompt")?,
@@ -41,10 +43,26 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
             input_tokens: r.try_get::<i64, _>("input_tokens")? as u64,
             output_tokens: r.try_get::<i64, _>("output_tokens")? as u64,
         },
+        parent_id: r.try_get::<Option<&str>, _>("parent_id")?.map(Uuid::parse_str).transpose()?,
+        workspace_id: r.try_get::<Option<&str>, _>("workspace_id")?.map(Uuid::parse_str).transpose()?.unwrap_or(id),
+        workspace_reused: r.try_get("workspace_reused")?,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
     })
+}
+
+/// Why [`Store::insert_run`] did not create a run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InsertRefused {
+    /// The owner already has the maximum number of queued/running runs.
+    TooManyActive,
+    /// The parent doesn't exist or belongs to someone else.
+    ParentNotFound,
+    /// The parent is still queued or running.
+    ParentActive,
+    /// The parent was already continued by this run.
+    ParentContinued(Uuid),
 }
 
 /// How a run ended, as written by [`Store::finish_run`].
@@ -105,13 +123,80 @@ impl Store {
     // -- runs -------------------------------------------------------------------------------
 
     /// Insert a `queued` run unless `owner` already has `max_active` queued/running runs.
-    /// The check and the insert are one statement, so concurrent requests can't both slip past it.
+    /// Only for runs without a parent; see [`Store::insert_run`].
     pub async fn insert_run_limited(&self, new: &NewRun, max_active: i64) -> Result<Option<Run>> {
+        Ok(self.insert_run(new, max_active).await?.ok())
+    }
+
+    /// Insert a `queued` run, checking the owner's active-run cap and, for a continuation, that the
+    /// parent is theirs, finished, and not continued yet. A continuation gets a copy of the parent's
+    /// conversation and reuses its workspace unless that has expired.
+    ///
+    /// Everything happens in one write transaction, so concurrent requests can't both slip past a
+    /// check, and a workspace can't expire between being picked and being used.
+    pub async fn insert_run(&self, new: &NewRun, max_active: i64) -> Result<Result<Run, InsertRefused>> {
         let id = Uuid::now_v7();
-        let res = sqlx::query(
-            "INSERT INTO runs (id, owner, status, prompt, system, model, max_turns, created_at) \
-             SELECT ?1, ?2, 'queued', ?3, ?4, ?5, ?6, ?7 \
-             WHERE (SELECT COUNT(*) FROM runs WHERE owner = ?2 AND status IN ('queued', 'running')) < ?8",
+        let now = now_ms();
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let active: i64 = sqlx::query("SELECT COUNT(*) AS n FROM runs WHERE owner = ? AND status IN ('queued', 'running')")
+            .bind(&new.owner)
+            .fetch_one(&mut *tx)
+            .await?
+            .try_get("n")?;
+        if active >= max_active {
+            return Ok(Err(InsertRefused::TooManyActive));
+        }
+
+        let mut workspace = None;
+        if let Some(parent_id) = new.parent_id {
+            let parent = sqlx::query("SELECT owner, status, workspace_id FROM runs WHERE id = ?")
+                .bind(parent_id.to_string())
+                .fetch_optional(&mut *tx)
+                .await?;
+            let Some(parent) = parent.filter(|p| p.try_get::<&str, _>("owner").ok() == Some(new.owner.as_str())) else {
+                return Ok(Err(InsertRefused::ParentNotFound));
+            };
+            if matches!(parent.try_get::<&str, _>("status")?, "queued" | "running") {
+                return Ok(Err(InsertRefused::ParentActive));
+            }
+            let child = sqlx::query("SELECT id FROM runs WHERE parent_id = ?")
+                .bind(parent_id.to_string())
+                .fetch_optional(&mut *tx)
+                .await?;
+            if let Some(child) = child {
+                return Ok(Err(InsertRefused::ParentContinued(Uuid::parse_str(child.try_get("id")?)?)));
+            }
+            let parent_ws: Option<String> = parent.try_get("workspace_id")?;
+            if let Some(ws) = parent_ws {
+                let reserved = sqlx::query("UPDATE workspaces SET last_used_at = ? WHERE id = ? AND expired_at IS NULL")
+                    .bind(now)
+                    .bind(&ws)
+                    .execute(&mut *tx)
+                    .await?;
+                if reserved.rows_affected() == 1 {
+                    workspace = Some(Uuid::parse_str(&ws)?);
+                }
+            }
+        }
+        let reused = workspace.is_some();
+        let workspace_id = match workspace {
+            Some(ws) => ws,
+            None => {
+                sqlx::query("INSERT INTO workspaces (id, owner, created_at, last_used_at) VALUES (?, ?, ?, ?)")
+                    .bind(id.to_string())
+                    .bind(&new.owner)
+                    .bind(now)
+                    .bind(now)
+                    .execute(&mut *tx)
+                    .await?;
+                id
+            }
+        };
+
+        sqlx::query(
+            "INSERT INTO runs (id, owner, status, prompt, system, model, max_turns, parent_id, workspace_id, \
+             workspace_reused, created_at) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -119,14 +204,21 @@ impl Store {
         .bind(&new.system)
         .bind(&new.model)
         .bind(new.max_turns as i64)
-        .bind(now_ms())
-        .bind(max_active)
-        .execute(&self.pool)
+        .bind(new.parent_id.map(|p| p.to_string()))
+        .bind(workspace_id.to_string())
+        .bind(reused)
+        .bind(now)
+        .execute(&mut *tx)
         .await?;
-        if res.rows_affected() == 0 {
-            return Ok(None);
+        if let Some(parent_id) = new.parent_id {
+            sqlx::query("INSERT INTO messages (run_id, seq, role, content) SELECT ?, seq, role, content FROM messages WHERE run_id = ?")
+                .bind(id.to_string())
+                .bind(parent_id.to_string())
+                .execute(&mut *tx)
+                .await?;
         }
-        self.get_run(id).await
+        tx.commit().await?;
+        Ok(Ok(self.get_run(id).await?.ok_or_else(|| anyhow!("run {id} vanished after insert"))?))
     }
 
     pub async fn get_run(&self, id: Uuid) -> Result<Option<Run>> {
@@ -201,6 +293,12 @@ impl Store {
         if res.rows_affected() == 0 {
             return Ok(None);
         }
+        // The idle clock for the workspace starts when its run ends.
+        sqlx::query("UPDATE workspaces SET last_used_at = ? WHERE id = (SELECT workspace_id FROM runs WHERE id = ?)")
+            .bind(now_ms())
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await?;
         let seq = insert_event(&mut tx, id, f.event_kind, &f.event_data).await?;
         tx.commit().await?;
         Ok(Some(seq))
@@ -250,6 +348,40 @@ impl Store {
             .execute(&self.pool)
             .await?;
         Ok(res.rows_affected() == 1)
+    }
+
+    // -- workspaces -------------------------------------------------------------------------
+
+    /// Forget a workspace no run refers to any more. Returns true if the caller should remove its
+    /// volume. Once a workspace has no runs, nothing can continue into it, so this can't race.
+    pub async fn release_workspace_if_unused(&self, workspace_id: Uuid) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM workspaces WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM runs WHERE workspace_id = ?1)")
+            .bind(workspace_id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// Mark workspaces idle since before `cutoff` (and with no active run) as expired and return
+    /// them, so their volumes can be removed. Marking first means a continuation can no longer pick
+    /// them up while the volume is being deleted.
+    pub async fn expire_idle_workspaces(&self, cutoff: DateTime<Utc>) -> Result<Vec<Uuid>> {
+        let rows = sqlx::query(
+            "UPDATE workspaces SET expired_at = ?1 WHERE expired_at IS NULL AND last_used_at < ?2 \
+             AND NOT EXISTS (SELECT 1 FROM runs WHERE runs.workspace_id = workspaces.id AND status IN ('queued', 'running')) \
+             RETURNING id",
+        )
+        .bind(now_ms())
+        .bind(cutoff.timestamp_millis())
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(|r| Ok(Uuid::parse_str(r.try_get("id")?)?)).collect()
+    }
+
+    /// Workspaces whose volumes should exist.
+    pub async fn live_workspaces(&self) -> Result<Vec<Uuid>> {
+        let rows = sqlx::query("SELECT id FROM workspaces WHERE expired_at IS NULL").fetch_all(&self.pool).await?;
+        rows.iter().map(|r| Ok(Uuid::parse_str(r.try_get("id")?)?)).collect()
     }
 
     // -- events -----------------------------------------------------------------------------
@@ -339,6 +471,7 @@ mod tests {
             system: "sys".into(),
             model: "m".into(),
             max_turns: 5,
+            parent_id: None,
         }
     }
 
@@ -351,6 +484,34 @@ mod tests {
             event_kind: event::RUN_COMPLETED,
             event_data: json!({ "final_text": text }),
         }
+    }
+
+    #[tokio::test]
+    async fn runs_from_before_continuations_migrate_and_can_be_continued() {
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap().foreign_keys(true);
+        let pool = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
+        let mut first_only = sqlx::migrate!("./migrations");
+        first_only.migrations = first_only.migrations[..1].to_vec().into();
+        first_only.run(&pool).await.unwrap();
+        let old = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO runs (id, owner, status, prompt, system, model, max_turns, created_at) \
+             VALUES (?, 'a', 'completed', 'p', 's', 'm', 5, 1)",
+        )
+        .bind(old.to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let store = Store::migrated(pool).await.unwrap();
+        let run = store.get_run(old).await.unwrap().unwrap();
+        assert_eq!((run.workspace_id, run.parent_id, run.workspace_reused), (old, None, false));
+
+        // Its workspace is long gone, so a continuation gets a new one.
+        let child = store.insert_run(&NewRun { parent_id: Some(old), ..new_run("a") }, 5).await.unwrap().unwrap();
+        assert_eq!(child.parent_id, Some(old));
+        assert!(!child.workspace_reused);
+        assert_eq!(child.workspace_id, child.id);
     }
 
     #[tokio::test]
