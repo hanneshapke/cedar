@@ -36,9 +36,17 @@ async fn main() -> Result<()> {
     tracing::info!(
         web_search = cfg.brave_api_key.is_some(),
         web_fetch = cfg.web_fetch,
+        browser = cfg.browser.enabled,
         weather = cfg.weather,
         "tools configured"
     );
+    if cfg.browser.enabled {
+        tracing::warn!(
+            network = %cfg.browser.network,
+            "BROWSER is on: only the URLs the model navigates to are checked, so pages the browser \
+             reaches by itself (links, redirects, scripts) can reach whatever its Docker network can"
+        );
+    }
     if cfg.web_fetch_allow_private {
         tracing::warn!(
             "WEB_FETCH_ALLOW_PRIVATE is on: fetch_url and download_file can reach this host and its internal network"

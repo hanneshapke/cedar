@@ -24,6 +24,17 @@ pub struct SandboxConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct BrowserConfig {
+    /// Offer the `browser` tool (off by default).
+    pub enabled: bool,
+    pub image: String,
+    /// Docker network for the browser containers. It needs internet access, so `bridge` by default.
+    pub network: String,
+    pub memory: String,
+    pub cpus: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Base URL of the OpenAI-compatible server (vLLM), including the `/v1` prefix.
     pub llm_base_url: String,
@@ -68,6 +79,7 @@ pub struct Config {
     pub workspace_ttl: Duration,
 
     pub sandbox: SandboxConfig,
+    pub browser: BrowserConfig,
 }
 
 impl Config {
@@ -180,6 +192,13 @@ impl Config {
                 memory: get("SANDBOX_MEMORY").unwrap_or_else(|| "512m".into()),
                 cpus: get("SANDBOX_CPUS").unwrap_or_else(|| "1".into()),
             },
+            browser: BrowserConfig {
+                enabled: flag("BROWSER", false)?,
+                image: get("BROWSER_IMAGE").unwrap_or_else(|| "cedar-browser:latest".into()),
+                network: get("BROWSER_NETWORK").unwrap_or_else(|| "bridge".into()),
+                memory: get("BROWSER_MEMORY").unwrap_or_else(|| "1g".into()),
+                cpus: get("BROWSER_CPUS").unwrap_or_else(|| "1".into()),
+            },
         };
         cfg.validate()?;
         Ok(cfg)
@@ -200,6 +219,9 @@ impl Config {
         }
         if self.tool_timeout.is_zero() {
             bail!("TOOL_TIMEOUT_SECS must be at least 1");
+        }
+        if self.browser.enabled && self.browser.network == "none" {
+            bail!("BROWSER_NETWORK=none leaves the browser without internet access; use a network that has it");
         }
         Ok(())
     }
@@ -320,6 +342,35 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.brave_api_key.as_deref(), Some("BSA-secret"));
         assert_eq!(cfg.brave_base_url, "http://localhost:9999/search");
+    }
+
+    #[test]
+    fn the_browser_is_off_unless_enabled() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(!cfg.browser.enabled);
+        assert_eq!(cfg.browser.image, "cedar-browser:latest");
+        assert_eq!(cfg.browser.network, "bridge");
+
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("BROWSER", "on"),
+            ("BROWSER_IMAGE", "my-browser:2"),
+            ("BROWSER_NETWORK", "cedar-web"),
+            ("BROWSER_MEMORY", "2g"),
+        ]))
+        .unwrap();
+        assert!(cfg.browser.enabled);
+        assert_eq!(cfg.browser.image, "my-browser:2");
+        assert_eq!(cfg.browser.network, "cedar-web");
+        assert_eq!(cfg.browser.memory, "2g");
+
+        let err = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("BROWSER", "on"),
+            ("BROWSER_NETWORK", "none"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("BROWSER_NETWORK"), "{err}");
     }
 
     #[test]

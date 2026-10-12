@@ -138,8 +138,8 @@ pub trait SandboxFactory: Send + Sync {
 const LABEL: &str = "cedar.run";
 const WORKSPACE_LABEL: &str = "cedar.workspace";
 const VOLUME_PREFIX: &str = "cedar-ws-";
-const DOCKER_CALL_TIMEOUT: Duration = Duration::from_secs(30);
-const DOCKER_CREATE_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const DOCKER_CALL_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const DOCKER_CREATE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Extra time beyond the in-container `timeout` before the host gives up on `docker exec`.
 const EXEC_BACKSTOP: Duration = Duration::from_secs(10);
 const WRITE_SCRIPT: &str = r#"mkdir -p -- "$(dirname -- "$1")" && cat > "$1""#;
@@ -305,7 +305,7 @@ pub fn exec_args(container: &str, timeout_secs: u64, command: &str) -> Vec<Strin
     .collect()
 }
 
-async fn docker_output(
+pub(crate) async fn docker_output(
     bin: &str,
     args: &[String],
     timeout: Duration,
@@ -330,7 +330,11 @@ async fn docker_output(
 }
 
 /// Like [`docker_output`], but a non-zero exit becomes an error carrying docker's stderr.
-async fn docker_checked(bin: &str, args: &[String], timeout: Duration) -> Result<String> {
+pub(crate) async fn docker_checked(
+    bin: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<String> {
     let out = docker_output(bin, args, timeout).await?;
     if !out.status.success() {
         bail!(
