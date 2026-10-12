@@ -2,6 +2,7 @@
 
 use crate::agent::AgentEnv;
 use crate::auth::{self, AuthKeys, Owner};
+use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
@@ -45,6 +46,8 @@ pub struct AppState {
     pub manager: RunManager,
     pub sandboxes: Arc<dyn SandboxFactory>,
     pub auth: AuthKeys,
+    /// For model calls outside a run (compaction).
+    pub llm: Arc<dyn LlmClient>,
 }
 
 impl AppState {
@@ -59,7 +62,7 @@ impl AppState {
         let hub = Arc::new(EventHub::new());
         let tools = ToolSet::from_config(&cfg)?;
         let env = AgentEnv {
-            llm,
+            llm: llm.clone(),
             environment_note: tools.environment_note(&cfg.sandbox.network),
             tools: Arc::new(tools),
             store: store.clone(),
@@ -83,6 +86,7 @@ impl AppState {
             manager,
             sandboxes,
             auth,
+            llm,
         })
     }
 }
@@ -96,6 +100,7 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/cancel", post(cancel_run))
         .route("/runs/{id}/files", get(list_files))
         .route("/runs/{id}/files/{*path}", get(download_file))
+        .route("/compact", post(compact_conversation))
         .route_layer(middleware::from_fn_with_state(
             state.auth.clone(),
             auth::require_auth,
@@ -133,6 +138,30 @@ async fn owned_run(state: &AppState, owner: &Owner, raw_id: &str) -> Result<Run,
     }
 }
 
+/// The model a request gets: what it asked for, else `inherited`, else the default; checked
+/// against `ALLOWED_MODELS`.
+fn resolve_model(
+    cfg: &Config,
+    requested: Option<&str>,
+    inherited: Option<&str>,
+) -> Result<String, AppError> {
+    let requested = requested.map(str::trim).filter(|m| !m.is_empty());
+    match requested.or(inherited) {
+        None => Ok(cfg.default_model.clone()),
+        Some(m) if m.len() > MAX_MODEL_LEN => {
+            Err(AppError::BadRequest("model name is too long".into()))
+        }
+        Some(m)
+            if m == cfg.default_model
+                || cfg.allowed_models.is_empty()
+                || cfg.allowed_models.iter().any(|a| a == m) =>
+        {
+            Ok(m.to_string())
+        }
+        Some(m) => Err(AppError::BadRequest(format!("model {m:?} is not allowed"))),
+    }
+}
+
 // -- runs -----------------------------------------------------------------------------------
 
 async fn create_run(
@@ -159,25 +188,11 @@ async fn create_run(
             _ => return Err(AppError::NotFound("parent run not found")),
         },
     };
-    let requested_model = req
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|m| !m.is_empty());
-    let model = match requested_model.or(parent.as_ref().map(|p| p.model.as_str())) {
-        None => cfg.default_model.clone(),
-        Some(m) if m.len() > MAX_MODEL_LEN => {
-            return Err(AppError::BadRequest("model name is too long".into()))
-        }
-        Some(m)
-            if m == cfg.default_model
-                || cfg.allowed_models.is_empty()
-                || cfg.allowed_models.iter().any(|a| a == m) =>
-        {
-            m.to_string()
-        }
-        Some(m) => return Err(AppError::BadRequest(format!("model {m:?} is not allowed"))),
-    };
+    let model = resolve_model(
+        cfg,
+        req.model.as_deref(),
+        parent.as_ref().map(|p| p.model.as_str()),
+    )?;
 
     let system = match req.system.filter(|s| !s.trim().is_empty()) {
         None => parent
@@ -355,6 +370,72 @@ async fn stream_events(
         run.id,
         after,
     ))
+}
+
+// -- compaction -----------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompactRequest {
+    /// A finished run of the caller's: its stored conversation is compacted.
+    run_id: Option<Uuid>,
+    /// A plain-text transcript to compact instead (for conversations cedar no longer has).
+    transcript: Option<String>,
+    model: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CompactResponse {
+    prompt: String,
+    model: String,
+    usage: crate::models::Usage,
+}
+
+/// One tool-free model call that turns a conversation into a single self-contained prompt.
+async fn compact_conversation(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(req): ApiJson<CompactRequest>,
+) -> Result<Json<CompactResponse>, AppError> {
+    let cfg = &state.cfg;
+    let (messages, inherited_model) = match (req.run_id, req.transcript) {
+        (Some(id), None) => {
+            let run = owned_run(&state, &owner, &id.to_string()).await?;
+            if !run.status.is_terminal() {
+                return Err(AppError::Conflict("the run has not finished yet".into()));
+            }
+            let stored = state.store.list_messages(run.id).await?;
+            if stored.is_empty() {
+                return Err(AppError::Conflict("the run has no conversation yet".into()));
+            }
+            (compact::messages_for_run(stored), Some(run.model))
+        }
+        (None, Some(transcript)) => {
+            if transcript.trim().is_empty() {
+                return Err(AppError::BadRequest("transcript must not be empty".into()));
+            }
+            if transcript.len() > MAX_PROMPT_BYTES {
+                return Err(AppError::BadRequest(format!(
+                    "transcript is longer than {MAX_PROMPT_BYTES} bytes"
+                )));
+            }
+            (compact::messages_for_transcript(&transcript), None)
+        }
+        _ => {
+            return Err(AppError::BadRequest(
+                "give exactly one of run_id and transcript".into(),
+            ))
+        }
+    };
+    let model = resolve_model(cfg, req.model.as_deref(), inherited_model.as_deref())?;
+    let done = compact::compact(state.llm.as_ref(), &model, cfg.max_tokens, &messages)
+        .await
+        .map_err(|e| AppError::BadGateway(format!("could not compact the conversation: {e:#}")))?;
+    Ok(Json(CompactResponse {
+        prompt: done.prompt,
+        model,
+        usage: done.usage,
+    }))
 }
 
 // -- workspace files ------------------------------------------------------------------------
