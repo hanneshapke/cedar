@@ -528,7 +528,7 @@ const WRITING_TOOLS = ['write_file', 'generate_pdf', 'generate_chart', 'download
 const TOOL_ICONS = {
   bash: 'terminal', read_file: 'file', write_file: 'pencil', web_search: 'search',
   generate_pdf: 'document', read_document: 'document', run_python: 'code',
-  generate_chart: 'chart', fetch_url: 'globe', download_file: 'download',
+  generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
 };
 
 function toolSummary(name, input) {
@@ -540,6 +540,7 @@ function toolSummary(name, input) {
   if (typeof input.url === 'string') return input.path ? `${input.url} → ${input.path}` : input.url;
   if (typeof input.path === 'string') return input.path;
   if (typeof input.query === 'string') return input.query;
+  if (typeof input.location === 'string') return input.location;
   return JSON.stringify(input);
 }
 

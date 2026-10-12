@@ -30,7 +30,7 @@ Both interfaces have all of these, except where noted:
 - A conversation list (a sidebar in Claude style, an "Earlier" list in Cedar style) with new chat,
   rename (click the title), and delete. Cedar style deletes only the open conversation
 - Replies stream in as the agent works. Text, tool calls (`bash`, `run_python`, the file,
-  document, chart, and web tools, and `web_search` when cedar has a Brave key) with their input and
+  document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
 - A stop button cancels the running response
 - A files panel (the folder button in the header) lists what the agent saved under `/workspace`

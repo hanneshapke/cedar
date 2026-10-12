@@ -124,7 +124,8 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "generate_chart",
             "web_search",
             "fetch_url",
-            "download_file"
+            "download_file",
+            "weather_forecast"
         ]
     );
 
@@ -288,7 +289,8 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
             "generate_pdf",
             "generate_chart",
             "fetch_url",
-            "download_file"
+            "download_file",
+            "weather_forecast"
         ]
     );
 }

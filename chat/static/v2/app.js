@@ -264,6 +264,11 @@ const TOOLS = {
   write_file: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path },
   generate_pdf: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path },
   generate_chart: { doing: 'Drawing', did: 'Drew', subject: (i) => i.path },
+  weather_forecast: {
+    doing: 'Checking the weather for',
+    did: 'Checked the weather for',
+    subject: (i) => i.location || (i.latitude != null ? `${i.latitude}, ${i.longitude}` : ''),
+  },
 };
 // Tools whose `path` input is a file they write, so a finished call gets a download button.
 const FILE_TOOLS = new Set(['write_file', 'generate_pdf', 'generate_chart', 'download_file']);

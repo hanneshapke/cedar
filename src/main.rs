@@ -36,6 +36,7 @@ async fn main() -> Result<()> {
     tracing::info!(
         web_search = cfg.brave_api_key.is_some(),
         web_fetch = cfg.web_fetch,
+        weather = cfg.weather,
         "tools configured"
     );
     if cfg.web_fetch_allow_private {
