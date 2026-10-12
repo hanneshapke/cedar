@@ -53,7 +53,10 @@ SNAPSHOT_JS = r"""
 
   // What is on screen, not what screen readers get: sites set aria-hidden on their whole app while
   // an overlay (a cookie banner, a dialog) is open, and on visible text that has a spoken twin.
-  const visible = (el) => (el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : true);
+  // An element that isn't rendered (display: none) takes its subtree with it, but one with
+  // `visibility: hidden` doesn't: its children can be visible again, so that is checked per element.
+  const rendered = (el) => (el.checkVisibility ? el.checkVisibility() : true);
+  const shown = (el) => rendered(el) && getComputedStyle(el).visibility === "visible";
 
   const roleOf = (el) => {
     const explicit = (el.getAttribute("role") || "").split(" ")[0];
@@ -86,7 +89,7 @@ SNAPSHOT_JS = r"""
   };
 
   // The dialog to describe instead of the page, if a modal one is open (the last one wins).
-  const modal = [...document.querySelectorAll('dialog:modal, [aria-modal="true"]')].filter(visible).pop();
+  const modal = [...document.querySelectorAll('dialog:modal, [aria-modal="true"]')].filter(shown).pop();
   const root = modal || document.body;
 
   const lines = [];
@@ -107,16 +110,19 @@ SNAPSHOT_JS = r"""
     } catch { return ""; }
   };
 
-  const walk = (node) => {
+  // `visible`: whether text directly inside `node` is visible (`visibility` of its element).
+  const walk = (node, visible) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      line += node.nodeValue;
+      if (visible) line += node.nodeValue;
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node;
-      if (SKIP.has(el.tagName.toUpperCase()) || !visible(el)) return;
-      const role = roleOf(el);
+      if (SKIP.has(el.tagName.toUpperCase()) || !rendered(el)) return;
+      const style = getComputedStyle(el);
+      visible = style.visibility === "visible";
+      const role = visible ? roleOf(el) : null;
       if (role) {
         const ref = next++;
         el.setAttribute("data-cedar-ref", String(ref));
@@ -135,27 +141,27 @@ SNAPSHOT_JS = r"""
         // Short labels are already in the description; long content is described on below.
         if (text.length <= MAX_NAME || ["textbox", "searchbox", "combobox"].includes(role)) return;
       }
-      const display = getComputedStyle(el).display;
+      const display = style.display;
       const block = !display.startsWith("inline") && display !== "contents";
       const heading = /^H[1-6]$/.test(el.tagName) ? Number(el.tagName[1]) : 0;
-      if (heading && !role) {
+      if (heading && !role && visible) {
         const text = clean(el.innerText);
         if (text) emit("#".repeat(heading) + " " + text);
         return;
       }
       if (block || el.tagName === "BR") flush();
       if (el.tagName === "LI") line += "- ";
-      if (el.tagName === "IMG" && !role && clean(el.getAttribute("alt"))) line += ` [image: ${clean(el.getAttribute("alt"))}] `;
-      if (el.shadowRoot) walk(el.shadowRoot);
-      for (const child of el.childNodes) walk(child);
+      if (el.tagName === "IMG" && visible && !role && clean(el.getAttribute("alt"))) line += ` [image: ${clean(el.getAttribute("alt"))}] `;
+      if (el.shadowRoot) walk(el.shadowRoot, visible);
+      for (const child of el.childNodes) walk(child, visible);
       if (block) flush();
       else line += " ";
       return;
     }
-    for (const child of node.childNodes) walk(child);
+    for (const child of node.childNodes) walk(child, visible);
   };
 
-  walk(root);
+  walk(root, shown(root));
   flush();
   return { dialog: Boolean(modal), text: lines.join("\n"), visibleChars: (document.body?.innerText || "").length };
 }
