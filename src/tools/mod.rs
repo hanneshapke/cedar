@@ -1,18 +1,27 @@
-//! Tools the model can call. The file, shell, and PDF tools run inside the run's sandbox;
-//! `web_search` runs in the cedar process, because the sandbox has no network.
+//! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
+//! run's sandbox; `web_search`, `fetch_url`, and `download_file` run in the cedar process, because
+//! the sandbox has no network.
 
 mod bash;
+mod chart;
+mod document;
+mod fetch;
 mod files;
 mod pdf;
+mod python;
 mod web_search;
 
 pub use bash::Bash;
+pub use chart::GenerateChart;
+pub use document::ReadDocument;
+pub use fetch::{DownloadFile, FetchUrl, WebClient};
 pub use files::{ReadFile, WriteFile};
 pub use pdf::GeneratePdf;
+pub use python::RunPython;
 pub use web_search::BraveSearch;
 
 use crate::config::Config;
-use crate::sandbox::Sandbox;
+use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -56,17 +65,22 @@ impl ToolSet {
         Self { tools }
     }
 
-    /// `bash`, `read_file`, `write_file`, and `generate_pdf`.
+    /// The tools that run in the sandbox: `bash`, `read_file`, `write_file`, `run_python`,
+    /// `read_document`, `generate_pdf`, and `generate_chart`.
     pub fn standard() -> Self {
         Self::new(vec![
             Box::new(Bash),
             Box::new(ReadFile),
             Box::new(WriteFile),
+            Box::new(RunPython),
+            Box::new(ReadDocument),
             Box::new(GeneratePdf),
+            Box::new(GenerateChart),
         ])
     }
 
-    /// The standard tools, plus `web_search` if a Brave API key is configured.
+    /// The standard tools, plus `web_search` if a Brave API key is configured and `fetch_url` and
+    /// `download_file` unless `WEB_FETCH` is off.
     pub fn from_config(cfg: &Config) -> Result<Self> {
         let mut set = Self::standard();
         if let Some(key) = &cfg.brave_api_key {
@@ -75,13 +89,19 @@ impl ToolSet {
                 cfg.brave_base_url.clone(),
             )?));
         }
+        if cfg.web_fetch {
+            let client = Arc::new(WebClient::new(cfg.web_fetch_allow_private)?);
+            set.tools.push(Box::new(FetchUrl(client.clone())));
+            set.tools.push(Box::new(DownloadFile(client)));
+        }
         Ok(set)
     }
 
-    /// A note for the system prompt saying what the sandbox can reach and how to search the web,
-    /// so the model doesn't try to fetch search engines with `curl`.
+    /// A note for the system prompt saying what the sandbox can reach and how to use the web, so
+    /// the model doesn't try to fetch search engines or pages with `curl`.
     pub fn environment_note(&self, sandbox_network: &str) -> String {
         let search = self.get("web_search").is_some();
+        let fetch = self.get("fetch_url").is_some();
         let net = if sandbox_network == "none" {
             "The sandbox has no internet access: curl, wget, and pip install cannot reach the network."
         } else {
@@ -94,7 +114,14 @@ impl ToolSet {
             "No web search tool is available, and search engines block scripted requests, so do not \
              query them with curl or wget. If a task needs information from the web, say so."
         };
-        format!("{net} {how}")
+        let mut note = format!("{net} {how}");
+        if fetch {
+            note.push_str(
+                " To read a web page, use fetch_url; to save a file from the web into the \
+                 workspace, use download_file.",
+            );
+        }
+        note
     }
 
     pub fn definitions(&self) -> Vec<Value> {
@@ -107,6 +134,43 @@ impl ToolSet {
             .find(|t| t.name() == name)
             .map(|t| t.as_ref())
     }
+}
+
+/// `s` as a single-quoted POSIX shell word.
+pub(crate) fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// A command's output as the model sees it: stdout, then stderr under a `[stderr]` marker, each
+/// cut to `ctx.max_output`, then a note if the command timed out or exited non-zero.
+pub(crate) fn exec_report(out: &ExecOutput, ctx: &ToolContext) -> String {
+    let stream = |bytes: &[u8], total: usize| {
+        truncate_with_total(&String::from_utf8_lossy(bytes), total, ctx.max_output)
+    };
+    let mut s = stream(&out.stdout, out.stdout_total);
+    let err = stream(&out.stderr, out.stderr_total);
+    if !err.is_empty() {
+        s.push_str("\n[stderr]\n");
+        s.push_str(&err);
+    }
+    match out.exit_code {
+        Some(0) => {}
+        Some(124) => s.push_str(&format!("\n[timed out after {}s]", ctx.timeout.as_secs())),
+        Some(code) => s.push_str(&format!("\n[exit status: {code}]")),
+        None => s.push_str("\n[terminated by signal]"),
+    }
+    s
+}
+
+/// The renderer's stderr, cut to `max_output` and trimmed, for an error message or warnings.
+pub(crate) fn stderr_text(out: &ExecOutput, max_output: usize) -> String {
+    truncate_with_total(
+        &String::from_utf8_lossy(&out.stderr),
+        out.stderr_total,
+        max_output,
+    )
+    .trim()
+    .to_string()
 }
 
 /// Cut `s` to at most `max` bytes (on a char boundary), noting how much was dropped.
@@ -172,38 +236,61 @@ mod tests {
         );
     }
 
+    const STANDARD: [&str; 7] = [
+        "bash",
+        "read_file",
+        "write_file",
+        "run_python",
+        "read_document",
+        "generate_pdf",
+        "generate_chart",
+    ];
+
+    #[test]
+    fn shell_words_are_single_quoted() {
+        assert_eq!(shell_quote("plain"), "'plain'");
+        assert_eq!(shell_quote("it's $(x) `y`"), r"'it'\''s $(x) `y`'");
+    }
+
     #[test]
     fn standard_set_exposes_the_local_tools() {
         let set = ToolSet::standard();
         let defs = set.definitions();
         let names: Vec<_> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["bash", "read_file", "write_file", "generate_pdf"]);
+        assert_eq!(names, STANDARD);
         assert!(set.get("bash").is_some());
         assert!(set.get("nope").is_none());
     }
 
+    fn cfg(pairs: &[(&str, &str)]) -> Config {
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        Config::from_lookup(move |k| {
+            pairs
+                .iter()
+                .find(|(name, _)| name == k)
+                .map(|(_, v)| v.clone())
+        })
+        .unwrap()
+    }
+
     #[test]
-    fn environment_note_points_to_web_search_when_offered() {
-        let cfg = |pairs: &[(&str, &str)]| {
-            let pairs: Vec<_> = pairs.to_vec();
-            Config::from_lookup(move |k| {
-                pairs
-                    .iter()
-                    .find(|(name, _)| *name == k)
-                    .map(|(_, v)| v.to_string())
-            })
-            .unwrap()
-        };
-        let plain = ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a")])).unwrap();
+    fn environment_note_points_to_the_web_tools_when_offered() {
+        let plain =
+            ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "off")])).unwrap();
         let search =
             ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])).unwrap();
 
         let note = search.environment_note("none");
         assert!(note.contains("no internet access"));
         assert!(note.contains("use the web_search tool"));
+        assert!(note.contains("use fetch_url") && note.contains("use download_file"));
         let note = plain.environment_note("none");
         assert!(note.contains("No web search tool is available"));
         assert!(!note.contains("use the web_search tool"));
+        assert!(!note.contains("fetch_url"));
         assert!(plain
             .environment_note("bridge")
             .contains("outbound network access"));
@@ -219,30 +306,23 @@ mod tests {
     }
 
     #[test]
-    fn web_search_is_offered_only_with_a_brave_key() {
-        let cfg = |pairs: &[(&str, &str)]| {
-            let pairs: Vec<_> = pairs.to_vec();
-            Config::from_lookup(move |k| {
-                pairs
-                    .iter()
-                    .find(|(name, _)| *name == k)
-                    .map(|(_, v)| v.to_string())
-            })
-            .unwrap()
+    fn web_tools_follow_the_configuration() {
+        let with = |extra: &[&str]| {
+            let mut names: Vec<String> = STANDARD.iter().map(|s| s.to_string()).collect();
+            names.extend(extra.iter().map(|s| s.to_string()));
+            names
         };
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a")])),
-            ["bash", "read_file", "write_file", "generate_pdf"]
+            with(&["fetch_url", "download_file"])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])),
-            [
-                "bash",
-                "read_file",
-                "write_file",
-                "generate_pdf",
-                "web_search"
-            ]
+            with(&["web_search", "fetch_url", "download_file"])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "off")])),
+            with(&[])
         );
     }
 }

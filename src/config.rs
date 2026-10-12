@@ -30,6 +30,11 @@ pub struct Config {
     pub brave_api_key: Option<String>,
     /// Brave web search endpoint; overridable so tests can point at a mock.
     pub brave_base_url: String,
+    /// Offer the `fetch_url` and `download_file` tools (on by default).
+    pub web_fetch: bool,
+    /// Let those tools reach loopback, private, and link-local addresses. Off by default, since
+    /// the requests come from the cedar host.
+    pub web_fetch_allow_private: bool,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
     pub database_url: String,
@@ -84,6 +89,17 @@ impl Config {
                 .unwrap_or_default()
         };
 
+        let flag = |k: &str, default: bool| -> Result<bool> {
+            match get(k).map(|v| v.trim().to_ascii_lowercase()) {
+                None => Ok(default),
+                Some(v) => match v.as_str() {
+                    "1" | "true" | "on" | "yes" => Ok(true),
+                    "0" | "false" | "off" | "no" => Ok(false),
+                    _ => bail!("invalid {k}={v:?}: use on or off"),
+                },
+            }
+        };
+
         let api_keys = list("CEDAR_API_KEYS");
         if api_keys.is_empty() {
             bail!("CEDAR_API_KEYS must contain at least one comma-separated API key");
@@ -95,6 +111,8 @@ impl Config {
             brave_api_key: get("BRAVE_API_KEY").map(|k| k.trim().to_string()),
             brave_base_url: get("BRAVE_API_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_BRAVE_BASE_URL.into()),
+            web_fetch: flag("WEB_FETCH", true)?,
+            web_fetch_allow_private: flag("WEB_FETCH_ALLOW_PRIVATE", false)?,
             api_keys,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -192,6 +210,23 @@ mod tests {
         assert_eq!(cfg.sandbox.network, "none");
         assert_eq!(cfg.max_turns_cap, 25);
         assert_eq!(cfg.workspace_ttl, Duration::from_secs(86_400));
+        assert!(cfg.web_fetch);
+        assert!(!cfg.web_fetch_allow_private);
+    }
+
+    #[test]
+    fn web_fetch_flags_parse_on_and_off() {
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("WEB_FETCH", "Off"),
+            ("WEB_FETCH_ALLOW_PRIVATE", "true"),
+        ]))
+        .unwrap();
+        assert!(!cfg.web_fetch);
+        assert!(cfg.web_fetch_allow_private);
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "maybe")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("WEB_FETCH"), "{err}");
     }
 
     #[test]

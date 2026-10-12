@@ -43,6 +43,9 @@ const ICONS = {
   spark: '<svg class="spark" viewBox="0 0 24 24"><path d="M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>',
   document: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 12h6M9 16h6"/></svg>',
+  code: '<svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>',
+  chart: '<svg viewBox="0 0 24 24"><path d="M4 4v16h16M8 16v-4M12 16V8M16 16v-6"/></svg>',
+  globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
 };
 
 function escapeHtml(s) {
@@ -519,18 +522,29 @@ function applyEvent(view, event) {
   }
 }
 
+// Tools whose `path` input is a file they write, so a finished call gets a download button.
+const WRITING_TOOLS = ['write_file', 'generate_pdf', 'generate_chart', 'download_file'];
+
+const TOOL_ICONS = {
+  bash: 'terminal', read_file: 'file', write_file: 'pencil', web_search: 'search',
+  generate_pdf: 'document', read_document: 'document', run_python: 'code',
+  generate_chart: 'chart', fetch_url: 'globe', download_file: 'download',
+};
+
 function toolSummary(name, input) {
   if (!input || typeof input !== 'object') return '';
   if (typeof input.command === 'string') return input.command.split('\n')[0];
+  if (name === 'run_python' && typeof input.code === 'string') {
+    return input.code.split('\n').find((l) => l.trim()) || '';
+  }
+  if (typeof input.url === 'string') return input.path ? `${input.url} → ${input.path}` : input.url;
   if (typeof input.path === 'string') return input.path;
   if (typeof input.query === 'string') return input.query;
   return JSON.stringify(input);
 }
 
 function toolCall(view, d) {
-  const icon = d.name === 'bash' ? ICONS.terminal : d.name === 'read_file' ? ICONS.file
-    : d.name === 'write_file' ? ICONS.pencil : d.name === 'web_search' ? ICONS.search
-    : d.name === 'generate_pdf' ? ICONS.document : ICONS.tool;
+  const icon = ICONS[TOOL_ICONS[d.name]] || ICONS.tool;
   const details = h('details', 'tool running');
   const summary = h('summary', '', `${icon}<span class="tool-name"></span><span class="tool-arg"></span>` +
     `<span class="meta"></span><span class="state"><span class="spinner"></span></span>${ICONS.chevron}`);
@@ -540,13 +554,14 @@ function toolCall(view, d) {
   const input = d.input || {};
   let shown;
   if (d.name === 'bash' && typeof input.command === 'string') shown = `$ ${input.command}`;
+  else if (d.name === 'run_python' && typeof input.code === 'string') shown = input.code;
   else if ((d.name === 'write_file' || d.name === 'generate_pdf') && typeof input.content === 'string') shown = `${input.path}\n\n${input.content}`;
   else shown = JSON.stringify(input, null, 2);
   const inputPre = h('pre');
   inputPre.textContent = shown;
   body.append(h('div', 'label', 'Input'), inputPre);
   details.append(summary, body);
-  if ((d.name === 'write_file' || d.name === 'generate_pdf') && typeof input.path === 'string') details.dataset.path = input.path;
+  if (WRITING_TOOLS.includes(d.name) && typeof input.path === 'string') details.dataset.path = input.path;
   view.tools.set(d.id, details);
   return details;
 }

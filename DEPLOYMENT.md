@@ -136,7 +136,10 @@ That gives the container outbound access to whatever the Docker bridge network c
 only do it on a machine where that is acceptable. Installed packages live in the run's workspace
 and survive follow-up messages until the workspace expires. Web search is separate: the optional
 `web_search` tool (see `BRAVE_API_KEY` in step 4) runs in the cedar process, so the host needs
-outbound HTTPS to `api.search.brave.com`.
+outbound HTTPS to `api.search.brave.com`. So do `fetch_url` and `download_file`, which are on by
+default: the host needs outbound HTTP(S) to the sites the agent reads. They refuse private and
+loopback addresses, so the agent can't use them to reach vLLM or anything else on your network;
+set `WEB_FETCH=off` to remove them.
 
 ## 4. Configure
 
@@ -194,6 +197,7 @@ Settings worth knowing on this hardware:
 | `MAX_CONCURRENT_RUNS` | How many agents run at once; the rest queue. |
 | `CHAT_MODELS` | Optional model picker in the UI. Leave unset to use only `LLM_MODEL`. |
 | `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox container. |
+| `WEB_FETCH` | `on` by default. `off` removes `fetch_url` and `download_file`, for a host that should make no outbound requests on the agent's behalf. |
 
 ## 5. Try it by hand first
 

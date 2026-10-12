@@ -33,7 +33,16 @@ async fn main() -> Result<()> {
     let bind_addr = cfg.bind_addr;
     let workspace_ttl = cfg.workspace_ttl;
 
-    tracing::info!(web_search = cfg.brave_api_key.is_some(), "tools configured");
+    tracing::info!(
+        web_search = cfg.brave_api_key.is_some(),
+        web_fetch = cfg.web_fetch,
+        "tools configured"
+    );
+    if cfg.web_fetch_allow_private {
+        tracing::warn!(
+            "WEB_FETCH_ALLOW_PRIVATE is on: fetch_url and download_file can reach this host and its internal network"
+        );
+    }
     if cfg.brave_api_key.is_none() {
         tracing::warn!(
             "BRAVE_API_KEY is not set: web_search is disabled and the model cannot search the web"
