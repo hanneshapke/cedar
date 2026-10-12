@@ -119,6 +119,16 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat   # then open http://127.0.0.1:3000
 Each follow-up message continues the previous run, so the agent keeps its conversation and its
 workspace files. See [chat/README.md](chat/README.md) for configuration.
 
+![A cedar-chat conversation: the agent writes a test file, runs pytest in its sandbox, and summarizes the result in a table](docs/screenshots/conversation-light.png)
+
+| Starting a conversation | A response in progress |
+| --- | --- |
+| ![The empty chat with a greeting, the conversation sidebar, and the message box with a model picker](docs/screenshots/welcome.png) | ![A running response: a finished write_file call, a bash call still running, and the stop button](docs/screenshots/streaming.png) |
+
+| Dark theme, with a tool call expanded | Mobile layout |
+| --- | --- |
+| ![The dark theme, with the write_file tool call expanded to show its input and output](docs/screenshots/conversation-dark.png) | <img src="docs/screenshots/mobile.png" alt="The mobile layout showing a code block with a copy button and token usage" width="260"> |
+
 ## Configuration
 
 Settings come from environment variables. The important ones:
