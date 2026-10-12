@@ -4,8 +4,10 @@
 #   scripts/dev-up.sh            build, start everything, attach
 #   scripts/dev-up.sh --no-build skip cargo and docker builds
 #   scripts/dev-up.sh --restart  kill the existing session first
-#   scripts/dev-up.sh --down     kill the session (vLLM keeps running)
-#   scripts/dev-up.sh --down-all kill the session and stop vLLM (docker compose down)
+#   scripts/dev-up.sh --down     kill the session; vLLM keeps running
+#   scripts/dev-up.sh --down --with-vllm
+#                                also stop vLLM (docker compose down)
+#   scripts/dev-up.sh --down-all same as --down --with-vllm
 #
 # Settings come from .env in the repo root (created on first run with fresh keys). Besides
 # cedar's and cedar-chat's own variables it reads:
@@ -107,15 +109,18 @@ pane_chat() {
     exec "$ROOT/target/release/cedar-chat"
 }
 
-# down_all: stop cedar, cedar-chat and, if the script manages it, vLLM.
-down_all() {
+# down <stop_vllm>: stop cedar and cedar-chat. vLLM keeps running unless stop_vllm is 1 and the
+# script manages it.
+down() {
     load_env
     if tmux kill-session -t "$TMUX_SESSION" 2>/dev/null; then
         echo "Killed tmux session '$TMUX_SESSION' (cedar, cedar-chat)."
     else
         echo "tmux session '$TMUX_SESSION' is not running."
     fi
-    if [[ -n ${VLLM_COMPOSE_FILE:-} ]]; then
+    if (( ! $1 )); then
+        echo "vLLM keeps running (use --down --with-vllm to stop it)."
+    elif [[ -n ${VLLM_COMPOSE_FILE:-} ]]; then
         echo "==> docker compose down ($VLLM_COMPOSE_FILE)"
         docker compose -f "$VLLM_COMPOSE_FILE" down
     else
@@ -126,17 +131,23 @@ down_all() {
 # --- main ----------------------------------------------------------------------------------
 
 main() {
-    local build=1 restart=0
+    local build=1 restart=0 stop=0 with_vllm=0
     for arg in "$@"; do
         case $arg in
             --no-build) build=0 ;;
             --restart) restart=1 ;;
-            --down) load_env; tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true; exit 0 ;;
-            --down-all) down_all; exit 0 ;;
-            -h|--help) sed -n '2,13p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+            --down) stop=1 ;;
+            --with-vllm) with_vllm=1 ;;
+            --down-all) stop=1; with_vllm=1 ;;
+            -h|--help) sed -n '2,15p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
             *) die "unknown option: $arg" ;;
         esac
     done
+    if (( stop )); then
+        down "$with_vllm"
+        exit 0
+    fi
+    (( with_vllm )) && die "--with-vllm only applies to --down"
 
     for cmd in cargo docker tmux curl jq openssl; do
         command -v "$cmd" >/dev/null || die "$cmd is not installed"
