@@ -27,3 +27,5 @@ rustc-ice-*.txt
 cedar.db
 cedar.db-*
 .env
+cedar-chat.db
+cedar-chat.db-*

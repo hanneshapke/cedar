@@ -30,3 +30,6 @@ uuid = { version = "1", features = ["v4", "v7", "serde"] }
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+
+[workspace]
+members = [".", "chat"]
