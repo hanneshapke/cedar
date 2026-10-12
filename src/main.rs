@@ -26,9 +26,11 @@ async fn main() -> Result<()> {
     let llm = Arc::new(AnthropicClient::new(cfg.anthropic_api_key.clone(), cfg.anthropic_base_url.clone())?);
     let sandboxes = Arc::new(DockerSandboxFactory::new(cfg.sandbox.clone()));
     let bind_addr = cfg.bind_addr;
+    let workspace_ttl = cfg.workspace_ttl;
 
     let state = AppState::new(cfg, store, llm, sandboxes);
     state.manager.recover().await?;
+    state.manager.start_janitor(workspace_ttl);
 
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await

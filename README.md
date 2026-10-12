@@ -30,6 +30,33 @@ cargo run
 
 Tool calls are logged to stderr, local tools in yellow and web searches in magenta. The final answer goes to stdout. In the REPL the conversation history is kept until you exit, but nothing is saved between runs.
 
+## Continuing a run
+
+`POST /v1/runs` accepts `"parent_id": "<run id>"` to continue a finished run instead of starting a
+new conversation:
+
+```sh
+curl -s localhost:8080/v1/runs -H "Authorization: Bearer devkey" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "now add tests for it", "parent_id": "0190..."}'
+```
+
+- The new run starts with a copy of the parent's messages, including its tool calls, and appends
+  the new prompt. If the parent stopped in the middle of a tool call, that call gets an error
+  result so the conversation stays valid.
+- It mounts the parent's workspace, so files under `/workspace` are kept. Each run still gets a
+  new container, so running processes are not.
+- The model and system prompt come from the parent unless the request sets them.
+- A run can be continued once, and only after it has finished, so a chain of runs is a straight
+  line and never shares a workspace with a run that is still going. To keep going, continue from
+  the latest run.
+- Runs report `parent_id`, `workspace_id`, and `workspace_reused`.
+
+Workspaces are kept for `WORKSPACE_TTL_SECS` (default 86400) after their last run ends, then
+removed. A continuation of a run whose workspace has expired still gets the conversation, but
+starts with an empty workspace, and the model is told so. Deleting the last run that uses a
+workspace removes it straight away.
+
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a Claude.ai-style web UI for talking to
@@ -40,7 +67,8 @@ HTTP API with a key it keeps on the server.
 CEDAR_API_KEY=devkey cargo run -p cedar-chat   # then open http://127.0.0.1:3000
 ```
 
-See [chat/README.md](chat/README.md) for configuration and how conversations map onto runs.
+Each follow-up message continues the previous run, so the agent keeps its conversation and its
+workspace files. See [chat/README.md](chat/README.md) for configuration.
 
 ## Configuration
 

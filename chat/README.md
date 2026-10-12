@@ -42,25 +42,31 @@ is no Node build step. Restart the server after you edit those files.
 | `CHAT_DATABASE_URL` | `sqlite://cedar-chat.db` | Conversation storage |
 | `CHAT_ACCESS_TOKEN` | unset | If set, the page asks for this token and the API requires it |
 | `CHAT_MODELS` | unset | Comma-separated models for the picker. They must also be allowed by cedar's `ALLOWED_MODELS` |
-| `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is sent with each new message (at most 60000) |
+| `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar (at most 60000) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
 
 ## How conversations map onto cedar
 
-Each cedar run takes one prompt and gets a fresh sandbox. A chat message becomes a new run:
+The first message in a conversation starts a new cedar run. Each later message starts a run that
+**continues** the previous one (`parent_id` in cedar's API), so the agent keeps:
 
-- The first message is sent unchanged.
-- Later messages include the earlier exchanges (your messages and the agent's final answers) in a
-  `<conversation_history>` block. If the history is longer than `CHAT_HISTORY_MAX_BYTES`, the
-  oldest exchanges are dropped. Failed or stopped exchanges are left out.
-- **The sandbox does not carry over between messages.** Files written or processes started while
-  answering one message are gone for the next. The prompt tells the model this.
+- the whole conversation, including its earlier tool calls and their results, and
+- its sandbox workspace: files written under `/workspace` are still there. Running processes
+  are not, since each run gets a new container.
+
+cedar removes a workspace once it has been idle for `WORKSPACE_TTL_SECS` (24 hours by default).
+After that, a follow-up still has the conversation but starts with an empty workspace, and the
+model is told so.
+
+If cedar no longer has the previous run (it was deleted, or cedar's database was reset), cedar-chat
+falls back to starting a new run with the earlier exchanges inlined in the prompt, up to
+`CHAT_HISTORY_MAX_BYTES`.
 
 Only one response per conversation runs at a time. The UI replays each turn from cedar's event log,
 so reloading the page or opening a conversation shows the full tool trace. Deleting a conversation
-also deletes its runs on cedar (best effort).
+also deletes its runs on cedar (best effort), which frees the workspace.
 
 ## API
 

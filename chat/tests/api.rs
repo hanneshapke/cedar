@@ -22,6 +22,7 @@ const CEDAR_KEY: &str = "cedar-key";
 struct FakeCedar {
     runs: Mutex<HashMap<Uuid, Value>>,
     prompts: Mutex<Vec<String>>,
+    parents: Mutex<Vec<Option<String>>>,
     deleted: Mutex<Vec<Uuid>>,
 }
 
@@ -43,9 +44,16 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
     if prompt.contains("TOO MANY") {
         return cedar_error(StatusCode::TOO_MANY_REQUESTS, "too_many_requests", "at most 2 runs");
     }
+    let parent = body["parent_id"].as_str().map(String::from);
+    if let Some(p) = &parent {
+        if !s.runs.lock().unwrap().contains_key(&Uuid::parse_str(p).unwrap()) {
+            return cedar_error(StatusCode::NOT_FOUND, "not_found", "parent run not found");
+        }
+    }
     let id = Uuid::new_v4();
     let run = json!({ "id": id, "status": "queued", "prompt": prompt, "model": body["model"], "final_text": null, "error": null });
     s.prompts.lock().unwrap().push(prompt);
+    s.parents.lock().unwrap().push(parent);
     s.runs.lock().unwrap().insert(id, run.clone());
     (StatusCode::ACCEPTED, Json(run)).into_response()
 }
@@ -140,7 +148,7 @@ impl Harness {
 }
 
 #[tokio::test]
-async fn conversation_flow_carries_history_into_later_runs() {
+async fn follow_up_messages_continue_the_previous_run() {
     let h = Harness::new(&[]).await;
     let (status, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     assert_eq!(status, StatusCode::CREATED);
@@ -159,10 +167,10 @@ async fn conversation_flow_carries_history_into_later_runs() {
     h.finish(t1["run_id"].as_str().unwrap(), "completed", Some("It is 4."));
     let (status, _) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "Times 3?" }))).await;
     assert_eq!(status, StatusCode::CREATED);
-    let second = h.cedar.prompts.lock().unwrap()[1].clone();
-    assert!(second.contains("<user>\nWhat is 2+2?\n</user>"));
-    assert!(second.contains("<assistant>\nIt is 4.\n</assistant>"));
-    assert!(second.ends_with("Times 3?"));
+    // cedar carries the conversation and workspace; the prompt is just the new message.
+    assert_eq!(h.cedar.prompts.lock().unwrap()[1], "Times 3?");
+    assert_eq!(h.cedar.parents.lock().unwrap()[1].as_deref(), t1["run_id"].as_str());
+    assert_eq!(h.cedar.parents.lock().unwrap()[0], None);
 
     let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
     assert_eq!(detail["conversation"]["title"], "What is 2+2?");
@@ -174,6 +182,27 @@ async fn conversation_flow_carries_history_into_later_runs() {
 
     let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
     assert_eq!(list["conversations"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn history_is_resent_as_text_when_the_previous_run_is_gone() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
+    let (_, t1) = h.json(Method::POST, &msgs, Some(json!({ "content": "What is 2+2?" }))).await;
+    let run_id = t1["run_id"].as_str().unwrap();
+    h.finish(run_id, "completed", Some("It is 4."));
+    // Refresh while cedar still has the run, then lose it.
+    h.json(Method::GET, &format!("/api/conversations/{}", conv["id"].as_str().unwrap()), None).await;
+    h.cedar.runs.lock().unwrap().remove(&Uuid::parse_str(run_id).unwrap());
+
+    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "Times 3?" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(h.cedar.parents.lock().unwrap().last().unwrap(), &None);
+    let prompt = h.cedar.prompts.lock().unwrap().last().unwrap().clone();
+    assert!(prompt.contains("<user>\nWhat is 2+2?\n</user>"));
+    assert!(prompt.contains("<assistant>\nIt is 4.\n</assistant>"));
+    assert!(prompt.ends_with("Times 3?"));
 }
 
 #[tokio::test]

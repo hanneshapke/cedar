@@ -40,6 +40,8 @@ pub struct Config {
     pub run_timeout: Duration,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
+    /// How long a workspace is kept after its last run ends, so a continuation can pick it up.
+    pub workspace_ttl: Duration,
 
     pub sandbox: SandboxConfig,
 }
@@ -93,6 +95,7 @@ impl Config {
             run_timeout: Duration::from_secs(parse("RUN_TIMEOUT_SECS", get("RUN_TIMEOUT_SECS"), 600)?),
             tool_timeout: Duration::from_secs(parse("TOOL_TIMEOUT_SECS", get("TOOL_TIMEOUT_SECS"), 60)?),
             tool_output_max_bytes: parse("TOOL_OUTPUT_MAX_BYTES", get("TOOL_OUTPUT_MAX_BYTES"), 32 * 1024)?,
+            workspace_ttl: Duration::from_secs(parse("WORKSPACE_TTL_SECS", get("WORKSPACE_TTL_SECS"), 24 * 3600)?),
 
             sandbox: SandboxConfig {
                 image: get("SANDBOX_IMAGE").unwrap_or_else(|| "cedar-sandbox:latest".into()),
@@ -114,6 +117,9 @@ impl Config {
         }
         if self.max_active_runs_per_key < 1 {
             bail!("MAX_ACTIVE_RUNS_PER_KEY must be at least 1");
+        }
+        if self.workspace_ttl.is_zero() {
+            bail!("WORKSPACE_TTL_SECS must be at least 1");
         }
         if self.tool_timeout.is_zero() {
             bail!("TOOL_TIMEOUT_SECS must be at least 1");
@@ -139,6 +145,7 @@ mod tests {
         assert_eq!(cfg.default_model, DEFAULT_MODEL);
         assert_eq!(cfg.sandbox.network, "none");
         assert_eq!(cfg.max_turns_cap, 25);
+        assert_eq!(cfg.workspace_ttl, Duration::from_secs(86_400));
     }
 
     #[test]

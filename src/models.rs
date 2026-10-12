@@ -64,6 +64,12 @@ pub struct Run {
     pub stop_reason: Option<String>,
     pub error: Option<String>,
     pub usage: Usage,
+    /// The run this one continues, if any (and if it hasn't been deleted since).
+    pub parent_id: Option<Uuid>,
+    /// The sandbox workspace (files under /workspace) this run uses.
+    pub workspace_id: Uuid,
+    /// True if the run picked up its parent's workspace; false if it started with an empty one.
+    pub workspace_reused: bool,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -76,6 +82,8 @@ pub struct NewRun {
     pub system: String,
     pub model: String,
     pub max_turns: u32,
+    /// Continue this run: its conversation, and its workspace if that hasn't expired.
+    pub parent_id: Option<Uuid>,
 }
 
 /// Event type names, as sent in the `type` field and the SSE `event:` line.
@@ -124,4 +132,6 @@ pub struct CreateRunRequest {
     pub model: Option<String>,
     pub system: Option<String>,
     pub max_turns: Option<u32>,
+    /// Continue an earlier, finished run instead of starting a fresh conversation.
+    pub parent_id: Option<Uuid>,
 }
