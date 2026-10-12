@@ -22,8 +22,65 @@ pub struct Conversation {
     pub id: Uuid,
     pub title: Option<String>,
     pub model: Option<String>,
+    /// Set on conversations a schedule created; they are listed under it, not in the main list.
+    pub schedule_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// A prompt that runs on its own at a local time of day. `frequency`, `weekday`, `time_of_day`
+/// and `timezone` are kept as the API received them; `schedule::Timing` interprets them.
+#[derive(Debug, Clone, Serialize)]
+pub struct Schedule {
+    pub id: Uuid,
+    pub title: String,
+    pub prompt: String,
+    pub model: Option<String>,
+    pub source_conversation_id: Option<Uuid>,
+    pub frequency: String,
+    pub weekday: Option<u8>,
+    pub time_of_day: String,
+    pub timezone: String,
+    pub enabled: bool,
+    pub next_run_at: DateTime<Utc>,
+    pub last_run_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub struct NewSchedule<'a> {
+    pub title: &'a str,
+    pub prompt: &'a str,
+    pub model: Option<&'a str>,
+    pub source_conversation_id: Option<Uuid>,
+    pub frequency: &'a str,
+    pub weekday: Option<u8>,
+    pub time_of_day: &'a str,
+    pub timezone: &'a str,
+    pub next_run_at: DateTime<Utc>,
+}
+
+/// One firing of a schedule. `conversation_id` and `turn_id` are `None` when the cedar run could
+/// not be started; `error` then says why.
+#[derive(Debug, Clone, Serialize)]
+pub struct ScheduleRun {
+    pub id: Uuid,
+    pub schedule_id: Uuid,
+    pub conversation_id: Option<Uuid>,
+    pub turn_id: Option<Uuid>,
+    pub due_at: DateTime<Utc>,
+    pub started_at: DateTime<Utc>,
+    pub manual: bool,
+    pub error: Option<String>,
+}
+
+pub struct NewScheduleRun {
+    pub schedule_id: Uuid,
+    pub conversation_id: Option<Uuid>,
+    pub turn_id: Option<Uuid>,
+    pub due_at: DateTime<Utc>,
+    pub manual: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,13 +96,50 @@ pub struct Turn {
     pub created_at: DateTime<Utc>,
 }
 
+fn opt_uuid(r: &SqliteRow, col: &str) -> Result<Option<Uuid>> {
+    r.try_get::<Option<&str>, _>(col)?.map(Uuid::parse_str).transpose().map_err(Into::into)
+}
+
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
     Ok(Conversation {
         id: Uuid::parse_str(r.try_get("id")?)?,
         title: r.try_get("title")?,
         model: r.try_get("model")?,
+        schedule_id: opt_uuid(r, "schedule_id")?,
         created_at: to_dt(r.try_get("created_at")?),
         updated_at: to_dt(r.try_get("updated_at")?),
+    })
+}
+
+fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
+    Ok(Schedule {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        title: r.try_get("title")?,
+        prompt: r.try_get("prompt")?,
+        model: r.try_get("model")?,
+        source_conversation_id: opt_uuid(r, "source_conversation_id")?,
+        frequency: r.try_get("frequency")?,
+        weekday: r.try_get::<Option<i64>, _>("weekday")?.map(|d| d as u8),
+        time_of_day: r.try_get("time_of_day")?,
+        timezone: r.try_get("timezone")?,
+        enabled: r.try_get::<i64, _>("enabled")? != 0,
+        next_run_at: to_dt(r.try_get("next_run_at")?),
+        last_run_at: r.try_get::<Option<i64>, _>("last_run_at")?.map(to_dt),
+        created_at: to_dt(r.try_get("created_at")?),
+        updated_at: to_dt(r.try_get("updated_at")?),
+    })
+}
+
+fn schedule_run_from_row(r: &SqliteRow) -> Result<ScheduleRun> {
+    Ok(ScheduleRun {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        schedule_id: Uuid::parse_str(r.try_get("schedule_id")?)?,
+        conversation_id: opt_uuid(r, "conversation_id")?,
+        turn_id: opt_uuid(r, "turn_id")?,
+        due_at: to_dt(r.try_get("due_at")?),
+        started_at: to_dt(r.try_get("started_at")?),
+        manual: r.try_get::<i64, _>("manual")? != 0,
+        error: r.try_get("error")?,
     })
 }
 
@@ -121,9 +215,12 @@ impl Store {
         row.as_ref().map(conversation_from_row).transpose()
     }
 
-    /// Most recently active first.
+    /// Most recently active first. Conversations a schedule created are left out; they are
+    /// listed under their schedule.
     pub async fn list_conversations(&self, limit: u32) -> Result<Vec<Conversation>> {
-        let rows = sqlx::query("SELECT * FROM conversations ORDER BY updated_at DESC, id DESC LIMIT ?")
+        let rows = sqlx::query(
+            "SELECT * FROM conversations WHERE schedule_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT ?",
+        )
             .bind(limit as i64)
             .fetch_all(&self.pool)
             .await?;
@@ -210,6 +307,154 @@ impl Store {
             .await?;
         Ok(())
     }
+
+    // -- schedules --------------------------------------------------------------------------
+
+    pub async fn create_schedule(&self, new: &NewSchedule<'_>) -> Result<Schedule> {
+        let id = Uuid::now_v7();
+        let now = now_ms();
+        sqlx::query(
+            "INSERT INTO schedules (id, title, prompt, model, source_conversation_id, frequency, weekday, \
+             time_of_day, timezone, enabled, next_run_at, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+        )
+        .bind(id.to_string())
+        .bind(new.title)
+        .bind(new.prompt)
+        .bind(new.model)
+        .bind(new.source_conversation_id.map(|c| c.to_string()))
+        .bind(new.frequency)
+        .bind(new.weekday.map(i64::from))
+        .bind(new.time_of_day)
+        .bind(new.timezone)
+        .bind(new.next_run_at.timestamp_millis())
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(self.get_schedule(id).await?.expect("just inserted"))
+    }
+
+    pub async fn get_schedule(&self, id: Uuid) -> Result<Option<Schedule>> {
+        let row = sqlx::query("SELECT * FROM schedules WHERE id = ?").bind(id.to_string()).fetch_optional(&self.pool).await?;
+        row.as_ref().map(schedule_from_row).transpose()
+    }
+
+    /// Enabled schedules first, soonest first.
+    pub async fn list_schedules(&self) -> Result<Vec<Schedule>> {
+        let rows = sqlx::query("SELECT * FROM schedules ORDER BY enabled DESC, next_run_at, id").fetch_all(&self.pool).await?;
+        rows.iter().map(schedule_from_row).collect()
+    }
+
+    pub async fn count_schedules(&self) -> Result<i64> {
+        Ok(sqlx::query("SELECT COUNT(*) AS n FROM schedules").fetch_one(&self.pool).await?.try_get("n")?)
+    }
+
+    /// Write back a schedule's editable fields (everything but its id, origin and timestamps).
+    pub async fn update_schedule(&self, s: &Schedule) -> Result<bool> {
+        let res = sqlx::query(
+            "UPDATE schedules SET title = ?, prompt = ?, model = ?, frequency = ?, weekday = ?, time_of_day = ?, \
+             timezone = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(&s.title)
+        .bind(&s.prompt)
+        .bind(&s.model)
+        .bind(&s.frequency)
+        .bind(s.weekday.map(i64::from))
+        .bind(&s.time_of_day)
+        .bind(&s.timezone)
+        .bind(s.enabled as i64)
+        .bind(s.next_run_at.timestamp_millis())
+        .bind(now_ms())
+        .bind(s.id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// Deleting a schedule takes its runs and the conversations they created with it.
+    pub async fn delete_schedule(&self, id: Uuid) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM schedules WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// Enabled schedules whose next run is at or before `now`, earliest first.
+    pub async fn due_schedules(&self, now: DateTime<Utc>) -> Result<Vec<Schedule>> {
+        let rows = sqlx::query("SELECT * FROM schedules WHERE enabled = 1 AND next_run_at <= ? ORDER BY next_run_at, id")
+            .bind(now.timestamp_millis())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter().map(schedule_from_row).collect()
+    }
+
+    /// Record a firing: when it ran and, unless `next_run_at` is `None` (a manual run), when the
+    /// next one is due.
+    pub async fn mark_fired(&self, id: Uuid, last_run_at: DateTime<Utc>, next_run_at: Option<DateTime<Utc>>) -> Result<()> {
+        sqlx::query("UPDATE schedules SET last_run_at = ?, next_run_at = COALESCE(?, next_run_at) WHERE id = ?")
+            .bind(last_run_at.timestamp_millis())
+            .bind(next_run_at.map(|t| t.timestamp_millis()))
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// A conversation that belongs to a schedule: hidden from the main list, deleted with it.
+    pub async fn create_scheduled_conversation(&self, schedule_id: Uuid, title: &str) -> Result<Conversation> {
+        let id = Uuid::now_v7();
+        let now = now_ms();
+        sqlx::query("INSERT INTO conversations (id, title, schedule_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(id.to_string())
+            .bind(title)
+            .bind(schedule_id.to_string())
+            .bind(now)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        Ok(self.get_conversation(id).await?.expect("just inserted"))
+    }
+
+    pub async fn insert_schedule_run(&self, new: &NewScheduleRun) -> Result<ScheduleRun> {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO schedule_runs (id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id.to_string())
+        .bind(new.schedule_id.to_string())
+        .bind(new.conversation_id.map(|c| c.to_string()))
+        .bind(new.turn_id.map(|t| t.to_string()))
+        .bind(new.due_at.timestamp_millis())
+        .bind(now_ms())
+        .bind(new.manual as i64)
+        .bind(&new.error)
+        .execute(&self.pool)
+        .await?;
+        let row = sqlx::query("SELECT * FROM schedule_runs WHERE id = ?").bind(id.to_string()).fetch_one(&self.pool).await?;
+        schedule_run_from_row(&row)
+    }
+
+    /// Newest first.
+    pub async fn list_schedule_runs(&self, schedule_id: Uuid, limit: u32) -> Result<Vec<ScheduleRun>> {
+        let rows = sqlx::query("SELECT * FROM schedule_runs WHERE schedule_id = ? ORDER BY started_at DESC, id DESC LIMIT ?")
+            .bind(schedule_id.to_string())
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter().map(schedule_run_from_row).collect()
+    }
+
+    /// Every turn of every conversation the schedule created, so their cedar runs can be deleted.
+    pub async fn list_schedule_turns(&self, schedule_id: Uuid) -> Result<Vec<Turn>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {} FROM turns t JOIN conversations c ON c.id = t.conversation_id WHERE c.schedule_id = ? ORDER BY t.created_at",
+            TURN_COLS.split(", ").map(|c| format!("t.{c}")).collect::<Vec<_>>().join(", ")
+        ))
+        .bind(schedule_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(turn_from_row).collect()
+    }
 }
 
 /// A short title from the first line of a message.
@@ -253,6 +498,60 @@ mod tests {
         let c = store.create_conversation(Some("Mine")).await.unwrap();
         store.insert_turn(c.id, Uuid::new_v4(), "hello", "queued", None).await.unwrap();
         assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().title.as_deref(), Some("Mine"));
+    }
+
+    #[tokio::test]
+    async fn scheduled_conversations_are_hidden_and_go_with_their_schedule() {
+        let store = Store::connect_memory().await.unwrap();
+        let s = store
+            .create_schedule(&NewSchedule {
+                title: "Daily digest",
+                prompt: "summarize",
+                model: None,
+                source_conversation_id: None,
+                frequency: "daily",
+                weekday: None,
+                time_of_day: "09:00",
+                timezone: "UTC",
+                next_run_at: to_dt(1_000),
+            })
+            .await
+            .unwrap();
+        assert!(s.enabled && s.last_run_at.is_none());
+        let plain = store.create_conversation(Some("Mine")).await.unwrap();
+        let c = store.create_scheduled_conversation(s.id, "Daily digest · Mon").await.unwrap();
+        assert_eq!(c.schedule_id, Some(s.id));
+        let t = store.insert_turn(c.id, Uuid::new_v4(), "summarize", "queued", None).await.unwrap();
+        assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().title.as_deref(), Some("Daily digest · Mon"));
+        let run = store
+            .insert_schedule_run(&NewScheduleRun {
+                schedule_id: s.id,
+                conversation_id: Some(c.id),
+                turn_id: Some(t.id),
+                due_at: to_dt(1_000),
+                manual: false,
+                error: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(run.turn_id, Some(t.id));
+
+        let listed: Vec<Uuid> = store.list_conversations(10).await.unwrap().iter().map(|c| c.id).collect();
+        assert_eq!(listed, [plain.id], "scheduled conversations stay out of the main list");
+        assert_eq!(store.list_schedule_turns(s.id).await.unwrap().len(), 1);
+
+        store.mark_fired(s.id, to_dt(2_000), Some(to_dt(90_000))).await.unwrap();
+        assert!(store.due_schedules(to_dt(80_000)).await.unwrap().is_empty());
+        assert_eq!(store.due_schedules(to_dt(90_000)).await.unwrap().len(), 1);
+        store.mark_fired(s.id, to_dt(3_000), None).await.unwrap();
+        let s = store.get_schedule(s.id).await.unwrap().unwrap();
+        assert_eq!((s.last_run_at, s.next_run_at), (Some(to_dt(3_000)), to_dt(90_000)));
+
+        assert!(store.delete_schedule(s.id).await.unwrap());
+        assert!(store.get_conversation(c.id).await.unwrap().is_none(), "its conversations are deleted too");
+        assert!(store.get_turn(t.id).await.unwrap().is_none());
+        assert!(store.list_schedule_runs(s.id, 10).await.unwrap().is_empty());
+        assert!(store.get_conversation(plain.id).await.unwrap().is_some());
     }
 
     #[test]
