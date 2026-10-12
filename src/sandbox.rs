@@ -38,6 +38,59 @@ pub struct FileContent {
     pub truncated: bool,
 }
 
+/// A regular file in a workspace, as reported by [`SandboxFactory::list_workspace_files`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct WorkspaceFile {
+    /// Relative to the workspace root, with `/` separators.
+    pub path: String,
+    pub size: u64,
+    pub modified_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Default, serde::Serialize)]
+pub struct WorkspaceListing {
+    /// Sorted by path.
+    pub files: Vec<WorkspaceFile>,
+    /// There were more than [`MAX_LISTED_FILES`] files; the listing stops there.
+    pub truncated: bool,
+}
+
+/// Most files a listing reports.
+pub const MAX_LISTED_FILES: usize = 1000;
+
+/// Directories a listing skips: tool caches and dependency trees, which would otherwise crowd
+/// out the files the agent actually produced. `.local` is where pip installs packages.
+pub const UNLISTED_DIRS: &[&str] = &[
+    ".git",
+    ".cache",
+    ".local",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+];
+
+/// The workspace's files are gone (expired, deleted, or never created).
+#[derive(Debug, thiserror::Error)]
+#[error("workspace does not exist")]
+pub struct WorkspaceMissing;
+
+/// Check a workspace-relative path for use with [`SandboxFactory::read_workspace_file`]:
+/// non-empty, relative, and without `.` / `..` components or NUL bytes.
+pub fn check_workspace_path(path: &str) -> Result<()> {
+    check_path(path)?;
+    if path.starts_with('/') {
+        bail!("path must be relative to the workspace");
+    }
+    if path
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        bail!("path must not contain empty, `.` or `..` components");
+    }
+    Ok(())
+}
+
 #[async_trait]
 pub trait Sandbox: Send + Sync {
     /// Run `command` with `sh -c`, killing it after `timeout`. Exit code 124 means it timed out.
@@ -62,6 +115,18 @@ pub trait SandboxFactory: Send + Sync {
     async fn remove_workspace(&self, workspace_id: Uuid) -> Result<()>;
     /// Every workspace that currently exists.
     async fn list_workspaces(&self) -> Result<Vec<Uuid>>;
+    /// The regular files in a workspace (see [`UNLISTED_DIRS`] and [`MAX_LISTED_FILES`]).
+    /// Fails with [`WorkspaceMissing`] if the workspace doesn't exist.
+    async fn list_workspace_files(&self, workspace_id: Uuid) -> Result<WorkspaceListing>;
+    /// Read up to `max_bytes` of a regular file in a workspace. `path` must pass
+    /// [`check_workspace_path`] and resolve inside the workspace. `Ok(None)` if there is no such
+    /// file; [`WorkspaceMissing`] if there is no such workspace.
+    async fn read_workspace_file(
+        &self,
+        workspace_id: Uuid,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<Option<FileContent>>;
     /// Is the backing runtime reachable and usable? (for `/readyz`)
     async fn health(&self) -> Result<()>;
 }
@@ -126,6 +191,99 @@ pub fn run_args(cfg: &SandboxConfig, run_id: Uuid, workspace_id: Uuid) -> Vec<St
     .collect();
     args.shrink_to_fit();
     args
+}
+
+/// Lists regular files (symlinks excluded) as NUL-separated `size\tmtime\tpath` records, skipping
+/// [`UNLISTED_DIRS`]. One record more than the cap is read so truncation can be detected.
+fn list_script() -> String {
+    let prune = UNLISTED_DIRS
+        .iter()
+        .map(|d| format!("-name '{d}'"))
+        .collect::<Vec<_>>()
+        .join(" -o ");
+    format!(
+        "find /workspace -mindepth 1 \\( {prune} \\) -prune -o -type f -printf '%s\\t%T@\\t%P\\0' \
+         | head -z -n {}",
+        MAX_LISTED_FILES + 1
+    )
+}
+
+/// Prints up to `$2` bytes of `$1` if it is a regular file inside /workspace (after resolving
+/// symlinks); exits 2 if there is no such file.
+const READ_WORKSPACE_SCRIPT: &str = r#"cd /workspace || exit 3
+p=$(realpath -e -- "$1" 2>/dev/null) || exit 2
+case $p in /workspace/*) ;; *) exit 2 ;; esac
+[ -f "$p" ] || exit 2
+exec head -c "$2" -- "$p""#;
+
+/// Arguments for a one-off `docker run` that executes `script` with the workspace mounted
+/// read-only, under the same restrictions as a sandbox. Used to look at a workspace whose run
+/// has finished (and whose container is therefore gone).
+pub fn workspace_run_args(
+    cfg: &SandboxConfig,
+    workspace_id: Uuid,
+    script: &str,
+    args: &[&str],
+) -> Vec<String> {
+    let mut out: Vec<String> = [
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--memory",
+        &cfg.memory,
+        "--memory-swap",
+        &cfg.memory,
+        "--cpus",
+        &cfg.cpus,
+        "--pids-limit",
+        "64",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--user",
+        "1000:1000",
+        "-w",
+        "/workspace",
+        "-v",
+        &format!("{}:/workspace:ro", volume_name(workspace_id)),
+        &cfg.image,
+        "sh",
+        "-c",
+        script,
+        "sh",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    out.extend(args.iter().map(|s| s.to_string()));
+    out
+}
+
+/// Parse the output of [`list_script`]. Unparseable records are skipped.
+fn parse_listing(raw: &[u8]) -> WorkspaceListing {
+    let mut files: Vec<WorkspaceFile> = raw
+        .split(|&b| b == 0)
+        .filter(|rec| !rec.is_empty())
+        .filter_map(|rec| {
+            let rec = String::from_utf8_lossy(rec);
+            let mut parts = rec.splitn(3, '\t');
+            let size = parts.next()?.parse().ok()?;
+            let mtime: f64 = parts.next()?.parse().ok()?;
+            let path = parts.next()?.to_string();
+            let modified_at = chrono::DateTime::from_timestamp_millis((mtime * 1000.0) as i64)?;
+            Some(WorkspaceFile {
+                path,
+                size,
+                modified_at,
+            })
+        })
+        .collect();
+    let truncated = files.len() > MAX_LISTED_FILES;
+    files.truncate(MAX_LISTED_FILES);
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    WorkspaceListing { files, truncated }
 }
 
 /// Arguments for `docker exec` that run `command` under an in-container `timeout`.
@@ -359,6 +517,43 @@ impl DockerSandboxFactory {
     fn label_filter() -> String {
         format!("label={LABEL}")
     }
+
+    /// `docker run` would silently create a missing volume, so check first. [`WorkspaceMissing`]
+    /// if it doesn't exist; other docker failures are returned as they are.
+    async fn require_workspace(&self, workspace_id: Uuid) -> Result<()> {
+        let args = [
+            "volume",
+            "inspect",
+            "--format",
+            "{{.Name}}",
+            &volume_name(workspace_id),
+        ]
+        .map(String::from);
+        let out = docker_output(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if stderr.contains("no such volume") || stderr.contains("No such volume") {
+            return Err(WorkspaceMissing.into());
+        }
+        bail!(
+            "`docker volume inspect` failed ({}): {}",
+            out.status,
+            stderr.trim()
+        );
+    }
+
+    async fn run_in_workspace(
+        &self,
+        workspace_id: Uuid,
+        script: &str,
+        args: &[&str],
+    ) -> Result<std::process::Output> {
+        self.require_workspace(workspace_id).await?;
+        let args = workspace_run_args(&self.cfg, workspace_id, script, args);
+        docker_output(&self.docker, &args, DOCKER_CREATE_TIMEOUT).await
+    }
 }
 
 #[async_trait]
@@ -437,6 +632,47 @@ impl SandboxFactory for DockerSandboxFactory {
             .split_whitespace()
             .filter_map(|n| n.strip_prefix(VOLUME_PREFIX)?.parse().ok())
             .collect())
+    }
+
+    async fn list_workspace_files(&self, workspace_id: Uuid) -> Result<WorkspaceListing> {
+        let out = self
+            .run_in_workspace(workspace_id, &list_script(), &[])
+            .await?;
+        if !out.status.success() {
+            bail!(
+                "listing workspace {workspace_id} failed ({}): {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        Ok(parse_listing(&out.stdout))
+    }
+
+    async fn read_workspace_file(
+        &self,
+        workspace_id: Uuid,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<Option<FileContent>> {
+        check_workspace_path(path)?;
+        let limit = (max_bytes + 1).to_string();
+        let out = self
+            .run_in_workspace(workspace_id, READ_WORKSPACE_SCRIPT, &[path, &limit])
+            .await?;
+        match out.status.code() {
+            Some(0) => {
+                let mut bytes = out.stdout;
+                let truncated = bytes.len() > max_bytes;
+                bytes.truncate(max_bytes);
+                Ok(Some(FileContent { bytes, truncated }))
+            }
+            Some(2) => Ok(None),
+            _ => bail!(
+                "reading {path} from workspace {workspace_id} failed ({}): {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        }
     }
 
     async fn health(&self) -> Result<()> {
@@ -519,5 +755,81 @@ mod tests {
         assert!(check_path("a/b.txt").is_ok());
         assert!(check_path("").is_err());
         assert!(check_path("a\0b").is_err());
+    }
+
+    #[test]
+    fn workspace_paths_must_stay_inside_the_workspace() {
+        for ok in [
+            "a.pdf",
+            "deep/nested/file.txt",
+            "it's a $(x) file",
+            ".hidden",
+        ] {
+            assert!(check_workspace_path(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "/etc/passwd",
+            "../x",
+            "a/../b",
+            "a/./b",
+            "a//b",
+            "a/",
+            "a\0b",
+        ] {
+            assert!(check_workspace_path(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn workspace_run_args_mount_read_only_and_lock_down() {
+        let ws = Uuid::nil();
+        let args = workspace_run_args(&cfg(), ws, "echo \"$1\"", &["x y", "2"]);
+        let joined = args.join(" ");
+        assert!(joined.starts_with("run --rm --network none"));
+        assert!(joined.contains("--cap-drop ALL"));
+        assert!(joined.contains("--user 1000:1000"));
+        assert!(joined.contains(&format!("-v cedar-ws-{ws}:/workspace:ro")));
+        // Image, then the script as one argv element, then `$0` and the positional arguments.
+        assert_eq!(
+            &args[args.len() - 7..],
+            ["img:1", "sh", "-c", "echo \"$1\"", "sh", "x y", "2"]
+        );
+    }
+
+    #[test]
+    fn list_script_prunes_noise_and_caps_the_listing() {
+        let script = list_script();
+        assert!(script.contains("-name '.git'"));
+        assert!(script.contains("-name 'node_modules'"));
+        assert!(script.contains("-type f"));
+        assert!(script.ends_with(&format!("head -z -n {}", MAX_LISTED_FILES + 1)));
+    }
+
+    #[test]
+    fn listings_are_parsed_sorted_and_truncated() {
+        let raw = b"5828\t1700000000.5\tout/rust-intro.pdf\0\
+                    12\t1700000001\ta.txt\0\
+                    garbage\0\
+                    3\t1700000002\tdir with space/b c.md\0";
+        let listing = parse_listing(raw);
+        assert!(!listing.truncated);
+        let paths: Vec<_> = listing.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            ["a.txt", "dir with space/b c.md", "out/rust-intro.pdf"]
+        );
+        assert_eq!(listing.files[2].size, 5828);
+        assert_eq!(
+            listing.files[2].modified_at.timestamp_millis(),
+            1_700_000_000_500
+        );
+
+        let many: Vec<u8> = (0..=MAX_LISTED_FILES)
+            .flat_map(|i| format!("1\t1\tf{i:05}\0").into_bytes())
+            .collect();
+        let listing = parse_listing(&many);
+        assert!(listing.truncated);
+        assert_eq!(listing.files.len(), MAX_LISTED_FILES);
     }
 }

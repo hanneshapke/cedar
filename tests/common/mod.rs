@@ -10,7 +10,10 @@ use cedar::api::{self, AppState};
 use cedar::config::Config;
 use cedar::llm::{LlmClient, LlmResponse, MessageRequest};
 use cedar::models::Usage;
-use cedar::sandbox::{ExecOutput, FileContent, Sandbox, SandboxFactory, SandboxFatal};
+use cedar::sandbox::{
+    check_workspace_path, ExecOutput, FileContent, Sandbox, SandboxFactory, SandboxFatal,
+    WorkspaceFile, WorkspaceListing, WorkspaceMissing,
+};
 use cedar::store::Store;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -213,6 +216,15 @@ impl FakeFactory {
         self.created.lock().unwrap()[index].1.clone()
     }
 
+    fn workspace_files(&self, workspace_id: Uuid) -> Result<Files> {
+        self.workspaces
+            .lock()
+            .unwrap()
+            .get(&workspace_id)
+            .cloned()
+            .ok_or_else(|| WorkspaceMissing.into())
+    }
+
     pub fn all_destroyed(&self) -> bool {
         self.created
             .lock()
@@ -258,6 +270,39 @@ impl SandboxFactory for FakeFactory {
 
     async fn list_workspaces(&self) -> Result<Vec<Uuid>> {
         Ok(self.workspaces.lock().unwrap().keys().copied().collect())
+    }
+
+    async fn list_workspace_files(&self, workspace_id: Uuid) -> Result<WorkspaceListing> {
+        let files = self.workspace_files(workspace_id)?;
+        let files = files.lock().unwrap();
+        let mut files: Vec<WorkspaceFile> = files
+            .iter()
+            .map(|(path, bytes)| WorkspaceFile {
+                path: path.clone(),
+                size: bytes.len() as u64,
+                modified_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+            })
+            .collect();
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(WorkspaceListing {
+            files,
+            truncated: false,
+        })
+    }
+
+    async fn read_workspace_file(
+        &self,
+        workspace_id: Uuid,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<Option<FileContent>> {
+        check_workspace_path(path)?;
+        let files = self.workspace_files(workspace_id)?;
+        let files = files.lock().unwrap();
+        Ok(files.get(path).map(|bytes| FileContent {
+            bytes: bytes[..bytes.len().min(max_bytes)].to_vec(),
+            truncated: bytes.len() > max_bytes,
+        }))
     }
 
     async fn health(&self) -> Result<()> {

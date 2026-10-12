@@ -7,8 +7,8 @@ use crate::prompt::{self, Exchange};
 use crate::store::{Conversation, Store, Turn};
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Request, State};
-use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE};
-use axum::http::StatusCode;
+use axum::http::header::{self, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE};
+use axum::http::{HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -55,6 +55,8 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations", get(list_conversations).post(create_conversation))
         .route("/conversations/{id}", get(get_conversation).patch(rename_conversation).delete(delete_conversation))
         .route("/conversations/{id}/messages", post(send_message))
+        .route("/conversations/{id}/files", get(list_files))
+        .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
         .route("/turns/{id}/cancel", post(cancel_turn))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
@@ -291,6 +293,36 @@ async fn send_message(
     };
     let turn = state.store.insert_turn(conversation.id, run.id, content, &run.status, model).await?;
     Ok((StatusCode::CREATED, Json(turn)))
+}
+
+// -- workspace files ------------------------------------------------------------------------
+
+/// The run whose workspace holds the conversation's files: the latest one, since every turn
+/// continues the previous run and keeps its workspace. `None` for a conversation with no turns.
+async fn latest_run(state: &AppState, raw_id: &str) -> Result<Option<Uuid>, AppError> {
+    let conversation = find_conversation(state, raw_id).await?;
+    Ok(state.store.list_turns(conversation.id).await?.last().map(|t| t.run_id))
+}
+
+async fn list_files(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
+    match latest_run(&state, &id).await? {
+        Some(run_id) => Ok(Json(state.cedar.list_files(run_id).await?)),
+        None => Ok(Json(json!({ "workspace_id": null, "files": [], "truncated": false }))),
+    }
+}
+
+/// Relay a file download from cedar, keeping the headers that describe the file.
+async fn download_file(State(state): State<AppState>, Path((id, path)): Path<(String, String)>) -> Result<Response, AppError> {
+    let run_id = latest_run(&state, &id).await?.ok_or(AppError::NotFound("no such file in the workspace"))?;
+    let upstream = state.cedar.download_file(run_id, &path).await?;
+    let mut headers = axum::http::HeaderMap::new();
+    for name in [CONTENT_TYPE, header::CONTENT_LENGTH, header::CONTENT_DISPOSITION] {
+        if let Some(value) = upstream.headers().get(&name) {
+            headers.insert(name, value.clone());
+        }
+    }
+    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok((headers, Body::from_stream(upstream.bytes_stream())).into_response())
 }
 
 #[derive(Deserialize)]

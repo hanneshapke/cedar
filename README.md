@@ -57,6 +57,8 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`). |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
+| `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
+| `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (database + Docker). No auth. |
 
@@ -106,11 +108,26 @@ removed. A continuation of a run whose workspace has expired still gets the conv
 starts with an empty workspace, and the model is told so. Deleting the last run that uses a
 workspace removes it straight away.
 
+## Workspace files
+
+Anything the agent saves under `/workspace` can be fetched while the workspace exists, whether the
+run is still going or has finished:
+
+```sh
+curl -s -H "Authorization: Bearer $KEY" localhost:8080/v1/runs/<id>/files
+curl -OJ -H "Authorization: Bearer $KEY" localhost:8080/v1/runs/<id>/files/out/report.pdf
+```
+
+Every run in a chain of continuations shares one workspace, so any of their ids works. The files
+are read through a short-lived container that mounts the workspace read-only, with the same
+restrictions as a sandbox; nothing is read from the host filesystem, and a symlink that points
+outside `/workspace` is reported as missing.
+
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a Claude.ai-style web UI for talking to
-the agent: a conversation sidebar, live tool calls, and stop and rename buttons. It calls cedar's
-HTTP API with a key it keeps on the server.
+the agent: a conversation sidebar, live tool calls, a files panel for downloading what the agent
+produced, and stop and rename buttons. It calls cedar's HTTP API with a key it keeps on the server.
 
 ```sh
 CEDAR_API_KEY=devkey cargo run -p cedar-chat   # then open http://127.0.0.1:3000
@@ -152,7 +169,7 @@ Settings come from environment variables. The important ones:
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
 | `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
 | `BRAVE_API_BASE_URL` | `https://api.search.brave.com/res/v1/web/search` |
-| `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` |
+| `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
 
 ## Tools
@@ -167,6 +184,10 @@ Settings come from environment variables. The important ones:
 `web_search` runs in the cedar process, not in the container, because the container has no network. It returns snippets only; it does not fetch pages. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
 
 Output is cut at `TOOL_OUTPUT_MAX_BYTES` per stream with a `[truncated N bytes]` marker, so a large file or noisy command can't fill the context window.
+
+### The sandbox image
+
+`sandbox/Dockerfile` builds a small Debian image with `python3`, `pip`, `venv`, `git`, `curl`, and `jq`. pip installs go to `/workspace/.local` (via `PYTHONUSERBASE`), so packages the agent installs in one run are still there in a [continuation](#continuing-a-run), and scripts they install are on `PATH`. Installing needs network access: with the default `SANDBOX_NETWORK=none` the container is offline and `pip install` fails to reach PyPI, so set `SANDBOX_NETWORK=bridge` if you want the agent to add packages itself (see [Safety](#safety)). Anything the agent should have offline goes into the Dockerfile.
 
 ## Adding a tool
 
@@ -204,7 +225,8 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
-- Turning networking on for the sandbox lets the agent reach anything that container network can reach, including internal services.
+- Turning networking on for the sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services.
+- Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
 ## Operations
 
@@ -227,7 +249,7 @@ The integration tests drive the real router with a scripted LLM and a fake sandb
 
 - No token-level streaming from the model; events arrive per model turn and per tool call.
 - A run is a single prompt. To follow up, start a new run that [continues](#continuing-a-run) the finished one.
-- There is no API to download workspace files, and workspaces are removed after `WORKSPACE_TTL_SECS`. Have the agent include what you need in its answer.
+- Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload.
 - One instance: SQLite and the run queue live in the process.
 - Tool calls within a turn run one after another.
 - Per-key limiting is only the active-run cap; there is no request rate limit or token budget.

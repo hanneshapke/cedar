@@ -37,6 +37,9 @@
           <button class="title" id="title" type="button" title="Rename"></button>
           <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
         </div>
+        <button class="icon-btn" id="files-btn" type="button" aria-label="Workspace files" title="Workspace files" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </button>
         <button class="icon-btn" id="delete-chat" type="button" aria-label="Delete conversation" title="Delete conversation" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
         </button>
@@ -76,6 +79,20 @@
       <input id="token-input" type="password" autocomplete="current-password" required aria-label="Access token">
       <div class="dialog-actions"><button type="submit" class="primary">Continue</button></div>
     </form>
+  </dialog>
+
+  <dialog id="files-dialog" class="files-dialog" aria-labelledby="files-title">
+    <div class="files-head">
+      <h3 id="files-title">Workspace files</h3>
+      <button class="icon-btn" id="files-refresh" type="button" aria-label="Refresh" title="Refresh">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+      </button>
+      <button class="icon-btn" id="files-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p>Files the agent saved under <code>/workspace</code>. They are removed once the workspace expires.</p>
+    <div class="files-list" id="files-list"></div>
   </dialog>
 
   <script src="/app.js"></script>

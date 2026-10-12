@@ -411,6 +411,15 @@ impl Store {
             .collect()
     }
 
+    /// Does this workspace still have its files (exists and hasn't expired)?
+    pub async fn workspace_is_live(&self, workspace_id: Uuid) -> Result<bool> {
+        let row = sqlx::query("SELECT 1 FROM workspaces WHERE id = ? AND expired_at IS NULL")
+            .bind(workspace_id.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
+    }
+
     /// Workspaces whose volumes should exist.
     pub async fn live_workspaces(&self) -> Result<Vec<Uuid>> {
         let rows = sqlx::query("SELECT id FROM workspaces WHERE expired_at IS NULL")

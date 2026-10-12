@@ -122,15 +122,19 @@ cd ~/cedar
 cargo build --release --workspace
 sudo install -m 0755 target/release/cedar target/release/cedar-chat /usr/local/bin/
 
-# The image the agent's tools run in (a small Debian with python3, git, curl, jq)
+# The image the agent's tools run in (a small Debian with python3, pip, git, curl, jq)
 docker build -t cedar-sandbox sandbox/
 ```
 
 The chat UI's HTML, CSS, and JavaScript are compiled into the `cedar-chat` binary, so there is
 nothing else to deploy.
 
-The sandbox has no network, so the agent can't install packages. If your tasks need more tools,
-add them to `sandbox/Dockerfile` and rebuild the image. Web search is the exception: the optional
+By default the sandbox has no network, so the agent can only use what the image ships with; add
+tools to `sandbox/Dockerfile` and rebuild the image if your tasks need more. To let the agent
+`pip install` packages itself, set `SANDBOX_NETWORK=bridge` in cedar's environment file (step 4).
+That gives the container outbound access to whatever the Docker bridge network can reach, so
+only do it on a machine where that is acceptable. Installed packages live in the run's workspace
+and survive follow-up messages until the workspace expires. Web search is separate: the optional
 `web_search` tool (see `BRAVE_API_KEY` in step 4) runs in the cedar process, so the host needs
 outbound HTTPS to `api.search.brave.com`.
 

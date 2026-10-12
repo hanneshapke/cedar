@@ -16,6 +16,8 @@ The cedar API key stays on the server. The browser only talks to cedar-chat.
   `web_search` when cedar has a Brave key) with their input and output, errors, and token usage are
   shown as they happen
 - A stop button cancels the running response
+- A files panel (the folder button in the header) lists what the agent saved under `/workspace`
+  and downloads any of it; finished `write_file` calls get a download button too
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
 - An optional model picker and an optional access token
@@ -54,8 +56,9 @@ The first message in a conversation starts a new cedar run. Each later message s
 **continues** the previous one (`parent_id` in cedar's API), so the agent keeps:
 
 - the whole conversation, including its earlier tool calls and their results, and
-- its sandbox workspace: files written under `/workspace` are still there. Running processes
-  are not, since each run gets a new container.
+- its sandbox workspace: files written under `/workspace` are still there, as are packages the
+  agent `pip install`ed (they go to `/workspace/.local`). Running processes are not, since each
+  run gets a new container.
 
 cedar removes a workspace once it has been idle for `WORKSPACE_TTL_SECS` (24 hours by default).
 After that, a follow-up still has the conversation but starts with an empty workspace, and the
@@ -84,6 +87,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "..."}`. Starts a cedar run and returns the turn. Returns 409 if a response is still running |
+| `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
+| `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 

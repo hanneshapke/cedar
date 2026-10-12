@@ -1143,6 +1143,160 @@ async fn startup_removes_workspaces_the_database_does_not_know() {
     assert_eq!(*app.factory.removed_workspaces.lock().unwrap(), [stray]);
 }
 
+// -- workspace files --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn workspace_files_can_be_listed_and_downloaded() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use(
+            "t1",
+            "write_file",
+            json!({ "path": "out/rust-intro.pdf", "content": "%PDF-1.4 fake" }),
+        )),
+        Step::Reply(tool_use(
+            "t2",
+            "write_file",
+            json!({ "path": "notes/it's \"quoted\" ✓.md", "content": "# hi" }),
+        )),
+        Step::Reply(text("done")),
+    ])
+    .await;
+    let run = app.create_run(KEY_A, "make a pdf").await;
+    let id = id_of(&run);
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let (status, list) = app.get(&format!("/v1/runs/{id}/files"), KEY_A).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["workspace_id"], run["workspace_id"]);
+    assert_eq!(list["truncated"], false);
+    let files = list["files"].as_array().unwrap();
+    assert_eq!(files.len(), 2);
+    assert_eq!(files[0]["path"], "notes/it's \"quoted\" ✓.md");
+    assert_eq!(files[1]["path"], "out/rust-intro.pdf");
+    assert_eq!(files[1]["size"], 13);
+    assert!(files[1]["modified_at"].is_string());
+
+    let (status, headers, body) = app
+        .call(
+            Method::GET,
+            &format!("/v1/runs/{id}/files/out/rust-intro.pdf"),
+            Some(KEY_A),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, "%PDF-1.4 fake");
+    assert_eq!(headers["content-type"], "application/pdf");
+    assert_eq!(
+        headers["content-disposition"],
+        "attachment; filename=\"rust-intro.pdf\"; filename*=UTF-8''rust-intro.pdf"
+    );
+    assert_eq!(headers["content-length"], "13");
+
+    // Odd names survive percent-encoding both ways; unknown types are octet streams.
+    let encoded = "notes/it's%20%22quoted%22%20%E2%9C%93.md";
+    let (status, headers, body) = app
+        .call(
+            Method::GET,
+            &format!("/v1/runs/{id}/files/{encoded}"),
+            Some(KEY_A),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, "# hi");
+    assert_eq!(headers["content-type"], "text/markdown");
+    assert_eq!(
+        headers["content-disposition"],
+        "attachment; filename=\"it's _quoted_ _.md\"; filename*=UTF-8''it%27s%20%22quoted%22%20%E2%9C%93.md"
+    );
+
+    // The files belong to the key that owns the run.
+    let (status, _) = app.get(&format!("/v1/runs/{id}/files"), KEY_B).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .get(&format!("/v1/runs/{id}/files/out/rust-intro.pdf"), KEY_B)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, err) = app
+        .get(&format!("/v1/runs/{id}/files/nope.txt"), KEY_A)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["message"], "no such file in the workspace");
+    for bad in ["../secret", "a/../b", "./a", "a//b"] {
+        let (status, err) = app.get(&format!("/v1/runs/{id}/files/{bad}"), KEY_A).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {err}");
+    }
+}
+
+#[tokio::test]
+async fn files_follow_the_workspace_through_continuations_and_expiry() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use(
+            "t1",
+            "write_file",
+            json!({ "path": "a.txt", "content": "A" }),
+        )),
+        Step::Reply(text("one")),
+        Step::Reply(text("two")),
+    ])
+    .await;
+    let first = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &id_of(&first), "completed").await;
+    let second = app
+        .create_run_with(KEY_A, json!({ "prompt": "2", "parent_id": first["id"] }))
+        .await;
+    app.wait_status(KEY_A, &id_of(&second), "completed").await;
+
+    // Both runs share the workspace, so both see the file.
+    for run in [&first, &second] {
+        let (status, _, body) = app
+            .call(
+                Method::GET,
+                &format!("/v1/runs/{}/files/a.txt", id_of(run)),
+                Some(KEY_A),
+                None,
+            )
+            .await;
+        assert_eq!((status, body.as_str()), (StatusCode::OK, "A"));
+    }
+
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    app.state
+        .manager
+        .expire_workspaces(Duration::ZERO)
+        .await
+        .unwrap();
+    let (status, err) = app
+        .get(&format!("/v1/runs/{}/files", id_of(&second)), KEY_A)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        err["error"]["message"],
+        "the run's workspace no longer exists"
+    );
+    let (status, _) = app
+        .get(&format!("/v1/runs/{}/files/a.txt", id_of(&second)), KEY_A)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_workspace_that_vanished_from_docker_is_a_404_not_a_500() {
+    let app = TestApp::new(vec![Step::Reply(text("one"))]).await;
+    let run = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &id_of(&run), "completed").await;
+    // The database still thinks the workspace is live, but its volume is gone.
+    let ws: uuid::Uuid = run["workspace_id"].as_str().unwrap().parse().unwrap();
+    app.factory.workspaces.lock().unwrap().remove(&ws);
+
+    let (status, err) = app
+        .get(&format!("/v1/runs/{}/files", id_of(&run)), KEY_A)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{err}");
+}
+
 // -- startup recovery -------------------------------------------------------------------------
 
 #[tokio::test]

@@ -94,6 +94,29 @@ impl CedarClient {
     pub async fn events(&self, id: Uuid, after: i64) -> Result<reqwest::Response, AppError> {
         self.send(self.http.get(self.url(&format!("/runs/{id}/events"))).query(&[("after", after)])).await
     }
+
+    /// The files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`.
+    pub async fn list_files(&self, id: Uuid) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url(&format!("/runs/{id}/files")))).await
+    }
+
+    /// Start downloading a workspace file. The response carries the file's type, length and name.
+    pub async fn download_file(&self, id: Uuid, path: &str) -> Result<reqwest::Response, AppError> {
+        let url = self.url(&format!("/runs/{id}/files/{}", encode_path(path)));
+        self.send(self.http.get(url).timeout(Duration::from_secs(300))).await
+    }
+}
+
+/// Percent-encode a workspace path for a URL, keeping `/` as the separator.
+fn encode_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 async fn upstream_error(resp: reqwest::Response) -> AppError {
@@ -109,4 +132,16 @@ async fn upstream_error(resp: reqwest::Response) -> AppError {
     }
     let code = body["error"]["code"].as_str().unwrap_or("upstream").to_string();
     AppError::Upstream { status, code, message }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paths_are_encoded_per_segment() {
+        assert_eq!(encode_path("out/rust-intro.pdf"), "out/rust-intro.pdf");
+        assert_eq!(encode_path("a b/it's #1?.md"), "a%20b/it%27s%20%231%3F.md");
+        assert_eq!(encode_path("✓.txt"), "%E2%9C%93.txt");
+    }
 }

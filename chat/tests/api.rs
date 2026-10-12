@@ -24,6 +24,8 @@ struct FakeCedar {
     prompts: Mutex<Vec<String>>,
     parents: Mutex<Vec<Option<String>>>,
     deleted: Mutex<Vec<Uuid>>,
+    expired: Mutex<Vec<Uuid>>,
+    downloads: Mutex<Vec<(Uuid, String)>>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -89,6 +91,37 @@ async fn events(Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract:
     ([("content-type", "text/event-stream")], body)
 }
 
+/// Every run's workspace holds `out/report.pdf`, unless the run has been marked `expired`.
+async fn list_files(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::response::Response {
+    if !s.runs.lock().unwrap().contains_key(&id) {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "run not found");
+    }
+    if s.expired.lock().unwrap().contains(&id) {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "the run's workspace no longer exists");
+    }
+    Json(json!({
+        "workspace_id": id,
+        "files": [{ "path": "out/report.pdf", "size": 4, "modified_at": "2026-10-11T12:00:00Z" }],
+        "truncated": false,
+    }))
+    .into_response()
+}
+
+async fn download_file(State(s): State<Shared>, Path((id, path)): Path<(Uuid, String)>) -> axum::response::Response {
+    s.downloads.lock().unwrap().push((id, path.clone()));
+    if path != "out/report.pdf" {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "no such file in the workspace");
+    }
+    (
+        [
+            ("content-type", "application/pdf"),
+            ("content-disposition", "attachment; filename=\"report.pdf\"; filename*=UTF-8''report.pdf"),
+        ],
+        "%PDF",
+    )
+        .into_response()
+}
+
 struct Harness {
     app: Router,
     cedar: Shared,
@@ -102,6 +135,8 @@ impl Harness {
             .route("/v1/runs/{id}", get(get_run).delete(delete_run))
             .route("/v1/runs/{id}/cancel", post(cancel_run))
             .route("/v1/runs/{id}/events", get(events))
+            .route("/v1/runs/{id}/files", get(list_files))
+            .route("/v1/runs/{id}/files/{*path}", get(download_file))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -127,10 +162,15 @@ impl Harness {
             None => req.body(Body::empty()),
         }
         .unwrap();
+        let (status, _, body) = self.call_full(req).await;
+        (status, body)
+    }
+
+    async fn call_full(&self, req: Request<Body>) -> (StatusCode, HeaderMap, String) {
         let resp = self.app.clone().oneshot(req).await.unwrap();
-        let status = resp.status();
-        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-        (status, String::from_utf8(bytes.to_vec()).unwrap())
+        let (parts, body) = resp.into_parts();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        (parts.status, parts.headers, String::from_utf8(bytes.to_vec()).unwrap())
     }
 
     async fn json(&self, method: Method, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
@@ -293,4 +333,55 @@ async fn access_token_guards_the_api_but_not_the_page() {
     let (status, page) = h.call(Method::GET, "/", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(page.contains("<script src=\"/app.js\">"));
+}
+
+#[tokio::test]
+async fn workspace_files_are_listed_and_downloaded_through_the_latest_run() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let files_url = format!("/api/conversations/{cid}/files");
+
+    // No turns yet: an empty listing, not an error.
+    let (status, listing) = h.json(Method::GET, &files_url, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listing, json!({ "workspace_id": null, "files": [], "truncated": false }));
+    let (status, _) = h.call(Method::GET, &format!("{files_url}/out/report.pdf"), None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let msgs = format!("/api/conversations/{cid}/messages");
+    let (_, t1) = h.json(Method::POST, &msgs, Some(json!({ "content": "make a pdf" }))).await;
+    h.finish(t1["run_id"].as_str().unwrap(), "completed", Some("done"));
+    let (_, t2) = h.json(Method::POST, &msgs, Some(json!({ "content": "and a chart" }))).await;
+
+    let (status, listing) = h.json(Method::GET, &files_url, None).await;
+    assert_eq!(status, StatusCode::OK, "{listing}");
+    assert_eq!(listing["workspace_id"], t2["run_id"], "the latest run's workspace is used");
+    assert_eq!(listing["files"][0]["path"], "out/report.pdf");
+
+    let req = Request::builder().uri(format!("{files_url}/out/report.pdf")).body(Body::empty()).unwrap();
+    let (status, headers, body) = h.call_full(req).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, "%PDF");
+    assert_eq!(headers["content-type"], "application/pdf");
+    assert_eq!(headers["content-disposition"], "attachment; filename=\"report.pdf\"; filename*=UTF-8''report.pdf");
+    assert_eq!(headers["cache-control"], "no-store");
+    let t2_run = Uuid::parse_str(t2["run_id"].as_str().unwrap()).unwrap();
+    assert_eq!(*h.cedar.downloads.lock().unwrap(), [(t2_run, "out/report.pdf".to_string())]);
+
+    // Names are passed on percent-encoded and decoded by cedar; cedar's errors are relayed.
+    let (status, err) = h.json(Method::GET, &format!("{files_url}/it's%20gone.txt"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["message"], "no such file in the workspace");
+    assert_eq!(h.cedar.downloads.lock().unwrap().last().unwrap().1, "it's gone.txt");
+
+    h.cedar.expired.lock().unwrap().push(t2_run);
+    let (status, err) = h.json(Method::GET, &files_url, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["message"], "the run's workspace no longer exists");
+
+    // Like every other API route, files need the access token when one is configured.
+    let guarded = Harness::new(&[("CHAT_ACCESS_TOKEN", "letmein")]).await;
+    let (status, _) = guarded.call(Method::GET, &files_url, None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }

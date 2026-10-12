@@ -56,6 +56,9 @@ LLM_BASE_URL=http://localhost:8000/v1
 MAX_CONCURRENT_RUNS=2
 RUN_TIMEOUT_SECS=1800
 RUST_LOG=info,sqlx=warn
+# Give the sandbox network access so the agent can \`pip install\` packages. Set to "none" to keep
+# it offline (the agent then only has what sandbox/Dockerfile installs).
+SANDBOX_NETWORK=bridge
 
 # cedar-chat (its CEDAR_API_KEY is the first of CEDAR_API_KEYS)
 # Set this to your Tailscale IP (e.g. 100.x.y.z:3000) to open the UI from other devices.

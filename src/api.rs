@@ -8,15 +8,16 @@ use crate::events::EventHub;
 use crate::llm::LlmClient;
 use crate::manager::RunManager;
 use crate::models::{CreateRunRequest, NewRun, Run, RunStatus, StoredMessage};
-use crate::sandbox::SandboxFactory;
+use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
 use crate::sse;
 use crate::store::{InsertRefused, Store};
 use crate::tools::ToolSet;
 use anyhow::Result;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::response::sse::Sse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use futures_util::Stream;
@@ -33,6 +34,8 @@ const MAX_SYSTEM_BYTES: usize = 20_000;
 const MAX_MODEL_LEN: usize = 100;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
+/// Largest workspace file that can be downloaded. It is read into memory before being sent.
+pub const MAX_DOWNLOAD_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -89,6 +92,8 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/messages", get(get_messages))
         .route("/runs/{id}/events", get(stream_events))
         .route("/runs/{id}/cancel", post(cancel_run))
+        .route("/runs/{id}/files", get(list_files))
+        .route("/runs/{id}/files/{*path}", get(download_file))
         .route_layer(middleware::from_fn_with_state(
             state.auth.clone(),
             auth::require_auth,
@@ -348,6 +353,113 @@ async fn stream_events(
         run.id,
         after,
     ))
+}
+
+// -- workspace files ------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct FileList {
+    workspace_id: Uuid,
+    #[serde(flatten)]
+    listing: WorkspaceListing,
+}
+
+/// The caller's run, if its workspace files still exist. Expired workspaces look like missing ones.
+async fn owned_live_workspace(
+    state: &AppState,
+    owner: &Owner,
+    raw_id: &str,
+) -> Result<Uuid, AppError> {
+    let run = owned_run(state, owner, raw_id).await?;
+    if !state.store.workspace_is_live(run.workspace_id).await? {
+        return Err(AppError::NotFound("the run's workspace no longer exists"));
+    }
+    Ok(run.workspace_id)
+}
+
+/// A missing volume is a 404 (it can expire between the database check and the docker call);
+/// anything else is an internal error, logged with its detail.
+fn workspace_error(e: anyhow::Error) -> AppError {
+    if e.downcast_ref::<WorkspaceMissing>().is_some() {
+        AppError::NotFound("the run's workspace no longer exists")
+    } else {
+        AppError::Internal(e)
+    }
+}
+
+async fn list_files(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<FileList>, AppError> {
+    let workspace_id = owned_live_workspace(&state, &owner, &id).await?;
+    let listing = state
+        .sandboxes
+        .list_workspace_files(workspace_id)
+        .await
+        .map_err(workspace_error)?;
+    Ok(Json(FileList {
+        workspace_id,
+        listing,
+    }))
+}
+
+async fn download_file(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path((id, path)): Path<(String, String)>,
+) -> Result<Response, AppError> {
+    check_workspace_path(&path).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let workspace_id = owned_live_workspace(&state, &owner, &id).await?;
+    let file = state
+        .sandboxes
+        .read_workspace_file(workspace_id, &path, MAX_DOWNLOAD_BYTES)
+        .await
+        .map_err(workspace_error)?
+        .ok_or(AppError::NotFound("no such file in the workspace"))?;
+    if file.truncated {
+        return Err(AppError::BadRequest(format!(
+            "{path} is larger than the {MAX_DOWNLOAD_BYTES} byte download limit"
+        )));
+    }
+    let name = path.rsplit('/').next().unwrap_or(&path);
+    let mime = mime_guess::from_path(name)
+        .first_raw()
+        .unwrap_or("application/octet-stream");
+    Ok((
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static(mime)),
+            (header::CONTENT_DISPOSITION, attachment(name)),
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+        ],
+        file.bytes,
+    )
+        .into_response())
+}
+
+/// `attachment; filename="<ascii>"; filename*=UTF-8''<percent-encoded>` for a file name.
+fn attachment(name: &str) -> HeaderValue {
+    let ascii: String = name
+        .chars()
+        .map(|c| match c {
+            '"' | '\\' => '_',
+            c if c.is_ascii_graphic() || c == ' ' => c,
+            _ => '_',
+        })
+        .collect();
+    let mut encoded = String::new();
+    for b in name.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(b as char)
+            }
+            _ => encoded.push_str(&format!("%{b:02X}")),
+        }
+    }
+    HeaderValue::from_str(&format!(
+        "attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}"
+    ))
+    .expect("ascii header value")
 }
 
 // -- health ---------------------------------------------------------------------------------

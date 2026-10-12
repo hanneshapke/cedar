@@ -10,6 +10,7 @@ const els = {
   composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), hint: $('hint'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
+  filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
 };
 
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
@@ -40,6 +41,7 @@ const ICONS = {
   copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   spark: '<svg class="spark" viewBox="0 0 24 24"><path d="M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z"/></svg>',
+  download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>',
 };
 
 function escapeHtml(s) {
@@ -340,6 +342,7 @@ function resetView() {
   state.views.clear();
   state.activeTurn = null;
   els.thread.textContent = '';
+  if (els.filesDialog.open) els.filesDialog.close();
 }
 
 function setHeader() {
@@ -347,6 +350,7 @@ function setHeader() {
   els.main.classList.toggle('empty', !c);
   els.title.textContent = c ? (c.title || 'New chat') : '';
   els.deleteChat.hidden = !c;
+  els.filesBtn.hidden = !c;
   document.title = c?.title ? `${c.title} – Cedar` : 'Cedar';
 }
 
@@ -540,6 +544,7 @@ function toolCall(view, d) {
   inputPre.textContent = shown;
   body.append(h('div', 'label', 'Input'), inputPre);
   details.append(summary, body);
+  if (d.name === 'write_file' && typeof input.path === 'string') details.dataset.path = input.path;
   view.tools.set(d.id, details);
   return details;
 }
@@ -556,7 +561,13 @@ function toolResult(view, d) {
   const out = h('pre', 'output');
   const text = String(d.output ?? '');
   out.textContent = text.trim() ? text : '(no output)';
-  details.querySelector('.tool-body').append(h('div', 'label', d.is_error ? 'Error' : 'Output'), out);
+  const label = h('div', 'label', d.is_error ? 'Error' : 'Output');
+  const written = !d.is_error && workspacePath(details.dataset.path);
+  if (written) {
+    label.classList.add('with-action');
+    label.append(downloadButton(written));
+  }
+  details.querySelector('.tool-body').append(label, out);
 }
 
 function finishTurn(view, event) {
@@ -601,7 +612,115 @@ function finishTurn(view, event) {
     updateComposer();
     renderSidebar();
   }
+  if (els.filesDialog.open) loadFiles(); // the response may have added or changed files
   scrollToBottom(false);
+}
+
+// -- workspace files ---------------------------------------------------------------------------
+
+/** A path relative to the workspace, or null if `path` points elsewhere. */
+function workspacePath(path) {
+  if (typeof path !== 'string') return null;
+  let p = path.trim();
+  if (p.startsWith('/workspace/')) p = p.slice('/workspace/'.length);
+  else if (p.startsWith('./')) p = p.slice(2);
+  if (!p || p.startsWith('/') || p.split('/').some((part) => !part || part === '.' || part === '..')) return null;
+  return p;
+}
+
+function formatSize(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** API path (without the `/api` prefix) of the conversation's file listing, or of one file. */
+function filesPath(path) {
+  const base = `/conversations/${state.current.id}/files`;
+  return path ? `${base}/${path.split('/').map(encodeURIComponent).join('/')}` : base;
+}
+
+function downloadButton(path) {
+  const button = h('button', 'copy-btn', `${ICONS.download}Download`);
+  button.type = 'button';
+  button.title = `Download ${path}`;
+  button.addEventListener('click', () => downloadFile(path, button));
+  return button;
+}
+
+/** Fetch the file with the access token and hand it to the browser as a download. */
+async function downloadFile(path, button) {
+  if (!state.current) return;
+  if (button) button.disabled = true;
+  try {
+    let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
+    if (res.status === 401) {
+      await askToken(true);
+      res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error?.message || `Download failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = path.split('/').pop();
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderFiles(listing) {
+  els.filesList.textContent = '';
+  if (!listing.files.length) {
+    els.filesList.append(h('div', 'empty-list', 'No files in the workspace yet.'));
+    return;
+  }
+  for (const f of listing.files) {
+    const row = h('div', 'file-row');
+    const path = h('span', 'path');
+    const bdi = document.createElement('bdi');
+    bdi.textContent = f.path;
+    path.title = f.path;
+    path.append(bdi);
+    const size = h('span', 'size');
+    size.textContent = formatSize(f.size);
+    row.append(path, size, downloadButton(f.path));
+    els.filesList.append(row);
+  }
+  if (listing.truncated) els.filesList.append(h('div', 'empty-list', 'Only the first 1,000 files are shown.'));
+}
+
+async function loadFiles() {
+  if (!state.current) return;
+  const id = state.current.id;
+  els.filesList.textContent = '';
+  els.filesList.append(h('div', 'empty-list', 'Loading…'));
+  try {
+    const listing = await api('GET', filesPath());
+    if (state.current?.id !== id || !els.filesDialog.open) return;
+    renderFiles(listing);
+  } catch (e) {
+    if (state.current?.id !== id) return;
+    els.filesList.textContent = '';
+    const note = h('div', 'empty-list');
+    note.textContent = e.message;
+    els.filesList.append(note);
+  }
+}
+
+function openFiles() {
+  if (!state.current) return;
+  els.filesDialog.showModal();
+  loadFiles();
 }
 
 // -- composer ----------------------------------------------------------------------------------
@@ -723,6 +842,9 @@ els.titleInput.addEventListener('keydown', (e) => {
 });
 els.titleInput.addEventListener('blur', () => finishRename(true));
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
+els.filesBtn.addEventListener('click', openFiles);
+$('files-refresh').addEventListener('click', loadFiles);
+$('files-close').addEventListener('click', () => els.filesDialog.close());
 $('new-chat').addEventListener('click', () => { toggleSidebar(false); location.hash = '#/'; if (!state.current) els.input.focus(); });
 $('open-sidebar').addEventListener('click', () => toggleSidebar(true));
 $('close-sidebar').addEventListener('click', () => toggleSidebar(false));

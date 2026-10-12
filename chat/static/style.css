@@ -204,6 +204,22 @@ dialog p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
 dialog input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); outline: none; }
 dialog input:focus { border-color: var(--accent); }
 .dialog-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+dialog p code { padding: 1px 5px; border-radius: 5px; background: var(--code-bg); border: 1px solid var(--border); font: 0.88em var(--mono); }
+
+/* workspace files */
+.files-dialog { width: min(640px, calc(100vw - 32px)); padding: 18px 20px 16px; }
+.files-head { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.files-head h3 { flex: 1; margin: 0; }
+.files-list { max-height: min(60vh, 520px); overflow-y: auto; margin: 0 -8px; }
+.files-list .empty-list { padding: 12px 8px; }
+.file-row { display: flex; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 8px; }
+.file-row:hover { background: var(--hover); }
+.file-row .path { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; font: 13px var(--mono); }
+.file-row .path bdi { direction: ltr; unicode-bidi: isolate; }
+.file-row .size { flex-shrink: 0; font-size: 12px; color: var(--faint); white-space: nowrap; }
+.file-row .copy-btn { flex-shrink: 0; }
+.tool-body .label.with-action { display: flex; align-items: center; justify-content: space-between; padding-right: 6px; }
+.tool-body .label.with-action .copy-btn { text-transform: none; letter-spacing: normal; font-weight: 500; }
 .primary { padding: 8px 16px; border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 500; }
 .primary:hover { background: var(--accent-hover); }
 

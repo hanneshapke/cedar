@@ -295,6 +295,174 @@ async fn a_missing_image_is_reported_by_the_health_check_and_create() {
     factory.remove_workspace(id).await.unwrap();
 }
 
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn workspace_files_are_listed_and_read_after_the_run_is_gone() {
+    let (f, id, sb) = sandbox().await;
+    sb.write_file("out/report.pdf", b"%PDF-1.4 fake")
+        .await
+        .unwrap();
+    sb.write_file("notes/it's \"quoted\" ✓.md", b"# hi")
+        .await
+        .unwrap();
+    // Noise that a listing should skip, and things that aren't regular files.
+    sb.exec(
+        "mkdir -p .git node_modules/x .local/lib && echo g > .git/config && echo n > node_modules/x/i.js \
+         && echo l > .local/lib/p.py && ln -s /etc/passwd escape && ln -s out/report.pdf alias.pdf && mkdir empty",
+        10 * SECOND,
+        1000,
+    )
+    .await
+    .unwrap();
+    // The container is gone; the workspace volume is what gets read.
+    sb.destroy().await;
+
+    let listing = f.list_workspace_files(id).await.unwrap();
+    let paths: Vec<_> = listing.files.iter().map(|x| x.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        ["notes/it's \"quoted\" ✓.md", "out/report.pdf"],
+        "{listing:?}"
+    );
+    assert_eq!(listing.files[1].size, 13);
+    assert!(!listing.truncated);
+    let age = chrono::Utc::now() - listing.files[1].modified_at;
+    assert!(
+        age.num_seconds() < 120,
+        "mtime {:?}",
+        listing.files[1].modified_at
+    );
+
+    let file = f
+        .read_workspace_file(id, "out/report.pdf", 1000)
+        .await
+        .unwrap()
+        .expect("file exists");
+    assert_eq!(
+        (file.bytes.as_slice(), file.truncated),
+        (&b"%PDF-1.4 fake"[..], false)
+    );
+    let short = f
+        .read_workspace_file(id, "out/report.pdf", 4)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (short.bytes.as_slice(), short.truncated),
+        (&b"%PDF"[..], true)
+    );
+    let odd = f
+        .read_workspace_file(id, "notes/it's \"quoted\" ✓.md", 1000)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(odd.bytes, b"# hi");
+
+    // Symlinks inside the workspace resolve; ones that leave it, directories, and missing files don't.
+    assert!(f
+        .read_workspace_file(id, "alias.pdf", 1000)
+        .await
+        .unwrap()
+        .is_some());
+    for missing in ["escape", "empty", "out", "nope.txt", ".git/config"] {
+        let got = f.read_workspace_file(id, missing, 1000).await.unwrap();
+        assert!(
+            got.is_none() || missing == ".git/config",
+            "{missing}: {got:?}"
+        );
+    }
+    assert!(f
+        .read_workspace_file(id, "../etc/passwd", 1000)
+        .await
+        .is_err());
+
+    // The read-only mount must not have created anything, and the volume is untouched.
+    let names = docker(&[
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        &format!("name=cedar-ws-{id}"),
+    ]);
+    assert_eq!(names.lines().count(), 1);
+
+    f.remove_workspace(id).await.unwrap();
+    let err = f.list_workspace_files(id).await.unwrap_err();
+    assert!(
+        err.downcast_ref::<cedar::sandbox::WorkspaceMissing>()
+            .is_some(),
+        "{err:#}"
+    );
+    let err = f
+        .read_workspace_file(id, "out/report.pdf", 10)
+        .await
+        .unwrap_err();
+    assert!(
+        err.downcast_ref::<cedar::sandbox::WorkspaceMissing>()
+            .is_some(),
+        "{err:#}"
+    );
+    // Looking at a workspace that doesn't exist must not create a stray volume.
+    assert_eq!(
+        docker(&[
+            "volume",
+            "ls",
+            "-q",
+            "--filter",
+            &format!("name=cedar-ws-{id}")
+        ]),
+        ""
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, the cedar-sandbox image, and network access for pip"]
+async fn pip_installs_into_the_workspace_and_persists_across_runs() {
+    let factory = DockerSandboxFactory::new(config("bridge"));
+    let id = Uuid::new_v4();
+    let first = factory.create(id, id).await.unwrap();
+    let out = first
+        .exec(
+            "pip --version && pip install --quiet six",
+            120 * SECOND,
+            10_000,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    first.destroy().await;
+
+    // A continuation gets a new container on the same workspace: the package is still there.
+    let second = factory.create(Uuid::new_v4(), id).await.unwrap();
+    let out = second
+        .exec(
+            "python3 -c 'import six, os; print(six.__file__)'",
+            30 * SECOND,
+            1000,
+        )
+        .await
+        .unwrap();
+    let path = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.exit_code,
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(path.starts_with("/workspace/.local/"), "{path}");
+    // ...and the listing doesn't drown in it.
+    let listing = factory.list_workspace_files(id).await.unwrap();
+    assert!(listing.files.is_empty(), "{:?}", listing.files);
+    second.destroy().await;
+    factory.remove_workspace(id).await.unwrap();
+}
+
 #[test]
 fn sandbox_fatal_is_a_distinct_error_type() {
     // Compile-time/behavioral guard that the downcast the agent loop relies on keeps working.
