@@ -43,6 +43,7 @@ NAVIGATE_TIMEOUT_MS = 30_000
 SETTLE_TIMEOUT_MS = 3_000
 ACTION_TIMEOUT_MS = 5_000
 MAX_REQUEST_BYTES = 1_000_000
+STARTUP_WAIT_SECS = 15
 BLOCKED_RESOURCES = {"image", "media", "font"}
 
 # Walks the DOM (and open shadow roots) and returns the page as text: block elements on their own
@@ -412,10 +413,16 @@ def error_text(e):
 
 
 async def call(raw):
-    try:
-        reader, writer = await asyncio.open_unix_connection(SOCKET, limit=64 * 1024 * 1024)
-    except OSError as e:
-        fail(f"the browser is not running ({e})")
+    # A call can come right after the container starts, while Chromium is still launching.
+    deadline = asyncio.get_running_loop().time() + STARTUP_WAIT_SECS
+    while True:
+        try:
+            reader, writer = await asyncio.open_unix_connection(SOCKET, limit=64 * 1024 * 1024)
+            break
+        except OSError as e:
+            if asyncio.get_running_loop().time() >= deadline:
+                fail(f"the browser is not running ({e})")
+            await asyncio.sleep(0.2)
     writer.write(raw.encode() + b"\n")
     await writer.drain()
     line = await reader.readline()
