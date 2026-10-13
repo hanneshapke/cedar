@@ -137,6 +137,7 @@ async fn app_with_gmail(script: Vec<Step>, base: &str) -> TestApp {
         script,
         &[
             ("GMAIL", "on"),
+            ("GOOGLE_BACKEND", "mcp"),
             ("GMAIL_MCP_URL", &format!("{base}/mcp")),
             ("GMAIL_TOOLS", "search_threads,get_thread,not_offered"),
             ("GOOGLE_CLIENT_ID", "client"),

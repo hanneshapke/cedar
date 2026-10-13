@@ -19,7 +19,7 @@ const EXPIRY_MARGIN: Duration = Duration::from_secs(60);
 /// Error bodies are cut to this many bytes before they reach the model or the log.
 const ERROR_BODY_MAX: usize = 500;
 
-fn http_client() -> Result<reqwest::Client> {
+pub(crate) fn http_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .build()
@@ -385,12 +385,12 @@ pub fn flatten_content(result: &Value) -> String {
     parts.join("\n")
 }
 
-fn cut(s: &str) -> String {
+pub(crate) fn cut(s: &str) -> String {
     crate::tools::truncate_output(s.trim(), ERROR_BODY_MAX)
 }
 
 /// A reqwest error without the URL it carries.
-fn without_url(e: reqwest::Error) -> String {
+pub(crate) fn without_url(e: reqwest::Error) -> String {
     if e.is_timeout() {
         "the request timed out".into()
     } else if e.is_connect() {

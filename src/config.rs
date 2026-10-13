@@ -14,6 +14,8 @@ pub const DEFAULT_WEATHER_GEOCODING_BASE_URL: &str =
 pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const DEFAULT_GMAIL_MCP_URL: &str = "https://gmailmcp.googleapis.com/mcp/v1";
 pub const DEFAULT_CALENDAR_MCP_URL: &str = "https://calendarmcp.googleapis.com/mcp/v1";
+pub const DEFAULT_GMAIL_API_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
+pub const DEFAULT_CALENDAR_API_URL: &str = "https://www.googleapis.com/calendar/v3";
 /// The Gmail tools offered by default: reading mail and writing drafts, nothing that sends,
 /// deletes, or relabels.
 pub const DEFAULT_GMAIL_TOOLS: &str =
@@ -74,6 +76,17 @@ pub struct McpServerConfig {
     pub tools: Vec<String>,
 }
 
+/// Gmail or Calendar through Google's REST API, with tools named like the MCP server's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GoogleApiConfig {
+    /// `gmail` or `calendar`; also the tool name prefix.
+    pub prefix: String,
+    /// The API's base URL (see `DEFAULT_GMAIL_API_URL` and `DEFAULT_CALENDAR_API_URL`).
+    pub url: String,
+    /// The tool names to offer; `*` offers every tool cedar implements for the API.
+    pub tools: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Base URL of the OpenAI-compatible server (vLLM), including the `/v1` prefix.
@@ -98,9 +111,12 @@ pub struct Config {
     pub weather_geocoding_base_url: String,
     /// Offer the `show_map` tool (on by default).
     pub maps: bool,
-    /// The Google account the Gmail and Calendar MCP servers act for. Set when either is on.
+    /// The Google account the Gmail and Calendar tools act for. Set when either is on.
     pub google_oauth: Option<GoogleOAuthConfig>,
-    /// Remote MCP servers (Gmail, Calendar), in the order their tools are offered.
+    /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
+    pub google_apis: Vec<GoogleApiConfig>,
+    /// Remote MCP servers (Gmail and Calendar with `GOOGLE_BACKEND=mcp`), in the order their
+    /// tools are offered.
     pub mcp_servers: Vec<McpServerConfig>,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
@@ -173,13 +189,29 @@ impl Config {
             bail!("CEDAR_API_KEYS must contain at least one comma-separated API key");
         }
 
+        // Google's MCP servers only serve projects enrolled in the Workspace Developer Preview,
+        // which personal accounts can't join; the REST APIs serve everyone.
+        let use_mcp = match get("GOOGLE_BACKEND").map(|v| v.trim().to_ascii_lowercase()) {
+            None => false,
+            Some(v) if v == "api" => false,
+            Some(v) if v == "mcp" => true,
+            Some(v) => bail!("invalid GOOGLE_BACKEND={v:?}: use api or mcp"),
+        };
+        let mut google_apis = Vec::new();
         let mut mcp_servers = Vec::new();
-        for (prefix, flag_name, default_url, default_tools) in [
-            ("gmail", "GMAIL", DEFAULT_GMAIL_MCP_URL, DEFAULT_GMAIL_TOOLS),
+        for (prefix, flag_name, default_mcp_url, default_api_url, default_tools) in [
+            (
+                "gmail",
+                "GMAIL",
+                DEFAULT_GMAIL_MCP_URL,
+                DEFAULT_GMAIL_API_URL,
+                DEFAULT_GMAIL_TOOLS,
+            ),
             (
                 "calendar",
                 "CALENDAR",
                 DEFAULT_CALENDAR_MCP_URL,
+                DEFAULT_CALENDAR_API_URL,
                 DEFAULT_CALENDAR_TOOLS,
             ),
         ] {
@@ -191,13 +223,24 @@ impl Config {
             if tools.is_empty() {
                 tools = default_tools.split(',').map(String::from).collect();
             }
-            mcp_servers.push(McpServerConfig {
-                prefix: prefix.into(),
-                url: get(&format!("{flag_name}_MCP_URL")).unwrap_or_else(|| default_url.into()),
-                tools,
-            });
+            if use_mcp {
+                mcp_servers.push(McpServerConfig {
+                    prefix: prefix.into(),
+                    url: get(&format!("{flag_name}_MCP_URL"))
+                        .unwrap_or_else(|| default_mcp_url.into()),
+                    tools,
+                });
+            } else {
+                google_apis.push(GoogleApiConfig {
+                    prefix: prefix.into(),
+                    url: get(&format!("{flag_name}_API_URL"))
+                        .map(|u| u.trim().trim_end_matches('/').to_string())
+                        .unwrap_or_else(|| default_api_url.into()),
+                    tools,
+                });
+            }
         }
-        let google_oauth = if mcp_servers.is_empty() {
+        let google_oauth = if mcp_servers.is_empty() && google_apis.is_empty() {
             None
         } else {
             let need = |k: &str| {
@@ -229,6 +272,7 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_WEATHER_GEOCODING_BASE_URL.into()),
             maps: flag("MAPS", true)?,
             google_oauth,
+            google_apis,
             mcp_servers,
             api_keys,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
@@ -464,6 +508,7 @@ mod tests {
     fn gmail_and_calendar_are_off_unless_enabled() {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
         assert!(cfg.mcp_servers.is_empty());
+        assert!(cfg.google_apis.is_empty());
         assert!(cfg.google_oauth.is_none());
     }
 
@@ -495,6 +540,40 @@ mod tests {
         assert_eq!(oauth.refresh_token, "refresh");
         assert_eq!(oauth.token_url, DEFAULT_GOOGLE_TOKEN_URL);
         assert!(!format!("{oauth:?}").contains("secret"));
+        // The REST APIs by default.
+        assert!(cfg.mcp_servers.is_empty());
+        assert_eq!(
+            cfg.google_apis,
+            [
+                GoogleApiConfig {
+                    prefix: "gmail".into(),
+                    url: DEFAULT_GMAIL_API_URL.into(),
+                    tools: DEFAULT_GMAIL_TOOLS.split(',').map(String::from).collect(),
+                },
+                GoogleApiConfig {
+                    prefix: "calendar".into(),
+                    url: DEFAULT_CALENDAR_API_URL.into(),
+                    tools: DEFAULT_CALENDAR_TOOLS
+                        .split(',')
+                        .map(String::from)
+                        .collect(),
+                },
+            ]
+        );
+
+        let cfg = Config::from_lookup(lookup(
+            &[
+                &google[..],
+                &[
+                    ("GMAIL", "on"),
+                    ("CALENDAR", "on"),
+                    ("GOOGLE_BACKEND", "mcp"),
+                ],
+            ]
+            .concat(),
+        ))
+        .unwrap();
+        assert!(cfg.google_apis.is_empty());
         assert_eq!(
             cfg.mcp_servers,
             [
@@ -519,6 +598,7 @@ mod tests {
                 &google[..],
                 &[
                     ("CALENDAR", "on"),
+                    ("GOOGLE_BACKEND", "MCP"),
                     ("CALENDAR_MCP_URL", "http://localhost:9999/mcp"),
                     ("CALENDAR_TOOLS", "list_events, create_event"),
                     ("GOOGLE_TOKEN_URL", "http://localhost:9999/token"),
@@ -534,6 +614,25 @@ mod tests {
             cfg.google_oauth.unwrap().token_url,
             "http://localhost:9999/token"
         );
+
+        let cfg = Config::from_lookup(lookup(
+            &[
+                &google[..],
+                &[
+                    ("GMAIL", "on"),
+                    ("GMAIL_API_URL", "http://localhost:9999/gmail/"),
+                ],
+            ]
+            .concat(),
+        ))
+        .unwrap();
+        assert_eq!(cfg.google_apis[0].url, "http://localhost:9999/gmail");
+
+        let err = Config::from_lookup(lookup(
+            &[&google[..], &[("GMAIL", "on"), ("GOOGLE_BACKEND", "rest")]].concat(),
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("GOOGLE_BACKEND"), "{err}");
     }
 
     #[test]

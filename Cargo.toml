@@ -10,7 +10,9 @@ anyhow = "1"
 async-stream = "0.3"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+chrono-tz = "0.10"
 futures-util = "0.3"
 hex = "0.4"
 html2text = "0.17"

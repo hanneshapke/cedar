@@ -1,14 +1,18 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
 //! run's sandbox; `web_search`, `fetch_url`, `download_file`, `weather_forecast`, and `show_map` run
 //! in the cedar process, because the sandbox has no network; `browser` drives the run's browser
-//! container. Tools from remote MCP servers (Gmail, Calendar) run in the cedar process too.
+//! container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
+//! in the cedar process too.
 
 mod bash;
 mod browser;
+mod calendar;
 mod chart;
 mod document;
 mod fetch;
 mod files;
+mod gmail;
+mod google;
 mod map;
 mod mcp;
 mod open_meteo;
@@ -101,7 +105,8 @@ impl ToolSet {
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `browser` if `BROWSER` is on, and the Gmail and Calendar
-    /// MCP tools if `GMAIL` or `CALENDAR` is on.
+    /// tools if `GMAIL` or `CALENDAR` is on (through the REST APIs, or MCP servers whose tools are
+    /// discovered later).
     pub fn from_config(cfg: &Config) -> Result<Self> {
         let mut set = Self::standard();
         if let Some(key) = &cfg.brave_api_key {
@@ -132,6 +137,14 @@ impl ToolSet {
         }
         if let Some(oauth) = &cfg.google_oauth {
             let auth = Arc::new(GoogleOAuth::new(oauth.clone())?);
+            for api in &cfg.google_apis {
+                let tools = match api.prefix.as_str() {
+                    "gmail" => gmail::tools(api, auth.clone())?,
+                    "calendar" => calendar::tools(api, auth.clone())?,
+                    other => anyhow::bail!("no REST API tools for {other}"),
+                };
+                set.tools.extend(tools);
+            }
             for server in &cfg.mcp_servers {
                 set.remote.push(McpServer::new(server, auth.clone())?);
             }
@@ -196,7 +209,14 @@ impl ToolSet {
         if self.get("show_map").is_some() {
             note.push_str(" To show the user where places are, use show_map.");
         }
-        let has = |prefix: &str| self.remote.iter().any(|s| s.prefix() == prefix);
+        let has = |prefix: &str| {
+            self.remote.iter().any(|s| s.prefix() == prefix)
+                || self.tools.iter().any(|t| {
+                    t.name()
+                        .strip_prefix(prefix)
+                        .is_some_and(|n| n.starts_with('_'))
+                })
+        };
         let (gmail, calendar) = (has("gmail"), has("calendar"));
         if gmail {
             note.push_str(" For the user's email, use the gmail_ tools.");

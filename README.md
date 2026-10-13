@@ -261,43 +261,69 @@ docker rm -f cb
 
 ### Gmail and Calendar
 
-With `GMAIL=on` or `CALENDAR=on`, cedar offers the tools of Google's remote MCP servers for
-[Gmail](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server) and
-[Calendar](https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server).
-cedar is the MCP client: it speaks the streamable-HTTP transport from the cedar process (the
-sandbox has no network, and the Google tokens stay out of it), so no MCP software has to be
-installed anywhere.
+With `GMAIL=on` or `CALENDAR=on`, cedar offers tools for one Google account's mail and calendar.
+They run in the cedar process (the sandbox has no network, and the Google tokens stay out of it)
+and use one of two backends, chosen with `GOOGLE_BACKEND`:
 
-Both servers act for one Google account, through an OAuth client and a refresh token you give
+- `api` (the default): cedar calls the [Gmail](https://developers.google.com/workspace/gmail/api)
+  and [Calendar](https://developers.google.com/workspace/calendar/api) REST APIs itself. This
+  works for any Google account, personal Gmail included.
+- `mcp`: cedar is the MCP client of Google's remote MCP servers for
+  [Gmail](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server) and
+  [Calendar](https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server).
+  These are in Google's Workspace Developer Preview: every tool call fails unless the Cloud project
+  is enrolled in the [preview program](https://developers.google.com/workspace/preview), which
+  only Google Workspace accounts can join.
+
+The tools have the same names with either backend (`gmail_search_threads`,
+`calendar_list_events`, ...), so `GMAIL_TOOLS` and `CALENDAR_TOOLS` mean the same.
+
+Both backends act for one Google account, through an OAuth client and a refresh token you give
 cedar:
 
-1. In a Google Cloud project, enable the MCP APIs:
-   `gcloud services enable gmailmcp.googleapis.com calendarmcp.googleapis.com --project=PROJECT_ID`.
-2. Create an OAuth client (APIs & Services → Credentials, type *Desktop app* or *Web application*)
-   and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to its ID and secret.
-3. Get a refresh token for the account with the scopes the tools need, for example with the
-   [OAuth 2.0 Playground](https://developers.google.com/oauthplayground) using your own client
-   (its settings cog). The default tools need `https://www.googleapis.com/auth/gmail.readonly`,
+1. In a Google Cloud project, enable the APIs:
+   `gcloud services enable gmail.googleapis.com calendar-json.googleapis.com --project=PROJECT_ID`
+   (for `GOOGLE_BACKEND=mcp`, `gmailmcp.googleapis.com calendarmcp.googleapis.com` as well).
+2. Set up the OAuth consent screen (Google Auth Platform in the console): add the scopes below,
+   and either add the account as a test user or publish the app (see step 4).
+3. Create an OAuth client (APIs & Services → Credentials, type *Web application*, with
+   `https://developers.google.com/oauthplayground` as an authorized redirect URI if you use the
+   Playground in the next step) and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to its ID
+   and secret.
+4. Get a refresh token for the account with the scopes the tools need, for example with the
+   [OAuth 2.0 Playground](https://developers.google.com/oauthplayground): in its settings cog
+   choose *Use your own OAuth credentials* and enter the client's ID and secret first, or the
+   token belongs to the Playground's client and Google refuses it (`unauthorized_client`). The
+   default tools need `https://www.googleapis.com/auth/gmail.readonly`,
    `https://www.googleapis.com/auth/gmail.compose` (drafts), and
-   `https://www.googleapis.com/auth/calendar.readonly`; Calendar tools that change events need
-   `https://www.googleapis.com/auth/calendar.events`. Set `GOOGLE_REFRESH_TOKEN` to it. While the
+   `https://www.googleapis.com/auth/calendar.readonly`. Set `GOOGLE_REFRESH_TOKEN` to it. While the
    OAuth consent screen is in *Testing*, Google expires refresh tokens after 7 days; publish it
    to *In production* (for your own account you can click through the "unverified app" warning)
    to get one that lasts.
 
 cedar trades the refresh token for an access token when it first needs one and again shortly
-before that expires, and runs the MCP `initialize` handshake once, starting over if the server
-drops the session or rejects the token.
+before that expires, and asks for a new one once if Google rejects it.
 
-The tools are discovered when the first run after startup begins, not at startup, so a server
-that is down delays nothing: a run that can't reach it goes ahead without its tools (and cedar
-logs a warning), and the next run tries again. Once discovered, the list is kept until cedar
-restarts. Only the tools `GMAIL_TOOLS` and `CALENDAR_TOOLS` name are offered: by default reading
-mail, listing labels, and reading and writing drafts, and reading calendars and events. Nothing
-that sends, forwards, deletes, or changes events is offered unless you add it; with drafts the
-agent prepares replies for you to send from Gmail. Allowed names the server doesn't list are
-logged and skipped. The Gmail and Calendar MCP servers are in Google's Developer Preview, so their
-tool names may change; check the startup log (`MCP tools discovered`) after an upgrade.
+Only the tools `GMAIL_TOOLS` and `CALENDAR_TOOLS` name are offered: by default reading mail,
+listing labels, and reading and writing drafts, and reading calendars and events and finding free
+time. Nothing that sends, forwards, deletes, or changes events is offered; with drafts the agent
+prepares replies for you to send from Gmail.
+
+With `GOOGLE_BACKEND=api` the tools cedar implements are `search_threads`, `get_thread`,
+`get_message`, `list_labels`, `list_drafts`, `get_draft`, and `create_draft` for Gmail, and
+`list_calendars`, `list_events`, `get_event`, `search_events`, and `suggest_time` for Calendar.
+Allowed names it doesn't implement are logged and skipped. Calendar times without a UTC offset
+are read in the calendar's time zone, and every Calendar result includes the current date and
+time, which the model otherwise doesn't know.
+
+With `GOOGLE_BACKEND=mcp` the tools are discovered when the first run after startup begins, not
+at startup, so a server that is down delays nothing: a run that can't reach it goes ahead without
+its tools (and cedar logs a warning), and the next run tries again. Once discovered, the list is
+kept until cedar restarts, and cedar runs the MCP `initialize` handshake once, starting over if
+the server drops the session. Any tool the server lists can be allowed (`*` allows all), including
+ones that send mail or change events; allowed names the server doesn't list are logged and
+skipped. Check the startup log (`MCP tools discovered`) after an upgrade, since preview tool names
+may change.
 
 ## Adding a tool
 
