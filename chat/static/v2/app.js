@@ -392,10 +392,9 @@ function clippingsFor(tool) {
     case 'web_search':
       return searchClippings(tool, meta);
     case 'bash':
-      return [withImages(tool, clipEl('bash', meta, `<code>$ ${escapeHtml(firstLine(input.command))}</code>`, '', shell, tool.is_error))];
+      return [clipEl('bash', meta, `<code>$ ${escapeHtml(firstLine(input.command))}</code>`, '', shell, tool.is_error)];
     case 'run_python': {
-      const el = clipEl('run_python', meta, `<code>${escapeHtml(firstLine(input.code))}</code>`, '', shell, tool.is_error);
-      return [withImages(tool, el)];
+      return [clipEl('run_python', meta, `<code>${escapeHtml(firstLine(input.code))}</code>`, '', shell, tool.is_error)];
     }
     case 'read_file':
     case 'read_document':
@@ -415,26 +414,11 @@ function clippingsFor(tool) {
           if (view) el.querySelector('.sub').append(' · ', view);
           el.querySelector('.sub').append(' · ', downloadLink(rel));
         }
-        return [withImages(tool, el)];
+        return [el];
       }
       // A tool this page doesn't know yet: still show what it was given and what it returned.
       return [clipEl(tool.name, meta, `<code>${escapeHtml(JSON.stringify(input).slice(0, 120))}</code>`, '', shell, tool.is_error)];
   }
-}
-
-/**
- * Put the images a finished call produced (a chart, a saved picture, what a script wrote) into
- * its clipping. The figures are built once per call and moved into each redraw, like a map, so
- * the pictures are fetched once.
- */
-function withImages(tool, el) {
-  if (tool.output === undefined || tool.is_error) return el;
-  tool.imageEls ??= cedarImages.figuresFor(tool.name, tool.input, tool.output);
-  if (tool.imageEls.length) {
-    el.classList.add('image');
-    el.append(...tool.imageEls);
-  }
-  return el;
 }
 
 function downloadLink(path, primary) {
@@ -539,7 +523,7 @@ function note(cls, who, html) {
 
 function addTurn(turn) {
   const view = {
-    turn, texts: [], tools: [], byId: new Map(), usage: { input: 0, output: 0 },
+    turn, texts: [], textNotes: [], tools: [], images: [], byId: new Map(), usage: { input: 0, output: 0 },
     abort: new AbortController(), done: false,
     workingEl: null,
   };
@@ -624,7 +608,8 @@ function applyEvent(view, event) {
   switch (event.type) {
     case 'assistant.text':
       view.texts.push(d.text);
-      placeNote(view, note('cedar', 'Cedar', renderMarkdown(d.text)));
+      view.textNotes.push(note('cedar', 'Cedar', renderMarkdown(d.text)));
+      placeNote(view, view.textNotes[view.textNotes.length - 1]);
       setWorking(view, 'Thinking');
       break;
     case 'tool.call': {
@@ -636,7 +621,15 @@ function applyEvent(view, event) {
     }
     case 'tool.result': {
       const tool = view.byId.get(d.id);
-      if (tool) Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
+      if (tool) {
+        Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
+        // The images a call produced are shown in the margin once each, after the reply: see finishTurn.
+        if (!tool.is_error) {
+          for (const path of cedarImages.produced(tool.name, tool.input, tool.output)) {
+            if (!view.images.includes(path)) view.images.push(path);
+          }
+        }
+      }
       setWorking(view, 'Thinking');
       break;
     }
@@ -659,24 +652,35 @@ const CUT_OFF =
 function finishTurn(view, event) {
   if (view.done) return;
   view.done = true;
-  view.workingEl?.remove();
+  // The working line marks where this turn's notes end, so they land there even when a later turn's
+  // notes are already in the margin (a conversation's turns are replayed side by side).
+  const anchor = view.workingEl;
   view.workingEl = null;
+  const put = (node) => (anchor?.isConnected ? els.notes.insertBefore(node, anchor) : els.notes.append(node));
   const d = event.data || {};
+  const inText = new Set(view.textNotes.flatMap((n) => [...cedarImages.shown(n)])); // pictures the reply itself places
+  const figures = cedarImages.figuresFor(view.images, { skip: inText, onLoad: keepNotesAtEnd });
+  if (figures.length) {
+    const n = note('cedar', '', '');
+    n.lastChild.append(...figures);
+    put(n);
+  }
   if (event.type === 'run.failed') {
     const n = note('error', '');
     n.lastChild.textContent = d.error || 'Something went wrong.';
-    els.notes.append(n);
+    put(n);
   } else if (event.type === 'run.cancelled') {
-    els.notes.append(note('muted', '', d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.'));
+    put(note('muted', '', d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.'));
   } else if (d.stop_reason === 'max_tokens') {
-    els.notes.append(note('error', '', CUT_OFF));
+    put(note('error', '', CUT_OFF));
   } else if (!view.texts.length) {
-    els.notes.append(note('muted', '', 'No text in this response.'));
+    put(note('muted', '', 'No text in this response.'));
   }
   for (const tool of view.tools) if (tool.output === undefined) Object.assign(tool, { output: '', is_error: true });
   if (view.usage.input || view.usage.output) {
-    els.notes.append(note('usage', '', `${view.usage.input.toLocaleString()} in · ${view.usage.output.toLocaleString()} out`));
+    put(note('usage', '', `${view.usage.input.toLocaleString()} in · ${view.usage.output.toLocaleString()} out`));
   }
+  anchor?.remove();
   els.notes.scrollTop = els.notes.scrollHeight;
   view.lastEvent = event.type;
   if (state.activeTurn === view) state.activeTurn = null;

@@ -1,9 +1,11 @@
 'use strict';
 
 // Images the agent produces, shared by both UIs (/v1 and /v2). A chart from generate_chart, a
-// picture written by write_file or download_file, an image bash or run_python created, or one the agent
-// refers to in its text as ![caption](chart.png) is shown in the response, not only offered as a
-// download. Each app hands over its own helpers through cedarImages.init():
+// picture written by write_file or download_file, an image bash or run_python created, or one the
+// agent refers to in its text as ![caption](chart.png) is shown in the response, not only offered
+// as a download. Each image a response produced is shown once, after the reply, as the file is
+// when the response ends (a script that rewrote it three times does not show it three times).
+// Each app hands over its own helpers through cedarImages.init():
 //
 //   fetchFile(path) -> Promise<Response>  an ok response for a workspace file (sends the access token)
 //   open(path)                            shows the file in the viewer (optional)
@@ -22,8 +24,8 @@ const cedarImages = (() => {
   };
   /** Larger files are left to the download button. */
   const MAX_BYTES = 16 * 1024 * 1024;
-  /** How many of one tool call's images are shown inline; the rest are in the files panel. */
-  const MAX_PER_CALL = 8;
+  /** How many of a response's images are shown after the reply; the rest are in the files panel. */
+  const MAX_SHOWN = 12;
   /** Tools whose `path` input is the file they write. */
   const FILE_TOOLS = new Set(['write_file', 'generate_chart', 'download_file']);
   const CHANGED_HEADING = '\n[files created or modified]\n';
@@ -212,18 +214,26 @@ const cedarImages = (() => {
   }
 
   /**
-   * Figures for the images a finished tool call produced (see `produced`), or an empty list. At
-   * most MAX_PER_CALL are shown; a note counts the rest.
+   * Figures for the workspace images at `paths` (what `produced` returned for the response's
+   * tool calls, each once). At most MAX_SHOWN are shown; a note counts the rest. A path the
+   * response's text already shows (see `shown`) is left out.
    */
-  function figuresFor(name, input, output, options) {
-    const images = produced(name, input, output);
-    for (const rel of images) forget(rel); // the call just (re)wrote them, so a cached copy is stale
-    const nodes = images.slice(0, MAX_PER_CALL).map((rel) => figure(rel, options));
-    if (images.length > MAX_PER_CALL) {
-      const more = images.length - MAX_PER_CALL;
+  function figuresFor(paths, { skip, ...options } = {}) {
+    const images = skip ? paths.filter((p) => !skip.has(p)) : paths;
+    for (const rel of images) forget(rel); // the response just (re)wrote them, so a cached copy is stale
+    const nodes = images.slice(0, MAX_SHOWN).map((rel) => figure(rel, options));
+    if (images.length > MAX_SHOWN) {
+      const more = images.length - MAX_SHOWN;
       nodes.push(el('div', 'cedar-image-more', `${more} more image${more === 1 ? '' : 's'} in the workspace files.`));
     }
     return nodes;
+  }
+
+  /** The workspace paths of the images already drawn under `root` (from Markdown references). */
+  function shown(root) {
+    const paths = new Set();
+    for (const f of root?.querySelectorAll?.('figure.cedar-image') ?? []) if (f.cedarImage) paths.add(f.cedarImage.path);
+    return paths;
   }
 
   const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -256,5 +266,5 @@ const cedarImages = (() => {
     window.addEventListener('hashchange', reset); // another conversation is being opened
   }
 
-  return { init, reset, forget, type, isImage, workspacePath, figure, produced, figuresFor, markdown, hydrate };
+  return { init, reset, forget, type, isImage, workspacePath, figure, produced, figuresFor, shown, markdown, hydrate };
 })();

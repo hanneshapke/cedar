@@ -449,7 +449,7 @@ function addTurn(turn) {
 
   const view = {
     turn, el, body, thinking,
-    tools: new Map(), texts: [], usage: { input: 0, output: 0 },
+    tools: new Map(), texts: [], images: [], usage: { input: 0, output: 0 },
     abort: new AbortController(), done: false,
   };
   state.views.set(turn.id, view);
@@ -624,12 +624,11 @@ function toolResult(view, d) {
       scrollToBottom(false);
     }
   }
-  // So is an image the call produced: a chart, a picture it saved, or one a script wrote.
+  // The images a call produced (a chart, a picture it saved, or one a command or script wrote) are
+  // shown with the reply, once each: see finishTurn.
   if (!d.is_error) {
-    const figures = cedarImages.figuresFor(details.dataset.tool, details.cedarInput, text, { onLoad: () => scrollToBottom(false) });
-    if (figures.length) {
-      details.after(...figures);
-      scrollToBottom(false);
+    for (const path of cedarImages.produced(details.dataset.tool, details.cedarInput, text)) {
+      if (!view.images.includes(path)) view.images.push(path);
     }
   }
 }
@@ -643,6 +642,8 @@ function finishTurn(view, event) {
   view.done = true;
   view.thinking.remove();
   const d = event.data || {};
+  const figures = cedarImages.figuresFor(view.images, { skip: cedarImages.shown(view.body), onLoad: () => scrollToBottom(false) });
+  if (figures.length) view.body.append(...figures);
   if (event.type === 'run.failed') {
     const box = h('div', 'notice error');
     box.textContent = d.error || 'Something went wrong.';

@@ -140,9 +140,12 @@ a { color: var(--accent); }
 /* A map is a live widget: a tilted clipping would skew where Leaflet thinks the pointer is. */
 .clip.map:nth-child(n) { transform: none; margin-left: 0; }
 .clip.map .cedar-map { margin: 10px 0 0; }
-.clip.image:nth-child(n) { transform: none; margin-left: 0; }
-.clip.image .cedar-image { margin: 10px 0 0; }
-.clip.image .cedar-image-more { margin: 8px 0 0; }
+/* The images a response produced are in the margin, which is narrow: the name sits above the buttons. */
+.note .cedar-image { margin: 8px 0 0; }
+.note .cedar-image-img { max-height: 220px; }
+.note .cedar-image-caption { flex-wrap: wrap; padding: 4px 6px 4px 10px; }
+.note .cedar-image-caption bdi { flex-basis: 100%; }
+.note .cedar-image-more { margin: 8px 0 0; }
 .clip.more { width: 100%; padding: 10px 16px; color: var(--muted); border-style: dashed; box-shadow: none; transform: none; margin-left: 0; text-align: left; font-size: 13px; cursor: pointer; }
 .clip.more:hover { background: var(--wash); }
 
