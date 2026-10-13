@@ -408,7 +408,7 @@ const cedarSettings = (() => {
     if (l.source === 'default') side.append(badge('Default'));
     if (l.api_key_set) side.append(badge('API key set'));
     const editable = l.source !== 'env' && status.storage && l.changeable !== false;
-    if (l.default_model) main.append(el('small', '', `Model name: ${l.default_model}`));
+    if (l.default_model) main.append(el('small', '', `Model name: ${l.default_model}${l.model_source === 'env' ? ' (set by LLM_MODEL on the server)' : ''}`));
     if (Array.isArray(l.models)) {
       const found = l.models.length ? l.models.join(', ') : 'none';
       main.append(el('small', '', `Models it listed: ${found}`));
@@ -435,19 +435,18 @@ const cedarSettings = (() => {
     const address = input('http://10.0.0.5:8000/v1', l.base_url || '', 'Server address');
     address.spellcheck = false;
     address.autocapitalize = 'off';
-    // Left out when the environment sets LLM_MODEL. Empty means cedar's own default.
-    let model = null;
+    // Empty means cedar's own default. Shown but locked when the environment sets LLM_MODEL.
+    const modelLocked = l.model_source === 'env';
+    const model = input('Model name (leave empty for the default)', modelLocked || l.model_source === 'ui' ? l.default_model : '', 'Model name');
+    model.spellcheck = false;
+    model.autocapitalize = 'off';
+    model.disabled = modelLocked;
     let listed = null;
-    if (l.model_source !== 'env') {
-      model = input('Model name (leave empty for the default)', l.model_source === 'ui' ? l.default_model : '', 'Model name');
-      model.spellcheck = false;
-      model.autocapitalize = 'off';
-      if (Array.isArray(l.models) && l.models.length) {
-        listed = el('datalist');
-        listed.id = 'cedar-set-models';
-        for (const m of l.models) listed.append(new Option(m, m));
-        model.setAttribute('list', listed.id);
-      }
+    if (!modelLocked && Array.isArray(l.models) && l.models.length) {
+      listed = el('datalist');
+      listed.id = 'cedar-set-models';
+      for (const m of l.models) listed.append(new Option(m, m));
+      model.setAttribute('list', listed.id);
     }
     const key = input(l.api_key_set ? 'API key (leave empty to keep it)' : 'API key, if the server needs one', '', 'API key', 'password');
     key.autocomplete = 'off';
@@ -456,8 +455,8 @@ const cedarSettings = (() => {
     clearBox.type = 'checkbox';
     clearKey.append(clearBox, el('span', '', 'Remove the saved API key'));
     const saveBtn = button('Check and save', () => edit.requestSubmit(), 'primary');
-    edit.append(address);
-    if (model) edit.append(model);
+    edit.append(address, model);
+    if (modelLocked) edit.append(el('small', 'cedar-set-field-note', 'Set by LLM_MODEL in the cedar server\'s environment; change it there.'));
     if (listed) edit.append(listed);
     edit.append(key);
     if (l.api_key_source === 'ui') edit.append(clearKey);
@@ -466,7 +465,7 @@ const cedarSettings = (() => {
       e.preventDefault();
       if (!address.value.trim()) { deps.toast('Enter the server address'); return; }
       const body = { base_url: address.value.trim() };
-      if (model) body.model = model.value.trim();
+      if (!modelLocked) body.model = model.value.trim();
       if (key.value.trim()) body.api_key = key.value.trim();
       else if (clearBox.checked) body.api_key = '';
       saveBtn.disabled = true;

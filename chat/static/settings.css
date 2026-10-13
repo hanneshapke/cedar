@@ -65,6 +65,7 @@
 .cedar-set-endpoint { flex: 1 1 100%; flex-direction: column; align-items: stretch; margin-top: 4px; }
 .cedar-set-inline.cedar-set-endpoint > input { flex: none; }
 .cedar-set-endpoint > .primary, .cedar-set-endpoint > .copy-btn { align-self: flex-start; }
+.cedar-set-endpoint > input:disabled { opacity: .6; }
 .cedar-set-unlock, .cedar-set-inline { display: flex; gap: 8px; align-items: center; }
 .cedar-set-inline { margin-top: 8px; flex-wrap: wrap; }
 .cedar-set-inline[hidden] { display: none; }
