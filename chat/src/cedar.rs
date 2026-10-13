@@ -102,11 +102,15 @@ impl CedarClient {
         admin(self.json(req).await)
     }
 
-    /// Point cedar at another model server. `api_key`: `None` keeps the saved one, empty removes it.
-    pub async fn set_llm(&self, base_url: &str, api_key: Option<&str>) -> Result<Value, AppError> {
+    /// Point cedar at another model server. `api_key` and `model`: `None` keeps the saved one,
+    /// empty removes it.
+    pub async fn set_llm(&self, base_url: &str, api_key: Option<&str>, model: Option<&str>) -> Result<Value, AppError> {
         let mut body = json!({ "base_url": base_url });
         if let Some(k) = api_key {
             body["api_key"] = json!(k);
+        }
+        if let Some(m) = model {
+            body["model"] = json!(m);
         }
         admin(self.json(self.http.put(self.url("/admin/integrations/llm")).json(&body)).await)
     }

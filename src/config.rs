@@ -125,10 +125,11 @@ pub struct Config {
     pub llm_base_url: String,
     /// Bearer token for the LLM server; only needed if it was started with `--api-key`.
     pub llm_api_key: Option<String>,
-    /// Whether `LLM_BASE_URL` / `LLM_API_KEY` were set in the environment. Those can't be changed
-    /// through the admin API; the built-in default address can.
+    /// Whether `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` were set in the environment. Those can't
+    /// be changed through the admin API; the built-in defaults can.
     pub llm_base_url_from_env: bool,
     pub llm_api_key_from_env: bool,
+    pub llm_model_from_env: bool,
     /// Brave Search API key. The `web_search` tool is only offered to the model when this is set.
     pub brave_api_key: Option<String>,
     /// Brave web search endpoint; overridable so tests can point at a mock.
@@ -332,6 +333,7 @@ impl Config {
             llm_api_key: get("LLM_API_KEY").map(|k| k.trim().to_string()),
             llm_base_url_from_env: get("LLM_BASE_URL").is_some(),
             llm_api_key_from_env: get("LLM_API_KEY").is_some(),
+            llm_model_from_env: get("LLM_MODEL").is_some(),
             brave_api_key: get("BRAVE_API_KEY").map(|k| k.trim().to_string()),
             brave_base_url: get("BRAVE_API_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_BRAVE_BASE_URL.into()),
@@ -452,7 +454,7 @@ mod tests {
         assert_eq!(cfg.default_model, DEFAULT_MODEL);
         assert_eq!(cfg.llm_base_url, DEFAULT_LLM_BASE_URL);
         assert_eq!(cfg.llm_api_key, None);
-        assert!(!cfg.llm_base_url_from_env && !cfg.llm_api_key_from_env);
+        assert!(!cfg.llm_base_url_from_env && !cfg.llm_api_key_from_env && !cfg.llm_model_from_env);
         assert_eq!(cfg.sandbox.network, "none");
         assert_eq!(cfg.max_turns_cap, 25);
         assert_eq!(cfg.workspace_ttl, Duration::from_secs(86_400));
@@ -523,7 +525,7 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.llm_base_url, "http://gpu-box:9000/v1");
         assert_eq!(cfg.llm_api_key.as_deref(), Some("secret"));
-        assert!(cfg.llm_base_url_from_env && cfg.llm_api_key_from_env);
+        assert!(cfg.llm_base_url_from_env && cfg.llm_api_key_from_env && cfg.llm_model_from_env);
         assert_eq!(cfg.default_model, "my-model");
     }
 

@@ -33,7 +33,7 @@ use uuid::Uuid;
 const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_PROMPT_BYTES: usize = 100_000;
 const MAX_SYSTEM_BYTES: usize = 20_000;
-const MAX_MODEL_LEN: usize = 100;
+pub(crate) const MAX_MODEL_LEN: usize = 100;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
 /// Largest workspace file that can be downloaded. It is read into memory before being sent.
@@ -182,21 +182,22 @@ async fn owned_run(state: &AppState, owner: &Owner, raw_id: &str) -> Result<Run,
     }
 }
 
-/// The model a request gets: what it asked for, else `inherited`, else the default; checked
+/// The model a request gets: what it asked for, else `inherited`, else `default`; checked
 /// against `ALLOWED_MODELS`.
 fn resolve_model(
     cfg: &Config,
+    default: &str,
     requested: Option<&str>,
     inherited: Option<&str>,
 ) -> Result<String, AppError> {
     let requested = requested.map(str::trim).filter(|m| !m.is_empty());
     match requested.or(inherited) {
-        None => Ok(cfg.default_model.clone()),
+        None => Ok(default.to_string()),
         Some(m) if m.len() > MAX_MODEL_LEN => {
             Err(AppError::BadRequest("model name is too long".into()))
         }
         Some(m)
-            if m == cfg.default_model
+            if m == default
                 || cfg.allowed_models.is_empty()
                 || cfg.allowed_models.iter().any(|a| a == m) =>
         {
@@ -234,6 +235,7 @@ async fn create_run(
     };
     let model = resolve_model(
         cfg,
+        &state.integrations.default_model(),
         req.model.as_deref(),
         parent.as_ref().map(|p| p.model.as_str()),
     )?;
@@ -306,7 +308,7 @@ async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
 async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
     let cfg = &state.cfg;
     Json(json!({
-        "model": cfg.default_model,
+        "model": state.integrations.default_model(),
         "system": cfg.default_system_prompt,
         "max_turns_cap": cfg.max_turns_cap,
         "allowed_models": cfg.allowed_models,
@@ -362,6 +364,8 @@ struct LlmBody {
     base_url: String,
     /// Absent keeps the saved key; empty removes it.
     api_key: Option<String>,
+    /// The model runs use when they name none. Absent keeps the saved name; empty removes it.
+    model: Option<String>,
 }
 
 async fn put_llm(
@@ -373,7 +377,11 @@ async fn put_llm(
     Ok(Json(
         state
             .integrations
-            .set_llm(&body.base_url, body.api_key.as_deref())
+            .set_llm(
+                &body.base_url,
+                body.api_key.as_deref(),
+                body.model.as_deref(),
+            )
             .await?,
     ))
 }
@@ -624,7 +632,12 @@ async fn compact_conversation(
             ))
         }
     };
-    let model = resolve_model(cfg, req.model.as_deref(), inherited_model.as_deref())?;
+    let model = resolve_model(
+        cfg,
+        &state.integrations.default_model(),
+        req.model.as_deref(),
+        inherited_model.as_deref(),
+    )?;
     let done = compact::compact(state.llm.as_ref(), &model, cfg.max_tokens, &messages)
         .await
         .map_err(|e| AppError::BadGateway(format!("could not compact the conversation: {e:#}")))?;

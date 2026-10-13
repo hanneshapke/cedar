@@ -64,14 +64,7 @@
 @media (prefers-color-scheme: dark) { .cedar-set-warn-text { color: #e2a66a; } }
 .cedar-set-endpoint { flex: 1 1 100%; flex-direction: column; align-items: stretch; margin-top: 4px; }
 .cedar-set-inline.cedar-set-endpoint > input { flex: none; }
-.cedar-set-inline.cedar-set-endpoint > .cedar-set-endpoint-row { width: 100%; }
 .cedar-set-endpoint > .primary, .cedar-set-endpoint > .copy-btn { align-self: flex-start; }
-.cedar-set-endpoint-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cedar-set-endpoint-row select { flex: none; padding: 8px 6px; border: 1px solid rgba(128, 128, 128, .4); border-radius: 8px; background: rgba(128, 128, 128, .07); color: inherit; font: inherit; font-size: 14px; }
-.cedar-set-endpoint-row input { flex: 1 1 120px; }
-.cedar-set-endpoint-row input[type=number] { flex: 0 0 84px; }
-.cedar-set-endpoint-row input[aria-label=Path] { flex: 0 0 72px; }
-.cedar-set-colon { color: var(--muted); }
 .cedar-set-unlock, .cedar-set-inline { display: flex; gap: 8px; align-items: center; }
 .cedar-set-inline { margin-top: 8px; flex-wrap: wrap; }
 .cedar-set-inline[hidden] { display: none; }
@@ -94,6 +87,5 @@
 
 @media (max-width: 640px) {
   .cedar-set-fields { grid-template-columns: 1fr; }
-  .cedar-set-endpoint-row { flex-wrap: wrap; }
   .cedar-set-menu { width: calc(100vw - 16px); }
 }

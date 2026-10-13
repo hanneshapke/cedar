@@ -13,6 +13,8 @@ pub const BRAVE_API_KEY: &str = "brave_api_key";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
 pub const LLM_BASE_URL: &str = "llm_base_url";
 pub const LLM_API_KEY: &str = "llm_api_key";
+/// Not a secret, but this table is where saved settings live, next to the address it belongs to.
+pub const LLM_MODEL: &str = "llm_model";
 
 #[derive(Clone)]
 pub struct SecretStore {

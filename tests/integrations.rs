@@ -9,6 +9,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Form, Json, Router};
 use base64::Engine;
+use cedar::config::DEFAULT_MODEL;
 use cedar::store::Store;
 use common::*;
 use serde_json::{json, Value};
@@ -744,6 +745,90 @@ async fn an_admin_can_point_cedar_at_another_model_server() {
         )
         .await;
     assert_eq!(code, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn an_admin_can_set_the_model_name_with_the_address() {
+    let (server_url, _server) = start_model_server(None).await;
+    let app = app_with_real_llm(&admin_env(&[])).await;
+    let put = |body: Value| {
+        app.json(
+            Method::PUT,
+            "/v1/admin/integrations/llm",
+            Some(KEY_B),
+            Some(body),
+        )
+    };
+
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["llm"]["model_source"], "default");
+    assert_eq!(status["llm"]["default_model"], DEFAULT_MODEL);
+
+    for bad in ["x".repeat(101), "two\nlines".to_string()] {
+        let (code, body) = put(json!({ "base_url": server_url, "model": bad })).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+    }
+
+    let (code, body) = put(json!({ "base_url": server_url, "model": " m-1 " })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["default_model"], "m-1");
+    assert_eq!(body["model_source"], "ui");
+
+    // New runs, and the defaults clients show, use it.
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["model"], "m-1");
+    let run = app.create_run(KEY_A, "hello").await;
+    assert_eq!(run["model"], "m-1");
+    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
+
+    // Leaving the model out keeps it; an empty one forgets it.
+    let (code, body) = put(json!({ "base_url": server_url })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["default_model"], "m-1");
+    let (code, body) = put(json!({ "base_url": server_url, "model": "" })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["default_model"], DEFAULT_MODEL);
+    assert_eq!(body["model_source"], "default");
+
+    // Going back to the default server forgets the name too.
+    put(json!({ "base_url": server_url, "model": "m-1" })).await;
+    let (code, _) = app
+        .json(
+            Method::DELETE,
+            "/v1/admin/integrations/llm",
+            Some(KEY_B),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::NO_CONTENT);
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["llm"]["default_model"], DEFAULT_MODEL);
+    assert_eq!(status["llm"]["model_source"], "default");
+}
+
+#[tokio::test]
+async fn a_model_name_set_in_the_environment_is_locked() {
+    let (server_url, _server) = start_model_server(None).await;
+    let app = app_with_real_llm(&admin_env(&[("LLM_MODEL", "from-env")])).await;
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["llm"]["model_source"], "env");
+    assert_eq!(status["llm"]["default_model"], "from-env");
+
+    let put = |body: Value| {
+        app.json(
+            Method::PUT,
+            "/v1/admin/integrations/llm",
+            Some(KEY_B),
+            Some(body),
+        )
+    };
+    let (code, _) = put(json!({ "base_url": server_url, "model": "other" })).await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    // The address can still be changed; the name stays.
+    let (code, body) = put(json!({ "base_url": server_url })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["default_model"], "from-env");
 }
 
 #[tokio::test]

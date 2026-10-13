@@ -63,7 +63,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, system, max_turns_cap, allowed_models}`. |
-| `PUT` / `DELETE /v1/admin/integrations/llm` | Admin: point cedar at another model server (`{"base_url", "api_key"?}`; checked by listing its models first; an absent `api_key` keeps the saved one, `""` removes it), or go back to the environment's or the default one. |
+| `PUT` / `DELETE /v1/admin/integrations/llm` | Admin: point cedar at another model server and name the model it uses by default (`{"base_url", "api_key"?, "model"?}`; checked by listing the server's models first; an absent `api_key` or `model` keeps the saved one, `""` removes it), or go back to the environment's or the default ones. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
 | `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. |
@@ -204,7 +204,7 @@ Settings come from environment variables. The important ones:
 | `LLM_API_KEY` | empty (only needed if the server runs with `--api-key`) |
 | `BIND_ADDR` | `127.0.0.1:8080` |
 | `DATABASE_URL` | `sqlite://cedar.db` |
-| `LLM_MODEL` | `deepseek-ai/DeepSeek-V4-Flash` (must match the name the server registered) |
+| `LLM_MODEL` | `deepseek-ai/DeepSeek-V4-Flash` (must match the name the server registered; left unset, an admin can set it from the chat UI) |
 | `ALLOWED_MODELS` | empty (any model may be requested) |
 | `MAX_TURNS_CAP` | 25 |
 | `MAX_TOKENS` | 4096 |
@@ -378,9 +378,11 @@ Model server & API keys does:
    refresh token it gets back, along with the account's address.
 
 A model server address is checked by asking it for its models (`GET <base_url>/models`) before it
-is kept; the path defaults to `/v1`, and the models it listed are shown, with a warning if
-`LLM_MODEL` isn't one of them. The next model call, in a new run or one already going, uses the new
-address. Only an `LLM_BASE_URL` actually set in the environment locks it; the built-in default
+is kept; the path defaults to `/v1`, and the models it listed are shown, with a warning if the
+model name isn't one of them. The next model call, in a new run or one already going, uses the new
+address. The model name is saved with the address and becomes the default for new runs (runs
+already created keep theirs); an `LLM_MODEL` set in the environment wins and can't be changed here.
+Only an `LLM_BASE_URL` actually set in the environment locks the address; the built-in default
 `http://localhost:8000/v1` can be changed. A saved Brave key is checked with one search before it is kept. Saving or removing a credential
 rebuilds the tool set at once: the next run sees the change, runs already going keep the tools they
 started with. A value set in the environment always wins; the API reports it as `"source": "env"`

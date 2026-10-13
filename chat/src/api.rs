@@ -585,11 +585,13 @@ struct LlmBody {
     base_url: String,
     /// Absent keeps cedar's saved key; empty removes it.
     api_key: Option<String>,
+    /// Absent keeps cedar's saved model name; empty removes it.
+    model: Option<String>,
 }
 
 async fn put_llm(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<LlmBody>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
-    Ok(Json(state.cedar.set_llm(&body.base_url, body.api_key.as_deref()).await?))
+    Ok(Json(state.cedar.set_llm(&body.base_url, body.api_key.as_deref(), body.model.as_deref()).await?))
 }
 
 async fn delete_llm(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {

@@ -5,6 +5,7 @@
 //!
 //! The environment wins: a credential set there is reported as such and can't be changed here.
 
+use crate::api::MAX_MODEL_LEN;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::llm::{list_models, SwappableLlm};
@@ -41,6 +42,9 @@ pub struct Integrations {
     changing: tokio::sync::Mutex<()>,
     /// The model server client, when it can be repointed (see [`Self::attach_llm`]).
     llm: OnceLock<Arc<SwappableLlm>>,
+    /// The model a run gets when it doesn't name one: the environment's, else the saved one, else
+    /// the built-in default. Kept here so every run creation reads it without a query.
+    default_model: ArcSwap<String>,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +60,7 @@ impl Integrations {
         let tools = ToolSet::from_config(&cfg)?;
         Ok(Self {
             secrets: cfg.secret_key.as_ref().map(|k| SecretStore::new(store, k)),
+            default_model: ArcSwap::from_pointee(cfg.default_model.clone()),
             cfg,
             tools: Arc::new(ArcSwap::from_pointee(tools)),
             http: http_client()?,
@@ -63,6 +68,11 @@ impl Integrations {
             changing: tokio::sync::Mutex::default(),
             llm: OnceLock::new(),
         })
+    }
+
+    /// The model a run gets when it doesn't name one.
+    pub fn default_model(&self) -> String {
+        self.default_model.load().to_string()
     }
 
     /// The current tool set, shared with the agent.
@@ -131,7 +141,20 @@ impl Integrations {
         )
     }
 
+    /// The saved model name, unless the environment sets one (which then wins).
+    async fn saved_model(&self) -> Option<String> {
+        match self.cfg.llm_model_from_env {
+            true => None,
+            false => self.saved(secrets::LLM_MODEL).await,
+        }
+    }
+
     async fn apply_llm(&self) -> Result<()> {
+        let model = self
+            .saved_model()
+            .await
+            .unwrap_or_else(|| self.cfg.default_model.clone());
+        self.default_model.store(Arc::new(model));
         if let Some(llm) = self.llm.get() {
             let (url, key) = self.llm_endpoint().await;
             if llm.base_url() != url {
@@ -144,8 +167,13 @@ impl Integrations {
 
     /// Point cedar at another model server: check that `base_url` answers like an
     /// OpenAI-compatible server (listing its models), then save it and use it for the next model
-    /// call. `api_key`: `None` keeps the saved key, empty removes it.
-    pub async fn set_llm(&self, base_url: &str, api_key: Option<&str>) -> Result<Value, AppError> {
+    /// call. `api_key` and `model`: `None` keeps the saved one, empty removes it.
+    pub async fn set_llm(
+        &self,
+        base_url: &str,
+        api_key: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<Value, AppError> {
         if self.llm.get().is_none() {
             return Err(AppError::Conflict(
                 "this server's model client can't be changed".into(),
@@ -157,6 +185,12 @@ impl Integrations {
                 "LLM_API_KEY is set in the server's environment; change it there".into(),
             ));
         }
+        if model.is_some() && self.cfg.llm_model_from_env {
+            return Err(AppError::Conflict(
+                "LLM_MODEL is set in the server's environment; change it there".into(),
+            ));
+        }
+        let model = model.map(clean_model_name).transpose()?;
         let url = normalize_llm_url(base_url).map_err(AppError::BadRequest)?;
         let key = match api_key.map(str::trim) {
             Some("") => None,
@@ -194,18 +228,30 @@ impl Integrations {
             }
             (None, _) => {}
         }
+        match &model {
+            Some(Some(m)) => {
+                secrets
+                    .put(secrets::LLM_MODEL, m, &json!({ "model": m }))
+                    .await?
+            }
+            Some(None) => {
+                secrets.delete(secrets::LLM_MODEL).await?;
+            }
+            None => {}
+        }
         self.apply_llm().await?;
         tracing::info!(base_url = %shown, models = models.len(), "model server changed");
         Ok(self.llm_status().await?)
     }
 
-    /// Go back to the environment's (or the default) model server.
+    /// Go back to the environment's (or the default) model server, key and model name.
     pub async fn remove_llm(&self) -> Result<(), AppError> {
         let secrets = self.writable(self.cfg.llm_base_url_from_env)?;
         let _guard = self.changing.lock().await;
         let removed = secrets.delete(secrets::LLM_BASE_URL).await?;
         let removed_key = secrets.delete(secrets::LLM_API_KEY).await?;
-        if !removed && !removed_key {
+        let removed_model = secrets.delete(secrets::LLM_MODEL).await?;
+        if !removed && !removed_key && !removed_model {
             return Err(AppError::NotFound("no model server address is saved"));
         }
         self.apply_llm().await?;
@@ -221,6 +267,17 @@ impl Integrations {
         let key_saved = match &self.secrets {
             Some(s) if !cfg.llm_api_key_from_env => s.meta(secrets::LLM_API_KEY).await?.is_some(),
             _ => false,
+        };
+        let model_saved = match &self.secrets {
+            Some(s) if !cfg.llm_model_from_env => s.meta(secrets::LLM_MODEL).await?.is_some(),
+            _ => false,
+        };
+        let model_source = if cfg.llm_model_from_env {
+            "env"
+        } else if model_saved {
+            "ui"
+        } else {
+            "default"
         };
         let (url, key) = self.llm_endpoint().await;
         let source = if cfg.llm_base_url_from_env {
@@ -242,7 +299,8 @@ impl Integrations {
             "source": source,
             "api_key_set": key.is_some(),
             "api_key_source": key_source,
-            "default_model": cfg.default_model,
+            "default_model": self.default_model(),
+            "model_source": model_source,
             "models": meta.as_ref().map(|m| m["models"].clone()),
             "changeable": self.llm.get().is_some(),
         }))
@@ -520,6 +578,15 @@ fn normalize_llm_url(raw: &str) -> Result<String, String> {
         url.set_path("/v1");
     }
     Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+/// A model name as stored: trimmed, `None` when empty (meaning "forget the saved one").
+fn clean_model_name(raw: &str) -> Result<Option<String>, AppError> {
+    let name = raw.trim();
+    if name.len() > MAX_MODEL_LEN || name.chars().any(char::is_control) {
+        return Err(AppError::BadRequest("model name is malformed".into()));
+    }
+    Ok((!name.is_empty()).then(|| name.to_string()))
 }
 
 /// A URL without the user and password it may carry, for showing and logging.

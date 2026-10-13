@@ -222,7 +222,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |
-| `PUT` / `DELETE /api/integrations/llm` | Admin: set cedar's model server (`{"base_url", "api_key"?}`) or go back to its default |
+| `PUT` / `DELETE /api/integrations/llm` | Admin: set cedar's model server and its default model name (`{"base_url", "api_key"?, "model"?}`) or go back to its defaults |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |

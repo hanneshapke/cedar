@@ -985,17 +985,21 @@ async fn integrations_need_the_admin_token() {
     let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/google", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, llm) =
-        admin_call(&h, Method::PUT, "/api/integrations/llm", Some("admin"), Some(json!({ "base_url": "http://gpu:8000", "api_key": "k" }))).await;
+        admin_call(&h, Method::PUT, "/api/integrations/llm", Some("admin"), Some(json!({ "base_url": "http://gpu:8000", "api_key": "k", "model": "model-a" }))).await;
     assert_eq!(status, StatusCode::OK, "{llm}");
     assert_eq!(llm["models"], json!(["model-a"]));
+    // Without a model the field is left out, so cedar keeps the one it has saved.
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/llm", Some("admin"), Some(json!({ "base_url": "http://gpu:8000" }))).await;
+    assert_eq!(status, StatusCode::OK);
     let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/llm", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/llm", None, Some(json!({ "base_url": "http://x" }))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "put_llm", "delete_llm"]);
-    assert_eq!(calls[5].1, json!({ "base_url": "http://gpu:8000", "api_key": "k" }));
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "put_llm", "put_llm", "delete_llm"]);
+    assert_eq!(calls[5].1, json!({ "base_url": "http://gpu:8000", "api_key": "k", "model": "model-a" }));
+    assert_eq!(calls[6].1, json!({ "base_url": "http://gpu:8000" }));
 
     let (status, connect) = admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK);

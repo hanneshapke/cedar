@@ -399,7 +399,7 @@ const cedarSettings = (() => {
     return { row, main, side };
   }
 
-  /** The address (and key) of the OpenAI-compatible server cedar sends model calls to. */
+  /** The address, model name (and key) of the OpenAI-compatible server cedar sends model calls to. */
   function llmRow(status) {
     const l = status.llm || {};
     const { row, main, side } = integrationRow('Model server', 'The OpenAI-compatible server (vLLM) cedar sends every model call to.');
@@ -407,17 +407,20 @@ const cedarSettings = (() => {
     if (l.source === 'env') side.append(badge('Managed by environment'));
     if (l.source === 'default') side.append(badge('Default'));
     if (l.api_key_set) side.append(badge('API key set'));
+    const editable = l.source !== 'env' && status.storage && l.changeable !== false;
+    if (l.default_model) main.append(el('small', '', `Model name: ${l.default_model}`));
     if (Array.isArray(l.models)) {
       const found = l.models.length ? l.models.join(', ') : 'none';
       main.append(el('small', '', `Models it listed: ${found}`));
       if (l.default_model && !l.models.includes(l.default_model)) {
-        main.append(el('small', 'cedar-set-warn-text', `cedar's default model ${l.default_model} is not among them; set cedar's LLM_MODEL (and cedar-chat's CHAT_MODELS) to one of these.`));
+        const fix = editable && l.model_source !== 'env'
+          ? 'use Change to set the model name to one of these.'
+          : "set cedar's LLM_MODEL (and cedar-chat's CHAT_MODELS) to one of these.";
+        main.append(el('small', 'cedar-set-warn-text', `cedar's default model ${l.default_model} is not among them; ${fix}`));
       }
     }
-    if (l.source === 'env' || !status.storage || l.changeable === false) return row;
+    if (!editable) return row;
 
-    let current;
-    try { current = new URL(l.base_url); } catch { current = new URL('http://localhost:8000/v1'); }
     const edit = el('form', 'cedar-set-inline cedar-set-endpoint');
     edit.hidden = true;
     const input = (placeholder, value, label, type = 'text') => {
@@ -428,15 +431,24 @@ const cedarSettings = (() => {
       i.setAttribute('aria-label', label);
       return i;
     };
-    const scheme = el('select');
-    scheme.setAttribute('aria-label', 'Protocol');
-    for (const p of ['http', 'https']) scheme.append(new Option(`${p}://`, p));
-    scheme.value = current.protocol.replace(':', '');
-    const host = input('Address, e.g. 10.0.0.5', current.hostname, 'Address');
-    const port = input('Port', current.port || (scheme.value === 'https' ? '443' : '80'), 'Port', 'number');
-    port.min = '1';
-    port.max = '65535';
-    const path = input('/v1', current.pathname === '/' ? '/v1' : current.pathname, 'Path');
+    // The whole address, protocol and path included; cedar adds /v1 if the path is left off.
+    const address = input('http://10.0.0.5:8000/v1', l.base_url || '', 'Server address');
+    address.spellcheck = false;
+    address.autocapitalize = 'off';
+    // Left out when the environment sets LLM_MODEL. Empty means cedar's own default.
+    let model = null;
+    let listed = null;
+    if (l.model_source !== 'env') {
+      model = input('Model name (leave empty for the default)', l.model_source === 'ui' ? l.default_model : '', 'Model name');
+      model.spellcheck = false;
+      model.autocapitalize = 'off';
+      if (Array.isArray(l.models) && l.models.length) {
+        listed = el('datalist');
+        listed.id = 'cedar-set-models';
+        for (const m of l.models) listed.append(new Option(m, m));
+        model.setAttribute('list', listed.id);
+      }
+    }
     const key = input(l.api_key_set ? 'API key (leave empty to keep it)' : 'API key, if the server needs one', '', 'API key', 'password');
     key.autocomplete = 'off';
     const clearKey = el('label', 'cedar-set-check small');
@@ -444,16 +456,17 @@ const cedarSettings = (() => {
     clearBox.type = 'checkbox';
     clearKey.append(clearBox, el('span', '', 'Remove the saved API key'));
     const saveBtn = button('Check and save', () => edit.requestSubmit(), 'primary');
-    const addr = el('div', 'cedar-set-endpoint-row');
-    addr.append(scheme, host, el('span', 'cedar-set-colon', ':'), port, path);
-    edit.append(addr, key);
+    edit.append(address);
+    if (model) edit.append(model);
+    if (listed) edit.append(listed);
+    edit.append(key);
     if (l.api_key_source === 'ui') edit.append(clearKey);
     edit.append(saveBtn, button('Cancel', () => { edit.hidden = true; }));
     edit.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!host.value.trim() || !port.value) { deps.toast('Enter the address and port'); return; }
-      const p = path.value.trim() || '/v1';
-      const body = { base_url: `${scheme.value}://${host.value.trim()}:${port.value}${p.startsWith('/') ? p : `/${p}`}` };
+      if (!address.value.trim()) { deps.toast('Enter the server address'); return; }
+      const body = { base_url: address.value.trim() };
+      if (model) body.model = model.value.trim();
       if (key.value.trim()) body.api_key = key.value.trim();
       else if (clearBox.checked) body.api_key = '';
       saveBtn.disabled = true;
@@ -468,10 +481,10 @@ const cedarSettings = (() => {
         deps.toast(err.message);
       }
     });
-    side.append(button('Change', () => { edit.hidden = false; host.focus(); }));
+    side.append(button('Change', () => { edit.hidden = false; address.focus(); }));
     if (l.source === 'ui') {
       side.append(button('Use the default', async () => {
-        if (!confirm('Forget this address (and its saved API key) and go back to the server default?')) return;
+        if (!confirm('Forget this address (and its saved API key and model name) and go back to the server default?')) return;
         try {
           await adminApi('DELETE', '/integrations/llm');
           renderIntegrations();
