@@ -6,8 +6,10 @@
 
 use crate::models::Usage;
 use anyhow::{anyhow, Context, Result};
+use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct MessageRequest<'a> {
@@ -307,6 +309,86 @@ fn tool_use_block(call: &Value, index: usize) -> Value {
         json!({})
     });
     json!({ "type": "tool_use", "id": id, "name": name, "input": input })
+}
+
+/// The model server client, swappable while cedar runs: an admin can point cedar at another
+/// server (see `crate::integrations`). Each model call uses the client current at its start.
+pub struct SwappableLlm {
+    inner: ArcSwap<ChatCompletionsClient>,
+}
+
+impl SwappableLlm {
+    pub fn new(client: ChatCompletionsClient) -> Self {
+        Self {
+            inner: ArcSwap::from_pointee(client),
+        }
+    }
+
+    /// Send later calls to `base_url`, with `api_key` if given.
+    pub fn set(&self, base_url: String, api_key: Option<String>) -> Result<()> {
+        self.inner
+            .store(Arc::new(ChatCompletionsClient::new(base_url, api_key)?));
+        Ok(())
+    }
+
+    pub fn base_url(&self) -> String {
+        self.inner.load().base_url.clone()
+    }
+}
+
+#[async_trait]
+impl LlmClient for SwappableLlm {
+    async fn create_message(&self, req: &MessageRequest<'_>) -> Result<LlmResponse> {
+        let client = self.inner.load_full();
+        client.create_message(req).await
+    }
+}
+
+/// The models an OpenAI-compatible server lists at `{base_url}/models`, to check an address
+/// before using it. Errors say whether the server couldn't be reached or refused.
+pub async fn list_models(
+    base_url: &str,
+    api_key: Option<&str>,
+    timeout: Duration,
+) -> Result<Vec<String>> {
+    let http = reqwest::Client::builder()
+        .connect_timeout(timeout)
+        .timeout(timeout)
+        .build()
+        .context("building HTTP client")?;
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let mut req = http.get(&url);
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| anyhow!("could not reach {url}: {}", root_cause(&e)))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(anyhow!("{url} answered {status}"));
+    }
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|_| anyhow!("{url} did not answer like an OpenAI-compatible server"))?;
+    let models = body["data"]
+        .as_array()
+        .ok_or_else(|| anyhow!("{url} did not answer like an OpenAI-compatible server"))?
+        .iter()
+        .filter_map(|m| m["id"].as_str().map(String::from))
+        .collect();
+    Ok(models)
+}
+
+/// The innermost error message ("Connection refused"), which says more than reqwest's own.
+fn root_cause(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut cur = e;
+    while let Some(next) = cur.source() {
+        cur = next;
+    }
+    cur.to_string()
 }
 
 #[cfg(test)]

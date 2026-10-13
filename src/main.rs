@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use cedar::api::{self, AppState};
 use cedar::config::Config;
-use cedar::llm::ChatCompletionsClient;
+use cedar::llm::{ChatCompletionsClient, SwappableLlm};
 use cedar::sandbox::DockerSandboxFactory;
 use cedar::store::Store;
 use std::sync::Arc;
@@ -25,10 +25,11 @@ async fn main() -> Result<()> {
 
     let cfg = Config::from_env()?;
     let store = Store::connect(&cfg.database_url).await?;
-    let llm = Arc::new(ChatCompletionsClient::new(
+    // Swappable, so an admin can point cedar at another model server (see Integrations).
+    let llm = Arc::new(SwappableLlm::new(ChatCompletionsClient::new(
         cfg.llm_base_url.clone(),
         cfg.llm_api_key.clone(),
-    )?);
+    )?));
     let sandboxes = Arc::new(DockerSandboxFactory::new(cfg.sandbox.clone()));
     let bind_addr = cfg.bind_addr;
     let workspace_ttl = cfg.workspace_ttl;
@@ -60,8 +61,10 @@ async fn main() -> Result<()> {
         );
     }
 
-    let state = AppState::new(cfg, store, llm, sandboxes)?;
-    // Adds integrations saved through the admin API to the tools the environment configures.
+    let state = AppState::new(cfg, store, llm.clone(), sandboxes)?;
+    state.integrations.attach_llm(llm);
+    // Adds integrations saved through the admin API (a model server address, keys) to what the
+    // environment configures.
     state.integrations.reload().await?;
     state.manager.recover().await?;
     state.manager.start_janitor(workspace_ttl);

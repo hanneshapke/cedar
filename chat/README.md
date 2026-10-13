@@ -162,7 +162,9 @@ skips the slots missed while it was paused. At most 100 schedules can exist.
 **Settings → Tools & model** sets the defaults for every conversation: which of cedar's tool
 groups the agent gets (web search, reading web pages, weather, maps, the browser, Gmail and
 Calendar, the last two down to single tools), and the default model, turn limit, and system
-prompt. The groups come from cedar's `GET /v1/tools`, so a group cedar doesn't offer is shown
+prompt. The system prompt field shows cedar's own default text until you change it, and "Use the
+default" puts it back; the default text is saved as "unset", so it keeps following cedar's
+`SYSTEM_PROMPT`. The groups come from cedar's `GET /v1/tools`, so a group cedar doesn't offer is shown
 greyed out with the reason (no Brave key, `BROWSER=off`, no Google account). Tools that send or
 change things (sending mail, editing events) ask before they are switched on. The sandbox tools
 (files, shell, Python, documents, charts) are always on.
@@ -177,8 +179,11 @@ also applies to follow-ups in existing conversations that don't have their own t
 
 ### Integrations
 
-With `CHAT_ADMIN_TOKEN` set, Settings also shows **Integrations**, unlocked with that token for the
-browser session: cedar's Brave Search key (checked with one search before it is saved, then shown
+Settings → **Model server & API keys** is where the model server address and the API keys go.
+Without `CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key.
+With it, the section is unlocked with that token for the browser session and manages cedar's model
+server (address, port, path and optional API key; checked by listing the server's models, which
+are then shown), its Brave Search key (checked with one search before it is saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs cedar's
@@ -213,10 +218,11 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
-| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own) |
+| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own), plus `defaults`: cedar's own model, system prompt and turn limit (`null` if cedar can't be reached) |
 | `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |
+| `PUT` / `DELETE /api/integrations/llm` | Admin: set cedar's model server (`{"base_url", "api_key"?}`) or go back to its default |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |

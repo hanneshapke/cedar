@@ -206,6 +206,8 @@ const cedarSettings = (() => {
       prefsSection.replaceChildren(heading('Tools & model'), note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
       return;
     }
+    // cedar's own defaults (null if cedar couldn't be asked), to show what an unset field means.
+    const defaults = prefs.defaults || null;
     const draft = { ...prefs, tools: prefs.tools };
     let state = decode(prefs.tools);
     const save = button('Save defaults', submit, 'primary');
@@ -220,7 +222,7 @@ const cedarSettings = (() => {
     let modelSelect = null;
     if (models.length) {
       modelSelect = el('select');
-      modelSelect.append(new Option("cedar's default", ''));
+      modelSelect.append(new Option(defaults?.model ? `cedar's default (${defaults.model})` : "cedar's default", ''));
       for (const m of models) modelSelect.append(new Option(m, m));
       modelSelect.value = prefs.model || '';
       modelSelect.addEventListener('change', dirty);
@@ -230,17 +232,30 @@ const cedarSettings = (() => {
     turns.type = 'number';
     turns.min = '1';
     turns.max = '1000';
-    turns.placeholder = 'Server limit';
+    turns.placeholder = defaults ? `Server limit (${defaults.max_turns_cap})` : 'Server limit';
     turns.value = prefs.max_turns ?? '';
     turns.addEventListener('input', dirty);
     fields.append(field('Max turns per message', turns));
+    // Without a saved prompt the field shows cedar's default text; it is only saved when changed.
+    const defaultSystem = defaults?.system ?? '';
     const system = el('textarea');
-    system.rows = 4;
-    system.placeholder = "cedar's default system prompt";
-    system.value = prefs.system || '';
-    system.addEventListener('input', dirty);
-    const reset = button('Use the default', () => { system.value = ''; dirty(); });
-    fields.append(field('System prompt', system, reset));
+    system.rows = 6;
+    system.placeholder = defaults ? '' : "cedar's default system prompt (cedar could not be asked for its text)";
+    system.value = prefs.system ?? defaultSystem;
+    const isDefault = () => system.value.trim() === defaultSystem.trim();
+    const tag = el('span', 'cedar-set-badge', "cedar's default");
+    const reset = button('Use the default', () => { system.value = defaultSystem; syncSystem(); dirty(); });
+    const syncSystem = () => {
+      tag.hidden = !isDefault();
+      reset.hidden = isDefault();
+    };
+    system.addEventListener('input', () => { syncSystem(); dirty(); });
+    syncSystem();
+    const extra = el('span', 'cedar-set-field-extra');
+    extra.append(tag, reset);
+    const systemField = field('System prompt', system, extra);
+    systemField.append(el('small', 'cedar-set-field-note', 'cedar adds a short note after it saying which tools this conversation has and what the sandbox can reach.'));
+    fields.append(systemField);
 
     async function submit() {
       save.disabled = true;
@@ -248,11 +263,13 @@ const cedarSettings = (() => {
       const body = {
         tools: draft.tools,
         model: modelSelect ? modelSelect.value || null : prefs.model,
-        system: system.value.trim() || null,
+        // The default text is saved as "unset", so the prompt keeps following cedar's SYSTEM_PROMPT.
+        system: isDefault() || !system.value.trim() ? null : system.value.trim(),
         max_turns: turns.value ? Number(turns.value) : null,
       };
       try {
-        prefs = await deps.api('PUT', '/settings', body);
+        prefs = { ...(await deps.api('PUT', '/settings', body)), defaults };
+        if (prefs.system === null) { system.value = defaultSystem; syncSystem(); }
         status.textContent = 'Saved';
         updateChip();
       } catch (e) {
@@ -287,32 +304,64 @@ const cedarSettings = (() => {
   async function renderIntegrations() {
     if (!integrationsSection) return;
     const cfg = deps.config();
-    integrationsSection.hidden = !cfg.admin_enabled;
-    if (!cfg.admin_enabled) return;
-    const lock = button('Lock', () => { setAdminToken(''); renderIntegrations(); });
-    if (!(adminToken() || memoryAdmin)) {
-      integrationsSection.replaceChildren(heading('Integrations'), unlockForm());
+    integrationsSection.hidden = false;
+    if (!cfg.admin_enabled) {
+      try { await loadCatalog(); } catch { /* the help is shown without the list */ }
+      integrationsSection.replaceChildren(heading('Model server & API keys'), setupHelp());
       return;
     }
-    integrationsSection.replaceChildren(heading('Integrations', lock), note('Loading…'));
+    const lock = button('Lock', () => { setAdminToken(''); renderIntegrations(); });
+    if (!(adminToken() || memoryAdmin)) {
+      integrationsSection.replaceChildren(heading('Model server & API keys'), unlockForm());
+      return;
+    }
+    integrationsSection.replaceChildren(heading('Model server & API keys', lock), note('Loading…'));
     let status;
     try {
       status = await adminApi('GET', '/integrations');
     } catch (e) {
       if (e.status === 403) {
         setAdminToken('');
-        integrationsSection.replaceChildren(heading('Integrations'), unlockForm(e.message));
+        integrationsSection.replaceChildren(heading('Model server & API keys'), unlockForm(e.message));
       } else {
-        integrationsSection.replaceChildren(heading('Integrations', lock), note(e.message, 'cedar-set-error'));
+        integrationsSection.replaceChildren(heading('Model server & API keys', lock), note(e.message, 'cedar-set-error'));
       }
       return;
     }
-    const parts = [heading('Integrations', lock)];
+    const parts = [heading('Model server & API keys', lock)];
     if (!status.storage) {
       parts.push(note('cedar has no CEDAR_SECRET_KEY, so keys can only be set in its environment.'));
     }
-    parts.push(braveRow(status), googleRow(status));
+    parts.push(llmRow(status), braveRow(status), googleRow(status));
     integrationsSection.replaceChildren(...parts);
+  }
+
+  /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
+  function setupHelp() {
+    const wrap = el('div', 'cedar-set-help');
+    wrap.append(note('The model server address, the Brave Search key and the Google account are set on the cedar server. They can be managed here once these are set:'));
+    const list = el('ul');
+    const item = (code, text) => {
+      const li = el('li');
+      li.append(el('code', '', code), ` ${text}`);
+      list.append(li);
+    };
+    item('CHAT_ADMIN_TOKEN', 'on cedar-chat: the token that unlocks this section');
+    item('CEDAR_SECRET_KEY', 'on cedar (openssl rand -hex 32): encrypts what is saved here');
+    item('CEDAR_ADMIN_KEYS', "on cedar: include cedar-chat's CEDAR_API_KEY");
+    wrap.append(list);
+    wrap.append(note('Until then, set LLM_BASE_URL, LLM_API_KEY, BRAVE_API_KEY and the GOOGLE_* variables in cedar\'s environment (see .env.example). Everything else, like the sandbox and limits, is only set there.'));
+    const missing = groups().filter((g) => !g.available);
+    if (missing.length) {
+      const l = el('ul');
+      for (const g of missing) {
+        const li = el('li');
+        li.append(el('strong', '', g.label), `: ${g.reason || 'not offered'}`);
+        l.append(li);
+      }
+      wrap.append(note('Not available on this server right now:'), l);
+    }
+    return wrap;
   }
 
   function unlockForm(error) {
@@ -331,7 +380,7 @@ const cedarSettings = (() => {
       refreshTools();
     });
     const wrap = el('div');
-    wrap.append(note('API keys and the Google account are for admins. Enter the admin token (CHAT_ADMIN_TOKEN) to manage them.'));
+    wrap.append(note('The model server, API keys and the Google account are for admins. Enter the admin token (CHAT_ADMIN_TOKEN) to manage them.'));
     if (error) wrap.append(note(error, 'cedar-set-error'));
     wrap.append(form);
     return wrap;
@@ -348,6 +397,89 @@ const cedarSettings = (() => {
     const side = el('div', 'cedar-set-integration-side');
     row.append(main, side);
     return { row, main, side };
+  }
+
+  /** The address (and key) of the OpenAI-compatible server cedar sends model calls to. */
+  function llmRow(status) {
+    const l = status.llm || {};
+    const { row, main, side } = integrationRow('Model server', 'The OpenAI-compatible server (vLLM) cedar sends every model call to.');
+    side.append(badge(l.base_url || 'unknown', l.source === 'ui' ? 'ok' : ''));
+    if (l.source === 'env') side.append(badge('Managed by environment'));
+    if (l.source === 'default') side.append(badge('Default'));
+    if (l.api_key_set) side.append(badge('API key set'));
+    if (Array.isArray(l.models)) {
+      const found = l.models.length ? l.models.join(', ') : 'none';
+      main.append(el('small', '', `Models it listed: ${found}`));
+      if (l.default_model && !l.models.includes(l.default_model)) {
+        main.append(el('small', 'cedar-set-warn-text', `cedar's default model ${l.default_model} is not among them; set cedar's LLM_MODEL (and cedar-chat's CHAT_MODELS) to one of these.`));
+      }
+    }
+    if (l.source === 'env' || !status.storage || l.changeable === false) return row;
+
+    let current;
+    try { current = new URL(l.base_url); } catch { current = new URL('http://localhost:8000/v1'); }
+    const edit = el('form', 'cedar-set-inline cedar-set-endpoint');
+    edit.hidden = true;
+    const input = (placeholder, value, label, type = 'text') => {
+      const i = el('input');
+      i.type = type;
+      i.placeholder = placeholder;
+      i.value = value;
+      i.setAttribute('aria-label', label);
+      return i;
+    };
+    const scheme = el('select');
+    scheme.setAttribute('aria-label', 'Protocol');
+    for (const p of ['http', 'https']) scheme.append(new Option(`${p}://`, p));
+    scheme.value = current.protocol.replace(':', '');
+    const host = input('Address, e.g. 10.0.0.5', current.hostname, 'Address');
+    const port = input('Port', current.port || (scheme.value === 'https' ? '443' : '80'), 'Port', 'number');
+    port.min = '1';
+    port.max = '65535';
+    const path = input('/v1', current.pathname === '/' ? '/v1' : current.pathname, 'Path');
+    const key = input(l.api_key_set ? 'API key (leave empty to keep it)' : 'API key, if the server needs one', '', 'API key', 'password');
+    key.autocomplete = 'off';
+    const clearKey = el('label', 'cedar-set-check small');
+    const clearBox = el('input');
+    clearBox.type = 'checkbox';
+    clearKey.append(clearBox, el('span', '', 'Remove the saved API key'));
+    const saveBtn = button('Check and save', () => edit.requestSubmit(), 'primary');
+    const addr = el('div', 'cedar-set-endpoint-row');
+    addr.append(scheme, host, el('span', 'cedar-set-colon', ':'), port, path);
+    edit.append(addr, key);
+    if (l.api_key_source === 'ui') edit.append(clearKey);
+    edit.append(saveBtn, button('Cancel', () => { edit.hidden = true; }));
+    edit.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!host.value.trim() || !port.value) { deps.toast('Enter the address and port'); return; }
+      const p = path.value.trim() || '/v1';
+      const body = { base_url: `${scheme.value}://${host.value.trim()}:${port.value}${p.startsWith('/') ? p : `/${p}`}` };
+      if (key.value.trim()) body.api_key = key.value.trim();
+      else if (clearBox.checked) body.api_key = '';
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Checking…';
+      try {
+        const saved = await adminApi('PUT', '/integrations/llm', body);
+        deps.toast(`Model server set to ${saved.base_url}`);
+        renderIntegrations();
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Check and save';
+        deps.toast(err.message);
+      }
+    });
+    side.append(button('Change', () => { edit.hidden = false; host.focus(); }));
+    if (l.source === 'ui') {
+      side.append(button('Use the default', async () => {
+        if (!confirm('Forget this address (and its saved API key) and go back to the server default?')) return;
+        try {
+          await adminApi('DELETE', '/integrations/llm');
+          renderIntegrations();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    }
+    row.append(edit); // full width, below the description and the buttons
+    return row;
   }
 
   function braveRow(status) {

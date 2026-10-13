@@ -121,6 +121,7 @@ pub fn router(state: AppState) -> Router {
         .route("/tools", get(list_tools))
         .route("/integrations", get(get_integrations))
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
+        .route("/integrations/llm", put(put_llm).delete(delete_llm))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/connect", post(connect_google))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
@@ -471,8 +472,20 @@ async fn clean_tools(state: &AppState, tools: Option<Vec<String>>) -> Result<Opt
     Ok(Some(tools))
 }
 
-async fn get_settings(State(state): State<AppState>) -> Result<Json<Preferences>, AppError> {
-    Ok(Json(state.store.preferences().await?))
+/// The saved defaults, plus cedar's own (`defaults`: its model, system prompt and turn limit, or
+/// `null` if cedar can't be reached) so the page can show what an unset field means.
+async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let prefs = state.store.preferences().await?;
+    let defaults = match state.cedar.defaults().await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not read cedar's defaults");
+            Value::Null
+        }
+    };
+    let mut body = serde_json::to_value(prefs).map_err(anyhow::Error::from)?;
+    body["defaults"] = defaults;
+    Ok(Json(body))
 }
 
 async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<SettingsBody>) -> Result<Json<Preferences>, AppError> {
@@ -564,6 +577,25 @@ async fn put_brave_key(
 ) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     Ok(Json(state.cedar.set_brave_key(&body.api_key).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LlmBody {
+    base_url: String,
+    /// Absent keeps cedar's saved key; empty removes it.
+    api_key: Option<String>,
+}
+
+async fn put_llm(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<LlmBody>) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.set_llm(&body.base_url, body.api_key.as_deref()).await?))
+}
+
+async fn delete_llm(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_llm().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn delete_brave_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {

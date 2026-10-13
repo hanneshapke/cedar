@@ -7,6 +7,7 @@
 
 use crate::config::Config;
 use crate::error::AppError;
+use crate::llm::{list_models, SwappableLlm};
 use crate::mcp::http_client;
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
@@ -19,7 +20,7 @@ use chacha20poly1305::aead::OsRng;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// How long a "Connect Google" link stays usable.
@@ -38,6 +39,8 @@ pub struct Integrations {
     pending: Mutex<HashMap<String, (String, Instant)>>,
     /// Serializes changes, so two admins can't interleave a save and a rebuild.
     changing: tokio::sync::Mutex<()>,
+    /// The model server client, when it can be repointed (see [`Self::attach_llm`]).
+    llm: OnceLock<Arc<SwappableLlm>>,
 }
 
 #[derive(Deserialize)]
@@ -58,6 +61,7 @@ impl Integrations {
             http: http_client()?,
             pending: Mutex::default(),
             changing: tokio::sync::Mutex::default(),
+            llm: OnceLock::new(),
         })
     }
 
@@ -69,6 +73,7 @@ impl Integrations {
     /// Rebuild the tools from the environment plus the saved credentials. A credential that can't
     /// be decrypted is logged and left out rather than keeping cedar from starting.
     pub async fn reload(&self) -> Result<()> {
+        self.apply_llm().await?;
         let mut overrides = Overrides::default();
         if let Some(secrets) = &self.secrets {
             for (name, slot) in [
@@ -89,6 +94,158 @@ impl Integrations {
         let tools = ToolSet::build(&self.cfg, &overrides)?;
         self.tools.store(Arc::new(tools));
         Ok(())
+    }
+
+    /// Let admins repoint the model server: `llm` is the client the agent and compaction use.
+    /// Call [`Self::reload`] afterwards to apply a saved address.
+    pub fn attach_llm(&self, llm: Arc<SwappableLlm>) {
+        let _ = self.llm.set(llm);
+    }
+
+    async fn saved(&self, name: &str) -> Option<String> {
+        let secrets = self.secrets.as_ref()?;
+        match secrets.get(name).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %format!("{e:#}"), "ignoring a saved integration");
+                None
+            }
+        }
+    }
+
+    /// The model server address and key in effect: the environment's, else the saved ones, else
+    /// the built-in default address.
+    async fn llm_endpoint(&self) -> (String, Option<String>) {
+        let cfg = &self.cfg;
+        let url = match cfg.llm_base_url_from_env {
+            true => None,
+            false => self.saved(secrets::LLM_BASE_URL).await,
+        };
+        let key = match cfg.llm_api_key_from_env {
+            true => None,
+            false => self.saved(secrets::LLM_API_KEY).await,
+        };
+        (
+            url.unwrap_or_else(|| cfg.llm_base_url.clone()),
+            key.or_else(|| cfg.llm_api_key.clone()),
+        )
+    }
+
+    async fn apply_llm(&self) -> Result<()> {
+        if let Some(llm) = self.llm.get() {
+            let (url, key) = self.llm_endpoint().await;
+            if llm.base_url() != url {
+                tracing::info!(base_url = %redact_url(&url), "model server");
+            }
+            llm.set(url, key)?;
+        }
+        Ok(())
+    }
+
+    /// Point cedar at another model server: check that `base_url` answers like an
+    /// OpenAI-compatible server (listing its models), then save it and use it for the next model
+    /// call. `api_key`: `None` keeps the saved key, empty removes it.
+    pub async fn set_llm(&self, base_url: &str, api_key: Option<&str>) -> Result<Value, AppError> {
+        if self.llm.get().is_none() {
+            return Err(AppError::Conflict(
+                "this server's model client can't be changed".into(),
+            ));
+        }
+        let secrets = self.writable(self.cfg.llm_base_url_from_env)?;
+        if api_key.is_some() && self.cfg.llm_api_key_from_env {
+            return Err(AppError::Conflict(
+                "LLM_API_KEY is set in the server's environment; change it there".into(),
+            ));
+        }
+        let url = normalize_llm_url(base_url).map_err(AppError::BadRequest)?;
+        let key = match api_key.map(str::trim) {
+            Some("") => None,
+            Some(k) if k.len() > MAX_SECRET_LEN || k.chars().any(char::is_control) => {
+                return Err(AppError::BadRequest("api_key is malformed".into()))
+            }
+            Some(k) => Some(k.to_string()),
+            None => self.llm_endpoint().await.1,
+        };
+        let models = list_models(&url, key.as_deref(), REQUEST_TIMEOUT)
+            .await
+            .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;
+
+        let _guard = self.changing.lock().await;
+        let shown = redact_url(&url);
+        secrets
+            .put(
+                secrets::LLM_BASE_URL,
+                &url,
+                &json!({ "base_url": shown, "models": models }),
+            )
+            .await?;
+        match (api_key, &key) {
+            (Some(_), Some(k)) => {
+                secrets
+                    .put(
+                        secrets::LLM_API_KEY,
+                        k,
+                        &json!({ "last4": secrets::last4(k) }),
+                    )
+                    .await?
+            }
+            (Some(_), None) => {
+                secrets.delete(secrets::LLM_API_KEY).await?;
+            }
+            (None, _) => {}
+        }
+        self.apply_llm().await?;
+        tracing::info!(base_url = %shown, models = models.len(), "model server changed");
+        Ok(self.llm_status().await?)
+    }
+
+    /// Go back to the environment's (or the default) model server.
+    pub async fn remove_llm(&self) -> Result<(), AppError> {
+        let secrets = self.writable(self.cfg.llm_base_url_from_env)?;
+        let _guard = self.changing.lock().await;
+        let removed = secrets.delete(secrets::LLM_BASE_URL).await?;
+        let removed_key = secrets.delete(secrets::LLM_API_KEY).await?;
+        if !removed && !removed_key {
+            return Err(AppError::NotFound("no model server address is saved"));
+        }
+        self.apply_llm().await?;
+        Ok(())
+    }
+
+    async fn llm_status(&self) -> Result<Value> {
+        let cfg = &self.cfg;
+        let meta = match &self.secrets {
+            Some(s) if !cfg.llm_base_url_from_env => s.meta(secrets::LLM_BASE_URL).await?,
+            _ => None,
+        };
+        let key_saved = match &self.secrets {
+            Some(s) if !cfg.llm_api_key_from_env => s.meta(secrets::LLM_API_KEY).await?.is_some(),
+            _ => false,
+        };
+        let (url, key) = self.llm_endpoint().await;
+        let source = if cfg.llm_base_url_from_env {
+            "env"
+        } else if meta.is_some() {
+            "ui"
+        } else {
+            "default"
+        };
+        let key_source = if cfg.llm_api_key_from_env {
+            json!("env")
+        } else if key_saved {
+            json!("ui")
+        } else {
+            Value::Null
+        };
+        Ok(json!({
+            "base_url": redact_url(&url),
+            "source": source,
+            "api_key_set": key.is_some(),
+            "api_key_source": key_source,
+            "default_model": cfg.default_model,
+            "models": meta.as_ref().map(|m| m["models"].clone()),
+            "changeable": self.llm.get().is_some(),
+        }))
     }
 
     /// Why a tool group has no tools on this server, for the clients' settings pages.
@@ -148,7 +305,10 @@ impl Integrations {
                 g
             }
         };
-        Ok(json!({ "storage": self.secrets.is_some(), "brave": brave, "google": google }))
+        let llm = self.llm_status().await?;
+        Ok(
+            json!({ "storage": self.secrets.is_some(), "llm": llm, "brave": brave, "google": google }),
+        )
     }
 
     fn google_services(&self) -> Vec<&str> {
@@ -341,6 +501,39 @@ impl Integrations {
     }
 }
 
+/// A model server address as stored: an http(s) URL with a host, its path defaulting to `/v1`,
+/// without a trailing slash, query, or fragment.
+fn normalize_llm_url(raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    let bad =
+        || "base_url must be an http(s) URL with a host, like http://10.0.0.5:8000/v1".to_string();
+    if raw.len() > 500 {
+        return Err(bad());
+    }
+    let mut url = reqwest::Url::parse(raw).map_err(|_| bad())?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none_or(str::is_empty) {
+        return Err(bad());
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    if url.path() == "/" {
+        url.set_path("/v1");
+    }
+    Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+/// A URL without the user and password it may carry, for showing and logging.
+fn redact_url(raw: &str) -> String {
+    match reqwest::Url::parse(raw) {
+        Ok(mut url) => {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            url.as_str().trim_end_matches('/').to_string()
+        }
+        Err(_) => raw.to_string(),
+    }
+}
+
 /// The `email` claim of an ID token. It comes straight from Google's token endpoint over TLS, so
 /// it is read without checking the signature; it is only shown to admins.
 fn email_from_id_token(token: &str) -> Option<String> {
@@ -355,6 +548,35 @@ fn email_from_id_token(token: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_server_addresses_are_normalized_and_redacted() {
+        assert_eq!(
+            normalize_llm_url(" http://10.0.0.5:8000 ").unwrap(),
+            "http://10.0.0.5:8000/v1"
+        );
+        assert_eq!(
+            normalize_llm_url("https://gpu.example/v1/?x=1#y").unwrap(),
+            "https://gpu.example/v1"
+        );
+        assert_eq!(
+            normalize_llm_url("http://box:9000/openai/v1").unwrap(),
+            "http://box:9000/openai/v1"
+        );
+        for bad in [
+            "",
+            "box:8000",
+            "ftp://box/v1",
+            "http://",
+            "file:///etc/passwd",
+        ] {
+            assert!(normalize_llm_url(bad).is_err(), "{bad}");
+        }
+        assert_eq!(
+            redact_url("http://user:pw@box:8000/v1"),
+            "http://box:8000/v1"
+        );
+    }
 
     #[test]
     fn the_email_is_read_from_the_id_token() {

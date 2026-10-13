@@ -228,6 +228,17 @@ impl Harness {
             .route("/v1/runs/{id}/files/{*path}", get(download_file))
             .route("/v1/compact", post(compact))
             .route("/v1/tools", get(tools))
+            .route("/v1/defaults", get(|| async { Json(json!({ "model": "model-a", "system": "You are helpful.", "max_turns_cap": 25, "allowed_models": [] })) }))
+            .route(
+                "/v1/admin/integrations/llm",
+                axum::routing::put(|State(s): State<Shared>, Json(body): Json<Value>| async move {
+                    if let Some(refused) = admin(&s, "put_llm", body.clone()).await {
+                        return refused;
+                    }
+                    Json(json!({ "base_url": body["base_url"], "source": "ui", "models": ["model-a"] })).into_response()
+                })
+                .delete(|State(s): State<Shared>| delete_integration(s, "llm")),
+            )
             .route("/v1/admin/integrations", get(integrations))
             .route(
                 "/v1/admin/integrations/brave",
@@ -847,7 +858,11 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
     assert_eq!(status, StatusCode::OK, "{prefs}");
     assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7 }));
     let (_, got) = h.json(Method::GET, "/api/settings", None).await;
-    assert_eq!(got, prefs);
+    assert_eq!(got["tools"], prefs["tools"]);
+    assert_eq!(got["system"], "be brief");
+    // cedar's own defaults come along, so the page can show what an unset field means.
+    assert_eq!(got["defaults"]["system"], "You are helpful.");
+    assert_eq!(got["defaults"]["max_turns_cap"], 25);
 
     let msgs = format!("/api/conversations/{cid}/messages");
     let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "second" }))).await;
@@ -969,8 +984,18 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/google", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let routes: Vec<String> = h.cedar.admin_calls.lock().unwrap().iter().map(|(r, _)| r.clone()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google"]);
+    let (status, llm) =
+        admin_call(&h, Method::PUT, "/api/integrations/llm", Some("admin"), Some(json!({ "base_url": "http://gpu:8000", "api_key": "k" }))).await;
+    assert_eq!(status, StatusCode::OK, "{llm}");
+    assert_eq!(llm["models"], json!(["model-a"]));
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/llm", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/llm", None, Some(json!({ "base_url": "http://x" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let calls = h.cedar.admin_calls.lock().unwrap().clone();
+    let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "put_llm", "delete_llm"]);
+    assert_eq!(calls[5].1, json!({ "base_url": "http://gpu:8000", "api_key": "k" }));
 
     let (status, connect) = admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1004,4 +1029,13 @@ async fn the_google_callback_needs_no_token_and_redirects_to_the_page() {
     assert!(headers["location"].to_str().unwrap().contains("access_denied"));
     let (_, headers, _) = h.call_full(get("/api/oauth/google/callback")).await;
     assert!(headers["location"].to_str().unwrap().contains("incomplete"));
+}
+
+#[tokio::test]
+async fn settings_load_without_cedar() {
+    let h = Harness::new(&[("CEDAR_URL", "http://127.0.0.1:1")]).await;
+    let (status, got) = h.json(Method::GET, "/api/settings", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["defaults"], Value::Null);
+    assert_eq!(got["tools"], Value::Null);
 }

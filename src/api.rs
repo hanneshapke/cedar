@@ -126,7 +126,12 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/files/{*path}", get(download_file))
         .route("/compact", post(compact_conversation))
         .route("/tools", get(list_tools))
+        .route("/defaults", get(defaults))
         .route("/admin/integrations", get(get_integrations))
+        .route(
+            "/admin/integrations/llm",
+            axum::routing::put(put_llm).delete(delete_llm),
+        )
         .route(
             "/admin/integrations/brave",
             axum::routing::put(put_brave_key).delete(delete_brave_key),
@@ -297,6 +302,17 @@ async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(tools.catalog(&state.integrations.unavailable_reasons()))
 }
 
+/// What a run gets when it doesn't say: for clients that show the defaults.
+async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let cfg = &state.cfg;
+    Json(json!({
+        "model": cfg.default_model,
+        "system": cfg.default_system_prompt,
+        "max_turns_cap": cfg.max_turns_cap,
+        "allowed_models": cfg.allowed_models,
+    }))
+}
+
 fn require_admin(admin: Admin) -> Result<(), AppError> {
     if admin.0 {
         Ok(())
@@ -337,6 +353,37 @@ async fn delete_brave_key(
 ) -> Result<StatusCode, AppError> {
     require_admin(admin)?;
     state.integrations.remove_brave_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LlmBody {
+    base_url: String,
+    /// Absent keeps the saved key; empty removes it.
+    api_key: Option<String>,
+}
+
+async fn put_llm(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<LlmBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(
+        state
+            .integrations
+            .set_llm(&body.base_url, body.api_key.as_deref())
+            .await?,
+    ))
+}
+
+async fn delete_llm(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state.integrations.remove_llm().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
