@@ -61,6 +61,12 @@ pub async fn run_agent(
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
     };
+    // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+        _ = env.tools.connect_remote(env.tool_timeout) => {}
+    }
     let tool_defs = env.tools.definitions();
     let system = with_note(&run.system, &env.environment_note);
     // A continuation starts with a copy of its parent's conversation (made when it was created).
