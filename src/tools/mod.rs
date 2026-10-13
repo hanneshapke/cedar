@@ -194,8 +194,8 @@ impl ToolSet {
         )
     }
 
-    /// The tools a run may use. `None` means every tool; otherwise each entry names a group (see
-    /// [`GROUPS`]) or a single tool, and the sandbox tools are always included.
+    /// The tools a run may use. `None` (or an entry `*`) means every tool; otherwise each entry
+    /// names a group (see [`GROUPS`]) or a single tool, and the sandbox tools are always included.
     pub fn select<'a>(&'a self, allow: Option<&'a [String]>) -> ToolView<'a> {
         ToolView { set: self, allow }
     }
@@ -208,7 +208,8 @@ impl ToolSet {
             return Err(format!("tools may name at most {MAX_SELECTION} entries"));
         }
         for entry in allow {
-            let known = GROUPS.iter().any(|(id, _)| id == entry)
+            let known = entry == "*"
+                || GROUPS.iter().any(|(id, _)| id == entry)
                 || self.all().any(|t| t.name() == entry)
                 || ["gmail_", "calendar_"].iter().any(|p| {
                     entry.len() <= 100
@@ -329,7 +330,7 @@ impl<'a> ToolView<'a> {
             return true;
         };
         let group = group_of(name);
-        group == "core" || allow.iter().any(|a| a == name || a == group)
+        group == "core" || allow.iter().any(|a| a == "*" || a == name || a == group)
     }
 
     fn all(&self) -> impl Iterator<Item = &'a dyn Tool> + '_ {
@@ -384,9 +385,10 @@ impl<'a> ToolView<'a> {
         }
         let has = |group: &str| {
             let remote = self.set.remote.iter().any(|s| s.prefix() == group);
-            let allowed = self
-                .allow
-                .is_none_or(|a| a.iter().any(|e| e == group || group_of(e) == group));
+            let allowed = self.allow.is_none_or(|a| {
+                a.iter()
+                    .any(|e| e == "*" || e == group || group_of(e) == group)
+            });
             (remote && allowed) || self.all().any(|t| group_of(t.name()) == group)
         };
         let (gmail, calendar) = (has("gmail"), has("calendar"));
@@ -705,6 +707,15 @@ mod tests {
         assert!(!note.contains("fetch_url") && !note.contains("weather_forecast"));
         assert!(view.get("bash").is_some(), "sandbox tools are always in");
         assert!(view.get("show_map").is_none());
-        assert_eq!(set.select(None).definitions().len(), set.definitions().len());
+        assert_eq!(
+            set.select(None).definitions().len(),
+            set.definitions().len()
+        );
+        let all = ["*".to_string()];
+        assert_eq!(
+            set.select(Some(&all)).definitions().len(),
+            set.definitions().len()
+        );
+        assert!(set.validate_selection(&all).is_ok());
     }
 }

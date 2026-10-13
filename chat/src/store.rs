@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow};
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
@@ -24,6 +24,8 @@ pub struct Conversation {
     pub model: Option<String>,
     /// Set on conversations a schedule created; they are listed under it, not in the main list.
     pub schedule_id: Option<Uuid>,
+    /// The tools this conversation uses instead of the default ones.
+    pub tools: Option<Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -37,6 +39,8 @@ pub struct Schedule {
     pub prompt: String,
     pub model: Option<String>,
     pub source_conversation_id: Option<Uuid>,
+    /// The tools the schedule's runs use; `None` means the defaults at the time of the run.
+    pub tools: Option<Vec<String>>,
     pub frequency: String,
     pub weekday: Option<u8>,
     pub time_of_day: String,
@@ -53,6 +57,7 @@ pub struct NewSchedule<'a> {
     pub prompt: &'a str,
     pub model: Option<&'a str>,
     pub source_conversation_id: Option<Uuid>,
+    pub tools: Option<&'a [String]>,
     pub frequency: &'a str,
     pub weekday: Option<u8>,
     pub time_of_day: &'a str,
@@ -100,12 +105,31 @@ fn opt_uuid(r: &SqliteRow, col: &str) -> Result<Option<Uuid>> {
     r.try_get::<Option<&str>, _>(col)?.map(Uuid::parse_str).transpose().map_err(Into::into)
 }
 
+fn opt_json<T: serde::de::DeserializeOwned>(r: &SqliteRow, col: &str) -> Result<Option<T>> {
+    r.try_get::<Option<&str>, _>(col)?.map(serde_json::from_str).transpose().map_err(Into::into)
+}
+
+fn to_json<T: Serialize + ?Sized>(v: Option<&T>) -> Result<Option<String>> {
+    v.map(serde_json::to_string).transpose().map_err(Into::into)
+}
+
+/// Defaults for new runs, set in the Settings dialog. Each `None` leaves cedar's own default.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Preferences {
+    /// Tool groups and tool names; `None` means every tool cedar offers.
+    pub tools: Option<Vec<String>>,
+    pub model: Option<String>,
+    pub system: Option<String>,
+    pub max_turns: Option<u32>,
+}
+
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
     Ok(Conversation {
         id: Uuid::parse_str(r.try_get("id")?)?,
         title: r.try_get("title")?,
         model: r.try_get("model")?,
         schedule_id: opt_uuid(r, "schedule_id")?,
+        tools: opt_json(r, "tools")?,
         created_at: to_dt(r.try_get("created_at")?),
         updated_at: to_dt(r.try_get("updated_at")?),
     })
@@ -118,6 +142,7 @@ fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
         prompt: r.try_get("prompt")?,
         model: r.try_get("model")?,
         source_conversation_id: opt_uuid(r, "source_conversation_id")?,
+        tools: opt_json(r, "tools")?,
         frequency: r.try_get("frequency")?,
         weekday: r.try_get::<Option<i64>, _>("weekday")?.map(|d| d as u8),
         time_of_day: r.try_get("time_of_day")?,
@@ -227,6 +252,16 @@ impl Store {
         rows.iter().map(conversation_from_row).collect()
     }
 
+    /// Set (or, with `None`, clear) the tools a conversation uses instead of the defaults.
+    pub async fn set_conversation_tools(&self, id: Uuid, tools: Option<&[String]>) -> Result<bool> {
+        let res = sqlx::query("UPDATE conversations SET tools = ? WHERE id = ?")
+            .bind(to_json(tools)?)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(res.rows_affected() == 1)
+    }
+
     pub async fn rename_conversation(&self, id: Uuid, title: &str) -> Result<bool> {
         let res = sqlx::query("UPDATE conversations SET title = ? WHERE id = ?")
             .bind(title)
@@ -308,21 +343,43 @@ impl Store {
         Ok(())
     }
 
+    // -- settings ---------------------------------------------------------------------------
+
+    pub async fn preferences(&self) -> Result<Preferences> {
+        let row = sqlx::query("SELECT value FROM settings WHERE key = 'preferences'").fetch_optional(&self.pool).await?;
+        match row {
+            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
+            None => Ok(Preferences::default()),
+        }
+    }
+
+    pub async fn set_preferences(&self, prefs: &Preferences) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('preferences', ?) \
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(serde_json::to_string(prefs)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     // -- schedules --------------------------------------------------------------------------
 
     pub async fn create_schedule(&self, new: &NewSchedule<'_>) -> Result<Schedule> {
         let id = Uuid::now_v7();
         let now = now_ms();
         sqlx::query(
-            "INSERT INTO schedules (id, title, prompt, model, source_conversation_id, frequency, weekday, \
+            "INSERT INTO schedules (id, title, prompt, model, source_conversation_id, tools, frequency, weekday, \
              time_of_day, timezone, enabled, next_run_at, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(new.title)
         .bind(new.prompt)
         .bind(new.model)
         .bind(new.source_conversation_id.map(|c| c.to_string()))
+        .bind(to_json(new.tools)?)
         .bind(new.frequency)
         .bind(new.weekday.map(i64::from))
         .bind(new.time_of_day)
@@ -353,12 +410,13 @@ impl Store {
     /// Write back a schedule's editable fields (everything but its id, origin and timestamps).
     pub async fn update_schedule(&self, s: &Schedule) -> Result<bool> {
         let res = sqlx::query(
-            "UPDATE schedules SET title = ?, prompt = ?, model = ?, frequency = ?, weekday = ?, time_of_day = ?, \
-             timezone = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
+            "UPDATE schedules SET title = ?, prompt = ?, model = ?, tools = ?, frequency = ?, weekday = ?, \
+             time_of_day = ?, timezone = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
         )
         .bind(&s.title)
         .bind(&s.prompt)
         .bind(&s.model)
+        .bind(to_json(s.tools.as_ref())?)
         .bind(&s.frequency)
         .bind(s.weekday.map(i64::from))
         .bind(&s.time_of_day)
@@ -509,6 +567,7 @@ mod tests {
                 prompt: "summarize",
                 model: None,
                 source_conversation_id: None,
+                tools: Some(&["weather".to_string()]),
                 frequency: "daily",
                 weekday: None,
                 time_of_day: "09:00",
@@ -518,6 +577,7 @@ mod tests {
             .await
             .unwrap();
         assert!(s.enabled && s.last_run_at.is_none());
+        assert_eq!(s.tools, Some(vec!["weather".to_string()]));
         let plain = store.create_conversation(Some("Mine")).await.unwrap();
         let c = store.create_scheduled_conversation(s.id, "Daily digest · Mon").await.unwrap();
         assert_eq!(c.schedule_id, Some(s.id));
@@ -560,5 +620,27 @@ mod tests {
         let t = title_from(&"word ".repeat(30));
         assert!(t.ends_with('…') && t.chars().count() <= 61);
         assert!(!t.contains("wor…"));
+    }
+
+    #[tokio::test]
+    async fn preferences_and_conversation_tools_round_trip() {
+        let store = Store::connect_memory().await.unwrap();
+        assert_eq!(store.preferences().await.unwrap(), Preferences::default());
+        let prefs = Preferences {
+            tools: Some(vec!["maps".into()]),
+            model: Some("m".into()),
+            system: Some("be brief".into()),
+            max_turns: Some(5),
+        };
+        store.set_preferences(&prefs).await.unwrap();
+        store.set_preferences(&prefs).await.unwrap();
+        assert_eq!(store.preferences().await.unwrap(), prefs);
+
+        let c = store.create_conversation(None).await.unwrap();
+        assert_eq!(c.tools, None);
+        assert!(store.set_conversation_tools(c.id, Some(&["web_search".to_string()])).await.unwrap());
+        assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().tools, Some(vec!["web_search".to_string()]));
+        store.set_conversation_tools(c.id, None).await.unwrap();
+        assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().tools, None);
     }
 }

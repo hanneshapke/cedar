@@ -24,9 +24,10 @@ const cedarUI = (() => {
     try { localStorage.setItem(KEY, ui); } catch { /* the switch then only lasts for this visit */ }
   }
 
-  /** Open a UI, keeping the #/c/<id> hash so the same conversation stays open. */
+  /** Open a UI, keeping the #/c/<id> hash so the same conversation stays open, and the query
+   *  (the outcome of "Connect Google", which settings.js reports). */
   function go(ui, replace) {
-    const url = `/${valid(ui) ? ui : DEFAULT}/${location.hash}`;
+    const url = `/${valid(ui) ? ui : DEFAULT}/${location.search}${location.hash}`;
     if (replace) location.replace(url);
     else location.assign(url);
   }

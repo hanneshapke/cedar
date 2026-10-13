@@ -1,0 +1,79 @@
+/* Tools, model and integrations settings and the composer's Tools button (settings.js), shared by
+   both UIs. Like schedule.css it only relies on --accent and --muted, which both define, and on
+   translucent greys for edges, so it reads in the light and dark themes alike. Buttons reuse each
+   UI's .copy-btn and .primary. */
+
+.cedar-set-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(128, 128, 128, .25); }
+.cedar-set-section[hidden] { display: none; }
+.cedar-set-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.cedar-set-heading > span { flex: 1; }
+.cedar-set-note { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.cedar-set-error { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: rgba(200, 60, 40, .1); color: #b63d2b; font-size: 13px; }
+@media (prefers-color-scheme: dark) { .cedar-set-error { color: #f09080; } }
+
+/* tool groups */
+.cedar-set-tools { display: flex; flex-direction: column; gap: 6px; }
+.cedar-set-tool { padding: 8px 12px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; background: rgba(128, 128, 128, .04); }
+.cedar-set-tool.unavailable { opacity: .65; }
+.cedar-set-check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13.5px; }
+.cedar-set-check input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.cedar-set-check > span { display: flex; flex-direction: column; min-width: 0; }
+.cedar-set-check small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.cedar-set-check.small { align-items: center; gap: 8px; font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.cedar-set-check.small input { margin: 0; }
+.cedar-set-single { margin: 6px 0 0 26px; font-size: 12.5px; }
+.cedar-set-single summary { cursor: pointer; color: var(--muted); }
+.cedar-set-single-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.cedar-set-warn { display: inline-block; margin-left: 26px; font-size: 11.5px; color: #b0662a; }
+.cedar-set-check .cedar-set-warn { margin-left: 4px; font-family: inherit; }
+@media (prefers-color-scheme: dark) { .cedar-set-warn { color: #e2a66a; } }
+
+/* model fields */
+.cedar-set-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.cedar-set-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; color: var(--muted); }
+.cedar-set-field:has(textarea) { grid-column: 1 / -1; }
+.cedar-set-field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 500; }
+.cedar-set-field input, .cedar-set-field textarea, .cedar-set-field select,
+.cedar-set-unlock input, .cedar-set-inline input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(128, 128, 128, .4);
+  border-radius: 8px;
+  background: rgba(128, 128, 128, .07);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.cedar-set-field textarea { resize: vertical; min-height: 80px; line-height: 1.45; }
+.cedar-set-field :focus, .cedar-set-unlock input:focus, .cedar-set-inline input:focus { border-color: var(--accent); }
+.cedar-set-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.cedar-set-status { font-size: 12.5px; color: var(--muted); }
+.cedar-set-actions .primary:disabled { opacity: .5; cursor: default; }
+
+/* integrations */
+.cedar-set-unlock, .cedar-set-inline { display: flex; gap: 8px; align-items: center; }
+.cedar-set-inline { margin-top: 8px; flex-wrap: wrap; }
+.cedar-set-inline[hidden] { display: none; }
+.cedar-set-inline input { flex: 1 1 200px; }
+.cedar-set-integration { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; }
+.cedar-set-integration-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 240px; min-width: 0; font-size: 13.5px; }
+.cedar-set-integration-main small { color: var(--muted); font-size: 12.5px; }
+.cedar-set-integration-main code { font-size: 11.5px; overflow-wrap: anywhere; }
+.cedar-set-hint { margin-top: 4px; }
+.cedar-set-integration-side { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cedar-set-badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; border: 1px solid rgba(128, 128, 128, .35); font-size: 11.5px; line-height: 1.6; color: var(--muted); white-space: nowrap; }
+.cedar-set-badge.ok { color: var(--accent); border-color: var(--accent); }
+
+/* the composer's Tools button and its menu */
+.cedar-set-chip { position: relative; flex: none; }
+.cedar-set-chip.custom::after { content: ""; position: absolute; top: 3px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.cedar-set-menu { width: min(480px, calc(100vw - 32px)); max-height: min(86vh, 760px); overflow-y: auto; }
+.cedar-set-menu-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cedar-set-menu-head h3 { flex: 1; margin: 0; font-size: 16px; }
+
+@media (max-width: 640px) {
+  .cedar-set-fields { grid-template-columns: 1fr; }
+  .cedar-set-menu { width: calc(100vw - 16px); }
+}

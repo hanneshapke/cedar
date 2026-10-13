@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/v1/style.css">
   <link rel="stylesheet" href="/map-view.css">
   <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/settings.css">
 </head>
 <body>
   <div class="app">
@@ -123,6 +124,8 @@
       </button>
     </div>
     <p class="settings-note">Saved in this browser. Switching keeps your open conversation.</p>
+    <div class="cedar-set-section" id="prefs-section" aria-live="polite"></div>
+    <div class="cedar-set-section" id="integrations-section" aria-live="polite" hidden></div>
     <div class="cedar-sched-section" id="schedules-section" aria-live="polite"></div>
   </dialog>
 
@@ -130,6 +133,7 @@
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>
   <script src="/schedule.js"></script>
+  <script src="/settings.js"></script>
   <script src="/v1/app.js"></script>
 </body>
 </html>

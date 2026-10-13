@@ -31,6 +31,12 @@ struct FakeCedar {
     compactions: Mutex<Vec<Value>>,
     /// When set, `POST /v1/runs` answers with this status and message instead of a run.
     refuse_runs: Mutex<Option<(StatusCode, &'static str)>>,
+    /// Every `POST /v1/runs` body.
+    bodies: Mutex<Vec<Value>>,
+    /// Admin calls: (route, body).
+    admin_calls: Mutex<Vec<(String, Value)>>,
+    /// When set, the admin routes refuse the key, as cedar does for a key not in CEDAR_ADMIN_KEYS.
+    not_admin: Mutex<bool>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -54,6 +60,7 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
     if let Some((status, message)) = *s.refuse_runs.lock().unwrap() {
         return cedar_error(status, "refused", message);
     }
+    s.bodies.lock().unwrap().push(body.clone());
     let parent = body["parent_id"].as_str().map(String::from);
     if let Some(p) = &parent {
         if !s.runs.lock().unwrap().contains_key(&Uuid::parse_str(p).unwrap()) {
@@ -149,6 +156,60 @@ async fn download_file(State(s): State<Shared>, Path((id, path)): Path<(Uuid, St
         .into_response()
 }
 
+async fn tools() -> Json<Value> {
+    Json(json!({ "groups": [
+        { "id": "web_search", "label": "Web search", "available": false, "reason": "Needs a Brave Search API key", "tools": [] },
+        { "id": "weather", "label": "Weather", "available": true, "tools": [{ "name": "weather_forecast", "description": "d", "writes": false }] },
+        { "id": "gmail", "label": "Gmail", "available": true, "discovered": false, "tools": [] },
+    ] }))
+}
+
+async fn admin(s: &Shared, route: &str, body: Value) -> Option<axum::response::Response> {
+    s.admin_calls.lock().unwrap().push((route.to_string(), body));
+    (*s.not_admin.lock().unwrap()).then(|| cedar_error(StatusCode::FORBIDDEN, "forbidden", "not an admin key"))
+}
+
+async fn integrations(State(s): State<Shared>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "get", Value::Null).await {
+        return refused;
+    }
+    Json(json!({ "storage": true, "brave": { "configured": false, "source": null }, "google": { "enabled": true, "configured": false } })).into_response()
+}
+
+async fn put_brave(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "put_brave", body.clone()).await {
+        return refused;
+    }
+    if body["api_key"] == "bad" {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "Brave Search rejected the API key (401 Unauthorized)");
+    }
+    Json(json!({ "brave": { "configured": true, "source": "ui", "last4": "1234" } })).into_response()
+}
+
+async fn delete_integration(s: Shared, which: &str) -> axum::response::Response {
+    if let Some(refused) = admin(&s, &format!("delete_{which}"), Value::Null).await {
+        return refused;
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn authorize(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "authorize", body.clone()).await {
+        return refused;
+    }
+    Json(json!({ "url": format!("https://accounts.example/auth?state=st-1&redirect_uri={}", body["redirect_uri"].as_str().unwrap()) })).into_response()
+}
+
+async fn callback(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "callback", body.clone()).await {
+        return refused;
+    }
+    if body["state"] != "st-1" {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "this Google sign-in link is unknown, used, or expired; start again");
+    }
+    Json(json!({ "account": "ana@example.com" })).into_response()
+}
+
 struct Harness {
     app: Router,
     state: AppState,
@@ -166,6 +227,15 @@ impl Harness {
             .route("/v1/runs/{id}/files", get(list_files))
             .route("/v1/runs/{id}/files/{*path}", get(download_file))
             .route("/v1/compact", post(compact))
+            .route("/v1/tools", get(tools))
+            .route("/v1/admin/integrations", get(integrations))
+            .route(
+                "/v1/admin/integrations/brave",
+                axum::routing::put(put_brave).delete(|State(s): State<Shared>| delete_integration(s, "brave")),
+            )
+            .route("/v1/admin/integrations/google", axum::routing::delete(|State(s): State<Shared>| delete_integration(s, "google")))
+            .route("/v1/admin/integrations/google/authorize", post(authorize))
+            .route("/v1/admin/integrations/google/callback", post(callback))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -346,7 +416,7 @@ async fn validation_and_upstream_errors() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
-    assert_eq!(cfg, json!({ "auth_required": false, "models": ["model-a", "model-b"] }));
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models": ["model-a", "model-b"] }));
 }
 
 #[tokio::test]
@@ -752,4 +822,186 @@ async fn a_busy_cedar_is_retried_for_an_hour_then_the_slot_is_recorded_as_failed
     let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
     assert_eq!(detail["runs"].as_array().unwrap().len(), 2);
     assert!(h.state.store.get_schedule(sid).await.unwrap().unwrap().next_run_at > Utc::now());
+}
+
+// -- settings, tools, integrations ------------------------------------------------------------
+
+#[tokio::test]
+async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
+    let h = Harness::new(&[("CHAT_MODELS", "model-a,model-b")]).await;
+
+    // Without settings every tool is asked for explicitly, so a continuation can't keep a
+    // narrower choice from before.
+    let (cid, _) = h.finished_conversation("first", "ok").await;
+    let first = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(first["tools"], json!(["*"]));
+    assert!(first.get("system").is_none() && first.get("model").is_none());
+
+    let (status, prefs) = h
+        .json(
+            Method::PUT,
+            "/api/settings",
+            Some(json!({ "tools": ["weather", "web_search", "weather"], "model": "model-b", "system": "  be brief  ", "max_turns": 7 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{prefs}");
+    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7 }));
+    let (_, got) = h.json(Method::GET, "/api/settings", None).await;
+    assert_eq!(got, prefs);
+
+    let msgs = format!("/api/conversations/{cid}/messages");
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "second" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    let second = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(second["tools"], json!(["weather", "web_search"]));
+    assert_eq!(second["model"], "model-b");
+    assert_eq!(second["system"], "be brief");
+    assert_eq!(second["max_turns"], 7);
+    assert!(second["parent_id"].is_string());
+
+    // The conversation's own tools win; an explicit model too.
+    let (status, conv) =
+        h.json(Method::PUT, &format!("/api/conversations/{cid}/tools"), Some(json!({ "tools": ["gmail_search_threads"] }))).await;
+    assert_eq!(status, StatusCode::OK, "{conv}");
+    assert_eq!(conv["tools"], json!(["gmail_search_threads"]));
+    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "third", "model": "model-a" }))).await;
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    let third = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(third["tools"], json!(["gmail_search_threads"]));
+    assert_eq!(third["model"], "model-a");
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["conversation"]["tools"], json!(["gmail_search_threads"]));
+
+    // Back to the defaults.
+    let (_, conv) = h.json(Method::PUT, &format!("/api/conversations/{cid}/tools"), Some(json!({ "tools": null }))).await;
+    assert_eq!(conv["tools"], Value::Null);
+}
+
+#[tokio::test]
+async fn settings_are_validated() {
+    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    for (body, needle) in [
+        (json!({ "tools": ["nope"] }), "no tool or tool group"),
+        (json!({ "tools": ["gmail"], "model": "model-z" }), "not offered"),
+        (json!({ "max_turns": 0 }), "max_turns"),
+        (json!({ "system": "x".repeat(20_001) }), "system"),
+        (json!({ "colour": "red" }), "unknown field"),
+    ] {
+        let (status, err) = h.json(Method::PUT, "/api/settings", Some(body.clone())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(err["error"]["message"].as_str().unwrap().contains(needle), "{body}: {err}");
+    }
+    let (status, _) = h.json(Method::PUT, "/api/conversations/00000000-0000-0000-0000-000000000000/tools", Some(json!({ "tools": [] }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, tools) = h.json(Method::GET, "/api/tools", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(tools["groups"][1]["id"], "weather");
+}
+
+#[tokio::test]
+async fn schedules_keep_their_conversations_tools() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("weather please", "sunny").await;
+    h.json(Method::PUT, &format!("/api/conversations/{cid}/tools"), Some(json!({ "tools": ["weather"] }))).await;
+    let (status, schedule) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    assert_eq!(status, StatusCode::CREATED, "{schedule}");
+    assert_eq!(schedule["tools"], json!(["weather"]));
+    let sid = schedule["id"].as_str().unwrap();
+
+    let (status, _) = h.json(Method::POST, &format!("/api/schedules/{sid}/run"), None).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["tools"], json!(["weather"]));
+
+    // `null` hands the schedule back to the defaults; an absent field leaves it alone.
+    let (_, updated) = h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "title": "Forecast" }))).await;
+    assert_eq!(updated["tools"], json!(["weather"]));
+    let (_, updated) = h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "tools": null }))).await;
+    assert_eq!(updated["tools"], Value::Null);
+    let (status, _) = h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "tools": ["bogus"] }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+async fn admin_call(h: &Harness, method: Method, uri: &str, admin: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+    let mut req = Request::builder().method(method).uri(uri).header("authorization", "Bearer access");
+    if let Some(a) = admin {
+        req = req.header("x-admin-token", a);
+    }
+    let req = match body {
+        Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())),
+        None => req.body(Body::empty()),
+    }
+    .unwrap();
+    let (status, _, text) = h.call_full(req).await;
+    (status, serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn integrations_need_the_admin_token() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access")]).await;
+    let (status, err) = admin_call(&h, Method::GET, "/api/integrations", Some("anything"), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(err["error"]["message"].as_str().unwrap().contains("CHAT_ADMIN_TOKEN"));
+
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_PUBLIC_URL", "https://chat.example")]).await;
+    let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
+    assert_eq!(cfg["admin_enabled"], true);
+    for admin in [None, Some("wrong")] {
+        let (status, _) = admin_call(&h, Method::GET, "/api/integrations", admin, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+    // The access token is still needed too.
+    let (status, _) = h.call(Method::GET, "/api/integrations", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(h.cedar.admin_calls.lock().unwrap().is_empty());
+
+    let (status, status_body) = admin_call(&h, Method::GET, "/api/integrations", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status_body["google"]["redirect_uri"], "https://chat.example/api/oauth/google/callback");
+
+    let (status, err) = admin_call(&h, Method::PUT, "/api/integrations/brave", Some("admin"), Some(json!({ "api_key": "bad" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("rejected"));
+    let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/brave", Some("admin"), Some(json!({ "api_key": "k-1234" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["brave"]["last4"], "1234");
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/brave", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/google", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let routes: Vec<String> = h.cedar.admin_calls.lock().unwrap().iter().map(|(r, _)| r.clone()).collect();
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google"]);
+
+    let (status, connect) = admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(connect["url"].as_str().unwrap().ends_with("redirect_uri=https://chat.example/api/oauth/google/callback"));
+
+    // cedar refusing chat's key is explained, not passed on as the browser's fault.
+    *h.cedar.not_admin.lock().unwrap() = true;
+    let (status, err) = admin_call(&h, Method::GET, "/api/integrations", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(err["error"]["message"].as_str().unwrap().contains("CEDAR_ADMIN_KEYS"));
+}
+
+#[tokio::test]
+async fn the_google_callback_needs_no_token_and_redirects_to_the_page() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+    let get = |uri: &str| Request::builder().uri(uri).body(Body::empty()).unwrap();
+
+    let (status, headers, _) = h.call_full(get("/api/oauth/google/callback?state=st-1&code=c0de")).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(headers["location"], "/?integrations=connected");
+    let (route, body) = h.cedar.admin_calls.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(route, "callback");
+    assert_eq!(body, json!({ "state": "st-1", "code": "c0de" }));
+
+    let (_, headers, _) = h.call_full(get("/api/oauth/google/callback?state=forged&code=c")).await;
+    let location = headers["location"].to_str().unwrap();
+    assert!(location.starts_with("/?integrations=error&message="), "{location}");
+    assert!(location.contains("expired"), "{location}");
+
+    let (_, headers, _) = h.call_full(get("/api/oauth/google/callback?error=access_denied&state=st-1")).await;
+    assert!(headers["location"].to_str().unwrap().contains("access_denied"));
+    let (_, headers, _) = h.call_full(get("/api/oauth/google/callback")).await;
+    assert!(headers["location"].to_str().unwrap().contains("incomplete"));
 }

@@ -51,7 +51,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "system"?, "max_turns"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "system"?, "max_turns"?, "parent_id"?, "tools"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Choosing tools](#choosing-tools) for `tools`. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`). |
@@ -61,9 +61,35 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, usage}`. |
+| `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
+| `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
+| `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
+| `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. |
+| `POST /v1/admin/integrations/google/callback` | Admin: finish it with the `{"state", "code"}` Google sent to the redirect URI. Returns `{account}`. |
+| `DELETE /v1/admin/integrations/google` | Admin: disconnect the Google account. |
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (database + Docker). No auth. |
 
 A run belongs to the key that created it. Anyone else gets `404`.
+
+### Choosing tools
+
+`tools` limits what a run can use. Each entry is a group or a single tool name:
+
+| Group | Tools |
+| --- | --- |
+| `web_search` | `web_search` |
+| `web_fetch` | `fetch_url`, `download_file` |
+| `weather` | `weather_forecast` |
+| `maps` | `show_map` |
+| `browser` | `browser` |
+| `gmail`, `calendar` | every `gmail_*` or `calendar_*` tool, or name single ones (`gmail_search_threads`) |
+
+The sandbox tools (`bash`, the file, Python, document, PDF, and chart tools) are always included,
+and `*` means every tool. Leaving `tools` out gives a fresh run every tool and a continuation its
+parent's choice. The model only sees the chosen tools, a call to any other is answered as an
+unknown tool, and the [note on the environment](#tools) only mentions the chosen ones. A group the
+server doesn't offer right now (no Brave key, say) is accepted and adds nothing, so a client's saved
+choice keeps working; an unknown name is a `400`. The run's `tools` are returned with it.
 
 ### Compacting a run into a prompt
 
@@ -192,7 +218,11 @@ Settings come from environment variables. The important ones:
 | `WEATHER_BASE_URL` / `WEATHER_GEOCODING_BASE_URL` | `https://api.open-meteo.com/v1/forecast` / `https://geocoding-api.open-meteo.com/v1/search` (point both at a self-hosted Open-Meteo to avoid the public API; `show_map` uses the geocoding URL too) |
 | `MAPS` | `on` (set `off` to remove the `show_map` tool) |
 | `GMAIL` / `CALENDAR` | `off` (set `on` to offer the Gmail or Calendar tools; see [Gmail and Calendar](#gmail-and-calendar)) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` | empty (required when `GMAIL` or `CALENDAR` is on) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty (required when `GMAIL` or `CALENDAR` is on) |
+| `GOOGLE_REFRESH_TOKEN` | empty (required when `GMAIL` or `CALENDAR` is on, unless the account is connected from the chat UI; see [Integrations](#integrations)) |
+| `CEDAR_ADMIN_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may manage [integrations](#integrations)) |
+| `CEDAR_SECRET_KEY` | empty (64 hex characters, `openssl rand -hex 32`; encrypts integration credentials saved through the API, which can't be saved without it) |
+| `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
 | `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |
 | `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time` |
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
@@ -221,6 +251,8 @@ Settings come from environment variables. The important ones:
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
+`writes` in `GET /v1/tools` marks Gmail and Calendar tools whose names say they send, create, change, or delete something, so clients can ask before switching them on.
+
 `web_search`, `fetch_url`, `download_file`, `weather_forecast`, and `show_map` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
 
 `weather_forecast` talks only to the two Open-Meteo endpoints in the settings above, never to a URL the model picks, so it needs no address checks. A rate-limited request is retried once. Open-Meteo's public API is free for non-commercial use only; for commercial use, run your own instance or buy their commercial plan and set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to it. The forecast ends with Open-Meteo's CC BY 4.0 attribution line so the model can pass it on.
@@ -229,7 +261,7 @@ Settings come from environment variables. The important ones:
 
 `fetch_url` and `download_file` are on unless `WEB_FETCH=off`. Since their requests come from the cedar host, they only reach public addresses: hostnames are resolved by cedar and loopback, private, link-local, CGNAT, and other internal addresses are dropped (so DNS tricks don't get through), IP literals are checked the same way, every redirect is re-checked (at most 5), and proxy environment variables are ignored because a proxy would resolve names itself. `WEB_FETCH_ALLOW_PRIVATE=on` lifts that rule for tests or a trusted intranet.
 
-Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `browser`, and the Gmail and Calendar tools are available (with a reminder that emails and event descriptions are information, not instructions), so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY`, cedar logs a warning at startup.
+Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `browser`, and the Gmail and Calendar tools are available (with a reminder that emails and event descriptions are information, not instructions), so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY` (and without `CEDAR_SECRET_KEY`, which would let an admin add one later), cedar logs a warning at startup.
 
 `generate_pdf` runs in the sandbox like the file tools: the document is staged in the container's `/tmp`, rendered with `cedar-render-pdf` (a script in the sandbox image, built on [WeasyPrint](https://weasyprint.org)), and the staging file removed. Markdown gets a page template with A4 pages, margins, page numbers, and styles for headings, tables, code blocks, and footnotes; HTML that is already a full document (`<html>`) is rendered as-is with its own styles. Relative image URLs resolve against `/workspace`, so a chart the agent saved earlier can be embedded. The tool is always offered, so a custom `SANDBOX_IMAGE` must ship `cedar-render-pdf` or the model gets an error telling it so.
 
@@ -325,6 +357,28 @@ ones that send mail or change events; allowed names the server doesn't list are 
 skipped. Check the startup log (`MCP tools discovered`) after an upgrade, since preview tool names
 may change.
 
+### Integrations
+
+Instead of putting `BRAVE_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the environment, an admin can set
+them up through the API, which is what the chat UI's Settings → Integrations does:
+
+1. Set `CEDAR_SECRET_KEY` (`openssl rand -hex 32`). Credentials saved through the API are encrypted
+   with it (XChaCha20-Poly1305) in cedar's database; keep it with your other secrets, since without
+   it they can't be read. If it changes, saved credentials are ignored (with a warning) until set
+   again.
+2. List the keys that may manage integrations in `CEDAR_ADMIN_KEYS`. For the chat UI that is
+   cedar-chat's `CEDAR_API_KEY`. Other keys get `403` on `/v1/admin/...`.
+3. For Google, keep `GMAIL` / `CALENDAR`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the
+   environment (they identify your deployment) and leave `GOOGLE_REFRESH_TOKEN` unset. Add the
+   chat's callback, `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, as an authorized redirect URI of
+   the OAuth client. "Connect Google" then sends you to Google's consent page and cedar keeps the
+   refresh token it gets back, along with the account's address.
+
+A saved Brave key is checked with one search before it is kept. Saving or removing a credential
+rebuilds the tool set at once: the next run sees the change, runs already going keep the tools they
+started with. A value set in the environment always wins; the API reports it as `"source": "env"`
+and refuses to change it.
+
 ## Adding a tool
 
 A tool is a name, a description, a JSON schema for its input, and an async function. Implement the `Tool` trait in `src/tools/` and add it to `ToolSet::standard`.
@@ -360,6 +414,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - `LLM_API_KEY` and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
 - With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. Set `WEATHER=off` and `MAPS=off` if that is not acceptable.
 - With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
+- Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.

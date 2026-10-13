@@ -6,7 +6,7 @@
 //! own. Then it moves `next_run_at` past now, so a process that was down for a while fires each
 //! schedule once, not once per missed slot.
 
-use crate::api::AppState;
+use crate::api::{AppState, RunSettings};
 use crate::error::AppError;
 use crate::store::{NewScheduleRun, Schedule, ScheduleRun};
 use chrono::{DateTime, Datelike, Duration as ChronoDuration, NaiveTime, TimeZone, Utc, Weekday};
@@ -159,12 +159,15 @@ pub async fn fire(
 ) -> Result<ScheduleRun, AppError> {
     let timing = Timing::of(schedule).map_err(|e| AppError::Internal(anyhow::anyhow!("schedule {} is invalid: {e}", schedule.id)))?;
     let next = (!manual).then(|| timing.next_after(now));
-    let model = schedule.model.as_deref().filter(|m| state.cfg.models.iter().any(|allowed| allowed == m));
+    let model = schedule.model.clone().filter(|m| state.cfg.models.iter().any(|allowed| allowed == m));
+    let prefs = state.store.preferences().await?;
+    let settings = RunSettings::resolve(state, &prefs, model, schedule.tools.clone());
+    let model = settings.model.as_deref();
     let when = due_at.with_timezone(&timing.tz).format("%a %-d %b %H:%M");
     let title = format!("{} · {when}", schedule.title);
 
     let conversation = state.store.create_scheduled_conversation(schedule.id, &title).await?;
-    let run = match state.cedar.create_run(&schedule.prompt, model, None).await {
+    let run = match state.cedar.create_run(&schedule.prompt, &settings.options(None)).await {
         Ok(run) => run,
         Err(e) => {
             // Nothing happened; don't leave an empty conversation behind.

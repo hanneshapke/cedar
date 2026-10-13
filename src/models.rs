@@ -137,6 +137,6 @@ pub struct CreateRunRequest {
     /// Continue an earlier, finished run instead of starting a fresh conversation.
     pub parent_id: Option<Uuid>,
     /// Tool groups (`web_search`, `gmail`, ...) and tool names the run may use, on top of the
-    /// sandbox tools. Absent: the parent's selection for a continuation, else every tool.
+    /// sandbox tools; `*` means all. Absent: the parent's selection for a continuation, else all.
     pub tools: Option<Vec<String>>,
 }

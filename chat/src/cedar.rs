@@ -60,16 +60,63 @@ impl CedarClient {
             .map_err(|e| AppError::BadGateway(format!("unreadable response from cedar: {e}")))
     }
 
-    /// Start a run. With `parent`, it continues that run's conversation and sandbox workspace.
-    pub async fn create_run(&self, prompt: &str, model: Option<&str>, parent: Option<Uuid>) -> Result<RemoteRun, AppError> {
+    /// Start a run. With `opts.parent`, it continues that run's conversation and sandbox workspace.
+    pub async fn create_run(&self, prompt: &str, opts: &RunOptions<'_>) -> Result<RemoteRun, AppError> {
         let mut body = json!({ "prompt": prompt });
-        if let Some(m) = model {
-            body["model"] = Value::String(m.to_string());
+        if let Some(m) = opts.model {
+            body["model"] = json!(m);
         }
-        if let Some(p) = parent {
+        if let Some(s) = opts.system {
+            body["system"] = json!(s);
+        }
+        if let Some(n) = opts.max_turns {
+            body["max_turns"] = json!(n);
+        }
+        if let Some(t) = opts.tools {
+            body["tools"] = json!(t);
+        }
+        if let Some(p) = opts.parent {
             body["parent_id"] = Value::String(p.to_string());
         }
         self.json(self.http.post(self.url("/runs")).json(&body)).await
+    }
+
+    /// The tool groups cedar offers: `{groups: [{id, label, available, reason?, tools}]}`.
+    pub async fn tools(&self) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url("/tools"))).await
+    }
+
+    // -- admin: integrations (needs CEDAR_API_KEY to be one of cedar's CEDAR_ADMIN_KEYS) --------
+
+    pub async fn integrations(&self) -> Result<Value, AppError> {
+        admin(self.json(self.http.get(self.url("/admin/integrations"))).await)
+    }
+
+    pub async fn set_brave_key(&self, api_key: &str) -> Result<Value, AppError> {
+        let req = self.http.put(self.url("/admin/integrations/brave")).json(&json!({ "api_key": api_key }));
+        admin(self.json(req).await)
+    }
+
+    pub async fn remove_brave_key(&self) -> Result<(), AppError> {
+        let req = self.http.delete(self.url("/admin/integrations/brave")).timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
+    }
+
+    /// The Google sign-in URL for "Connect Google"; Google sends the browser back to `redirect_uri`.
+    pub async fn google_authorize(&self, redirect_uri: &str) -> Result<String, AppError> {
+        let req = self.http.post(self.url("/admin/integrations/google/authorize")).json(&json!({ "redirect_uri": redirect_uri }));
+        let resp: Value = admin(self.json(req).await)?;
+        resp["url"].as_str().map(String::from).ok_or_else(|| AppError::BadGateway("cedar returned no sign-in URL".into()))
+    }
+
+    pub async fn google_callback(&self, state: &str, code: &str) -> Result<Value, AppError> {
+        let req = self.http.post(self.url("/admin/integrations/google/callback")).json(&json!({ "state": state, "code": code }));
+        admin(self.json(req).await)
+    }
+
+    pub async fn remove_google(&self) -> Result<(), AppError> {
+        let req = self.http.delete(self.url("/admin/integrations/google")).timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
     }
 
     /// `None` if cedar no longer knows the run.
@@ -131,6 +178,27 @@ impl CedarClient {
     pub async fn download_file(&self, id: Uuid, path: &str) -> Result<reqwest::Response, AppError> {
         let url = self.url(&format!("/runs/{id}/files/{}", encode_path(path)));
         self.send(self.http.get(url).timeout(Duration::from_secs(300))).await
+    }
+}
+
+/// How a run is started; `None` fields leave cedar's defaults (or, for a continuation, the
+/// parent's).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RunOptions<'a> {
+    pub model: Option<&'a str>,
+    pub system: Option<&'a str>,
+    pub max_turns: Option<u32>,
+    pub tools: Option<&'a [String]>,
+    pub parent: Option<Uuid>,
+}
+
+/// cedar refuses the admin routes to a key that isn't an admin key: say which setting to fix.
+fn admin<T>(result: Result<T, AppError>) -> Result<T, AppError> {
+    match result {
+        Err(AppError::Upstream { status: StatusCode::FORBIDDEN, .. }) => Err(AppError::BadGateway(
+            "cedar refused: add this server's CEDAR_API_KEY to cedar's CEDAR_ADMIN_KEYS".into(),
+        )),
+        other => other,
     }
 }
 

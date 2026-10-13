@@ -1,22 +1,23 @@
 //! The HTTP API and the embedded web UI.
 
-use crate::cedar::{self, CedarClient};
+use crate::cedar::{self, CedarClient, RunOptions};
 use crate::config::Config;
 use crate::error::AppError;
 use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
-use crate::store::{Conversation, NewSchedule, Schedule, ScheduleRun, Store, Turn};
+use crate::store::{Conversation, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
 use chrono::Utc;
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Request, State};
+use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query, Request, State};
 use axum::http::header::{self, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE};
-use axum::http::{HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::response::{IntoResponse, Redirect, Response};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{json, Value};
+use std::collections::HashMap;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
@@ -30,6 +31,12 @@ const MAX_TITLE_CHARS: usize = 200;
 const MAX_CONVERSATIONS: u32 = 500;
 const MAX_SCHEDULES: i64 = 100;
 const MAX_SCHEDULE_RUNS: u32 = 100;
+const MAX_TOOLS: usize = 100;
+const MAX_SYSTEM_BYTES: usize = 20_000;
+const MAX_TURNS: u32 = 1000;
+/// Where Google sends the browser back after "Connect Google" (under `CHAT_PUBLIC_URL`).
+pub const GOOGLE_CALLBACK_PATH: &str = "/api/oauth/google/callback";
+const ADMIN_HEADER: &str = "x-admin-token";
 
 /// `/` only redirects to the UI the browser has chosen (see `ui-pref.js`).
 const LOADER_HTML: &str = include_str!("../static/index.html");
@@ -39,6 +46,9 @@ const FILE_VIEWER_JS: &str = include_str!("../static/file-viewer.js");
 /// Draws the `show_map` tool's result as a map; both UIs load it, and it loads Leaflet on demand.
 const MAP_VIEW_JS: &str = include_str!("../static/map-view.js");
 const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
+/// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
+const SETTINGS_JS: &str = include_str!("../static/settings.js");
+const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
@@ -78,6 +88,8 @@ pub struct AppState {
     pub cedar: CedarClient,
     /// SHA-256 of the access token, if one is required.
     token_digest: Option<[u8; 32]>,
+    /// SHA-256 of the admin token; `None` hides the Integrations settings.
+    admin_digest: Option<[u8; 32]>,
     /// Serializes sending messages, so two tabs can't start overlapping runs in one conversation.
     send_lock: Arc<Mutex<()>>,
 }
@@ -86,7 +98,8 @@ impl AppState {
     pub fn new(cfg: Config, store: Store) -> anyhow::Result<Self> {
         let cedar = CedarClient::new(&cfg.cedar_url, &cfg.cedar_api_key)?;
         let token_digest = cfg.access_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, send_lock: Arc::default() })
+        let admin_digest = cfg.admin_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default() })
     }
 }
 
@@ -95,6 +108,7 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations", get(list_conversations).post(create_conversation))
         .route("/conversations/{id}", get(get_conversation).patch(rename_conversation).delete(delete_conversation))
         .route("/conversations/{id}/messages", post(send_message))
+        .route("/conversations/{id}/tools", put(set_conversation_tools))
         .route("/conversations/{id}/compact", post(compact_conversation))
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
@@ -103,9 +117,18 @@ pub fn router(state: AppState) -> Router {
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
+        .route("/settings", get(get_settings).put(put_settings))
+        .route("/tools", get(list_tools))
+        .route("/integrations", get(get_integrations))
+        .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
+        .route("/integrations/google", axum::routing::delete(delete_google))
+        .route("/integrations/google/connect", post(connect_google))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
         // Public: the page needs it to know whether to ask for a token.
-        .route("/config", get(client_config));
+        .route("/config", get(client_config))
+        // Public too: Google redirects the browser here, which can't add the token. The single-use
+        // `state` cedar issued for an admin's "Connect Google" is what authorizes it.
+        .route("/oauth/google/callback", get(google_callback));
 
     let pages = Router::new()
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
@@ -113,6 +136,8 @@ pub fn router(state: AppState) -> Router {
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
         .route("/map-view.js", get(|| async { asset(JS, MAP_VIEW_JS) }))
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
+        .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
+        .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
@@ -216,7 +241,11 @@ async fn refresh_all(state: &AppState, turns: Vec<Turn>) -> Vec<Turn> {
 // -- config ---------------------------------------------------------------------------------
 
 async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value> {
-    Json(json!({ "auth_required": state.token_digest.is_some(), "models": state.cfg.models }))
+    Json(json!({
+        "auth_required": state.token_digest.is_some(),
+        "admin_enabled": state.admin_digest.is_some(),
+        "models": state.cfg.models,
+    }))
 }
 
 // -- conversations --------------------------------------------------------------------------
@@ -304,6 +333,7 @@ async fn delete_conversation(State(state): State<AppState>, Path(id): Path<Strin
 #[serde(deny_unknown_fields)]
 struct MessageBody {
     content: String,
+    /// Absent: the default model from Settings.
     model: Option<String>,
 }
 
@@ -355,30 +385,222 @@ async fn send_message(
     ApiJson(body): ApiJson<MessageBody>,
 ) -> Result<(StatusCode, Json<Turn>), AppError> {
     let content = clean_message("message", &body.content)?;
-    let model = clean_model(&state, body.model.as_deref())?;
-    let model = model.as_deref();
+    let requested = clean_model(&state, body.model.as_deref())?;
 
     let _guard = state.send_lock.lock().await;
     let conversation = find_conversation(&state, &id).await?;
     let turns = settled_turns(&state, &conversation).await?;
+    let prefs = state.store.preferences().await?;
+    let settings = RunSettings::resolve(&state, &prefs, requested, conversation.tools.clone());
+    let model = settings.model.as_deref();
 
     // Continue the previous run, so the agent keeps the whole conversation (tool calls included)
     // and the files in its sandbox workspace.
     let run = match turns.last() {
-        None => state.cedar.create_run(&content, model, None).await?,
-        Some(last) => match state.cedar.create_run(&content, model, Some(last.run_id)).await {
+        None => state.cedar.create_run(&content, &settings.options(None)).await?,
+        Some(last) => match state.cedar.create_run(&content, &settings.options(Some(last.run_id))).await {
             // cedar no longer has the previous run (deleted, or a reset database). Start over,
             // carrying what this service remembers of the conversation in the prompt.
             Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => {
                 tracing::warn!(run_id = %last.run_id, "previous run is gone from cedar; resending history as text");
                 let run_prompt = prompt::compose(&exchanges(&turns), &content, state.cfg.history_max_bytes);
-                state.cedar.create_run(&run_prompt, model, None).await?
+                state.cedar.create_run(&run_prompt, &settings.options(None)).await?
             }
             other => other?,
         },
     };
     let turn = state.store.insert_turn(conversation.id, run.id, &content, &run.status, model).await?;
     Ok((StatusCode::CREATED, Json(turn)))
+}
+
+// -- settings and tools ---------------------------------------------------------------------
+
+/// How a new run is started, from the Settings defaults and a conversation's or schedule's own
+/// tools.
+pub struct RunSettings {
+    pub model: Option<String>,
+    pub system: Option<String>,
+    pub max_turns: Option<u32>,
+    /// `*` when every tool is meant, so a continuation doesn't keep its parent's narrower choice.
+    pub tools: Vec<String>,
+}
+
+impl RunSettings {
+    /// `model` and `tools` win over the defaults. A default model that is no longer offered is
+    /// dropped (cedar then uses its own).
+    pub fn resolve(state: &AppState, prefs: &Preferences, model: Option<String>, tools: Option<Vec<String>>) -> Self {
+        let model = model.or_else(|| clean_model(state, prefs.model.as_deref()).ok().flatten());
+        let tools = tools.or_else(|| prefs.tools.clone()).unwrap_or_else(|| vec!["*".to_string()]);
+        Self { model, system: prefs.system.clone(), max_turns: prefs.max_turns, tools }
+    }
+
+    pub fn options(&self, parent: Option<Uuid>) -> RunOptions<'_> {
+        RunOptions {
+            model: self.model.as_deref(),
+            system: self.system.as_deref(),
+            max_turns: self.max_turns,
+            tools: Some(&self.tools),
+            parent,
+        }
+    }
+}
+
+/// A tool selection from the client, checked against what cedar offers so a typo can't break
+/// every later message. Groups are accepted even when cedar has no tools in them right now.
+async fn clean_tools(state: &AppState, tools: Option<Vec<String>>) -> Result<Option<Vec<String>>, AppError> {
+    let Some(mut tools) = tools else { return Ok(None) };
+    if tools.len() > MAX_TOOLS {
+        return Err(AppError::BadRequest(format!("tools may name at most {MAX_TOOLS} entries")));
+    }
+    tools.sort();
+    tools.dedup();
+    let catalog = state.cedar.tools().await?;
+    let groups = catalog["groups"].as_array().cloned().unwrap_or_default();
+    let known = |name: &str| {
+        name == "*"
+            || groups.iter().any(|g| {
+                g["id"] == name
+                    || g["tools"].as_array().is_some_and(|ts| ts.iter().any(|t| t["name"] == name))
+                    // MCP servers list their tools only once a run has connected to them.
+                    || g["discovered"] == false && name.strip_prefix(g["id"].as_str().unwrap_or("-")).is_some_and(|r| r.starts_with('_'))
+            })
+    };
+    if let Some(bad) = tools.iter().find(|t| !known(t)) {
+        return Err(AppError::BadRequest(format!("cedar offers no tool or tool group {bad:?}")));
+    }
+    Ok(Some(tools))
+}
+
+async fn get_settings(State(state): State<AppState>) -> Result<Json<Preferences>, AppError> {
+    Ok(Json(state.store.preferences().await?))
+}
+
+async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<SettingsBody>) -> Result<Json<Preferences>, AppError> {
+    let system = body.system.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if system.as_ref().is_some_and(|s| s.len() > MAX_SYSTEM_BYTES) {
+        return Err(AppError::BadRequest(format!("system is longer than {MAX_SYSTEM_BYTES} bytes")));
+    }
+    if body.max_turns.is_some_and(|n| n == 0 || n > MAX_TURNS) {
+        return Err(AppError::BadRequest(format!("max_turns must be between 1 and {MAX_TURNS}")));
+    }
+    let prefs = Preferences {
+        tools: clean_tools(&state, body.tools).await?,
+        model: clean_model(&state, body.model.as_deref())?,
+        system,
+        max_turns: body.max_turns,
+    };
+    state.store.set_preferences(&prefs).await?;
+    Ok(Json(prefs))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SettingsBody {
+    tools: Option<Vec<String>>,
+    model: Option<String>,
+    system: Option<String>,
+    max_turns: Option<u32>,
+}
+
+/// cedar's tool groups, for the Tools settings and the composer's tools menu.
+async fn list_tools(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.tools().await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolsBody {
+    /// `null` returns the conversation to the default tools.
+    tools: Option<Vec<String>>,
+}
+
+async fn set_conversation_tools(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<ToolsBody>,
+) -> Result<Json<Conversation>, AppError> {
+    let conversation = find_conversation(&state, &id).await?;
+    let tools = clean_tools(&state, body.tools).await?;
+    state.store.set_conversation_tools(conversation.id, tools.as_deref()).await?;
+    Ok(Json(Conversation { tools, ..conversation }))
+}
+
+// -- integrations (admin) -------------------------------------------------------------------
+
+/// The Integrations settings need the admin token (`X-Admin-Token`) on top of the access token.
+fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    let Some(expected) = &state.admin_digest else {
+        return Err(AppError::Forbidden("integrations are managed in cedar's environment here (CHAT_ADMIN_TOKEN is not set)".into()));
+    };
+    let presented = headers.get(ADMIN_HEADER).and_then(|v| v.to_str().ok()).map(|t| Sha256::digest(t.trim().as_bytes()));
+    match presented {
+        Some(digest) if bool::from(digest.as_slice().ct_eq(expected)) => Ok(()),
+        _ => Err(AppError::Forbidden("wrong or missing admin token".into())),
+    }
+}
+
+fn redirect_uri(state: &AppState) -> String {
+    format!("{}{GOOGLE_CALLBACK_PATH}", state.cfg.public_url)
+}
+
+async fn get_integrations(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    let mut status = state.cedar.integrations().await?;
+    // To register with the Google OAuth client.
+    status["google"]["redirect_uri"] = json!(redirect_uri(&state));
+    Ok(Json(status))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BraveKeyBody {
+    api_key: String,
+}
+
+async fn put_brave_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.set_brave_key(&body.api_key).await?))
+}
+
+async fn delete_brave_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_brave_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn connect_google(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    let url = state.cedar.google_authorize(&redirect_uri(&state)).await?;
+    Ok(Json(json!({ "url": url })))
+}
+
+async fn delete_google(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_google().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Google sends the browser here after "Connect Google". Hand the code to cedar, then go back to
+/// the page, which reports the outcome from the query string.
+async fn google_callback(State(state): State<AppState>, Query(params): Query<HashMap<String, String>>) -> Redirect {
+    let outcome = match (params.get("state"), params.get("code"), params.get("error")) {
+        (_, _, Some(error)) => Err(format!("Google sign-in was not completed ({error})")),
+        (Some(s), Some(code), None) => state.cedar.google_callback(s, code).await.map_err(|e| e.to_string()),
+        _ => Err("the sign-in response from Google is incomplete".to_string()),
+    };
+    let mut url = reqwest::Url::parse("http://local/").expect("static URL");
+    match outcome {
+        Ok(_) => url.query_pairs_mut().append_pair("integrations", "connected"),
+        Err(message) => {
+            tracing::warn!(error = %message, "Connect Google failed");
+            url.query_pairs_mut().append_pair("integrations", "error").append_pair("message", &message)
+        }
+    };
+    Redirect::to(&format!("/?{}", url.query().unwrap_or_default()))
 }
 
 // -- compaction -----------------------------------------------------------------------------
@@ -432,6 +654,15 @@ struct ScheduleBody {
     enabled: Option<bool>,
     /// The chat the schedule was made from.
     conversation_id: Option<Uuid>,
+    /// The tools its runs use; `null` means the defaults. When creating, absent means the
+    /// conversation's own tools, if it has any.
+    #[serde(default, deserialize_with = "nullable")]
+    tools: Option<Option<Vec<String>>>,
+}
+
+/// Tells an absent field (`None`) from an explicit `null` (`Some(None)`).
+fn nullable<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(d).map(Some)
 }
 
 /// A run record with the turn that carries its cedar run, if it started.
@@ -507,6 +738,13 @@ async fn create_schedule(
     if state.store.count_schedules().await? >= MAX_SCHEDULES {
         return Err(AppError::Conflict(format!("at most {MAX_SCHEDULES} schedules; delete one first")));
     }
+    let tools = match body.tools {
+        Some(tools) => clean_tools(&state, tools).await?,
+        None => match body.conversation_id {
+            Some(cid) => state.store.get_conversation(cid).await?.and_then(|c| c.tools),
+            None => None,
+        },
+    };
     let schedule = state
         .store
         .create_schedule(&NewSchedule {
@@ -514,6 +752,7 @@ async fn create_schedule(
             prompt: &prompt,
             model: model.as_deref(),
             source_conversation_id: body.conversation_id,
+            tools: tools.as_deref(),
             frequency: timing.frequency.as_str(),
             weekday: timing.weekday.map(|d| d.num_days_from_monday() as u8),
             time_of_day: &timing.time.format("%H:%M").to_string(),
@@ -544,6 +783,9 @@ async fn update_schedule(
     }
     if let Some(model) = &body.model {
         schedule.model = clean_model(&state, Some(model))?;
+    }
+    if let Some(tools) = body.tools {
+        schedule.tools = clean_tools(&state, tools).await?;
     }
     let retime = body.frequency.is_some() || body.weekday.is_some() || body.time.is_some() || body.timezone.is_some();
     if retime {
