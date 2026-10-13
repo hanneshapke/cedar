@@ -38,6 +38,7 @@ async fn main() -> Result<()> {
         web_fetch = cfg.web_fetch,
         browser = cfg.browser.enabled,
         weather = cfg.weather,
+        mcp = ?cfg.mcp_servers.iter().map(|s| s.prefix.as_str()).collect::<Vec<_>>(),
         "tools configured"
     );
     if cfg.browser.enabled {

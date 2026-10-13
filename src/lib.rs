@@ -13,6 +13,7 @@ pub mod error;
 pub mod events;
 pub mod llm;
 pub mod manager;
+pub mod mcp;
 pub mod models;
 pub mod sandbox;
 pub mod sse;

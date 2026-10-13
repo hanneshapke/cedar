@@ -191,6 +191,11 @@ Settings come from environment variables. The important ones:
 | `WEATHER` | `on` (set `off` to remove the `weather_forecast` tool) |
 | `WEATHER_BASE_URL` / `WEATHER_GEOCODING_BASE_URL` | `https://api.open-meteo.com/v1/forecast` / `https://geocoding-api.open-meteo.com/v1/search` (point both at a self-hosted Open-Meteo to avoid the public API; `show_map` uses the geocoding URL too) |
 | `MAPS` | `on` (set `off` to remove the `show_map` tool) |
+| `GMAIL` / `CALENDAR` | `off` (set `on` to offer the Gmail or Calendar tools; see [Gmail and Calendar](#gmail-and-calendar)) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` | empty (required when `GMAIL` or `CALENDAR` is on) |
+| `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |
+| `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time` |
+| `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
 | `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
@@ -213,6 +218,7 @@ Settings come from environment variables. The important ones:
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
 | `weather_forecast` | Current conditions and a daily forecast from [Open-Meteo](https://open-meteo.com) (open source, open data, no API key). Takes a `location` (a place name or postal code, geocoded to its best match) or `latitude` and `longitude`, optional `days` (1–16, default 3) and optional `units` (`metric` or `imperial`). Returns the resolved place, current temperature, conditions, humidity, wind, and precipitation, then per day the conditions, low and high, precipitation and its chance, wind, UV index, and sunrise and sunset. Unless `WEATHER=off`. |
 | `show_map` | Shows the user a map in the chat, with a numbered pin for each place. Takes `markers` (1–25 objects, each with a `location` such as `Berlin` or `Paris, France`, or `latitude` and `longitude`, and an optional `label`) and an optional `title`. Names are looked up with Open-Meteo's geocoding API, which knows cities, towns, and regions but not street addresses or businesses. Returns JSON with the coordinates used; names that could not be found are listed under `not_found`, and a call where none are found is an error. The chat interfaces draw the JSON as a map ([chat/README.md](chat/README.md)); other clients just get the JSON. Unless `MAPS=off`. |
+| `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
 `web_search`, `fetch_url`, `download_file`, `weather_forecast`, and `show_map` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
@@ -223,7 +229,7 @@ Settings come from environment variables. The important ones:
 
 `fetch_url` and `download_file` are on unless `WEB_FETCH=off`. Since their requests come from the cedar host, they only reach public addresses: hostnames are resolved by cedar and loopback, private, link-local, CGNAT, and other internal addresses are dropped (so DNS tricks don't get through), IP literals are checked the same way, every redirect is re-checked (at most 5), and proxy environment variables are ignored because a proxy would resolve names itself. `WEB_FETCH_ALLOW_PRIVATE=on` lifts that rule for tests or a trusted intranet.
 
-Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and `browser` are available, so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY`, cedar logs a warning at startup.
+Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `browser`, and the Gmail and Calendar tools are available (with a reminder that emails and event descriptions are information, not instructions), so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY`, cedar logs a warning at startup.
 
 `generate_pdf` runs in the sandbox like the file tools: the document is staged in the container's `/tmp`, rendered with `cedar-render-pdf` (a script in the sandbox image, built on [WeasyPrint](https://weasyprint.org)), and the staging file removed. Markdown gets a page template with A4 pages, margins, page numbers, and styles for headings, tables, code blocks, and footnotes; HTML that is already a full document (`<html>`) is rendered as-is with its own styles. Relative image URLs resolve against `/workspace`, so a chart the agent saved earlier can be embedded. The tool is always offered, so a custom `SANDBOX_IMAGE` must ship `cedar-render-pdf` or the model gets an error telling it so.
 
@@ -252,6 +258,46 @@ docker run -d --name cb --shm-size 256m cedar-browser
 docker exec cb cedar-browser call '{"action":"navigate","url":"https://example.com"}'
 docker rm -f cb
 ```
+
+### Gmail and Calendar
+
+With `GMAIL=on` or `CALENDAR=on`, cedar offers the tools of Google's remote MCP servers for
+[Gmail](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server) and
+[Calendar](https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server).
+cedar is the MCP client: it speaks the streamable-HTTP transport from the cedar process (the
+sandbox has no network, and the Google tokens stay out of it), so no MCP software has to be
+installed anywhere.
+
+Both servers act for one Google account, through an OAuth client and a refresh token you give
+cedar:
+
+1. In a Google Cloud project, enable the MCP APIs:
+   `gcloud services enable gmailmcp.googleapis.com calendarmcp.googleapis.com --project=PROJECT_ID`.
+2. Create an OAuth client (APIs & Services → Credentials, type *Desktop app* or *Web application*)
+   and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to its ID and secret.
+3. Get a refresh token for the account with the scopes the tools need, for example with the
+   [OAuth 2.0 Playground](https://developers.google.com/oauthplayground) using your own client
+   (its settings cog). The default tools need `https://www.googleapis.com/auth/gmail.readonly`,
+   `https://www.googleapis.com/auth/gmail.compose` (drafts), and
+   `https://www.googleapis.com/auth/calendar.readonly`; Calendar tools that change events need
+   `https://www.googleapis.com/auth/calendar.events`. Set `GOOGLE_REFRESH_TOKEN` to it. While the
+   OAuth consent screen is in *Testing*, Google expires refresh tokens after 7 days; publish it
+   to *In production* (for your own account you can click through the "unverified app" warning)
+   to get one that lasts.
+
+cedar trades the refresh token for an access token when it first needs one and again shortly
+before that expires, and runs the MCP `initialize` handshake once, starting over if the server
+drops the session or rejects the token.
+
+The tools are discovered when the first run after startup begins, not at startup, so a server
+that is down delays nothing: a run that can't reach it goes ahead without its tools (and cedar
+logs a warning), and the next run tries again. Once discovered, the list is kept until cedar
+restarts. Only the tools `GMAIL_TOOLS` and `CALENDAR_TOOLS` name are offered: by default reading
+mail, listing labels, and reading and writing drafts, and reading calendars and events. Nothing
+that sends, forwards, deletes, or changes events is offered unless you add it; with drafts the
+agent prepares replies for you to send from Gmail. Allowed names the server doesn't list are
+logged and skipped. The Gmail and Calendar MCP servers are in Google's Developer Preview, so their
+tool names may change; check the startup log (`MCP tools discovered`) after an upgrade.
 
 ## Adding a tool
 
@@ -287,6 +333,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - Every file and command operation goes through `docker exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
 - `LLM_API_KEY` and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
 - With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. Set `WEATHER=off` and `MAPS=off` if that is not acceptable.
+- With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
@@ -322,6 +369,7 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 - One instance: SQLite and the run queue live in the process.
 - Tool calls within a turn run one after another.
 - Per-key limiting is only the active-run cap; there is no request rate limit or token budget.
+- Gmail and Calendar act for a single Google account, set in the environment, for every API key. There is no per-user sign-in yet.
 
 ## License
 

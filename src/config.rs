@@ -11,6 +11,16 @@ pub const DEFAULT_BRAVE_BASE_URL: &str = "https://api.search.brave.com/res/v1/we
 pub const DEFAULT_WEATHER_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
 pub const DEFAULT_WEATHER_GEOCODING_BASE_URL: &str =
     "https://geocoding-api.open-meteo.com/v1/search";
+pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+pub const DEFAULT_GMAIL_MCP_URL: &str = "https://gmailmcp.googleapis.com/mcp/v1";
+pub const DEFAULT_CALENDAR_MCP_URL: &str = "https://calendarmcp.googleapis.com/mcp/v1";
+/// The Gmail tools offered by default: reading mail and writing drafts, nothing that sends,
+/// deletes, or relabels.
+pub const DEFAULT_GMAIL_TOOLS: &str =
+    "search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft";
+/// The Calendar tools offered by default: reading only.
+pub const DEFAULT_CALENDAR_TOOLS: &str =
+    "list_calendars,list_events,get_event,search_events,suggest_time";
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful coding agent. Your tools run inside an \
     isolated sandbox whose working directory is /workspace. Use tools when they help; keep answers concise.";
 
@@ -32,6 +42,36 @@ pub struct BrowserConfig {
     pub network: String,
     pub memory: String,
     pub cpus: String,
+}
+
+/// An OAuth client and the refresh token one Google account granted it.
+#[derive(Clone)]
+pub struct GoogleOAuthConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub refresh_token: String,
+    /// The token endpoint; overridable so tests can point at a mock.
+    pub token_url: String,
+}
+
+impl std::fmt::Debug for GoogleOAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GoogleOAuthConfig")
+            .field("client_id", &self.client_id)
+            .field("token_url", &self.token_url)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A remote MCP server whose tools are offered to the model.
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpServerConfig {
+    /// Prepended to the server's tool names (`gmail` makes `search_threads` `gmail_search_threads`).
+    pub prefix: String,
+    /// The streamable-HTTP endpoint.
+    pub url: String,
+    /// The server's tool names to offer; `*` offers every tool it lists.
+    pub tools: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +98,10 @@ pub struct Config {
     pub weather_geocoding_base_url: String,
     /// Offer the `show_map` tool (on by default).
     pub maps: bool,
+    /// The Google account the Gmail and Calendar MCP servers act for. Set when either is on.
+    pub google_oauth: Option<GoogleOAuthConfig>,
+    /// Remote MCP servers (Gmail, Calendar), in the order their tools are offered.
+    pub mcp_servers: Vec<McpServerConfig>,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
     pub database_url: String,
@@ -129,6 +173,47 @@ impl Config {
             bail!("CEDAR_API_KEYS must contain at least one comma-separated API key");
         }
 
+        let mut mcp_servers = Vec::new();
+        for (prefix, flag_name, default_url, default_tools) in [
+            ("gmail", "GMAIL", DEFAULT_GMAIL_MCP_URL, DEFAULT_GMAIL_TOOLS),
+            (
+                "calendar",
+                "CALENDAR",
+                DEFAULT_CALENDAR_MCP_URL,
+                DEFAULT_CALENDAR_TOOLS,
+            ),
+        ] {
+            if !flag(flag_name, false)? {
+                continue;
+            }
+            let tools_key = format!("{flag_name}_TOOLS");
+            let mut tools = list(&tools_key);
+            if tools.is_empty() {
+                tools = default_tools.split(',').map(String::from).collect();
+            }
+            mcp_servers.push(McpServerConfig {
+                prefix: prefix.into(),
+                url: get(&format!("{flag_name}_MCP_URL")).unwrap_or_else(|| default_url.into()),
+                tools,
+            });
+        }
+        let google_oauth = if mcp_servers.is_empty() {
+            None
+        } else {
+            let need = |k: &str| {
+                get(k).map(|v| v.trim().to_string()).ok_or_else(|| {
+                    anyhow!("GMAIL and CALENDAR need GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN; {k} is not set")
+                })
+            };
+            Some(GoogleOAuthConfig {
+                client_id: need("GOOGLE_CLIENT_ID")?,
+                client_secret: need("GOOGLE_CLIENT_SECRET")?,
+                refresh_token: need("GOOGLE_REFRESH_TOKEN")?,
+                token_url: get("GOOGLE_TOKEN_URL")
+                    .unwrap_or_else(|| DEFAULT_GOOGLE_TOKEN_URL.into()),
+            })
+        };
+
         let cfg = Config {
             llm_base_url: get("LLM_BASE_URL").unwrap_or_else(|| DEFAULT_LLM_BASE_URL.into()),
             llm_api_key: get("LLM_API_KEY").map(|k| k.trim().to_string()),
@@ -143,6 +228,8 @@ impl Config {
             weather_geocoding_base_url: get("WEATHER_GEOCODING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_WEATHER_GEOCODING_BASE_URL.into()),
             maps: flag("MAPS", true)?,
+            google_oauth,
+            mcp_servers,
             api_keys,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -371,6 +458,82 @@ mod tests {
         ]))
         .unwrap_err();
         assert!(err.to_string().contains("BROWSER_NETWORK"), "{err}");
+    }
+
+    #[test]
+    fn gmail_and_calendar_are_off_unless_enabled() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.mcp_servers.is_empty());
+        assert!(cfg.google_oauth.is_none());
+    }
+
+    #[test]
+    fn gmail_and_calendar_need_google_credentials() {
+        let err = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("GMAIL", "on"),
+            ("GOOGLE_CLIENT_ID", "id"),
+            ("GOOGLE_CLIENT_SECRET", "secret"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("GOOGLE_REFRESH_TOKEN"), "{err}");
+    }
+
+    #[test]
+    fn gmail_and_calendar_settings_come_from_the_environment() {
+        let google = [
+            ("CEDAR_API_KEYS", "a"),
+            ("GOOGLE_CLIENT_ID", "id"),
+            ("GOOGLE_CLIENT_SECRET", "secret"),
+            ("GOOGLE_REFRESH_TOKEN", " refresh "),
+        ];
+        let cfg = Config::from_lookup(lookup(
+            &[&google[..], &[("GMAIL", "on"), ("CALENDAR", "on")]].concat(),
+        ))
+        .unwrap();
+        let oauth = cfg.google_oauth.as_ref().unwrap();
+        assert_eq!(oauth.refresh_token, "refresh");
+        assert_eq!(oauth.token_url, DEFAULT_GOOGLE_TOKEN_URL);
+        assert!(!format!("{oauth:?}").contains("secret"));
+        assert_eq!(
+            cfg.mcp_servers,
+            [
+                McpServerConfig {
+                    prefix: "gmail".into(),
+                    url: DEFAULT_GMAIL_MCP_URL.into(),
+                    tools: DEFAULT_GMAIL_TOOLS.split(',').map(String::from).collect(),
+                },
+                McpServerConfig {
+                    prefix: "calendar".into(),
+                    url: DEFAULT_CALENDAR_MCP_URL.into(),
+                    tools: DEFAULT_CALENDAR_TOOLS
+                        .split(',')
+                        .map(String::from)
+                        .collect(),
+                },
+            ]
+        );
+
+        let cfg = Config::from_lookup(lookup(
+            &[
+                &google[..],
+                &[
+                    ("CALENDAR", "on"),
+                    ("CALENDAR_MCP_URL", "http://localhost:9999/mcp"),
+                    ("CALENDAR_TOOLS", "list_events, create_event"),
+                    ("GOOGLE_TOKEN_URL", "http://localhost:9999/token"),
+                ],
+            ]
+            .concat(),
+        ))
+        .unwrap();
+        assert_eq!(cfg.mcp_servers.len(), 1);
+        assert_eq!(cfg.mcp_servers[0].url, "http://localhost:9999/mcp");
+        assert_eq!(cfg.mcp_servers[0].tools, ["list_events", "create_event"]);
+        assert_eq!(
+            cfg.google_oauth.unwrap().token_url,
+            "http://localhost:9999/token"
+        );
     }
 
     #[test]
