@@ -41,7 +41,10 @@ const ADMIN_HEADER: &str = "x-admin-token";
 /// `/` only redirects to the UI the browser has chosen (see `ui-pref.js`).
 const LOADER_HTML: &str = include_str!("../static/index.html");
 const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
-/// Previews Markdown files and PDFs; both UIs load it.
+/// Shows the images the agent produces in the response; both UIs load it, before the viewer.
+const IMAGE_VIEW_JS: &str = include_str!("../static/image-view.js");
+const IMAGE_VIEW_CSS: &str = include_str!("../static/image-view.css");
+/// Previews Markdown files, PDFs and images; both UIs load it.
 const FILE_VIEWER_JS: &str = include_str!("../static/file-viewer.js");
 /// Draws the `show_map` tool's result as a map; both UIs load it, and it loads Leaflet on demand.
 const MAP_VIEW_JS: &str = include_str!("../static/map-view.js");
@@ -134,6 +137,8 @@ pub fn router(state: AppState) -> Router {
     let pages = Router::new()
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
         .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
+        .route("/image-view.js", get(|| async { asset(JS, IMAGE_VIEW_JS) }))
+        .route("/image-view.css", get(|| async { asset(CSS, IMAGE_VIEW_CSS) }))
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
         .route("/map-view.js", get(|| async { asset(JS, MAP_VIEW_JS) }))
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))

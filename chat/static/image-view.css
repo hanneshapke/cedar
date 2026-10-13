@@ -1,0 +1,76 @@
+/* Images the agent produced (see image-view.js), shared by both UIs. Like map-view.css, it only
+   relies on --muted and uses translucent greys for edges so it reads in both themes. */
+
+.cedar-image {
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .06);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cedar-image-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  /* A checkerboard behind the picture, so a transparent PNG or SVG still has edges. */
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, rgba(128, 128, 128, .12) 25%, transparent 25%, transparent 75%, rgba(128, 128, 128, .12) 75%),
+    linear-gradient(45deg, rgba(128, 128, 128, .12) 25%, transparent 25%, transparent 75%, rgba(128, 128, 128, .12) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
+.cedar-image.failed .cedar-image-frame {
+  background: none;
+  min-height: 0;
+  padding: 10px 12px;
+  justify-content: flex-start;
+}
+
+.cedar-image-img {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  height: auto;
+  cursor: zoom-in;
+}
+
+.cedar-image-img:focus-visible {
+  outline: 2px solid var(--accent, #c96442);
+  outline-offset: -2px;
+}
+
+.cedar-image-note {
+  color: var(--muted, #6f6d66);
+  overflow-wrap: anywhere;
+}
+
+.cedar-image-caption {
+  padding: 6px 12px;
+  color: var(--muted, #6f6d66);
+  border-top: 1px solid rgba(128, 128, 128, .2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cedar-image.failed .cedar-image-caption {
+  display: none;
+}
+
+.cedar-image-more {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: var(--muted, #6f6d66);
+}
+
+/* A placeholder that was not turned into a picture reads as its caption. */
+.cedar-image-ref {
+  font-style: italic;
+  color: var(--muted, #6f6d66);
+}

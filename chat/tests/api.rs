@@ -474,6 +474,12 @@ async fn both_uis_are_served() {
             assert!(page.contains(&format!("href=\"/{ui}/style.css\"")));
             assert!(page.contains("<script src=\"/ui-pref.js\">"));
             assert!(page.contains("<script src=\"/file-viewer.js\">"), "{uri} loads the file viewer");
+            assert!(page.contains("<script src=\"/image-view.js\">"), "{uri} loads the image view");
+            assert!(page.contains("href=\"/image-view.css\""), "{uri} loads the image styles");
+            assert!(
+                page.find("/image-view.js") < page.find("/file-viewer.js"),
+                "{uri} loads the image view before the viewer, which asks it which files are images"
+            );
             assert!(page.contains("<script src=\"/map-view.js\">"), "{uri} loads the map view");
             assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
             assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
@@ -502,6 +508,8 @@ async fn both_uis_are_served() {
     for (uri, content_type, marker) in [
         ("/map-view.js", "text/javascript; charset=utf-8", "cedarMap"),
         ("/map-view.css", "text/css; charset=utf-8", ".cedar-map"),
+        ("/image-view.js", "text/javascript; charset=utf-8", "cedarImages"),
+        ("/image-view.css", "text/css; charset=utf-8", ".cedar-image"),
         ("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8", "Leaflet 1.9.4"),
         ("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8", ".leaflet-container"),
         ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),

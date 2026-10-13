@@ -104,6 +104,11 @@ function renderInline(text) {
   const link = (href, label) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
 
   let s = text.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${escapeHtml(code)}</code>`));
+  // ![caption](chart.png) for a workspace image becomes a placeholder that image-view.js fills in.
+  s = s.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m, alt, href) => {
+    const image = cedarImages.markdown(alt, href);
+    return image ? stash(image) : m;
+  });
   s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, href) =>
     /^(https?:|mailto:)/i.test(href) ? stash(link(href, escapeHtml(label))) : m);
   s = s.replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"*_]/g, (url) => stash(link(url, escapeHtml(url))));
@@ -521,7 +526,9 @@ function applyEvent(view, event) {
   switch (event.type) {
     case 'assistant.text': {
       view.texts.push(d.text);
-      place(view, h('div', 'md', renderMarkdown(d.text)));
+      const md = h('div', 'md', renderMarkdown(d.text));
+      cedarImages.hydrate(md, { onLoad: () => scrollToBottom(false) });
+      place(view, md);
       break;
     }
     case 'tool.call': place(view, toolCall(view, d)); break;
@@ -581,6 +588,7 @@ function toolCall(view, d) {
   body.append(h('div', 'label', 'Input'), inputPre);
   details.append(summary, body);
   if (WRITING_TOOLS.includes(d.name) && typeof input.path === 'string') details.dataset.path = input.path;
+  details.cedarInput = input; // for the images the result may point at
   view.tools.set(d.id, details);
   return details;
 }
@@ -613,6 +621,14 @@ function toolResult(view, d) {
     const spec = cedarMap.parse(text);
     if (spec) {
       details.after(cedarMap.element(spec));
+      scrollToBottom(false);
+    }
+  }
+  // So is an image the call produced: a chart, a picture it saved, or one a script wrote.
+  if (!d.is_error) {
+    const figures = cedarImages.figuresFor(details.dataset.tool, details.cedarInput, text, { onLoad: () => scrollToBottom(false) });
+    if (figures.length) {
+      details.after(...figures);
       scrollToBottom(false);
     }
   }
@@ -923,6 +939,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
   cedarSettings.init({
