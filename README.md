@@ -62,6 +62,8 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, system, max_turns_cap, allowed_models}`. |
+| `PUT` / `DELETE /v1/admin/integrations/llm` | Admin: point cedar at another model server (`{"base_url", "api_key"?}`; checked by listing its models first; an absent `api_key` keeps the saved one, `""` removes it), or go back to the environment's or the default one. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
 | `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. |
@@ -359,8 +361,9 @@ may change.
 
 ### Integrations
 
-Instead of putting `BRAVE_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the environment, an admin can set
-them up through the API, which is what the chat UI's Settings → Integrations does:
+Instead of putting `LLM_BASE_URL`, `LLM_API_KEY`, `BRAVE_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the
+environment, an admin can set them up through the API, which is what the chat UI's Settings →
+Model server & API keys does:
 
 1. Set `CEDAR_SECRET_KEY` (`openssl rand -hex 32`). Credentials saved through the API are encrypted
    with it (XChaCha20-Poly1305) in cedar's database; keep it with your other secrets, since without
@@ -374,7 +377,11 @@ them up through the API, which is what the chat UI's Settings → Integrations d
    the OAuth client. "Connect Google" then sends you to Google's consent page and cedar keeps the
    refresh token it gets back, along with the account's address.
 
-A saved Brave key is checked with one search before it is kept. Saving or removing a credential
+A model server address is checked by asking it for its models (`GET <base_url>/models`) before it
+is kept; the path defaults to `/v1`, and the models it listed are shown, with a warning if
+`LLM_MODEL` isn't one of them. The next model call, in a new run or one already going, uses the new
+address. Only an `LLM_BASE_URL` actually set in the environment locks it; the built-in default
+`http://localhost:8000/v1` can be changed. A saved Brave key is checked with one search before it is kept. Saving or removing a credential
 rebuilds the tool set at once: the next run sees the change, runs already going keep the tools they
 started with. A value set in the environment always wins; the API reports it as `"source": "env"`
 and refuses to change it.

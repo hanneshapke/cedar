@@ -86,6 +86,11 @@ impl CedarClient {
         self.json(self.http.get(self.url("/tools"))).await
     }
 
+    /// cedar's defaults for runs: `{model, system, max_turns_cap, allowed_models}`.
+    pub async fn defaults(&self) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url("/defaults"))).await
+    }
+
     // -- admin: integrations (needs CEDAR_API_KEY to be one of cedar's CEDAR_ADMIN_KEYS) --------
 
     pub async fn integrations(&self) -> Result<Value, AppError> {
@@ -95,6 +100,20 @@ impl CedarClient {
     pub async fn set_brave_key(&self, api_key: &str) -> Result<Value, AppError> {
         let req = self.http.put(self.url("/admin/integrations/brave")).json(&json!({ "api_key": api_key }));
         admin(self.json(req).await)
+    }
+
+    /// Point cedar at another model server. `api_key`: `None` keeps the saved one, empty removes it.
+    pub async fn set_llm(&self, base_url: &str, api_key: Option<&str>) -> Result<Value, AppError> {
+        let mut body = json!({ "base_url": base_url });
+        if let Some(k) = api_key {
+            body["api_key"] = json!(k);
+        }
+        admin(self.json(self.http.put(self.url("/admin/integrations/llm")).json(&body)).await)
+    }
+
+    pub async fn remove_llm(&self) -> Result<(), AppError> {
+        let req = self.http.delete(self.url("/admin/integrations/llm")).timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
     }
 
     pub async fn remove_brave_key(&self) -> Result<(), AppError> {

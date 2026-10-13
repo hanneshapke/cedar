@@ -11,6 +11,8 @@ use sqlx::Row;
 
 pub const BRAVE_API_KEY: &str = "brave_api_key";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
+pub const LLM_BASE_URL: &str = "llm_base_url";
+pub const LLM_API_KEY: &str = "llm_api_key";
 
 #[derive(Clone)]
 pub struct SecretStore {

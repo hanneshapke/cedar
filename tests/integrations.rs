@@ -567,3 +567,203 @@ async fn connecting_google_stores_the_account_and_turns_gmail_on() {
     let (_, catalog) = app.get("/v1/tools", KEY_A).await;
     assert_eq!(group(&catalog, "gmail")["available"], false);
 }
+
+// -- defaults and the model server --------------------------------------------------------------
+
+#[tokio::test]
+async fn defaults_are_reported_to_any_key() {
+    let app = TestApp::with_env(
+        vec![],
+        &[("SYSTEM_PROMPT", "Be terse."), ("LLM_MODEL", "m-9")],
+    )
+    .await;
+    let (status, body) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["system"], "Be terse.");
+    assert_eq!(body["model"], "m-9");
+    assert_eq!(body["max_turns_cap"], 10);
+}
+
+#[derive(Default)]
+struct ModelServer {
+    completions: Mutex<Vec<HeaderMap>>,
+}
+
+/// An OpenAI-compatible model server that lists `m-1` and, when `key` is set, wants it.
+async fn start_model_server(key: Option<&'static str>) -> (String, Arc<ModelServer>) {
+    async fn models(
+        State((key, _)): State<(Option<&'static str>, Arc<ModelServer>)>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
+        let presented = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+        if key.is_some_and(|k| presented != Some(format!("Bearer {k}"))) {
+            return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "no" })));
+        }
+        (
+            StatusCode::OK,
+            Json(json!({ "object": "list", "data": [{ "id": "m-1", "object": "model" }] })),
+        )
+    }
+    async fn completions(
+        State((_, server)): State<(Option<&'static str>, Arc<ModelServer>)>,
+        headers: HeaderMap,
+    ) -> Json<Value> {
+        server.completions.lock().unwrap().push(headers);
+        Json(
+            json!({ "choices": [{ "message": { "role": "assistant", "content": "from the new server" }, "finish_reason": "stop" }],
+                     "usage": { "prompt_tokens": 3, "completion_tokens": 2 } }),
+        )
+    }
+    let server = Arc::new(ModelServer::default());
+    let app = Router::new()
+        .route("/v1/models", get(models))
+        .route("/v1/chat/completions", post(completions))
+        .with_state((key, server.clone()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), server)
+}
+
+/// A test app whose model client is the real, swappable one, as in `main.rs`.
+async fn app_with_real_llm(env: &[(&str, &str)]) -> TestApp {
+    let cfg = test_config(env);
+    let llm = Arc::new(cedar::llm::SwappableLlm::new(
+        cedar::llm::ChatCompletionsClient::new(cfg.llm_base_url.clone(), None)
+            .unwrap()
+            .with_retry(1, std::time::Duration::from_millis(1)),
+    ));
+    let factory = FakeFactory::new();
+    let browsers = Arc::new(FakeBrowserFactory::default());
+    let state = cedar::api::AppState::with_browsers(
+        cfg,
+        Store::connect_memory().await.unwrap(),
+        llm.clone(),
+        factory.clone(),
+        browsers.clone(),
+    )
+    .unwrap();
+    state.integrations.attach_llm(llm);
+    state.integrations.reload().await.unwrap();
+    TestApp {
+        router: cedar::api::router(state.clone()),
+        state,
+        llm: ScriptedLlm::new(vec![]),
+        factory,
+        browsers,
+    }
+}
+
+#[tokio::test]
+async fn an_admin_can_point_cedar_at_another_model_server() {
+    let (server_url, server) = start_model_server(Some("llm-key")).await;
+    let app = app_with_real_llm(&admin_env(&[("LLM_MODEL", "m-1")])).await;
+
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["llm"]["source"], "default");
+    assert_eq!(status["llm"]["base_url"], "http://localhost:8000/v1");
+    assert_eq!(status["llm"]["api_key_set"], false);
+
+    let put = |body: Value| {
+        app.json(
+            Method::PUT,
+            "/v1/admin/integrations/llm",
+            Some(KEY_B),
+            Some(body),
+        )
+    };
+    // Nothing listening there.
+    let (code, body) = put(json!({ "base_url": "http://127.0.0.1:1" })).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("could not reach"),
+        "{body}"
+    );
+    // The server wants a key.
+    let (code, body) = put(json!({ "base_url": server_url })).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("401"),
+        "{body}"
+    );
+    let (code, body) = put(json!({ "base_url": "not a url" })).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+
+    // The path defaults to /v1.
+    let (code, body) = put(json!({ "base_url": server_url, "api_key": "llm-key" })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["base_url"], format!("{server_url}/v1"));
+    assert_eq!(body["source"], "ui");
+    assert_eq!(body["api_key_set"], true);
+    assert_eq!(body["models"], json!(["m-1"]));
+    let (_, _, raw) = app
+        .call(Method::GET, "/v1/admin/integrations", Some(KEY_B), None)
+        .await;
+    assert!(!raw.contains("llm-key"));
+
+    // The next run talks to the new server, with its key.
+    let run = app.create_run(KEY_A, "hello").await;
+    let done = app
+        .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
+    assert_eq!(done["final_text"], "from the new server");
+    assert_eq!(
+        server.completions.lock().unwrap()[0]["authorization"],
+        "Bearer llm-key"
+    );
+
+    // Changing the address without api_key keeps the saved key.
+    let (code, _) = put(json!({ "base_url": format!("{server_url}/v1/") })).await;
+    assert_eq!(code, StatusCode::OK);
+
+    let (code, _) = app
+        .json(
+            Method::DELETE,
+            "/v1/admin/integrations/llm",
+            Some(KEY_B),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::NO_CONTENT);
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["llm"]["source"], "default");
+    assert_eq!(status["llm"]["api_key_set"], false);
+
+    let (code, _) = app
+        .json(
+            Method::PUT,
+            "/v1/admin/integrations/llm",
+            Some(KEY_A),
+            Some(json!({ "base_url": server_url })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_model_server_set_in_the_environment_is_locked() {
+    let app = app_with_real_llm(&admin_env(&[("LLM_BASE_URL", "http://gpu:9000/v1")])).await;
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["llm"]["source"], "env");
+    assert_eq!(status["llm"]["base_url"], "http://gpu:9000/v1");
+    let (code, _) = app
+        .json(
+            Method::PUT,
+            "/v1/admin/integrations/llm",
+            Some(KEY_B),
+            Some(json!({ "base_url": "http://other:8000" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT);
+
+    // A test app with a scripted model can't be repointed at all.
+    let scripted = TestApp::with_env(vec![], &admin_env(&[])).await;
+    let (_, status) = scripted.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["llm"]["changeable"], false);
+}
