@@ -13,29 +13,46 @@ use subtle::ConstantTimeEq;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owner(pub String);
 
+/// Whether the request's key may use the admin routes (it is in `CEDAR_ADMIN_KEYS`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Admin(pub bool);
+
 #[derive(Clone)]
-pub struct AuthKeys(Arc<Vec<(Owner, [u8; 32])>>);
+pub struct AuthKeys(Arc<Vec<(Owner, [u8; 32], bool)>>);
 
 impl AuthKeys {
     pub fn new(keys: &[String]) -> Self {
+        Self::with_admins(keys, &[])
+    }
+
+    /// `admins` is the subset of `keys` that may use the admin routes.
+    pub fn with_admins(keys: &[String], admins: &[String]) -> Self {
         let entries = keys
             .iter()
             .map(|key| {
                 let digest: [u8; 32] = Sha256::digest(key.as_bytes()).into();
-                (Owner(hex::encode(&digest[..8])), digest)
+                (
+                    Owner(hex::encode(&digest[..8])),
+                    digest,
+                    admins.contains(key),
+                )
             })
             .collect();
         Self(Arc::new(entries))
     }
 
+    pub fn authenticate(&self, token: &str) -> Option<Owner> {
+        self.authenticate_role(token).map(|(owner, _)| owner)
+    }
+
     /// Compare digests rather than raw keys so the comparison is constant-time regardless of the
     /// key's length, and check every key so timing doesn't reveal which one matched.
-    pub fn authenticate(&self, token: &str) -> Option<Owner> {
+    pub fn authenticate_role(&self, token: &str) -> Option<(Owner, Admin)> {
         let presented: [u8; 32] = Sha256::digest(token.as_bytes()).into();
         let mut found = None;
-        for (owner, digest) in self.0.iter() {
+        for (owner, digest, admin) in self.0.iter() {
             if bool::from(presented.ct_eq(digest)) {
-                found = Some(owner.clone());
+                found = Some((owner.clone(), Admin(*admin)));
             }
         }
         found
@@ -54,10 +71,11 @@ pub async fn require_auth(
         .and_then(|v| v.split_once(' '))
         .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
         .map(|(_, token)| token.trim());
-    let owner = token
-        .and_then(|t| keys.authenticate(t))
+    let (owner, admin) = token
+        .and_then(|t| keys.authenticate_role(t))
         .ok_or(AppError::Unauthorized)?;
     req.extensions_mut().insert(owner);
+    req.extensions_mut().insert(admin);
     Ok(next.run(req).await)
 }
 
@@ -75,6 +93,14 @@ mod tests {
         assert!(keys.authenticate("gamma").is_none());
         assert!(keys.authenticate("").is_none());
         assert!(keys.authenticate("alph").is_none());
+    }
+
+    #[test]
+    fn only_admin_keys_are_admins() {
+        let keys = AuthKeys::with_admins(&["alpha".into(), "beta".into()], &["beta".into()]);
+        assert_eq!(keys.authenticate_role("alpha").unwrap().1, Admin(false));
+        assert_eq!(keys.authenticate_role("beta").unwrap().1, Admin(true));
+        assert!(keys.authenticate_role("gamma").is_none());
     }
 
     #[test]

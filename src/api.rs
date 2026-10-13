@@ -1,19 +1,19 @@
 //! The HTTP API.
 
 use crate::agent::AgentEnv;
-use crate::auth::{self, AuthKeys, Owner};
+use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
 use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
+use crate::integrations::Integrations;
 use crate::llm::LlmClient;
 use crate::manager::RunManager;
 use crate::models::{CreateRunRequest, NewRun, Run, RunStatus, StoredMessage};
 use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
 use crate::sse;
 use crate::store::{InsertRefused, Store};
-use crate::tools::ToolSet;
 use anyhow::Result;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
@@ -51,6 +51,8 @@ pub struct AppState {
     pub auth: AuthKeys,
     /// For model calls outside a run (compaction).
     pub llm: Arc<dyn LlmClient>,
+    /// The current tools, and the credentials admins can set up for them.
+    pub integrations: Arc<Integrations>,
 }
 
 impl AppState {
@@ -78,11 +80,12 @@ impl AppState {
     ) -> Result<Self> {
         let browsers = cfg.browser.enabled.then_some(browsers);
         let hub = Arc::new(EventHub::new());
-        let tools = ToolSet::from_config(&cfg)?;
+        let cfg = Arc::new(cfg);
+        let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
         let env = AgentEnv {
             llm: llm.clone(),
-            environment_note: tools.environment_note(&cfg.sandbox.network),
-            tools: Arc::new(tools),
+            sandbox_network: cfg.sandbox.network.clone(),
+            tools: integrations.tools(),
             store: store.clone(),
             max_tokens: cfg.max_tokens,
             tool_timeout: cfg.tool_timeout,
@@ -97,9 +100,9 @@ impl AppState {
             cfg.max_concurrent_runs,
             cfg.run_timeout,
         );
-        let auth = AuthKeys::new(&cfg.api_keys);
+        let auth = AuthKeys::with_admins(&cfg.api_keys, &cfg.admin_keys);
         Ok(Self {
-            cfg: Arc::new(cfg),
+            cfg,
             store,
             hub,
             manager,
@@ -107,6 +110,7 @@ impl AppState {
             browsers,
             auth,
             llm,
+            integrations,
         })
     }
 }
@@ -121,6 +125,21 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/files", get(list_files))
         .route("/runs/{id}/files/{*path}", get(download_file))
         .route("/compact", post(compact_conversation))
+        .route("/tools", get(list_tools))
+        .route("/admin/integrations", get(get_integrations))
+        .route(
+            "/admin/integrations/brave",
+            axum::routing::put(put_brave_key).delete(delete_brave_key),
+        )
+        .route(
+            "/admin/integrations/google",
+            axum::routing::delete(delete_google),
+        )
+        .route(
+            "/admin/integrations/google/authorize",
+            post(authorize_google),
+        )
+        .route("/admin/integrations/google/callback", post(google_callback))
         .route_layer(middleware::from_fn_with_state(
             state.auth.clone(),
             auth::require_auth,
@@ -226,6 +245,19 @@ async fn create_run(
         Some(s) => s,
     };
 
+    let tools = match req.tools {
+        None => parent.as_ref().and_then(|p| p.tools.clone()),
+        Some(mut tools) => {
+            let current = state.integrations.tools().load_full();
+            current
+                .validate_selection(&tools)
+                .map_err(AppError::BadRequest)?;
+            tools.sort();
+            tools.dedup();
+            Some(tools)
+        }
+    };
+
     let max_turns = match req.max_turns {
         None => cfg.max_turns_cap,
         Some(0) => return Err(AppError::BadRequest("max_turns must be at least 1".into())),
@@ -239,6 +271,7 @@ async fn create_run(
         model,
         max_turns,
         parent_id: req.parent_id,
+        tools,
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -254,6 +287,103 @@ async fn create_run(
 
     state.manager.spawn(run.clone());
     Ok((StatusCode::ACCEPTED, Json(run)))
+}
+
+// -- tools and integrations -----------------------------------------------------------------
+
+/// The tool groups a run can switch on or off, with what this server offers in each.
+async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let tools = state.integrations.tools().load_full();
+    Json(tools.catalog(&state.integrations.unavailable_reasons()))
+}
+
+fn require_admin(admin: Admin) -> Result<(), AppError> {
+    if admin.0 {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "this API key may not manage integrations (see CEDAR_ADMIN_KEYS)",
+        ))
+    }
+}
+
+async fn get_integrations(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(state.integrations.status().await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BraveKeyBody {
+    api_key: String,
+}
+
+async fn put_brave_key(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    state.integrations.set_brave_key(&body.api_key).await?;
+    Ok(Json(state.integrations.status().await?))
+}
+
+async fn delete_brave_key(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state.integrations.remove_brave_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthorizeBody {
+    redirect_uri: String,
+}
+
+async fn authorize_google(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<AuthorizeBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    let url = state.integrations.google_authorize(&body.redirect_uri)?;
+    Ok(Json(json!({ "url": url })))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CallbackBody {
+    state: String,
+    code: String,
+}
+
+async fn google_callback(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<CallbackBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(
+        state
+            .integrations
+            .google_callback(&body.state, &body.code)
+            .await?,
+    ))
+}
+
+async fn delete_google(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state.integrations.remove_google().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]

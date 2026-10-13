@@ -12,6 +12,12 @@ pub const DEFAULT_WEATHER_BASE_URL: &str = "https://api.open-meteo.com/v1/foreca
 pub const DEFAULT_WEATHER_GEOCODING_BASE_URL: &str =
     "https://geocoding-api.open-meteo.com/v1/search";
 pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+pub const DEFAULT_GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+/// What "Connect Google" asks for: the account's address, and what the default tools need.
+pub const DEFAULT_GOOGLE_SCOPES: &str = "openid email \
+    https://www.googleapis.com/auth/gmail.readonly \
+    https://www.googleapis.com/auth/gmail.compose \
+    https://www.googleapis.com/auth/calendar.readonly";
 pub const DEFAULT_GMAIL_MCP_URL: &str = "https://gmailmcp.googleapis.com/mcp/v1";
 pub const DEFAULT_CALENDAR_MCP_URL: &str = "https://calendarmcp.googleapis.com/mcp/v1";
 pub const DEFAULT_GMAIL_API_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -65,6 +71,32 @@ impl std::fmt::Debug for GoogleOAuthConfig {
     }
 }
 
+/// The deployment's Google OAuth client. The refresh token is optional here: without one in the
+/// environment, an admin connects the account from the chat UI and cedar keeps the token
+/// encrypted in its database (see `CEDAR_SECRET_KEY`).
+#[derive(Clone)]
+pub struct GoogleClientConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub refresh_token: Option<String>,
+    pub token_url: String,
+    /// Where people are sent to grant access ("Connect Google").
+    pub auth_url: String,
+    /// The scopes asked for when connecting.
+    pub scopes: Vec<String>,
+}
+
+impl std::fmt::Debug for GoogleClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GoogleClientConfig")
+            .field("client_id", &self.client_id)
+            .field("token_url", &self.token_url)
+            .field("auth_url", &self.auth_url)
+            .field("scopes", &self.scopes)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A remote MCP server whose tools are offered to the model.
 #[derive(Debug, Clone, PartialEq)]
 pub struct McpServerConfig {
@@ -112,7 +144,7 @@ pub struct Config {
     /// Offer the `show_map` tool (on by default).
     pub maps: bool,
     /// The Google account the Gmail and Calendar tools act for. Set when either is on.
-    pub google_oauth: Option<GoogleOAuthConfig>,
+    pub google_oauth: Option<GoogleClientConfig>,
     /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
     pub google_apis: Vec<GoogleApiConfig>,
     /// Remote MCP servers (Gmail and Calendar with `GOOGLE_BACKEND=mcp`), in the order their
@@ -120,6 +152,10 @@ pub struct Config {
     pub mcp_servers: Vec<McpServerConfig>,
     /// Bearer tokens accepted by the API.
     pub api_keys: Vec<String>,
+    /// The subset of `api_keys` that may use the admin routes (integrations).
+    pub admin_keys: Vec<String>,
+    /// Encrypts integration secrets saved through the admin API. Without it they can't be saved.
+    pub secret_key: Option<[u8; 32]>,
     pub database_url: String,
     pub bind_addr: SocketAddr,
 
@@ -240,22 +276,52 @@ impl Config {
                 });
             }
         }
+        let secret_key = match get("CEDAR_SECRET_KEY").map(|v| v.trim().to_string()) {
+            None => None,
+            Some(v) => {
+                let bytes = hex::decode(&v)
+                    .ok()
+                    .filter(|b| b.len() == 32)
+                    .ok_or_else(|| {
+                        anyhow!("CEDAR_SECRET_KEY must be 64 hex characters (openssl rand -hex 32)")
+                    })?;
+                Some(<[u8; 32]>::try_from(bytes.as_slice()).expect("checked length"))
+            }
+        };
         let google_oauth = if mcp_servers.is_empty() && google_apis.is_empty() {
             None
         } else {
             let need = |k: &str| {
                 get(k).map(|v| v.trim().to_string()).ok_or_else(|| {
-                    anyhow!("GMAIL and CALENDAR need GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN; {k} is not set")
+                    anyhow!("GMAIL and CALENDAR need GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET; {k} is not set")
                 })
             };
-            Some(GoogleOAuthConfig {
+            let refresh_token = get("GOOGLE_REFRESH_TOKEN").map(|v| v.trim().to_string());
+            if refresh_token.is_none() && secret_key.is_none() {
+                bail!("GMAIL and CALENDAR need GOOGLE_REFRESH_TOKEN, or CEDAR_SECRET_KEY so the account can be connected from the chat UI");
+            }
+            let scopes = match get("GOOGLE_SCOPES") {
+                Some(v) => v
+                    .split([' ', ','])
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect(),
+                None => DEFAULT_GOOGLE_SCOPES.split(' ').map(String::from).collect(),
+            };
+            Some(GoogleClientConfig {
                 client_id: need("GOOGLE_CLIENT_ID")?,
                 client_secret: need("GOOGLE_CLIENT_SECRET")?,
-                refresh_token: need("GOOGLE_REFRESH_TOKEN")?,
+                refresh_token,
                 token_url: get("GOOGLE_TOKEN_URL")
                     .unwrap_or_else(|| DEFAULT_GOOGLE_TOKEN_URL.into()),
+                auth_url: get("GOOGLE_AUTH_URL").unwrap_or_else(|| DEFAULT_GOOGLE_AUTH_URL.into()),
+                scopes,
             })
         };
+        let admin_keys = list("CEDAR_ADMIN_KEYS");
+        if admin_keys.iter().any(|k| !api_keys.contains(k)) {
+            bail!("every key in CEDAR_ADMIN_KEYS must also be in CEDAR_API_KEYS");
+        }
 
         let cfg = Config {
             llm_base_url: get("LLM_BASE_URL").unwrap_or_else(|| DEFAULT_LLM_BASE_URL.into()),
@@ -275,6 +341,8 @@ impl Config {
             google_apis,
             mcp_servers,
             api_keys,
+            admin_keys,
+            secret_key,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
                 "BIND_ADDR",
@@ -522,6 +590,48 @@ mod tests {
         ]))
         .unwrap_err();
         assert!(err.to_string().contains("GOOGLE_REFRESH_TOKEN"), "{err}");
+
+        // With a secret key the account can be connected later, from the chat UI.
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("GMAIL", "on"),
+            ("GOOGLE_CLIENT_ID", "id"),
+            ("GOOGLE_CLIENT_SECRET", "secret"),
+            ("CEDAR_SECRET_KEY", &"ab".repeat(32)),
+        ]))
+        .unwrap();
+        assert!(cfg.google_oauth.unwrap().refresh_token.is_none());
+    }
+
+    #[test]
+    fn admin_keys_and_the_secret_key() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.admin_keys.is_empty());
+        assert!(cfg.secret_key.is_none());
+
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a,b"),
+            ("CEDAR_ADMIN_KEYS", "b"),
+            ("CEDAR_SECRET_KEY", &"0f".repeat(32)),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.admin_keys, ["b"]);
+        assert_eq!(cfg.secret_key, Some([0x0f; 32]));
+
+        let err = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("CEDAR_ADMIN_KEYS", "z"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("CEDAR_ADMIN_KEYS"), "{err}");
+        for bad in ["abc", &"zz".repeat(32), &"ab".repeat(31)] {
+            let err = Config::from_lookup(lookup(&[
+                ("CEDAR_API_KEYS", "a"),
+                ("CEDAR_SECRET_KEY", bad),
+            ]))
+            .unwrap_err();
+            assert!(err.to_string().contains("CEDAR_SECRET_KEY"), "{err}");
+        }
     }
 
     #[test]
@@ -537,7 +647,12 @@ mod tests {
         ))
         .unwrap();
         let oauth = cfg.google_oauth.as_ref().unwrap();
-        assert_eq!(oauth.refresh_token, "refresh");
+        assert_eq!(oauth.refresh_token.as_deref(), Some("refresh"));
+        assert_eq!(oauth.auth_url, DEFAULT_GOOGLE_AUTH_URL);
+        assert!(oauth.scopes.iter().any(|s| s == "email"));
+        assert!(oauth
+            .scopes
+            .contains(&"https://www.googleapis.com/auth/gmail.readonly".to_string()));
         assert_eq!(oauth.token_url, DEFAULT_GOOGLE_TOKEN_URL);
         assert!(!format!("{oauth:?}").contains("secret"));
         // The REST APIs by default.

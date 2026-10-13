@@ -54,13 +54,15 @@ async fn main() -> Result<()> {
             "WEB_FETCH_ALLOW_PRIVATE is on: fetch_url and download_file can reach this host and its internal network"
         );
     }
-    if cfg.brave_api_key.is_none() {
+    if cfg.brave_api_key.is_none() && cfg.secret_key.is_none() {
         tracing::warn!(
             "BRAVE_API_KEY is not set: web_search is disabled and the model cannot search the web"
         );
     }
 
     let state = AppState::new(cfg, store, llm, sandboxes)?;
+    // Adds integrations saved through the admin API to the tools the environment configures.
+    state.integrations.reload().await?;
     state.manager.recover().await?;
     state.manager.start_janitor(workspace_ttl);
 
