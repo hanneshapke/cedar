@@ -1,11 +1,14 @@
-//! `run_python`, `read_document`, and `generate_chart` against the fake sandbox: what gets staged,
+//! `bash`, `run_python`, `read_document`, and `generate_chart` against the fake sandbox: what gets staged,
 //! what gets run, and which input errors the model hears about. Real execution is covered by
 //! `tests/docker.rs`.
 
 mod common;
 
+use cedar::tools::{Bash, Tool, ToolContext};
 use common::*;
 use serde_json::{json, Value};
+use std::sync::Arc;
+use std::time::Duration;
 
 /// The tool result at the end of the messages sent in the model's `request`-th call.
 fn tool_result(app: &TestApp, request: usize) -> Value {
@@ -37,6 +40,49 @@ fn staged_path(cmd: &str, prefix: &str, suffix: &str) -> String {
         .find(|s| s.starts_with(prefix) && s.ends_with(suffix))
         .unwrap_or_else(|| panic!("no {prefix} path in {cmd}"))
         .to_string()
+}
+
+#[tokio::test]
+async fn bash_runs_the_command_as_given_and_lists_the_files_it_changed() {
+    let sandbox = Arc::new(FakeSandbox::default());
+    *sandbox.changed.lock().unwrap() = vec!["out/chart.png".into(), "notes.txt".into()];
+    let ctx = ToolContext {
+        sandbox: sandbox.clone(),
+        browser: None,
+        timeout: Duration::from_secs(5),
+        max_output: 1000,
+    };
+
+    let msg = Bash
+        .call(&ctx, &json!({ "command": "python3 fig.py && ls *.png" }))
+        .await
+        .unwrap();
+    assert_eq!(
+        msg,
+        "ran: python3 fig.py && ls *.png\n[files created or modified]\n- out/chart.png\n- notes.txt"
+    );
+
+    // A marker is touched, the command is run untouched, then the files newer than the marker listed.
+    let commands = sandbox.commands.lock().unwrap().clone();
+    assert_eq!(commands.len(), 3, "{commands:?}");
+    let marker = staged_path(&commands[0], "/tmp/cedar-bash-", ".mark");
+    assert_eq!(commands[0], format!("touch '{marker}'"));
+    assert_eq!(commands[1], "python3 fig.py && ls *.png");
+    assert!(
+        commands[2].contains(&format!("-newer '{marker}' -print")),
+        "{}",
+        commands[2]
+    );
+
+    // Nothing written: the result is just what the command printed.
+    sandbox.changed.lock().unwrap().clear();
+    let msg = Bash.call(&ctx, &json!({ "command": "ls" })).await.unwrap();
+    assert_eq!(msg, "ran: ls");
+
+    // A missing command is reported before anything runs.
+    let before = sandbox.commands.lock().unwrap().len();
+    assert!(Bash.call(&ctx, &json!({})).await.is_err());
+    assert_eq!(sandbox.commands.lock().unwrap().len(), before);
 }
 
 #[tokio::test]

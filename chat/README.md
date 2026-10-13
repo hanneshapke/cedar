@@ -37,11 +37,12 @@ Both interfaces have all of these, except where noted:
   and downloads any of it; finished `write_file`, `generate_pdf`, `generate_chart`, and
   `download_file` calls get a download button too
 - An image the agent produces is shown in the response: a chart from `generate_chart`, a picture
-  `write_file` or `download_file` saved, or one a `run_python` script created (from the files the
-  call lists). Claude style puts it under the tool call, Cedar style in the call's clipping. An
-  image the agent refers to in its text as `![caption](chart.png)` is shown in place of the
-  reference. PNG, JPEG, GIF, WebP, BMP, AVIF, and SVG files up to 16 MB are shown; at most 8 per
-  call, loaded as they scroll into view. Click one to see it full size
+  `write_file` or `download_file` saved, or one a `bash` command or `run_python` script created
+  (from the files the call lists). Claude style puts it under the tool call, Cedar style in the
+  call's clipping. An image the agent refers to in its text as `![caption](chart.png)` is shown in
+  place of the reference. PNG, JPEG, GIF, WebP, BMP, AVIF, and SVG files up to 16 MB are shown; at
+  most 8 per call, loaded as they scroll into view. Each has View and Download buttons under it,
+  and a click on the picture opens it full size
 - In Cedar style, a Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
   as the page, with Copy and Download
 - A View button opens a workspace Markdown file (`.md`, `.markdown`) as rendered Markdown, a PDF in

@@ -392,7 +392,7 @@ function clippingsFor(tool) {
     case 'web_search':
       return searchClippings(tool, meta);
     case 'bash':
-      return [clipEl('bash', meta, `<code>$ ${escapeHtml(firstLine(input.command))}</code>`, '', shell, tool.is_error)];
+      return [withImages(tool, clipEl('bash', meta, `<code>$ ${escapeHtml(firstLine(input.command))}</code>`, '', shell, tool.is_error))];
     case 'run_python': {
       const el = clipEl('run_python', meta, `<code>${escapeHtml(firstLine(input.code))}</code>`, '', shell, tool.is_error);
       return [withImages(tool, el)];
@@ -652,6 +652,10 @@ function applyEvent(view, event) {
   updateChrome();
 }
 
+/** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
+const CUT_OFF =
+  "The reply was cut off at the model's output limit (MAX_TOKENS). A model that thinks before answering can use all of it before writing any text. Ask whoever runs the server to raise it.";
+
 function finishTurn(view, event) {
   if (view.done) return;
   view.done = true;
@@ -664,6 +668,8 @@ function finishTurn(view, event) {
     els.notes.append(n);
   } else if (event.type === 'run.cancelled') {
     els.notes.append(note('muted', '', d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.'));
+  } else if (d.stop_reason === 'max_tokens') {
+    els.notes.append(note('error', '', CUT_OFF));
   } else if (!view.texts.length) {
     els.notes.append(note('muted', '', 'No text in this response.'));
   }
@@ -974,7 +980,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
-  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open });
+  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
   cedarSettings.init({

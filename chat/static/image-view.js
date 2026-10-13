@@ -1,12 +1,13 @@
 'use strict';
 
 // Images the agent produces, shared by both UIs (/v1 and /v2). A chart from generate_chart, a
-// picture written by write_file or download_file, an image run_python created, or one the agent
+// picture written by write_file or download_file, an image bash or run_python created, or one the agent
 // refers to in its text as ![caption](chart.png) is shown in the response, not only offered as a
 // download. Each app hands over its own helpers through cedarImages.init():
 //
 //   fetchFile(path) -> Promise<Response>  an ok response for a workspace file (sends the access token)
 //   open(path)                            shows the file in the viewer (optional)
+//   download(path, button)                starts a download of the file (optional)
 //
 // The files are fetched with the Authorization header and shown from a blob: URL, because the API
 // takes its token from that header only. The blob's type is forced from the file's extension, so
@@ -57,6 +58,15 @@ const cedarImages = (() => {
     if (className) e.className = className;
     if (text !== undefined) e.textContent = text;
     return e;
+  }
+
+  /** A caption button, in the page's own button style. */
+  function actionButton(label, title, onClick) {
+    const b = el('button', 'copy-btn', label);
+    b.type = 'button';
+    b.title = title;
+    b.addEventListener('click', () => onClick(b));
+    return b;
   }
 
   /** Forget every image: drop pending fetches and free the blob: URLs. */
@@ -165,6 +175,10 @@ const cedarImages = (() => {
     const figcaption = el('figcaption', 'cedar-image-caption');
     figcaption.append(el('bdi', '', caption ?? (alt && alt !== name ? `${alt} · ${name}` : name)));
     figcaption.title = rel;
+    const actions = el('span', 'cedar-image-actions');
+    if (deps?.open) actions.append(actionButton('View', `View ${rel}`, () => deps.open(rel)));
+    if (deps?.download) actions.append(actionButton('Download', `Download ${rel}`, (button) => deps.download(rel, button)));
+    if (actions.childElementCount) figcaption.append(actions);
     figureEl.append(frame, figcaption);
     watch(figureEl);
     return figureEl;
@@ -172,13 +186,13 @@ const cedarImages = (() => {
 
   /**
    * The workspace images a finished tool call produced, from its input and output: the file a
-   * writing tool saved, or what run_python lists under "files created or modified".
+   * writing tool saved, or what bash or run_python lists under "files created or modified".
    */
   function produced(name, input, output) {
     const paths = [];
     if (FILE_TOOLS.has(name)) {
       if (typeof input?.path === 'string') paths.push(input.path);
-    } else if (name === 'run_python') {
+    } else if (name === 'run_python' || name === 'bash') {
       const text = String(output ?? '');
       const at = text.indexOf(CHANGED_HEADING);
       if (at >= 0) {

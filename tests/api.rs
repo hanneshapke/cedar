@@ -110,9 +110,18 @@ async fn a_run_executes_tools_and_completes() {
     assert_eq!(run["error"], Value::Null);
 
     // The sandbox ran the command and was torn down afterwards.
-    assert_eq!(
-        *app.factory.sandbox(0).commands.lock().unwrap(),
-        ["echo hi"]
+    let commands = app.factory.sandbox(0).commands.lock().unwrap().clone();
+    assert_eq!(commands.len(), 3, "{commands:?}");
+    assert!(
+        commands[0].starts_with("touch '/tmp/cedar-bash-"),
+        "{}",
+        commands[0]
+    );
+    assert_eq!(commands[1], "echo hi");
+    assert!(
+        commands[2].contains(" -newer '/tmp/cedar-bash-"),
+        "{}",
+        commands[2]
     );
     assert!(app.factory.all_destroyed());
 

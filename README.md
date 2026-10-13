@@ -207,7 +207,7 @@ Settings come from environment variables. The important ones:
 | `LLM_MODEL` | `deepseek-ai/DeepSeek-V4-Flash` (must match the name the server registered; left unset, an admin can set it from the chat UI) |
 | `ALLOWED_MODELS` | empty (any model may be requested) |
 | `MAX_TURNS_CAP` | 25 |
-| `MAX_TOKENS` | 4096 |
+| `MAX_TOKENS` | 4096 (cap on one model reply, including a reasoning model's thinking; a reply that hits it ends with `stop_reason` `max_tokens`) |
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
@@ -238,10 +238,10 @@ Settings come from environment variables. The important ones:
 
 | Tool | What it does |
 | --- | --- |
-| `bash` | Runs a command with `sh -c` in the run's container and returns stdout, stderr, and the exit status if it was non-zero. Killed after `TOOL_TIMEOUT_SECS`. |
+| `bash` | Runs a command with `sh -c` in the run's container and returns stdout, stderr, the exit status if it was non-zero, and the workspace files the command created or modified. Killed after `TOOL_TIMEOUT_SECS`. |
 | `read_file` | Reads a text file from the container. |
 | `write_file` | Writes content to a path in the container, creating parent directories and overwriting the file. |
-| `run_python` | Runs a Python 3 script (`code`, optional `args`) in the container with `/workspace` as working directory and on the import path. Returns stdout, stderr, the exit status if non-zero, and the workspace files the script created or modified. Unlike `bash`, the code needs no shell quoting. |
+| `run_python` | Runs a Python 3 script (`code`, optional `args`) in the container with `/workspace` as working directory and on the import path. Returns what `bash` does. Unlike `bash`, the code needs no shell quoting. |
 | `read_document` | Extracts the text of a PDF, Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), CSV/TSV, or HTML file in the workspace, with tables as Markdown. Takes `path`, optional `pages` (PDF pages or slides, like `2-5` or `1,4-`), `sheet`, and `rows` (spreadsheet or CSV data rows; the header is always shown). |
 | `generate_pdf` | Renders Markdown (default) or HTML to a PDF file in the workspace. Takes `path` (must end in `.pdf`), `content`, optional `format` (`markdown` or `html`) and optional `title`. Returns the page count and size, plus the renderer's warnings (a missing image, say). |
 | `generate_chart` | Draws a chart with matplotlib and saves it as PNG, SVG, or PDF. Takes `path`, `kind` (`line`, `bar`, `barh`, `area`, `scatter`, `pie`, `histogram`), `labels` (x categories or values), `series` (`[{name?, values}]`, `null` for gaps), and optional `title`, `x_label`, `y_label`, `stacked`, `bins`, `log_scale`. |

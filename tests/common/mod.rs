@@ -122,11 +122,14 @@ pub fn tool_use(id: &str, name: &str, input: Value) -> LlmResponse {
 pub type Files = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 
 /// Commands with special meaning: `fatal` (sandbox breaks), `fail` (exit 1 with stderr),
-/// `big` (output larger than the cap). Anything else echoes `ran: <command>`.
+/// `big` (output larger than the cap), and the changed-files listing that follows `bash` and
+/// `run_python` (it prints `changed`, one path per line). Anything else echoes `ran: <command>`.
 #[derive(Default)]
 pub struct FakeSandbox {
     pub files: Files,
     pub commands: Mutex<Vec<String>>,
+    /// The workspace files the listing of changes reports.
+    pub changed: Mutex<Vec<String>>,
     pub destroyed: AtomicBool,
 }
 
@@ -154,6 +157,15 @@ impl Sandbox for FakeSandbox {
                 exit_code: Some(0),
                 ..Default::default()
             }),
+            listing if listing.contains(" -newer ") => {
+                let out = self.changed.lock().unwrap().join("\n");
+                Ok(ExecOutput {
+                    stdout_total: out.len(),
+                    stdout: out.into_bytes(),
+                    exit_code: Some(0),
+                    ..Default::default()
+                })
+            }
             other => {
                 let out = format!("ran: {other}");
                 Ok(ExecOutput {

@@ -51,12 +51,26 @@
 }
 
 .cedar-image-caption {
-  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
   color: var(--muted, #6f6d66);
   border-top: 1px solid rgba(128, 128, 128, .2);
+}
+
+.cedar-image-caption bdi {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.cedar-image-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
 }
 
 .cedar-image.failed .cedar-image-caption {

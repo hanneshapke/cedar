@@ -634,6 +634,10 @@ function toolResult(view, d) {
   }
 }
 
+/** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
+const CUT_OFF =
+  "The reply was cut off at the model's output limit (MAX_TOKENS). A model that thinks before answering can use all of it before writing any text. Ask whoever runs the server to raise it.";
+
 function finishTurn(view, event) {
   if (view.done) return;
   view.done = true;
@@ -647,6 +651,8 @@ function finishTurn(view, event) {
     const note = h('div', 'notice muted');
     note.textContent = d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.';
     view.body.append(note);
+  } else if (d.stop_reason === 'max_tokens') {
+    view.body.append(h('div', 'notice error', CUT_OFF));
   } else if (!view.texts.length) {
     view.body.append(h('div', 'notice muted', 'No text in this response.'));
   }
@@ -939,7 +945,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
-  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open });
+  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
   cedarSettings.init({

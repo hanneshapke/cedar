@@ -197,7 +197,7 @@ Settings worth knowing on this hardware:
 | Setting | Why |
 | --- | --- |
 | `RUN_TIMEOUT_SECS` | A whole run, across all its model turns, must finish within this (default 600). A local model is slower than a hosted one, so give it room. |
-| `MAX_TOKENS` | Cap on one model reply (default 4096). cedar waits for the full reply and gives up on a single request after **300 seconds** (fixed in `src/llm.rs`). If your Spark generates slowly enough that 4096 tokens takes longer than that, lower `MAX_TOKENS`. |
+| `MAX_TOKENS` | Cap on one model reply (default 4096). A model that reasons before it answers spends this on its thinking too, so a reply can end before any text; chat then says it was cut off at the limit. Raise it if you see that. cedar waits for the full reply and gives up on a single request after **300 seconds** (fixed in `src/llm.rs`). If your Spark generates slowly enough that 4096 tokens takes longer than that, lower `MAX_TOKENS`. |
 | `MAX_CONCURRENT_RUNS` | How many agents run at once; the rest queue. |
 | `CHAT_MODELS` | Optional model picker in the UI. Leave unset to use only `LLM_MODEL`. |
 | `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox container. |
