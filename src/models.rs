@@ -70,6 +70,8 @@ pub struct Run {
     pub workspace_id: Uuid,
     /// True if the run picked up its parent's workspace; false if it started with an empty one.
     pub workspace_reused: bool,
+    /// The tool groups and tools the run may use besides the sandbox tools; `None` means all.
+    pub tools: Option<Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -84,6 +86,7 @@ pub struct NewRun {
     pub max_turns: u32,
     /// Continue this run: its conversation, and its workspace if that hasn't expired.
     pub parent_id: Option<Uuid>,
+    pub tools: Option<Vec<String>>,
 }
 
 /// Event type names, as sent in the `type` field and the SSE `event:` line.
@@ -133,4 +136,7 @@ pub struct CreateRunRequest {
     pub max_turns: Option<u32>,
     /// Continue an earlier, finished run instead of starting a fresh conversation.
     pub parent_id: Option<Uuid>,
+    /// Tool groups (`web_search`, `gmail`, ...) and tool names the run may use, on top of the
+    /// sandbox tools; `*` means all. Absent: the parent's selection for a continuation, else all.
+    pub tools: Option<Vec<String>>,
 }

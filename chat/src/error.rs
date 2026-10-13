@@ -13,6 +13,9 @@ pub enum AppError {
     BadRequest(String),
     #[error("missing or invalid access token")]
     Unauthorized,
+    /// Settings only an admin may change, without the admin token.
+    #[error("{0}")]
+    Forbidden(String),
     #[error("{0}")]
     NotFound(&'static str),
     #[error("{0}")]
@@ -50,6 +53,7 @@ impl IntoResponse for AppError {
         let (status, code, message) = match self {
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, "bad_request".to_string(), m),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".into(), self.to_string()),
+            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, "forbidden".into(), m),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found".into(), m.to_string()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "conflict".into(), m),
             AppError::Upstream { status, code, message } => (status, code, message),

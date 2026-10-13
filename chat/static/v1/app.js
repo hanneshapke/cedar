@@ -373,6 +373,7 @@ function showNewChat() {
   state.loadToken++;
   resetView();
   state.current = null;
+  cedarSettings.conversationChanged();
   setHeader();
   const hour = new Date().getHours();
   els.greeting.textContent = hour < 5 ? 'Up late? How can I help?' : hour < 12 ? 'Good morning. How can I help?'
@@ -396,6 +397,7 @@ async function openConversation(id) {
   }
   if (token !== state.loadToken) return;
   state.current = detail.conversation;
+  cedarSettings.conversationChanged();
   setHeader();
   if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) {
     els.model.value = detail.conversation.model;
@@ -824,6 +826,7 @@ async function sendMessage() {
       conversation = await api('POST', '/conversations', {});
       state.current = conversation;
       state.conversations.unshift(conversation);
+      await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
     const body = { content };
@@ -922,6 +925,13 @@ document.addEventListener('keydown', (e) => {
 async function init() {
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
+  cedarSettings.init({
+    api, toast, authHeaders,
+    models: () => state.config.models || [],
+    config: () => state.config,
+    current: () => state.current,
+    anchor: els.model,
+  });
   try {
     const res = await fetch('/api/config');
     state.config = await res.json();
@@ -934,6 +944,7 @@ async function init() {
     els.model.hidden = false;
   }
   if (state.config.auth_required && !memoryToken) await askToken(false);
+  cedarSettings.start();
   await loadConversations();
   route();
 }

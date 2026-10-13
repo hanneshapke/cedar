@@ -36,6 +36,7 @@ pub use web_search::BraveSearch;
 
 use crate::browser::BrowserSession;
 use crate::config::Config;
+use crate::config::GoogleOAuthConfig as GoogleCredentials;
 use crate::mcp::GoogleOAuth;
 use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
@@ -108,8 +109,19 @@ impl ToolSet {
     /// tools if `GMAIL` or `CALENDAR` is on (through the REST APIs, or MCP servers whose tools are
     /// discovered later).
     pub fn from_config(cfg: &Config) -> Result<Self> {
+        Self::build(cfg, &Overrides::default())
+    }
+
+    /// Like [`Self::from_config`], with credentials saved through the admin API filling in what
+    /// the environment leaves unset. Gmail and Calendar tools need a refresh token from one or the
+    /// other.
+    pub fn build(cfg: &Config, overrides: &Overrides) -> Result<Self> {
         let mut set = Self::standard();
-        if let Some(key) = &cfg.brave_api_key {
+        if let Some(key) = cfg
+            .brave_api_key
+            .as_ref()
+            .or(overrides.brave_api_key.as_ref())
+        {
             set.tools.push(Box::new(BraveSearch::new(
                 key.clone(),
                 cfg.brave_base_url.clone(),
@@ -135,8 +147,19 @@ impl ToolSet {
             set.tools
                 .push(Box::new(BrowserTool::new(cfg.web_fetch_allow_private)));
         }
-        if let Some(oauth) = &cfg.google_oauth {
-            let auth = Arc::new(GoogleOAuth::new(oauth.clone())?);
+        let refresh_token = cfg
+            .google_oauth
+            .as_ref()
+            .and_then(|o| o.refresh_token.clone())
+            .or_else(|| overrides.google_refresh_token.clone());
+        if let (Some(oauth), Some(refresh_token)) = (&cfg.google_oauth, refresh_token) {
+            let creds = GoogleCredentials {
+                client_id: oauth.client_id.clone(),
+                client_secret: oauth.client_secret.clone(),
+                refresh_token,
+                token_url: oauth.token_url.clone(),
+            };
+            let auth = Arc::new(GoogleOAuth::new(creds)?);
             for api in &cfg.google_apis {
                 let tools = match api.prefix.as_str() {
                     "gmail" => gmail::tools(api, auth.clone())?,
@@ -169,6 +192,157 @@ impl ToolSet {
                 .iter()
                 .flat_map(|s| s.tools().iter().map(|t| t as &dyn Tool)),
         )
+    }
+
+    /// The tools a run may use. `None` (or an entry `*`) means every tool; otherwise each entry
+    /// names a group (see [`GROUPS`]) or a single tool, and the sandbox tools are always included.
+    pub fn select<'a>(&'a self, allow: Option<&'a [String]>) -> ToolView<'a> {
+        ToolView { set: self, allow }
+    }
+
+    /// Check a run's tool selection. Groups are accepted whether or not this server offers them
+    /// right now, so a saved selection keeps working when, say, a key is removed; tool names must
+    /// be known, except Gmail and Calendar ones, which MCP servers only list once connected.
+    pub fn validate_selection(&self, allow: &[String]) -> Result<(), String> {
+        if allow.len() > MAX_SELECTION {
+            return Err(format!("tools may name at most {MAX_SELECTION} entries"));
+        }
+        for entry in allow {
+            let known = entry == "*"
+                || GROUPS.iter().any(|(id, _)| id == entry)
+                || self.all().any(|t| t.name() == entry)
+                || ["gmail_", "calendar_"].iter().any(|p| {
+                    entry.len() <= 100
+                        && entry.strip_prefix(p).is_some_and(|rest| {
+                            !rest.is_empty()
+                                && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        })
+                });
+            if !known {
+                return Err(format!("unknown tool or tool group {entry:?}"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Every group with the tools this server offers in it, for clients that let people choose.
+    /// `reasons` explains, per group id, why a group without tools has none.
+    pub fn catalog(&self, reasons: &[(&str, String)]) -> Value {
+        let groups: Vec<Value> = GROUPS
+            .iter()
+            .filter(|(id, _)| *id != "core")
+            .map(|(id, label)| {
+                let tools: Vec<Value> = self
+                    .all()
+                    .filter(|t| group_of(t.name()) == *id)
+                    .map(|t| json!({ "name": t.name(), "description": t.description(), "writes": writes(t.name()) }))
+                    .collect();
+                let remote = self.remote.iter().find(|s| s.prefix() == *id);
+                let available = !tools.is_empty() || remote.is_some();
+                let mut g = json!({ "id": id, "label": label, "available": available, "tools": tools });
+                if let Some(server) = remote {
+                    g["discovered"] = json!(!server.tools().is_empty());
+                }
+                if !available {
+                    let reason = reasons.iter().find(|(r, _)| r == id).map(|(_, why)| why.clone());
+                    g["reason"] = json!(reason.unwrap_or_else(|| "Not offered by this server".into()));
+                }
+                g
+            })
+            .collect();
+        json!({ "groups": groups })
+    }
+
+    /// A note for the system prompt; see [`ToolView::environment_note`].
+    pub fn environment_note(&self, sandbox_network: &str) -> String {
+        self.select(None).environment_note(sandbox_network)
+    }
+
+    pub fn definitions(&self) -> Vec<Value> {
+        self.select(None).definitions()
+    }
+
+    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
+        self.select(None).get(name)
+    }
+}
+
+/// Credentials saved through the admin API, used where the environment sets none.
+#[derive(Default, Clone)]
+pub struct Overrides {
+    pub brave_api_key: Option<String>,
+    pub google_refresh_token: Option<String>,
+}
+
+/// At most this many entries in a run's tool selection.
+pub const MAX_SELECTION: usize = 100;
+
+/// Tool groups a run can switch on or off, with a label for people. `core` (the sandbox tools)
+/// is always on.
+pub const GROUPS: &[(&str, &str)] = &[
+    ("core", "Sandbox"),
+    ("web_search", "Web search"),
+    ("web_fetch", "Read web pages"),
+    ("weather", "Weather"),
+    ("maps", "Maps"),
+    ("browser", "Browser"),
+    ("gmail", "Gmail"),
+    ("calendar", "Calendar"),
+];
+
+/// The group a tool belongs to.
+pub fn group_of(name: &str) -> &'static str {
+    match name {
+        "web_search" => "web_search",
+        "fetch_url" | "download_file" => "web_fetch",
+        "weather_forecast" => "weather",
+        "show_map" => "maps",
+        "browser" => "browser",
+        n if n.starts_with("gmail_") => "gmail",
+        n if n.starts_with("calendar_") => "calendar",
+        _ => "core",
+    }
+}
+
+/// Whether a Gmail or Calendar tool changes something (sends, deletes, edits) rather than only
+/// reading. A heuristic on the name, used to warn people before they switch it on.
+pub fn writes(name: &str) -> bool {
+    const VERBS: &[&str] = &[
+        "send", "forward", "reply", "delete", "trash", "remove", "modify", "update", "create",
+        "move", "label", "insert", "patch", "respond",
+    ];
+    let group = group_of(name);
+    if group != "gmail" && group != "calendar" {
+        return false;
+    }
+    name.split('_').skip(1).any(|w| VERBS.contains(&w))
+}
+
+/// The part of a [`ToolSet`] one run may use.
+pub struct ToolView<'a> {
+    set: &'a ToolSet,
+    allow: Option<&'a [String]>,
+}
+
+impl<'a> ToolView<'a> {
+    fn allows(&self, name: &str) -> bool {
+        let Some(allow) = self.allow else {
+            return true;
+        };
+        let group = group_of(name);
+        group == "core" || allow.iter().any(|a| a == "*" || a == name || a == group)
+    }
+
+    fn all(&self) -> impl Iterator<Item = &'a dyn Tool> + '_ {
+        self.set.all().filter(|t| self.allows(t.name()))
+    }
+
+    pub fn definitions(&self) -> Vec<Value> {
+        self.all().map(|t| t.definition()).collect()
+    }
+
+    pub fn get(&self, name: &str) -> Option<&'a dyn Tool> {
+        self.all().find(|t| t.name() == name)
     }
 
     /// A note for the system prompt saying what the sandbox can reach and how to use the web, so
@@ -209,13 +383,13 @@ impl ToolSet {
         if self.get("show_map").is_some() {
             note.push_str(" To show the user where places are, use show_map.");
         }
-        let has = |prefix: &str| {
-            self.remote.iter().any(|s| s.prefix() == prefix)
-                || self.tools.iter().any(|t| {
-                    t.name()
-                        .strip_prefix(prefix)
-                        .is_some_and(|n| n.starts_with('_'))
-                })
+        let has = |group: &str| {
+            let remote = self.set.remote.iter().any(|s| s.prefix() == group);
+            let allowed = self.allow.is_none_or(|a| {
+                a.iter()
+                    .any(|e| e == "*" || e == group || group_of(e) == group)
+            });
+            (remote && allowed) || self.all().any(|t| group_of(t.name()) == group)
         };
         let (gmail, calendar) = (has("gmail"), has("calendar"));
         if gmail {
@@ -231,14 +405,6 @@ impl ToolSet {
             );
         }
         note
-    }
-
-    pub fn definitions(&self) -> Vec<Value> {
-        self.all().map(|t| t.definition()).collect()
-    }
-
-    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
-        self.all().find(|t| t.name() == name)
     }
 }
 
@@ -514,5 +680,42 @@ mod tests {
                 "browser"
             ])
         );
+    }
+
+    #[test]
+    fn tools_belong_to_groups_and_writes_are_flagged() {
+        assert_eq!(group_of("bash"), "core");
+        assert_eq!(group_of("download_file"), "web_fetch");
+        assert_eq!(group_of("gmail_search_threads"), "gmail");
+        assert_eq!(group_of("calendar_list_events"), "calendar");
+        assert!(!writes("gmail_search_threads"));
+        assert!(!writes("calendar_suggest_time"));
+        assert!(writes("gmail_create_draft"));
+        assert!(writes("gmail_send_message"));
+        assert!(writes("calendar_update_event"));
+        assert!(!writes("write_file"));
+    }
+
+    #[test]
+    fn a_selection_filters_the_note_too() {
+        let set =
+            ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])).unwrap();
+        let allow = ["web_search".to_string()];
+        let view = set.select(Some(&allow));
+        let note = view.environment_note("none");
+        assert!(note.contains("use the web_search tool"));
+        assert!(!note.contains("fetch_url") && !note.contains("weather_forecast"));
+        assert!(view.get("bash").is_some(), "sandbox tools are always in");
+        assert!(view.get("show_map").is_none());
+        assert_eq!(
+            set.select(None).definitions().len(),
+            set.definitions().len()
+        );
+        let all = ["*".to_string()];
+        assert_eq!(
+            set.select(Some(&all)).definitions().len(),
+            set.definitions().len()
+        );
+        assert!(set.validate_selection(&all).is_ok());
     }
 }

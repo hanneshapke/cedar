@@ -1317,6 +1317,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         model: "m".into(),
         max_turns: 3,
         parent_id: None,
+        tools: None,
     };
     let running = store
         .insert_run_limited(&new("was running"), 10)

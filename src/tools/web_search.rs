@@ -35,6 +35,28 @@ impl BraveSearch {
         })
     }
 
+    /// Check the key with one small search, before it is saved. Being rate limited counts as
+    /// accepted: Brave only says so to a key it knows.
+    pub async fn check_key(&self, timeout: Duration) -> Result<()> {
+        let search = Search {
+            query: "cedar",
+            count: 1,
+            freshness: None,
+        };
+        let resp = self.send(&search, timeout).await?;
+        let status = resp.status();
+        match status {
+            s if s.is_success() || s == StatusCode::TOO_MANY_REQUESTS => Ok(()),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                bail!("Brave Search rejected the API key ({status})")
+            }
+            _ => {
+                let text = resp.text().await.unwrap_or_default();
+                bail!("Brave Search error {status}: {}", error_message(&text))
+            }
+        }
+    }
+
     async fn send(&self, search: &Search<'_>, timeout: Duration) -> Result<reqwest::Response> {
         let mut params = vec![
             ("q", search.query.to_string()),

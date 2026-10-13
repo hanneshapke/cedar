@@ -706,6 +706,7 @@ function showNewChat() {
   state.loadToken++;
   resetView();
   state.current = null;
+  cedarSettings.conversationChanged();
   renderDesk();
   updateChrome();
   renderRecents();
@@ -724,6 +725,7 @@ async function openConversation(id) {
   }
   if (token !== state.loadToken) return;
   state.current = detail.conversation;
+  cedarSettings.conversationChanged();
   if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) els.model.value = detail.conversation.model;
   for (const turn of detail.turns) addTurn(turn);
   renderDesk();
@@ -844,6 +846,7 @@ async function sendMessage() {
       conversation = await api('POST', '/conversations', {});
       state.current = conversation;
       state.conversations.unshift(conversation);
+      await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
     const body = { content };
@@ -937,6 +940,13 @@ document.addEventListener('keydown', (e) => {
 async function init() {
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
+  cedarSettings.init({
+    api, toast, authHeaders,
+    models: () => state.config.models || [],
+    config: () => state.config,
+    current: () => state.current,
+    anchor: els.model,
+  });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   if (state.config.models?.length) {
     els.model.append(new Option('Default model', ''));
@@ -944,6 +954,7 @@ async function init() {
     els.model.hidden = false;
   }
   if (state.config.auth_required && !memoryToken) await askToken(false);
+  cedarSettings.start();
   await loadConversations();
   route();
 }

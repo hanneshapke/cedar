@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model, max_turns, turns, final_text, \
     stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, workspace_reused, \
-    created_at, started_at, finished_at";
+    tools, created_at, started_at, finished_at";
 
 fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
@@ -55,6 +55,10 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
             .transpose()?
             .unwrap_or(id),
         workspace_reused: r.try_get("workspace_reused")?,
+        tools: r
+            .try_get::<Option<&str>, _>("tools")?
+            .map(serde_json::from_str)
+            .transpose()?,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
@@ -220,7 +224,7 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model, max_turns, parent_id, workspace_id, \
-             workspace_reused, created_at) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)",
+             workspace_reused, tools, created_at) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -231,6 +235,7 @@ impl Store {
         .bind(new.parent_id.map(|p| p.to_string()))
         .bind(workspace_id.to_string())
         .bind(reused)
+        .bind(new.tools.as_ref().map(serde_json::to_string).transpose()?)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -245,6 +250,11 @@ impl Store {
         Ok(Ok(self.get_run(id).await?.ok_or_else(|| {
             anyhow!("run {id} vanished after insert")
         })?))
+    }
+
+    /// For modules that keep their own tables (see `secrets`).
+    pub(crate) fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 
     pub async fn get_run(&self, id: Uuid) -> Result<Option<Run>> {
@@ -524,6 +534,7 @@ mod tests {
             model: "m".into(),
             max_turns: 5,
             parent_id: None,
+            tools: None,
         }
     }
 

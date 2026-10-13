@@ -264,4 +264,7 @@ dialog p code { padding: 1px 4px; border-radius: 3px; background: var(--wash); f
   .viewer-dialog { width: 100vw; max-width: none; height: 100dvh; max-height: none; border: 0; border-radius: 0; }
   .viewer-head { padding: 8px 10px; }
   .viewer-body { padding: 16px; }
+  /* Leave the message box room next to the model picker and the Tools button. */
+  .composer { gap: 8px; }
+  .composer select { max-width: 32%; }
 }

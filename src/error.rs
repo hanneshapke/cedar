@@ -12,6 +12,9 @@ pub enum AppError {
     BadRequest(String),
     #[error("missing or invalid API key")]
     Unauthorized,
+    /// Authenticated, but the key may not do this (the admin routes).
+    #[error("{0}")]
+    Forbidden(&'static str),
     #[error("{0}")]
     NotFound(&'static str),
     #[error("{0}")]
@@ -54,6 +57,7 @@ impl IntoResponse for AppError {
         let (status, code, message) = match &self {
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, "bad_request", m.clone()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", self.to_string()),
+            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, "forbidden", (*m).to_string()),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found", (*m).to_string()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone()),
             AppError::TooManyRequests(m) => (

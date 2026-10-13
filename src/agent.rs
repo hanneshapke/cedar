@@ -7,8 +7,9 @@ use crate::llm::{LlmClient, MessageRequest};
 use crate::models::{event, Run};
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::store::Store;
-use crate::tools::{ToolContext, ToolSet};
+use crate::tools::{ToolContext, ToolSet, ToolView};
 use anyhow::{anyhow, Result};
+use arc_swap::ArcSwap;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,13 +18,15 @@ use tokio_util::sync::CancellationToken;
 /// What every run shares.
 pub struct AgentEnv {
     pub llm: Arc<dyn LlmClient>,
-    pub tools: Arc<ToolSet>,
+    /// The current tools. Swapped when an admin changes an integration; a run keeps the set it
+    /// started with.
+    pub tools: Arc<ArcSwap<ToolSet>>,
     pub store: Store,
     pub max_tokens: u32,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
-    /// Appended to every run's system prompt: what the sandbox can reach and how to search.
-    pub environment_note: String,
+    /// The sandbox's Docker network mode, for the note on what the sandbox can reach.
+    pub sandbox_network: String,
 }
 
 #[derive(Debug)]
@@ -61,14 +64,16 @@ pub async fn run_agent(
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
     };
+    let tool_set = env.tools.load_full();
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
     tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-        _ = env.tools.connect_remote(env.tool_timeout) => {}
+        _ = tool_set.connect_remote(env.tool_timeout) => {}
     }
-    let tool_defs = env.tools.definitions();
-    let system = with_note(&run.system, &env.environment_note);
+    let tools = tool_set.select(run.tools.as_deref());
+    let tool_defs = tools.definitions();
+    let system = with_note(&run.system, &tools.environment_note(&env.sandbox_network));
     // A continuation starts with a copy of its parent's conversation (made when it was created).
     let mut messages: Vec<Value> = env
         .store
@@ -133,7 +138,7 @@ pub async fn run_agent(
             Some("tool_use") if !tool_calls.is_empty() => {
                 let mut results = Vec::with_capacity(tool_calls.len());
                 for block in tool_calls {
-                    results.push(execute_tool_call(env, &ctx, events, cancel, block).await?);
+                    results.push(execute_tool_call(&tools, &ctx, events, cancel, block).await?);
                 }
                 push_message(env, run, &mut messages, "user", Value::Array(results)).await?;
             }
@@ -201,7 +206,7 @@ pub fn opening_message(history: &[Value], prompt: &str, workspace_lost: bool) ->
 
 /// Execute one `tool_use` block and return the matching `tool_result` block.
 async fn execute_tool_call(
-    env: &AgentEnv,
+    tools: &ToolView<'_>,
     ctx: &ToolContext,
     events: &Emitter,
     cancel: &CancellationToken,
@@ -219,7 +224,8 @@ async fn execute_tool_call(
 
     let started = Instant::now();
     let call = async {
-        match env.tools.get(name) {
+        // A tool left out of the run's selection is as unknown as a made-up one.
+        match tools.get(name) {
             Some(tool) => tool.call(ctx, input).await,
             None => Err(anyhow!("unknown tool: {name}")),
         }
