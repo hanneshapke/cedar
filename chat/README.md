@@ -36,12 +36,20 @@ Both interfaces have all of these, except where noted:
 - A files panel (the folder button in the header) lists what the agent saved under `/workspace`
   and downloads any of it; finished `write_file`, `generate_pdf`, `generate_chart`, and
   `download_file` calls get a download button too
+- An image the agent produces is shown in the response: a chart from `generate_chart`, a picture
+  `write_file` or `download_file` saved, or one a `run_python` script created (from the files the
+  call lists). Claude style puts it under the tool call, Cedar style in the call's clipping. An
+  image the agent refers to in its text as `![caption](chart.png)` is shown in place of the
+  reference. PNG, JPEG, GIF, WebP, BMP, AVIF, and SVG files up to 16 MB are shown; at most 8 per
+  call, loaded as they scroll into view. Click one to see it full size
 - In Cedar style, a Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
   as the page, with Copy and Download
-- A View button opens a workspace Markdown file (`.md`, `.markdown`) as rendered Markdown and a PDF in the
-  browser's own PDF viewer, in a dialog. It is in the files panel, on finished file-tool calls, and
-  on the page of a generated PDF. Files over 2 MB are not previewed. A file named `.pdf` that is not
-  a PDF is refused. Images inside Markdown files are not rendered
+- A View button opens a workspace Markdown file (`.md`, `.markdown`) as rendered Markdown, a PDF in
+  the browser's own PDF viewer, and an image at full size, in a dialog. It is in the files panel, on
+  finished file-tool calls, and on the page of a generated PDF. Markdown files over 2 MB and images
+  over 16 MB are not previewed. A file named `.pdf` that is not a PDF, or `.png` that is not a PNG,
+  is refused. Workspace images inside a Markdown file (`![caption](chart.png)`, relative to
+  `/workspace` as `generate_pdf` resolves them) are shown; images from the web are not fetched
 - A `show_map` tool call (when cedar offers the tool) is drawn as a map: a numbered pin for each
   place on an OpenStreetMap map you can pan and zoom (click it first, so the wheel keeps scrolling
   the conversation), a list of the places with their coordinates under it, and a note for any names
@@ -69,13 +77,24 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat
 ```
 
 The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
-`ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `map-view.js` and
+`ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
+`image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `schedule.js` and `schedule.css` for scheduled agents, and
 `settings.js` and `settings.css` for the tools, model, and integrations settings, which both
 interfaces share, `vendor/leaflet/` for the map library, and
 `index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
 files.
+
+### Images
+
+Every image the page shows comes through this server's `/api/conversations/{id}/files/{path}`
+with the access token, like a download, so nothing is fetched from elsewhere: a `![caption](url)`
+that points at the web stays a link. The bytes are shown from a `blob:` URL whose type is taken
+from the file's extension, never from the content, so a file named `.png` is decoded as a PNG or
+not at all, and an SVG is drawn by an `<img>`, which runs none of its scripts and loads nothing it
+references. "Open in new tab" in the viewer is offered for PDFs and raster images only, since a
+tab of its own would run an SVG's scripts with the page's origin.
 
 ### Maps and privacy
 

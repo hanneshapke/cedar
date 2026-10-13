@@ -92,6 +92,11 @@ function renderInline(text) {
   const stash = (html) => `\u0000${slots.push(html) - 1}\u0000`;
   const link = (href, label) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
   let s = text.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${escapeHtml(code)}</code>`));
+  // ![caption](chart.png) for a workspace image becomes a placeholder that image-view.js fills in.
+  s = s.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m, alt, href) => {
+    const image = cedarImages.markdown(alt, href);
+    return image ? stash(image) : m;
+  });
   s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, href) =>
     /^(https?:|mailto:)/i.test(href) ? stash(link(href, escapeHtml(label))) : m);
   s = s.replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"*_]/g, (url) => stash(link(url, escapeHtml(url))));
@@ -388,8 +393,10 @@ function clippingsFor(tool) {
       return searchClippings(tool, meta);
     case 'bash':
       return [clipEl('bash', meta, `<code>$ ${escapeHtml(firstLine(input.command))}</code>`, '', shell, tool.is_error)];
-    case 'run_python':
-      return [clipEl('run_python', meta, `<code>${escapeHtml(firstLine(input.code))}</code>`, '', shell, tool.is_error)];
+    case 'run_python': {
+      const el = clipEl('run_python', meta, `<code>${escapeHtml(firstLine(input.code))}</code>`, '', shell, tool.is_error);
+      return [withImages(tool, el)];
+    }
     case 'read_file':
     case 'read_document':
       return [clipEl(tool.name, meta, escapeHtml(String(input.path || '')), '', raw, tool.is_error)];
@@ -408,11 +415,26 @@ function clippingsFor(tool) {
           if (view) el.querySelector('.sub').append(' · ', view);
           el.querySelector('.sub').append(' · ', downloadLink(rel));
         }
-        return [el];
+        return [withImages(tool, el)];
       }
       // A tool this page doesn't know yet: still show what it was given and what it returned.
       return [clipEl(tool.name, meta, `<code>${escapeHtml(JSON.stringify(input).slice(0, 120))}</code>`, '', shell, tool.is_error)];
   }
+}
+
+/**
+ * Put the images a finished call produced (a chart, a saved picture, what a script wrote) into
+ * its clipping. The figures are built once per call and moved into each redraw, like a map, so
+ * the pictures are fetched once.
+ */
+function withImages(tool, el) {
+  if (tool.output === undefined || tool.is_error) return el;
+  tool.imageEls ??= cedarImages.figuresFor(tool.name, tool.input, tool.output);
+  if (tool.imageEls.length) {
+    el.classList.add('image');
+    el.append(...tool.imageEls);
+  }
+  return el;
 }
 
 function downloadLink(path, primary) {
@@ -421,6 +443,13 @@ function downloadLink(path, primary) {
   b.title = `Download ${path}`;
   b.addEventListener('click', () => downloadFile(path, b));
   return b;
+}
+
+/** Rendered Markdown for the page, with the workspace images it refers to. */
+function pageMarkdown(text) {
+  const md = h('div', 'md', renderMarkdown(text));
+  cedarImages.hydrate(md);
+  return md;
 }
 
 function renderDesk() {
@@ -451,10 +480,10 @@ function renderDesk() {
     els.pageHead.append(actions);
     const content = String(doc.input.content ?? '');
     if (/\.txt$/i.test(path)) { const pre = h('pre', 'plain'); pre.textContent = content; els.pageBody.append(pre); }
-    else els.pageBody.append(h('div', 'md', renderMarkdown(content)));
+    else els.pageBody.append(pageMarkdown(content));
   } else if (latest && latest.texts.length) {
     els.pageHead.append(h('span', 'page-name', 'Answer'), h('span', '', 'no file was written; this is what Cedar said'));
-    els.pageBody.append(h('div', 'md', renderMarkdown(latest.texts.join('\n\n'))));
+    els.pageBody.append(pageMarkdown(latest.texts.join('\n\n')));
   } else if (latest) {
     els.pageHead.append(h('span', 'page-name', 'Working'));
     const w = h('div', 'working');
@@ -503,6 +532,7 @@ function note(cls, who, html) {
   const el = h('div', `note ${cls}`);
   if (who) el.append(h('div', 'who', who));
   const body = h('div', cls === 'cedar' ? 'md' : '', html);
+  if (cls === 'cedar') cedarImages.hydrate(body, { onLoad: keepNotesAtEnd });
   el.append(body);
   return el;
 }
@@ -525,6 +555,12 @@ function addTurn(turn) {
   updateChrome();
   followEvents(view);
   return view;
+}
+
+/** After a picture in the margin loads: stay at the end if the reader was there, else leave them be. */
+function keepNotesAtEnd() {
+  const n = els.notes;
+  if (n.scrollHeight - n.scrollTop - n.clientHeight < 160) n.scrollTop = n.scrollHeight;
 }
 
 function placeNote(view, el) {
@@ -938,6 +974,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
   cedarSettings.init({
