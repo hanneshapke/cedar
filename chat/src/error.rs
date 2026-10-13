@@ -20,6 +20,9 @@ pub enum AppError {
     NotFound(&'static str),
     #[error("{0}")]
     Conflict(String),
+    /// A request body over the route's limit (attachments, mostly).
+    #[error("{0}")]
+    PayloadTooLarge(String),
     /// cedar answered with an error; relay it.
     #[error("{message}")]
     Upstream { status: StatusCode, code: String, message: String },
@@ -38,7 +41,11 @@ impl From<sqlx::Error> for AppError {
 
 impl From<JsonRejection> for AppError {
     fn from(r: JsonRejection) -> Self {
-        AppError::BadRequest(r.body_text())
+        if r.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            AppError::PayloadTooLarge(r.body_text())
+        } else {
+            AppError::BadRequest(r.body_text())
+        }
     }
 }
 
@@ -56,6 +63,7 @@ impl IntoResponse for AppError {
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, "forbidden".into(), m),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found".into(), m.to_string()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "conflict".into(), m),
+            AppError::PayloadTooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large".into(), m),
             AppError::Upstream { status, code, message } => (status, code, message),
             AppError::BadGateway(m) => {
                 tracing::warn!(error = %m, "cedar request failed");

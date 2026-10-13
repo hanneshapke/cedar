@@ -1,8 +1,9 @@
 //! Client for OpenAI-compatible chat completions (e.g. a local vLLM server).
 //!
-//! cedar keeps conversations as content blocks (`text`, `tool_use`, `tool_result`) and tool
-//! definitions as `{name, description, input_schema}`. This module translates those to and from
-//! the chat-completions wire format, so the agent loop and the stored history never see it.
+//! cedar keeps conversations as content blocks (`text`, `tool_use`, `tool_result`, and `image` /
+//! `document` for files sent with a prompt) and tool definitions as `{name, description,
+//! input_schema}`. This module translates those to and from the chat-completions wire format, so
+//! the agent loop and the stored history never see it.
 
 use crate::models::Usage;
 use anyhow::{anyhow, Context, Result};
@@ -163,8 +164,9 @@ fn translate_tool(def: &Value) -> Value {
     })
 }
 
-/// Append the chat-completions form of one stored message. Block types the format has no place
-/// for (anything but text, tool use and tool results) are dropped.
+/// Append the chat-completions form of one stored message. A user message with `image` or
+/// `document` blocks is sent as content parts (`image_url` and `file` data URLs); any other
+/// message is sent as plain text. Block types the format has no place for are dropped.
 fn translate_message(msg: &Value, out: &mut Vec<Value>) {
     let role = msg["role"].as_str().unwrap_or_default();
     let blocks = match &msg["content"] {
@@ -217,8 +219,39 @@ fn translate_message(msg: &Value, out: &mut Vec<Value>) {
             json!({ "role": "tool", "tool_call_id": block["tool_use_id"], "content": content }),
         );
     }
-    if !text.is_empty() {
+    if blocks.iter().any(|b| media_part(b).is_some()) {
+        let parts: Vec<Value> = blocks
+            .iter()
+            .filter_map(|b| match b["type"].as_str() {
+                Some("text") => b["text"]
+                    .as_str()
+                    .filter(|t| !t.is_empty())
+                    .map(|t| json!({ "type": "text", "text": t })),
+                _ => media_part(b),
+            })
+            .collect();
+        out.push(json!({ "role": role, "content": parts }));
+    } else if !text.is_empty() {
         out.push(json!({ "role": role, "content": text }));
+    }
+}
+
+/// The content part for an `image` or `document` block with a base64 source, if it is one.
+fn media_part(block: &Value) -> Option<Value> {
+    let source = &block["source"];
+    let media_type = source["media_type"].as_str()?;
+    let data = source["data"].as_str()?;
+    let url = format!("data:{media_type};base64,{data}");
+    match block["type"].as_str()? {
+        "image" => Some(json!({ "type": "image_url", "image_url": { "url": url } })),
+        "document" => Some(json!({
+            "type": "file",
+            "file": {
+                "filename": block["title"].as_str().unwrap_or("document.pdf"),
+                "file_data": url,
+            },
+        })),
+        _ => None,
     }
 }
 
@@ -465,6 +498,41 @@ mod tests {
                 json!({ "role": "tool", "tool_call_id": "t2", "content": "Error: boom" }),
                 json!({ "role": "user", "content": "next" }),
             ]
+        );
+    }
+
+    #[test]
+    fn user_images_and_documents_become_content_parts() {
+        let body = request(&[json!({ "role": "user", "content": [
+            { "type": "tool_result", "tool_use_id": "t1", "content": "ok" },
+            { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "aGk=" }, "title": "a.png" },
+            { "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": "cGRm" }, "title": "b.pdf" },
+            { "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": "cGRm" } },
+            { "type": "text", "text": "what are these?" },
+        ] })]);
+        assert_eq!(
+            body["messages"].as_array().unwrap()[1..],
+            [
+                json!({ "role": "tool", "tool_call_id": "t1", "content": "ok" }),
+                json!({ "role": "user", "content": [
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,aGk=" } },
+                    { "type": "file", "file": { "filename": "b.pdf", "file_data": "data:application/pdf;base64,cGRm" } },
+                    { "type": "file", "file": { "filename": "document.pdf", "file_data": "data:application/pdf;base64,cGRm" } },
+                    { "type": "text", "text": "what are these?" },
+                ] }),
+            ]
+        );
+    }
+
+    #[test]
+    fn user_messages_without_attachments_stay_strings() {
+        let body = request(&[json!({ "role": "user", "content": [
+            { "type": "text", "text": "a" },
+            { "type": "text", "text": "b" },
+        ] })]);
+        assert_eq!(
+            body["messages"][1],
+            json!({ "role": "user", "content": "ab" })
         );
     }
 

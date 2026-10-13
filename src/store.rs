@@ -2,7 +2,7 @@
 //!
 //! Uses runtime-checked queries (not the `query!` macros) so building doesn't need a database.
 
-use crate::models::{event, Event, NewRun, Run, RunStatus, StoredMessage, Usage};
+use crate::models::{event, Attachment, Event, NewRun, Run, RunStatus, StoredMessage, Usage};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -239,6 +239,18 @@ impl Store {
         .bind(now)
         .execute(&mut *tx)
         .await?;
+        for (i, attachment) in new.attachments.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO run_attachments (run_id, seq, name, media_type, data) VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(id.to_string())
+            .bind(i as i64 + 1)
+            .bind(&attachment.name)
+            .bind(&attachment.media_type)
+            .bind(&attachment.data)
+            .execute(&mut *tx)
+            .await?;
+        }
         if let Some(parent_id) = new.parent_id {
             sqlx::query("INSERT INTO messages (run_id, seq, role, content) SELECT ?, seq, role, content FROM messages WHERE run_id = ?")
                 .bind(id.to_string())
@@ -484,6 +496,25 @@ impl Store {
         Ok(row.try_get("seq")?)
     }
 
+    /// The files sent with the run's prompt, in the order they were given.
+    pub async fn list_attachments(&self, run_id: Uuid) -> Result<Vec<Attachment>> {
+        let rows = sqlx::query(
+            "SELECT name, media_type, data FROM run_attachments WHERE run_id = ? ORDER BY seq",
+        )
+        .bind(run_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(Attachment {
+                    name: r.try_get("name")?,
+                    media_type: r.try_get("media_type")?,
+                    data: r.try_get("data")?,
+                })
+            })
+            .collect()
+    }
+
     pub async fn list_messages(&self, run_id: Uuid) -> Result<Vec<StoredMessage>> {
         let rows =
             sqlx::query("SELECT seq, role, content FROM messages WHERE run_id = ? ORDER BY seq")
@@ -535,6 +566,7 @@ mod tests {
             max_turns: 5,
             parent_id: None,
             tools: None,
+            attachments: vec![],
         }
     }
 
@@ -764,5 +796,42 @@ mod tests {
         let msgs = store.list_messages(run.id).await.unwrap();
         assert_eq!(msgs.iter().map(|m| m.seq).collect::<Vec<_>>(), [1, 2]);
         assert_eq!(msgs[1].content, blocks);
+    }
+
+    #[tokio::test]
+    async fn attachments_are_stored_with_the_run_and_deleted_with_it() {
+        let store = Store::connect_memory().await.unwrap();
+        let files = vec![
+            Attachment {
+                name: "a.png".into(),
+                media_type: "image/png".into(),
+                data: "aGk=".into(),
+            },
+            Attachment {
+                name: "b.pdf".into(),
+                media_type: "application/pdf".into(),
+                data: "cGRm".into(),
+            },
+        ];
+        let new = NewRun {
+            attachments: files.clone(),
+            ..new_run("a")
+        };
+        let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();
+        assert_eq!(store.list_attachments(run.id).await.unwrap(), files);
+
+        // A continuation copies the parent's messages, not its attachment rows.
+        store.finish_run(run.id, completed("done")).await.unwrap();
+        let child = NewRun {
+            parent_id: Some(run.id),
+            ..new_run("a")
+        };
+        let child = store.insert_run(&child, 5).await.unwrap().unwrap();
+        assert!(store.list_attachments(child.id).await.unwrap().is_empty());
+
+        store.finish_run(child.id, completed("done")).await.unwrap();
+        assert!(store.delete_finished_run(child.id).await.unwrap());
+        assert!(store.delete_finished_run(run.id).await.unwrap());
+        assert!(store.list_attachments(run.id).await.unwrap().is_empty());
     }
 }

@@ -1,11 +1,11 @@
 //! The HTTP API and the embedded web UI.
 
-use crate::cedar::{self, CedarClient, RunOptions};
+use crate::cedar::{self, Attachment, CedarClient, RunOptions};
 use crate::config::Config;
 use crate::error::AppError;
 use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
-use crate::store::{Conversation, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
+use crate::store::{AttachmentInfo, Conversation, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
 use chrono::Utc;
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query, Request, State};
@@ -34,6 +34,14 @@ const MAX_SCHEDULE_RUNS: u32 = 100;
 const MAX_TOOLS: usize = 100;
 const MAX_SYSTEM_BYTES: usize = 20_000;
 const MAX_TURNS: u32 = 1000;
+/// Attachments, mirroring cedar's limits: how many per message, how big each and all together
+/// (decoded), and the body limit that leaves room for their base64 on the messages route only.
+const MAX_ATTACHMENTS: usize = 10;
+const MAX_ATTACHMENT_BYTES: usize = 20 << 20;
+const MAX_ATTACHMENTS_TOTAL_BYTES: usize = 32 << 20;
+const MAX_MESSAGE_BODY_BYTES: usize = 48 << 20;
+const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
+const ATTACHMENT_TYPES: [&str; 5] = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
 /// Where Google sends the browser back after "Connect Google" (under `CHAT_PUBLIC_URL`).
 pub const GOOGLE_CALLBACK_PATH: &str = "/api/oauth/google/callback";
 const ADMIN_HEADER: &str = "x-admin-token";
@@ -49,6 +57,9 @@ const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
 /// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
+/// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
+const ATTACH_JS: &str = include_str!("../static/attach.js");
+const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
@@ -107,7 +118,8 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/conversations", get(list_conversations).post(create_conversation))
         .route("/conversations/{id}", get(get_conversation).patch(rename_conversation).delete(delete_conversation))
-        .route("/conversations/{id}/messages", post(send_message))
+        // Only this route takes attachments, so only it gets the room for them.
+        .route("/conversations/{id}/messages", post(send_message).layer(DefaultBodyLimit::max(MAX_MESSAGE_BODY_BYTES)))
         .route("/conversations/{id}/tools", put(set_conversation_tools))
         .route("/conversations/{id}/compact", post(compact_conversation))
         .route("/conversations/{id}/files", get(list_files))
@@ -139,6 +151,8 @@ pub fn router(state: AppState) -> Router {
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
+        .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))
+        .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
@@ -336,6 +350,50 @@ struct MessageBody {
     content: String,
     /// Absent: the default model from Settings.
     model: Option<String>,
+    /// Images and PDFs for the model, when Settings says it accepts them.
+    attachments: Option<Vec<Attachment>>,
+}
+
+/// The files sent with a message: checked the way cedar checks them (count, name, type, base64,
+/// sizes) so a mistake is reported before anything is sent, and summarized for the turn. The
+/// size comes from the base64 length; cedar does the real decoding.
+fn clean_attachments(attachments: Vec<Attachment>) -> Result<(Vec<Attachment>, Vec<AttachmentInfo>), AppError> {
+    if attachments.len() > MAX_ATTACHMENTS {
+        return Err(AppError::BadRequest(format!("at most {MAX_ATTACHMENTS} files per message")));
+    }
+    let mut infos = Vec::with_capacity(attachments.len());
+    let mut total = 0usize;
+    for (i, a) in attachments.iter().enumerate() {
+        let which = |what: &str| AppError::BadRequest(format!("file {} ({:?}): {what}", i + 1, a.name));
+        let name = a.name.trim();
+        if name.is_empty() {
+            return Err(AppError::BadRequest(format!("file {}: name must not be empty", i + 1)));
+        }
+        if name.chars().count() > MAX_ATTACHMENT_NAME_CHARS || name.chars().any(char::is_control) {
+            return Err(which("name is malformed"));
+        }
+        if !ATTACHMENT_TYPES.contains(&a.media_type.as_str()) {
+            return Err(which("only PNG, JPEG, GIF, WebP and PDF files can be attached"));
+        }
+        let data = a.data.as_bytes();
+        if data.is_empty() {
+            return Err(which("the file is empty"));
+        }
+        if data.len() % 4 != 0 || !data.iter().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=')) {
+            return Err(which("data is not valid base64"));
+        }
+        let padding = data.iter().rev().take_while(|b| **b == b'=').count();
+        let size = data.len() / 4 * 3 - padding;
+        if size > MAX_ATTACHMENT_BYTES {
+            return Err(which(&format!("larger than {} MiB", MAX_ATTACHMENT_BYTES >> 20)));
+        }
+        total += size;
+        if total > MAX_ATTACHMENTS_TOTAL_BYTES {
+            return Err(AppError::BadRequest(format!("the files add up to more than {} MiB", MAX_ATTACHMENTS_TOTAL_BYTES >> 20)));
+        }
+        infos.push(AttachmentInfo { name: name.to_string(), media_type: a.media_type.clone(), size: size as u64 });
+    }
+    Ok((attachments, infos))
 }
 
 /// A user message or a schedule's prompt: trimmed, non-empty, and not too long for cedar.
@@ -387,30 +445,38 @@ async fn send_message(
 ) -> Result<(StatusCode, Json<Turn>), AppError> {
     let content = clean_message("message", &body.content)?;
     let requested = clean_model(&state, body.model.as_deref())?;
+    let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
+    let prefs = state.store.preferences().await?;
+    if !attachments.is_empty() && !prefs.multimodal {
+        return Err(AppError::BadRequest(
+            "files are off: turn on \"This model accepts images and PDFs\" under Settings → Tools & model to send them".into(),
+        ));
+    }
 
     let _guard = state.send_lock.lock().await;
     let conversation = find_conversation(&state, &id).await?;
     let turns = settled_turns(&state, &conversation).await?;
-    let prefs = state.store.preferences().await?;
     let settings = RunSettings::resolve(&state, &prefs, requested, conversation.tools.clone());
     let model = settings.model.as_deref();
+    let options = |parent| RunOptions { attachments: Some(&attachments), ..settings.options(parent) };
 
-    // Continue the previous run, so the agent keeps the whole conversation (tool calls included)
-    // and the files in its sandbox workspace.
+    // Continue the previous run, so the agent keeps the whole conversation (tool calls and
+    // earlier attachments included) and the files in its sandbox workspace.
     let run = match turns.last() {
-        None => state.cedar.create_run(&content, &settings.options(None)).await?,
-        Some(last) => match state.cedar.create_run(&content, &settings.options(Some(last.run_id))).await {
+        None => state.cedar.create_run(&content, &options(None)).await?,
+        Some(last) => match state.cedar.create_run(&content, &options(Some(last.run_id))).await {
             // cedar no longer has the previous run (deleted, or a reset database). Start over,
-            // carrying what this service remembers of the conversation in the prompt.
+            // carrying what this service remembers of the conversation in the prompt. Earlier
+            // attachments went with the run; only this message's come along.
             Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => {
                 tracing::warn!(run_id = %last.run_id, "previous run is gone from cedar; resending history as text");
                 let run_prompt = prompt::compose(&exchanges(&turns), &content, state.cfg.history_max_bytes);
-                state.cedar.create_run(&run_prompt, &settings.options(None)).await?
+                state.cedar.create_run(&run_prompt, &options(None)).await?
             }
             other => other?,
         },
     };
-    let turn = state.store.insert_turn(conversation.id, run.id, &content, &run.status, model).await?;
+    let turn = state.store.insert_turn(conversation.id, run.id, &content, &run.status, model, &infos).await?;
     Ok((StatusCode::CREATED, Json(turn)))
 }
 
@@ -442,6 +508,7 @@ impl RunSettings {
             max_turns: self.max_turns,
             tools: Some(&self.tools),
             parent,
+            attachments: None,
         }
     }
 }
@@ -501,6 +568,7 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
         model: clean_model(&state, body.model.as_deref())?,
         system,
         max_turns: body.max_turns,
+        multimodal: body.multimodal.unwrap_or(false),
     };
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))
@@ -513,6 +581,8 @@ struct SettingsBody {
     model: Option<String>,
     system: Option<String>,
     max_turns: Option<u32>,
+    /// The model accepts images and PDFs, so the composer offers attachments.
+    multimodal: Option<bool>,
 }
 
 /// cedar's tool groups, for the Tools settings and the composer's tools menu.

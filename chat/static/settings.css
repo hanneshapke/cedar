@@ -90,3 +90,4 @@
   .cedar-set-fields { grid-template-columns: 1fr; }
   .cedar-set-menu { width: calc(100vw - 16px); }
 }
+.cedar-set-check-wide { grid-column: 1 / -1; }

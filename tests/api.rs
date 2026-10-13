@@ -501,9 +501,147 @@ async fn invalid_requests_are_rejected_with_json_errors() {
         "bad_request"
     );
 
+    // `/v1/runs` has room for attachments (so an oversized prompt is caught by its own check);
+    // every other route keeps the small body limit, and the big one still has a ceiling.
     let (status, resp) = post(json!({ "prompt": "x".repeat(300_000) })).await;
-    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
+    assert!(resp["error"]["message"].as_str().unwrap().contains("prompt is longer"));
+    let (status, resp) = app
+        .json(
+            Method::POST,
+            "/v1/compact",
+            Some(KEY_A),
+            Some(json!({ "transcript": "x".repeat(300_000) })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{resp}");
     assert_eq!(resp["error"]["code"], "payload_too_large");
+    let (status, resp) = post(json!({ "prompt": "x".repeat(49 << 20) })).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{resp}");
+    assert_eq!(resp["error"]["code"], "payload_too_large");
+}
+
+// -- attachments ------------------------------------------------------------------------------
+
+fn png() -> Value {
+    json!({ "name": "dot.png", "media_type": "image/png", "data": "iVBORw0KGgo=" })
+}
+
+fn pdf() -> Value {
+    json!({ "name": "scan.pdf", "media_type": "application/pdf", "data": "JVBERi0xLjQ=" })
+}
+
+fn image_block(attachment: &Value) -> Value {
+    json!({
+        "type": "image",
+        "source": { "type": "base64", "media_type": attachment["media_type"], "data": attachment["data"] },
+        "title": attachment["name"],
+    })
+}
+
+fn document_block(attachment: &Value) -> Value {
+    json!({
+        "type": "document",
+        "source": { "type": "base64", "media_type": attachment["media_type"], "data": attachment["data"] },
+        "title": attachment["name"],
+    })
+}
+
+#[tokio::test]
+async fn attachments_reach_the_model_in_the_opening_message() {
+    let app = TestApp::new(vec![Step::Reply(text("a dot and a scan"))]).await;
+    let created = app
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "what are these?", "attachments": [png(), pdf()] }),
+        )
+        .await;
+    let id = id_of(&created);
+    assert!(created.get("attachments").is_none(), "the run itself carries no file data");
+    assert_eq!(created["prompt"], "what are these?");
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let expected = json!([
+        image_block(&png()),
+        document_block(&pdf()),
+        { "type": "text", "text": "what are these?" },
+    ]);
+    let requests = app.llm.requests();
+    assert_eq!(requests[0]["messages"][0]["content"], expected);
+
+    let (_, messages) = app.get(&format!("/v1/runs/{id}/messages"), KEY_A).await;
+    assert_eq!(messages["messages"][0]["role"], "user");
+    assert_eq!(messages["messages"][0]["content"], expected);
+
+    // A plain run is unaffected: its opening message is still the bare prompt.
+    let plain = app
+        .create_run_with(KEY_A, json!({ "prompt": "no files", "attachments": [] }))
+        .await;
+    app.wait_status(KEY_A, &id_of(&plain), "failed").await; // the script has no more replies
+    let (_, messages) = app
+        .get(&format!("/v1/runs/{}/messages", id_of(&plain)), KEY_A)
+        .await;
+    assert_eq!(messages["messages"][0]["content"], "no files");
+}
+
+#[tokio::test]
+async fn a_continuation_keeps_the_parents_attachments() {
+    let app = TestApp::new(vec![
+        Step::Reply(text("a dot")),
+        Step::Reply(text("still a dot")),
+    ])
+    .await;
+    let first = app
+        .create_run_with(KEY_A, json!({ "prompt": "look", "attachments": [png()] }))
+        .await;
+    let first_id = id_of(&first);
+    app.wait_status(KEY_A, &first_id, "completed").await;
+    let second = app
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "and now?", "parent_id": first_id }),
+        )
+        .await;
+    app.wait_status(KEY_A, &id_of(&second), "completed").await;
+
+    let requests = app.llm.requests();
+    let msgs = requests[1]["messages"].as_array().unwrap();
+    assert_eq!(msgs.len(), 3);
+    assert_eq!(msgs[0]["content"][0], image_block(&png()));
+    assert_eq!(msgs[0]["content"][1]["text"], "look");
+    assert_eq!(msgs[2], json!({ "role": "user", "content": "and now?" }));
+}
+
+#[tokio::test]
+async fn attachment_requests_are_validated() {
+    let app = TestApp::new(vec![]).await;
+    let with = |name: &str, media_type: &str, data: &str| {
+        json!({ "name": name, "media_type": media_type, "data": data })
+    };
+    for (attachments, needle) in [
+        (json!(vec![png(); 11]), "at most 10"),
+        (json!([with("", "image/png", "aGk=")]), "name must not be empty"),
+        (json!([with("a.txt", "text/plain", "aGk=")]), "not supported"),
+        (json!([with("a.png", "image/png", "")]), "data is empty"),
+        (json!([with("a.png", "image/png", "@@@")]), "not valid base64"),
+        (json!([{ "name": "a.png", "media_type": "image/png", "data": "aGk=", "url": "x" }]), "url"),
+        (json!([{ "media_type": "image/png", "data": "aGk=" }]), "name"),
+    ] {
+        let (status, resp) = app
+            .json(
+                Method::POST,
+                "/v1/runs",
+                Some(KEY_A),
+                Some(json!({ "prompt": "x", "attachments": attachments })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
+        assert!(
+            resp["error"]["message"].as_str().unwrap().contains(needle),
+            "{resp} should mention {needle}"
+        );
+    }
+    assert_eq!(app.llm.call_count(), 0);
 }
 
 #[tokio::test]
@@ -1318,6 +1456,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         max_turns: 3,
         parent_id: None,
         tools: None,
+        attachments: vec![],
     };
     let running = store
         .insert_run_limited(&new("was running"), 10)

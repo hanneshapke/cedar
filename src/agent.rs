@@ -4,7 +4,7 @@
 use crate::browser::BrowserSession;
 use crate::events::Emitter;
 use crate::llm::{LlmClient, MessageRequest};
-use crate::models::{event, Run};
+use crate::models::{event, Attachment, Run};
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::store::Store;
 use crate::tools::{ToolContext, ToolSet, ToolView};
@@ -84,6 +84,11 @@ pub async fn run_agent(
         .collect();
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
+    let attachments = env.store.list_attachments(run.id).await?;
+    let opening = with_attachments(
+        opening,
+        attachments.iter().map(Attachment::to_block).collect(),
+    );
     push_message(env, run, &mut messages, "user", opening).await?;
 
     for turn in 1..=run.max_turns {
@@ -204,6 +209,23 @@ pub fn opening_message(history: &[Value], prompt: &str, workspace_lost: bool) ->
     Value::Array(blocks)
 }
 
+/// The opening message with the run's attachments (image and document blocks) placed before its
+/// text: any tool results first, then the files, then the prompt. Without blocks it is unchanged.
+pub fn with_attachments(opening: Value, blocks: Vec<Value>) -> Value {
+    if blocks.is_empty() {
+        return opening;
+    }
+    let mut parts = match opening {
+        Value::String(text) => vec![json!({ "type": "text", "text": text })],
+        Value::Array(parts) => parts,
+        other => vec![other],
+    };
+    let text = parts.pop();
+    parts.extend(blocks);
+    parts.extend(text);
+    Value::Array(parts)
+}
+
 /// Execute one `tool_use` block and return the matching `tool_result` block.
 async fn execute_tool_call(
     tools: &ToolView<'_>,
@@ -296,6 +318,36 @@ mod tests {
         let opening = opening_message(&history, "next", true);
         let text = opening.as_str().unwrap();
         assert!(text.starts_with(WORKSPACE_LOST) && text.ends_with("next"));
+    }
+
+    #[test]
+    fn attachments_sit_between_tool_results_and_the_prompt() {
+        let image = json!({ "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "aGk=" }, "title": "a.png" });
+        let pdf = json!({ "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": "aGk=" }, "title": "b.pdf" });
+
+        let from_text = with_attachments(json!("look"), vec![image.clone(), pdf.clone()]);
+        assert_eq!(
+            from_text,
+            json!([image, pdf, { "type": "text", "text": "look" }])
+        );
+
+        let result =
+            json!({ "type": "tool_result", "tool_use_id": "t1", "content": "x", "is_error": true });
+        let from_blocks = with_attachments(
+            json!([result, { "type": "text", "text": "look" }]),
+            vec![image.clone()],
+        );
+        assert_eq!(
+            from_blocks,
+            json!([result, image, { "type": "text", "text": "look" }])
+        );
+    }
+
+    #[test]
+    fn no_attachments_leaves_the_opening_alone() {
+        assert_eq!(with_attachments(json!("hi"), vec![]), json!("hi"));
+        let blocks = json!([{ "type": "text", "text": "hi" }]);
+        assert_eq!(with_attachments(blocks.clone(), vec![]), blocks);
     }
 
     #[test]

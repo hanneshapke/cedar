@@ -365,6 +365,114 @@ async fn history_is_resent_as_text_when_the_previous_run_is_gone() {
     assert!(prompt.ends_with("Times 3?"));
 }
 
+// -- attachments ------------------------------------------------------------------------------
+
+fn png() -> Value {
+    json!({ "name": "dot.png", "media_type": "image/png", "data": "iVBORw0KGgo=" })
+}
+
+async fn multimodal(h: &Harness, on: bool) {
+    let (status, prefs) = h.json(Method::PUT, "/api/settings", Some(json!({ "multimodal": on }))).await;
+    assert_eq!(status, StatusCode::OK, "{prefs}");
+    assert_eq!(prefs["multimodal"], on);
+}
+
+#[tokio::test]
+async fn attachments_are_forwarded_when_multimodal_is_on() {
+    let h = Harness::new(&[]).await;
+    multimodal(&h, true).await;
+    let (_, got) = h.json(Method::GET, "/api/settings", None).await;
+    assert_eq!(got["multimodal"], true);
+
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap();
+    let msgs = format!("/api/conversations/{cid}/messages");
+    // Well over the 128 KiB that every other route allows.
+    let big = json!({ "name": "scan.pdf", "media_type": "application/pdf", "data": "A".repeat(400_000) });
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "what are these?", "attachments": [png(), big] }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    let sent = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(sent["prompt"], "what are these?");
+    assert_eq!(sent["attachments"], json!([png(), big]));
+    let expected = json!([
+        { "name": "dot.png", "media_type": "image/png", "size": 8 },
+        { "name": "scan.pdf", "media_type": "application/pdf", "size": 300_000 },
+    ]);
+    assert_eq!(turn["attachments"], expected, "the turn remembers the files, not their bytes");
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["turns"][0]["attachments"], expected);
+
+    // A follow-up without files sends none, and the turn says so.
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("a dot and a scan"));
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "thanks" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    assert!(h.cedar.bodies.lock().unwrap().last().unwrap().get("attachments").is_none());
+    assert_eq!(turn["attachments"], json!([]));
+}
+
+#[tokio::test]
+async fn attachments_are_refused_when_multimodal_is_off() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
+    let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "attachments": [png()] }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert!(err["error"]["message"].as_str().unwrap().contains("Settings"), "{err}");
+    assert!(h.cedar.bodies.lock().unwrap().is_empty(), "nothing reached cedar");
+    // An empty list is the same as none.
+    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "attachments": [] }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn attachment_messages_are_validated() {
+    let h = Harness::new(&[]).await;
+    multimodal(&h, true).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
+    let file = |name: &str, media_type: &str, data: &str| json!({ "name": name, "media_type": media_type, "data": data });
+    for (attachments, needle) in [
+        (json!(vec![png(); 11]), "at most 10"),
+        (json!([file("  ", "image/png", "aGk=")]), "name must not be empty"),
+        (json!([file("a.txt", "text/plain", "aGk=")]), "only PNG"),
+        (json!([file("a.png", "image/png", "")]), "empty"),
+        (json!([file("a.png", "image/png", "aGk")]), "not valid base64"),
+        (json!([file("a.png", "image/png", "a Gk=")]), "not valid base64"),
+        (json!([file("a.png", "image/png", &"A".repeat(28 << 20))]), "larger than 20 MiB"),
+        (json!([{ "name": "a.png", "media_type": "image/png", "data": "aGk=", "size": 3 }]), "size"),
+    ] {
+        let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "attachments": attachments }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+        assert!(err["error"]["message"].as_str().unwrap().contains(needle), "{err} should mention {needle}");
+    }
+    // Over the route's own body limit.
+    let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "attachments": [file("a.png", "image/png", &"A".repeat(49 << 20))] }))).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{err}");
+    assert_eq!(err["error"]["code"], "payload_too_large");
+    assert!(h.cedar.bodies.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn attachments_survive_the_history_resend_fallback() {
+    let h = Harness::new(&[]).await;
+    multimodal(&h, true).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
+    let (_, t1) = h.json(Method::POST, &msgs, Some(json!({ "content": "What is 2+2?" }))).await;
+    let run_id = t1["run_id"].as_str().unwrap();
+    h.finish(run_id, "completed", Some("It is 4."));
+    h.json(Method::GET, &format!("/api/conversations/{}", conv["id"].as_str().unwrap()), None).await;
+    h.cedar.runs.lock().unwrap().remove(&Uuid::parse_str(run_id).unwrap());
+
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "And this?", "attachments": [png()] }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    let sent = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert!(sent.get("parent_id").is_none());
+    assert!(sent["prompt"].as_str().unwrap().contains("<user>\nWhat is 2+2?\n</user>"));
+    assert_eq!(sent["attachments"], json!([png()]));
+    assert_eq!(turn["attachments"][0]["name"], "dot.png");
+}
+
 #[tokio::test]
 async fn events_are_relayed_from_cedar() {
     let h = Harness::new(&[]).await;
@@ -478,6 +586,8 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
             assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
             assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
+            assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
+            assert!(page.contains("href=\"/attach.css\""), "{uri} loads the attachments styles");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in Settings");
             assert!(page.contains("id=\"schedule-btn\""), "{uri} has a Schedule button");
@@ -506,6 +616,8 @@ async fn both_uis_are_served() {
         ("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8", ".leaflet-container"),
         ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),
         ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
+        ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
+        ("/attach.css", "text/css; charset=utf-8", ".cedar-attach"),
     ] {
         let (status, headers, body) = fetch(&h, uri).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
@@ -856,7 +968,7 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{prefs}");
-    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7 }));
+    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "multimodal": false }));
     let (_, got) = h.json(Method::GET, "/api/settings", None).await;
     assert_eq!(got["tools"], prefs["tools"]);
     assert_eq!(got["system"], "be brief");
@@ -902,6 +1014,7 @@ async fn settings_are_validated() {
         (json!({ "max_turns": 0 }), "max_turns"),
         (json!({ "system": "x".repeat(20_001) }), "system"),
         (json!({ "colour": "red" }), "unknown field"),
+        (json!({ "multimodal": "yes" }), "multimodal"),
     ] {
         let (status, err) = h.json(Method::PUT, "/api/settings", Some(body.clone())).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");

@@ -98,7 +98,18 @@ pub struct Turn {
     pub status: String,
     pub final_text: Option<String>,
     pub error: Option<String>,
+    /// The files sent with the message (name, type and size only; the bytes are in cedar's run).
+    pub attachments: Vec<AttachmentInfo>,
     pub created_at: DateTime<Utc>,
+}
+
+/// What is remembered about a file sent with a message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentInfo {
+    pub name: String,
+    pub media_type: String,
+    /// Decoded size in bytes.
+    pub size: u64,
 }
 
 fn opt_uuid(r: &SqliteRow, col: &str) -> Result<Option<Uuid>> {
@@ -121,6 +132,9 @@ pub struct Preferences {
     pub model: Option<String>,
     pub system: Option<String>,
     pub max_turns: Option<u32>,
+    /// The model accepts images and PDFs: the composer offers attachments.
+    #[serde(default)]
+    pub multimodal: bool,
 }
 
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
@@ -178,11 +192,12 @@ fn turn_from_row(r: &SqliteRow) -> Result<Turn> {
         status: r.try_get("status")?,
         final_text: r.try_get("final_text")?,
         error: r.try_get("error")?,
+        attachments: opt_json(r, "attachments")?.unwrap_or_default(),
         created_at: to_dt(r.try_get("created_at")?),
     })
 }
 
-const TURN_COLS: &str = "id, conversation_id, seq, run_id, prompt, status, final_text, error, created_at";
+const TURN_COLS: &str = "id, conversation_id, seq, run_id, prompt, status, final_text, error, attachments, created_at";
 
 #[derive(Clone)]
 pub struct Store {
@@ -287,19 +302,21 @@ impl Store {
         prompt: &str,
         status: &str,
         model: Option<&str>,
+        attachments: &[AttachmentInfo],
     ) -> Result<Turn> {
         let id = Uuid::now_v7();
         let now = now_ms();
         let mut tx = self.pool.begin().await?;
         sqlx::query(
-            "INSERT INTO turns (id, conversation_id, seq, run_id, prompt, status, created_at) \
-             SELECT ?1, ?2, COALESCE(MAX(seq), 0) + 1, ?3, ?4, ?5, ?6 FROM turns WHERE conversation_id = ?2",
+            "INSERT INTO turns (id, conversation_id, seq, run_id, prompt, status, attachments, created_at) \
+             SELECT ?1, ?2, COALESCE(MAX(seq), 0) + 1, ?3, ?4, ?5, ?6, ?7 FROM turns WHERE conversation_id = ?2",
         )
         .bind(id.to_string())
         .bind(conversation_id.to_string())
         .bind(run_id.to_string())
         .bind(prompt)
         .bind(status)
+        .bind(to_json(if attachments.is_empty() { None } else { Some(attachments) })?)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -536,8 +553,8 @@ mod tests {
         let store = Store::connect_memory().await.unwrap();
         let c = store.create_conversation(None).await.unwrap();
         assert!(c.title.is_none());
-        let t1 = store.insert_turn(c.id, Uuid::new_v4(), "\n  first question\nmore", "queued", Some("m")).await.unwrap();
-        let t2 = store.insert_turn(c.id, Uuid::new_v4(), "second", "queued", None).await.unwrap();
+        let t1 = store.insert_turn(c.id, Uuid::new_v4(), "\n  first question\nmore", "queued", Some("m"), &[]).await.unwrap();
+        let t2 = store.insert_turn(c.id, Uuid::new_v4(), "second", "queued", None, &[]).await.unwrap();
         assert_eq!((t1.seq, t2.seq), (1, 2));
         let c = store.get_conversation(c.id).await.unwrap().unwrap();
         assert_eq!(c.title.as_deref(), Some("first question"));
@@ -554,7 +571,7 @@ mod tests {
     async fn renamed_conversations_keep_their_title() {
         let store = Store::connect_memory().await.unwrap();
         let c = store.create_conversation(Some("Mine")).await.unwrap();
-        store.insert_turn(c.id, Uuid::new_v4(), "hello", "queued", None).await.unwrap();
+        store.insert_turn(c.id, Uuid::new_v4(), "hello", "queued", None, &[]).await.unwrap();
         assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().title.as_deref(), Some("Mine"));
     }
 
@@ -581,7 +598,7 @@ mod tests {
         let plain = store.create_conversation(Some("Mine")).await.unwrap();
         let c = store.create_scheduled_conversation(s.id, "Daily digest · Mon").await.unwrap();
         assert_eq!(c.schedule_id, Some(s.id));
-        let t = store.insert_turn(c.id, Uuid::new_v4(), "summarize", "queued", None).await.unwrap();
+        let t = store.insert_turn(c.id, Uuid::new_v4(), "summarize", "queued", None, &[]).await.unwrap();
         assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().title.as_deref(), Some("Daily digest · Mon"));
         let run = store
             .insert_schedule_run(&NewScheduleRun {
@@ -631,6 +648,7 @@ mod tests {
             model: Some("m".into()),
             system: Some("be brief".into()),
             max_turns: Some(5),
+            multimodal: true,
         };
         store.set_preferences(&prefs).await.unwrap();
         store.set_preferences(&prefs).await.unwrap();
@@ -642,5 +660,18 @@ mod tests {
         assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().tools, Some(vec!["web_search".to_string()]));
         store.set_conversation_tools(c.id, None).await.unwrap();
         assert_eq!(store.get_conversation(c.id).await.unwrap().unwrap().tools, None);
+    }
+
+    #[tokio::test]
+    async fn turns_keep_attachment_metadata() {
+        let store = Store::connect_memory().await.unwrap();
+        let c = store.create_conversation(None).await.unwrap();
+        let files = vec![AttachmentInfo { name: "a.png".into(), media_type: "image/png".into(), size: 3 }];
+        let with = store.insert_turn(c.id, Uuid::new_v4(), "look", "queued", None, &files).await.unwrap();
+        let without = store.insert_turn(c.id, Uuid::new_v4(), "next", "queued", None, &[]).await.unwrap();
+        assert_eq!(store.get_turn(with.id).await.unwrap().unwrap().attachments, files);
+        assert!(store.get_turn(without.id).await.unwrap().unwrap().attachments.is_empty());
+        let turns = store.list_turns(c.id).await.unwrap();
+        assert_eq!(turns.iter().map(|t| t.attachments.len()).collect::<Vec<_>>(), [1, 0]);
     }
 }

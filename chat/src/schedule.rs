@@ -196,7 +196,8 @@ pub async fn fire(
             return Err(e);
         }
     };
-    let turn = state.store.insert_turn(conversation.id, run.id, &schedule.prompt, &run.status, model).await?;
+    // A schedule's prompt is text only; it never carries attachments.
+    let turn = state.store.insert_turn(conversation.id, run.id, &schedule.prompt, &run.status, model, &[]).await?;
     let record = state
         .store
         .insert_schedule_run(&NewScheduleRun {

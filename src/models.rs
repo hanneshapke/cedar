@@ -87,6 +87,44 @@ pub struct NewRun {
     /// Continue this run: its conversation, and its workspace if that hasn't expired.
     pub parent_id: Option<Uuid>,
     pub tools: Option<Vec<String>>,
+    /// Files sent with the prompt, for a multimodal model.
+    pub attachments: Vec<Attachment>,
+}
+
+/// The media types a run's prompt may come with: images and PDFs.
+pub const ALLOWED_ATTACHMENT_TYPES: [&str; 5] = [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+];
+
+/// A file sent with a run's prompt, base64 as received. It is shown to the model as part of the
+/// opening user message; cedar does not check that the model can read it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Attachment {
+    pub name: String,
+    pub media_type: String,
+    /// Standard base64 (with padding, no data: prefix) of the file's bytes.
+    pub data: String,
+}
+
+impl Attachment {
+    pub fn is_image(&self) -> bool {
+        self.media_type.starts_with("image/")
+    }
+
+    /// The content block the attachment becomes in the conversation: `image` for images,
+    /// `document` for PDFs, each with a base64 `source` and the file name as `title`.
+    pub fn to_block(&self) -> Value {
+        serde_json::json!({
+            "type": if self.is_image() { "image" } else { "document" },
+            "source": { "type": "base64", "media_type": self.media_type, "data": self.data },
+            "title": self.name,
+        })
+    }
 }
 
 /// Event type names, as sent in the `type` field and the SSE `event:` line.
@@ -139,4 +177,6 @@ pub struct CreateRunRequest {
     /// Tool groups (`web_search`, `gmail`, ...) and tool names the run may use, on top of the
     /// sandbox tools; `*` means all. Absent: the parent's selection for a continuation, else all.
     pub tools: Option<Vec<String>>,
+    /// Images and PDFs to show the model with the prompt (see [`Attachment`]).
+    pub attachments: Option<Vec<Attachment>>,
 }

@@ -10,7 +10,9 @@ use crate::events::EventHub;
 use crate::integrations::Integrations;
 use crate::llm::LlmClient;
 use crate::manager::RunManager;
-use crate::models::{CreateRunRequest, NewRun, Run, RunStatus, StoredMessage};
+use crate::models::{
+    Attachment, CreateRunRequest, NewRun, Run, RunStatus, StoredMessage, ALLOWED_ATTACHMENT_TYPES,
+};
 use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
 use crate::sse;
 use crate::store::{InsertRefused, Store};
@@ -22,6 +24,7 @@ use axum::response::sse::Sse;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use base64::Engine;
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -34,6 +37,13 @@ const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_PROMPT_BYTES: usize = 100_000;
 const MAX_SYSTEM_BYTES: usize = 20_000;
 pub(crate) const MAX_MODEL_LEN: usize = 100;
+/// Attachments (images and PDFs sent with a prompt): how many, how big each and all together
+/// (decoded), and the body limit that leaves room for their base64 on `POST /v1/runs` only.
+pub const MAX_ATTACHMENTS: usize = 10;
+pub const MAX_ATTACHMENT_BYTES: usize = 20 << 20;
+pub const MAX_ATTACHMENTS_TOTAL_BYTES: usize = 32 << 20;
+const MAX_RUN_BODY_BYTES: usize = 48 << 20;
+const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
 /// Largest workspace file that can be downloaded. It is read into memory before being sent.
@@ -117,7 +127,13 @@ impl AppState {
 
 pub fn router(state: AppState) -> Router {
     let v1 = Router::new()
-        .route("/runs", post(create_run).get(list_runs))
+        // Only this route takes attachments, so only it gets the room for them.
+        .route(
+            "/runs",
+            post(create_run)
+                .get(list_runs)
+                .layer(DefaultBodyLimit::max(MAX_RUN_BODY_BYTES)),
+        )
         .route("/runs/{id}", get(get_run).delete(delete_run))
         .route("/runs/{id}/messages", get(get_messages))
         .route("/runs/{id}/events", get(stream_events))
@@ -207,6 +223,60 @@ fn resolve_model(
     }
 }
 
+/// Check the files sent with a prompt: count, name, media type, that `data` is real base64, and
+/// the decoded sizes. The base64 is kept as sent; decoding here only validates it.
+fn validate_attachments(attachments: &[Attachment]) -> Result<(), AppError> {
+    if attachments.len() > MAX_ATTACHMENTS {
+        return Err(AppError::BadRequest(format!(
+            "at most {MAX_ATTACHMENTS} attachments per run"
+        )));
+    }
+    let mut total = 0usize;
+    for (i, a) in attachments.iter().enumerate() {
+        let which = |what: &str| {
+            AppError::BadRequest(format!("attachment {} ({:?}): {what}", i + 1, a.name))
+        };
+        let name = a.name.trim();
+        if name.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "attachment {}: name must not be empty",
+                i + 1
+            )));
+        }
+        if name.chars().count() > MAX_ATTACHMENT_NAME_CHARS || name.chars().any(char::is_control) {
+            return Err(which("name is malformed"));
+        }
+        if !ALLOWED_ATTACHMENT_TYPES.contains(&a.media_type.as_str()) {
+            return Err(which(&format!(
+                "media type {:?} is not supported (use one of {})",
+                a.media_type,
+                ALLOWED_ATTACHMENT_TYPES.join(", ")
+            )));
+        }
+        if a.data.is_empty() {
+            return Err(which("data is empty"));
+        }
+        let too_big = which(&format!("larger than {} MiB", MAX_ATTACHMENT_BYTES >> 20));
+        if base64::decoded_len_estimate(a.data.len()) > MAX_ATTACHMENT_BYTES {
+            return Err(too_big);
+        }
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&a.data)
+            .map_err(|_| which("data is not valid base64"))?;
+        if decoded.len() > MAX_ATTACHMENT_BYTES {
+            return Err(too_big);
+        }
+        total += decoded.len();
+        if total > MAX_ATTACHMENTS_TOTAL_BYTES {
+            return Err(AppError::BadRequest(format!(
+                "attachments add up to more than {} MiB",
+                MAX_ATTACHMENTS_TOTAL_BYTES >> 20
+            )));
+        }
+    }
+    Ok(())
+}
+
 // -- runs -----------------------------------------------------------------------------------
 
 async fn create_run(
@@ -224,6 +294,8 @@ async fn create_run(
             "prompt is longer than {MAX_PROMPT_BYTES} bytes"
         )));
     }
+    let attachments = req.attachments.unwrap_or_default();
+    validate_attachments(&attachments)?;
 
     // A continuation inherits its parent's model and system prompt unless the request overrides them.
     let parent = match req.parent_id {
@@ -279,6 +351,7 @@ async fn create_run(
         max_turns,
         parent_id: req.parent_id,
         tools,
+        attachments,
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -312,6 +385,12 @@ async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
         "system": cfg.default_system_prompt,
         "max_turns_cap": cfg.max_turns_cap,
         "allowed_models": cfg.allowed_models,
+        "attachments": {
+            "max_count": MAX_ATTACHMENTS,
+            "max_bytes": MAX_ATTACHMENT_BYTES,
+            "max_total_bytes": MAX_ATTACHMENTS_TOTAL_BYTES,
+            "media_types": ALLOWED_ATTACHMENT_TYPES,
+        },
     }))
 }
 
@@ -797,4 +876,40 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
             "checks": summary,
         })),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn att(name: &str, media_type: &str, data: &str) -> Attachment {
+        Attachment {
+            name: name.into(),
+            media_type: media_type.into(),
+            data: data.into(),
+        }
+    }
+
+    #[test]
+    fn attachments_are_validated() {
+        let ok = att("a.png", "image/png", "iVBORw0KGgo=");
+        assert!(validate_attachments(&[]).is_ok());
+        assert!(
+            validate_attachments(&[ok.clone(), att("b.pdf", "application/pdf", "JVBERi0=")])
+                .is_ok()
+        );
+
+        let message = |atts: &[Attachment]| match validate_attachments(atts) {
+            Err(AppError::BadRequest(m)) => m,
+            other => panic!("expected a bad request, got {other:?}"),
+        };
+        assert!(message(&vec![ok.clone(); MAX_ATTACHMENTS + 1]).contains("at most"));
+        assert!(message(&[att(" ", "image/png", "aGk=")]).contains("name must not be empty"));
+        assert!(message(&[att("a\nb", "image/png", "aGk=")]).contains("name is malformed"));
+        assert!(message(&[att("a.txt", "text/plain", "aGk=")]).contains("not supported"));
+        assert!(message(&[att("a.png", "image/png", "")]).contains("data is empty"));
+        assert!(message(&[att("a.png", "image/png", "not base64!")]).contains("not valid base64"));
+        let huge = "A".repeat(base64::encoded_len(MAX_ATTACHMENT_BYTES + 3, true).unwrap());
+        assert!(message(&[att("a.png", "image/png", &huge)]).contains("larger than"));
+    }
 }
