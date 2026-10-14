@@ -10,12 +10,15 @@ use anyhow::{anyhow, Context, Result};
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 pub struct MessageRequest<'a> {
     pub model: &'a str,
     pub max_tokens: u32,
+    /// Sent as `reasoning_effort` when set (what the model accepts is up to its server).
+    pub reasoning_effort: Option<&'a str>,
     pub system: &'a str,
     pub tools: &'a [Value],
     pub messages: &'a [Value],
@@ -147,6 +150,9 @@ fn build_request(req: &MessageRequest<'_>) -> Value {
         "max_tokens": req.max_tokens,
         "messages": messages,
     });
+    if let Some(effort) = req.reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
     if !req.tools.is_empty() {
         body["tools"] = req.tools.iter().map(translate_tool).collect();
     }
@@ -344,36 +350,50 @@ fn tool_use_block(call: &Value, index: usize) -> Value {
     json!({ "type": "tool_use", "id": id, "name": name, "input": input })
 }
 
-/// The model server client, swappable while cedar runs: an admin can point cedar at another
-/// server (see `crate::integrations`). Each model call uses the client current at its start.
-pub struct SwappableLlm {
-    inner: ArcSwap<ChatCompletionsClient>,
+/// One client per registered model, keyed by the entry's id and swapped while cedar runs: an
+/// admin's change to the registry (see `crate::integrations`) applies to the next model call,
+/// in a new run or one already going.
+#[derive(Default)]
+pub struct LlmRouter {
+    clients: ArcSwap<HashMap<String, Arc<dyn LlmClient>>>,
 }
 
-impl SwappableLlm {
-    pub fn new(client: ChatCompletionsClient) -> Self {
-        Self {
-            inner: ArcSwap::from_pointee(client),
-        }
+impl LlmRouter {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Send later calls to `base_url`, with `api_key` if given.
-    pub fn set(&self, base_url: String, api_key: Option<String>) -> Result<()> {
-        self.inner
-            .store(Arc::new(ChatCompletionsClient::new(base_url, api_key)?));
-        Ok(())
+    /// The client for a registered model, or `None` if the entry is gone.
+    pub fn client_for(&self, model_id: &str) -> Option<Arc<dyn LlmClient>> {
+        self.clients.load().get(model_id).cloned()
     }
 
-    pub fn base_url(&self) -> String {
-        self.inner.load().base_url.clone()
+    /// Use `client` for the model `id` from now on.
+    pub fn set(&self, id: &str, client: Arc<dyn LlmClient>) {
+        self.clients.rcu(|clients| {
+            let mut next = HashMap::clone(clients);
+            next.insert(id.to_string(), client.clone());
+            next
+        });
     }
-}
 
-#[async_trait]
-impl LlmClient for SwappableLlm {
-    async fn create_message(&self, req: &MessageRequest<'_>) -> Result<LlmResponse> {
-        let client = self.inner.load_full();
-        client.create_message(req).await
+    pub fn remove(&self, id: &str) {
+        self.clients.rcu(|clients| {
+            let mut next = HashMap::clone(clients);
+            next.remove(id);
+            next
+        });
+    }
+
+    /// Replace every client at once.
+    pub fn replace_all(&self, clients: HashMap<String, Arc<dyn LlmClient>>) {
+        self.clients.store(Arc::new(clients));
+    }
+
+    pub fn ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.clients.load().keys().cloned().collect();
+        ids.sort();
+        ids
     }
 }
 
@@ -432,6 +452,7 @@ mod tests {
         build_request(&MessageRequest {
             model: "m",
             max_tokens: 50,
+            reasoning_effort: None,
             system: "be nice",
             tools: &[],
             messages,
@@ -446,6 +467,7 @@ mod tests {
         let body = build_request(&MessageRequest {
             model: "m",
             max_tokens: 50,
+            reasoning_effort: None,
             system: "be nice",
             tools: &tools,
             messages: &messages,
@@ -464,6 +486,42 @@ mod tests {
             })
         );
         assert!(request(&[]).get("tools").is_none());
+    }
+
+    #[test]
+    fn a_reasoning_level_is_sent_as_reasoning_effort() {
+        let messages = [json!({ "role": "user", "content": "hello" })];
+        let body = build_request(&MessageRequest {
+            model: "m",
+            max_tokens: 50,
+            reasoning_effort: Some("high"),
+            system: "",
+            tools: &[],
+            messages: &messages,
+        });
+        assert_eq!(
+            body,
+            json!({
+                "model": "m",
+                "max_tokens": 50,
+                "reasoning_effort": "high",
+                "messages": [{ "role": "user", "content": "hello" }],
+            })
+        );
+        assert!(request(&[]).get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn the_router_hands_out_the_client_of_a_registered_model() {
+        let router = LlmRouter::new();
+        assert!(router.client_for("a").is_none());
+        let client: Arc<dyn LlmClient> =
+            Arc::new(ChatCompletionsClient::new("http://a/v1".into(), None).unwrap());
+        router.set("a", client);
+        assert!(router.client_for("a").is_some());
+        assert_eq!(router.ids(), ["a"]);
+        router.remove("a");
+        assert!(router.client_for("a").is_none());
     }
 
     #[test]

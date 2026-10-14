@@ -472,7 +472,7 @@ async fn active_runs_per_key_are_capped() {
 
 #[tokio::test]
 async fn invalid_requests_are_rejected_with_json_errors() {
-    let app = TestApp::with_env(vec![], &[("ALLOWED_MODELS", "small-model")]).await;
+    let app = TestApp::new(vec![]).await;
     let post = |body: Value| {
         let app = app.clone();
         async move {
@@ -484,7 +484,8 @@ async fn invalid_requests_are_rejected_with_json_errors() {
     for (body, needle) in [
         (json!({ "prompt": "   " }), "prompt must not be empty"),
         (json!({ "prompt": "x", "max_turns": 0 }), "max_turns"),
-        (json!({ "prompt": "x", "model": "gpt-4" }), "not allowed"),
+        (json!({ "prompt": "x", "model": "gpt-4" }), "not registered"),
+        (json!({ "prompt": "x", "reasoning": "max" }), "not offered"),
         (json!({ "prompt": "x", "bogus": 1 }), "bogus"),
         (json!({ "nothing": "here" }), "prompt"),
         (json!({ "prompt": "x".repeat(100_001) }), "prompt is longer"),
@@ -655,37 +656,38 @@ async fn attachment_requests_are_validated() {
 
 #[tokio::test]
 async fn defaults_and_clamps_are_applied() {
-    let app = TestApp::with_env(
-        vec![
-            Step::Reply(text("a")),
-            Step::Reply(text("b")),
-            Step::Reply(text("c")),
-        ],
-        &[("ALLOWED_MODELS", "small-model")],
-    )
+    let app = TestApp::new(vec![
+        Step::Reply(text("a")),
+        Step::Reply(text("b")),
+        Step::Reply(text("c")),
+    ])
     .await;
+    app.register("small", "small-model", &[]).await;
 
     let plain = app.create_run(KEY_A, "x").await;
-    assert_eq!(plain["model"], "deepseek-ai/DeepSeek-V4-Flash");
+    assert_eq!(plain["model"], TEST_MODEL);
+    assert_eq!(plain["model_id"], TEST_MODEL);
+    assert_eq!(plain["reasoning"], Value::Null);
     assert_eq!(plain["max_turns"], 10);
     assert!(plain["system"].as_str().unwrap().contains("/workspace"));
 
+    // A model is named by its registry id...
     let custom = app
-        .create_run_with(KEY_A, json!({ "prompt": "x", "model": "small-model", "system": "be brief", "max_turns": 999 }))
+        .create_run_with(KEY_A, json!({ "prompt": "x", "model": "small", "system": "be brief", "max_turns": 999 }))
         .await;
     assert_eq!(custom["model"], "small-model");
+    assert_eq!(custom["model_id"], "small");
     assert_eq!(custom["system"], "be brief");
     assert_eq!(
         custom["max_turns"], 10,
         "max_turns is clamped to the server cap"
     );
 
-    // The default model is always allowed, even when it isn't on the allow-list.
-    app.create_run_with(
-        KEY_A,
-        json!({ "prompt": "x", "model": "deepseek-ai/DeepSeek-V4-Flash" }),
-    )
-    .await;
+    // ...or by its name on the server, when only one entry has it.
+    let by_name = app
+        .create_run_with(KEY_A, json!({ "prompt": "x", "model": "small-model" }))
+        .await;
+    assert_eq!(by_name["model_id"], "small");
 
     app.wait_status(KEY_A, &id_of(&custom), "completed").await;
     let requests = app.llm.requests();
@@ -1001,10 +1003,11 @@ async fn a_continuation_picks_up_the_conversation_and_the_workspace() {
         Step::Reply(text("it says: remember me")),
     ])
     .await;
+    app.register("small", "small-model", &[]).await;
     let first = app
         .create_run_with(
             KEY_A,
-            json!({ "prompt": "save a note", "system": "be brief", "model": "small-model" }),
+            json!({ "prompt": "save a note", "system": "be brief", "model": "small" }),
         )
         .await;
     let first_id = id_of(&first);
@@ -1461,7 +1464,9 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
             .0,
         prompt: prompt.into(),
         system: "s".into(),
-        model: "m".into(),
+        model_id: TEST_MODEL.into(),
+        model: TEST_MODEL.into(),
+        reasoning: None,
         max_turns: 3,
         parent_id: None,
         tools: None,
@@ -1479,7 +1484,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         .unwrap()
         .unwrap();
 
-    let app = TestApp::build(store, ScriptedLlm::new(vec![]), FakeFactory::new(), &[]);
+    let app = TestApp::build(store, ScriptedLlm::new(vec![]), FakeFactory::new(), &[]).await;
     app.state.manager.recover().await.unwrap();
 
     for id in [running.id, queued.id] {
@@ -1501,6 +1506,100 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
     );
 }
 
+// -- models and reasoning levels ---------------------------------------------------------------
+
+#[tokio::test]
+async fn the_registered_models_are_listed_to_any_key() {
+    let app = TestApp::new(vec![]).await;
+    app.register("small", "small-model", &["low"]).await;
+    let (status, body) = app.get("/v1/models", KEY_B).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        json!({ "models": [
+            { "id": TEST_MODEL, "label": TEST_MODEL, "model": TEST_MODEL, "is_default": true,
+              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null },
+            { "id": "small", "label": "small", "model": "small-model", "is_default": false,
+              "reasoning_levels": ["low"], "default_reasoning": null },
+        ] })
+    );
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["model"], TEST_MODEL);
+    assert_eq!(defaults["model_id"], TEST_MODEL);
+}
+
+#[tokio::test]
+async fn a_run_asks_for_a_reasoning_level_and_a_continuation_keeps_it() {
+    let app = TestApp::new(vec![
+        Step::Reply(text("a")),
+        Step::Reply(text("b")),
+        Step::Reply(text("c")),
+        Step::Reply(text("d")),
+    ])
+    .await;
+
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "think", "reasoning": "high" }))
+        .await;
+    assert_eq!(run["reasoning"], "high");
+    let id = id_of(&run);
+    app.wait_status(KEY_A, &id, "completed").await;
+    assert_eq!(app.llm.requests()[0]["reasoning_effort"], "high");
+    let events = app.events(KEY_A, &id, None).await;
+    assert_eq!(events[0].data["data"]["model_id"], TEST_MODEL);
+    assert_eq!(events[0].data["data"]["reasoning"], "high");
+
+    // Inherited by a continuation of the same model, unless it asks for another level.
+    let same = app
+        .create_run_with(KEY_A, json!({ "prompt": "more", "parent_id": id }))
+        .await;
+    assert_eq!(same["reasoning"], "high");
+    app.wait_status(KEY_A, &id_of(&same), "completed").await;
+    let other = app
+        .create_run_with(KEY_A, json!({ "prompt": "more", "parent_id": id_of(&same), "reasoning": "low" }))
+        .await;
+    assert_eq!(other["reasoning"], "low");
+    app.wait_status(KEY_A, &id_of(&other), "completed").await;
+    assert_eq!(app.llm.requests()[2]["reasoning_effort"], "low");
+
+    // A level the model doesn't offer, or a model that offers none, is refused.
+    let (status, body) = app
+        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x", "reasoning": "max" })))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"].as_str().unwrap().contains("one of none, low, high"), "{body}");
+    app.register("plain", "plain-model", &[]).await;
+    let (status, body) = app
+        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x", "model": "plain", "reasoning": "low" })))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"].as_str().unwrap().contains("offers no reasoning levels"), "{body}");
+
+    // Without a level, no reasoning_effort is sent at all.
+    let plain = app
+        .create_run_with(KEY_A, json!({ "prompt": "x", "model": "plain" }))
+        .await;
+    assert_eq!(plain["reasoning"], Value::Null);
+    app.wait_status(KEY_A, &id_of(&plain), "completed").await;
+    assert_eq!(app.llm.requests()[3]["reasoning_effort"], Value::Null);
+}
+
+#[tokio::test]
+async fn runs_are_refused_while_no_model_is_registered() {
+    let app = TestApp::new(vec![]).await;
+    app.state.store.delete_model(TEST_MODEL).await.unwrap();
+    app.state.integrations.reload().await.unwrap();
+    let (status, body) = app
+        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x" })))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body["error"]["message"].as_str().unwrap().contains("no model is registered"));
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["model"], Value::Null);
+    let (_, ready) = app.json(Method::GET, "/readyz", None, None).await;
+    assert_eq!(ready["models"], 0);
+}
+
 // -- compaction -------------------------------------------------------------------------------
 
 #[tokio::test]
@@ -1511,8 +1610,9 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
         Step::Reply(text("  Write hello.py that prints hi and run it.  ")),
     ])
     .await;
+    app.register("small", "small-model", &["low", "high"]).await;
     let run = app
-        .create_run_with(KEY_A, json!({ "prompt": "say hi", "model": "small-model" }))
+        .create_run_with(KEY_A, json!({ "prompt": "say hi", "model": "small", "reasoning": "high" }))
         .await;
     let id = id_of(&run);
     app.wait_status(KEY_A, &id, "completed").await;
@@ -1523,6 +1623,7 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["prompt"], "Write hello.py that prints hi and run it.");
     assert_eq!(body["model"], "small-model", "the run's model is used");
+    assert_eq!(body["model_id"], "small");
     assert_eq!(body["usage"], json!({ "input_tokens": 10, "output_tokens": 5 }));
 
     // One call, no tools, a dedicated system prompt, the run's conversation, then the instruction.
@@ -1530,6 +1631,7 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
     assert_eq!(requests.len(), 3);
     let req = &requests[2];
     assert_eq!(req["tools"], json!([]));
+    assert_eq!(req["reasoning_effort"], Value::Null, "compaction thinks no harder than it must");
     assert_eq!(req["system"], cedar::compact::SYSTEM);
     let msgs = req["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 5);
@@ -1552,14 +1654,11 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
 
 #[tokio::test]
 async fn compaction_needs_a_finished_run_or_a_transcript() {
-    let app = TestApp::with_env(
-        vec![
-            Step::Reply(text("DISTILLED")),
-            Step::Reply(reply(vec![], "end_turn")),
-            Step::Block,
-        ],
-        &[("ALLOWED_MODELS", "small-model")],
-    )
+    let app = TestApp::new(vec![
+        Step::Reply(text("DISTILLED")),
+        Step::Reply(reply(vec![], "end_turn")),
+        Step::Block,
+    ])
     .await;
     let post = |body: Value| app.json(Method::POST, "/v1/compact", Some(KEY_A), Some(body));
 

@@ -1,15 +1,19 @@
-//! Integrations an admin can set up through the API instead of the environment: a Brave Search
-//! key and a Google account ("Connect Google"). Their credentials are kept encrypted (see
-//! [`crate::secrets`]), and saving or removing one rebuilds the tool set, so the next run sees the
-//! change without a restart. Runs already going keep the tools they started with.
+//! Integrations an admin can set up through the API instead of the environment: the model
+//! registry (the models runs can use, each with its server and API key), a Brave Search key and
+//! a Google account ("Connect Google"). Credentials are kept encrypted (see [`crate::secrets`]).
+//! Saving or removing a key rebuilds the tool set, and a change to the registry rebuilds the
+//! model clients, so the next run (or the next model call of one already going) sees the change
+//! without a restart. Runs already going keep the tools they started with.
 //!
-//! The environment wins: a credential set there is reported as such and can't be changed here.
+//! The environment wins for the Brave key and the Google account: a credential set there is
+//! reported as such and can't be changed here. Models are only ever registered here.
 
 use crate::api::MAX_MODEL_LEN;
-use crate::config::Config;
+use crate::config::{Config, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL};
 use crate::error::AppError;
-use crate::llm::{list_models, SwappableLlm};
+use crate::llm::{list_models, ChatCompletionsClient, LlmClient, LlmRouter};
 use crate::mcp::http_client;
+use crate::models::ModelEntry;
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
 use crate::tools::{BraveSearch, Overrides, ToolSet};
@@ -20,6 +24,7 @@ use chacha20poly1305::aead::rand_core::RngCore;
 use chacha20poly1305::aead::OsRng;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -30,9 +35,16 @@ const OAUTH_STATE_TTL: Duration = Duration::from_secs(600);
 const MAX_PENDING_STATES: usize = 20;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_SECRET_LEN: usize = 500;
+const MAX_MODEL_ID_LEN: usize = 64;
+const MAX_LABEL_LEN: usize = 100;
+const MAX_REASONING_LEVELS: usize = 16;
+const MAX_REASONING_LEVEL_LEN: usize = 32;
+/// The id the single model server saved by earlier versions becomes.
+const LEGACY_MODEL_ID: &str = "default";
 
 pub struct Integrations {
     cfg: Arc<Config>,
+    store: Store,
     secrets: Option<SecretStore>,
     tools: Arc<ArcSwap<ToolSet>>,
     http: reqwest::Client,
@@ -40,11 +52,31 @@ pub struct Integrations {
     pending: Mutex<HashMap<String, (String, Instant)>>,
     /// Serializes changes, so two admins can't interleave a save and a rebuild.
     changing: tokio::sync::Mutex<()>,
-    /// The model server client, when it can be repointed (see [`Self::attach_llm`]).
-    llm: OnceLock<Arc<SwappableLlm>>,
-    /// The model a run gets when it doesn't name one: the environment's, else the saved one, else
-    /// the built-in default. Kept here so every run creation reads it without a query.
-    default_model: ArcSwap<String>,
+    /// The model clients, when this server drives them (see [`Self::attach_router`]).
+    router: OnceLock<Arc<LlmRouter>>,
+    /// The registry as last loaded, in picker order. Kept here so every run creation reads it
+    /// without a query.
+    models: ArcSwap<Vec<ModelEntry>>,
+}
+
+/// What an admin sends to register or change a model (`PUT /v1/admin/models/{id}`).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSpec {
+    /// What the pickers show. Absent: the existing label, else the model name.
+    pub label: Option<String>,
+    pub base_url: String,
+    /// The model's name on the server.
+    pub model: String,
+    /// Absent keeps the saved key; empty removes it.
+    pub api_key: Option<String>,
+    /// The `reasoning_effort` values the model accepts. Absent keeps the saved ones (none for a
+    /// new entry).
+    pub reasoning_levels: Option<Vec<String>>,
+    /// The level a run gets when it names none; empty for none. Absent keeps the saved one.
+    pub default_reasoning: Option<String>,
+    /// Make this the model runs get when they name none. Absent keeps it as it is.
+    pub is_default: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -59,20 +91,29 @@ impl Integrations {
     pub fn new(cfg: Arc<Config>, store: Store) -> Result<Self> {
         let tools = ToolSet::from_config(&cfg)?;
         Ok(Self {
-            secrets: cfg.secret_key.as_ref().map(|k| SecretStore::new(store, k)),
-            default_model: ArcSwap::from_pointee(cfg.default_model.clone()),
+            secrets: cfg
+                .secret_key
+                .as_ref()
+                .map(|k| SecretStore::new(store.clone(), k)),
+            store,
             cfg,
             tools: Arc::new(ArcSwap::from_pointee(tools)),
             http: http_client()?,
             pending: Mutex::default(),
             changing: tokio::sync::Mutex::default(),
-            llm: OnceLock::new(),
+            router: OnceLock::new(),
+            models: ArcSwap::from_pointee(vec![]),
         })
     }
 
-    /// The model a run gets when it doesn't name one.
-    pub fn default_model(&self) -> String {
-        self.default_model.load().to_string()
+    /// The registered models, in picker order, as last loaded.
+    pub fn models(&self) -> Arc<Vec<ModelEntry>> {
+        self.models.load_full()
+    }
+
+    /// The model a run gets when it doesn't name one, if any is registered.
+    pub fn default_entry(&self) -> Option<ModelEntry> {
+        self.models.load().iter().find(|m| m.is_default).cloned()
     }
 
     /// The current tool set, shared with the agent.
@@ -83,7 +124,7 @@ impl Integrations {
     /// Rebuild the tools from the environment plus the saved credentials. A credential that can't
     /// be decrypted is logged and left out rather than keeping cedar from starting.
     pub async fn reload(&self) -> Result<()> {
-        self.apply_llm().await?;
+        self.apply_models().await?;
         let mut overrides = Overrides::default();
         if let Some(secrets) = &self.secrets {
             for (name, slot) in [
@@ -106,10 +147,10 @@ impl Integrations {
         Ok(())
     }
 
-    /// Let admins repoint the model server: `llm` is the client the agent and compaction use.
-    /// Call [`Self::reload`] afterwards to apply a saved address.
-    pub fn attach_llm(&self, llm: Arc<SwappableLlm>) {
-        let _ = self.llm.set(llm);
+    /// Let this server drive the model clients: `router` is what the agent and compaction call.
+    /// Call [`Self::reload`] afterwards to load the registry into it.
+    pub fn attach_router(&self, router: Arc<LlmRouter>) {
+        let _ = self.router.set(router);
     }
 
     async fn saved(&self, name: &str) -> Option<String> {
@@ -123,187 +164,250 @@ impl Integrations {
         }
     }
 
-    /// The model server address and key in effect: the environment's, else the saved ones, else
-    /// the built-in default address.
-    async fn llm_endpoint(&self) -> (String, Option<String>) {
-        let cfg = &self.cfg;
-        let url = match cfg.llm_base_url_from_env {
-            true => None,
-            false => self.saved(secrets::LLM_BASE_URL).await,
-        };
-        let key = match cfg.llm_api_key_from_env {
-            true => None,
-            false => self.saved(secrets::LLM_API_KEY).await,
-        };
-        (
-            url.unwrap_or_else(|| cfg.llm_base_url.clone()),
-            key.or_else(|| cfg.llm_api_key.clone()),
-        )
-    }
-
-    /// The saved model name, unless the environment sets one (which then wins).
-    async fn saved_model(&self) -> Option<String> {
-        match self.cfg.llm_model_from_env {
-            true => None,
-            false => self.saved(secrets::LLM_MODEL).await,
-        }
-    }
-
-    async fn apply_llm(&self) -> Result<()> {
-        let model = self
-            .saved_model()
-            .await
-            .unwrap_or_else(|| self.cfg.default_model.clone());
-        self.default_model.store(Arc::new(model));
-        if let Some(llm) = self.llm.get() {
-            let (url, key) = self.llm_endpoint().await;
-            if llm.base_url() != url {
-                tracing::info!(base_url = %redact_url(&url), "model server");
+    /// A registered model's API key, if one is saved and can be read.
+    async fn model_api_key(&self, id: &str) -> Option<String> {
+        let name = secrets::model_api_key(id);
+        if self.secrets.is_none() {
+            if self.store.has_secret(&name).await.unwrap_or(false) {
+                tracing::warn!(
+                    model = id,
+                    "the model's saved API key can't be read without CEDAR_SECRET_KEY; calling without it"
+                );
             }
-            llm.set(url, key)?;
+            return None;
+        }
+        self.saved(&name).await
+    }
+
+    /// Load the registry (migrating a model server saved by an earlier version first) and
+    /// rebuild the model clients from it.
+    async fn apply_models(&self) -> Result<()> {
+        self.migrate_legacy_server().await?;
+        let entries = self.store.list_models().await?;
+        if let Some(router) = self.router.get() {
+            let mut clients: HashMap<String, Arc<dyn LlmClient>> = HashMap::new();
+            for entry in &entries {
+                let key = self.model_api_key(&entry.id).await;
+                let client = ChatCompletionsClient::new(entry.base_url.clone(), key)
+                    .with_context(|| format!("model {}", entry.id))?;
+                clients.insert(entry.id.clone(), Arc::new(client));
+            }
+            router.replace_all(clients);
+        }
+        self.models.store(Arc::new(entries));
+        Ok(())
+    }
+
+    /// Versions before the registry kept one model server (address, key, model name) in the
+    /// secrets. Turn it into the entry `default` once, then forget the old rows.
+    async fn migrate_legacy_server(&self) -> Result<()> {
+        let legacy = [
+            secrets::LEGACY_LLM_BASE_URL,
+            secrets::LEGACY_LLM_API_KEY,
+            secrets::LEGACY_LLM_MODEL,
+        ];
+        let mut any = false;
+        for name in legacy {
+            any |= self.store.has_secret(name).await?;
+        }
+        if !any {
+            return Ok(());
+        }
+        let Some(secrets) = &self.secrets else {
+            tracing::warn!(
+                "a model server saved by an earlier version can't be migrated into the model registry without CEDAR_SECRET_KEY"
+            );
+            return Ok(());
+        };
+        let read = |name: &'static str| async move {
+            match secrets.get(name).await {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    tracing::warn!(error = %format!("{e:#}"), "leaving the saved model server as it is");
+                    None
+                }
+            }
+        };
+        let (Some(base_url), Some(api_key), Some(model)) = (
+            read(secrets::LEGACY_LLM_BASE_URL).await,
+            read(secrets::LEGACY_LLM_API_KEY).await,
+            read(secrets::LEGACY_LLM_MODEL).await,
+        ) else {
+            return Ok(());
+        };
+        if self.store.get_model(LEGACY_MODEL_ID).await?.is_none() {
+            let listed = secrets
+                .meta(secrets::LEGACY_LLM_BASE_URL)
+                .await?
+                .and_then(|m| serde_json::from_value(m["models"].clone()).ok());
+            let model = model.unwrap_or_else(|| LEGACY_DEFAULT_MODEL.to_string());
+            let base_url = base_url.unwrap_or_else(|| LEGACY_DEFAULT_LLM_BASE_URL.to_string());
+            let now = Utc::now();
+            let entry = ModelEntry {
+                id: LEGACY_MODEL_ID.into(),
+                label: "Default".into(),
+                reasoning_levels: suggested_reasoning_levels(&model),
+                model,
+                base_url,
+                default_reasoning: None,
+                is_default: true,
+                position: 0,
+                listed_models: listed,
+                created_at: now,
+                updated_at: now,
+            };
+            self.store.upsert_model(&entry).await?;
+            if let Some(key) = &api_key {
+                secrets
+                    .put(
+                        &secrets::model_api_key(LEGACY_MODEL_ID),
+                        key,
+                        &json!({ "last4": secrets::last4(key) }),
+                    )
+                    .await?;
+            }
+            tracing::info!(
+                base_url = %redact_url(&entry.base_url),
+                model = %entry.model,
+                "the saved model server is now the registered model \"default\""
+            );
+        }
+        for name in legacy {
+            self.store.delete_secret(name).await?;
         }
         Ok(())
     }
 
-    /// Point cedar at another model server: check that `base_url` answers like an
-    /// OpenAI-compatible server (listing its models), then save it and use it for the next model
-    /// call. `api_key` and `model`: `None` keeps the saved one, empty removes it.
-    pub async fn set_llm(
-        &self,
-        base_url: &str,
-        api_key: Option<&str>,
-        model: Option<&str>,
-    ) -> Result<Value, AppError> {
-        if self.llm.get().is_none() {
-            return Err(AppError::Conflict(
-                "this server's model client can't be changed".into(),
-            ));
+    /// Register a model, or change a registered one: check that `base_url` answers like an
+    /// OpenAI-compatible server (listing its models), then save the entry and use it for the next
+    /// model call. See [`ModelSpec`] for what absent fields mean.
+    pub async fn set_model(&self, id: &str, spec: ModelSpec) -> Result<Value, AppError> {
+        let id = clean_model_id(id)?;
+        let existing = self.store.get_model(&id).await?;
+        let model = clean_model_name(&spec.model)?
+            .ok_or_else(|| AppError::BadRequest("model must not be empty".into()))?;
+        let label = match spec.label.as_deref().map(str::trim) {
+            Some("") | None => existing
+                .as_ref()
+                .map_or_else(|| model.clone(), |e| e.label.clone()),
+            Some(l) => l.to_string(),
+        };
+        if label.chars().count() > MAX_LABEL_LEN || label.chars().any(char::is_control) {
+            return Err(AppError::BadRequest("label is malformed".into()));
         }
-        let secrets = self.writable(self.cfg.llm_base_url_from_env)?;
-        if api_key.is_some() && self.cfg.llm_api_key_from_env {
-            return Err(AppError::Conflict(
-                "LLM_API_KEY is set in the server's environment; change it there".into(),
-            ));
+        let url = normalize_llm_url(&spec.base_url).map_err(AppError::BadRequest)?;
+        let reasoning_levels = match spec.reasoning_levels {
+            Some(levels) => clean_reasoning_levels(&levels)?,
+            None => existing
+                .as_ref()
+                .map(|e| e.reasoning_levels.clone())
+                .unwrap_or_default(),
+        };
+        let default_reasoning = match spec.default_reasoning.as_deref().map(str::trim) {
+            Some("") => None,
+            Some(level) => Some(level.to_string()),
+            None => existing.as_ref().and_then(|e| e.default_reasoning.clone()),
+        };
+        if let Some(level) = &default_reasoning {
+            if !reasoning_levels.iter().any(|l| l == level) {
+                return Err(AppError::BadRequest(format!(
+                    "default_reasoning {level:?} is not one of the reasoning levels"
+                )));
+            }
         }
-        if model.is_some() && self.cfg.llm_model_from_env {
-            return Err(AppError::Conflict(
-                "LLM_MODEL is set in the server's environment; change it there".into(),
-            ));
-        }
-        let model = model.map(clean_model_name).transpose()?;
-        let url = normalize_llm_url(base_url).map_err(AppError::BadRequest)?;
-        let key = match api_key.map(str::trim) {
+        let is_default = spec
+            .is_default
+            .unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.is_default));
+
+        let key_name = secrets::model_api_key(&id);
+        let key = match spec.api_key.as_deref().map(str::trim) {
             Some("") => None,
             Some(k) if k.len() > MAX_SECRET_LEN || k.chars().any(char::is_control) => {
                 return Err(AppError::BadRequest("api_key is malformed".into()))
             }
-            Some(k) => Some(k.to_string()),
-            None => self.llm_endpoint().await.1,
+            Some(k) => {
+                self.writable(false)?;
+                Some(k.to_string())
+            }
+            None => self.model_api_key(&id).await,
         };
-        let models = list_models(&url, key.as_deref(), REQUEST_TIMEOUT)
+        let listed = list_models(&url, key.as_deref(), REQUEST_TIMEOUT)
             .await
             .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;
 
         let _guard = self.changing.lock().await;
-        let shown = redact_url(&url);
-        secrets
-            .put(
-                secrets::LLM_BASE_URL,
-                &url,
-                &json!({ "base_url": shown, "models": models }),
-            )
-            .await?;
-        match (api_key, &key) {
+        let now = Utc::now();
+        let entry = ModelEntry {
+            id: id.clone(),
+            label,
+            model,
+            base_url: url,
+            reasoning_levels,
+            default_reasoning,
+            is_default,
+            position: existing.as_ref().map_or(0, |e| e.position),
+            listed_models: Some(listed),
+            created_at: existing.as_ref().map_or(now, |e| e.created_at),
+            updated_at: now,
+        };
+        let saved = self.store.upsert_model(&entry).await?;
+        match (spec.api_key.as_deref(), &key) {
             (Some(_), Some(k)) => {
-                secrets
-                    .put(
-                        secrets::LLM_API_KEY,
-                        k,
-                        &json!({ "last4": secrets::last4(k) }),
-                    )
+                self.writable(false)?
+                    .put(&key_name, k, &json!({ "last4": secrets::last4(k) }))
                     .await?
             }
             (Some(_), None) => {
-                secrets.delete(secrets::LLM_API_KEY).await?;
+                self.store.delete_secret(&key_name).await?;
             }
             (None, _) => {}
         }
-        match &model {
-            Some(Some(m)) => {
-                secrets
-                    .put(secrets::LLM_MODEL, m, &json!({ "model": m }))
-                    .await?
-            }
-            Some(None) => {
-                secrets.delete(secrets::LLM_MODEL).await?;
-            }
-            None => {}
-        }
-        self.apply_llm().await?;
-        tracing::info!(base_url = %shown, models = models.len(), "model server changed");
-        Ok(self.llm_status().await?)
+        self.apply_models().await?;
+        tracing::info!(
+            model = %saved.id,
+            base_url = %saved.base_url,
+            name = %saved.model,
+            listed = saved.listed_models.as_ref().map_or(0, Vec::len),
+            "model registered"
+        );
+        Ok(self.model_status(&saved).await?)
     }
 
-    /// Go back to the environment's (or the default) model server, key and model name.
-    pub async fn remove_llm(&self) -> Result<(), AppError> {
-        let secrets = self.writable(self.cfg.llm_base_url_from_env)?;
+    /// Forget a registered model and its key. Runs using it fail at their next model call.
+    pub async fn remove_model(&self, id: &str) -> Result<(), AppError> {
         let _guard = self.changing.lock().await;
-        let removed = secrets.delete(secrets::LLM_BASE_URL).await?;
-        let removed_key = secrets.delete(secrets::LLM_API_KEY).await?;
-        let removed_model = secrets.delete(secrets::LLM_MODEL).await?;
-        if !removed && !removed_key && !removed_model {
-            return Err(AppError::NotFound("no model server address is saved"));
+        if !self.store.delete_model(id).await? {
+            return Err(AppError::NotFound("no such model is registered"));
         }
-        self.apply_llm().await?;
+        self.store
+            .delete_secret(&secrets::model_api_key(id))
+            .await?;
+        self.apply_models().await?;
+        tracing::info!(model = id, "model removed");
         Ok(())
     }
 
-    async fn llm_status(&self) -> Result<Value> {
-        let cfg = &self.cfg;
-        let meta = match &self.secrets {
-            Some(s) if !cfg.llm_base_url_from_env => s.meta(secrets::LLM_BASE_URL).await?,
-            _ => None,
-        };
-        let key_saved = match &self.secrets {
-            Some(s) if !cfg.llm_api_key_from_env => s.meta(secrets::LLM_API_KEY).await?.is_some(),
-            _ => false,
-        };
-        let model_saved = match &self.secrets {
-            Some(s) if !cfg.llm_model_from_env => s.meta(secrets::LLM_MODEL).await?.is_some(),
-            _ => false,
-        };
-        let model_source = if cfg.llm_model_from_env {
-            "env"
-        } else if model_saved {
-            "ui"
-        } else {
-            "default"
-        };
-        let (url, key) = self.llm_endpoint().await;
-        let source = if cfg.llm_base_url_from_env {
-            "env"
-        } else if meta.is_some() {
-            "ui"
-        } else {
-            "default"
-        };
-        let key_source = if cfg.llm_api_key_from_env {
-            json!("env")
-        } else if key_saved {
-            json!("ui")
-        } else {
-            Value::Null
-        };
-        Ok(json!({
-            "base_url": redact_url(&url),
-            "source": source,
-            "api_key_set": key.is_some(),
-            "api_key_source": key_source,
-            "default_model": self.default_model(),
-            "model_source": model_source,
-            "models": meta.as_ref().map(|m| m["models"].clone()),
-            "changeable": self.llm.get().is_some(),
-        }))
+    /// Every registered model, as shown to admins. Never includes a key.
+    pub async fn models_status(&self) -> Result<Value> {
+        let mut out = Vec::new();
+        for entry in self.models.load().iter() {
+            out.push(self.model_status(entry).await?);
+        }
+        Ok(json!({ "models": out }))
+    }
+
+    async fn model_status(&self, entry: &ModelEntry) -> Result<Value> {
+        let mut status = entry.public();
+        status["base_url"] = json!(entry.base_url);
+        status["api_key_set"] = json!(
+            self.store
+                .has_secret(&secrets::model_api_key(&entry.id))
+                .await?
+        );
+        status["listed_models"] = json!(entry.listed_models);
+        status["created_at"] = json!(entry.created_at);
+        status["updated_at"] = json!(entry.updated_at);
+        Ok(status)
     }
 
     /// Why a tool group has no tools on this server, for the clients' settings pages.
@@ -363,10 +467,12 @@ impl Integrations {
                 g
             }
         };
-        let llm = self.llm_status().await?;
-        Ok(
-            json!({ "storage": self.secrets.is_some(), "llm": llm, "brave": brave, "google": google }),
-        )
+        Ok(json!({
+            "storage": self.secrets.is_some(),
+            "models": self.models.load().len(),
+            "brave": brave,
+            "google": google,
+        }))
     }
 
     fn google_services(&self) -> Vec<&str> {
@@ -560,7 +666,7 @@ impl Integrations {
 }
 
 /// A model server address as stored: an http(s) URL with a host, its path defaulting to `/v1`,
-/// without a trailing slash, query, or fragment.
+/// without a trailing slash, query, fragment, user or password (the key goes in `api_key`).
 fn normalize_llm_url(raw: &str) -> Result<String, String> {
     let raw = raw.trim();
     let bad =
@@ -572,6 +678,9 @@ fn normalize_llm_url(raw: &str) -> Result<String, String> {
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none_or(str::is_empty) {
         return Err(bad());
     }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("base_url must not carry a user or password; put the key in api_key".into());
+    }
     url.set_query(None);
     url.set_fragment(None);
     if url.path() == "/" {
@@ -580,13 +689,73 @@ fn normalize_llm_url(raw: &str) -> Result<String, String> {
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
-/// A model name as stored: trimmed, `None` when empty (meaning "forget the saved one").
+/// A model name as stored: trimmed, `None` when empty.
 fn clean_model_name(raw: &str) -> Result<Option<String>, AppError> {
     let name = raw.trim();
     if name.len() > MAX_MODEL_LEN || name.chars().any(char::is_control) {
         return Err(AppError::BadRequest("model name is malformed".into()));
     }
     Ok((!name.is_empty()).then(|| name.to_string()))
+}
+
+/// A registry id: lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit.
+fn clean_model_id(raw: &str) -> Result<String, AppError> {
+    let id = raw.trim();
+    let ok = !id.is_empty()
+        && id.len() <= MAX_MODEL_ID_LEN
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
+        && id.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit());
+    if !ok {
+        return Err(AppError::BadRequest(format!(
+            "model id {id:?} is malformed: use lowercase letters, digits, '.', '_' and '-' (at most {MAX_MODEL_ID_LEN} characters)"
+        )));
+    }
+    Ok(id.to_string())
+}
+
+/// Reasoning levels as stored: trimmed, in the order given, without repeats; each a short token
+/// as a server would take it in `reasoning_effort` (`none`, `low`, `high`, ...).
+fn clean_reasoning_levels(raw: &[String]) -> Result<Vec<String>, AppError> {
+    let mut levels: Vec<String> = Vec::new();
+    for level in raw {
+        let level = level.trim();
+        if level.is_empty() {
+            continue;
+        }
+        let ok = level.len() <= MAX_REASONING_LEVEL_LEN
+            && level
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+        if !ok {
+            return Err(AppError::BadRequest(format!(
+                "reasoning level {level:?} is malformed: use letters, digits, '_', '-' and '.' (at most {MAX_REASONING_LEVEL_LEN} characters)"
+            )));
+        }
+        if !levels.iter().any(|l| l == level) {
+            levels.push(level.to_string());
+        }
+    }
+    if levels.len() > MAX_REASONING_LEVELS {
+        return Err(AppError::BadRequest(format!(
+            "at most {MAX_REASONING_LEVELS} reasoning levels"
+        )));
+    }
+    Ok(levels)
+}
+
+/// The reasoning levels a model server saved by an earlier version most likely takes: DeepSeek V4
+/// on vLLM accepts these as `reasoning_effort`; for anything else the admin fills them in.
+fn suggested_reasoning_levels(model: &str) -> Vec<String> {
+    if model.to_ascii_lowercase().contains("deepseek-v4") {
+        ["none", "low", "high", "max"]
+            .into_iter()
+            .map(String::from)
+            .collect()
+    } else {
+        vec![]
+    }
 }
 
 /// A URL without the user and password it may carry, for showing and logging.
@@ -636,6 +805,7 @@ mod tests {
             "ftp://box/v1",
             "http://",
             "file:///etc/passwd",
+            "http://user:pw@box:8000/v1",
         ] {
             assert!(normalize_llm_url(bad).is_err(), "{bad}");
         }
@@ -643,6 +813,23 @@ mod tests {
             redact_url("http://user:pw@box:8000/v1"),
             "http://box:8000/v1"
         );
+    }
+
+    #[test]
+    fn model_ids_and_reasoning_levels_are_checked() {
+        assert_eq!(clean_model_id(" deepseek-v4.flash_1 ").unwrap(), "deepseek-v4.flash_1");
+        for bad in ["", "Deep", "-a", "a b", "a/b", &"x".repeat(65)] {
+            assert!(clean_model_id(bad).is_err(), "{bad:?}");
+        }
+        let levels = clean_reasoning_levels(&["none".into(), " high ".into(), "".into(), "none".into()])
+            .unwrap();
+        assert_eq!(levels, ["none", "high"]);
+        assert!(clean_reasoning_levels(&["hi gh".into()]).is_err());
+        assert_eq!(
+            suggested_reasoning_levels("deepseek-ai/DeepSeek-V4-Flash"),
+            ["none", "low", "high", "max"]
+        );
+        assert!(suggested_reasoning_levels("gpt-oss-120b").is_empty());
     }
 
     #[test]

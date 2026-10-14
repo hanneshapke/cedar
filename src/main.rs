@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use cedar::api::{self, AppState};
 use cedar::config::Config;
-use cedar::llm::{ChatCompletionsClient, SwappableLlm};
+use cedar::llm::LlmRouter;
 use cedar::sandbox::DockerSandboxFactory;
 use cedar::store::Store;
 use std::sync::Arc;
@@ -25,11 +25,9 @@ async fn main() -> Result<()> {
 
     let cfg = Config::from_env()?;
     let store = Store::connect(&cfg.database_url).await?;
-    // Swappable, so an admin can point cedar at another model server (see Integrations).
-    let llm = Arc::new(SwappableLlm::new(ChatCompletionsClient::new(
-        cfg.llm_base_url.clone(),
-        cfg.llm_api_key.clone(),
-    )?));
+    // One client per registered model; Integrations fills it from the registry and keeps it
+    // current as admins change it.
+    let llm = Arc::new(LlmRouter::new());
     let sandboxes = Arc::new(DockerSandboxFactory::new(cfg.sandbox.clone()));
     let bind_addr = cfg.bind_addr;
     let workspace_ttl = cfg.workspace_ttl;
@@ -62,10 +60,16 @@ async fn main() -> Result<()> {
     }
 
     let state = AppState::new(cfg, store, llm.clone(), sandboxes)?;
-    state.integrations.attach_llm(llm);
-    // Adds integrations saved through the admin API (a model server address, keys) to what the
-    // environment configures.
+    state.integrations.attach_router(llm);
+    // Loads the model registry and adds the integrations saved through the admin API (keys) to
+    // what the environment configures.
     state.integrations.reload().await?;
+    match state.integrations.models().len() {
+        0 => tracing::warn!(
+            "no model is registered: runs are refused until an admin adds one (PUT /v1/admin/models/{{id}}, or Settings in the chat UI)"
+        ),
+        n => tracing::info!(models = n, "model registry loaded"),
+    }
     state.manager.recover().await?;
     state.manager.start_janitor(workspace_ttl);
 

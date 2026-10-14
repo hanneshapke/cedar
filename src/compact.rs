@@ -136,6 +136,7 @@ pub async fn compact(
     let req = MessageRequest {
         model,
         max_tokens,
+        reasoning_effort: None,
         system: SYSTEM,
         tools: &[],
         messages,

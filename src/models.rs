@@ -57,7 +57,12 @@ pub struct Run {
     pub status: RunStatus,
     pub prompt: String,
     pub system: String,
+    /// The registry entry the run uses (see [`ModelEntry`]).
+    pub model_id: String,
+    /// The model's name on its server, as sent in each request.
     pub model: String,
+    /// The `reasoning_effort` sent with each request, if the run asked for one.
+    pub reasoning: Option<String>,
     pub max_turns: u32,
     pub turns: u32,
     pub final_text: Option<String>,
@@ -82,13 +87,55 @@ pub struct NewRun {
     pub owner: String,
     pub prompt: String,
     pub system: String,
+    pub model_id: String,
     pub model: String,
+    pub reasoning: Option<String>,
     pub max_turns: u32,
     /// Continue this run: its conversation, and its workspace if that hasn't expired.
     pub parent_id: Option<Uuid>,
     pub tools: Option<Vec<String>>,
     /// Files sent with the prompt, for a multimodal model.
     pub attachments: Vec<Attachment>,
+}
+
+/// A registered model: a name on an OpenAI-compatible server, and what it accepts. Admins manage
+/// the registry through `/v1/admin/models`; its API key, if any, lives in the encrypted secrets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ModelEntry {
+    pub id: String,
+    /// What the pickers show.
+    pub label: String,
+    /// The model's name on its server, sent as `model` in each request.
+    pub model: String,
+    /// The server's base URL, including the version prefix (`http://localhost:8000/v1`).
+    pub base_url: String,
+    /// The `reasoning_effort` values the model accepts, in the order to offer them. Empty: the
+    /// model takes none, and a run may not ask for one.
+    pub reasoning_levels: Vec<String>,
+    /// The level a run gets when it names none; `None` sends no `reasoning_effort`.
+    pub default_reasoning: Option<String>,
+    /// The entry a run gets when it names no model. Exactly one entry has it while any exist.
+    pub is_default: bool,
+    /// Order in the pickers.
+    pub position: i64,
+    /// What the server listed at `/models` when the entry was last checked.
+    pub listed_models: Option<Vec<String>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl ModelEntry {
+    /// The public view: what any key may see through `GET /v1/models`.
+    pub fn public(&self) -> Value {
+        serde_json::json!({
+            "id": self.id,
+            "label": self.label,
+            "model": self.model,
+            "reasoning_levels": self.reasoning_levels,
+            "default_reasoning": self.default_reasoning,
+            "is_default": self.is_default,
+        })
+    }
 }
 
 /// The media types a run's prompt may come with: images and PDFs.
@@ -169,7 +216,12 @@ pub struct StoredMessage {
 #[serde(deny_unknown_fields)]
 pub struct CreateRunRequest {
     pub prompt: String,
+    /// A registered model's id, or its name on the server when only one entry has it. Absent:
+    /// the parent's for a continuation, else the default entry.
     pub model: Option<String>,
+    /// One of the model's reasoning levels, sent as `reasoning_effort`. Absent: the parent's
+    /// for a continuation of the same model, else the model's default level.
+    pub reasoning: Option<String>,
     pub system: Option<String>,
     pub max_turns: Option<u32>,
     /// Continue an earlier, finished run instead of starting a fresh conversation.

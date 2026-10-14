@@ -3,7 +3,7 @@
 
 use crate::browser::BrowserSession;
 use crate::events::Emitter;
-use crate::llm::{LlmClient, MessageRequest};
+use crate::llm::{LlmRouter, MessageRequest};
 use crate::models::{event, Attachment, Run};
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::store::Store;
@@ -17,7 +17,8 @@ use tokio_util::sync::CancellationToken;
 
 /// What every run shares.
 pub struct AgentEnv {
-    pub llm: Arc<dyn LlmClient>,
+    /// The clients of the registered models; a run uses the one for its `model_id`.
+    pub llm: Arc<LlmRouter>,
     /// The current tools. Swapped when an admin changes an integration; a run keeps the set it
     /// started with.
     pub tools: Arc<ArcSwap<ToolSet>>,
@@ -95,14 +96,22 @@ pub async fn run_agent(
         let req = MessageRequest {
             model: &run.model,
             max_tokens: env.max_tokens,
+            reasoning_effort: run.reasoning.as_deref(),
             system: &system,
             tools: &tool_defs,
             messages: &messages,
         };
+        // Looked up each turn, so a changed address applies to the next call.
+        let llm = env.llm.client_for(&run.model_id).ok_or_else(|| {
+            AgentError::Failed(format!(
+                "model {:?} is no longer registered",
+                run.model_id
+            ))
+        })?;
         let resp = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-            r = env.llm.create_message(&req) => r?,
+            r = llm.create_message(&req) => r?,
         };
 
         env.store.record_turn(run.id, turn, resp.usage).await?;

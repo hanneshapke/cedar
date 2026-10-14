@@ -11,10 +11,16 @@ use sqlx::Row;
 
 pub const BRAVE_API_KEY: &str = "brave_api_key";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
-pub const LLM_BASE_URL: &str = "llm_base_url";
-pub const LLM_API_KEY: &str = "llm_api_key";
-/// Not a secret, but this table is where saved settings live, next to the address it belongs to.
-pub const LLM_MODEL: &str = "llm_model";
+/// The single model server address, key and model name saved by versions before the model
+/// registry. Read once to migrate them into the registry's `default` entry, then removed.
+pub const LEGACY_LLM_BASE_URL: &str = "llm_base_url";
+pub const LEGACY_LLM_API_KEY: &str = "llm_api_key";
+pub const LEGACY_LLM_MODEL: &str = "llm_model";
+
+/// Where a registered model's API key is kept.
+pub fn model_api_key(model_id: &str) -> String {
+    format!("model_api_key:{model_id}")
+}
 
 #[derive(Clone)]
 pub struct SecretStore {
