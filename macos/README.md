@@ -29,18 +29,21 @@ Cedar.app (menu bar) ──┬── cedar-chat :13000 ──▶ cedar :18080 �
      Tick *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the
      `browser` tool.
    - **Model server**: pick a preset or type the address, add an API key if the server needs
-     one, click *List models*, choose one, and *Save and start*.
-4. The window switches to the chat once both servers answer. Close it any time; the app keeps
-   running in the menu bar, where *Open Cedar* brings it back and *Quit Cedar* stops everything.
+     one, click *List models*, choose one, and *Save*. The app registers it in cedar's model
+     registry (as the entry `default`), which cedar keeps in its database.
+4. The window switches to the chat once both servers answer and the model is registered. Close
+   it any time; the app keeps running in the menu bar, where *Open Cedar* brings it back and
+   *Quit Cedar* stops everything.
 
 *Open in Browser* opens the same chat in your default browser; it asks for an access token once,
 which *Copy Access Token* puts on the clipboard. Only the Mac itself can reach the servers: both
 listen on 127.0.0.1.
 
-To change the model server later, choose *Model Server & Setup…* from the menu. Changing it
-restarts both servers, which ends any run in progress. The chat's own Settings page still manages
-the Brave Search key and the Google account (cedar runs with `CEDAR_SECRET_KEY` and the chat's
-key as admin key); the model server section there shows what the app set and is read-only.
+To change the model server later, choose *Model Server & Setup…* from the menu; the new choice
+is registered with the running cedar, so nothing restarts. The chat's own Settings page can add
+further models to the registry and manages the Brave Search key and the Google account: cedar
+runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
+admin token, so Settings works without typing anything.
 
 ## Where things are
 
@@ -66,7 +69,7 @@ key as admin key); the model server section there shows what the app set and is 
   "browser": false,
   "cedar_env": { "SANDBOX_NETWORK": "bridge", "RUN_TIMEOUT_SECS": "1800" },
   "chat_env": {},
-  "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…" }
+  "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…", "chat_admin_token": "…" }
 }
 ```
 
@@ -77,7 +80,9 @@ version; set them to use an image you built yourself (`docker build -t cedar-san
 
 The servers always get `DOCKER_BIN` (the CLI the app found), `CEDAR_EXIT_ON_STDIN_EOF=1` (they
 exit when the app goes away, so nothing is left behind after a crash), `BIND_ADDR` and
-`CHAT_BIND_ADDR` on loopback, and the keys from `secrets`.
+`CHAT_BIND_ADDR` on loopback, and the keys from `secrets`. The model server is not passed as
+environment: cedar takes models only through its admin API, which the app calls once cedar is
+up (`PUT /v1/admin/models/default`).
 
 ## How it is built
 
@@ -148,6 +153,7 @@ One-time setup:
 | "Docker is installed but not answering" | The daemon isn't running yet. Start it and click *Check again*. |
 | The image download fails with "denied" | The GHCR package is private or this version's images haven't been published yet (see above). You can also build the image yourself and set `sandbox_image` in `config.json`. |
 | *List models* fails | The address needs the API path (usually `/v1`). Ollama: `http://127.0.0.1:11434/v1`, LM Studio: `http://127.0.0.1:1234/v1`. A remote server must be reachable from this Mac. |
+| "Cedar could not register …" | cedar checks the model server itself before keeping the entry, so the server must be running when you save and when the app starts. Start it and click *Save* again; a model registered earlier keeps working meanwhile. |
 | Runs finish instantly with tool calls printed as text | The model or server doesn't do tool calling. Pick a model that does; for vLLM see the [deployment guide](../DEPLOYMENT.md#2-make-sure-vllm-is-ready-for-cedar). |
 | "port … is already in use" | Something else listens on 18080 or 13000. Change `cedar_port` or `chat_port` in `config.json`, then *Restart Services*. |
 | Cedar stopped with an error | *Open Logs Folder*; `cedar.log` says why. After three quick crashes the app stops retrying until *Restart Services*. |

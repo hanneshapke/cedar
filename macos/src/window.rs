@@ -10,7 +10,11 @@ use url::Url;
 pub const MAIN: &str = "main";
 
 pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
-    let script = token_script(&cfg.chat_url(), &cfg.secrets.chat_access_token);
+    let script = token_script(
+        &cfg.chat_url(),
+        &cfg.secrets.chat_access_token,
+        &cfg.secrets.chat_admin_token,
+    );
     let win = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Cedar")
         .inner_size(1120.0, 780.0)
@@ -22,13 +26,16 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
 }
 
 /// Runs before every page the window loads. On the chat's own origin it hands the page the access
-/// token the server expects, so there is no token prompt; anywhere else it does nothing.
-fn token_script(chat_url: &str, token: &str) -> String {
+/// token the server expects (so there is no token prompt) and the admin token its Settings page
+/// sends with changes to cedar's models and integrations; anywhere else it does nothing.
+fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
     let origin = serde_json::to_string(chat_url).unwrap_or_default();
     let token = serde_json::to_string(token).unwrap_or_default();
+    let admin = serde_json::to_string(admin_token).unwrap_or_default();
     format!(
         "(function () {{\n  try {{\n    if (window.location.origin === {origin}) {{\n      \
-         window.localStorage.setItem('cedar-chat-token', {token});\n    }}\n  }} catch (e) {{}}\n}})();"
+         window.localStorage.setItem('cedar-chat-token', {token});\n      \
+         window.sessionStorage.setItem('cedar-chat-admin', {admin});\n    }}\n  }} catch (e) {{}}\n}})();"
     )
 }
 
@@ -87,8 +94,9 @@ mod tests {
 
     #[test]
     fn the_token_script_only_touches_the_chat_origin() {
-        let s = token_script("http://127.0.0.1:13000", "abc\"def");
+        let s = token_script("http://127.0.0.1:13000", "abc\"def", "adm");
         assert!(s.contains(r#"window.location.origin === "http://127.0.0.1:13000""#));
-        assert!(s.contains(r#"setItem('cedar-chat-token', "abc\"def")"#));
+        assert!(s.contains(r#"localStorage.setItem('cedar-chat-token', "abc\"def")"#));
+        assert!(s.contains(r#"sessionStorage.setItem('cedar-chat-admin', "adm")"#));
     }
 }

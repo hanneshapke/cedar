@@ -1,8 +1,10 @@
-//! Shared state and the launch sequence: find Docker, pull the images, start the servers, show
-//! the chat. Everything the setup page shows comes from [`AppState::status`].
+//! Shared state and the launch sequence: find Docker, pull the images, start the servers,
+//! register the model, show the chat. Everything the setup page shows comes from
+//! [`AppState::status`].
 
 use crate::config::{Config, VERSION};
 use crate::docker::{self, DockerCli};
+use crate::models;
 use crate::paths::Paths;
 use crate::supervisor::{ServiceState, Supervisor};
 use crate::window;
@@ -31,12 +33,24 @@ pub enum ImagesStatus {
     Failed(String),
 }
 
+/// Whether cedar's registry holds the model the user chose.
+#[derive(Serialize, Clone, Debug)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum ModelStatus {
+    /// Nothing chosen yet.
+    Unset,
+    Registering,
+    Registered(String),
+    Failed(String),
+}
+
 pub struct AppState {
     pub paths: Paths,
     config: Mutex<Config>,
     docker: Mutex<DockerStatus>,
     docker_cli: Mutex<Option<DockerCli>>,
     images: Mutex<ImagesStatus>,
+    model: Mutex<ModelStatus>,
     pub supervisor: Supervisor,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
@@ -51,6 +65,7 @@ pub struct Status {
     pub docker: DockerStatus,
     pub images: ImagesStatus,
     pub services: ServiceState,
+    pub model: ModelStatus,
     pub configured: bool,
     pub llm_base_url: String,
     pub llm_model: String,
@@ -72,6 +87,7 @@ impl AppState {
             docker: Mutex::new(DockerStatus::Checking),
             docker_cli: Mutex::new(None),
             images: Mutex::new(ImagesStatus::Waiting),
+            model: Mutex::new(ModelStatus::Unset),
             bootstrap: tokio::sync::Mutex::new(()),
             setup_url: Mutex::new(None),
         }
@@ -105,6 +121,10 @@ impl AppState {
         *self.images.lock().unwrap() = s;
     }
 
+    fn set_model(&self, s: ModelStatus) {
+        *self.model.lock().unwrap() = s;
+    }
+
     pub fn status(&self) -> Status {
         let cfg = self.config();
         Status {
@@ -112,6 +132,7 @@ impl AppState {
             docker: self.docker.lock().unwrap().clone(),
             images: self.images.lock().unwrap().clone(),
             services: self.supervisor.state(),
+            model: self.model.lock().unwrap().clone(),
             configured: cfg.configured(),
             llm_base_url: cfg.llm_base_url.clone(),
             llm_model: cfg.llm_model.clone(),
@@ -122,6 +143,38 @@ impl AppState {
             logs_dir: self.paths.logs.to_string_lossy().into_owned(),
             config_path: self.paths.config().to_string_lossy().into_owned(),
             sandbox_image: cfg.sandbox_image(),
+        }
+    }
+
+    /// Puts the chosen model server into cedar's registry. cedar must be running.
+    async fn register_model(&self) -> bool {
+        let cfg = self.config();
+        if !cfg.configured() {
+            self.set_model(ModelStatus::Unset);
+            return false;
+        }
+        self.set_model(ModelStatus::Registering);
+        let result = models::register(
+            &cfg.cedar_url(),
+            &cfg.secrets.cedar_api_key,
+            &cfg.llm_base_url,
+            &cfg.llm_api_key,
+            &cfg.llm_model,
+        )
+        .await;
+        match result {
+            Ok(()) => {
+                self.set_model(ModelStatus::Registered(format!(
+                    "{} at {}",
+                    cfg.llm_model.trim(),
+                    cfg.llm_base_url.trim()
+                )));
+                true
+            }
+            Err(e) => {
+                self.set_model(ModelStatus::Failed(format!("{e:#}")));
+                false
+            }
         }
     }
 }
@@ -178,13 +231,33 @@ pub async fn bootstrap(app: AppHandle) {
     if !cfg.configured() {
         return;
     }
-    match state.supervisor.start(cfg, cli).await {
-        Ok(()) => {
-            if let Err(e) = window::show_chat(&app) {
-                eprintln!("showing the chat: {e:#}");
-            }
+    if let Err(e) = state.supervisor.start(cfg, cli).await {
+        eprintln!("starting the services: {e:#}");
+        return;
+    }
+
+    // 4. The model, into cedar's registry. A failure here (the model server is down, say) leaves
+    //    the servers up: cedar keeps the last registered model, and the page says what's wrong.
+    if state.register_model().await {
+        if let Err(e) = window::show_chat(&app) {
+            eprintln!("showing the chat: {e:#}");
         }
-        Err(e) => eprintln!("starting the services: {e:#}"),
+    }
+}
+
+/// After the model server was changed on the setup page: registers it with the running cedar,
+/// or runs the launch sequence if the servers aren't up yet. No restart, so a run in progress
+/// goes on.
+pub async fn apply_model_server(app: AppHandle) {
+    let state = app.state::<AppState>();
+    if state.supervisor.state() != ServiceState::Running {
+        bootstrap(app.clone()).await;
+        return;
+    }
+    if state.register_model().await {
+        if let Err(e) = window::show_chat(&app) {
+            eprintln!("showing the chat: {e:#}");
+        }
     }
 }
 

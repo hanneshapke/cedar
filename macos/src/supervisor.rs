@@ -171,6 +171,10 @@ impl Runner {
         self.set(ServiceState::Starting("starting cedar".into()));
         let cedar_log = self.paths.cedar_log();
         let mut cedar = self.spawn("cedar", self.cedar_env(), &cedar_log)?;
+        // tokio's `Child::wait` closes the stdin handle it finds in the child, which with
+        // CEDAR_EXIT_ON_STDIN_EOF would stop the server as soon as it is up. Hold the pipe here
+        // instead; it closes when this function returns, after the server was told to stop.
+        let _cedar_stdin = cedar.stdin.take();
         if let Err(e) = wait_healthy(&mut cedar, &self.cfg.cedar_url(), "cedar", &cedar_log).await {
             terminate(&mut cedar).await;
             return Err(e);
@@ -185,6 +189,7 @@ impl Runner {
                 return Err(e);
             }
         };
+        let _chat_stdin = chat.stdin.take();
         if let Err(e) = wait_healthy(&mut chat, &self.cfg.chat_url(), "cedar-chat", &chat_log).await {
             terminate(&mut chat).await;
             terminate(&mut cedar).await;
@@ -241,8 +246,8 @@ impl Runner {
             ("CEDAR_SECRET_KEY", s.cedar_secret_key.clone()),
             ("BIND_ADDR", format!("127.0.0.1:{}", cfg.cedar_port)),
             ("DATABASE_URL", sqlite_url(&self.paths.cedar_db())),
-            ("LLM_BASE_URL", cfg.llm_base_url.trim().to_string()),
-            ("LLM_MODEL", cfg.llm_model.trim().to_string()),
+            // The model server is not configuration: the app registers it through cedar's admin
+            // API once cedar is up (see models::register), and cedar keeps it in its database.
             ("SANDBOX_IMAGE", cfg.sandbox_image()),
             ("BROWSER", if cfg.browser { "on" } else { "off" }.to_string()),
             ("BROWSER_IMAGE", cfg.browser_image()),
@@ -254,9 +259,6 @@ impl Runner {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-        if !cfg.llm_api_key.trim().is_empty() {
-            env.push(("LLM_API_KEY".into(), cfg.llm_api_key.trim().to_string()));
-        }
         // The user's own entries win (later duplicates override earlier ones in `envs`).
         env.extend(cfg.cedar_env.iter().map(|(k, v)| (k.clone(), v.clone())));
         env
@@ -270,7 +272,8 @@ impl Runner {
             ("CHAT_BIND_ADDR", format!("127.0.0.1:{}", cfg.chat_port)),
             ("CHAT_DATABASE_URL", sqlite_url(&self.paths.chat_db())),
             ("CHAT_ACCESS_TOKEN", cfg.secrets.chat_access_token.clone()),
-            ("CHAT_MODELS", cfg.llm_model.trim().to_string()),
+            // Lets Settings manage cedar's models and integrations; the window seeds the token.
+            ("CHAT_ADMIN_TOKEN", cfg.secrets.chat_admin_token.clone()),
             ("PATH", self.docker.path_env.clone()),
             ("CEDAR_EXIT_ON_STDIN_EOF", "1".to_string()),
             ("RUST_LOG", "info,sqlx=warn".to_string()),
@@ -373,6 +376,27 @@ fn sqlite_url(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The bug behind "stdin closed; the launcher is gone" half a second after every start:
+    /// `Child::wait` drops the stdin handle unless it was taken out of the child first.
+    #[tokio::test]
+    async fn waiting_does_not_close_a_stdin_handle_we_hold() {
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let held = child.stdin.take();
+        let waited = tokio::time::timeout(Duration::from_millis(500), child.wait()).await;
+        assert!(waited.is_err(), "cat exited, so its stdin was closed under it");
+        drop(held);
+        let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .expect("cat exits once its stdin is closed")
+            .unwrap();
+        assert!(status.success());
+    }
 
     #[test]
     fn sqlite_urls_keep_spaces_and_escape_url_syntax() {

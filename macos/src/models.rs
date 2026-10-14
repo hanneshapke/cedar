@@ -1,7 +1,7 @@
 //! Asking the model server what it serves, so the user picks a name cedar can use.
 
 use anyhow::{anyhow, bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use url::Url;
 
@@ -88,4 +88,61 @@ mod tests {
         assert!(normalize_base_url("").is_err());
         assert!(normalize_base_url("ftp://x").is_err());
     }
+}
+
+/// The registry entry the app manages. The chat's Settings page can add others beside it.
+pub const REGISTRY_ID: &str = "default";
+
+#[derive(Serialize)]
+struct ModelSpec<'a> {
+    base_url: &'a str,
+    model: &'a str,
+    label: &'a str,
+    /// An empty string removes a saved key, which is what an emptied field means.
+    api_key: &'a str,
+    is_default: bool,
+}
+
+/// Registers (or updates) the model server in cedar's registry: `PUT /v1/admin/models/default`.
+/// cedar checks the server by listing its models before it keeps the entry, and stores it in its
+/// database, so this only needs to happen when the choice changes, but it is safe to repeat.
+pub async fn register(
+    cedar_url: &str,
+    cedar_api_key: &str,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+) -> Result<()> {
+    let base = normalize_base_url(base_url)?;
+    let model = model.trim();
+    if model.is_empty() {
+        bail!("pick a model");
+    }
+    let client = reqwest::Client::builder()
+        // cedar itself gives the model server 20 s to answer.
+        .timeout(Duration::from_secs(30))
+        .build()?;
+    let resp = client
+        .put(format!("{cedar_url}/v1/admin/models/{REGISTRY_ID}"))
+        .bearer_auth(cedar_api_key)
+        .json(&ModelSpec {
+            base_url: &base,
+            model,
+            label: model,
+            api_key: api_key.trim(),
+            is_default: true,
+        })
+        .send()
+        .await
+        .context("could not reach cedar to register the model")?;
+    let status = resp.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = resp.text().await.unwrap_or_default();
+    let message = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
+        .unwrap_or(body);
+    bail!("cedar did not accept the model ({status}): {message}")
 }

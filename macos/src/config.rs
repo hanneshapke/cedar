@@ -46,6 +46,8 @@ pub struct Secrets {
     pub cedar_secret_key: String,
     /// What the chat page needs; the app seeds it into the page.
     pub chat_access_token: String,
+    /// Lets the chat's Settings page manage cedar's integrations; seeded into the page too.
+    pub chat_admin_token: String,
 }
 
 impl Default for Config {
@@ -88,6 +90,7 @@ impl Config {
         for slot in [
             &mut self.secrets.cedar_api_key,
             &mut self.secrets.chat_access_token,
+            &mut self.secrets.chat_admin_token,
         ] {
             if slot.trim().is_empty() {
                 *slot = random_hex(24);
@@ -178,6 +181,8 @@ mod tests {
         let b = Config::load_or_create(&path).unwrap();
         assert_eq!(a.secrets.cedar_api_key, b.secrets.cedar_api_key);
         assert_eq!(a.secrets.chat_access_token, b.secrets.chat_access_token);
+        assert_eq!(a.secrets.chat_admin_token, b.secrets.chat_admin_token);
+        assert_ne!(a.secrets.chat_admin_token, a.secrets.chat_access_token);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

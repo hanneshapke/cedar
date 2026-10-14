@@ -64,7 +64,25 @@ function render(s) {
     $('base-url').value = s.llm_base_url || '';
     if (s.has_api_key && !$('api-key').value) $('api-key').placeholder = 'saved';
   }
-  dot($('model-dot'), s.configured ? 'ok' : 'warn');
+  const m = s.model;
+  $('model-detail').textContent = '';
+  if (m.state === 'registering') {
+    dot($('model-dot'), 'busy');
+    $('model-text').textContent = 'Registering ' + s.llm_model + ' with Cedar…';
+  } else if (m.state === 'registered') {
+    dot($('model-dot'), 'ok');
+    $('model-text').textContent = 'Using ' + m.detail;
+  } else if (m.state === 'failed') {
+    dot($('model-dot'), 'bad');
+    $('model-text').textContent = 'Cedar could not register ' + s.llm_model + '. Is the model server running?';
+    $('model-detail').textContent = m.detail;
+  } else if (s.configured) {
+    dot($('model-dot'), 'warn');
+    $('model-text').textContent = s.llm_model + ' at ' + s.llm_base_url + ' (registered once Cedar starts)';
+  } else {
+    dot($('model-dot'), 'warn');
+    $('model-text').textContent = 'Not chosen yet.';
+  }
 
   // Services
   const sv = s.services;
@@ -79,7 +97,7 @@ function render(s) {
     $('services-detail').textContent = sv.detail;
   } else if (running) {
     dot($('services-dot'), 'ok');
-    $('services-text').textContent = 'Running at ' + s.chat_url + '. Model: ' + s.llm_model;
+    $('services-text').textContent = 'Running at ' + s.chat_url + '.'
   } else {
     dot($('services-dot'), '');
     $('services-text').textContent = s.configured

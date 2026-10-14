@@ -24,7 +24,7 @@ pub async fn list_models(base_url: String, api_key: String) -> Result<Vec<String
     models::list_models(&base_url, &api_key).await.map_err(fail)
 }
 
-/// Saves the model server and restarts the servers with it.
+/// Saves the model server and registers it with cedar (starting the servers first if needed).
 #[tauri::command]
 pub fn save_model_server(
     app: AppHandle,
@@ -44,7 +44,7 @@ pub fn save_model_server(
             c.llm_model = model;
         })
         .map_err(fail)?;
-    tauri::async_runtime::spawn(app::restart(app));
+    tauri::async_runtime::spawn(app::apply_model_server(app));
     Ok(())
 }
 

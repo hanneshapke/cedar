@@ -95,7 +95,9 @@
 
 <section id="model">
   <h2><span class="dot" id="model-dot"></span>Model server</h2>
-  <p class="muted">Any OpenAI-compatible server that supports tool calling. Ollama, LM Studio, and vLLM all work; the server can run on this Mac or on another machine.</p>
+  <p id="model-text" class="muted">Not chosen yet.</p>
+  <p class="detail" id="model-detail"></p>
+  <p class="muted">Any OpenAI-compatible server that supports tool calling. Ollama, LM Studio, and vLLM all work; the server can run on this Mac or on another machine. More models can be added from the chat's Settings.</p>
   <div class="row presets">
     <span class="muted">Presets:</span>
     <button data-url="http://127.0.0.1:11434/v1">Ollama</button>
@@ -114,7 +116,7 @@
     <label for="model-select">Model</label>
     <select id="model-select"></select>
     <div class="row">
-      <button class="primary" id="save">Save and start</button>
+      <button class="primary" id="save">Save</button>
     </div>
   </div>
   <p id="model-error" class="error"></p>
