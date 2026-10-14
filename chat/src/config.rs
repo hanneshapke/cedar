@@ -20,8 +20,6 @@ pub struct Config {
     pub admin_token: Option<String>,
     /// This server's address as the browser reaches it, for the "Connect Google" redirect URI.
     pub public_url: String,
-    /// Models offered in the picker. Empty means only cedar's default.
-    pub models: Vec<String>,
     /// How much earlier conversation is inlined into the prompt when the previous cedar run is gone
     /// and can't be continued.
     pub history_max_bytes: usize,
@@ -55,9 +53,6 @@ impl Config {
             public_url: get("CHAT_PUBLIC_URL")
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_else(|| format!("http://{bind_addr}")),
-            models: get("CHAT_MODELS")
-                .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
-                .unwrap_or_default(),
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
         };
         if cfg.history_max_bytes > 60_000 {
@@ -86,9 +81,8 @@ mod tests {
 
     #[test]
     fn defaults_and_required() {
-        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_MODELS", "a, ,b")])).unwrap();
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k")])).unwrap();
         assert_eq!(cfg.cedar_url, "http://127.0.0.1:8080");
-        assert_eq!(cfg.models, ["a", "b"]);
         assert!(cfg.access_token.is_none());
         assert!(cfg.admin_token.is_none());
         assert_eq!(cfg.public_url, "http://127.0.0.1:3000");

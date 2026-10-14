@@ -60,6 +60,16 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
     if let Some((status, message)) = *s.refuse_runs.lock().unwrap() {
         return cedar_error(status, "refused", message);
     }
+    // As cedar does: an unregistered model, or a level the model doesn't offer, is refused.
+    let model = body["model"].as_str().unwrap_or("model-a");
+    let Some(entry) = registry().into_iter().find(|m| m["id"] == model) else {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", &format!("model {model:?} is not registered"));
+    };
+    if let Some(level) = body["reasoning"].as_str() {
+        if !entry["reasoning_levels"].as_array().unwrap().iter().any(|l| l == level) {
+            return cedar_error(StatusCode::BAD_REQUEST, "bad_request", &format!("reasoning {level:?} is not offered by model {model:?}"));
+        }
+    }
     s.bodies.lock().unwrap().push(body.clone());
     let parent = body["parent_id"].as_str().map(String::from);
     if let Some(p) = &parent {
@@ -156,6 +166,18 @@ async fn download_file(State(s): State<Shared>, Path((id, path)): Path<(Uuid, St
         .into_response()
 }
 
+/// What the fake cedar has registered: `model-a` (the default, with reasoning levels) and `model-b`.
+fn registry() -> Vec<Value> {
+    vec![
+        json!({ "id": "model-a", "label": "Model A", "model": "org/model-a", "reasoning_levels": ["none", "high"], "default_reasoning": null, "is_default": true }),
+        json!({ "id": "model-b", "label": "Model B", "model": "org/model-b", "reasoning_levels": [], "default_reasoning": null, "is_default": false }),
+    ]
+}
+
+async fn models() -> Json<Value> {
+    Json(json!({ "models": registry() }))
+}
+
 async fn tools() -> Json<Value> {
     Json(json!({ "groups": [
         { "id": "web_search", "label": "Web search", "available": false, "reason": "Needs a Brave Search API key", "tools": [] },
@@ -228,16 +250,29 @@ impl Harness {
             .route("/v1/runs/{id}/files/{*path}", get(download_file))
             .route("/v1/compact", post(compact))
             .route("/v1/tools", get(tools))
-            .route("/v1/defaults", get(|| async { Json(json!({ "model": "model-a", "system": "You are helpful.", "max_turns_cap": 25, "allowed_models": [] })) }))
+            .route("/v1/models", get(models))
+            .route("/v1/defaults", get(|| async { Json(json!({ "model": "org/model-a", "model_id": "model-a", "system": "You are helpful.", "max_turns_cap": 25 })) }))
             .route(
-                "/v1/admin/integrations/llm",
-                axum::routing::put(|State(s): State<Shared>, Json(body): Json<Value>| async move {
-                    if let Some(refused) = admin(&s, "put_llm", body.clone()).await {
+                "/v1/admin/models",
+                get(|State(s): State<Shared>| async move {
+                    if let Some(refused) = admin(&s, "get_models", Value::Null).await {
                         return refused;
                     }
-                    Json(json!({ "base_url": body["base_url"], "source": "ui", "models": ["model-a"] })).into_response()
+                    Json(json!({ "models": registry() })).into_response()
+                }),
+            )
+            .route(
+                "/v1/admin/models/{id}",
+                axum::routing::put(|State(s): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>| async move {
+                    if let Some(refused) = admin(&s, &format!("put_model:{id}"), body.clone()).await {
+                        return refused;
+                    }
+                    if body["base_url"] == "http://127.0.0.1:1" {
+                        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "could not reach the model server");
+                    }
+                    Json(json!({ "id": id, "base_url": body["base_url"], "model": body["model"], "api_key_set": body.get("api_key").is_some(), "listed_models": ["m-1"] })).into_response()
                 })
-                .delete(|State(s): State<Shared>| delete_integration(s, "llm")),
+                .delete(|State(s): State<Shared>, Path(id): Path<String>| async move { delete_integration(s, &format!("model:{id}")).await }),
             )
             .route("/v1/admin/integrations", get(integrations))
             .route(
@@ -520,14 +555,19 @@ async fn cancel_rename_and_delete() {
 
 #[tokio::test]
 async fn validation_and_upstream_errors() {
-    let h = Harness::new(&[("CHAT_MODELS", "model-a,model-b")]).await;
+    let h = Harness::new(&[]).await;
     let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
 
     let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "   " }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "hi", "model": "model-z" }))).await;
+    // cedar's verdict on the model and the level is relayed as it is.
+    let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "hi", "model": "model-z" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("not registered"), "{err}");
+    let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "hi", "reasoning": "max" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("not offered"), "{err}");
     let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "TOO MANY" }))).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(err["error"]["message"], "at most 2 runs");
@@ -535,7 +575,12 @@ async fn validation_and_upstream_errors() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
-    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models": ["model-a", "model-b"] }));
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false }));
+    // The pickers take cedar's registry, relayed.
+    let (status, listed) = h.json(Method::GET, "/api/models", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed["models"][0]["id"], "model-a");
+    assert_eq!(listed["models"][1]["reasoning_levels"], json!([]));
 }
 
 #[tokio::test]
@@ -703,7 +748,7 @@ fn ts(v: &Value) -> DateTime<Utc> {
 
 #[tokio::test]
 async fn a_conversation_is_compacted_through_its_latest_run_or_its_history() {
-    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    let h = Harness::new(&[]).await;
     let (_, empty) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     let (status, _) = h.json(Method::POST, &format!("/api/conversations/{}/compact", empty["id"].as_str().unwrap()), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "nothing to compact yet");
@@ -722,6 +767,12 @@ async fn a_conversation_is_compacted_through_its_latest_run_or_its_history() {
     assert_eq!(body, json!({ "prompt": "DO: Times 3?", "source": "run" }));
     let sent = h.cedar.compactions.lock().unwrap().last().unwrap().clone();
     assert_eq!(sent, json!({ "run_id": run2, "model": "model-a" }), "the latest run, with the conversation's model");
+    // A model cedar no longer has is left to cedar's default.
+    h.state.store.insert_turn(Uuid::parse_str(&cid).unwrap(), Uuid::parse_str(&run2).unwrap(), "x", "completed", Some("model-gone"), None, &[]).await.unwrap();
+    let (status, _) = h.json(Method::POST, &compact, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let sent = h.cedar.compactions.lock().unwrap().last().unwrap().clone();
+    assert_eq!(sent.get("model"), None);
 
     // When cedar has lost the run, the remembered exchanges are compacted instead.
     h.cedar.runs.lock().unwrap().remove(&Uuid::parse_str(&run2).unwrap());
@@ -741,7 +792,7 @@ async fn a_conversation_is_compacted_through_its_latest_run_or_its_history() {
 
 #[tokio::test]
 async fn schedules_are_validated_created_updated_and_deleted() {
-    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    let h = Harness::new(&[]).await;
     let (cid, _) = h.finished_conversation("hi", "hello").await;
     let post = |body: Value| h.json(Method::POST, "/api/schedules", Some(body));
 
@@ -753,6 +804,8 @@ async fn schedules_are_validated_created_updated_and_deleted() {
         (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "9 am", "timezone": "UTC" }), "time"),
         (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00", "timezone": "Mars/Base" }), "time zone"),
         (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00", "timezone": "UTC", "model": "model-z" }), "model"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00", "timezone": "UTC", "model": "model-b", "reasoning": "high" }), "reasoning level"),
+        (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00", "timezone": "UTC", "reasoning": "max" }), "reasoning level"),
         (json!({ "title": "t", "prompt": "x", "frequency": "daily", "time": "09:00" }), "timezone"),
     ] {
         let (status, err) = post(bad).await;
@@ -771,6 +824,7 @@ async fn schedules_are_validated_created_updated_and_deleted() {
     assert_eq!(s["timezone"], "Europe/Berlin");
     assert_eq!(s["enabled"], true);
     assert_eq!(s["model"], Value::Null);
+    assert_eq!(s["reasoning"], Value::Null);
     assert_eq!(s["source_conversation_id"], cid);
     assert_eq!(s["last_run_at"], Value::Null);
     let next = ts(&s["next_run_at"]);
@@ -786,10 +840,20 @@ async fn schedules_are_validated_created_updated_and_deleted() {
     let patch = |body: Value| h.json(Method::PATCH, &patch_url, Some(body));
     let (status, err) = patch(json!({ "frequency": "weekly" })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    let (status, s) = patch(json!({ "frequency": "weekly", "weekday": 6, "time": "23:00", "model": "model-a", "title": " Sunday digest " })).await;
+    let (status, s) = patch(json!({ "frequency": "weekly", "weekday": 6, "time": "23:00", "model": "model-a", "reasoning": "high", "title": " Sunday digest " })).await;
     assert_eq!(status, StatusCode::OK, "{s}");
     assert_eq!((s["frequency"].as_str(), s["weekday"].as_u64(), s["time_of_day"].as_str()), (Some("weekly"), Some(6), Some("23:00")));
     assert_eq!(s["model"], "model-a");
+    assert_eq!(s["reasoning"], "high");
+    // A level is checked against the schedule's model, even when only the level changes.
+    let (status, err) = patch(json!({ "reasoning": "max" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    let (status, err) = patch(json!({ "model": "model-b" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "model-b offers no level high: {err}");
+    let (_, s) = patch(json!({ "model": "model-b", "reasoning": "" })).await;
+    assert_eq!((s["model"].as_str(), s["reasoning"].as_str()), (Some("model-b"), None));
+    let (_, s) = patch(json!({ "model": "model-a", "reasoning": "high" })).await;
+    assert_eq!(s["reasoning"], "high");
     assert_eq!(s["title"], "Sunday digest");
     let next = ts(&s["next_run_at"]);
     assert_eq!(next.with_timezone(&chrono_tz::Europe::Berlin).format("%a %H:%M").to_string(), "Sun 23:00");
@@ -804,8 +868,8 @@ async fn schedules_are_validated_created_updated_and_deleted() {
     assert!(ts(&s["next_run_at"]) > Utc::now());
 
     // The prompt can be edited; a blank model goes back to the default.
-    let (_, s) = patch(json!({ "prompt": " DO: something else ", "model": "" })).await;
-    assert_eq!((s["prompt"].as_str(), s["model"].as_str()), (Some("DO: something else"), None));
+    let (_, s) = patch(json!({ "prompt": " DO: something else ", "model": "", "reasoning": "" })).await;
+    assert_eq!((s["prompt"].as_str(), s["model"].as_str(), s["reasoning"].as_str()), (Some("DO: something else"), None, None));
 
     let (status, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -822,10 +886,11 @@ async fn schedules_are_validated_created_updated_and_deleted() {
 
 #[tokio::test]
 async fn due_schedules_start_a_run_in_a_hidden_conversation() {
-    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    let h = Harness::new(&[]).await;
     let (cid, _) = h.finished_conversation("hi", "hello").await;
     let mut body = schedule_body(&cid);
     body["model"] = json!("model-a");
+    body["reasoning"] = json!("high");
     let (_, s) = h.json(Method::POST, "/api/schedules", Some(body)).await;
     let sid = Uuid::parse_str(s["id"].as_str().unwrap()).unwrap();
 
@@ -862,6 +927,9 @@ async fn due_schedules_start_a_run_in_a_hidden_conversation() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(conv["conversation"]["schedule_id"], sid.to_string());
     assert_eq!(conv["conversation"]["model"], "model-a");
+    assert_eq!(conv["conversation"]["reasoning"], "high");
+    let sent = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert_eq!((sent["model"].as_str(), sent["reasoning"].as_str()), (Some("model-a"), Some("high")));
     let title = conv["conversation"]["title"].as_str().unwrap();
     assert!(title.starts_with("Morning digest · "), "{title}");
     assert_eq!(conv["turns"].as_array().unwrap().len(), 1);
@@ -959,7 +1027,7 @@ async fn a_busy_cedar_is_retried_for_an_hour_then_the_slot_is_recorded_as_failed
 
 #[tokio::test]
 async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
-    let h = Harness::new(&[("CHAT_MODELS", "model-a,model-b")]).await;
+    let h = Harness::new(&[]).await;
 
     // Without settings every tool is asked for explicitly, so a continuation can't keep a
     // narrower choice from before.
@@ -1000,13 +1068,23 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
         h.json(Method::PUT, &format!("/api/conversations/{cid}/tools"), Some(json!({ "tools": ["gmail_search_threads"] }))).await;
     assert_eq!(status, StatusCode::OK, "{conv}");
     assert_eq!(conv["tools"], json!(["gmail_search_threads"]));
-    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "third", "model": "model-a" }))).await;
+    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "third", "model": "model-a", "reasoning": "high" }))).await;
     h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
     let third = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
     assert_eq!(third["tools"], json!(["gmail_search_threads"]));
     assert_eq!(third["model"], "model-a");
+    assert_eq!(third["reasoning"], "high");
     let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
     assert_eq!(detail["conversation"]["tools"], json!(["gmail_search_threads"]));
+    assert_eq!(detail["conversation"]["model"], "model-a", "remembered for the picker");
+    assert_eq!(detail["conversation"]["reasoning"], "high");
+
+    // A saved default model cedar no longer has is dropped, so messages still go through.
+    h.state.store.set_preferences(&cedar_chat::store::Preferences { model: Some("model-gone".into()), ..Default::default() }).await.unwrap();
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "fourth" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap().get("model"), None);
 
     // Back to the defaults.
     let (_, conv) = h.json(Method::PUT, &format!("/api/conversations/{cid}/tools"), Some(json!({ "tools": null }))).await;
@@ -1015,10 +1093,10 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
 
 #[tokio::test]
 async fn settings_are_validated() {
-    let h = Harness::new(&[("CHAT_MODELS", "model-a")]).await;
+    let h = Harness::new(&[]).await;
     for (body, needle) in [
         (json!({ "tools": ["nope"] }), "no tool or tool group"),
-        (json!({ "tools": ["gmail"], "model": "model-z" }), "not offered"),
+        (json!({ "tools": ["gmail"], "model": "model-z" }), "not registered"),
         (json!({ "max_turns": 0 }), "max_turns"),
         (json!({ "system": "x".repeat(20_001) }), "system"),
         (json!({ "colour": "red" }), "unknown field"),
@@ -1105,22 +1183,27 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/google", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let (status, llm) =
-        admin_call(&h, Method::PUT, "/api/integrations/llm", Some("admin"), Some(json!({ "base_url": "http://gpu:8000", "api_key": "k", "model": "model-a" }))).await;
-    assert_eq!(status, StatusCode::OK, "{llm}");
-    assert_eq!(llm["models"], json!(["model-a"]));
-    // Without a model the field is left out, so cedar keeps the one it has saved.
-    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/llm", Some("admin"), Some(json!({ "base_url": "http://gpu:8000" }))).await;
-    assert_eq!(status, StatusCode::OK);
-    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/llm", Some("admin"), None).await;
+    let (status, listed) = admin_call(&h, Method::GET, "/api/integrations/models", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    assert_eq!(listed["models"][0]["id"], "model-a");
+    let spec = json!({ "base_url": "http://gpu:8000", "api_key": "k", "model": "m-1", "label": "GPU", "reasoning_levels": ["none", "high"], "is_default": true });
+    let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", Some("admin"), Some(spec.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["listed_models"], json!(["m-1"]));
+    // cedar's verdict on the server is relayed; a body that isn't an object is refused here.
+    let (status, err) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", Some("admin"), Some(json!({ "base_url": "http://127.0.0.1:1", "model": "m-1" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("could not reach"));
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", Some("admin"), Some(json!([1]))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/models/gpu", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/llm", None, Some(json!({ "base_url": "http://x" }))).await;
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", None, Some(json!({ "base_url": "http://x", "model": "m" }))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "put_llm", "put_llm", "delete_llm"]);
-    assert_eq!(calls[5].1, json!({ "base_url": "http://gpu:8000", "api_key": "k", "model": "model-a" }));
-    assert_eq!(calls[6].1, json!({ "base_url": "http://gpu:8000" }));
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "get_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu"]);
+    assert_eq!(calls[6].1, spec, "the body goes through as it is");
 
     let (status, connect) = admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK);

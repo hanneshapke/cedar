@@ -159,9 +159,8 @@ pub async fn fire(
 ) -> Result<ScheduleRun, AppError> {
     let timing = Timing::of(schedule).map_err(|e| AppError::Internal(anyhow::anyhow!("schedule {} is invalid: {e}", schedule.id)))?;
     let next = (!manual).then(|| timing.next_after(now));
-    let model = schedule.model.clone().filter(|m| state.cfg.models.iter().any(|allowed| allowed == m));
     let prefs = state.store.preferences().await?;
-    let settings = RunSettings::resolve(state, &prefs, model, schedule.tools.clone());
+    let settings = RunSettings::resolve(state, &prefs, schedule.model.clone(), schedule.reasoning.clone(), schedule.tools.clone()).await;
     let model = settings.model.as_deref();
     let when = due_at.with_timezone(&timing.tz).format("%a %-d %b %H:%M");
     let title = format!("{} · {when}", schedule.title);
@@ -197,7 +196,10 @@ pub async fn fire(
         }
     };
     // A schedule's prompt is text only; it never carries attachments.
-    let turn = state.store.insert_turn(conversation.id, run.id, &schedule.prompt, &run.status, model, &[]).await?;
+    let turn = state
+        .store
+        .insert_turn(conversation.id, run.id, &schedule.prompt, &run.status, model, settings.reasoning.as_deref(), &[])
+        .await?;
     let record = state
         .store
         .insert_schedule_run(&NewScheduleRun {
