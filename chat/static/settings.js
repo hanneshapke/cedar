@@ -3,7 +3,9 @@
 // Settings that change what the agent can do, shared by both UIs (/v1 and /v2). Three pieces:
 //
 //   - The "Tools & model" section of the Settings dialog: which of cedar's tool groups new
-//     conversations get, and the default model, turn limit and system prompt (GET/PUT /api/settings).
+//     conversations get, the default model, turn limit and system prompt, and whether the model
+//     accepts images and PDFs (GET/PUT /api/settings). That last one is announced as a
+//     `cedar-settings-changed` event on `document` ({detail: {multimodal}}) for attach.js.
 //   - The "Integrations" section, for admins only (CHAT_ADMIN_TOKEN): cedar's Brave Search key and
 //     its Google account. The admin token is kept for this browser session and sent as X-Admin-Token.
 //   - A "Tools" button next to the model picker that changes the tools of one conversation
@@ -228,6 +230,16 @@ const cedarSettings = (() => {
       modelSelect.addEventListener('change', dirty);
       fields.append(field('Default model', modelSelect));
     }
+    const multimodalBox = el('input');
+    multimodalBox.type = 'checkbox';
+    multimodalBox.checked = Boolean(prefs.multimodal);
+    multimodalBox.addEventListener('change', dirty);
+    const multimodalLabel = el('label', 'cedar-set-check cedar-set-check-wide');
+    const multimodalText = el('span');
+    multimodalText.append(el('strong', '', 'This model accepts images and PDFs'));
+    multimodalText.append(el('small', '', 'Shows an attach button by the message box (files can also be dropped or pasted). cedar passes the files to the model as they are; a model that cannot read them fails the message.'));
+    multimodalLabel.append(multimodalBox, multimodalText);
+    fields.append(multimodalLabel);
     const turns = el('input');
     turns.type = 'number';
     turns.min = '1';
@@ -266,12 +278,14 @@ const cedarSettings = (() => {
         // The default text is saved as "unset", so the prompt keeps following cedar's SYSTEM_PROMPT.
         system: isDefault() || !system.value.trim() ? null : system.value.trim(),
         max_turns: turns.value ? Number(turns.value) : null,
+        multimodal: multimodalBox.checked,
       };
       try {
         prefs = { ...(await deps.api('PUT', '/settings', body)), defaults };
         if (prefs.system === null) { system.value = defaultSystem; syncSystem(); }
         status.textContent = 'Saved';
         updateChip();
+        announce();
       } catch (e) {
         status.textContent = '';
         save.disabled = false;
@@ -288,6 +302,16 @@ const cedarSettings = (() => {
       fields,
       actions,
     );
+    announce();
+  }
+
+  /** Whether Settings says the model accepts images and PDFs. */
+  function multimodal() {
+    return Boolean(prefs?.multimodal);
+  }
+
+  function announce() {
+    document.dispatchEvent(new CustomEvent('cedar-settings-changed', { detail: { multimodal: multimodal() } }));
   }
 
   function field(label, input, extra) {
@@ -704,9 +728,9 @@ const cedarSettings = (() => {
   /** Call once the app has its config and access token: loads the defaults and reports the
    *  outcome of a "Connect Google" redirect. */
   function start() {
-    deps.api('GET', '/settings').then((p) => { prefs = p; updateChip(); }).catch(() => {});
+    deps.api('GET', '/settings').then((p) => { prefs = p; updateChip(); announce(); }).catch(() => {});
     reportRedirect();
   }
 
-  return { init, start, beforeSend, conversationChanged };
+  return { init, start, beforeSend, conversationChanged, multimodal };
 })();

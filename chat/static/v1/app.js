@@ -379,6 +379,7 @@ function showNewChat() {
   resetView();
   state.current = null;
   cedarSettings.conversationChanged();
+  cedarAttach.clear();
   setHeader();
   const hour = new Date().getHours();
   els.greeting.textContent = hour < 5 ? 'Up late? How can I help?' : hour < 12 ? 'Good morning. How can I help?'
@@ -403,6 +404,7 @@ async function openConversation(id) {
   if (token !== state.loadToken) return;
   state.current = detail.conversation;
   cedarSettings.conversationChanged();
+  cedarAttach.clear();
   setHeader();
   if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) {
     els.model.value = detail.conversation.model;
@@ -439,7 +441,8 @@ function addTurn(turn) {
   const el = h('div', 'turn');
   const user = h('div', 'user-msg');
   const bubble = h('div', 'bubble');
-  bubble.textContent = turn.prompt;
+  if (turn.attachments?.length) bubble.append(cedarAttach.chips(turn.attachments));
+  bubble.append(document.createTextNode(turn.prompt));
   user.append(bubble);
   const body = h('div', 'assistant');
   const thinking = h('div', 'thinking', `${ICONS.spark}<span>Thinking…</span>`);
@@ -854,8 +857,11 @@ async function sendMessage() {
     }
     const body = { content };
     if (els.model.value) body.model = els.model.value;
+    const attachments = cedarAttach.payload();
+    if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
     els.input.value = '';
+    cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
     autosize();
     if (token !== state.loadToken) return; // the user navigated away meanwhile
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
@@ -955,6 +961,14 @@ async function init() {
     config: () => state.config,
     current: () => state.current,
     anchor: els.model,
+  });
+  // The paperclip goes after the Tools button that settings.js puts after the model picker.
+  cedarAttach.init({
+    form: els.composer,
+    textarea: els.input,
+    anchor: els.model,
+    before: els.composer.querySelector('.composer-row'),
+    toast,
   });
   try {
     const res = await fetch('/api/config');

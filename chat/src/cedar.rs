@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use uuid::Uuid;
@@ -28,6 +28,17 @@ pub struct CedarClient {
 }
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Starting a run with attachments sends up to tens of MB that cedar decodes before answering.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// A file sent with a message, as cedar's `POST /v1/runs` takes it: standard base64, no prefix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Attachment {
+    pub name: String,
+    pub media_type: String,
+    pub data: String,
+}
 
 impl CedarClient {
     pub fn new(base_url: &str, api_key: &str) -> anyhow::Result<Self> {
@@ -53,7 +64,11 @@ impl CedarClient {
     }
 
     async fn json<T: for<'de> Deserialize<'de>>(&self, req: reqwest::RequestBuilder) -> Result<T, AppError> {
-        self.send(req.timeout(REQUEST_TIMEOUT))
+        self.json_within(req, REQUEST_TIMEOUT).await
+    }
+
+    async fn json_within<T: for<'de> Deserialize<'de>>(&self, req: reqwest::RequestBuilder, timeout: Duration) -> Result<T, AppError> {
+        self.send(req.timeout(timeout))
             .await?
             .json()
             .await
@@ -78,7 +93,12 @@ impl CedarClient {
         if let Some(p) = opts.parent {
             body["parent_id"] = Value::String(p.to_string());
         }
-        self.json(self.http.post(self.url("/runs")).json(&body)).await
+        let mut timeout = REQUEST_TIMEOUT;
+        if let Some(a) = opts.attachments.filter(|a| !a.is_empty()) {
+            body["attachments"] = json!(a);
+            timeout = UPLOAD_TIMEOUT;
+        }
+        self.json_within(self.http.post(self.url("/runs")).json(&body), timeout).await
     }
 
     /// The tool groups cedar offers: `{groups: [{id, label, available, reason?, tools}]}`.
@@ -213,6 +233,8 @@ pub struct RunOptions<'a> {
     pub max_turns: Option<u32>,
     pub tools: Option<&'a [String]>,
     pub parent: Option<Uuid>,
+    /// Images and PDFs to show the model with the prompt (for a multimodal model).
+    pub attachments: Option<&'a [Attachment]>,
 }
 
 /// cedar refuses the admin routes to a key that isn't an admin key: say which setting to fix.

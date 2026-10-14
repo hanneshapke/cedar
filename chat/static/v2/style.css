@@ -63,7 +63,7 @@ a { color: var(--accent); }
 .desk-app {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
-  grid-template-rows: 64px minmax(0, 1fr) 88px;
+  grid-template-rows: 64px minmax(0, 1fr) auto;
   grid-template-areas: "top top" "margin desk" "slip slip";
   height: 100vh; height: 100dvh;
 }
@@ -183,8 +183,10 @@ a { color: var(--accent); }
 
 /* -- slip (composer) ---------------------------------------------------------------------- */
 
-.slip { grid-area: slip; border-top: 1px solid var(--line); padding: 0 40px; }
-.composer { display: flex; align-items: center; gap: 16px; height: 100%; }
+/* The slip grows when files are attached (attach.js puts a row of them above the message box). */
+.slip { grid-area: slip; min-height: 88px; border-top: 1px solid var(--line); padding: 0 40px; display: flex; flex-direction: column; justify-content: center; }
+.composer { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 88px; padding: 8px 0; }
+.composer .cedar-attach-row { margin: 0; }
 .composer textarea { flex: 1; min-height: 44px; max-height: 40vh; padding: 10px 0; border: 0; border-bottom: 1px solid var(--ink); outline: none; resize: none; background: none; font-size: 16px; line-height: 1.5; }
 .composer textarea::placeholder { color: var(--faint); }
 .composer textarea:focus-visible { border-bottom-color: var(--accent); box-shadow: 0 1px 0 var(--accent); }
@@ -236,7 +238,8 @@ dialog p code { padding: 1px 4px; border-radius: 3px; background: var(--wash); f
   .trail { grid-column: 1; }
 }
 @media (max-width: 800px) {
-  .desk-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px auto minmax(0, 1fr) 76px; grid-template-areas: "top" "margin" "desk" "slip"; }
+  .desk-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px auto minmax(0, 1fr) auto; grid-template-areas: "top" "margin" "desk" "slip"; }
+  .slip, .composer { min-height: 76px; }
   .top, .slip { padding: 0 16px; }
   .top { gap: 8px; }
   .top .when, .top .lbl, .brand-name { display: none; }

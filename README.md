@@ -51,10 +51,10 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "system"?, "max_turns"?, "parent_id"?, "tools"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Choosing tools](#choosing-tools) for `tools`. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Choosing tools](#choosing-tools) for `tools` and [Attachments](#attachments) for `attachments`. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
-| `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`). |
+| `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
@@ -62,7 +62,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, system, max_turns_cap, allowed_models}`. |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, system, max_turns_cap, allowed_models}`, plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
 | `PUT` / `DELETE /v1/admin/integrations/llm` | Admin: point cedar at another model server and name the model it uses by default (`{"base_url", "api_key"?, "model"?}`; checked by listing the server's models first; an absent `api_key` or `model` keeps the saved one, `""` removes it), or go back to the environment's or the default ones. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
@@ -92,6 +92,32 @@ parent's choice. The model only sees the chosen tools, a call to any other is an
 unknown tool, and the [note on the environment](#tools) only mentions the chosen ones. A group the
 server doesn't offer right now (no Brave key, say) is accepted and adds nothing, so a client's saved
 choice keeps working; an unknown name is a `400`. The run's `tools` are returned with it.
+
+### Attachments
+
+For a multimodal model, a run's prompt can come with images and PDFs:
+
+```json
+{"prompt": "what does the invoice say?",
+ "attachments": [{"name": "invoice.pdf", "media_type": "application/pdf", "data": "<base64>"}]}
+```
+
+`media_type` is one of `image/png`, `image/jpeg`, `image/gif`, `image/webp` or
+`application/pdf`; `data` is the file's bytes in standard base64 (no `data:` prefix). At most 10
+files per run, 20 MiB each and 32 MiB together (decoded); the request body itself may be up to
+48 MiB. Anything else is a `400` that names the file.
+
+The files become part of the run's opening user message, as `image` and `document` content blocks
+(`{"type": "image", "source": {"type": "base64", "media_type", "data"}, "title": name}`), placed
+before the prompt's text. On the wire they are sent as chat-completions content parts: `image_url`
+with a `data:` URL for images, and `file` with `filename` and `file_data` for PDFs. cedar does not
+check that the model can read them: a server that can't answers with its own error, and the run
+fails with it. The files go to the model only, not into `/workspace`; use a tool call to save
+them there if the task needs it. Because they are ordinary message content, a
+[continuation](#continuing-a-run) keeps seeing them, and the stored copy grows with each
+continuation of a run that has them. `GET /v1/runs/{id}/messages` returns them verbatim;
+[compaction](#compacting-a-run-into-a-prompt) replaces each with a note like
+`[image omitted: photo.png]`.
 
 ### Compacting a run into a prompt
 
@@ -455,7 +481,7 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 - No token-level streaming from the model; events arrive per model turn and per tool call.
 - A run is a single prompt. To follow up, start a new run that [continues](#continuing-a-run) the finished one.
 - cedar has no scheduler of its own: a run starts when a client asks for it. Recurring runs are a [cedar-chat](chat/README.md#scheduled-agents) feature.
-- Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload.
+- Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload into the workspace; [attachments](#attachments) go to the model, not to `/workspace`.
 - One instance: SQLite and the run queue live in the process.
 - Tool calls within a turn run one after another.
 - Per-key limiting is only the active-run cap; there is no request rate limit or token budget.

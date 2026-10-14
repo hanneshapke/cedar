@@ -65,6 +65,8 @@ Both interfaces have all of these, except where noted:
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
   cedar's Brave Search key and Google account
+- [Attachments](#attachments): with a multimodal model, images and PDFs go with a message, by the
+  paperclip button, by dropping them on the message box, or by pasting an image
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, with every run's result kept
   under Settings
@@ -143,7 +145,8 @@ model is told so.
 
 If cedar no longer has the previous run (it was deleted, or cedar's database was reset), cedar-chat
 falls back to starting a new run with the earlier exchanges inlined in the prompt, up to
-`CHAT_HISTORY_MAX_BYTES`.
+`CHAT_HISTORY_MAX_BYTES`. [Attachments](#attachments) live in cedar's run, so earlier ones are gone
+with it; only the new message's files go along.
 
 Only one response per conversation runs at a time. The UI replays each turn from cedar's event log,
 so reloading the page or opening a conversation shows the full tool trace. Deleting a conversation
@@ -162,8 +165,8 @@ Once a conversation has a finished response, the **Schedule** button (the clock 
    browser's time zone is sent along (an IANA name like `Europe/Berlin`), so daylight-saving
    changes are handled, and the next run is confirmed in your local time.
 3. From then on the chat server starts the prompt as a **fresh** cedar run each time it is due: a
-   new conversation, a new workspace, no memory of the earlier runs. It checks every 30 seconds, so a
-   run starts within half a minute of its time.
+   new conversation, a new workspace, no memory of the earlier runs, and no files (a schedule's
+   prompt is text only). It checks every 30 seconds, so a run starts within half a minute of its time.
 
 Every run lives in a conversation of its own, named after the schedule and the time it was due,
 with the full tool trace and files panel. These conversations stay out of the conversation list;
@@ -199,6 +202,20 @@ tools.
 Every message sends cedar the resolved choice, `*` when everything is on, so changing the defaults
 also applies to follow-ups in existing conversations that don't have their own tools.
 
+### Attachments
+
+The same section has a checkbox, **This model accepts images and PDFs**. With it on, a paperclip
+button appears by the message box, and files can also be dropped on the box or pasted (a
+screenshot, say). PNG, JPEG, GIF, WebP and PDF files are taken, at most 10 per message, 20 MB each
+and 32 MB together; the chosen files are shown as chips, with a thumbnail for images, until the
+message is sent, and a message still needs some text. The browser sends them as base64 with the
+message, and cedar puts them in front of the prompt as [attachments](../README.md#attachments) of
+the run, so the agent sees them for the rest of the conversation. A sent message shows what went
+with it (name, type and size; the bytes stay in cedar's run). cedar passes the files to the model
+as they are and does not check that it can read them: with a text-only model the response fails
+with the model server's error, so leave the box off for one. A message with files is refused while
+the box is off.
+
 ### Integrations
 
 Settings → **Model server & API keys** is where the model server address and the API keys go.
@@ -227,7 +244,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
-| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "..."}`. Starts a cedar run with the [settings](#tools-and-settings) and returns the turn. Returns 409 if a response is still running |
+| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "...", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. Returns 400 for files while the multimodal setting is off, 409 if a response is still running |
 | `PUT /api/conversations/{id}/tools` | `{"tools": [...]}` gives the conversation its own tools; `{"tools": null}` returns it to the defaults |
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
@@ -240,8 +257,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
-| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own), plus `defaults`: cedar's own model, system prompt and turn limit (`null` if cedar can't be reached) |
-| `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` |
+| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns, multimodal}` (`null` means cedar's own; `multimodal` says whether messages may carry [attachments](#attachments)), plus `defaults`: cedar's own model, system prompt and turn limit (`null` if cedar can't be reached) |
+| `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools`; an absent `multimodal` means `false` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |
 | `PUT` / `DELETE /api/integrations/llm` | Admin: set cedar's model server and its default model name (`{"base_url", "api_key"?, "model"?}`) or go back to its defaults |

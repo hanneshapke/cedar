@@ -45,6 +45,19 @@ pub fn to_messages(stored: Vec<StoredMessage>) -> Vec<Value> {
 pub fn trim_messages(mut messages: Vec<Value>, per_result: usize, total: usize) -> Vec<Value> {
     for message in &mut messages {
         if let Some(blocks) = message["content"].as_array_mut() {
+            // Images and PDFs sent with the prompt would fill the budget on their own, and the
+            // prompt they belong to is never dropped; a note in their place says what was there.
+            for block in blocks.iter_mut() {
+                let kind = match block["type"].as_str() {
+                    Some(kind @ ("image" | "document")) => kind,
+                    _ => continue,
+                };
+                let title = block["title"]
+                    .as_str()
+                    .or_else(|| block["source"]["media_type"].as_str())
+                    .unwrap_or("file");
+                *block = json!({ "type": "text", "text": format!("[{kind} omitted: {title}]\n") });
+            }
             for block in blocks.iter_mut().filter(|b| b["type"] == "tool_result") {
                 let text = match &block["content"] {
                     Value::String(s) => s.clone(),
@@ -172,6 +185,25 @@ mod tests {
             format!("{}\n[… 40 characters omitted]", "x".repeat(10))
         );
         assert_eq!(blocks[1]["content"], "short");
+    }
+
+    #[test]
+    fn attachments_become_placeholders_before_sizing() {
+        let big = "A".repeat(200_000);
+        let mut messages = vec![json!({ "role": "user", "content": [
+            { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": big }, "title": "a.png" },
+            { "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": "x" } },
+            { "type": "text", "text": "what is this?" },
+        ] })];
+        for i in 0..4 {
+            messages.push(json!({ "role": if i % 2 == 0 { "assistant" } else { "user" }, "content": format!("m{i}") }));
+        }
+        let out = trim_messages(messages, 10, 60_000);
+        assert_eq!(out.len(), 5, "nothing had to be dropped once the image was replaced");
+        let blocks = out[0]["content"].as_array().unwrap();
+        assert_eq!(blocks[0], json!({ "type": "text", "text": "[image omitted: a.png]\n" }));
+        assert_eq!(blocks[1], json!({ "type": "text", "text": "[document omitted: application/pdf]\n" }));
+        assert_eq!(blocks[2]["text"], "what is this?");
     }
 
     #[test]

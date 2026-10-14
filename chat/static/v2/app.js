@@ -530,7 +530,8 @@ function addTurn(turn) {
   state.views.set(turn.id, view);
   state.order.push(turn.id);
   const user = note('user', `You · ${new Date(turn.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-  user.lastChild.textContent = turn.prompt;
+  if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
+  user.lastChild.append(document.createTextNode(turn.prompt));
   els.notes.append(user);
   view.workingEl = h('div', 'working');
   view.workingEl.append(h('span', 'spinner'), h('span', '', 'Thinking'));
@@ -753,6 +754,7 @@ function showNewChat() {
   resetView();
   state.current = null;
   cedarSettings.conversationChanged();
+  cedarAttach.clear();
   renderDesk();
   updateChrome();
   renderRecents();
@@ -772,6 +774,7 @@ async function openConversation(id) {
   if (token !== state.loadToken) return;
   state.current = detail.conversation;
   cedarSettings.conversationChanged();
+  cedarAttach.clear();
   if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) els.model.value = detail.conversation.model;
   for (const turn of detail.turns) addTurn(turn);
   renderDesk();
@@ -897,8 +900,11 @@ async function sendMessage() {
     }
     const body = { content };
     if (els.model.value) body.model = els.model.value;
+    const attachments = cedarAttach.payload();
+    if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
     els.input.value = '';
+    cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
     autosize();
     if (token !== state.loadToken) return;
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
@@ -993,6 +999,15 @@ async function init() {
     config: () => state.config,
     current: () => state.current,
     anchor: els.model,
+  });
+  // The paperclip goes after the Tools button that settings.js puts after the model picker; the
+  // row of chosen files sits above the message box.
+  cedarAttach.init({
+    form: els.composer,
+    textarea: els.input,
+    anchor: els.model,
+    before: els.input,
+    toast,
   });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   if (state.config.models?.length) {
