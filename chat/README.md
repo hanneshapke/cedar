@@ -61,8 +61,8 @@ Both interfaces have all of these, except where noted:
   the tool call's raw output is shown
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
-- A model picker and, next to it, a reasoning-level picker that offers the levels the chosen
-  model declares; an optional access token
+- The send button names the model and reasoning level the message goes with, and opens a menu
+  of the registered models with the levels each declares; an optional access token
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
   [the models](#models) cedar can use, its Brave Search key and its Google account
@@ -86,7 +86,7 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `schedule.js` and `schedule.css` for scheduled agents, and
-`models.js` for the model and reasoning pickers, `settings.js` and `settings.css` for the tools,
+`models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
 model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
 library, and
 `index.html`, which sends `/` to the chosen one). It is
@@ -204,19 +204,20 @@ tools.
 Every message sends cedar the resolved choice, `*` when everything is on, so changing the defaults
 also applies to follow-ups in existing conversations that don't have their own tools.
 
-The **model picker** by the message box (shown once cedar has more than one model) picks the
-model for the next message, and the **reasoning picker** next to it one of the levels that model
-declares (`none`, `low`, `high`, `max` for DeepSeek V4, say), or the model's default level. The
-picker hides itself for a model with no levels. Both are sent with every message (as the entry's
-id and the level), cedar checks them against its registry, and the conversation remembers them, so
-opening it again shows the choice its last message used. Until cedar has a model registered, the
-message box says so and sending is off.
+The label on the **send button** names the model the next message goes to and, after a dot, its
+reasoning level (`DeepSeek V4 · high`, say). Clicking it opens a menu of the registered models,
+each with the levels it declares (`none`, `low`, `high`, `max` for DeepSeek V4) and a "default"
+chip for the model's own default level; a model with no levels is just picked. The label is shown
+once there is something to choose: more than one model, or a model with levels. Both choices are
+sent with every message (as the entry's id and the level), cedar checks them against its registry,
+and the conversation remembers them, so opening it again shows the choice its last message used.
+Until cedar has a model registered, the message box says so and sending is off.
 
 ### Attachments
 
 A model registered with **Accepts images and PDFs** (a checkbox on its entry under
-[Models](#models)) gets a paperclip button by the message box while the picker has it chosen
-(or while it is the default and the picker says so), and files can also be dropped on the box or
+[Models](#models)) gets a paperclip button by the message box while the send button names it
+(the default model, until another is picked), and files can also be dropped on the box or
 pasted (a screenshot, say). PNG, JPEG, GIF, WebP and PDF files are taken, at most 10 per message, 20 MB each
 and 32 MB together; the chosen files are shown as chips, with a thumbnail for images, until the
 message is sent, and a message still needs some text. The browser sends them as base64 with the
@@ -255,8 +256,8 @@ not on it. **Edit**, **Make default** and **Remove** change an entry; a removed 
 conversations fail at their next message until another model is picked. The first model
 registered is the default, and a fresh cedar has none: the message box says so until an admin adds
 one. Saving an API key needs cedar's `CEDAR_SECRET_KEY`; a server without one can be registered
-without it. The pickers by the message box, the default model in Tools & model, and the schedule
-dialog all follow the list.
+without it. The send button's menu, the default model in Tools & model, and the schedule dialog
+all follow the list.
 
 ## API
 

@@ -633,6 +633,7 @@ async fn both_uis_are_served() {
                 "{uri} loads the models before the scripts that fill the pickers from them"
             );
             assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
+            assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
             assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
             assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
             assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
@@ -666,6 +667,7 @@ async fn both_uis_are_served() {
         ("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8", "Leaflet 1.9.4"),
         ("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8", ".leaflet-container"),
         ("/models.js", "text/javascript; charset=utf-8", "cedarModels"),
+        ("/models.css", "text/css; charset=utf-8", ".cedar-send-menu"),
         ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),
         ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),

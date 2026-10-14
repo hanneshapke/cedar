@@ -796,6 +796,7 @@ async function loadModels() {
   cedarModels.fillSelect(els.model, { selected: model });
   cedarModels.fillLevels(els.reasoning, els.model.value, els.reasoning.value);
   syncAttach();
+  sendMenu?.refresh();
   updateChrome();
 }
 
@@ -811,10 +812,13 @@ function restorePickers(conversation) {
   cedarModels.fillSelect(els.model, { selected: model });
   cedarModels.fillLevels(els.reasoning, model, conversation.reasoning || '');
   syncAttach();
+  sendMenu?.refresh();
 }
 
 cedarModels.bindPair(els.model, els.reasoning);
 els.model.addEventListener('change', syncAttach);
+// The send button's menu: shows the chosen model and level, and changes them.
+let sendMenu = null;
 document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
@@ -1044,6 +1048,7 @@ async function init() {
     toast,
   });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
+  sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();

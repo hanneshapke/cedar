@@ -18,6 +18,13 @@
 //                                      nothing to pick (fewer than two models and no `blank`)
 //   fillLevels(select, modelId, selected) -> boolean   the reasoning picker; false when hidden
 //   bindPair(modelSelect, levelSelect) refill the levels when the model changes
+//   sendMenu({send, modelSelect, levelSelect}) -> {refresh}
+//                                      the send button's menu: a label next to the button names
+//                                      the chosen model and level and opens a menu of the models
+//                                      with their levels; choosing writes the two selects (and
+//                                      fires their change events). The selects stay hidden
+//                                      (models.css) but remain the state the app reads and
+//                                      restores. Call refresh() after filling the selects.
 //
 // After an admin changes the registry, settings.js reloads it and dispatches
 // `cedar-models-changed` on `document`; the apps refill their pickers on it.
@@ -84,5 +91,124 @@ const cedarModels = (() => {
     modelSelect.addEventListener('change', () => fillLevels(levelSelect, modelSelect.value, ''));
   }
 
-  return { load, all, loaded, byId, defaultId, levelsFor, multimodal, fillSelect, fillLevels, bindPair };
+  const CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>';
+  const TICK = '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2.5"><path d="M5 12l5 5 9-10"/></svg>';
+
+  function sendMenu({ send, modelSelect, levelSelect }) {
+    const group = document.createElement('span');
+    group.className = 'cedar-send-group';
+    send.before(group);
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'cedar-send-pick';
+    pick.setAttribute('aria-haspopup', 'menu');
+    pick.setAttribute('aria-expanded', 'false');
+    pick.title = 'Model and reasoning level for this message';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'cedar-send-pick-label';
+    pick.append(labelEl);
+    pick.insertAdjacentHTML('beforeend', CHEVRON);
+    const menu = document.createElement('div');
+    menu.className = 'cedar-send-menu';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Model and reasoning level');
+    menu.hidden = true;
+    group.append(pick, send, menu);
+
+    const chosenModel = () => resolve(modelSelect.value);
+    const levelOf = () => levelSelect.value || '';
+
+    function refresh() {
+      const entry = chosenModel();
+      const choosable = list.length >= 2 || (entry?.reasoning_levels || []).length > 0;
+      pick.hidden = !entry || !choosable;
+      if (!entry) { close(); return; }
+      labelEl.textContent = levelOf() ? `${label(entry)} · ${levelOf()}` : label(entry);
+      if (!menu.hidden) render();
+    }
+
+    /** Set the selects and let the app's listeners (levels, paperclip) follow. */
+    function choose(id, level) {
+      modelSelect.value = id;
+      modelSelect.dispatchEvent(new Event('change'));
+      if (level && [...levelSelect.options].some((o) => o.value === level)) levelSelect.value = level;
+      else levelSelect.value = '';
+      levelSelect.dispatchEvent(new Event('change'));
+      close();
+      refresh();
+    }
+
+    function render() {
+      menu.textContent = '';
+      const title = document.createElement('div');
+      title.className = 'cedar-send-menu-title';
+      title.textContent = 'Send with';
+      menu.append(title);
+      const current = chosenModel();
+      for (const m of list) {
+        const item = document.createElement('div');
+        item.className = 'cedar-send-item';
+        const isCurrent = current?.id === m.id;
+        if (isCurrent) item.classList.add('current');
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'cedar-send-model';
+        b.setAttribute('role', 'menuitemradio');
+        b.setAttribute('aria-checked', String(isCurrent));
+        b.insertAdjacentHTML('beforeend', TICK);
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = label(m);
+        b.append(name);
+        if (m.is_default) {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.textContent = 'default';
+          b.append(tag);
+        }
+        b.addEventListener('click', () => choose(m.id, isCurrent ? levelOf() : (m.default_reasoning ? '' : '')));
+        item.append(b);
+        const levels = m.reasoning_levels || [];
+        if (levels.length) {
+          const row = document.createElement('div');
+          row.className = 'cedar-send-levels';
+          const chip = (value, text, checked) => {
+            const c = document.createElement('button');
+            c.type = 'button';
+            c.className = 'cedar-send-level';
+            c.setAttribute('role', 'menuitemradio');
+            c.setAttribute('aria-checked', String(checked));
+            c.textContent = text;
+            c.addEventListener('click', () => choose(m.id, value));
+            return c;
+          };
+          row.append(chip('', m.default_reasoning ? `default (${m.default_reasoning})` : 'default', isCurrent && !levelOf()));
+          for (const l of levels) row.append(chip(l, l, isCurrent && levelOf() === l));
+          item.append(row);
+        }
+        menu.append(item);
+      }
+    }
+
+    function open() {
+      render();
+      menu.hidden = false;
+      pick.setAttribute('aria-expanded', 'true');
+      menu.querySelector('[aria-checked="true"]')?.focus();
+    }
+    function close() {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      pick.setAttribute('aria-expanded', 'false');
+    }
+    pick.addEventListener('click', () => (menu.hidden ? open() : close()));
+    document.addEventListener('click', (e) => { if (!group.contains(e.target)) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); pick.focus(); } });
+    modelSelect.addEventListener('change', refresh);
+    levelSelect.addEventListener('change', refresh);
+    refresh();
+    return { refresh };
+  }
+
+  return { load, all, loaded, byId, defaultId, levelsFor, multimodal, fillSelect, fillLevels, bindPair, sendMenu };
 })();

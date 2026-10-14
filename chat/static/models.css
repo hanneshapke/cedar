@@ -1,0 +1,33 @@
+/* The send button's model menu (models.js: sendMenu), shared by both UIs. Like settings.css it
+   relies only on --accent and --muted, which both define, the page's surface colour (--surface in
+   Claude style, --sheet in Cedar style), and translucent greys for edges. */
+
+/* The two <select>s hold the choice (and what the conversation restores); the menu shows it. */
+.cedar-picker-state { display: none; }
+
+.cedar-send-group { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.cedar-send-pick { display: inline-flex; align-items: center; gap: 5px; max-width: 240px; height: 32px; padding: 0 8px 0 10px; border: 1px solid rgba(128, 128, 128, .35); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.cedar-send-pick:hover, .cedar-send-pick[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.cedar-send-pick[hidden] { display: none; }
+.cedar-send-pick-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-send-pick svg { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.cedar-send-menu { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 40; width: min(340px, calc(100vw - 32px)); max-height: min(60vh, 480px); overflow-y: auto; padding: 6px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 12px; background: var(--surface, var(--sheet, Canvas)); box-shadow: 0 10px 28px rgba(0, 0, 0, .18); }
+.cedar-send-menu[hidden] { display: none; }
+.cedar-send-menu-title { padding: 6px 10px 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.cedar-send-item { padding: 2px; border-radius: 8px; }
+.cedar-send-item.current { background: rgba(128, 128, 128, .1); }
+.cedar-send-model { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.cedar-send-model:hover { background: rgba(128, 128, 128, .12); }
+.cedar-send-model .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-send-model .tag { font-size: 11px; color: var(--muted); }
+.cedar-send-model .tick { width: 14px; flex: none; color: var(--accent); visibility: hidden; }
+.cedar-send-model[aria-checked="true"] .tick { visibility: visible; }
+.cedar-send-levels { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px 30px; }
+.cedar-send-level { padding: 2px 9px; border: 1px solid rgba(128, 128, 128, .35); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.cedar-send-level:hover { border-color: var(--accent); color: var(--accent); }
+.cedar-send-level[aria-checked="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+@media (max-width: 640px) {
+  .cedar-send-pick { max-width: 140px; }
+}
