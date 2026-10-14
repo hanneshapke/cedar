@@ -34,6 +34,8 @@ pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful coding agent. Your to
 
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
+    /// The `docker` command: a name looked up on `PATH` or an absolute path (`DOCKER_BIN`).
+    pub docker_bin: String,
     pub image: String,
     /// Docker network mode for the container. `none` by default.
     pub network: String,
@@ -45,6 +47,8 @@ pub struct SandboxConfig {
 pub struct BrowserConfig {
     /// Offer the `browser` tool (off by default).
     pub enabled: bool,
+    /// The `docker` command, as in [`SandboxConfig`].
+    pub docker_bin: String,
     pub image: String,
     /// Docker network for the browser containers. It needs internet access, so `bridge` by default.
     pub network: String,
@@ -327,6 +331,9 @@ impl Config {
             bail!("every key in CEDAR_ADMIN_KEYS must also be in CEDAR_API_KEYS");
         }
 
+        // A GUI launcher (the macOS app) runs without the user's PATH, so it names the CLI itself.
+        let docker_bin = get("DOCKER_BIN").unwrap_or_else(|| "docker".into());
+
         let cfg = Config {
             llm_base_url: get("LLM_BASE_URL").unwrap_or_else(|| DEFAULT_LLM_BASE_URL.into()),
             llm_api_key: get("LLM_API_KEY").map(|k| k.trim().to_string()),
@@ -392,6 +399,7 @@ impl Config {
             )?),
 
             sandbox: SandboxConfig {
+                docker_bin: docker_bin.clone(),
                 image: get("SANDBOX_IMAGE").unwrap_or_else(|| "cedar-sandbox:latest".into()),
                 network: get("SANDBOX_NETWORK").unwrap_or_else(|| "none".into()),
                 memory: get("SANDBOX_MEMORY").unwrap_or_else(|| "512m".into()),
@@ -399,6 +407,7 @@ impl Config {
             },
             browser: BrowserConfig {
                 enabled: flag("BROWSER", false)?,
+                docker_bin,
                 image: get("BROWSER_IMAGE").unwrap_or_else(|| "cedar-browser:latest".into()),
                 network: get("BROWSER_NETWORK").unwrap_or_else(|| "bridge".into()),
                 memory: get("BROWSER_MEMORY").unwrap_or_else(|| "1g".into()),
@@ -454,6 +463,8 @@ mod tests {
         assert_eq!(cfg.llm_api_key, None);
         assert!(!cfg.llm_base_url_from_env && !cfg.llm_api_key_from_env);
         assert_eq!(cfg.sandbox.network, "none");
+        assert_eq!(cfg.sandbox.docker_bin, "docker");
+        assert_eq!(cfg.browser.docker_bin, "docker");
         assert_eq!(cfg.max_turns_cap, 25);
         assert_eq!(cfg.workspace_ttl, Duration::from_secs(86_400));
         assert!(cfg.web_fetch);
@@ -570,6 +581,14 @@ mod tests {
         assert_eq!(cfg.browser.image, "my-browser:2");
         assert_eq!(cfg.browser.network, "cedar-web");
         assert_eq!(cfg.browser.memory, "2g");
+
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("DOCKER_BIN", "/opt/homebrew/bin/docker"),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.sandbox.docker_bin, "/opt/homebrew/bin/docker");
+        assert_eq!(cfg.browser.docker_bin, "/opt/homebrew/bin/docker");
 
         let err = Config::from_lookup(lookup(&[
             ("CEDAR_API_KEYS", "a"),

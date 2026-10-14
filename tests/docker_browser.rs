@@ -32,6 +32,7 @@ document.getElementById("open").onclick = () => {
 fn config() -> BrowserConfig {
     BrowserConfig {
         enabled: true,
+        docker_bin: "docker".into(),
         image: std::env::var("CEDAR_TEST_BROWSER_IMAGE")
             .unwrap_or_else(|_| "cedar-browser:latest".into()),
         network: "bridge".into(),

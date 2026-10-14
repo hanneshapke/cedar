@@ -1,6 +1,6 @@
 [package]
 name = "cedar-chat"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "A Claude.ai-style web chat for talking to a cedar agent server"
 license = "Apache-2.0"
@@ -18,7 +18,7 @@ sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 subtle = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time", "io-util", "io-std"] }
 tokio-util = "0.7"
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
