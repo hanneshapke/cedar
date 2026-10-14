@@ -251,8 +251,8 @@ registered, an API key if the server needs one, the reasoning levels it takes as
 (comma-separated, like `none, low, high, max`), the level to use when a message picks none,
 whether it accepts images and PDFs (see [Attachments](#attachments)), and whether it is the
 default for new chats. cedar checks the address by listing the server's models
-before saving, and the list is shown on the entry afterwards, with a warning if the model name is
-not on it. **Edit**, **Make default** and **Remove** change an entry; a removed model's
+before saving; the names it listed are offered in the edit form, with a warning on the entry if
+the model name is not one of them. **Edit**, **Make default** and **Remove** change an entry; a removed model's
 conversations fail at their next message until another model is picked. The first model
 registered is the default, and a fresh cedar has none: the message box says so until an admin adds
 one. Saving an API key needs cedar's `CEDAR_SECRET_KEY`; a server without one can be registered

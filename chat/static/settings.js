@@ -460,12 +460,11 @@ const cedarSettings = (() => {
     if (entry.api_key_set) side.append(badge('API key set'));
     if (entry.multimodal) side.append(badge('Images & PDFs'));
     side.append(badge(levels.length ? `Reasoning: ${levels.join(', ')}${entry.default_reasoning ? ` (default ${entry.default_reasoning})` : ''}` : 'No reasoning levels'));
-    if (Array.isArray(entry.listed_models)) {
+    // What the server listed when the entry was checked is offered in the edit form; the row only
+    // says when the model name is not one of them.
+    if (Array.isArray(entry.listed_models) && !entry.listed_models.includes(entry.model)) {
       const listed = entry.listed_models.length ? entry.listed_models.join(', ') : 'none';
-      main.append(el('small', '', `The server listed: ${listed}`));
-      if (!entry.listed_models.includes(entry.model)) {
-        main.append(el('small', 'cedar-set-warn-text', `${entry.model} is not among them; use Edit to set the model name to one of these.`));
-      }
+      main.append(el('small', 'cedar-set-warn-text', `"${entry.model}" is not a model this server lists (${listed}); use Edit to pick one it does.`));
     }
     let form = null;
     side.append(button('Edit', () => {
