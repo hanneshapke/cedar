@@ -75,6 +75,7 @@ async fn call(client: &ChatCompletionsClient) -> anyhow::Result<cedar::llm::LlmR
         .create_message(&MessageRequest {
             model: "test-model",
             max_tokens: 123,
+            reasoning_effort: None,
             system: "be nice",
             tools: &tools,
             messages: &messages,
@@ -123,6 +124,7 @@ async fn images_and_pdfs_are_sent_as_data_url_parts() {
         .create_message(&MessageRequest {
             model: "test-model",
             max_tokens: 10,
+            reasoning_effort: None,
             system: "",
             tools: &[],
             messages: &messages,
@@ -261,14 +263,13 @@ async fn the_agent_loop_drives_a_chat_completions_server() {
     ])
     .await;
     let llm = Arc::new(ChatCompletionsClient::new(url, None).unwrap());
+    let clients = Arc::new(cedar::llm::LlmRouter::new());
+    clients.set(common::TEST_MODEL, llm);
+    let store = cedar::store::Store::connect_memory().await.unwrap();
+    common::register_model(&store, common::TEST_MODEL, common::TEST_MODEL, &[]).await;
     let factory = common::FakeFactory::new();
-    let state = AppState::new(
-        common::test_config(&[]),
-        cedar::store::Store::connect_memory().await.unwrap(),
-        llm,
-        factory.clone(),
-    )
-    .unwrap();
+    let state = AppState::new(common::test_config(&[]), store, clients, factory.clone()).unwrap();
+    state.integrations.reload().await.unwrap();
     let app = common::TestApp {
         router: api::router(state.clone()),
         state,

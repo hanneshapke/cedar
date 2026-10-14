@@ -2,7 +2,9 @@
 //!
 //! Uses runtime-checked queries (not the `query!` macros) so building doesn't need a database.
 
-use crate::models::{event, Attachment, Event, NewRun, Run, RunStatus, StoredMessage, Usage};
+use crate::models::{
+    event, Attachment, Event, ModelEntry, NewRun, Run, RunStatus, StoredMessage, Usage,
+};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -14,9 +16,13 @@ use std::str::FromStr;
 use std::time::Duration;
 use uuid::Uuid;
 
-const RUN_COLS: &str = "id, owner, status, prompt, system, model, max_turns, turns, final_text, \
-    stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, workspace_reused, \
-    tools, created_at, started_at, finished_at";
+const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
+    turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
+    workspace_reused, tools, created_at, started_at, finished_at";
+
+const MODEL_COLS: &str =
+    "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, is_default, \
+    position, listed_models, created_at, updated_at";
 
 fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
@@ -35,7 +41,9 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         status: RunStatus::parse(status).ok_or_else(|| anyhow!("unknown run status {status:?}"))?,
         prompt: r.try_get("prompt")?,
         system: r.try_get("system")?,
+        model_id: r.try_get("model_id")?,
         model: r.try_get("model")?,
+        reasoning: r.try_get("reasoning")?,
         max_turns: r.try_get::<i64, _>("max_turns")? as u32,
         turns: r.try_get::<i64, _>("turns")? as u32,
         final_text: r.try_get("final_text")?,
@@ -62,6 +70,26 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
+    })
+}
+
+fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
+    Ok(ModelEntry {
+        id: r.try_get("id")?,
+        label: r.try_get("label")?,
+        model: r.try_get("model")?,
+        base_url: r.try_get("base_url")?,
+        reasoning_levels: serde_json::from_str(r.try_get("reasoning_levels")?)?,
+        default_reasoning: r.try_get("default_reasoning")?,
+        multimodal: r.try_get("multimodal")?,
+        is_default: r.try_get("is_default")?,
+        position: r.try_get("position")?,
+        listed_models: r
+            .try_get::<Option<&str>, _>("listed_models")?
+            .map(serde_json::from_str)
+            .transpose()?,
+        created_at: to_dt(r.try_get("created_at")?),
+        updated_at: to_dt(r.try_get("updated_at")?),
     })
 }
 
@@ -223,14 +251,17 @@ impl Store {
         };
 
         sqlx::query(
-            "INSERT INTO runs (id, owner, status, prompt, system, model, max_turns, parent_id, workspace_id, \
-             workspace_reused, tools, created_at) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
+             parent_id, workspace_id, workspace_reused, tools, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
         .bind(&new.prompt)
         .bind(&new.system)
+        .bind(&new.model_id)
         .bind(&new.model)
+        .bind(&new.reasoning)
         .bind(new.max_turns as i64)
         .bind(new.parent_id.map(|p| p.to_string()))
         .bind(workspace_id.to_string())
@@ -531,6 +562,138 @@ impl Store {
             })
             .collect()
     }
+
+    // -- the model registry ------------------------------------------------------------------
+
+    /// Every registered model, in picker order.
+    pub async fn list_models(&self) -> Result<Vec<ModelEntry>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {MODEL_COLS} FROM models ORDER BY position, id"
+        ))
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(model_from_row).collect()
+    }
+
+    pub async fn get_model(&self, id: &str) -> Result<Option<ModelEntry>> {
+        let row = sqlx::query(&format!("SELECT {MODEL_COLS} FROM models WHERE id = ?"))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.as_ref().map(model_from_row).transpose()
+    }
+
+    /// Add or replace a model. A new entry goes last; an existing one keeps its place and its
+    /// creation time. Exactly one entry is the default afterwards: this one if `is_default` is
+    /// set or it is the only entry, else the one that was.
+    pub async fn upsert_model(&self, entry: &ModelEntry) -> Result<ModelEntry> {
+        let mut tx = self.pool.begin().await?;
+        let now = now_ms();
+        let existing = sqlx::query("SELECT position, created_at FROM models WHERE id = ?")
+            .bind(&entry.id)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let (position, created_at) = match existing {
+            Some(r) => (
+                r.try_get::<i64, _>("position")?,
+                r.try_get::<i64, _>("created_at")?,
+            ),
+            None => {
+                let next: i64 =
+                    sqlx::query_scalar("SELECT COALESCE(MAX(position), 0) + 1 FROM models")
+                        .fetch_one(&mut *tx)
+                        .await?;
+                (next, now)
+            }
+        };
+        let others: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM models WHERE id != ?")
+            .bind(&entry.id)
+            .fetch_one(&mut *tx)
+            .await?;
+        let is_default = entry.is_default || others == 0;
+        if is_default {
+            sqlx::query("UPDATE models SET is_default = 0")
+                .execute(&mut *tx)
+                .await?;
+        }
+        sqlx::query(
+            "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
+             multimodal, is_default, position, listed_models, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
+             base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
+             default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, \
+             is_default = excluded.is_default, listed_models = excluded.listed_models, \
+             updated_at = excluded.updated_at",
+        )
+        .bind(&entry.id)
+        .bind(&entry.label)
+        .bind(&entry.model)
+        .bind(&entry.base_url)
+        .bind(serde_json::to_string(&entry.reasoning_levels)?)
+        .bind(&entry.default_reasoning)
+        .bind(entry.multimodal)
+        .bind(is_default)
+        .bind(position)
+        .bind(
+            entry
+                .listed_models
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
+        )
+        .bind(created_at)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        self.get_model(&entry.id)
+            .await?
+            .ok_or_else(|| anyhow!("model {} vanished after saving", entry.id))
+    }
+
+    /// Remove a model. Returns whether it existed. If it was the default, the first remaining
+    /// entry becomes the default.
+    pub async fn delete_model(&self, id: &str) -> Result<bool> {
+        let mut tx = self.pool.begin().await?;
+        let removed = sqlx::query("DELETE FROM models WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+            > 0;
+        let has_default: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM models WHERE is_default")
+            .fetch_one(&mut *tx)
+            .await?;
+        if has_default == 0 {
+            sqlx::query(
+                "UPDATE models SET is_default = 1 WHERE id = \
+                 (SELECT id FROM models ORDER BY position, id LIMIT 1)",
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(removed)
+    }
+
+    /// Whether anything is saved under `name` in the secrets table (without decrypting it).
+    pub async fn has_secret(&self, name: &str) -> Result<bool> {
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM secrets WHERE name = ?")
+            .bind(name)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(n > 0)
+    }
+
+    /// Remove a saved secret, whether or not it can be decrypted. Returns whether there was one.
+    pub async fn delete_secret(&self, name: &str) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM secrets WHERE name = ?")
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        Ok(res.rows_affected() > 0)
+    }
 }
 
 /// `seq` is computed inside the INSERT, so it is atomic with respect to other writers.
@@ -562,7 +725,9 @@ mod tests {
             owner: owner.into(),
             prompt: "hi".into(),
             system: "sys".into(),
+            model_id: "m".into(),
             model: "m".into(),
+            reasoning: None,
             max_turns: 5,
             parent_id: None,
             tools: None,

@@ -3,12 +3,13 @@
 // Settings that change what the agent can do, shared by both UIs (/v1 and /v2). Three pieces:
 //
 //   - The "Tools & model" section of the Settings dialog: which of cedar's tool groups new
-//     conversations get, the default model, turn limit and system prompt, and whether the model
-//     accepts images and PDFs (GET/PUT /api/settings). That last one is announced as a
-//     `cedar-settings-changed` event on `document` ({detail: {multimodal}}) for attach.js.
-//   - The "Integrations" section, for admins only (CHAT_ADMIN_TOKEN): cedar's Brave Search key and
-//     its Google account. The admin token is kept for this browser session and sent as X-Admin-Token.
-//   - A "Tools" button next to the model picker that changes the tools of one conversation
+//     conversations get, the default model, turn limit and system prompt (GET/PUT /api/settings).
+//   - The "Model server & API keys" section, for admins only (CHAT_ADMIN_TOKEN): the models cedar
+//     has registered (each with its server, API key and reasoning levels), its Brave Search key
+//     and its Google account. The admin token is kept for this browser session and sent as
+//     X-Admin-Token. A change to the models reloads cedarModels (models.js) and dispatches
+//     `cedar-models-changed` on `document`, so the apps refill their pickers.
+//   - A "Tools" button next to the model pickers that changes the tools of one conversation
 //     (PUT /api/conversations/{id}/tools). In a new chat the choice is applied when it is created.
 //
 // Each app hands over its helpers through cedarSettings.init():
@@ -16,10 +17,9 @@
 //   api(method, path, body) -> Promise<json>   the app's /api client (sends the access token)
 //   authHeaders() -> object                    the access token header, for the admin calls
 //   toast(message)                             a short notice
-//   models() -> string[]                       the models offered in the picker (may be empty)
 //   config() -> object                         /api/config (admin_enabled)
 //   current() -> conversation | null           the open conversation
-//   anchor                                     the element the Tools button goes after (the model picker)
+//   anchor                                     the element the Tools button goes after (the reasoning picker)
 
 const cedarSettings = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
@@ -220,26 +220,18 @@ const cedarSettings = (() => {
     const picker = toolPicker(state, (s) => { state = s; draft.tools = encode(s); dirty(); }, { detailed: true });
 
     const fields = el('div', 'cedar-set-fields');
-    const models = deps.models();
     let modelSelect = null;
-    if (models.length) {
+    if (cedarModels.all().length) {
       modelSelect = el('select');
-      modelSelect.append(new Option(defaults?.model ? `cedar's default (${defaults.model})` : "cedar's default", ''));
-      for (const m of models) modelSelect.append(new Option(m, m));
-      modelSelect.value = prefs.model || '';
+      cedarModels.fillSelect(modelSelect, { blank: "cedar's default", selected: prefs.model || '' });
+      modelSelect.hidden = false;
       modelSelect.addEventListener('change', dirty);
-      fields.append(field('Default model', modelSelect));
+      const modelField = field('Default model', modelSelect);
+      modelField.append(el('small', 'cedar-set-field-note', 'The picker by the message box changes it for one conversation, with the reasoning level next to it.'));
+      fields.append(modelField);
+    } else if (cedarModels.loaded()) {
+      fields.append(note('No model is registered yet: an admin adds one under Model server & API keys below.', 'cedar-set-error'));
     }
-    const multimodalBox = el('input');
-    multimodalBox.type = 'checkbox';
-    multimodalBox.checked = Boolean(prefs.multimodal);
-    multimodalBox.addEventListener('change', dirty);
-    const multimodalLabel = el('label', 'cedar-set-check cedar-set-check-wide');
-    const multimodalText = el('span');
-    multimodalText.append(el('strong', '', 'This model accepts images and PDFs'));
-    multimodalText.append(el('small', '', 'Shows an attach button by the message box (files can also be dropped or pasted). cedar passes the files to the model as they are; a model that cannot read them fails the message.'));
-    multimodalLabel.append(multimodalBox, multimodalText);
-    fields.append(multimodalLabel);
     const turns = el('input');
     turns.type = 'number';
     turns.min = '1';
@@ -278,14 +270,12 @@ const cedarSettings = (() => {
         // The default text is saved as "unset", so the prompt keeps following cedar's SYSTEM_PROMPT.
         system: isDefault() || !system.value.trim() ? null : system.value.trim(),
         max_turns: turns.value ? Number(turns.value) : null,
-        multimodal: multimodalBox.checked,
       };
       try {
         prefs = { ...(await deps.api('PUT', '/settings', body)), defaults };
         if (prefs.system === null) { system.value = defaultSystem; syncSystem(); }
         status.textContent = 'Saved';
         updateChip();
-        announce();
       } catch (e) {
         status.textContent = '';
         save.disabled = false;
@@ -302,16 +292,6 @@ const cedarSettings = (() => {
       fields,
       actions,
     );
-    announce();
-  }
-
-  /** Whether Settings says the model accepts images and PDFs. */
-  function multimodal() {
-    return Boolean(prefs?.multimodal);
-  }
-
-  function announce() {
-    document.dispatchEvent(new CustomEvent('cedar-settings-changed', { detail: { multimodal: multimodal() } }));
   }
 
   function field(label, input, extra) {
@@ -354,16 +334,16 @@ const cedarSettings = (() => {
     }
     const parts = [heading('Model server & API keys', lock)];
     if (!status.storage) {
-      parts.push(note('cedar has no CEDAR_SECRET_KEY, so keys can only be set in its environment.'));
+      parts.push(note('cedar has no CEDAR_SECRET_KEY, so API keys can\'t be saved here: models whose server needs none can still be registered; the Brave key and the Google account can only be set in cedar\'s environment.'));
     }
-    parts.push(llmRow(status), braveRow(status), googleRow(status));
+    parts.push(await modelsBlock(status), braveRow(status), googleRow(status));
     integrationsSection.replaceChildren(...parts);
   }
 
   /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
   function setupHelp() {
     const wrap = el('div', 'cedar-set-help');
-    wrap.append(note('The model server address, the Brave Search key and the Google account are set on the cedar server. They can be managed here once these are set:'));
+    wrap.append(note('The models (each with its server and API key), the Brave Search key and the Google account are set on the cedar server. They can be managed here once these are set:'));
     const list = el('ul');
     const item = (code, text) => {
       const li = el('li');
@@ -371,10 +351,13 @@ const cedarSettings = (() => {
       list.append(li);
     };
     item('CHAT_ADMIN_TOKEN', 'on cedar-chat: the token that unlocks this section');
-    item('CEDAR_SECRET_KEY', 'on cedar (openssl rand -hex 32): encrypts what is saved here');
+    item('CEDAR_SECRET_KEY', 'on cedar (openssl rand -hex 32): encrypts the API keys saved here');
     item('CEDAR_ADMIN_KEYS', "on cedar: include cedar-chat's CEDAR_API_KEY");
     wrap.append(list);
-    wrap.append(note('Until then, set LLM_BASE_URL, LLM_API_KEY, BRAVE_API_KEY and the GOOGLE_* variables in cedar\'s environment (see .env.example). Everything else, like the sandbox and limits, is only set there.'));
+    wrap.append(note('Models are only registered through cedar\'s admin API (PUT /v1/admin/models/{id}) or here. BRAVE_API_KEY and the GOOGLE_* variables can also go in cedar\'s environment (see .env.example); everything else, like the sandbox and limits, is only set there.'));
+    if (cedarModels.loaded() && !cedarModels.all().length) {
+      wrap.append(note('No model is registered yet, so messages can\'t be sent.', 'cedar-set-error'));
+    }
     const missing = groups().filter((g) => !g.available);
     if (missing.length) {
       const l = el('ul');
@@ -404,7 +387,10 @@ const cedarSettings = (() => {
       refreshTools();
     });
     const wrap = el('div');
-    wrap.append(note('The model server, API keys and the Google account are for admins. Enter the admin token (CHAT_ADMIN_TOKEN) to manage them.'));
+    wrap.append(note('The models, API keys and the Google account are for admins. Enter the admin token (CHAT_ADMIN_TOKEN) to manage them.'));
+    if (cedarModels.loaded() && !cedarModels.all().length) {
+      wrap.append(note('No model is registered yet, so messages can\'t be sent until an admin adds one here.', 'cedar-set-error'));
+    }
     if (error) wrap.append(note(error, 'cedar-set-error'));
     wrap.append(form);
     return wrap;
@@ -423,99 +409,199 @@ const cedarSettings = (() => {
     return { row, main, side };
   }
 
-  /** The address, model name (and key) of the OpenAI-compatible server cedar sends model calls to. */
-  function llmRow(status) {
-    const l = status.llm || {};
-    const { row, main, side } = integrationRow('Model server', 'The OpenAI-compatible server (vLLM) cedar sends every model call to.');
-    side.append(badge(l.base_url || 'unknown', l.source === 'ui' ? 'ok' : ''));
-    if (l.source === 'env') side.append(badge('Managed by environment'));
-    if (l.source === 'default') side.append(badge('Default'));
-    if (l.api_key_set) side.append(badge('API key set'));
-    const editable = l.source !== 'env' && status.storage && l.changeable !== false;
-    if (l.default_model) main.append(el('small', '', `Model name: ${l.default_model}${l.model_source === 'env' ? ' (set by LLM_MODEL on the server)' : ''}`));
-    if (Array.isArray(l.models)) {
-      const found = l.models.length ? l.models.join(', ') : 'none';
-      main.append(el('small', '', `Models it listed: ${found}`));
-      if (l.default_model && !l.models.includes(l.default_model)) {
-        const fix = editable && l.model_source !== 'env'
-          ? 'use Change to set the model name to one of these.'
-          : "set cedar's LLM_MODEL (and cedar-chat's CHAT_MODELS) to one of these.";
-        main.append(el('small', 'cedar-set-warn-text', `cedar's default model ${l.default_model} is not among them; ${fix}`));
-      }
-    }
-    if (!editable) return row;
+  // -- the model registry --------------------------------------------------------------------------
 
-    const edit = el('form', 'cedar-set-inline cedar-set-endpoint');
-    edit.hidden = true;
+  /** Tell the apps the registry changed, so their pickers follow. */
+  async function modelsChanged() {
+    try { await cedarModels.load(deps.api); } catch { /* the next load retries */ }
+    document.dispatchEvent(new CustomEvent('cedar-models-changed'));
+  }
+
+  /**
+   * The models cedar has registered, each with its server, and a form to add one. Every entry can
+   * be edited, made the default, or removed; the first one registered is the default.
+   */
+  async function modelsBlock(status) {
+    const wrap = el('div', 'cedar-set-models');
+    const head = el('div', 'cedar-set-subheading');
+    head.append(el('strong', '', 'Models'));
+    wrap.append(head);
+    let entries;
+    try {
+      ({ models: entries } = await adminApi('GET', '/integrations/models'));
+    } catch (e) {
+      wrap.append(note(`Could not list the models: ${e.message}`, 'cedar-set-error'));
+      return wrap;
+    }
+    entries = entries || [];
+    // The button sits in the heading, so it is in view however long the list is. The form it
+    // opens goes right under the heading, above the first entry.
+    const intro = entries.length
+      ? note('Each model is served by its own OpenAI-compatible server. New chats use the default; the picker by the message box chooses another, and the reasoning level next to it. Add a model for another server, or another model on the same one.')
+      : note('No model is registered yet, so messages can\'t be sent. Add the server that runs your model: for a local vLLM, http://localhost:8000/v1 and the name it registered (curl localhost:8000/v1/models).', 'cedar-set-error');
+    wrap.append(intro);
+    const add = button('Add a model', () => {
+      add.hidden = true;
+      const form = modelForm(null, status, () => { add.hidden = false; form.remove(); });
+      intro.after(form);
+      form.querySelector('input').focus();
+    }, entries.length ? 'copy-btn' : 'primary');
+    add.setAttribute('aria-label', 'Add a model');
+    head.append(add);
+    for (const entry of entries) wrap.append(modelRow(entry, status));
+    return wrap;
+  }
+
+  function modelRow(entry, status) {
+    const levels = entry.reasoning_levels || [];
+    const { row, main, side } = integrationRow(entry.label || entry.id, `${entry.model} at ${entry.base_url}`);
+    main.append(el('small', '', `id: ${entry.id}`));
+    if (entry.is_default) side.append(badge('Default', 'ok'));
+    if (entry.api_key_set) side.append(badge('API key set'));
+    if (entry.multimodal) side.append(badge('Images & PDFs'));
+    side.append(badge(levels.length ? `Reasoning: ${levels.join(', ')}${entry.default_reasoning ? ` (default ${entry.default_reasoning})` : ''}` : 'No reasoning levels'));
+    // What the server listed when the entry was checked is offered in the edit form; the row only
+    // says when the model name is not one of them.
+    if (Array.isArray(entry.listed_models) && !entry.listed_models.includes(entry.model)) {
+      const listed = entry.listed_models.length ? entry.listed_models.join(', ') : 'none';
+      main.append(el('small', 'cedar-set-warn-text', `"${entry.model}" is not a model this server lists (${listed}); use Edit to pick one it does.`));
+    }
+    let form = null;
+    side.append(button('Edit', () => {
+      if (form) { form.remove(); form = null; return; }
+      form = modelForm(entry, status, () => { form?.remove(); form = null; });
+      row.append(form);
+      form.querySelector('input').focus();
+    }));
+    if (!entry.is_default) {
+      side.append(button('Make default', async () => {
+        try {
+          await adminApi('PUT', `/integrations/models/${encodeURIComponent(entry.id)}`, { base_url: entry.base_url, model: entry.model, is_default: true });
+          deps.toast(`${entry.label || entry.id} is the default model`);
+          await modelsChanged();
+          renderIntegrations();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    }
+    side.append(button('Remove', async () => {
+      if (!confirm(`Remove the model ${entry.label || entry.id}? Conversations using it fail at their next message until another model is picked.`)) return;
+      try {
+        await adminApi('DELETE', `/integrations/models/${encodeURIComponent(entry.id)}`);
+        await modelsChanged();
+        renderIntegrations();
+      } catch (err) { deps.toast(err.message); }
+    }));
+    return row;
+  }
+
+  /** A form to register a model (`entry` null) or change one. `onDone` closes it. */
+  function modelForm(entry, status, onDone) {
+    const form = el('form', 'cedar-set-inline cedar-set-endpoint');
     const input = (placeholder, value, label, type = 'text') => {
       const i = el('input');
       i.type = type;
       i.placeholder = placeholder;
       i.value = value;
       i.setAttribute('aria-label', label);
+      i.spellcheck = false;
+      i.autocapitalize = 'off';
       return i;
     };
+    const slug = (text) => text.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+|-+$/g, '').slice(0, 64);
+    const id = input('id (letters, digits, . _ -), like deepseek', entry?.id || '', 'Model id');
+    id.disabled = Boolean(entry);
+    const label = input('Name shown in the picker', entry?.label || '', 'Label');
+    let idTouched = Boolean(entry);
+    id.addEventListener('input', () => { idTouched = true; });
+    label.addEventListener('input', () => { if (!idTouched) id.value = slug(label.value); });
     // The whole address, protocol and path included; cedar adds /v1 if the path is left off.
-    const address = input('http://10.0.0.5:8000/v1', l.base_url || '', 'Server address');
-    address.spellcheck = false;
-    address.autocapitalize = 'off';
-    // Empty means cedar's own default. Shown but locked when the environment sets LLM_MODEL.
-    const modelLocked = l.model_source === 'env';
-    const model = input('Model name (leave empty for the default)', modelLocked || l.model_source === 'ui' ? l.default_model : '', 'Model name');
-    model.spellcheck = false;
-    model.autocapitalize = 'off';
-    model.disabled = modelLocked;
+    const address = input('Server address, like http://10.0.0.5:8000/v1', entry?.base_url || '', 'Server address');
+    const model = input('Model name on the server, like deepseek-ai/DeepSeek-V4-Flash', entry?.model || '', 'Model name');
     let listed = null;
-    if (!modelLocked && Array.isArray(l.models) && l.models.length) {
+    if (entry?.listed_models?.length) {
       listed = el('datalist');
-      listed.id = 'cedar-set-models';
-      for (const m of l.models) listed.append(new Option(m, m));
+      listed.id = `cedar-set-listed-${entry.id}`;
+      for (const m of entry.listed_models) listed.append(new Option(m, m));
       model.setAttribute('list', listed.id);
     }
-    const key = input(l.api_key_set ? 'API key (leave empty to keep it)' : 'API key, if the server needs one', '', 'API key', 'password');
+    const canSaveKey = Boolean(status.storage);
+    const key = input(
+      !canSaveKey ? 'API key (needs CEDAR_SECRET_KEY on cedar)' : entry?.api_key_set ? 'API key (leave empty to keep it)' : 'API key, if the server needs one',
+      '', 'API key', 'password',
+    );
     key.autocomplete = 'off';
-    const clearKey = el('label', 'cedar-set-check small');
+    key.disabled = !canSaveKey;
+    const clearKey = el('label', 'cedar-set-check small plain');
     const clearBox = el('input');
     clearBox.type = 'checkbox';
     clearKey.append(clearBox, el('span', '', 'Remove the saved API key'));
-    const saveBtn = button('Check and save', () => edit.requestSubmit(), 'primary');
-    edit.append(address, model);
-    if (modelLocked) edit.append(el('small', 'cedar-set-field-note', 'Set by LLM_MODEL in the cedar server\'s environment; change it there.'));
-    if (listed) edit.append(listed);
-    edit.append(key);
-    if (l.api_key_source === 'ui') edit.append(clearKey);
-    edit.append(saveBtn, button('Cancel', () => { edit.hidden = true; }));
-    edit.addEventListener('submit', async (e) => {
+    const levels = input('Reasoning levels the model takes, like none, low, high, max (empty: none)', (entry?.reasoning_levels || []).join(', '), 'Reasoning levels');
+    const defaultLevel = el('select');
+    defaultLevel.setAttribute('aria-label', 'Default reasoning level');
+    const parseLevels = () => [...new Set(levels.value.split(',').map((l) => l.trim()).filter(Boolean))];
+    const fillDefault = () => {
+      const current = defaultLevel.value || entry?.default_reasoning || '';
+      defaultLevel.textContent = '';
+      defaultLevel.append(new Option("Default level: the server's own", ''));
+      for (const l of parseLevels()) defaultLevel.append(new Option(`Default level: ${l}`, l));
+      defaultLevel.value = parseLevels().includes(current) ? current : '';
+      defaultLevel.hidden = !parseLevels().length;
+    };
+    levels.addEventListener('input', fillDefault);
+    fillDefault();
+    const multimodalLabel = el('label', 'cedar-set-check plain');
+    const multimodalBox = el('input');
+    multimodalBox.type = 'checkbox';
+    multimodalBox.checked = Boolean(entry?.multimodal);
+    const multimodalText = el('span');
+    multimodalText.append(el('strong', '', 'Accepts images and PDFs'));
+    multimodalText.append(el('small', '', 'Shows an attach button by the message box while this model is picked (files can also be dropped or pasted). cedar passes the files to the model as they are; a model that cannot read them fails the message.'));
+    multimodalLabel.append(multimodalBox, multimodalText);
+    const makeDefault = el('label', 'cedar-set-check small plain');
+    const defaultBox = el('input');
+    defaultBox.type = 'checkbox';
+    defaultBox.checked = Boolean(entry?.is_default);
+    defaultBox.disabled = Boolean(entry?.is_default);
+    makeDefault.append(defaultBox, el('span', '', 'Use as the default model for new chats'));
+    const saveBtn = button(entry ? 'Check and save' : 'Check and add', () => form.requestSubmit(), 'primary');
+    form.append(id, label, address, model);
+    if (listed) form.append(listed);
+    form.append(key);
+    if (entry?.api_key_set && canSaveKey) form.append(clearKey);
+    form.append(levels, defaultLevel, multimodalLabel, makeDefault);
+    form.append(el('small', 'cedar-set-field-note', 'cedar checks the address by listing the server\'s models before saving. DeepSeek V4 on vLLM takes the levels none, low, high, xhigh and max as reasoning_effort; OpenAI-style servers take none, minimal, low, medium and high.'));
+    form.append(saveBtn, button('Cancel', onDone));
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!address.value.trim()) { deps.toast('Enter the server address'); return; }
-      const body = { base_url: address.value.trim() };
-      if (!modelLocked) body.model = model.value.trim();
+      if (!id.value.trim()) { deps.toast('Give the model an id'); id.focus(); return; }
+      if (!address.value.trim()) { deps.toast('Enter the server address'); address.focus(); return; }
+      if (!model.value.trim()) { deps.toast('Enter the model name'); model.focus(); return; }
+      const body = {
+        base_url: address.value.trim(),
+        model: model.value.trim(),
+        label: label.value.trim() || model.value.trim(),
+        reasoning_levels: parseLevels(),
+        default_reasoning: defaultLevel.value,
+        multimodal: multimodalBox.checked,
+        is_default: defaultBox.checked,
+      };
       if (key.value.trim()) body.api_key = key.value.trim();
       else if (clearBox.checked) body.api_key = '';
       saveBtn.disabled = true;
       saveBtn.textContent = 'Checking…';
       try {
-        const saved = await adminApi('PUT', '/integrations/llm', body);
-        deps.toast(`Model server set to ${saved.base_url}`);
+        const saved = await adminApi('PUT', `/integrations/models/${encodeURIComponent(id.value.trim())}`, body);
+        deps.toast(`${saved.label || saved.id}: ${saved.model} at ${saved.base_url}`);
+        await modelsChanged();
         renderIntegrations();
+        refreshTools();
       } catch (err) {
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Check and save';
+        saveBtn.textContent = entry ? 'Check and save' : 'Check and add';
         deps.toast(err.message);
       }
     });
-    side.append(button('Change', () => { edit.hidden = false; address.focus(); }));
-    if (l.source === 'ui') {
-      side.append(button('Use the default', async () => {
-        if (!confirm('Forget this address (and its saved API key and model name) and go back to the server default?')) return;
-        try {
-          await adminApi('DELETE', '/integrations/llm');
-          renderIntegrations();
-        } catch (err) { deps.toast(err.message); }
-      }));
-    }
-    row.append(edit); // full width, below the description and the buttons
-    return row;
+    return form;
   }
 
   function braveRow(status) {
@@ -728,9 +814,9 @@ const cedarSettings = (() => {
   /** Call once the app has its config and access token: loads the defaults and reports the
    *  outcome of a "Connect Google" redirect. */
   function start() {
-    deps.api('GET', '/settings').then((p) => { prefs = p; updateChip(); announce(); }).catch(() => {});
+    deps.api('GET', '/settings').then((p) => { prefs = p; updateChip(); }).catch(() => {});
     reportRedirect();
   }
 
-  return { init, start, beforeSend, conversationChanged, multimodal };
+  return { init, start, beforeSend, conversationChanged };
 })();

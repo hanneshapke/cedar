@@ -58,6 +58,8 @@ const FILE_VIEWER_JS: &str = include_str!("../static/file-viewer.js");
 const MAP_VIEW_JS: &str = include_str!("../static/map-view.js");
 const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
 /// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
+const MODELS_JS: &str = include_str!("../static/models.js");
+const MODELS_CSS: &str = include_str!("../static/models.css");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
@@ -142,9 +144,11 @@ pub fn router(state: AppState) -> Router {
         .route("/schedules/{id}/run", post(run_schedule_now))
         .route("/settings", get(get_settings).put(put_settings))
         .route("/tools", get(list_tools))
+        .route("/models", get(list_models))
         .route("/integrations", get(get_integrations))
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
-        .route("/integrations/llm", put(put_llm).delete(delete_llm))
+        .route("/integrations/models", get(get_models))
+        .route("/integrations/models/{id}", put(put_model).delete(delete_model))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/connect", post(connect_google))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
@@ -162,6 +166,8 @@ pub fn router(state: AppState) -> Router {
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
         .route("/map-view.js", get(|| async { asset(JS, MAP_VIEW_JS) }))
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
+        .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))
+        .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))
@@ -280,7 +286,6 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
     Json(json!({
         "auth_required": state.token_digest.is_some(),
         "admin_enabled": state.admin_digest.is_some(),
-        "models": state.cfg.models,
     }))
 }
 
@@ -369,8 +374,10 @@ async fn delete_conversation(State(state): State<AppState>, Path(id): Path<Strin
 #[serde(deny_unknown_fields)]
 struct MessageBody {
     content: String,
-    /// Absent: the default model from Settings.
+    /// A registered model's id. Absent: the default model from Settings.
     model: Option<String>,
+    /// One of the model's reasoning levels. Absent: the model's default.
+    reasoning: Option<String>,
     /// Images and PDFs for the model, when Settings says it accepts them.
     attachments: Option<Vec<Attachment>>,
 }
@@ -429,12 +436,53 @@ fn clean_message(what: &str, content: &str) -> Result<String, AppError> {
     Ok(content.to_string())
 }
 
-/// A model from the request: `None` (or blank) for cedar's default, else one of the offered ones.
-fn clean_model(state: &AppState, model: Option<&str>) -> Result<Option<String>, AppError> {
-    match model.map(str::trim).filter(|m| !m.is_empty()) {
-        None => Ok(None),
-        Some(m) if state.cfg.models.iter().any(|allowed| allowed == m) => Ok(Some(m.to_string())),
-        Some(m) => Err(AppError::BadRequest(format!("model {m:?} is not offered"))),
+/// Blank means absent, for the model and reasoning fields.
+fn blank_is_none(value: Option<&str>) -> Option<String> {
+    value.map(str::trim).filter(|v| !v.is_empty()).map(String::from)
+}
+
+/// The registered model `model` names (by id, or by its name on the server), if any.
+fn find_model<'a>(models: &'a [Value], model: &str) -> Option<&'a Value> {
+    models.iter().find(|m| m["id"] == model).or_else(|| models.iter().find(|m| m["model"] == model))
+}
+
+/// A model and reasoning level to save (for the defaults or a schedule), checked against
+/// cedar's registry so a stale choice can't break every later run: the model must be
+/// registered, and the level one the model (or, without a model, the default one) offers.
+async fn clean_model_choice(
+    state: &AppState,
+    model: Option<&str>,
+    reasoning: Option<&str>,
+) -> Result<(Option<String>, Option<String>), AppError> {
+    let model = blank_is_none(model);
+    let reasoning = blank_is_none(reasoning);
+    if model.is_none() && reasoning.is_none() {
+        return Ok((None, None));
+    }
+    let models = state.cedar.models().await?;
+    let entry = match &model {
+        Some(m) => find_model(&models, m).ok_or_else(|| AppError::BadRequest(format!("model {m:?} is not registered")))?,
+        None => models
+            .iter()
+            .find(|m| m["is_default"] == true)
+            .ok_or_else(|| AppError::BadRequest("no model is registered yet".into()))?,
+    };
+    if let Some(level) = &reasoning {
+        let offered = entry["reasoning_levels"].as_array().is_some_and(|ls| ls.iter().any(|l| l == level));
+        if !offered {
+            return Err(AppError::BadRequest(format!("model {:?} offers no reasoning level {level:?}", entry["id"])));
+        }
+    }
+    Ok((model.map(|_| entry["id"].as_str().unwrap_or_default().to_string()), reasoning))
+}
+
+/// A saved default model, if cedar still has it. `None` lets cedar use its own default.
+async fn still_registered(state: &AppState, model: Option<&str>) -> Option<String> {
+    let model = model?;
+    match state.cedar.models().await {
+        Ok(models) => find_model(&models, model).map(|m| m["id"].as_str().unwrap_or(model).to_string()),
+        // Can't tell: let cedar decide.
+        Err(_) => Some(model.to_string()),
     }
 }
 
@@ -465,19 +513,17 @@ async fn send_message(
     ApiJson(body): ApiJson<MessageBody>,
 ) -> Result<(StatusCode, Json<Turn>), AppError> {
     let content = clean_message("message", &body.content)?;
-    let requested = clean_model(&state, body.model.as_deref())?;
+    // The model and level go to cedar as given: it checks them against its registry.
+    let requested = blank_is_none(body.model.as_deref());
+    let reasoning = blank_is_none(body.reasoning.as_deref());
+    // Whether the model takes them is cedar's call (its registry says), relayed as it answers.
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
     let prefs = state.store.preferences().await?;
-    if !attachments.is_empty() && !prefs.multimodal {
-        return Err(AppError::BadRequest(
-            "files are off: turn on \"This model accepts images and PDFs\" under Settings → Tools & model to send them".into(),
-        ));
-    }
 
     let _guard = state.send_lock.lock().await;
     let conversation = find_conversation(&state, &id).await?;
     let turns = settled_turns(&state, &conversation).await?;
-    let settings = RunSettings::resolve(&state, &prefs, requested, conversation.tools.clone());
+    let settings = RunSettings::resolve(&state, &prefs, requested, reasoning, conversation.tools.clone()).await;
     let model = settings.model.as_deref();
     let options = |parent| RunOptions { attachments: Some(&attachments), ..settings.options(parent) };
 
@@ -497,7 +543,10 @@ async fn send_message(
             other => other?,
         },
     };
-    let turn = state.store.insert_turn(conversation.id, run.id, &content, &run.status, model, &infos).await?;
+    let turn = state
+        .store
+        .insert_turn(conversation.id, run.id, &content, &run.status, model, settings.reasoning.as_deref(), &infos)
+        .await?;
     Ok((StatusCode::CREATED, Json(turn)))
 }
 
@@ -507,6 +556,8 @@ async fn send_message(
 /// tools.
 pub struct RunSettings {
     pub model: Option<String>,
+    /// The reasoning level asked for; `None` leaves the model's default to cedar.
+    pub reasoning: Option<String>,
     pub system: Option<String>,
     pub max_turns: Option<u32>,
     /// `*` when every tool is meant, so a continuation doesn't keep its parent's narrower choice.
@@ -514,17 +565,27 @@ pub struct RunSettings {
 }
 
 impl RunSettings {
-    /// `model` and `tools` win over the defaults. A default model that is no longer offered is
-    /// dropped (cedar then uses its own).
-    pub fn resolve(state: &AppState, prefs: &Preferences, model: Option<String>, tools: Option<Vec<String>>) -> Self {
-        let model = model.or_else(|| clean_model(state, prefs.model.as_deref()).ok().flatten());
+    /// `model`, `reasoning` and `tools` win over the defaults. A default model that is no longer
+    /// registered is dropped (cedar then uses its own default).
+    pub async fn resolve(
+        state: &AppState,
+        prefs: &Preferences,
+        model: Option<String>,
+        reasoning: Option<String>,
+        tools: Option<Vec<String>>,
+    ) -> Self {
+        let model = match model {
+            Some(m) => Some(m),
+            None => still_registered(state, prefs.model.as_deref()).await,
+        };
         let tools = tools.or_else(|| prefs.tools.clone()).unwrap_or_else(|| vec!["*".to_string()]);
-        Self { model, system: prefs.system.clone(), max_turns: prefs.max_turns, tools }
+        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools }
     }
 
     pub fn options(&self, parent: Option<Uuid>) -> RunOptions<'_> {
         RunOptions {
             model: self.model.as_deref(),
+            reasoning: self.reasoning.as_deref(),
             system: self.system.as_deref(),
             max_turns: self.max_turns,
             tools: Some(&self.tools),
@@ -584,12 +645,12 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
     if body.max_turns.is_some_and(|n| n == 0 || n > MAX_TURNS) {
         return Err(AppError::BadRequest(format!("max_turns must be between 1 and {MAX_TURNS}")));
     }
+    let (model, _) = clean_model_choice(&state, body.model.as_deref(), None).await?;
     let prefs = Preferences {
         tools: clean_tools(&state, body.tools).await?,
-        model: clean_model(&state, body.model.as_deref())?,
+        model,
         system,
         max_turns: body.max_turns,
-        multimodal: body.multimodal.unwrap_or(false),
     };
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))
@@ -602,13 +663,16 @@ struct SettingsBody {
     model: Option<String>,
     system: Option<String>,
     max_turns: Option<u32>,
-    /// The model accepts images and PDFs, so the composer offers attachments.
-    multimodal: Option<bool>,
 }
 
 /// cedar's tool groups, for the Tools settings and the composer's tools menu.
 async fn list_tools(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     Ok(Json(state.cedar.tools().await?))
+}
+
+/// The models cedar has registered, for the pickers.
+async fn list_models(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    Ok(Json(json!({ "models": state.cedar.models().await? })))
 }
 
 #[derive(Deserialize)]
@@ -670,24 +734,30 @@ async fn put_brave_key(
     Ok(Json(state.cedar.set_brave_key(&body.api_key).await?))
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LlmBody {
-    base_url: String,
-    /// Absent keeps cedar's saved key; empty removes it.
-    api_key: Option<String>,
-    /// Absent keeps cedar's saved model name; empty removes it.
-    model: Option<String>,
+async fn get_models(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.models_admin().await?))
 }
 
-async fn put_llm(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<LlmBody>) -> Result<Json<Value>, AppError> {
+/// Register a model or change one. The body is cedar's (`{base_url, model, label?, api_key?,
+/// reasoning_levels?, default_reasoning?, is_default?}`) and goes through as it is; cedar
+/// checks it and the server it names.
+async fn put_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<Value>,
+) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
-    Ok(Json(state.cedar.set_llm(&body.base_url, body.api_key.as_deref(), body.model.as_deref()).await?))
+    if !body.is_object() {
+        return Err(AppError::BadRequest("the body must be a JSON object".into()));
+    }
+    Ok(Json(state.cedar.set_model(&id, &body).await?))
 }
 
-async fn delete_llm(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+async fn delete_model(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
-    state.cedar.remove_llm().await?;
+    state.cedar.remove_model(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -748,7 +818,8 @@ async fn compact_conversation(State(state): State<AppState>, Path(id): Path<Stri
         .rev()
         .find(|t| t.status == "completed")
         .ok_or(AppError::NotFound("the conversation has no finished response to schedule yet"))?;
-    let model = clean_model(&state, conversation.model.as_deref()).ok().flatten();
+    // The conversation's model, if cedar still has it; else cedar's default.
+    let model = still_registered(&state, conversation.model.as_deref()).await;
     match state.cedar.compact_run(last.run_id, model.as_deref()).await {
         Ok(prompt) => Ok(Json(Compacted { prompt, source: "run" })),
         Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => {
@@ -770,8 +841,10 @@ async fn compact_conversation(State(state): State<AppState>, Path(id): Path<Stri
 struct ScheduleBody {
     title: Option<String>,
     prompt: Option<String>,
-    /// Blank or absent means cedar's default model.
+    /// A registered model's id. Blank or absent means cedar's default model.
     model: Option<String>,
+    /// One of the model's reasoning levels. Blank or absent means the model's default.
+    reasoning: Option<String>,
     frequency: Option<String>,
     weekday: Option<u8>,
     time: Option<String>,
@@ -854,7 +927,7 @@ async fn create_schedule(
 ) -> Result<(StatusCode, Json<Schedule>), AppError> {
     let title = clean_title(body.title)?.ok_or_else(|| AppError::BadRequest("title must not be empty".into()))?;
     let prompt = clean_message("prompt", body.prompt.as_deref().unwrap_or_default())?;
-    let model = clean_model(&state, body.model.as_deref())?;
+    let (model, reasoning) = clean_model_choice(&state, body.model.as_deref(), body.reasoning.as_deref()).await?;
     let missing = |what: &str| AppError::BadRequest(format!("{what} is required"));
     let frequency = body.frequency.ok_or_else(|| missing("frequency"))?;
     let time = body.time.ok_or_else(|| missing("time"))?;
@@ -876,6 +949,7 @@ async fn create_schedule(
             title: &title,
             prompt: &prompt,
             model: model.as_deref(),
+            reasoning: reasoning.as_deref(),
             source_conversation_id: body.conversation_id,
             tools: tools.as_deref(),
             frequency: timing.frequency.as_str(),
@@ -906,8 +980,10 @@ async fn update_schedule(
     if let Some(prompt) = &body.prompt {
         schedule.prompt = clean_message("prompt", prompt)?;
     }
-    if let Some(model) = &body.model {
-        schedule.model = clean_model(&state, Some(model))?;
+    if body.model.is_some() || body.reasoning.is_some() {
+        let model = body.model.as_deref().or(schedule.model.as_deref());
+        let reasoning = body.reasoning.as_deref().or(schedule.reasoning.as_deref());
+        (schedule.model, schedule.reasoning) = clean_model_choice(&state, model, reasoning).await?;
     }
     if let Some(tools) = body.tools {
         schedule.tools = clean_tools(&state, tools).await?;

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/schedule.css">
   <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/models.css">
   <link rel="stylesheet" href="/attach.css">
 </head>
 <body>
@@ -72,7 +73,8 @@
         <form class="composer" id="composer">
           <textarea id="input" rows="1" placeholder="How can I help you today?" aria-label="Message"></textarea>
           <div class="composer-row">
-            <select id="model" aria-label="Model" hidden></select>
+            <select id="model" class="cedar-picker-state" aria-label="Model" hidden></select>
+            <select id="reasoning" class="cedar-picker-state" aria-label="Reasoning level" hidden></select>
             <span class="hint" id="hint"></span>
             <button class="send" id="send" type="submit" aria-label="Send message" disabled>
               <svg class="i-send" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
@@ -138,6 +140,7 @@
   <script src="/image-view.js"></script>
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>
+  <script src="/models.js"></script>
   <script src="/schedule.js"></script>
   <script src="/settings.js"></script>
   <script src="/attach.js"></script>

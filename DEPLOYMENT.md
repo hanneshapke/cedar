@@ -18,7 +18,7 @@ laptop browser ──SSH tunnel──▶ cedar-chat :3000 ──▶ cedar :8080 
 Only `cedar-chat` needs to be reachable from outside the Spark. Keep `cedar` and vLLM on
 loopback.
 
-If vLLM runs on another machine, skip step 2 and point `LLM_BASE_URL` at it in step 4.
+If vLLM runs on another machine, skip step 2 and register its address instead of the local one in step 5.
 
 ## 1. Prepare the Spark
 
@@ -96,8 +96,8 @@ Check the first and third:
 curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[].id'
 ```
 
-Whatever it prints is your `LLM_MODEL` in step 4. Then check that tool calling works, which is
-the check that matters most:
+Whatever it prints is the model name you register in step 5. Then check that tool calling works,
+which is the check that matters most:
 
 ```sh
 MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')
@@ -156,6 +156,8 @@ sudo useradd --system --create-home --home-dir /var/lib/cedar \
 
 CEDAR_KEY=$(openssl rand -hex 24)     # chat -> cedar
 CHAT_TOKEN=$(openssl rand -hex 24)    # browser -> chat
+ADMIN_TOKEN=$(openssl rand -hex 24)   # unlocks Settings -> Model server & API keys in the browser
+SECRET_KEY=$(openssl rand -hex 32)    # encrypts the API keys saved there; keep it with your secrets
 MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')   # or type the name yourself
 echo "model: ${MODEL:?vLLM is not reachable; set MODEL to the name it serves}"
 
@@ -163,12 +165,12 @@ sudo install -d -m 0755 /etc/cedar
 
 sudo tee /etc/cedar/cedar.env >/dev/null <<EOF
 CEDAR_API_KEYS=$CEDAR_KEY
+CEDAR_ADMIN_KEYS=$CEDAR_KEY           # lets the chat UI register models and save keys
+CEDAR_SECRET_KEY=$SECRET_KEY
 BIND_ADDR=127.0.0.1:8080
 DATABASE_URL=sqlite:///var/lib/cedar/cedar.db
 
-LLM_BASE_URL=http://127.0.0.1:8000/v1
-LLM_MODEL=$MODEL
-# LLM_API_KEY=            # only if vLLM was started with --api-key
+# The model server is registered through the chat UI (step 5), not here.
 # BRAVE_API_KEY=          # enables the web_search tool (key from api-dashboard.search.brave.com)
 
 # Tuned for one Spark running a large model (see "Memory" above)
@@ -183,13 +185,17 @@ CEDAR_API_KEY=$CEDAR_KEY
 CHAT_BIND_ADDR=127.0.0.1:3000
 CHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db
 CHAT_ACCESS_TOKEN=$CHAT_TOKEN
+CHAT_ADMIN_TOKEN=$ADMIN_TOKEN
 EOF
 
 sudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env   # systemd reads them as root
 echo "Chat access token (you type this in the browser): $CHAT_TOKEN"
+echo "Admin token (unlocks the model settings in the browser): $ADMIN_TOKEN"
 ```
 
-Keep the printed token. The chat page asks for it on first load. The full list of settings is in
+Keep the printed tokens. The chat page asks for the access token on first load; the admin token
+unlocks Settings → Model server & API keys, where the vLLM server is registered (step 5 does it
+with curl first). The full list of settings is in
 the [README](README.md#configuration) and [chat/README.md](chat/README.md#configuration).
 
 Settings worth knowing on this hardware:
@@ -199,7 +205,6 @@ Settings worth knowing on this hardware:
 | `RUN_TIMEOUT_SECS` | A whole run, across all its model turns, must finish within this (default 600). A local model is slower than a hosted one, so give it room. |
 | `MAX_TOKENS` | Cap on one model reply (default 4096). A model that reasons before it answers spends this on its thinking too, so a reply can end before any text; chat then says it was cut off at the limit. Raise it if you see that. cedar waits for the full reply and gives up on a single request after **300 seconds** (fixed in `src/llm.rs`). If your Spark generates slowly enough that 4096 tokens takes longer than that, lower `MAX_TOKENS`. |
 | `MAX_CONCURRENT_RUNS` | How many agents run at once; the rest queue. |
-| `CHAT_MODELS` | Optional model picker in the UI. Leave unset to use only `LLM_MODEL`. |
 | `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox container. |
 | `WEB_FETCH` | `on` by default. `off` removes `fetch_url` and `download_file`, for a host that should make no outbound requests on the agent's behalf. |
 | `WEATHER` | `on` by default. `off` removes `weather_forecast`. It uses the public Open-Meteo API, which is free for non-commercial use only; for commercial use set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to a self-hosted or commercial Open-Meteo endpoint. Place names and coordinates the agent asks about are sent to that service. |
@@ -221,6 +226,15 @@ sudo -u cedar env $(sudo cat /etc/cedar/cedar.env | grep -v '^#' | xargs) /usr/l
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/readyz     # 200
 
 CEDAR_KEY=$(sudo grep ^CEDAR_API_KEYS= /etc/cedar/cedar.env | cut -d= -f2)
+MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')
+
+# Register vLLM as the model "deepseek" (cedar lists the server's models first to check the
+# address). DeepSeek V4 takes these reasoning levels; leave the list out for a model that has none.
+curl -s -X PUT http://127.0.0.1:8080/v1/admin/models/deepseek -H "Authorization: Bearer $CEDAR_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"base_url": "http://127.0.0.1:8000/v1", "model": "'"$MODEL"'", "label": "DeepSeek V4",
+       "reasoning_levels": ["none", "low", "high", "max"]}'
+
 curl -s http://127.0.0.1:8080/v1/runs -H "Authorization: Bearer $CEDAR_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"prompt": "Write hello.txt containing the word hi, then read it back."}' | tee /tmp/run.json
@@ -229,9 +243,11 @@ curl -N http://127.0.0.1:8080/v1/runs/$RUN/events -H "Authorization: Bearer $CED
 ```
 
 `/readyz` returns 200 only if the database and Docker (including the `cedar-sandbox` image) are
-available. It does not check vLLM. The event stream should show `tool.call`, `tool.result`,
-`assistant.text`, and finally `run.completed`. If it ends in `run.failed`, see
-[Troubleshooting](#troubleshooting).
+available. It does not check vLLM, but it says how many models are registered (`"models": 1`
+after the `PUT`). The registration is kept in cedar's database, so it survives restarts; the chat
+UI shows and edits it under Settings → Model server & API keys. The event stream should show
+`tool.call`, `tool.result`, `assistant.text`, and finally `run.completed`. If it ends in
+`run.failed`, see [Troubleshooting](#troubleshooting).
 
 Stop cedar with Ctrl-C and move on to systemd.
 
@@ -350,8 +366,9 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 
 | Symptom | Likely cause and fix |
 | --- | --- |
-| Run fails: `LLM API error 404` / "model not found" | `LLM_MODEL` doesn't match the name vLLM registered. Compare with `curl localhost:8000/v1/models`. Runs created earlier keep their old model name, so continuing one needs an explicit `model`. |
-| Run fails immediately with `sending API request` | cedar can't reach vLLM. Check it is running and that `LLM_BASE_URL` includes `/v1`. |
+| Message refused: "no model is registered" | Nobody has registered the vLLM server yet: the `PUT` in step 5, or Settings → Model server & API keys → Add a model in the browser (with the admin token from step 4). |
+| Run fails: `LLM API error 404` / "model not found" | The model name in the registered entry doesn't match the name vLLM registered. Compare with `curl localhost:8000/v1/models` and edit the entry (Settings shows what the server listed). |
+| Run fails immediately with `sending API request` | cedar can't reach vLLM. Check it is running and that the entry's address includes `/v1`. |
 | Runs finish instantly with tool calls printed as text | vLLM was started without `--enable-auto-tool-choice --tool-call-parser deepseek_v4`. Redo the check in step 2. |
 | Run fails: `run exceeded the Ns time limit` | The whole run took longer than `RUN_TIMEOUT_SECS`. Raise it, or lower `MAX_TOKENS` so each model turn is shorter. |
 | Run fails: `run did not finish within N turns` | The task needed more model turns than allowed. Raise `max_turns` in the request (capped by `MAX_TURNS_CAP`, 25 by default) or give the agent a smaller task. |

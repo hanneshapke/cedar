@@ -7,11 +7,12 @@ use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
-use crate::integrations::Integrations;
-use crate::llm::LlmClient;
+use crate::integrations::{Integrations, ModelSpec};
+use crate::llm::LlmRouter;
 use crate::manager::RunManager;
 use crate::models::{
-    Attachment, CreateRunRequest, NewRun, Run, RunStatus, StoredMessage, ALLOWED_ATTACHMENT_TYPES,
+    Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
+    ALLOWED_ATTACHMENT_TYPES,
 };
 use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
 use crate::sse;
@@ -59,8 +60,8 @@ pub struct AppState {
     /// `None` when the browser is turned off.
     pub browsers: Option<Arc<dyn BrowserFactory>>,
     pub auth: AuthKeys,
-    /// For model calls outside a run (compaction).
-    pub llm: Arc<dyn LlmClient>,
+    /// The registered models' clients, for model calls outside a run (compaction).
+    pub llm: Arc<LlmRouter>,
     /// The current tools, and the credentials admins can set up for them.
     pub integrations: Arc<Integrations>,
 }
@@ -72,7 +73,7 @@ impl AppState {
     pub fn new(
         cfg: Config,
         store: Store,
-        llm: Arc<dyn LlmClient>,
+        llm: Arc<LlmRouter>,
         sandboxes: Arc<dyn SandboxFactory>,
     ) -> Result<Self> {
         let browsers = Arc::new(DockerBrowserFactory::new(cfg.browser.clone()));
@@ -84,7 +85,7 @@ impl AppState {
     pub fn with_browsers(
         cfg: Config,
         store: Store,
-        llm: Arc<dyn LlmClient>,
+        llm: Arc<LlmRouter>,
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Arc<dyn BrowserFactory>,
     ) -> Result<Self> {
@@ -142,11 +143,13 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/files/{*path}", get(download_file))
         .route("/compact", post(compact_conversation))
         .route("/tools", get(list_tools))
+        .route("/models", get(list_models))
         .route("/defaults", get(defaults))
         .route("/admin/integrations", get(get_integrations))
+        .route("/admin/models", get(get_models))
         .route(
-            "/admin/integrations/llm",
-            axum::routing::put(put_llm).delete(delete_llm),
+            "/admin/models/{id}",
+            axum::routing::put(put_model).delete(delete_model),
         )
         .route(
             "/admin/integrations/brave",
@@ -198,29 +201,89 @@ async fn owned_run(state: &AppState, owner: &Owner, raw_id: &str) -> Result<Run,
     }
 }
 
-/// The model a request gets: what it asked for, else `inherited`, else `default`; checked
-/// against `ALLOWED_MODELS`.
+/// The model a request gets and the reasoning level it sends.
+struct ResolvedModel {
+    id: String,
+    name: String,
+    reasoning: Option<String>,
+    /// Whether the entry takes images and PDFs.
+    multimodal: bool,
+}
+
+/// The model a request gets: the registered entry it named (by id, or by model name when only
+/// one entry has it), else the parent's, else the default entry. The reasoning level is the one
+/// asked for, else the parent's when it used the same entry, else the entry's default; it must be
+/// one the entry offers.
 fn resolve_model(
-    cfg: &Config,
-    default: &str,
+    models: &[ModelEntry],
     requested: Option<&str>,
-    inherited: Option<&str>,
-) -> Result<String, AppError> {
-    let requested = requested.map(str::trim).filter(|m| !m.is_empty());
-    match requested.or(inherited) {
-        None => Ok(default.to_string()),
-        Some(m) if m.len() > MAX_MODEL_LEN => {
-            Err(AppError::BadRequest("model name is too long".into()))
-        }
-        Some(m)
-            if m == default
-                || cfg.allowed_models.is_empty()
-                || cfg.allowed_models.iter().any(|a| a == m) =>
-        {
-            Ok(m.to_string())
-        }
-        Some(m) => Err(AppError::BadRequest(format!("model {m:?} is not allowed"))),
+    requested_reasoning: Option<&str>,
+    parent: Option<&Run>,
+) -> Result<ResolvedModel, AppError> {
+    if models.is_empty() {
+        return Err(AppError::Conflict(
+            "no model is registered; an admin adds one under Settings or with PUT /v1/admin/models/{id}"
+                .into(),
+        ));
     }
+    let requested = requested.map(str::trim).filter(|m| !m.is_empty());
+    let entry = match requested {
+        Some(m) if m.len() > MAX_MODEL_LEN => {
+            return Err(AppError::BadRequest("model name is too long".into()))
+        }
+        Some(m) => {
+            let by_id = models.iter().find(|e| e.id == m);
+            let by_name = || {
+                let mut named = models.iter().filter(|e| e.model == m);
+                match (named.next(), named.next()) {
+                    (Some(one), None) => Some(one),
+                    _ => None,
+                }
+            };
+            by_id
+                .or_else(by_name)
+                .ok_or_else(|| AppError::BadRequest(format!("model {m:?} is not registered")))?
+        }
+        None => match parent {
+            Some(p) => models.iter().find(|e| e.id == p.model_id).ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "the parent run's model {:?} is no longer registered; name another",
+                    p.model_id
+                ))
+            })?,
+            None => models
+                .iter()
+                .find(|e| e.is_default)
+                .or_else(|| models.first())
+                .expect("checked non-empty"),
+        },
+    };
+    let inherited = parent
+        .filter(|p| p.model_id == entry.id)
+        .and_then(|p| p.reasoning.as_deref());
+    let reasoning = match requested_reasoning.map(str::trim).filter(|r| !r.is_empty()) {
+        Some(r) => Some(r),
+        None => inherited.or(entry.default_reasoning.as_deref()),
+    };
+    if let Some(r) = reasoning {
+        if !entry.reasoning_levels.iter().any(|l| l == r) {
+            return Err(AppError::BadRequest(if entry.reasoning_levels.is_empty() {
+                format!("model {:?} offers no reasoning levels", entry.id)
+            } else {
+                format!(
+                    "reasoning {r:?} is not offered by model {:?} (one of {})",
+                    entry.id,
+                    entry.reasoning_levels.join(", ")
+                )
+            }));
+        }
+    }
+    Ok(ResolvedModel {
+        id: entry.id.clone(),
+        name: entry.model.clone(),
+        reasoning: reasoning.map(String::from),
+        multimodal: entry.multimodal,
+    })
 }
 
 /// Check the files sent with a prompt: count, name, media type, that `data` is real base64, and
@@ -306,11 +369,18 @@ async fn create_run(
         },
     };
     let model = resolve_model(
-        cfg,
-        &state.integrations.default_model(),
+        &state.integrations.models(),
         req.model.as_deref(),
-        parent.as_ref().map(|p| p.model.as_str()),
+        req.reasoning.as_deref(),
+        parent.as_ref(),
     )?;
+    if !attachments.is_empty() && !model.multimodal {
+        return Err(AppError::BadRequest(format!(
+            "model {:?} does not accept images or PDFs (an admin registers it as accepting them \
+             under Settings, or with \"multimodal\": true on PUT /v1/admin/models/{{id}})",
+            model.id
+        )));
+    }
 
     let system = match req.system.filter(|s| !s.trim().is_empty()) {
         None => parent
@@ -347,7 +417,9 @@ async fn create_run(
         owner: owner.0,
         prompt: req.prompt,
         system,
-        model,
+        model_id: model.id,
+        model: model.name,
+        reasoning: model.reasoning,
         max_turns,
         parent_id: req.parent_id,
         tools,
@@ -377,14 +449,26 @@ async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(tools.catalog(&state.integrations.unavailable_reasons()))
 }
 
+/// The registered models a run can name, in picker order.
+async fn list_models(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let models: Vec<serde_json::Value> = state
+        .integrations
+        .models()
+        .iter()
+        .map(ModelEntry::public)
+        .collect();
+    Json(json!({ "models": models }))
+}
+
 /// What a run gets when it doesn't say: for clients that show the defaults.
 async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
     let cfg = &state.cfg;
+    let default = state.integrations.default_entry();
     Json(json!({
-        "model": state.integrations.default_model(),
+        "model": default.as_ref().map(|m| m.model.clone()),
+        "model_id": default.as_ref().map(|m| m.id.clone()),
         "system": cfg.default_system_prompt,
         "max_turns_cap": cfg.max_turns_cap,
-        "allowed_models": cfg.allowed_models,
         "attachments": {
             "max_count": MAX_ATTACHMENTS,
             "max_bytes": MAX_ATTACHMENT_BYTES,
@@ -437,40 +521,31 @@ async fn delete_brave_key(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LlmBody {
-    base_url: String,
-    /// Absent keeps the saved key; empty removes it.
-    api_key: Option<String>,
-    /// The model runs use when they name none. Absent keeps the saved name; empty removes it.
-    model: Option<String>,
-}
-
-async fn put_llm(
+async fn get_models(
     State(state): State<AppState>,
     Extension(admin): Extension<Admin>,
-    ApiJson(body): ApiJson<LlmBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
-    Ok(Json(
-        state
-            .integrations
-            .set_llm(
-                &body.base_url,
-                body.api_key.as_deref(),
-                body.model.as_deref(),
-            )
-            .await?,
-    ))
+    Ok(Json(state.integrations.models_status().await?))
 }
 
-async fn delete_llm(
+async fn put_model(
     State(state): State<AppState>,
     Extension(admin): Extension<Admin>,
+    Path(id): Path<String>,
+    ApiJson(spec): ApiJson<ModelSpec>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(state.integrations.set_model(&id, spec).await?))
+}
+
+async fn delete_model(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
     require_admin(admin)?;
-    state.integrations.remove_llm().await?;
+    state.integrations.remove_model(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -672,6 +747,7 @@ struct CompactRequest {
 struct CompactResponse {
     prompt: String,
     model: String,
+    model_id: String,
     usage: crate::models::Usage,
 }
 
@@ -682,7 +758,7 @@ async fn compact_conversation(
     ApiJson(req): ApiJson<CompactRequest>,
 ) -> Result<Json<CompactResponse>, AppError> {
     let cfg = &state.cfg;
-    let (messages, inherited_model) = match (req.run_id, req.transcript) {
+    let (messages, run) = match (req.run_id, req.transcript) {
         (Some(id), None) => {
             let run = owned_run(&state, &owner, &id.to_string()).await?;
             if !run.status.is_terminal() {
@@ -692,7 +768,7 @@ async fn compact_conversation(
             if stored.is_empty() {
                 return Err(AppError::Conflict("the run has no conversation yet".into()));
             }
-            (compact::messages_for_run(stored), Some(run.model))
+            (compact::messages_for_run(stored), Some(run))
         }
         (None, Some(transcript)) => {
             if transcript.trim().is_empty() {
@@ -711,18 +787,27 @@ async fn compact_conversation(
             ))
         }
     };
+    // Compaction takes no reasoning level: one plain call is enough.
     let model = resolve_model(
-        cfg,
-        &state.integrations.default_model(),
+        &state.integrations.models(),
         req.model.as_deref(),
-        inherited_model.as_deref(),
-    )?;
-    let done = compact::compact(state.llm.as_ref(), &model, cfg.max_tokens, &messages)
+        Some(""),
+        run.as_ref(),
+    )
+    .map(|m| ResolvedModel {
+        reasoning: None,
+        ..m
+    })?;
+    let llm = state.llm.client_for(&model.id).ok_or_else(|| {
+        AppError::Conflict(format!("model {:?} is no longer registered", model.id))
+    })?;
+    let done = compact::compact(llm.as_ref(), &model.name, cfg.max_tokens, &messages)
         .await
         .map_err(|e| AppError::BadGateway(format!("could not compact the conversation: {e:#}")))?;
     Ok(Json(CompactResponse {
         prompt: done.prompt,
-        model,
+        model: model.name,
+        model_id: model.id,
         usage: done.usage,
     }))
 }
@@ -865,6 +950,9 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
             )
         })
         .collect();
+    // Informational: a server with no model registered is up, but runs are refused until an
+    // admin adds one.
+    let models = state.integrations.models().len();
     (
         if ready {
             StatusCode::OK
@@ -874,6 +962,7 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
         Json(json!({
             "status": if ready { "ok" } else { "unavailable" },
             "checks": summary,
+            "models": models,
         })),
     )
 }

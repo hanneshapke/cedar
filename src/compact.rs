@@ -107,7 +107,11 @@ fn cut(text: &str, max_chars: usize) -> String {
 
 /// The messages for a compaction call: the (trimmed) conversation closed by the instruction.
 pub fn messages_for_run(stored: Vec<StoredMessage>) -> Vec<Value> {
-    let mut messages = trim_messages(to_messages(stored), TOOL_RESULT_MAX_CHARS, HISTORY_MAX_BYTES);
+    let mut messages = trim_messages(
+        to_messages(stored),
+        TOOL_RESULT_MAX_CHARS,
+        HISTORY_MAX_BYTES,
+    );
     let closing = opening_message(&messages, INSTRUCTION, false);
     messages.push(json!({ "role": "user", "content": closing }));
     messages
@@ -136,6 +140,7 @@ pub async fn compact(
     let req = MessageRequest {
         model,
         max_tokens,
+        reasoning_effort: None,
         system: SYSTEM,
         tools: &[],
         messages,
@@ -199,10 +204,20 @@ mod tests {
             messages.push(json!({ "role": if i % 2 == 0 { "assistant" } else { "user" }, "content": format!("m{i}") }));
         }
         let out = trim_messages(messages, 10, 60_000);
-        assert_eq!(out.len(), 5, "nothing had to be dropped once the image was replaced");
+        assert_eq!(
+            out.len(),
+            5,
+            "nothing had to be dropped once the image was replaced"
+        );
         let blocks = out[0]["content"].as_array().unwrap();
-        assert_eq!(blocks[0], json!({ "type": "text", "text": "[image omitted: a.png]\n" }));
-        assert_eq!(blocks[1], json!({ "type": "text", "text": "[document omitted: application/pdf]\n" }));
+        assert_eq!(
+            blocks[0],
+            json!({ "type": "text", "text": "[image omitted: a.png]\n" })
+        );
+        assert_eq!(
+            blocks[1],
+            json!({ "type": "text", "text": "[document omitted: application/pdf]\n" })
+        );
         assert_eq!(blocks[2]["text"], "what is this?");
     }
 

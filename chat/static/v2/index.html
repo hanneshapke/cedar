@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/schedule.css">
   <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/models.css">
   <link rel="stylesheet" href="/attach.css">
 </head>
 <body>
@@ -66,7 +67,8 @@
     <footer class="slip">
       <form class="composer" id="composer">
         <textarea id="input" rows="1" placeholder="What should be on the desk?" aria-label="Message"></textarea>
-        <select id="model" aria-label="Model" hidden></select>
+        <select id="model" class="cedar-picker-state" aria-label="Model" hidden></select>
+        <select id="reasoning" class="cedar-picker-state" aria-label="Reasoning level" hidden></select>
         <button class="send" id="send" type="submit" aria-label="Send message" disabled>↑</button>
       </form>
     </footer>
@@ -125,6 +127,7 @@
   <script src="/image-view.js"></script>
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>
+  <script src="/models.js"></script>
   <script src="/schedule.js"></script>
   <script src="/settings.js"></script>
   <script src="/attach.js"></script>

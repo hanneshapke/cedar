@@ -257,6 +257,8 @@ impl Inner {
                 event::RUN_STARTED,
                 json!({
                     "model": run.model,
+                    "model_id": run.model_id,
+                    "reasoning": run.reasoning,
                     "max_turns": run.max_turns,
                     "parent_id": run.parent_id,
                     "workspace_id": run.workspace_id,

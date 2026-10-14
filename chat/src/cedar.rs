@@ -81,6 +81,9 @@ impl CedarClient {
         if let Some(m) = opts.model {
             body["model"] = json!(m);
         }
+        if let Some(r) = opts.reasoning {
+            body["reasoning"] = json!(r);
+        }
         if let Some(s) = opts.system {
             body["system"] = json!(s);
         }
@@ -106,9 +109,16 @@ impl CedarClient {
         self.json(self.http.get(self.url("/tools"))).await
     }
 
-    /// cedar's defaults for runs: `{model, system, max_turns_cap, allowed_models}`.
+    /// cedar's defaults for runs: `{model, model_id, system, max_turns_cap, attachments}`.
     pub async fn defaults(&self) -> Result<Value, AppError> {
         self.json(self.http.get(self.url("/defaults"))).await
+    }
+
+    /// The models cedar has registered, in picker order: each
+    /// `{id, label, model, reasoning_levels, default_reasoning, is_default}`.
+    pub async fn models(&self) -> Result<Vec<Value>, AppError> {
+        let body: Value = self.json(self.http.get(self.url("/models"))).await?;
+        Ok(body["models"].as_array().cloned().unwrap_or_default())
     }
 
     // -- admin: integrations (needs CEDAR_API_KEY to be one of cedar's CEDAR_ADMIN_KEYS) --------
@@ -122,21 +132,21 @@ impl CedarClient {
         admin(self.json(req).await)
     }
 
-    /// Point cedar at another model server. `api_key` and `model`: `None` keeps the saved one,
-    /// empty removes it.
-    pub async fn set_llm(&self, base_url: &str, api_key: Option<&str>, model: Option<&str>) -> Result<Value, AppError> {
-        let mut body = json!({ "base_url": base_url });
-        if let Some(k) = api_key {
-            body["api_key"] = json!(k);
-        }
-        if let Some(m) = model {
-            body["model"] = json!(m);
-        }
-        admin(self.json(self.http.put(self.url("/admin/integrations/llm")).json(&body)).await)
+    /// The registered models as admins see them (server address, whether a key is saved, what
+    /// the server listed).
+    pub async fn models_admin(&self) -> Result<Value, AppError> {
+        admin(self.json(self.http.get(self.url("/admin/models"))).await)
     }
 
-    pub async fn remove_llm(&self) -> Result<(), AppError> {
-        let req = self.http.delete(self.url("/admin/integrations/llm")).timeout(REQUEST_TIMEOUT);
+    /// Register a model or change one. `spec` is cedar's `{base_url, model, label?, api_key?,
+    /// reasoning_levels?, default_reasoning?, is_default?}`, passed through as it is.
+    pub async fn set_model(&self, id: &str, spec: &Value) -> Result<Value, AppError> {
+        let req = self.http.put(self.url(&format!("/admin/models/{id}"))).json(spec);
+        admin(self.json(req).await)
+    }
+
+    pub async fn remove_model(&self, id: &str) -> Result<(), AppError> {
+        let req = self.http.delete(self.url(&format!("/admin/models/{id}"))).timeout(REQUEST_TIMEOUT);
         admin(self.send(req).await.map(drop))
     }
 
@@ -229,6 +239,8 @@ impl CedarClient {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RunOptions<'a> {
     pub model: Option<&'a str>,
+    /// One of the model's reasoning levels.
+    pub reasoning: Option<&'a str>,
     pub system: Option<&'a str>,
     pub max_turns: Option<u32>,
     pub tools: Option<&'a [String]>,

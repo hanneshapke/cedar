@@ -61,11 +61,12 @@ Both interfaces have all of these, except where noted:
   the tool call's raw output is shown
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
-- An optional model picker and an optional access token
+- The send button names the model and reasoning level the message goes with, and opens a menu
+  of the registered models with the levels each declares; an optional access token
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
-  cedar's Brave Search key and Google account
-- [Attachments](#attachments): with a multimodal model, images and PDFs go with a message, by the
+  [the models](#models) cedar can use, its Brave Search key and its Google account
+- [Attachments](#attachments): with a model registered as accepting them, images and PDFs go with a message, by the
   paperclip button, by dropping them on the message box, or by pasting an image
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, with every run's result kept
@@ -85,8 +86,9 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `schedule.js` and `schedule.css` for scheduled agents, and
-`settings.js` and `settings.css` for the tools, model, and integrations settings, which both
-interfaces share, `vendor/leaflet/` for the map library, and
+`models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
+model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
+library, and
 `index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
 files. The logo and icons are not in `static/`: they come from `../docs/assets/` (shared with the
@@ -122,8 +124,7 @@ no requests for maps; cedar looks the places up (see the top-level README).
 | `CHAT_BIND_ADDR` | `127.0.0.1:3000` | Where the chat server listens |
 | `CHAT_DATABASE_URL` | `sqlite://cedar-chat.db` | Conversation storage |
 | `CHAT_ACCESS_TOKEN` | unset | If set, the page asks for this token and the API requires it |
-| `CHAT_MODELS` | unset | Comma-separated models for the picker. They must also be allowed by cedar's `ALLOWED_MODELS` |
-| `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [Integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
+| `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 
@@ -162,7 +163,8 @@ Once a conversation has a finished response, the **Schedule** button (the clock 
    for it (`POST /v1/compact` in cedar's API). If cedar no longer has the run, the exchanges this
    service remembers are compacted instead, up to `CHAT_HISTORY_MAX_BYTES`.
 2. You edit the prompt until it stands on its own, name the schedule, and pick a frequency (every
-   day, weekdays, or every week on a weekday), a time of day, and the model. Times are local: the
+   day, weekdays, or every week on a weekday), a time of day, the model and its reasoning level.
+   Times are local: the
    browser's time zone is sent along (an IANA name like `Europe/Berlin`), so daylight-saving
    changes are handled, and the next run is confirmed in your local time.
 3. From then on the chat server starts the prompt as a **fresh** cedar run each time it is due: a
@@ -187,8 +189,8 @@ skips the slots missed while it was paused. At most 100 schedules can exist.
 
 **Settings → Tools & model** sets the defaults for every conversation: which of cedar's tool
 groups the agent gets (web search, reading web pages, weather, maps, the browser, Gmail and
-Calendar, the last two down to single tools), and the default model, turn limit, and system
-prompt. The system prompt field shows cedar's own default text until you change it, and "Use the
+Calendar, the last two down to single tools), and the default model (one of those cedar has
+[registered](#models); unset means cedar's own default), turn limit, and system prompt. The system prompt field shows cedar's own default text until you change it, and "Use the
 default" puts it back; the default text is saved as "unset", so it keeps following cedar's
 `SYSTEM_PROMPT`. The groups come from cedar's `GET /v1/tools`, so a group cedar doesn't offer is shown
 greyed out with the reason (no Brave key, `BROWSER=off`, no Google account). Tools that send or
@@ -203,33 +205,60 @@ tools.
 Every message sends cedar the resolved choice, `*` when everything is on, so changing the defaults
 also applies to follow-ups in existing conversations that don't have their own tools.
 
+The label on the **send button** names the model the next message goes to and, after a dot, its
+reasoning level (`DeepSeek V4 · high`, say). Clicking it opens a menu of the registered models,
+each with the levels it declares (`none`, `low`, `high`, `max` for DeepSeek V4) and a "default"
+chip for the model's own default level; a model with no levels is just picked. The label is shown
+once there is something to choose: more than one model, or a model with levels. Both choices are
+sent with every message (as the entry's id and the level), cedar checks them against its registry,
+and the conversation remembers them, so opening it again shows the choice its last message used.
+Until cedar has a model registered, the message box says so and sending is off.
+
 ### Attachments
 
-The same section has a checkbox, **This model accepts images and PDFs**. With it on, a paperclip
-button appears by the message box, and files can also be dropped on the box or pasted (a
-screenshot, say). PNG, JPEG, GIF, WebP and PDF files are taken, at most 10 per message, 20 MB each
+A model registered with **Accepts images and PDFs** (a checkbox on its entry under
+[Models](#models)) gets a paperclip button by the message box while the send button names it
+(the default model, until another is picked), and files can also be dropped on the box or
+pasted (a screenshot, say). PNG, JPEG, GIF, WebP and PDF files are taken, at most 10 per message, 20 MB each
 and 32 MB together; the chosen files are shown as chips, with a thumbnail for images, until the
 message is sent, and a message still needs some text. The browser sends them as base64 with the
 message, and cedar puts them in front of the prompt as [attachments](../README.md#attachments) of
 the run, so the agent sees them for the rest of the conversation. A sent message shows what went
 with it (name, type and size; the bytes stay in cedar's run). cedar passes the files to the model
 as they are and does not check that it can read them: with a text-only model the response fails
-with the model server's error, so leave the box off for one. A message with files is refused while
-the box is off.
+with the model server's error, so leave the box off for one. A message with files to a model
+registered without the box is refused by cedar, and the error is relayed.
 
 ### Integrations
 
-Settings → **Model server & API keys** is where the model server address and the API keys go.
-Without `CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key.
-With it, the section is unlocked with that token for the browser session and manages cedar's model
-server (address, port, path and optional API key; checked by listing the server's models, which
-are then shown), its Brave Search key (checked with one search before it is saved, then shown
+Settings → **Model server & API keys** is where the models and the API keys go. Without
+`CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
+the section is unlocked with that token for the browser session and manages cedar's
+[models](#models), its Brave Search key (checked with one search before it is saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
-encrypted, and take effect on the next message without a restart. This needs cedar's
-`CEDAR_SECRET_KEY`, and this server's `CEDAR_API_KEY` in cedar's `CEDAR_ADMIN_KEYS`; see
-[Integrations](../README.md#integrations). Keys set in cedar's environment are shown as "Managed by
-environment" and can't be changed here.
+encrypted, and take effect on the next message without a restart. This needs this server's
+`CEDAR_API_KEY` in cedar's `CEDAR_ADMIN_KEYS`, and cedar's `CEDAR_SECRET_KEY` for anything that is
+a secret; see [Models](../README.md#models) and [Integrations](../README.md#integrations). Keys set
+in cedar's environment are shown as "Managed by environment" and can't be changed here.
+
+### Models
+
+The **Models** list in that section shows every model cedar has registered: its label, the model
+name and the server it is on, whether an API key is saved, its reasoning levels, and which one is
+the default. **Add a model**, in the heading of the list, asks for an id (filled in from the label), a label, the server address
+(`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), the model name the server
+registered, an API key if the server needs one, the reasoning levels it takes as `reasoning_effort`
+(comma-separated, like `none, low, high, max`), the level to use when a message picks none,
+whether it accepts images and PDFs (see [Attachments](#attachments)), and whether it is the
+default for new chats. cedar checks the address by listing the server's models
+before saving; the names it listed are offered in the edit form, with a warning on the entry if
+the model name is not one of them. **Edit**, **Make default** and **Remove** change an entry; a removed model's
+conversations fail at their next message until another model is picked. The first model
+registered is the default, and a fresh cedar has none: the message box says so until an admin adds
+one. Saving an API key needs cedar's `CEDAR_SECRET_KEY`; a server without one can be registered
+without it. The send button's menu, the default model in Tools & model, and the schedule dialog
+all follow the list.
 
 ## API
 
@@ -239,13 +268,13 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/config` | `{auth_required, admin_enabled, models}` |
+| `GET /api/config` | `{auth_required, admin_enabled}` |
 | `GET /api/conversations` | Conversations, most recently active first. Conversations a schedule created are left out |
 | `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
 | `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
-| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "...", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. Returns 400 for files while the multimodal setting is off, 409 if a response is still running |
+| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Files to a model registered without "accepts images and PDFs" are a 400 from cedar, relayed. Returns 409 if a response is still running |
 | `PUT /api/conversations/{id}/tools` | `{"tools": [...]}` gives the conversation its own tools; `{"tools": null}` returns it to the defaults |
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
@@ -253,16 +282,18 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |
-| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "conversation_id"?, "tools"?}`. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults |
+| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults |
 | `GET /api/schedules/{id}` | `{schedule, runs}`, newest run first, each with its `turn` (refreshed while unfinished) or an `error` if the run could not be started |
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
-| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns, multimodal}` (`null` means cedar's own; `multimodal` says whether messages may carry [attachments](#attachments)), plus `defaults`: cedar's own model, system prompt and turn limit (`null` if cedar can't be reached) |
-| `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools`; an absent `multimodal` means `false` |
+| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own), plus `defaults`: cedar's own model (`model` and `model_id`, `null` until one is registered), system prompt and turn limit (`null` if cedar can't be reached) |
+| `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
+| `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |
-| `PUT` / `DELETE /api/integrations/llm` | Admin: set cedar's model server and its default model name (`{"base_url", "api_key"?, "model"?}`) or go back to its defaults |
+| `GET /api/integrations/models` | Admin: cedar's registered models with their servers (`GET /v1/admin/models`), relayed |
+| `PUT` / `DELETE /api/integrations/models/{id}` | Admin: register or change a model (the body is cedar's `{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "is_default"?}`, passed through as it is) or remove it |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |

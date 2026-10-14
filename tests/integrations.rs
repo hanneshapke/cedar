@@ -1,5 +1,6 @@
-//! Per-run tool selection, the tool catalog, and integrations set up through the admin API (a
-//! Brave Search key, "Connect Google") against local mocks of Brave and Google.
+//! Per-run tool selection, the tool catalog, and integrations set up through the admin API (the
+//! model registry, a Brave Search key, "Connect Google") against local mocks of model servers,
+//! Brave and Google.
 
 mod common;
 
@@ -9,7 +10,6 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Form, Json, Router};
 use base64::Engine;
-use cedar::config::DEFAULT_MODEL;
 use cedar::store::Store;
 use common::*;
 use serde_json::{json, Value};
@@ -252,6 +252,13 @@ async fn admin_routes_need_an_admin_key() {
     let app = TestApp::with_env(vec![], &admin_env(&[])).await;
     for (method, uri, body) in [
         (Method::GET, "/v1/admin/integrations", None),
+        (Method::GET, "/v1/admin/models", None),
+        (
+            Method::PUT,
+            "/v1/admin/models/m",
+            Some(json!({ "base_url": "http://x", "model": "m" })),
+        ),
+        (Method::DELETE, "/v1/admin/models/m", None),
         (
             Method::PUT,
             "/v1/admin/integrations/brave",
@@ -283,7 +290,8 @@ async fn a_brave_key_saved_by_an_admin_turns_web_search_on_without_a_restart() {
         ScriptedLlm::new(vec![Step::Repeat(text("ok"))]),
         FakeFactory::new(),
         &admin_env(&[("BRAVE_API_BASE_URL", brave)]),
-    );
+    )
+    .await;
 
     let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
     assert_eq!(status["storage"], true);
@@ -335,7 +343,8 @@ async fn a_brave_key_saved_by_an_admin_turns_web_search_on_without_a_restart() {
         ScriptedLlm::new(vec![]),
         FakeFactory::new(),
         &admin_env(&[("BRAVE_API_BASE_URL", brave)]),
-    );
+    )
+    .await;
     restarted.state.integrations.reload().await.unwrap();
     let (_, catalog) = restarted.get("/v1/tools", KEY_A).await;
     assert_eq!(group(&catalog, "web_search")["available"], true);
@@ -569,31 +578,33 @@ async fn connecting_google_stores_the_account_and_turns_gmail_on() {
     assert_eq!(group(&catalog, "gmail")["available"], false);
 }
 
-// -- defaults and the model server --------------------------------------------------------------
+// -- defaults and the model registry ----------------------------------------------------------
 
 #[tokio::test]
 async fn defaults_are_reported_to_any_key() {
-    let app = TestApp::with_env(
-        vec![],
-        &[("SYSTEM_PROMPT", "Be terse."), ("LLM_MODEL", "m-9")],
-    )
-    .await;
+    let app = TestApp::with_env(vec![], &[("SYSTEM_PROMPT", "Be terse.")]).await;
     let (status, body) = app.get("/v1/defaults", KEY_A).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["system"], "Be terse.");
-    assert_eq!(body["model"], "m-9");
+    assert_eq!(body["model"], TEST_MODEL);
+    assert_eq!(body["model_id"], TEST_MODEL);
     assert_eq!(body["max_turns_cap"], 10);
 }
 
 #[derive(Default)]
 struct ModelServer {
-    completions: Mutex<Vec<HeaderMap>>,
+    /// The headers and body of every chat-completions request.
+    completions: Mutex<Vec<(HeaderMap, Value)>>,
 }
 
-/// An OpenAI-compatible model server that lists `m-1` and, when `key` is set, wants it.
-async fn start_model_server(key: Option<&'static str>) -> (String, Arc<ModelServer>) {
+/// An OpenAI-compatible model server that lists `m-1` and, when `key` is set, wants it. Its
+/// replies say `answer`.
+async fn start_model_server(
+    key: Option<&'static str>,
+    answer: &'static str,
+) -> (String, Arc<ModelServer>) {
     async fn models(
-        State((key, _)): State<(Option<&'static str>, Arc<ModelServer>)>,
+        State((key, _, _)): State<(Option<&'static str>, &'static str, Arc<ModelServer>)>,
         headers: HeaderMap,
     ) -> impl IntoResponse {
         let presented = headers
@@ -609,12 +620,13 @@ async fn start_model_server(key: Option<&'static str>) -> (String, Arc<ModelServ
         )
     }
     async fn completions(
-        State((_, server)): State<(Option<&'static str>, Arc<ModelServer>)>,
+        State((_, answer, server)): State<(Option<&'static str>, &'static str, Arc<ModelServer>)>,
         headers: HeaderMap,
+        Json(body): Json<Value>,
     ) -> Json<Value> {
-        server.completions.lock().unwrap().push(headers);
+        server.completions.lock().unwrap().push((headers, body));
         Json(
-            json!({ "choices": [{ "message": { "role": "assistant", "content": "from the new server" }, "finish_reason": "stop" }],
+            json!({ "choices": [{ "message": { "role": "assistant", "content": answer }, "finish_reason": "stop" }],
                      "usage": { "prompt_tokens": 3, "completion_tokens": 2 } }),
         )
     }
@@ -622,32 +634,28 @@ async fn start_model_server(key: Option<&'static str>) -> (String, Arc<ModelServ
     let app = Router::new()
         .route("/v1/models", get(models))
         .route("/v1/chat/completions", post(completions))
-        .with_state((key, server.clone()));
+        .with_state((key, answer, server.clone()));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     (format!("http://{addr}"), server)
 }
 
-/// A test app whose model client is the real, swappable one, as in `main.rs`.
-async fn app_with_real_llm(env: &[(&str, &str)]) -> TestApp {
-    let cfg = test_config(env);
-    let llm = Arc::new(cedar::llm::SwappableLlm::new(
-        cedar::llm::ChatCompletionsClient::new(cfg.llm_base_url.clone(), None)
-            .unwrap()
-            .with_retry(1, std::time::Duration::from_millis(1)),
-    ));
+/// A test app whose model clients are real ones built from the registry, as in `main.rs`. The
+/// registry starts as `store` has it (empty for a fresh one).
+async fn app_with_real_llm_on(store: Store, env: &[(&str, &str)]) -> TestApp {
+    let clients = Arc::new(cedar::llm::LlmRouter::new());
     let factory = FakeFactory::new();
     let browsers = Arc::new(FakeBrowserFactory::default());
     let state = cedar::api::AppState::with_browsers(
-        cfg,
-        Store::connect_memory().await.unwrap(),
-        llm.clone(),
+        test_config(env),
+        store,
+        clients.clone(),
         factory.clone(),
         browsers.clone(),
     )
     .unwrap();
-    state.integrations.attach_llm(llm);
+    state.integrations.attach_router(clients);
     state.integrations.reload().await.unwrap();
     TestApp {
         router: cedar::api::router(state.clone()),
@@ -658,26 +666,48 @@ async fn app_with_real_llm(env: &[(&str, &str)]) -> TestApp {
     }
 }
 
+async fn app_with_real_llm(env: &[(&str, &str)]) -> TestApp {
+    app_with_real_llm_on(Store::connect_memory().await.unwrap(), env).await
+}
+
+async fn put_model(app: &TestApp, id: &str, body: Value) -> (StatusCode, Value) {
+    let uri = format!("/v1/admin/models/{id}");
+    app.json(Method::PUT, &uri, Some(KEY_B), Some(body)).await
+}
+
 #[tokio::test]
-async fn an_admin_can_point_cedar_at_another_model_server() {
-    let (server_url, server) = start_model_server(Some("llm-key")).await;
-    let app = app_with_real_llm(&admin_env(&[("LLM_MODEL", "m-1")])).await;
+async fn an_admin_registers_a_model_with_its_server_and_key() {
+    let (server_url, server) = start_model_server(Some("llm-key"), "from the new server").await;
+    let app = app_with_real_llm(&admin_env(&[])).await;
 
+    // Nothing is registered: runs are refused, and the lists are empty.
     let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
-    assert_eq!(status["llm"]["source"], "default");
-    assert_eq!(status["llm"]["base_url"], "http://localhost:8000/v1");
-    assert_eq!(status["llm"]["api_key_set"], false);
-
-    let put = |body: Value| {
-        app.json(
-            Method::PUT,
-            "/v1/admin/integrations/llm",
-            Some(KEY_B),
-            Some(body),
+    assert_eq!(status["models"], 0);
+    assert_eq!(
+        app.get("/v1/admin/models", KEY_B).await.1,
+        json!({ "models": [] })
+    );
+    assert_eq!(
+        app.get("/v1/models", KEY_A).await.1,
+        json!({ "models": [] })
+    );
+    let (code, body) = app
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x" })),
         )
-    };
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+
     // Nothing listening there.
-    let (code, body) = put(json!({ "base_url": "http://127.0.0.1:1" })).await;
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": "http://127.0.0.1:1", "model": "m-1" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
     assert!(
         body["error"]["message"]
@@ -687,168 +717,316 @@ async fn an_admin_can_point_cedar_at_another_model_server() {
         "{body}"
     );
     // The server wants a key.
-    let (code, body) = put(json!({ "base_url": server_url })).await;
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
     assert!(
         body["error"]["message"].as_str().unwrap().contains("401"),
         "{body}"
     );
-    let (code, body) = put(json!({ "base_url": "not a url" })).await;
-    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+    for (id, body) in [
+        ("gpu", json!({ "base_url": "not a url", "model": "m-1" })),
+        (
+            "gpu",
+            json!({ "base_url": "http://user:pw@box:8000/v1", "model": "m-1" }),
+        ),
+        ("gpu", json!({ "base_url": server_url, "model": "" })),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "two\nlines" }),
+        ),
+        ("GPU", json!({ "base_url": server_url, "model": "m-1" })),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "bogus": 1 }),
+        ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["lo w"] }),
+        ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["low"], "default_reasoning": "high" }),
+        ),
+    ] {
+        let (code, resp) = put_model(&app, id, body.clone()).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{body} -> {resp}");
+    }
 
-    // The path defaults to /v1.
-    let (code, body) = put(json!({ "base_url": server_url, "api_key": "llm-key" })).await;
+    // The path defaults to /v1; the first entry is the default model.
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": " m-1 ", "api_key": "llm-key", "label": "GPU box",
+                "reasoning_levels": ["none", "high"], "multimodal": true }),
+    )
+    .await;
     assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["id"], "gpu");
+    assert_eq!(body["label"], "GPU box");
+    assert_eq!(body["model"], "m-1");
     assert_eq!(body["base_url"], format!("{server_url}/v1"));
-    assert_eq!(body["source"], "ui");
     assert_eq!(body["api_key_set"], true);
-    assert_eq!(body["models"], json!(["m-1"]));
+    assert_eq!(body["is_default"], true);
+    assert_eq!(body["reasoning_levels"], json!(["none", "high"]));
+    assert_eq!(body["default_reasoning"], Value::Null);
+    assert_eq!(body["multimodal"], true);
+    assert_eq!(body["listed_models"], json!(["m-1"]));
     let (_, _, raw) = app
-        .call(Method::GET, "/v1/admin/integrations", Some(KEY_B), None)
+        .call(Method::GET, "/v1/admin/models", Some(KEY_B), None)
         .await;
     assert!(!raw.contains("llm-key"));
+    assert_eq!(
+        app.get("/v1/models", KEY_A).await.1["models"][0],
+        json!({ "id": "gpu", "label": "GPU box", "model": "m-1", "is_default": true,
+                "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true })
+    );
 
-    // The next run talks to the new server, with its key.
-    let run = app.create_run(KEY_A, "hello").await;
+    // The next run talks to the server, with its key and the level asked for.
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "hello", "reasoning": "high" }))
+        .await;
+    assert_eq!(run["model_id"], "gpu");
     let done = app
         .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
         .await;
     assert_eq!(done["final_text"], "from the new server");
-    assert_eq!(
-        server.completions.lock().unwrap()[0]["authorization"],
-        "Bearer llm-key"
-    );
+    let (headers, body) = server.completions.lock().unwrap()[0].clone();
+    assert_eq!(headers["authorization"], "Bearer llm-key");
+    assert_eq!(body["model"], "m-1");
+    assert_eq!(body["reasoning_effort"], "high");
 
-    // Changing the address without api_key keeps the saved key.
-    let (code, _) = put(json!({ "base_url": format!("{server_url}/v1/") })).await;
-    assert_eq!(code, StatusCode::OK);
+    // Changing the entry without api_key keeps the saved key; absent levels stay too.
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": format!("{server_url}/v1/"), "model": "m-1" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["api_key_set"], true);
+    assert_eq!(body["label"], "GPU box");
+    assert_eq!(body["reasoning_levels"], json!(["none", "high"]));
+    assert_eq!(body["multimodal"], true, "absent keeps the saved value");
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "multimodal": false }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["multimodal"], false);
+    // An empty api_key removes it (and the server then refuses the check).
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "api_key": "" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
 
     let (code, _) = app
-        .json(
-            Method::DELETE,
-            "/v1/admin/integrations/llm",
-            Some(KEY_B),
-            None,
-        )
+        .json(Method::DELETE, "/v1/admin/models/gpu", Some(KEY_B), None)
         .await;
     assert_eq!(code, StatusCode::NO_CONTENT);
-    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
-    assert_eq!(status["llm"]["source"], "default");
-    assert_eq!(status["llm"]["api_key_set"], false);
+    let (code, _) = app
+        .json(Method::DELETE, "/v1/admin/models/gpu", Some(KEY_B), None)
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    assert_eq!(
+        app.get("/v1/admin/models", KEY_B).await.1,
+        json!({ "models": [] })
+    );
+    assert!(!app
+        .state
+        .store
+        .has_secret("model_api_key:gpu")
+        .await
+        .unwrap());
 
     let (code, _) = app
         .json(
             Method::PUT,
-            "/v1/admin/integrations/llm",
+            "/v1/admin/models/gpu",
             Some(KEY_A),
-            Some(json!({ "base_url": server_url })),
+            Some(json!({ "base_url": server_url, "model": "m-1" })),
         )
         .await;
     assert_eq!(code, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
-async fn an_admin_can_set_the_model_name_with_the_address() {
-    let (server_url, _server) = start_model_server(None).await;
+async fn each_model_has_its_own_server_levels_and_default() {
+    let (url_a, server_a) = start_model_server(None, "from a").await;
+    let (url_b, server_b) = start_model_server(None, "from b").await;
     let app = app_with_real_llm(&admin_env(&[])).await;
-    let put = |body: Value| {
-        app.json(
-            Method::PUT,
-            "/v1/admin/integrations/llm",
-            Some(KEY_B),
-            Some(body),
-        )
-    };
 
-    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
-    assert_eq!(status["llm"]["model_source"], "default");
-    assert_eq!(status["llm"]["default_model"], DEFAULT_MODEL);
+    let (code, a) = put_model(
+        &app,
+        "a",
+        json!({ "base_url": url_a, "model": "m-1", "reasoning_levels": ["none", "high"], "default_reasoning": "high" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{a}");
+    assert_eq!(a["is_default"], true);
+    let (code, b) = put_model(
+        &app,
+        "b",
+        json!({ "base_url": url_b, "model": "m-1", "is_default": true }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{b}");
+    assert_eq!(b["is_default"], true);
+    let (_, list) = app.get("/v1/admin/models", KEY_B).await;
+    assert_eq!(list["models"][0]["id"], "a");
+    assert_eq!(list["models"][0]["is_default"], false);
+    assert_eq!(list["models"][1]["id"], "b");
+    assert_eq!(app.get("/v1/defaults", KEY_A).await.1["model_id"], "b");
 
-    for bad in ["x".repeat(101), "two\nlines".to_string()] {
-        let (code, body) = put(json!({ "base_url": server_url, "model": bad })).await;
-        assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
-    }
-
-    let (code, body) = put(json!({ "base_url": server_url, "model": " m-1 " })).await;
-    assert_eq!(code, StatusCode::OK, "{body}");
-    assert_eq!(body["default_model"], "m-1");
-    assert_eq!(body["model_source"], "ui");
-
-    // New runs, and the defaults clients show, use it.
-    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
-    assert_eq!(defaults["model"], "m-1");
+    // Unnamed: the default. Named: its own server, with its default level.
     let run = app.create_run(KEY_A, "hello").await;
-    assert_eq!(run["model"], "m-1");
-    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+    assert_eq!(run["model_id"], "b");
+    let done = app
+        .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
         .await;
-
-    // Leaving the model out keeps it; an empty one forgets it.
-    let (code, body) = put(json!({ "base_url": server_url })).await;
-    assert_eq!(code, StatusCode::OK, "{body}");
-    assert_eq!(body["default_model"], "m-1");
-    let (code, body) = put(json!({ "base_url": server_url, "model": "" })).await;
-    assert_eq!(code, StatusCode::OK, "{body}");
-    assert_eq!(body["default_model"], DEFAULT_MODEL);
-    assert_eq!(body["model_source"], "default");
-
-    // Going back to the default server forgets the name too.
-    put(json!({ "base_url": server_url, "model": "m-1" })).await;
-    let (code, _) = app
+    assert_eq!(done["final_text"], "from b");
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "hello", "model": "a" }))
+        .await;
+    assert_eq!(run["reasoning"], "high");
+    let done = app
+        .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
+    assert_eq!(done["final_text"], "from a");
+    assert_eq!(
+        server_a.completions.lock().unwrap()[0].1["reasoning_effort"],
+        "high"
+    );
+    assert_eq!(
+        server_b.completions.lock().unwrap()[0]
+            .1
+            .get("reasoning_effort"),
+        None
+    );
+    // Both entries name m-1, so the name alone is ambiguous.
+    let (code, body) = app
         .json(
-            Method::DELETE,
-            "/v1/admin/integrations/llm",
-            Some(KEY_B),
-            None,
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x", "model": "m-1" })),
         )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+
+    // Removing the default hands it to the first remaining entry.
+    let (code, _) = app
+        .json(Method::DELETE, "/v1/admin/models/b", Some(KEY_B), None)
         .await;
     assert_eq!(code, StatusCode::NO_CONTENT);
-    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
-    assert_eq!(status["llm"]["default_model"], DEFAULT_MODEL);
-    assert_eq!(status["llm"]["model_source"], "default");
-}
-
-#[tokio::test]
-async fn a_model_name_set_in_the_environment_is_locked() {
-    let (server_url, _server) = start_model_server(None).await;
-    let app = app_with_real_llm(&admin_env(&[("LLM_MODEL", "from-env")])).await;
-    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
-    assert_eq!(status["llm"]["model_source"], "env");
-    assert_eq!(status["llm"]["default_model"], "from-env");
-
-    let put = |body: Value| {
-        app.json(
-            Method::PUT,
-            "/v1/admin/integrations/llm",
-            Some(KEY_B),
-            Some(body),
-        )
-    };
-    let (code, _) = put(json!({ "base_url": server_url, "model": "other" })).await;
-    assert_eq!(code, StatusCode::CONFLICT);
-    // The address can still be changed; the name stays.
-    let (code, body) = put(json!({ "base_url": server_url })).await;
-    assert_eq!(code, StatusCode::OK, "{body}");
-    assert_eq!(body["default_model"], "from-env");
-}
-
-#[tokio::test]
-async fn a_model_server_set_in_the_environment_is_locked() {
-    let app = app_with_real_llm(&admin_env(&[("LLM_BASE_URL", "http://gpu:9000/v1")])).await;
-    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
-    assert_eq!(status["llm"]["source"], "env");
-    assert_eq!(status["llm"]["base_url"], "http://gpu:9000/v1");
-    let (code, _) = app
+    assert_eq!(app.get("/v1/defaults", KEY_A).await.1["model_id"], "a");
+    // A run on the removed model fails at its next call rather than hanging.
+    let (code, body) = app
         .json(
-            Method::PUT,
-            "/v1/admin/integrations/llm",
-            Some(KEY_B),
-            Some(json!({ "base_url": "http://other:8000" })),
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x", "model": "b" })),
         )
         .await;
-    assert_eq!(code, StatusCode::CONFLICT);
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+}
 
-    // A test app with a scripted model can't be repointed at all.
-    let scripted = TestApp::with_env(vec![], &admin_env(&[])).await;
-    let (_, status) = scripted.get("/v1/admin/integrations", KEY_B).await;
-    assert_eq!(status["llm"]["changeable"], false);
+#[tokio::test]
+async fn an_api_key_needs_the_secret_key_but_a_model_without_one_does_not() {
+    let (url, _server) = start_model_server(None, "ok").await;
+    let app = app_with_real_llm(&[("CEDAR_ADMIN_KEYS", KEY_B)]).await;
+    let (code, body) = put_model(
+        &app,
+        "m",
+        json!({ "base_url": url, "model": "m-1", "api_key": "k" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("CEDAR_SECRET_KEY"));
+    let (code, body) = put_model(&app, "m", json!({ "base_url": url, "model": "m-1" })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["api_key_set"], false);
+    let run = app.create_run(KEY_A, "hello").await;
+    let done = app
+        .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
+    assert_eq!(done["final_text"], "ok");
+}
+
+#[tokio::test]
+async fn a_model_server_saved_by_an_earlier_version_becomes_the_default_entry() {
+    let store = Store::connect_memory().await.unwrap();
+    let key: [u8; 32] = hex::decode(SECRET_KEY).unwrap().try_into().unwrap();
+    let secrets = cedar::secrets::SecretStore::new(store.clone(), &key);
+    secrets
+        .put(
+            "llm_base_url",
+            "http://gpu:9000/v1",
+            &json!({ "base_url": "http://gpu:9000/v1", "models": ["m-1"] }),
+        )
+        .await
+        .unwrap();
+    secrets
+        .put("llm_api_key", "old-key", &json!({ "last4": "-key" }))
+        .await
+        .unwrap();
+    secrets
+        .put(
+            "llm_model",
+            "deepseek-ai/DeepSeek-V4-Flash",
+            &json!({ "model": "deepseek-ai/DeepSeek-V4-Flash" }),
+        )
+        .await
+        .unwrap();
+
+    let app = app_with_real_llm_on(store.clone(), &admin_env(&[])).await;
+    let (_, list) = app.get("/v1/admin/models", KEY_B).await;
+    let entry = &list["models"][0];
+    assert_eq!(list["models"].as_array().unwrap().len(), 1);
+    assert_eq!(entry["id"], "default");
+    assert_eq!(entry["label"], "Default");
+    assert_eq!(entry["model"], "deepseek-ai/DeepSeek-V4-Flash");
+    assert_eq!(entry["base_url"], "http://gpu:9000/v1");
+    assert_eq!(entry["api_key_set"], true);
+    assert_eq!(entry["is_default"], true);
+    assert_eq!(
+        entry["reasoning_levels"],
+        json!(["none", "low", "high", "max"])
+    );
+    assert_eq!(entry["multimodal"], false);
+    assert_eq!(entry["listed_models"], json!(["m-1"]));
+    for old in ["llm_base_url", "llm_api_key", "llm_model"] {
+        assert!(!store.has_secret(old).await.unwrap(), "{old} is gone");
+    }
+    assert_eq!(
+        secrets
+            .get("model_api_key:default")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("old-key")
+    );
+
+    // A restart doesn't make a second one.
+    let again = app_with_real_llm_on(store, &admin_env(&[])).await;
+    assert_eq!(
+        again.get("/v1/admin/models", KEY_B).await.1["models"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
