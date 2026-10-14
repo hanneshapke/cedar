@@ -434,19 +434,21 @@ const cedarSettings = (() => {
       return wrap;
     }
     entries = entries || [];
-    if (!entries.length) {
-      wrap.append(note('No model is registered yet, so messages can\'t be sent. Add the server that runs your model: for a local vLLM, http://localhost:8000/v1 and the name it registered (curl localhost:8000/v1/models).', 'cedar-set-error'));
-    } else {
-      wrap.append(note('Each model is served by its own OpenAI-compatible server. New chats use the default; the picker by the message box chooses another, and the reasoning level next to it.'));
-    }
-    for (const entry of entries) wrap.append(modelRow(entry, status));
+    // The button sits in the heading, so it is in view however long the list is. The form it
+    // opens goes right under the heading, above the first entry.
+    const intro = entries.length
+      ? note('Each model is served by its own OpenAI-compatible server. New chats use the default; the picker by the message box chooses another, and the reasoning level next to it. Add a model for another server, or another model on the same one.')
+      : note('No model is registered yet, so messages can\'t be sent. Add the server that runs your model: for a local vLLM, http://localhost:8000/v1 and the name it registered (curl localhost:8000/v1/models).', 'cedar-set-error');
+    wrap.append(intro);
     const add = button('Add a model', () => {
       add.hidden = true;
       const form = modelForm(null, status, () => { add.hidden = false; form.remove(); });
-      add.before(form);
+      intro.after(form);
       form.querySelector('input').focus();
     }, entries.length ? 'copy-btn' : 'primary');
-    wrap.append(add);
+    add.setAttribute('aria-label', 'Add a model');
+    head.append(add);
+    for (const entry of entries) wrap.append(modelRow(entry, status));
     return wrap;
   }
 

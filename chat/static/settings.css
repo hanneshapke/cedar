@@ -82,7 +82,8 @@
 
 /* the model registry */
 .cedar-set-models { margin-bottom: 12px; }
-.cedar-set-subheading { margin: 4px 0 6px; font-size: 13.5px; }
+.cedar-set-subheading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 6px; font-size: 13.5px; }
+.cedar-set-models > form.cedar-set-endpoint { margin-bottom: 10px; }
 .cedar-set-endpoint > select { width: 100%; padding: 8px 10px; border: 1px solid rgba(128, 128, 128, .4); border-radius: 8px; background: rgba(128, 128, 128, .07); color: inherit; font: inherit; font-size: 14px; }
 .cedar-set-endpoint > select[hidden] { display: none; }
 

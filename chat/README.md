@@ -244,7 +244,7 @@ in cedar's environment are shown as "Managed by environment" and can't be change
 
 The **Models** list in that section shows every model cedar has registered: its label, the model
 name and the server it is on, whether an API key is saved, its reasoning levels, and which one is
-the default. **Add a model** asks for an id (filled in from the label), a label, the server address
+the default. **Add a model**, in the heading of the list, asks for an id (filled in from the label), a label, the server address
 (`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), the model name the server
 registered, an API key if the server needs one, the reasoning levels it takes as `reasoning_effort`
 (comma-separated, like `none, low, high, max`), the level to use when a message picks none,
