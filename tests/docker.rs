@@ -536,6 +536,45 @@ fn tool_ctx(sb: &Arc<dyn Sandbox>) -> cedar::tools::ToolContext {
 
 #[tokio::test]
 #[ignore = "needs Docker and the cedar-sandbox image"]
+async fn bash_lists_the_files_it_created_or_modified() {
+    use cedar::tools::{Bash, Tool};
+    use serde_json::json;
+
+    let (f, id, sb) = sandbox().await;
+    let ctx = tool_ctx(&sb);
+    sb.write_file("old.txt", b"untouched").await.unwrap();
+    sb.write_file("edited.txt", b"before").await.unwrap();
+
+    // A command that finishes at once still has its files listed; caches and untouched files don't.
+    let msg = Bash
+        .call(
+            &ctx,
+            &json!({ "command": "mkdir -p out .cache && echo x > out/fig.png && echo y > .cache/noise \
+                                 && echo after > edited.txt && cat old.txt" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        msg,
+        "untouched\n[files created or modified]\n- edited.txt\n- out/fig.png"
+    );
+
+    // A command that writes nothing reports nothing, and keeps its exit status.
+    let msg = Bash
+        .call(&ctx, &json!({ "command": "ls old.txt; exit 3" }))
+        .await
+        .unwrap();
+    assert_eq!(msg, "old.txt\n\n[exit status: 3]");
+
+    // Neither marker is left in /tmp.
+    let out = sb.exec("ls -A /tmp", 10 * SECOND, 1000).await.unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
+
+    teardown(&f, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
 async fn run_python_runs_code_and_lists_the_files_it_wrote() {
     use cedar::tools::{RunPython, Tool};
     use serde_json::json;

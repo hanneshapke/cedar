@@ -21,6 +21,7 @@
 .cedar-set-check small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .cedar-set-check.small { align-items: center; gap: 8px; font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .cedar-set-check.small input { margin: 0; }
+.cedar-set-check.plain { font-family: inherit; }
 .cedar-set-single { margin: 6px 0 0 26px; font-size: 12.5px; }
 .cedar-set-single summary { cursor: pointer; color: var(--muted); }
 .cedar-set-single-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
@@ -62,16 +63,14 @@
 .cedar-set-help code { font-size: 12px; }
 .cedar-set-warn-text { color: #b0662a; }
 @media (prefers-color-scheme: dark) { .cedar-set-warn-text { color: #e2a66a; } }
-.cedar-set-endpoint { flex: 1 1 100%; flex-direction: column; align-items: stretch; margin-top: 4px; }
+/* More specific than the .cedar-set-inline rule below, which would otherwise center the children. */
+.cedar-set-inline.cedar-set-endpoint { flex: 1 1 100%; flex-direction: column; align-items: stretch; margin-top: 4px; }
 .cedar-set-inline.cedar-set-endpoint > input { flex: none; }
-.cedar-set-inline.cedar-set-endpoint > .cedar-set-endpoint-row { width: 100%; }
 .cedar-set-endpoint > .primary, .cedar-set-endpoint > .copy-btn { align-self: flex-start; }
-.cedar-set-endpoint-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cedar-set-endpoint-row select { flex: none; padding: 8px 6px; border: 1px solid rgba(128, 128, 128, .4); border-radius: 8px; background: rgba(128, 128, 128, .07); color: inherit; font: inherit; font-size: 14px; }
-.cedar-set-endpoint-row input { flex: 1 1 120px; }
-.cedar-set-endpoint-row input[type=number] { flex: 0 0 84px; }
-.cedar-set-endpoint-row input[aria-label=Path] { flex: 0 0 72px; }
-.cedar-set-colon { color: var(--muted); }
+.cedar-set-endpoint > input:disabled { opacity: .6; }
+/* A checkbox row inside an inline form keeps its box small; the text-field rule below must not grow or restyle it. */
+.cedar-set-inline .cedar-set-check { gap: 10px; }
+.cedar-set-inline .cedar-set-check input { flex: none; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 0; background: none; }
 .cedar-set-unlock, .cedar-set-inline { display: flex; gap: 8px; align-items: center; }
 .cedar-set-inline { margin-top: 8px; flex-wrap: wrap; }
 .cedar-set-inline[hidden] { display: none; }
@@ -85,6 +84,13 @@
 .cedar-set-badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; border: 1px solid rgba(128, 128, 128, .35); font-size: 11.5px; line-height: 1.6; color: var(--muted); white-space: nowrap; }
 .cedar-set-badge.ok { color: var(--accent); border-color: var(--accent); }
 
+/* the model registry */
+.cedar-set-models { margin-bottom: 12px; }
+.cedar-set-subheading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 6px; font-size: 13.5px; }
+.cedar-set-models > form.cedar-set-endpoint { margin-bottom: 10px; }
+.cedar-set-endpoint > select { width: 100%; padding: 8px 10px; border: 1px solid rgba(128, 128, 128, .4); border-radius: 8px; background: rgba(128, 128, 128, .07); color: inherit; font: inherit; font-size: 14px; }
+.cedar-set-endpoint > select[hidden] { display: none; }
+
 /* the composer's Tools button and its menu */
 .cedar-set-chip { position: relative; flex: none; }
 .cedar-set-chip.custom::after { content: ""; position: absolute; top: 3px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
@@ -94,6 +100,6 @@
 
 @media (max-width: 640px) {
   .cedar-set-fields { grid-template-columns: 1fr; }
-  .cedar-set-endpoint-row { flex-wrap: wrap; }
   .cedar-set-menu { width: calc(100vw - 16px); }
 }
+.cedar-set-check-wide { grid-column: 1 / -1; }

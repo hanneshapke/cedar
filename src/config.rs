@@ -5,8 +5,10 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
-pub const DEFAULT_MODEL: &str = "deepseek-ai/DeepSeek-V4-Flash";
-pub const DEFAULT_LLM_BASE_URL: &str = "http://localhost:8000/v1";
+/// What a model server address saved before the registry existed pointed at when it named no
+/// model, and the built-in address of that time: used only to migrate such a saved setting.
+pub const LEGACY_DEFAULT_MODEL: &str = "deepseek-ai/DeepSeek-V4-Flash";
+pub const LEGACY_DEFAULT_LLM_BASE_URL: &str = "http://localhost:8000/v1";
 pub const DEFAULT_BRAVE_BASE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
 pub const DEFAULT_WEATHER_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
 pub const DEFAULT_WEATHER_GEOCODING_BASE_URL: &str =
@@ -125,14 +127,6 @@ pub struct GoogleApiConfig {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Base URL of the OpenAI-compatible server (vLLM), including the `/v1` prefix.
-    pub llm_base_url: String,
-    /// Bearer token for the LLM server; only needed if it was started with `--api-key`.
-    pub llm_api_key: Option<String>,
-    /// Whether `LLM_BASE_URL` / `LLM_API_KEY` were set in the environment. Those can't be changed
-    /// through the admin API; the built-in default address can.
-    pub llm_base_url_from_env: bool,
-    pub llm_api_key_from_env: bool,
     /// Brave Search API key. The `web_search` tool is only offered to the model when this is set.
     pub brave_api_key: Option<String>,
     /// Brave web search endpoint; overridable so tests can point at a mock.
@@ -167,9 +161,6 @@ pub struct Config {
     pub database_url: String,
     pub bind_addr: SocketAddr,
 
-    pub default_model: String,
-    /// If non-empty, requests may only use these models (the default model is always allowed).
-    pub allowed_models: Vec<String>,
     pub default_system_prompt: String,
     pub max_tokens: u32,
     pub max_turns_cap: u32,
@@ -333,12 +324,16 @@ impl Config {
 
         // A GUI launcher (the macOS app) runs without the user's PATH, so it names the CLI itself.
         let docker_bin = get("DOCKER_BIN").unwrap_or_else(|| "docker".into());
+        for name in ["LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL", "ALLOWED_MODELS"] {
+            if get(name).is_some() {
+                tracing::warn!(
+                    setting = name,
+                    "ignored: models are registered through the admin API (PUT /v1/admin/models/{{id}}) or the chat UI's Settings"
+                );
+            }
+        }
 
         let cfg = Config {
-            llm_base_url: get("LLM_BASE_URL").unwrap_or_else(|| DEFAULT_LLM_BASE_URL.into()),
-            llm_api_key: get("LLM_API_KEY").map(|k| k.trim().to_string()),
-            llm_base_url_from_env: get("LLM_BASE_URL").is_some(),
-            llm_api_key_from_env: get("LLM_API_KEY").is_some(),
             brave_api_key: get("BRAVE_API_KEY").map(|k| k.trim().to_string()),
             brave_base_url: get("BRAVE_API_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_BRAVE_BASE_URL.into()),
@@ -364,8 +359,6 @@ impl Config {
             )
             .context("BIND_ADDR")?,
 
-            default_model: get("LLM_MODEL").unwrap_or_else(|| DEFAULT_MODEL.into()),
-            allowed_models: list("ALLOWED_MODELS"),
             default_system_prompt: get("SYSTEM_PROMPT")
                 .unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.into()),
             max_tokens: parse("MAX_TOKENS", get("MAX_TOKENS"), 4096)?,
@@ -458,10 +451,6 @@ mod tests {
     fn defaults_and_required() {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a, b ,,")])).unwrap();
         assert_eq!(cfg.api_keys, ["a", "b"]);
-        assert_eq!(cfg.default_model, DEFAULT_MODEL);
-        assert_eq!(cfg.llm_base_url, DEFAULT_LLM_BASE_URL);
-        assert_eq!(cfg.llm_api_key, None);
-        assert!(!cfg.llm_base_url_from_env && !cfg.llm_api_key_from_env);
         assert_eq!(cfg.sandbox.network, "none");
         assert_eq!(cfg.sandbox.docker_bin, "docker");
         assert_eq!(cfg.browser.docker_bin, "docker");
@@ -521,21 +510,6 @@ mod tests {
         let err =
             Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAPS", "maybe")])).unwrap_err();
         assert!(err.to_string().contains("MAPS"), "{err}");
-    }
-
-    #[test]
-    fn llm_settings_come_from_the_environment() {
-        let cfg = Config::from_lookup(lookup(&[
-            ("CEDAR_API_KEYS", "a"),
-            ("LLM_BASE_URL", "http://gpu-box:9000/v1"),
-            ("LLM_API_KEY", " secret "),
-            ("LLM_MODEL", "my-model"),
-        ]))
-        .unwrap();
-        assert_eq!(cfg.llm_base_url, "http://gpu-box:9000/v1");
-        assert_eq!(cfg.llm_api_key.as_deref(), Some("secret"));
-        assert!(cfg.llm_base_url_from_env && cfg.llm_api_key_from_env);
-        assert_eq!(cfg.default_model, "my-model");
     }
 
     #[test]

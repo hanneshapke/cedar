@@ -15,7 +15,7 @@ const els = {
   notes: $('notes'), recents: $('recents'),
   page: $('page'), pageHead: $('page-head'), pageName: $('page-name'), pageBody: $('page-body'),
   pile: $('pile'), trail: $('trail'),
-  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'),
+  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
 };
@@ -24,9 +24,11 @@ const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
 const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
 const DOC_RE = /\.(md|markdown|txt)$/i;
+const NO_MODELS = 'No model is registered yet: an admin adds one under Settings → Model server & API keys.';
 
 const state = {
-  config: { auth_required: false, models: [] },
+  config: { auth_required: false },
+  noModels: false,     // cedar has no model registered: messages can't be sent yet
   conversations: [],
   current: null,
   views: new Map(),   // turn id -> view
@@ -92,6 +94,11 @@ function renderInline(text) {
   const stash = (html) => `\u0000${slots.push(html) - 1}\u0000`;
   const link = (href, label) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
   let s = text.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${escapeHtml(code)}</code>`));
+  // ![caption](chart.png) for a workspace image becomes a placeholder that image-view.js fills in.
+  s = s.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m, alt, href) => {
+    const image = cedarImages.markdown(alt, href);
+    return image ? stash(image) : m;
+  });
   s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, href) =>
     /^(https?:|mailto:)/i.test(href) ? stash(link(href, escapeHtml(label))) : m);
   s = s.replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"*_]/g, (url) => stash(link(url, escapeHtml(url))));
@@ -388,8 +395,9 @@ function clippingsFor(tool) {
       return searchClippings(tool, meta);
     case 'bash':
       return [clipEl('bash', meta, `<code>$ ${escapeHtml(firstLine(input.command))}</code>`, '', shell, tool.is_error)];
-    case 'run_python':
+    case 'run_python': {
       return [clipEl('run_python', meta, `<code>${escapeHtml(firstLine(input.code))}</code>`, '', shell, tool.is_error)];
+    }
     case 'read_file':
     case 'read_document':
       return [clipEl(tool.name, meta, escapeHtml(String(input.path || '')), '', raw, tool.is_error)];
@@ -423,6 +431,13 @@ function downloadLink(path, primary) {
   return b;
 }
 
+/** Rendered Markdown for the page, with the workspace images it refers to. */
+function pageMarkdown(text) {
+  const md = h('div', 'md', renderMarkdown(text));
+  cedarImages.hydrate(md);
+  return md;
+}
+
 function renderDesk() {
   // page
   const doc = currentDocument();
@@ -451,10 +466,10 @@ function renderDesk() {
     els.pageHead.append(actions);
     const content = String(doc.input.content ?? '');
     if (/\.txt$/i.test(path)) { const pre = h('pre', 'plain'); pre.textContent = content; els.pageBody.append(pre); }
-    else els.pageBody.append(h('div', 'md', renderMarkdown(content)));
+    else els.pageBody.append(pageMarkdown(content));
   } else if (latest && latest.texts.length) {
     els.pageHead.append(h('span', 'page-name', 'Answer'), h('span', '', 'no file was written; this is what Cedar said'));
-    els.pageBody.append(h('div', 'md', renderMarkdown(latest.texts.join('\n\n'))));
+    els.pageBody.append(pageMarkdown(latest.texts.join('\n\n')));
   } else if (latest) {
     els.pageHead.append(h('span', 'page-name', 'Working'));
     const w = h('div', 'working');
@@ -503,20 +518,22 @@ function note(cls, who, html) {
   const el = h('div', `note ${cls}`);
   if (who) el.append(h('div', 'who', who));
   const body = h('div', cls === 'cedar' ? 'md' : '', html);
+  if (cls === 'cedar') cedarImages.hydrate(body, { onLoad: keepNotesAtEnd });
   el.append(body);
   return el;
 }
 
 function addTurn(turn) {
   const view = {
-    turn, texts: [], tools: [], byId: new Map(), usage: { input: 0, output: 0 },
+    turn, texts: [], textNotes: [], tools: [], images: [], byId: new Map(), usage: { input: 0, output: 0 },
     abort: new AbortController(), done: false,
     workingEl: null,
   };
   state.views.set(turn.id, view);
   state.order.push(turn.id);
   const user = note('user', `You · ${new Date(turn.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-  user.lastChild.textContent = turn.prompt;
+  if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
+  user.lastChild.append(document.createTextNode(turn.prompt));
   els.notes.append(user);
   view.workingEl = h('div', 'working');
   view.workingEl.append(h('span', 'spinner'), h('span', '', 'Thinking'));
@@ -525,6 +542,12 @@ function addTurn(turn) {
   updateChrome();
   followEvents(view);
   return view;
+}
+
+/** After a picture in the margin loads: stay at the end if the reader was there, else leave them be. */
+function keepNotesAtEnd() {
+  const n = els.notes;
+  if (n.scrollHeight - n.scrollTop - n.clientHeight < 160) n.scrollTop = n.scrollHeight;
 }
 
 function placeNote(view, el) {
@@ -588,7 +611,8 @@ function applyEvent(view, event) {
   switch (event.type) {
     case 'assistant.text':
       view.texts.push(d.text);
-      placeNote(view, note('cedar', 'Cedar', renderMarkdown(d.text)));
+      view.textNotes.push(note('cedar', 'Cedar', renderMarkdown(d.text)));
+      placeNote(view, view.textNotes[view.textNotes.length - 1]);
       setWorking(view, 'Thinking');
       break;
     case 'tool.call': {
@@ -600,7 +624,15 @@ function applyEvent(view, event) {
     }
     case 'tool.result': {
       const tool = view.byId.get(d.id);
-      if (tool) Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
+      if (tool) {
+        Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
+        // The images a call produced are shown in the margin once each, after the reply: see finishTurn.
+        if (!tool.is_error) {
+          for (const path of cedarImages.produced(tool.name, tool.input, tool.output)) {
+            if (!view.images.includes(path)) view.images.push(path);
+          }
+        }
+      }
       setWorking(view, 'Thinking');
       break;
     }
@@ -616,25 +648,42 @@ function applyEvent(view, event) {
   updateChrome();
 }
 
+/** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
+const CUT_OFF =
+  "The reply was cut off at the model's output limit (MAX_TOKENS). A model that thinks before answering can use all of it before writing any text. Ask whoever runs the server to raise it.";
+
 function finishTurn(view, event) {
   if (view.done) return;
   view.done = true;
-  view.workingEl?.remove();
+  // The working line marks where this turn's notes end, so they land there even when a later turn's
+  // notes are already in the margin (a conversation's turns are replayed side by side).
+  const anchor = view.workingEl;
   view.workingEl = null;
+  const put = (node) => (anchor?.isConnected ? els.notes.insertBefore(node, anchor) : els.notes.append(node));
   const d = event.data || {};
+  const inText = new Set(view.textNotes.flatMap((n) => [...cedarImages.shown(n)])); // pictures the reply itself places
+  const figures = cedarImages.figuresFor(view.images, { skip: inText, onLoad: keepNotesAtEnd });
+  if (figures.length) {
+    const n = note('cedar', '', '');
+    n.lastChild.append(...figures);
+    put(n);
+  }
   if (event.type === 'run.failed') {
     const n = note('error', '');
     n.lastChild.textContent = d.error || 'Something went wrong.';
-    els.notes.append(n);
+    put(n);
   } else if (event.type === 'run.cancelled') {
-    els.notes.append(note('muted', '', d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.'));
+    put(note('muted', '', d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.'));
+  } else if (d.stop_reason === 'max_tokens') {
+    put(note('error', '', CUT_OFF));
   } else if (!view.texts.length) {
-    els.notes.append(note('muted', '', 'No text in this response.'));
+    put(note('muted', '', 'No text in this response.'));
   }
   for (const tool of view.tools) if (tool.output === undefined) Object.assign(tool, { output: '', is_error: true });
   if (view.usage.input || view.usage.output) {
-    els.notes.append(note('usage', '', `${view.usage.input.toLocaleString()} in · ${view.usage.output.toLocaleString()} out`));
+    put(note('usage', '', `${view.usage.input.toLocaleString()} in · ${view.usage.output.toLocaleString()} out`));
   }
+  anchor?.remove();
   els.notes.scrollTop = els.notes.scrollHeight;
   view.lastEvent = event.type;
   if (state.activeTurn === view) state.activeTurn = null;
@@ -669,8 +718,9 @@ function updateChrome() {
   const doing = state.activeTurn?.workingEl?.lastChild.textContent || 'Thinking';
   els.statusText.textContent = busy ? `Working · ${doing[0].toLowerCase()}${doing.slice(1)}`
     : latest ? (latest.lastEvent === 'run.failed' ? 'Failed' : latest.lastEvent === 'run.cancelled' ? 'Stopped' : 'Done') : 'Idle';
-  els.send.disabled = state.sending || busy || !els.input.value.trim();
-  els.input.placeholder = busy ? 'Cedar is working. Type a follow-up for when it is done…' : c ? 'Change anything?' : 'What should be on the desk?';
+  els.send.disabled = state.sending || busy || state.noModels || !els.input.value.trim();
+  els.input.placeholder = state.noModels ? NO_MODELS
+    : busy ? 'Cedar is working. Type a follow-up for when it is done…' : c ? 'Change anything?' : 'What should be on the desk?';
   document.title = c?.title ? `${c.title} – Cedar` : 'Cedar';
 }
 
@@ -707,6 +757,7 @@ function showNewChat() {
   resetView();
   state.current = null;
   cedarSettings.conversationChanged();
+  cedarAttach.clear();
   renderDesk();
   updateChrome();
   renderRecents();
@@ -726,13 +777,49 @@ async function openConversation(id) {
   if (token !== state.loadToken) return;
   state.current = detail.conversation;
   cedarSettings.conversationChanged();
-  if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) els.model.value = detail.conversation.model;
+  cedarAttach.clear();
+  restorePickers(detail.conversation);
   for (const turn of detail.turns) addTurn(turn);
   renderDesk();
   updateChrome();
   renderRecents();
   els.input.focus();
 }
+
+// -- the model and reasoning pickers -----------------------------------------------------------
+
+/** Load cedar's registry into the pickers. Without a model registered, sending is off. */
+async function loadModels() {
+  try { await cedarModels.load(api); } catch { return; } // cedar unreachable: leave the pickers as they are
+  state.noModels = !cedarModels.all().length;
+  const model = cedarModels.byId(els.model.value) ? els.model.value : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, els.model.value, els.reasoning.value);
+  syncAttach();
+  sendMenu?.refresh();
+  updateChrome();
+}
+
+/** The paperclip is offered while the chosen model (or the default) takes images and PDFs. */
+function syncAttach() {
+  cedarAttach.setEnabled(cedarModels.multimodal(els.model.value));
+}
+
+/** Put the conversation's last model and reasoning level back into the pickers. */
+function restorePickers(conversation) {
+  if (!cedarModels.loaded()) return;
+  const model = cedarModels.byId(conversation.model) ? conversation.model : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, model, conversation.reasoning || '');
+  syncAttach();
+  sendMenu?.refresh();
+}
+
+cedarModels.bindPair(els.model, els.reasoning);
+els.model.addEventListener('change', syncAttach);
+// The send button's menu: shows the chosen model and level, and changes them.
+let sendMenu = null;
+document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
@@ -851,8 +938,12 @@ async function sendMessage() {
     }
     const body = { content };
     if (els.model.value) body.model = els.model.value;
+    if (els.reasoning.value) body.reasoning = els.reasoning.value;
+    const attachments = cedarAttach.payload();
+    if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
     els.input.value = '';
+    cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
     autosize();
     if (token !== state.loadToken) return;
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
@@ -922,7 +1013,7 @@ els.stop.addEventListener('click', stopActive);
 els.newChat.addEventListener('click', () => { location.hash = '#/'; if (!state.current) els.input.focus(); });
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
-els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value }));
+els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 els.title.addEventListener('click', startRename);
@@ -938,22 +1029,28 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
-  cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
+  cedarSchedule.init({ api, toast, renderMarkdown });
   cedarSettings.init({
     api, toast, authHeaders,
-    models: () => state.config.models || [],
     config: () => state.config,
     current: () => state.current,
-    anchor: els.model,
+    anchor: els.reasoning,
+  });
+  // The paperclip goes after the Tools button that settings.js puts after the model picker; the
+  // row of chosen files sits above the message box.
+  cedarAttach.init({
+    form: els.composer,
+    textarea: els.input,
+    anchor: els.reasoning,
+    before: els.input,
+    toast,
   });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
-  if (state.config.models?.length) {
-    els.model.append(new Option('Default model', ''));
-    for (const m of state.config.models) els.model.append(new Option(m, m));
-    els.model.hidden = false;
-  }
+  sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   if (state.config.auth_required && !memoryToken) await askToken(false);
+  await loadModels();
   cedarSettings.start();
   await loadConversations();
   route();

@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use uuid::Uuid;
@@ -28,6 +28,17 @@ pub struct CedarClient {
 }
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Starting a run with attachments sends up to tens of MB that cedar decodes before answering.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// A file sent with a message, as cedar's `POST /v1/runs` takes it: standard base64, no prefix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Attachment {
+    pub name: String,
+    pub media_type: String,
+    pub data: String,
+}
 
 impl CedarClient {
     pub fn new(base_url: &str, api_key: &str) -> anyhow::Result<Self> {
@@ -53,7 +64,11 @@ impl CedarClient {
     }
 
     async fn json<T: for<'de> Deserialize<'de>>(&self, req: reqwest::RequestBuilder) -> Result<T, AppError> {
-        self.send(req.timeout(REQUEST_TIMEOUT))
+        self.json_within(req, REQUEST_TIMEOUT).await
+    }
+
+    async fn json_within<T: for<'de> Deserialize<'de>>(&self, req: reqwest::RequestBuilder, timeout: Duration) -> Result<T, AppError> {
+        self.send(req.timeout(timeout))
             .await?
             .json()
             .await
@@ -65,6 +80,9 @@ impl CedarClient {
         let mut body = json!({ "prompt": prompt });
         if let Some(m) = opts.model {
             body["model"] = json!(m);
+        }
+        if let Some(r) = opts.reasoning {
+            body["reasoning"] = json!(r);
         }
         if let Some(s) = opts.system {
             body["system"] = json!(s);
@@ -78,7 +96,12 @@ impl CedarClient {
         if let Some(p) = opts.parent {
             body["parent_id"] = Value::String(p.to_string());
         }
-        self.json(self.http.post(self.url("/runs")).json(&body)).await
+        let mut timeout = REQUEST_TIMEOUT;
+        if let Some(a) = opts.attachments.filter(|a| !a.is_empty()) {
+            body["attachments"] = json!(a);
+            timeout = UPLOAD_TIMEOUT;
+        }
+        self.json_within(self.http.post(self.url("/runs")).json(&body), timeout).await
     }
 
     /// The tool groups cedar offers: `{groups: [{id, label, available, reason?, tools}]}`.
@@ -86,9 +109,16 @@ impl CedarClient {
         self.json(self.http.get(self.url("/tools"))).await
     }
 
-    /// cedar's defaults for runs: `{model, system, max_turns_cap, allowed_models}`.
+    /// cedar's defaults for runs: `{model, model_id, system, max_turns_cap, attachments}`.
     pub async fn defaults(&self) -> Result<Value, AppError> {
         self.json(self.http.get(self.url("/defaults"))).await
+    }
+
+    /// The models cedar has registered, in picker order: each
+    /// `{id, label, model, reasoning_levels, default_reasoning, is_default}`.
+    pub async fn models(&self) -> Result<Vec<Value>, AppError> {
+        let body: Value = self.json(self.http.get(self.url("/models"))).await?;
+        Ok(body["models"].as_array().cloned().unwrap_or_default())
     }
 
     // -- admin: integrations (needs CEDAR_API_KEY to be one of cedar's CEDAR_ADMIN_KEYS) --------
@@ -102,17 +132,21 @@ impl CedarClient {
         admin(self.json(req).await)
     }
 
-    /// Point cedar at another model server. `api_key`: `None` keeps the saved one, empty removes it.
-    pub async fn set_llm(&self, base_url: &str, api_key: Option<&str>) -> Result<Value, AppError> {
-        let mut body = json!({ "base_url": base_url });
-        if let Some(k) = api_key {
-            body["api_key"] = json!(k);
-        }
-        admin(self.json(self.http.put(self.url("/admin/integrations/llm")).json(&body)).await)
+    /// The registered models as admins see them (server address, whether a key is saved, what
+    /// the server listed).
+    pub async fn models_admin(&self) -> Result<Value, AppError> {
+        admin(self.json(self.http.get(self.url("/admin/models"))).await)
     }
 
-    pub async fn remove_llm(&self) -> Result<(), AppError> {
-        let req = self.http.delete(self.url("/admin/integrations/llm")).timeout(REQUEST_TIMEOUT);
+    /// Register a model or change one. `spec` is cedar's `{base_url, model, label?, api_key?,
+    /// reasoning_levels?, default_reasoning?, is_default?}`, passed through as it is.
+    pub async fn set_model(&self, id: &str, spec: &Value) -> Result<Value, AppError> {
+        let req = self.http.put(self.url(&format!("/admin/models/{id}"))).json(spec);
+        admin(self.json(req).await)
+    }
+
+    pub async fn remove_model(&self, id: &str) -> Result<(), AppError> {
+        let req = self.http.delete(self.url(&format!("/admin/models/{id}"))).timeout(REQUEST_TIMEOUT);
         admin(self.send(req).await.map(drop))
     }
 
@@ -205,10 +239,14 @@ impl CedarClient {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RunOptions<'a> {
     pub model: Option<&'a str>,
+    /// One of the model's reasoning levels.
+    pub reasoning: Option<&'a str>,
     pub system: Option<&'a str>,
     pub max_turns: Option<u32>,
     pub tools: Option<&'a [String]>,
     pub parent: Option<Uuid>,
+    /// Images and PDFs to show the model with the prompt (for a multimodal model).
+    pub attachments: Option<&'a [Attachment]>,
 }
 
 /// cedar refuses the admin routes to a key that isn't an admin key: say which setting to fix.

@@ -1,0 +1,22 @@
+/* Attachments (attach.js), shared by both UIs. Like settings.css it only relies on --accent and
+   --muted plus translucent greys, so it reads the same in either style and theme. */
+
+.cedar-attach-btn { display: inline-grid; place-items: center; padding: 4px 6px; }
+.cedar-attach-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.cedar-attach-row { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; flex-basis: 100%; margin-bottom: 8px; }
+.cedar-attach-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 6px 3px 3px; border: 1px solid rgba(128, 128, 128, .35); border-radius: 10px; background: rgba(128, 128, 128, .08); font-size: 12px; line-height: 1.3; }
+.cedar-attach-thumb { width: 28px; height: 28px; border-radius: 7px; object-fit: cover; }
+.cedar-attach-kind { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; background: rgba(128, 128, 128, .18); color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .04em; }
+.cedar-attach-name { max-width: 180px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-attach-size { color: var(--muted); font-size: 11px; }
+.cedar-attach-remove { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
+.cedar-attach-remove:hover { background: rgba(128, 128, 128, .2); color: inherit; }
+
+/* chips on a sent message */
+.cedar-attach-sent { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.cedar-attach-sent:empty { display: none; }
+.cedar-attach-sent .cedar-attach-chip { background: rgba(128, 128, 128, .12); }
+
+/* dragging files over the message box */
+.cedar-drag { outline: 2px dashed var(--accent); outline-offset: 2px; }

@@ -1,0 +1,55 @@
+name: Landing page
+
+# Publishes docs/landing to GitHub Pages. One-time setup: Settings > Pages > Source: GitHub Actions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/landing/**
+      - docs/assets/**
+      - docs/screenshots/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Assemble the site
+        run: |
+          set -euo pipefail
+          mkdir _site
+          cp -R docs/landing/. _site/
+          cp -R docs/assets _site/assets
+          cp -R docs/screenshots _site/screenshots
+          # The page sits in docs/landing and reaches the images with ../; in the site they are next to it.
+          sed -E 's#(src|href)="\.\./#\1="#g' docs/landing/index.html > _site/index.html
+          if grep -n '\.\./' _site/index.html; then
+            echo "::error file=docs/landing/index.html::a ../ path is left in the page, so it would break once published"
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -7,7 +7,7 @@ const els = {
   main: $('main'), sidebar: $('sidebar'), backdrop: $('backdrop'), convList: $('conv-list'),
   scroll: $('scroll'), thread: $('thread'), greeting: $('greeting'),
   title: $('title'), titleInput: $('title-input'), deleteChat: $('delete-chat'),
-  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), hint: $('hint'),
+  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'), hint: $('hint'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
@@ -17,9 +17,11 @@ const els = {
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
 const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
+const NO_MODELS = 'No model is registered yet: an admin adds one under Settings → Model server & API keys.';
 
 const state = {
-  config: { auth_required: false, models: [] },
+  config: { auth_required: false },
+  noModels: false,     // cedar has no model registered: messages can't be sent yet
   conversations: [],
   current: null,     // the open conversation, or null on the "new chat" screen
   views: new Map(),  // turn id -> view of the open conversation
@@ -41,7 +43,7 @@ const ICONS = {
   cross: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
-  spark: '<svg class="spark" viewBox="0 0 24 24"><path d="M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z"/></svg>',
+  logo: '<picture><source media="(prefers-color-scheme: dark)" srcset="/assets/cedar-mark-on-dark.svg"><img class="logo" src="/assets/cedar-mark.svg" alt="" width="22" height="22"></picture>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>',
   eye: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   document: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 12h6M9 16h6"/></svg>',
@@ -104,6 +106,11 @@ function renderInline(text) {
   const link = (href, label) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
 
   let s = text.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${escapeHtml(code)}</code>`));
+  // ![caption](chart.png) for a workspace image becomes a placeholder that image-view.js fills in.
+  s = s.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m, alt, href) => {
+    const image = cedarImages.markdown(alt, href);
+    return image ? stash(image) : m;
+  });
   s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, href) =>
     /^(https?:|mailto:)/i.test(href) ? stash(link(href, escapeHtml(label))) : m);
   s = s.replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"*_]/g, (url) => stash(link(url, escapeHtml(url))));
@@ -374,6 +381,7 @@ function showNewChat() {
   resetView();
   state.current = null;
   cedarSettings.conversationChanged();
+  cedarAttach.clear();
   setHeader();
   const hour = new Date().getHours();
   els.greeting.textContent = hour < 5 ? 'Up late? How can I help?' : hour < 12 ? 'Good morning. How can I help?'
@@ -398,16 +406,50 @@ async function openConversation(id) {
   if (token !== state.loadToken) return;
   state.current = detail.conversation;
   cedarSettings.conversationChanged();
+  cedarAttach.clear();
   setHeader();
-  if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) {
-    els.model.value = detail.conversation.model;
-  }
+  restorePickers(detail.conversation);
   for (const turn of detail.turns) addTurn(turn);
   renderSidebar();
   updateComposer();
   scrollToBottom(true);
   els.input.focus();
 }
+
+// -- the model and reasoning pickers -----------------------------------------------------------
+
+/** Load cedar's registry into the pickers. Without a model registered, sending is off. */
+async function loadModels() {
+  try { await cedarModels.load(api); } catch { return; } // cedar unreachable: leave the pickers as they are
+  state.noModels = !cedarModels.all().length;
+  const model = cedarModels.byId(els.model.value) ? els.model.value : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, els.model.value, els.reasoning.value);
+  syncAttach();
+  sendMenu?.refresh();
+  updateComposer();
+}
+
+/** The paperclip is offered while the chosen model (or the default) takes images and PDFs. */
+function syncAttach() {
+  cedarAttach.setEnabled(cedarModels.multimodal(els.model.value));
+}
+
+/** Put the conversation's last model and reasoning level back into the pickers. */
+function restorePickers(conversation) {
+  if (!cedarModels.loaded()) return;
+  const model = cedarModels.byId(conversation.model) ? conversation.model : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, model, conversation.reasoning || '');
+  syncAttach();
+  sendMenu?.refresh();
+}
+
+cedarModels.bindPair(els.model, els.reasoning);
+els.model.addEventListener('change', syncAttach);
+// The send button's menu: shows the chosen model and level, and changes them.
+let sendMenu = null;
+document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
@@ -434,17 +476,18 @@ function addTurn(turn) {
   const el = h('div', 'turn');
   const user = h('div', 'user-msg');
   const bubble = h('div', 'bubble');
-  bubble.textContent = turn.prompt;
+  if (turn.attachments?.length) bubble.append(cedarAttach.chips(turn.attachments));
+  bubble.append(document.createTextNode(turn.prompt));
   user.append(bubble);
   const body = h('div', 'assistant');
-  const thinking = h('div', 'thinking', `${ICONS.spark}<span>Thinking…</span>`);
+  const thinking = h('div', 'thinking', `${ICONS.logo}<span>Thinking…</span>`);
   body.append(thinking);
   el.append(user, body);
   els.thread.append(el);
 
   const view = {
     turn, el, body, thinking,
-    tools: new Map(), texts: [], usage: { input: 0, output: 0 },
+    tools: new Map(), texts: [], images: [], usage: { input: 0, output: 0 },
     abort: new AbortController(), done: false,
   };
   state.views.set(turn.id, view);
@@ -521,7 +564,9 @@ function applyEvent(view, event) {
   switch (event.type) {
     case 'assistant.text': {
       view.texts.push(d.text);
-      place(view, h('div', 'md', renderMarkdown(d.text)));
+      const md = h('div', 'md', renderMarkdown(d.text));
+      cedarImages.hydrate(md, { onLoad: () => scrollToBottom(false) });
+      place(view, md);
       break;
     }
     case 'tool.call': place(view, toolCall(view, d)); break;
@@ -581,6 +626,7 @@ function toolCall(view, d) {
   body.append(h('div', 'label', 'Input'), inputPre);
   details.append(summary, body);
   if (WRITING_TOOLS.includes(d.name) && typeof input.path === 'string') details.dataset.path = input.path;
+  details.cedarInput = input; // for the images the result may point at
   view.tools.set(d.id, details);
   return details;
 }
@@ -616,13 +662,26 @@ function toolResult(view, d) {
       scrollToBottom(false);
     }
   }
+  // The images a call produced (a chart, a picture it saved, or one a command or script wrote) are
+  // shown with the reply, once each: see finishTurn.
+  if (!d.is_error) {
+    for (const path of cedarImages.produced(details.dataset.tool, details.cedarInput, text)) {
+      if (!view.images.includes(path)) view.images.push(path);
+    }
+  }
 }
+
+/** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
+const CUT_OFF =
+  "The reply was cut off at the model's output limit (MAX_TOKENS). A model that thinks before answering can use all of it before writing any text. Ask whoever runs the server to raise it.";
 
 function finishTurn(view, event) {
   if (view.done) return;
   view.done = true;
   view.thinking.remove();
   const d = event.data || {};
+  const figures = cedarImages.figuresFor(view.images, { skip: cedarImages.shown(view.body), onLoad: () => scrollToBottom(false) });
+  if (figures.length) view.body.append(...figures);
   if (event.type === 'run.failed') {
     const box = h('div', 'notice error');
     box.textContent = d.error || 'Something went wrong.';
@@ -631,6 +690,8 @@ function finishTurn(view, event) {
     const note = h('div', 'notice muted');
     note.textContent = d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.';
     view.body.append(note);
+  } else if (d.stop_reason === 'max_tokens') {
+    view.body.append(h('div', 'notice error', CUT_OFF));
   } else if (!view.texts.length) {
     view.body.append(h('div', 'notice muted', 'No text in this response.'));
   }
@@ -791,8 +852,8 @@ function updateComposer() {
   const busy = Boolean(state.activeTurn);
   els.send.classList.toggle('stop', busy);
   els.send.setAttribute('aria-label', busy ? 'Stop response' : 'Send message');
-  els.send.disabled = state.sending || (!busy && !els.input.value.trim());
-  els.input.placeholder = state.current ? 'Reply to Cedar…' : 'How can I help you today?';
+  els.send.disabled = state.sending || state.noModels || (!busy && !els.input.value.trim());
+  els.input.placeholder = state.noModels ? NO_MODELS : state.current ? 'Reply to Cedar…' : 'How can I help you today?';
   els.hint.textContent = busy ? 'Working… you can stop the response at any time.' : '';
   els.scheduleBtn.hidden = !state.current || busy || state.sending || !hasCompletedTurn();
 }
@@ -831,8 +892,12 @@ async function sendMessage() {
     }
     const body = { content };
     if (els.model.value) body.model = els.model.value;
+    if (els.reasoning.value) body.reasoning = els.reasoning.value;
+    const attachments = cedarAttach.payload();
+    if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
     els.input.value = '';
+    cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
     autosize();
     if (token !== state.loadToken) return; // the user navigated away meanwhile
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
@@ -907,7 +972,7 @@ els.titleInput.addEventListener('keydown', (e) => {
 els.titleInput.addEventListener('blur', () => finishRename(true));
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
-els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value }));
+els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 $('new-chat').addEventListener('click', () => { toggleSidebar(false); location.hash = '#/'; if (!state.current) els.input.focus(); });
@@ -923,14 +988,22 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
-  cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
+  cedarSchedule.init({ api, toast, renderMarkdown });
   cedarSettings.init({
     api, toast, authHeaders,
-    models: () => state.config.models || [],
     config: () => state.config,
     current: () => state.current,
-    anchor: els.model,
+    anchor: els.reasoning,
+  });
+  // The paperclip goes after the Tools button that settings.js puts after the model picker.
+  cedarAttach.init({
+    form: els.composer,
+    textarea: els.input,
+    anchor: els.reasoning,
+    before: els.composer.querySelector('.composer-row'),
+    toast,
   });
   try {
     const res = await fetch('/api/config');
@@ -938,12 +1011,9 @@ async function init() {
   } catch {
     toast('Could not reach the server');
   }
-  if (state.config.models?.length) {
-    els.model.append(new Option('Default model', ''));
-    for (const m of state.config.models) els.model.append(new Option(m, m));
-    els.model.hidden = false;
-  }
+  sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   if (state.config.auth_required && !memoryToken) await askToken(false);
+  await loadModels();
   cedarSettings.start();
   await loadConversations();
   route();

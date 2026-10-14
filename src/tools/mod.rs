@@ -7,6 +7,7 @@
 mod bash;
 mod browser;
 mod calendar;
+mod changes;
 mod chart;
 mod document;
 mod fetch;
@@ -383,6 +384,16 @@ impl<'a> ToolView<'a> {
         if self.get("show_map").is_some() {
             note.push_str(" To show the user where places are, use show_map.");
         }
+        if ["bash", "run_python", "write_file", "generate_chart"]
+            .iter()
+            .any(|t| self.get(t).is_some())
+        {
+            note.push_str(
+                " You can show the user images: those you save in the workspace appear in the chat \
+                 under the call that made them, and ![caption](path.png) in your reply places one \
+                 in the text.",
+            );
+        }
         let has = |group: &str| {
             let remote = self.set.remote.iter().any(|s| s.prefix() == group);
             let allowed = self.allow.is_none_or(|a| {
@@ -603,6 +614,7 @@ mod tests {
         assert!(note.contains("use fetch_url") && note.contains("use download_file"));
         assert!(note.contains("use weather_forecast"));
         assert!(note.contains("use show_map"));
+        assert!(note.contains("![caption](path.png)"), "{note}");
         assert!(!note.contains("browser tool"));
         let browser = ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BROWSER", "on")]))
             .unwrap()

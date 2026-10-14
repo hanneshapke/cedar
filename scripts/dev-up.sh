@@ -4,6 +4,8 @@
 #   scripts/dev-up.sh            build, start everything, attach
 #   scripts/dev-up.sh --no-build skip cargo and docker builds
 #   scripts/dev-up.sh --restart  kill the existing session first
+#   scripts/dev-up.sh --no-vllm  don't start, check or wait for vLLM, and don't detect LLM_MODEL
+#                                from it (cedar starts at once; set LLM_MODEL in .env if you need it)
 #   scripts/dev-up.sh --down     kill the session; vLLM keeps running
 #   scripts/dev-up.sh --down --with-vllm
 #                                also stop vLLM (docker compose down)
@@ -54,7 +56,7 @@ create_env() {
 CEDAR_API_KEYS=$key
 BIND_ADDR=127.0.0.1:8080
 LLM_BASE_URL=http://localhost:8000/v1
-# LLM_MODEL=              # detected from vLLM if unset
+# LLM_MODEL=              # detected from vLLM if unset (not with --no-vllm)
 MAX_CONCURRENT_RUNS=2
 RUN_TIMEOUT_SECS=1800
 RUST_LOG=info,sqlx=warn
@@ -92,11 +94,13 @@ pane_vllm() {
 
 pane_cedar() {
     load_env
-    wait_for "$LLM_BASE_URL/models" vLLM
-    if [[ -z ${LLM_MODEL:-} ]]; then
-        LLM_MODEL=$(curl -fsS "$LLM_BASE_URL/models" | jq -r '.data[0].id')
-        export LLM_MODEL
-        echo "LLM_MODEL=$LLM_MODEL (from vLLM)"
+    if (( ! ${NO_VLLM:-0} )); then
+        wait_for "$LLM_BASE_URL/models" vLLM
+        if [[ -z ${LLM_MODEL:-} ]]; then
+            LLM_MODEL=$(curl -fsS "$LLM_BASE_URL/models" | jq -r '.data[0].id')
+            export LLM_MODEL
+            echo "LLM_MODEL=$LLM_MODEL (from vLLM)"
+        fi
     fi
     cd "$ROOT"
     exec "$ROOT/target/release/cedar"
@@ -134,15 +138,16 @@ down() {
 # --- main ----------------------------------------------------------------------------------
 
 main() {
-    local build=1 restart=0 stop=0 with_vllm=0
+    local build=1 restart=0 stop=0 with_vllm=0 no_vllm=0
     for arg in "$@"; do
         case $arg in
             --no-build) build=0 ;;
             --restart) restart=1 ;;
+            --no-vllm) no_vllm=1 ;;
             --down) stop=1 ;;
             --with-vllm) with_vllm=1 ;;
             --down-all) stop=1; with_vllm=1 ;;
-            -h|--help) sed -n '2,15p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+            -h|--help) sed -n '2,17p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
             *) die "unknown option: $arg" ;;
         esac
     done
@@ -175,21 +180,32 @@ main() {
         docker build -q -t cedar-sandbox "$ROOT/sandbox"
     fi
 
-    if [[ -n ${VLLM_COMPOSE_FILE:-} ]]; then
+    if [[ -n ${VLLM_COMPOSE_FILE:-} ]] && (( ! no_vllm )); then
         echo "==> docker compose up -d ($VLLM_COMPOSE_FILE)"
         docker compose -f "$VLLM_COMPOSE_FILE" up -d
     fi
 
-    # Each pane drops to a shell when its process exits, so errors stay readable.
+    # One pane per process (no vLLM pane with --no-vllm). Each drops to a shell when its process
+    # exits, so errors stay readable. The panes are fresh processes: NO_VLLM tells them the flag.
     local hold='; echo; echo "[exited with status $?]"; exec bash'
-    tmux new-session -d -s "$TMUX_SESSION" -n stack -c "$ROOT" "$SELF _vllm $hold"
-    tmux split-window -v -t "$TMUX_SESSION:stack" -c "$ROOT" "$SELF _cedar $hold"
-    tmux split-window -v -t "$TMUX_SESSION:stack" -c "$ROOT" "$SELF _chat $hold"
+    local -a titles=(cedar cedar-chat) cmds=(_cedar _chat)
+    if (( ! no_vllm )); then
+        titles=(vllm "${titles[@]}")
+        cmds=(_vllm "${cmds[@]}")
+    fi
+    local i
+    for i in "${!cmds[@]}"; do
+        if (( i == 0 )); then
+            tmux new-session -d -s "$TMUX_SESSION" -n stack -c "$ROOT" "NO_VLLM=$no_vllm $SELF ${cmds[i]} $hold"
+        else
+            tmux split-window -v -t "$TMUX_SESSION:stack" -c "$ROOT" "NO_VLLM=$no_vllm $SELF ${cmds[i]} $hold"
+        fi
+    done
     tmux select-layout -t "$TMUX_SESSION:stack" even-vertical
     tmux set-option -t "$TMUX_SESSION" pane-border-status top >/dev/null
-    tmux select-pane -t "$TMUX_SESSION:stack.0" -T vllm
-    tmux select-pane -t "$TMUX_SESSION:stack.1" -T cedar
-    tmux select-pane -t "$TMUX_SESSION:stack.2" -T cedar-chat
+    for i in "${!titles[@]}"; do
+        tmux select-pane -t "$TMUX_SESSION:stack.$i" -T "${titles[i]}"
+    done
 
     echo "Started tmux session '$TMUX_SESSION'. Chat UI: http://$CHAT_BIND_ADDR"
     if [[ -t 1 && -z ${TMUX:-} ]]; then

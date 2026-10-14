@@ -9,8 +9,8 @@ use axum::Router;
 use cedar::api::{self, AppState};
 use cedar::browser::{Browser, BrowserFactory};
 use cedar::config::Config;
-use cedar::llm::{LlmClient, LlmResponse, MessageRequest};
-use cedar::models::Usage;
+use cedar::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
+use cedar::models::{ModelEntry, Usage};
 use cedar::sandbox::{
     check_workspace_path, ExecOutput, FileContent, Sandbox, SandboxFactory, SandboxFatal,
     WorkspaceFile, WorkspaceListing, WorkspaceMissing,
@@ -70,6 +70,7 @@ impl LlmClient for ScriptedLlm {
     async fn create_message(&self, req: &MessageRequest<'_>) -> Result<LlmResponse> {
         self.requests.lock().unwrap().push(json!({
             "model": req.model, "system": req.system, "max_tokens": req.max_tokens,
+            "reasoning_effort": req.reasoning_effort,
             "tools": req.tools, "messages": req.messages,
         }));
         let step = {
@@ -122,11 +123,14 @@ pub fn tool_use(id: &str, name: &str, input: Value) -> LlmResponse {
 pub type Files = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 
 /// Commands with special meaning: `fatal` (sandbox breaks), `fail` (exit 1 with stderr),
-/// `big` (output larger than the cap). Anything else echoes `ran: <command>`.
+/// `big` (output larger than the cap), and the changed-files listing that follows `bash` and
+/// `run_python` (it prints `changed`, one path per line). Anything else echoes `ran: <command>`.
 #[derive(Default)]
 pub struct FakeSandbox {
     pub files: Files,
     pub commands: Mutex<Vec<String>>,
+    /// The workspace files the listing of changes reports.
+    pub changed: Mutex<Vec<String>>,
     pub destroyed: AtomicBool,
 }
 
@@ -154,6 +158,15 @@ impl Sandbox for FakeSandbox {
                 exit_code: Some(0),
                 ..Default::default()
             }),
+            listing if listing.contains(" -newer ") => {
+                let out = self.changed.lock().unwrap().join("\n");
+                Ok(ExecOutput {
+                    stdout_total: out.len(),
+                    stdout: out.into_bytes(),
+                    exit_code: Some(0),
+                    ..Default::default()
+                })
+            }
             other => {
                 let out = format!("ran: {other}");
                 Ok(ExecOutput {
@@ -387,6 +400,33 @@ impl BrowserFactory for FakeBrowserFactory {
 
 pub const KEY_A: &str = "key-a";
 pub const KEY_B: &str = "key-b";
+/// The one registered model of a test app: the scripted client answers for it. Its reasoning
+/// levels let tests ask for one.
+pub const TEST_MODEL: &str = "test-model";
+pub const TEST_MODEL_LEVELS: [&str; 3] = ["none", "low", "high"];
+
+/// Register a model (without a server check) so runs can name it. `TEST_MODEL` takes images
+/// and PDFs, so the attachment tests can send some; any other takes none.
+pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]) -> ModelEntry {
+    let now = chrono::Utc::now();
+    store
+        .upsert_model(&ModelEntry {
+            id: id.into(),
+            label: id.into(),
+            model: name.into(),
+            base_url: format!("http://{id}.test/v1"),
+            reasoning_levels: levels.iter().map(|l| l.to_string()).collect(),
+            default_reasoning: None,
+            multimodal: id == TEST_MODEL,
+            is_default: false,
+            position: 0,
+            listed_models: None,
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .unwrap()
+}
 
 #[derive(Clone)]
 pub struct TestApp {
@@ -424,24 +464,32 @@ impl TestApp {
 
     pub async fn with_env(script: Vec<Step>, extra: &[(&str, &str)]) -> Self {
         let store = Store::connect_memory().await.unwrap();
-        Self::build(store, ScriptedLlm::new(script), FakeFactory::new(), extra)
+        Self::build(store, ScriptedLlm::new(script), FakeFactory::new(), extra).await
     }
 
-    pub fn build(
+    /// An app over `store` whose model `test-model` (registered if it isn't yet) is answered by
+    /// the scripted client. The registry is loaded, as `main.rs` does.
+    pub async fn build(
         store: Store,
         llm: Arc<ScriptedLlm>,
         factory: Arc<FakeFactory>,
         extra: &[(&str, &str)],
     ) -> Self {
+        if store.get_model(TEST_MODEL).await.unwrap().is_none() {
+            register_model(&store, TEST_MODEL, TEST_MODEL, &TEST_MODEL_LEVELS).await;
+        }
+        let clients = Arc::new(LlmRouter::new());
+        clients.set(TEST_MODEL, llm.clone());
         let browsers = Arc::new(FakeBrowserFactory::default());
         let state = AppState::with_browsers(
             test_config(extra),
             store,
-            llm.clone(),
+            clients,
             factory.clone(),
             browsers.clone(),
         )
         .unwrap();
+        state.integrations.reload().await.unwrap();
         let router = api::router(state.clone());
         Self {
             state,
@@ -450,6 +498,13 @@ impl TestApp {
             factory,
             browsers,
         }
+    }
+
+    /// Register another model that the scripted client answers for.
+    pub async fn register(&self, id: &str, name: &str, levels: &[&str]) {
+        register_model(&self.state.store, id, name, levels).await;
+        self.state.llm.set(id, self.llm.clone());
+        self.state.integrations.reload().await.unwrap();
     }
 
     pub async fn call(

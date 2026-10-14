@@ -7,10 +7,13 @@ use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
-use crate::integrations::Integrations;
-use crate::llm::LlmClient;
+use crate::integrations::{Integrations, ModelSpec};
+use crate::llm::LlmRouter;
 use crate::manager::RunManager;
-use crate::models::{CreateRunRequest, NewRun, Run, RunStatus, StoredMessage};
+use crate::models::{
+    Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
+    ALLOWED_ATTACHMENT_TYPES,
+};
 use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
 use crate::sse;
 use crate::store::{InsertRefused, Store};
@@ -22,6 +25,7 @@ use axum::response::sse::Sse;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use base64::Engine;
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -33,7 +37,14 @@ use uuid::Uuid;
 const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_PROMPT_BYTES: usize = 100_000;
 const MAX_SYSTEM_BYTES: usize = 20_000;
-const MAX_MODEL_LEN: usize = 100;
+pub(crate) const MAX_MODEL_LEN: usize = 100;
+/// Attachments (images and PDFs sent with a prompt): how many, how big each and all together
+/// (decoded), and the body limit that leaves room for their base64 on `POST /v1/runs` only.
+pub const MAX_ATTACHMENTS: usize = 10;
+pub const MAX_ATTACHMENT_BYTES: usize = 20 << 20;
+pub const MAX_ATTACHMENTS_TOTAL_BYTES: usize = 32 << 20;
+const MAX_RUN_BODY_BYTES: usize = 48 << 20;
+const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
 /// Largest workspace file that can be downloaded. It is read into memory before being sent.
@@ -49,8 +60,8 @@ pub struct AppState {
     /// `None` when the browser is turned off.
     pub browsers: Option<Arc<dyn BrowserFactory>>,
     pub auth: AuthKeys,
-    /// For model calls outside a run (compaction).
-    pub llm: Arc<dyn LlmClient>,
+    /// The registered models' clients, for model calls outside a run (compaction).
+    pub llm: Arc<LlmRouter>,
     /// The current tools, and the credentials admins can set up for them.
     pub integrations: Arc<Integrations>,
 }
@@ -62,7 +73,7 @@ impl AppState {
     pub fn new(
         cfg: Config,
         store: Store,
-        llm: Arc<dyn LlmClient>,
+        llm: Arc<LlmRouter>,
         sandboxes: Arc<dyn SandboxFactory>,
     ) -> Result<Self> {
         let browsers = Arc::new(DockerBrowserFactory::new(cfg.browser.clone()));
@@ -74,7 +85,7 @@ impl AppState {
     pub fn with_browsers(
         cfg: Config,
         store: Store,
-        llm: Arc<dyn LlmClient>,
+        llm: Arc<LlmRouter>,
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Arc<dyn BrowserFactory>,
     ) -> Result<Self> {
@@ -117,7 +128,13 @@ impl AppState {
 
 pub fn router(state: AppState) -> Router {
     let v1 = Router::new()
-        .route("/runs", post(create_run).get(list_runs))
+        // Only this route takes attachments, so only it gets the room for them.
+        .route(
+            "/runs",
+            post(create_run)
+                .get(list_runs)
+                .layer(DefaultBodyLimit::max(MAX_RUN_BODY_BYTES)),
+        )
         .route("/runs/{id}", get(get_run).delete(delete_run))
         .route("/runs/{id}/messages", get(get_messages))
         .route("/runs/{id}/events", get(stream_events))
@@ -126,11 +143,13 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/files/{*path}", get(download_file))
         .route("/compact", post(compact_conversation))
         .route("/tools", get(list_tools))
+        .route("/models", get(list_models))
         .route("/defaults", get(defaults))
         .route("/admin/integrations", get(get_integrations))
+        .route("/admin/models", get(get_models))
         .route(
-            "/admin/integrations/llm",
-            axum::routing::put(put_llm).delete(delete_llm),
+            "/admin/models/{id}",
+            axum::routing::put(put_model).delete(delete_model),
         )
         .route(
             "/admin/integrations/brave",
@@ -182,28 +201,143 @@ async fn owned_run(state: &AppState, owner: &Owner, raw_id: &str) -> Result<Run,
     }
 }
 
-/// The model a request gets: what it asked for, else `inherited`, else the default; checked
-/// against `ALLOWED_MODELS`.
+/// The model a request gets and the reasoning level it sends.
+struct ResolvedModel {
+    id: String,
+    name: String,
+    reasoning: Option<String>,
+    /// Whether the entry takes images and PDFs.
+    multimodal: bool,
+}
+
+/// The model a request gets: the registered entry it named (by id, or by model name when only
+/// one entry has it), else the parent's, else the default entry. The reasoning level is the one
+/// asked for, else the parent's when it used the same entry, else the entry's default; it must be
+/// one the entry offers.
 fn resolve_model(
-    cfg: &Config,
+    models: &[ModelEntry],
     requested: Option<&str>,
-    inherited: Option<&str>,
-) -> Result<String, AppError> {
-    let requested = requested.map(str::trim).filter(|m| !m.is_empty());
-    match requested.or(inherited) {
-        None => Ok(cfg.default_model.clone()),
-        Some(m) if m.len() > MAX_MODEL_LEN => {
-            Err(AppError::BadRequest("model name is too long".into()))
-        }
-        Some(m)
-            if m == cfg.default_model
-                || cfg.allowed_models.is_empty()
-                || cfg.allowed_models.iter().any(|a| a == m) =>
-        {
-            Ok(m.to_string())
-        }
-        Some(m) => Err(AppError::BadRequest(format!("model {m:?} is not allowed"))),
+    requested_reasoning: Option<&str>,
+    parent: Option<&Run>,
+) -> Result<ResolvedModel, AppError> {
+    if models.is_empty() {
+        return Err(AppError::Conflict(
+            "no model is registered; an admin adds one under Settings or with PUT /v1/admin/models/{id}"
+                .into(),
+        ));
     }
+    let requested = requested.map(str::trim).filter(|m| !m.is_empty());
+    let entry = match requested {
+        Some(m) if m.len() > MAX_MODEL_LEN => {
+            return Err(AppError::BadRequest("model name is too long".into()))
+        }
+        Some(m) => {
+            let by_id = models.iter().find(|e| e.id == m);
+            let by_name = || {
+                let mut named = models.iter().filter(|e| e.model == m);
+                match (named.next(), named.next()) {
+                    (Some(one), None) => Some(one),
+                    _ => None,
+                }
+            };
+            by_id
+                .or_else(by_name)
+                .ok_or_else(|| AppError::BadRequest(format!("model {m:?} is not registered")))?
+        }
+        None => match parent {
+            Some(p) => models.iter().find(|e| e.id == p.model_id).ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "the parent run's model {:?} is no longer registered; name another",
+                    p.model_id
+                ))
+            })?,
+            None => models
+                .iter()
+                .find(|e| e.is_default)
+                .or_else(|| models.first())
+                .expect("checked non-empty"),
+        },
+    };
+    let inherited = parent
+        .filter(|p| p.model_id == entry.id)
+        .and_then(|p| p.reasoning.as_deref());
+    let reasoning = match requested_reasoning.map(str::trim).filter(|r| !r.is_empty()) {
+        Some(r) => Some(r),
+        None => inherited.or(entry.default_reasoning.as_deref()),
+    };
+    if let Some(r) = reasoning {
+        if !entry.reasoning_levels.iter().any(|l| l == r) {
+            return Err(AppError::BadRequest(if entry.reasoning_levels.is_empty() {
+                format!("model {:?} offers no reasoning levels", entry.id)
+            } else {
+                format!(
+                    "reasoning {r:?} is not offered by model {:?} (one of {})",
+                    entry.id,
+                    entry.reasoning_levels.join(", ")
+                )
+            }));
+        }
+    }
+    Ok(ResolvedModel {
+        id: entry.id.clone(),
+        name: entry.model.clone(),
+        reasoning: reasoning.map(String::from),
+        multimodal: entry.multimodal,
+    })
+}
+
+/// Check the files sent with a prompt: count, name, media type, that `data` is real base64, and
+/// the decoded sizes. The base64 is kept as sent; decoding here only validates it.
+fn validate_attachments(attachments: &[Attachment]) -> Result<(), AppError> {
+    if attachments.len() > MAX_ATTACHMENTS {
+        return Err(AppError::BadRequest(format!(
+            "at most {MAX_ATTACHMENTS} attachments per run"
+        )));
+    }
+    let mut total = 0usize;
+    for (i, a) in attachments.iter().enumerate() {
+        let which = |what: &str| {
+            AppError::BadRequest(format!("attachment {} ({:?}): {what}", i + 1, a.name))
+        };
+        let name = a.name.trim();
+        if name.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "attachment {}: name must not be empty",
+                i + 1
+            )));
+        }
+        if name.chars().count() > MAX_ATTACHMENT_NAME_CHARS || name.chars().any(char::is_control) {
+            return Err(which("name is malformed"));
+        }
+        if !ALLOWED_ATTACHMENT_TYPES.contains(&a.media_type.as_str()) {
+            return Err(which(&format!(
+                "media type {:?} is not supported (use one of {})",
+                a.media_type,
+                ALLOWED_ATTACHMENT_TYPES.join(", ")
+            )));
+        }
+        if a.data.is_empty() {
+            return Err(which("data is empty"));
+        }
+        let too_big = which(&format!("larger than {} MiB", MAX_ATTACHMENT_BYTES >> 20));
+        if base64::decoded_len_estimate(a.data.len()) > MAX_ATTACHMENT_BYTES {
+            return Err(too_big);
+        }
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&a.data)
+            .map_err(|_| which("data is not valid base64"))?;
+        if decoded.len() > MAX_ATTACHMENT_BYTES {
+            return Err(too_big);
+        }
+        total += decoded.len();
+        if total > MAX_ATTACHMENTS_TOTAL_BYTES {
+            return Err(AppError::BadRequest(format!(
+                "attachments add up to more than {} MiB",
+                MAX_ATTACHMENTS_TOTAL_BYTES >> 20
+            )));
+        }
+    }
+    Ok(())
 }
 
 // -- runs -----------------------------------------------------------------------------------
@@ -223,6 +357,8 @@ async fn create_run(
             "prompt is longer than {MAX_PROMPT_BYTES} bytes"
         )));
     }
+    let attachments = req.attachments.unwrap_or_default();
+    validate_attachments(&attachments)?;
 
     // A continuation inherits its parent's model and system prompt unless the request overrides them.
     let parent = match req.parent_id {
@@ -233,10 +369,18 @@ async fn create_run(
         },
     };
     let model = resolve_model(
-        cfg,
+        &state.integrations.models(),
         req.model.as_deref(),
-        parent.as_ref().map(|p| p.model.as_str()),
+        req.reasoning.as_deref(),
+        parent.as_ref(),
     )?;
+    if !attachments.is_empty() && !model.multimodal {
+        return Err(AppError::BadRequest(format!(
+            "model {:?} does not accept images or PDFs (an admin registers it as accepting them \
+             under Settings, or with \"multimodal\": true on PUT /v1/admin/models/{{id}})",
+            model.id
+        )));
+    }
 
     let system = match req.system.filter(|s| !s.trim().is_empty()) {
         None => parent
@@ -273,10 +417,13 @@ async fn create_run(
         owner: owner.0,
         prompt: req.prompt,
         system,
-        model,
+        model_id: model.id,
+        model: model.name,
+        reasoning: model.reasoning,
         max_turns,
         parent_id: req.parent_id,
         tools,
+        attachments,
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -302,14 +449,32 @@ async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(tools.catalog(&state.integrations.unavailable_reasons()))
 }
 
+/// The registered models a run can name, in picker order.
+async fn list_models(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let models: Vec<serde_json::Value> = state
+        .integrations
+        .models()
+        .iter()
+        .map(ModelEntry::public)
+        .collect();
+    Json(json!({ "models": models }))
+}
+
 /// What a run gets when it doesn't say: for clients that show the defaults.
 async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
     let cfg = &state.cfg;
+    let default = state.integrations.default_entry();
     Json(json!({
-        "model": cfg.default_model,
+        "model": default.as_ref().map(|m| m.model.clone()),
+        "model_id": default.as_ref().map(|m| m.id.clone()),
         "system": cfg.default_system_prompt,
         "max_turns_cap": cfg.max_turns_cap,
-        "allowed_models": cfg.allowed_models,
+        "attachments": {
+            "max_count": MAX_ATTACHMENTS,
+            "max_bytes": MAX_ATTACHMENT_BYTES,
+            "max_total_bytes": MAX_ATTACHMENTS_TOTAL_BYTES,
+            "media_types": ALLOWED_ATTACHMENT_TYPES,
+        },
     }))
 }
 
@@ -356,34 +521,31 @@ async fn delete_brave_key(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LlmBody {
-    base_url: String,
-    /// Absent keeps the saved key; empty removes it.
-    api_key: Option<String>,
-}
-
-async fn put_llm(
+async fn get_models(
     State(state): State<AppState>,
     Extension(admin): Extension<Admin>,
-    ApiJson(body): ApiJson<LlmBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
-    Ok(Json(
-        state
-            .integrations
-            .set_llm(&body.base_url, body.api_key.as_deref())
-            .await?,
-    ))
+    Ok(Json(state.integrations.models_status().await?))
 }
 
-async fn delete_llm(
+async fn put_model(
     State(state): State<AppState>,
     Extension(admin): Extension<Admin>,
+    Path(id): Path<String>,
+    ApiJson(spec): ApiJson<ModelSpec>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(state.integrations.set_model(&id, spec).await?))
+}
+
+async fn delete_model(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
     require_admin(admin)?;
-    state.integrations.remove_llm().await?;
+    state.integrations.remove_model(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -585,6 +747,7 @@ struct CompactRequest {
 struct CompactResponse {
     prompt: String,
     model: String,
+    model_id: String,
     usage: crate::models::Usage,
 }
 
@@ -595,7 +758,7 @@ async fn compact_conversation(
     ApiJson(req): ApiJson<CompactRequest>,
 ) -> Result<Json<CompactResponse>, AppError> {
     let cfg = &state.cfg;
-    let (messages, inherited_model) = match (req.run_id, req.transcript) {
+    let (messages, run) = match (req.run_id, req.transcript) {
         (Some(id), None) => {
             let run = owned_run(&state, &owner, &id.to_string()).await?;
             if !run.status.is_terminal() {
@@ -605,7 +768,7 @@ async fn compact_conversation(
             if stored.is_empty() {
                 return Err(AppError::Conflict("the run has no conversation yet".into()));
             }
-            (compact::messages_for_run(stored), Some(run.model))
+            (compact::messages_for_run(stored), Some(run))
         }
         (None, Some(transcript)) => {
             if transcript.trim().is_empty() {
@@ -624,13 +787,27 @@ async fn compact_conversation(
             ))
         }
     };
-    let model = resolve_model(cfg, req.model.as_deref(), inherited_model.as_deref())?;
-    let done = compact::compact(state.llm.as_ref(), &model, cfg.max_tokens, &messages)
+    // Compaction takes no reasoning level: one plain call is enough.
+    let model = resolve_model(
+        &state.integrations.models(),
+        req.model.as_deref(),
+        Some(""),
+        run.as_ref(),
+    )
+    .map(|m| ResolvedModel {
+        reasoning: None,
+        ..m
+    })?;
+    let llm = state.llm.client_for(&model.id).ok_or_else(|| {
+        AppError::Conflict(format!("model {:?} is no longer registered", model.id))
+    })?;
+    let done = compact::compact(llm.as_ref(), &model.name, cfg.max_tokens, &messages)
         .await
         .map_err(|e| AppError::BadGateway(format!("could not compact the conversation: {e:#}")))?;
     Ok(Json(CompactResponse {
         prompt: done.prompt,
-        model,
+        model: model.name,
+        model_id: model.id,
         usage: done.usage,
     }))
 }
@@ -773,6 +950,9 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
             )
         })
         .collect();
+    // Informational: a server with no model registered is up, but runs are refused until an
+    // admin adds one.
+    let models = state.integrations.models().len();
     (
         if ready {
             StatusCode::OK
@@ -782,6 +962,43 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
         Json(json!({
             "status": if ready { "ok" } else { "unavailable" },
             "checks": summary,
+            "models": models,
         })),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn att(name: &str, media_type: &str, data: &str) -> Attachment {
+        Attachment {
+            name: name.into(),
+            media_type: media_type.into(),
+            data: data.into(),
+        }
+    }
+
+    #[test]
+    fn attachments_are_validated() {
+        let ok = att("a.png", "image/png", "iVBORw0KGgo=");
+        assert!(validate_attachments(&[]).is_ok());
+        assert!(
+            validate_attachments(&[ok.clone(), att("b.pdf", "application/pdf", "JVBERi0=")])
+                .is_ok()
+        );
+
+        let message = |atts: &[Attachment]| match validate_attachments(atts) {
+            Err(AppError::BadRequest(m)) => m,
+            other => panic!("expected a bad request, got {other:?}"),
+        };
+        assert!(message(&vec![ok.clone(); MAX_ATTACHMENTS + 1]).contains("at most"));
+        assert!(message(&[att(" ", "image/png", "aGk=")]).contains("name must not be empty"));
+        assert!(message(&[att("a\nb", "image/png", "aGk=")]).contains("name is malformed"));
+        assert!(message(&[att("a.txt", "text/plain", "aGk=")]).contains("not supported"));
+        assert!(message(&[att("a.png", "image/png", "")]).contains("data is empty"));
+        assert!(message(&[att("a.png", "image/png", "not base64!")]).contains("not valid base64"));
+        let huge = "A".repeat(base64::encoded_len(MAX_ATTACHMENT_BYTES + 3, true).unwrap());
+        assert!(message(&[att("a.png", "image/png", &huge)]).contains("larger than"));
+    }
 }

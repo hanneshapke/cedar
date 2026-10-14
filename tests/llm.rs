@@ -75,6 +75,7 @@ async fn call(client: &ChatCompletionsClient) -> anyhow::Result<cedar::llm::LlmR
         .create_message(&MessageRequest {
             model: "test-model",
             max_tokens: 123,
+            reasoning_effort: None,
             system: "be nice",
             tools: &tools,
             messages: &messages,
@@ -108,6 +109,36 @@ async fn sends_the_expected_request_and_parses_the_reply() {
                 "tools": [{ "type": "function", "function": {
                     "name": "bash", "description": "run a command",
                     "parameters": { "type": "object" } } }] })
+    );
+}
+
+#[tokio::test]
+async fn images_and_pdfs_are_sent_as_data_url_parts() {
+    let (url, mock) = start(vec![(200, ok_body(), None)]).await;
+    let messages = [json!({ "role": "user", "content": [
+        { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "aGk=" }, "title": "a.png" },
+        { "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": "cGRm" }, "title": "b.pdf" },
+        { "type": "text", "text": "what are these?" },
+    ] })];
+    client(url)
+        .create_message(&MessageRequest {
+            model: "test-model",
+            max_tokens: 10,
+            reasoning_effort: None,
+            system: "",
+            tools: &[],
+            messages: &messages,
+        })
+        .await
+        .unwrap();
+    let seen = mock.seen.lock().unwrap();
+    assert_eq!(
+        seen[0].1["messages"],
+        json!([{ "role": "user", "content": [
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,aGk=" } },
+            { "type": "file", "file": { "filename": "b.pdf", "file_data": "data:application/pdf;base64,cGRm" } },
+            { "type": "text", "text": "what are these?" },
+        ] }])
     );
 }
 
@@ -232,14 +263,13 @@ async fn the_agent_loop_drives_a_chat_completions_server() {
     ])
     .await;
     let llm = Arc::new(ChatCompletionsClient::new(url, None).unwrap());
+    let clients = Arc::new(cedar::llm::LlmRouter::new());
+    clients.set(common::TEST_MODEL, llm);
+    let store = cedar::store::Store::connect_memory().await.unwrap();
+    common::register_model(&store, common::TEST_MODEL, common::TEST_MODEL, &[]).await;
     let factory = common::FakeFactory::new();
-    let state = AppState::new(
-        common::test_config(&[]),
-        cedar::store::Store::connect_memory().await.unwrap(),
-        llm,
-        factory.clone(),
-    )
-    .unwrap();
+    let state = AppState::new(common::test_config(&[]), store, clients, factory.clone()).unwrap();
+    state.integrations.reload().await.unwrap();
     let app = common::TestApp {
         router: api::router(state.clone()),
         state,

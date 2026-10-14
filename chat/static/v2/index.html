@@ -4,16 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Cedar</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='7' y='7' width='10' height='10' transform='rotate(45 12 12)' fill='%231f7a5c'/%3E%3C/svg%3E">
+  <link rel="icon" href="/assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="/assets/favicon-16.png" type="image/png" sizes="16x16">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="/v2/style.css">
   <link rel="stylesheet" href="/map-view.css">
+  <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/schedule.css">
   <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/models.css">
+  <link rel="stylesheet" href="/attach.css">
 </head>
 <body>
   <div class="desk-app" id="app">
     <header class="top">
-      <a class="brand" href="#/" aria-label="Cedar, new conversation"><span class="mark" aria-hidden="true"></span><span class="brand-name">Cedar</span></a>
+      <a class="brand" href="#/" aria-label="Cedar, new conversation"><picture><source media="(prefers-color-scheme: dark)" srcset="/assets/cedar-mark-on-dark.svg"><img class="mark" src="/assets/cedar-mark.svg" alt="" width="22" height="22"></picture><span class="brand-name">Cedar</span></a>
       <div class="title-wrap">
         <button class="title" id="title" type="button" title="Rename"></button>
         <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
@@ -61,7 +67,8 @@
     <footer class="slip">
       <form class="composer" id="composer">
         <textarea id="input" rows="1" placeholder="What should be on the desk?" aria-label="Message"></textarea>
-        <select id="model" aria-label="Model" hidden></select>
+        <select id="model" class="cedar-picker-state" aria-label="Model" hidden></select>
+        <select id="reasoning" class="cedar-picker-state" aria-label="Reasoning level" hidden></select>
         <button class="send" id="send" type="submit" aria-label="Send message" disabled>↑</button>
       </form>
     </footer>
@@ -117,10 +124,13 @@
   </dialog>
 
   <script src="/ui-pref.js"></script>
+  <script src="/image-view.js"></script>
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>
+  <script src="/models.js"></script>
   <script src="/schedule.js"></script>
   <script src="/settings.js"></script>
+  <script src="/attach.js"></script>
   <script src="/v2/app.js"></script>
 </body>
 </html>
