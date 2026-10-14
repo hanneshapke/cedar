@@ -637,6 +637,43 @@ async fn both_uis_are_served() {
     assert_eq!(fetch(&h, "/style.css").await.0, StatusCode::NOT_FOUND);
 }
 
+/// The logo and icons are embedded from `docs/assets`; both pages link them, light and dark.
+#[tokio::test]
+async fn the_logo_and_icons_are_served_and_linked() {
+    let h = Harness::new(&[]).await;
+    let served = [
+        ("/assets/cedar-mark.svg", "image/svg+xml", b"<svg".as_slice()),
+        ("/assets/cedar-mark-on-dark.svg", "image/svg+xml", b"<svg"),
+        ("/assets/favicon.svg", "image/svg+xml", b"<svg"),
+        ("/assets/favicon-32.png", "image/png", b"\x89PNG"),
+        ("/assets/favicon-16.png", "image/png", b"\x89PNG"),
+        ("/assets/apple-touch-icon.png", "image/png", b"\x89PNG"),
+    ];
+    for (uri, content_type, magic) in served {
+        let resp = h.app.clone().oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "{uri}");
+        assert_eq!(resp.headers()["content-type"], content_type, "{uri}");
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        assert!(bytes.starts_with(magic), "{uri} is the expected file");
+    }
+
+    for ui in ["v1", "v2"] {
+        let (_, _, page) = fetch(&h, &format!("/{ui}/")).await;
+        assert!(page.contains("rel=\"icon\" href=\"/assets/favicon.svg\""), "{ui} has an icon");
+        assert!(page.contains("rel=\"apple-touch-icon\" href=\"/assets/apple-touch-icon.png\""), "{ui} has a touch icon");
+        assert!(page.contains("srcset=\"/assets/cedar-mark-on-dark.svg\""), "{ui} swaps the mark in dark mode");
+        assert!(page.contains("src=\"/assets/cedar-mark.svg\""), "{ui} shows the mark");
+        // Every asset a page or script points at is one the server has.
+        let (_, _, script) = fetch(&h, &format!("/{ui}/app.js")).await;
+        for text in [&page, &script] {
+            for (at, _) in text.match_indices("/assets/") {
+                let path: String = text[at..].chars().take_while(|c| c.is_ascii_alphanumeric() || "/.-_".contains(*c)).collect();
+                assert!(served.iter().any(|(uri, ..)| *uri == path), "{ui} links {path}, which isn't served");
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn workspace_files_are_listed_and_downloaded_through_the_latest_run() {
     let h = Harness::new(&[]).await;

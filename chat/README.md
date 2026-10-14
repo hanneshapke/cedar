@@ -89,7 +89,8 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 interfaces share, `vendor/leaflet/` for the map library, and
 `index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
-files.
+files. The logo and icons are not in `static/`: they come from `../docs/assets/` (shared with the
+root README and the landing page) and are served under `/assets/`.
 
 ### Images
 

@@ -70,6 +70,14 @@ const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
 const LEAFLET_CSS: &str = include_str!("../static/vendor/leaflet/leaflet.css");
+/// The logo and icons, shared with the README and the landing page in `docs/assets`. The mark has a
+/// light and a dark variant; the pages pick one with `prefers-color-scheme`.
+const MARK_SVG: &str = include_str!("../../docs/assets/cedar-mark.svg");
+const MARK_ON_DARK_SVG: &str = include_str!("../../docs/assets/cedar-mark-on-dark.svg");
+const FAVICON_SVG: &str = include_str!("../../docs/assets/favicon.svg");
+const FAVICON_32_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-32.png");
+const FAVICON_16_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-16.png");
+const APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../docs/assets/apple-touch-icon.png");
 
 /// One of the two front ends, served under its own prefix.
 struct Ui {
@@ -162,6 +170,12 @@ pub fn router(state: AppState) -> Router {
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
         .route("/vendor/leaflet/leaflet.css", get(|| async { asset(CSS, LEAFLET_CSS) }))
+        .route("/assets/cedar-mark.svg", get(|| async { asset(SVG, MARK_SVG) }))
+        .route("/assets/cedar-mark-on-dark.svg", get(|| async { asset(SVG, MARK_ON_DARK_SVG) }))
+        .route("/assets/favicon.svg", get(|| async { asset(SVG, FAVICON_SVG) }))
+        .route("/assets/favicon-32.png", get(|| async { asset(PNG, FAVICON_32_PNG) }))
+        .route("/assets/favicon-16.png", get(|| async { asset(PNG, FAVICON_16_PNG) }))
+        .route("/assets/apple-touch-icon.png", get(|| async { asset(PNG, APPLE_TOUCH_ICON_PNG) }))
         .route("/healthz", get(|| async { "ok" }));
     with_ui(with_ui(pages, V1), V2)
         .nest("/api", api)
@@ -174,6 +188,8 @@ pub fn router(state: AppState) -> Router {
 const HTML: &str = "text/html; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
+const SVG: &str = "image/svg+xml";
+const PNG: &str = "image/png";
 
 /// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.
 fn with_ui(router: Router<AppState>, ui: Ui) -> Router<AppState> {
@@ -185,7 +201,7 @@ fn with_ui(router: Router<AppState>, ui: Ui) -> Router<AppState> {
         .route(&format!("{prefix}/style.css"), get(move || async move { asset(CSS, css) }))
 }
 
-fn asset(content_type: &'static str, body: &'static str) -> Response {
+fn asset(content_type: &'static str, body: impl IntoResponse) -> Response {
     ([(CONTENT_TYPE, content_type), (CACHE_CONTROL, "no-cache")], body).into_response()
 }
 

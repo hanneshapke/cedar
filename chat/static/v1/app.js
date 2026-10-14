@@ -41,7 +41,7 @@ const ICONS = {
   cross: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
-  spark: '<svg class="spark" viewBox="0 0 24 24"><path d="M12 2l1.6 6.1L19.1 5l-3.1 5.5L22 12l-6 1.5 3.1 5.5-5.5-3.1L12 22l-1.6-6.1L4.9 19l3.1-5.5L2 12l6-1.5L4.9 5l5.5 3.1z"/></svg>',
+  logo: '<picture><source media="(prefers-color-scheme: dark)" srcset="/assets/cedar-mark-on-dark.svg"><img class="logo" src="/assets/cedar-mark.svg" alt="" width="22" height="22"></picture>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>',
   eye: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   document: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 12h6M9 16h6"/></svg>',
@@ -445,7 +445,7 @@ function addTurn(turn) {
   bubble.append(document.createTextNode(turn.prompt));
   user.append(bubble);
   const body = h('div', 'assistant');
-  const thinking = h('div', 'thinking', `${ICONS.spark}<span>Thinking…</span>`);
+  const thinking = h('div', 'thinking', `${ICONS.logo}<span>Thinking…</span>`);
   body.append(thinking);
   el.append(user, body);
   els.thread.append(el);

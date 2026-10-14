@@ -55,7 +55,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 [hidden] { display: none !important; }
 svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
-.spark { fill: var(--accent); stroke: none; }
+.logo { display: block; }
 
 .app { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 
@@ -64,7 +64,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .sidebar { width: 272px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--border); padding: 12px 8px; }
 .sidebar-top { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px 12px; }
 .brand { display: flex; align-items: center; gap: 8px; font: 600 19px/1 var(--serif); color: var(--text); text-decoration: none; letter-spacing: -.01em; }
-.brand .spark { width: 22px; height: 22px; }
+.brand .logo { width: 22px; height: 22px; }
 .new-chat { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 10px; background: none; font-weight: 500; text-align: left; }
 .new-chat:hover { background: var(--hover); }
 .new-chat .plus { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
@@ -102,7 +102,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 
 .welcome { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 0 24px 28px; text-align: center; }
 .welcome h2 { margin: 0; font: 400 clamp(28px, 4vw, 38px)/1.2 var(--serif); letter-spacing: -.015em; color: var(--text); }
-.spark.big { width: 38px; height: 38px; }
+.logo.big { width: 38px; height: 38px; }
 .main.empty .welcome { display: flex; }
 .main.empty .scroll { flex: 0 0 auto; overflow: visible; margin-top: auto; }
 .main.empty .composer-wrap { margin-bottom: auto; }
@@ -164,7 +164,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 
 .thinking { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; color: var(--muted); font-size: 14px; }
-.thinking .spark { width: 22px; height: 22px; animation: breathe 2.2s ease-in-out infinite; transform-origin: center; }
+.thinking .logo { width: 22px; height: 22px; animation: breathe 2.2s ease-in-out infinite; transform-origin: center; }
 
 .notice { margin: 12px 0; padding: 10px 14px; border-radius: 10px; font-size: 14px; }
 .notice.error { background: var(--error-bg); color: var(--error-text); }
@@ -238,7 +238,7 @@ dialog p code { padding: 1px 5px; border-radius: 5px; background: var(--code-bg)
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: .35; } }
-@keyframes breathe { 0%, 100% { transform: rotate(0) scale(.92); opacity: .8; } 50% { transform: rotate(45deg) scale(1.06); opacity: 1; } }
+@keyframes breathe { 0%, 100% { transform: scale(.92); opacity: .8; } 50% { transform: scale(1.06); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition: none !important; } }
 
 @media (max-width: 800px) {

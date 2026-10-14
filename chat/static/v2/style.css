@@ -72,7 +72,7 @@ a { color: var(--accent); }
 
 .top { grid-area: top; display: flex; align-items: center; gap: 20px; padding: 0 40px; font-size: 13px; color: var(--muted); }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; color: var(--ink); text-decoration: none; }
-.mark { width: 9px; height: 9px; background: var(--accent); transform: rotate(45deg); }
+.mark { display: block; width: 22px; height: 22px; }
 .title-wrap { min-width: 0; display: flex; }
 .title { max-width: 420px; padding: 4px 8px; margin-left: -8px; border: 0; border-radius: 6px; background: none; color: var(--ink); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .title:hover { background: var(--wash); }
