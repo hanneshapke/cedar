@@ -1,7 +1,8 @@
 'use strict';
 
 // Attaching images and PDFs to a message, shared by both UIs (/v1 and /v2). Shown only while
-// Settings says the model accepts them ("This model accepts images and PDFs"). Three ways in:
+// the model the picker has chosen is registered as accepting them (see models.js; the app calls
+// setEnabled as the picker changes). Three ways in:
 // a paperclip button by the model picker, dropping files on the message box, and pasting an
 // image. Files are read in the browser as base64 and go with the message as
 // `attachments: [{name, media_type, data}]`; the limits here mirror the server's.
@@ -14,9 +15,6 @@
 //             settings.js puts there (its init runs first, so the button exists by then)
 //   before    the element the row of chosen files goes before
 //   toast(message)   a short notice
-//
-// Settings announces the preference with a `cedar-settings-changed` event on `document`
-// ({detail: {multimodal}}), so the button appears and disappears without a reload.
 
 const cedarAttach = (() => {
   const TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'];
@@ -201,7 +199,6 @@ const cedarAttach = (() => {
       e.preventDefault();
       add(pasted);
     });
-    document.addEventListener('cedar-settings-changed', (e) => setEnabled(e.detail?.multimodal));
   }
 
   function init(helpers) {

@@ -70,6 +70,9 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
             return cedar_error(StatusCode::BAD_REQUEST, "bad_request", &format!("reasoning {level:?} is not offered by model {model:?}"));
         }
     }
+    if body["attachments"].as_array().is_some_and(|a| !a.is_empty()) && entry["multimodal"] != true {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", &format!("model {model:?} does not accept images or PDFs"));
+    }
     s.bodies.lock().unwrap().push(body.clone());
     let parent = body["parent_id"].as_str().map(String::from);
     if let Some(p) = &parent {
@@ -169,8 +172,8 @@ async fn download_file(State(s): State<Shared>, Path((id, path)): Path<(Uuid, St
 /// What the fake cedar has registered: `model-a` (the default, with reasoning levels) and `model-b`.
 fn registry() -> Vec<Value> {
     vec![
-        json!({ "id": "model-a", "label": "Model A", "model": "org/model-a", "reasoning_levels": ["none", "high"], "default_reasoning": null, "is_default": true }),
-        json!({ "id": "model-b", "label": "Model B", "model": "org/model-b", "reasoning_levels": [], "default_reasoning": null, "is_default": false }),
+        json!({ "id": "model-a", "label": "Model A", "model": "org/model-a", "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true, "is_default": true }),
+        json!({ "id": "model-b", "label": "Model B", "model": "org/model-b", "reasoning_levels": [], "default_reasoning": null, "multimodal": false, "is_default": false }),
     ]
 }
 
@@ -406,19 +409,9 @@ fn png() -> Value {
     json!({ "name": "dot.png", "media_type": "image/png", "data": "iVBORw0KGgo=" })
 }
 
-async fn multimodal(h: &Harness, on: bool) {
-    let (status, prefs) = h.json(Method::PUT, "/api/settings", Some(json!({ "multimodal": on }))).await;
-    assert_eq!(status, StatusCode::OK, "{prefs}");
-    assert_eq!(prefs["multimodal"], on);
-}
-
 #[tokio::test]
-async fn attachments_are_forwarded_when_multimodal_is_on() {
+async fn attachments_are_forwarded_to_a_model_that_takes_them() {
     let h = Harness::new(&[]).await;
-    multimodal(&h, true).await;
-    let (_, got) = h.json(Method::GET, "/api/settings", None).await;
-    assert_eq!(got["multimodal"], true);
-
     let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     let cid = conv["id"].as_str().unwrap();
     let msgs = format!("/api/conversations/{cid}/messages");
@@ -446,23 +439,23 @@ async fn attachments_are_forwarded_when_multimodal_is_on() {
 }
 
 #[tokio::test]
-async fn attachments_are_refused_when_multimodal_is_off() {
+async fn attachments_are_refused_by_cedar_for_a_model_that_takes_none() {
     let h = Harness::new(&[]).await;
     let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
-    let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "attachments": [png()] }))).await;
+    // model-b is registered without "accepts images and PDFs": cedar's verdict is relayed.
+    let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "model": "model-b", "attachments": [png()] }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert!(err["error"]["message"].as_str().unwrap().contains("Settings"), "{err}");
-    assert!(h.cedar.bodies.lock().unwrap().is_empty(), "nothing reached cedar");
+    assert!(err["error"]["message"].as_str().unwrap().contains("does not accept images or PDFs"), "{err}");
+    assert!(h.cedar.bodies.lock().unwrap().is_empty(), "no run was started");
     // An empty list is the same as none.
-    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "attachments": [] }))).await;
+    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "model": "model-b", "attachments": [] }))).await;
     assert_eq!(status, StatusCode::CREATED);
 }
 
 #[tokio::test]
 async fn attachment_messages_are_validated() {
     let h = Harness::new(&[]).await;
-    multimodal(&h, true).await;
     let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
     let file = |name: &str, media_type: &str, data: &str| json!({ "name": name, "media_type": media_type, "data": data });
@@ -490,7 +483,6 @@ async fn attachment_messages_are_validated() {
 #[tokio::test]
 async fn attachments_survive_the_history_resend_fallback() {
     let h = Harness::new(&[]).await;
-    multimodal(&h, true).await;
     let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
     let (_, t1) = h.json(Method::POST, &msgs, Some(json!({ "content": "What is 2+2?" }))).await;
@@ -1051,7 +1043,7 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{prefs}");
-    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "multimodal": false }));
+    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7 }));
     let (_, got) = h.json(Method::GET, "/api/settings", None).await;
     assert_eq!(got["tools"], prefs["tools"]);
     assert_eq!(got["system"], "be brief");
@@ -1107,7 +1099,7 @@ async fn settings_are_validated() {
         (json!({ "max_turns": 0 }), "max_turns"),
         (json!({ "system": "x".repeat(20_001) }), "system"),
         (json!({ "colour": "red" }), "unknown field"),
-        (json!({ "multimodal": "yes" }), "multimodal"),
+        (json!({ "multimodal": true }), "unknown field"),
     ] {
         let (status, err) = h.json(Method::PUT, "/api/settings", Some(body.clone())).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");

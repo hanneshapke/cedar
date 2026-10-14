@@ -3,9 +3,7 @@
 // Settings that change what the agent can do, shared by both UIs (/v1 and /v2). Three pieces:
 //
 //   - The "Tools & model" section of the Settings dialog: which of cedar's tool groups new
-//     conversations get, the default model, turn limit and system prompt, and whether the model
-//     accepts images and PDFs (GET/PUT /api/settings). That last one is announced as a
-//     `cedar-settings-changed` event on `document` ({detail: {multimodal}}) for attach.js.
+//     conversations get, the default model, turn limit and system prompt (GET/PUT /api/settings).
 //   - The "Model server & API keys" section, for admins only (CHAT_ADMIN_TOKEN): the models cedar
 //     has registered (each with its server, API key and reasoning levels), its Brave Search key
 //     and its Google account. The admin token is kept for this browser session and sent as
@@ -234,16 +232,6 @@ const cedarSettings = (() => {
     } else if (cedarModels.loaded()) {
       fields.append(note('No model is registered yet: an admin adds one under Model server & API keys below.', 'cedar-set-error'));
     }
-    const multimodalBox = el('input');
-    multimodalBox.type = 'checkbox';
-    multimodalBox.checked = Boolean(prefs.multimodal);
-    multimodalBox.addEventListener('change', dirty);
-    const multimodalLabel = el('label', 'cedar-set-check cedar-set-check-wide');
-    const multimodalText = el('span');
-    multimodalText.append(el('strong', '', 'This model accepts images and PDFs'));
-    multimodalText.append(el('small', '', 'Shows an attach button by the message box (files can also be dropped or pasted). cedar passes the files to the model as they are; a model that cannot read them fails the message.'));
-    multimodalLabel.append(multimodalBox, multimodalText);
-    fields.append(multimodalLabel);
     const turns = el('input');
     turns.type = 'number';
     turns.min = '1';
@@ -282,14 +270,12 @@ const cedarSettings = (() => {
         // The default text is saved as "unset", so the prompt keeps following cedar's SYSTEM_PROMPT.
         system: isDefault() || !system.value.trim() ? null : system.value.trim(),
         max_turns: turns.value ? Number(turns.value) : null,
-        multimodal: multimodalBox.checked,
       };
       try {
         prefs = { ...(await deps.api('PUT', '/settings', body)), defaults };
         if (prefs.system === null) { system.value = defaultSystem; syncSystem(); }
         status.textContent = 'Saved';
         updateChip();
-        announce();
       } catch (e) {
         status.textContent = '';
         save.disabled = false;
@@ -306,16 +292,6 @@ const cedarSettings = (() => {
       fields,
       actions,
     );
-    announce();
-  }
-
-  /** Whether Settings says the model accepts images and PDFs. */
-  function multimodal() {
-    return Boolean(prefs?.multimodal);
-  }
-
-  function announce() {
-    document.dispatchEvent(new CustomEvent('cedar-settings-changed', { detail: { multimodal: multimodal() } }));
   }
 
   function field(label, input, extra) {
@@ -480,6 +456,7 @@ const cedarSettings = (() => {
     main.append(el('small', '', `id: ${entry.id}`));
     if (entry.is_default) side.append(badge('Default', 'ok'));
     if (entry.api_key_set) side.append(badge('API key set'));
+    if (entry.multimodal) side.append(badge('Images & PDFs'));
     side.append(badge(levels.length ? `Reasoning: ${levels.join(', ')}${entry.default_reasoning ? ` (default ${entry.default_reasoning})` : ''}` : 'No reasoning levels'));
     if (Array.isArray(entry.listed_models)) {
       const listed = entry.listed_models.length ? entry.listed_models.join(', ') : 'none';
@@ -571,6 +548,14 @@ const cedarSettings = (() => {
     };
     levels.addEventListener('input', fillDefault);
     fillDefault();
+    const multimodalLabel = el('label', 'cedar-set-check plain');
+    const multimodalBox = el('input');
+    multimodalBox.type = 'checkbox';
+    multimodalBox.checked = Boolean(entry?.multimodal);
+    const multimodalText = el('span');
+    multimodalText.append(el('strong', '', 'Accepts images and PDFs'));
+    multimodalText.append(el('small', '', 'Shows an attach button by the message box while this model is picked (files can also be dropped or pasted). cedar passes the files to the model as they are; a model that cannot read them fails the message.'));
+    multimodalLabel.append(multimodalBox, multimodalText);
     const makeDefault = el('label', 'cedar-set-check small plain');
     const defaultBox = el('input');
     defaultBox.type = 'checkbox';
@@ -582,7 +567,7 @@ const cedarSettings = (() => {
     if (listed) form.append(listed);
     form.append(key);
     if (entry?.api_key_set && canSaveKey) form.append(clearKey);
-    form.append(levels, defaultLevel, makeDefault);
+    form.append(levels, defaultLevel, multimodalLabel, makeDefault);
     form.append(el('small', 'cedar-set-field-note', 'cedar checks the address by listing the server\'s models before saving. DeepSeek V4 on vLLM takes the levels none, low, high, xhigh and max as reasoning_effort; OpenAI-style servers take none, minimal, low, medium and high.'));
     form.append(saveBtn, button('Cancel', onDone));
     form.addEventListener('submit', async (e) => {
@@ -596,6 +581,7 @@ const cedarSettings = (() => {
         label: label.value.trim() || model.value.trim(),
         reasoning_levels: parseLevels(),
         default_reasoning: defaultLevel.value,
+        multimodal: multimodalBox.checked,
         is_default: defaultBox.checked,
       };
       if (key.value.trim()) body.api_key = key.value.trim();
@@ -827,9 +813,9 @@ const cedarSettings = (() => {
   /** Call once the app has its config and access token: loads the defaults and reports the
    *  outcome of a "Connect Google" redirect. */
   function start() {
-    deps.api('GET', '/settings').then((p) => { prefs = p; updateChip(); announce(); }).catch(() => {});
+    deps.api('GET', '/settings').then((p) => { prefs = p; updateChip(); }).catch(() => {});
     reportRedirect();
   }
 
-  return { init, start, beforeSend, conversationChanged, multimodal };
+  return { init, start, beforeSend, conversationChanged };
 })();

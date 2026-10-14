@@ -405,7 +405,8 @@ pub const KEY_B: &str = "key-b";
 pub const TEST_MODEL: &str = "test-model";
 pub const TEST_MODEL_LEVELS: [&str; 3] = ["none", "low", "high"];
 
-/// Register a model (without a server check) so runs can name it.
+/// Register a model (without a server check) so runs can name it. `TEST_MODEL` takes images
+/// and PDFs, so the attachment tests can send some; any other takes none.
 pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]) -> ModelEntry {
     let now = chrono::Utc::now();
     store
@@ -416,6 +417,7 @@ pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]
             base_url: format!("http://{id}.test/v1"),
             reasoning_levels: levels.iter().map(|l| l.to_string()).collect(),
             default_reasoning: None,
+            multimodal: id == TEST_MODEL,
             is_default: false,
             position: 0,
             listed_models: None,

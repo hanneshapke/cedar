@@ -206,6 +206,8 @@ struct ResolvedModel {
     id: String,
     name: String,
     reasoning: Option<String>,
+    /// Whether the entry takes images and PDFs.
+    multimodal: bool,
 }
 
 /// The model a request gets: the registered entry it named (by id, or by model name when only
@@ -280,6 +282,7 @@ fn resolve_model(
         id: entry.id.clone(),
         name: entry.model.clone(),
         reasoning: reasoning.map(String::from),
+        multimodal: entry.multimodal,
     })
 }
 
@@ -371,6 +374,13 @@ async fn create_run(
         req.reasoning.as_deref(),
         parent.as_ref(),
     )?;
+    if !attachments.is_empty() && !model.multimodal {
+        return Err(AppError::BadRequest(format!(
+            "model {:?} does not accept images or PDFs (an admin registers it as accepting them \
+             under Settings, or with \"multimodal\": true on PUT /v1/admin/models/{{id}})",
+            model.id
+        )));
+    }
 
     let system = match req.system.filter(|s| !s.trim().is_empty()) {
         None => parent

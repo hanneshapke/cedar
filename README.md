@@ -68,10 +68,10 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
-| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, is_default}]}` (see [Models](#models)). |
+| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, is_default}]}` (see [Models](#models)). |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap}` (`model` and `model_id` are `null` until a model is registered), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
-| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "is_default"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels` and `default_reasoning` keep what is saved. Returns the entry as `GET /v1/admin/models` shows it. |
+| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "is_default"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning` and `multimodal` keep what is saved. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
@@ -104,7 +104,8 @@ choice keeps working; an unknown name is a `400`. The run's `tools` are returned
 
 ### Attachments
 
-For a multimodal model, a run's prompt can come with images and PDFs:
+For a model registered as `multimodal` (see [Models](#models)), a run's prompt can come with
+images and PDFs; on any other model the run is refused with `400`:
 
 ```json
 {"prompt": "what does the invoice say?",
@@ -404,6 +405,9 @@ setting for the model server: a fresh cedar has no model, says so at startup and
 - a `base_url` (the OpenAI-compatible server, `/v1` added if the path is left off; a user and
   password in the URL are refused) and an optional `api_key`, kept encrypted (see below);
 - the `model` name the server registered, and a `label` for the pickers;
+- `multimodal`: whether the model takes images and PDFs with a prompt (see
+  [Attachments](#attachments)); a run with attachments on a model without it is refused with
+  `400`. Off unless set;
 - `reasoning_levels`: the values the model accepts as `reasoning_effort`, in the order to offer
   them, and an optional `default_reasoning` among them. A run's `reasoning` must be one of the
   levels; without one the default level is sent, and without that nothing is. DeepSeek V4 on vLLM

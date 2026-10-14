@@ -795,7 +795,13 @@ async function loadModels() {
   const model = cedarModels.byId(els.model.value) ? els.model.value : '';
   cedarModels.fillSelect(els.model, { selected: model });
   cedarModels.fillLevels(els.reasoning, els.model.value, els.reasoning.value);
+  syncAttach();
   updateChrome();
+}
+
+/** The paperclip is offered while the chosen model (or the default) takes images and PDFs. */
+function syncAttach() {
+  cedarAttach.setEnabled(cedarModels.multimodal(els.model.value));
 }
 
 /** Put the conversation's last model and reasoning level back into the pickers. */
@@ -804,9 +810,11 @@ function restorePickers(conversation) {
   const model = cedarModels.byId(conversation.model) ? conversation.model : '';
   cedarModels.fillSelect(els.model, { selected: model });
   cedarModels.fillLevels(els.reasoning, model, conversation.reasoning || '');
+  syncAttach();
 }
 
 cedarModels.bindPair(els.model, els.reasoning);
+els.model.addEventListener('change', syncAttach);
 document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {

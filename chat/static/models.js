@@ -12,6 +12,8 @@
 //   byId(id) -> entry | null
 //   defaultId() -> string              the default entry's id ('' when nothing is registered)
 //   levelsFor(id) -> string[]          the levels of that model ('' or unknown: the default model)
+//   multimodal(id) -> boolean          whether that model ('' or unknown: the default one) takes
+//                                      images and PDFs
 //   fillSelect(select, {blank, selected}) -> boolean   the model picker; false when there is
 //                                      nothing to pick (fewer than two models and no `blank`)
 //   fillLevels(select, modelId, selected) -> boolean   the reasoning picker; false when hidden
@@ -38,6 +40,7 @@ const cedarModels = (() => {
   const defaultId = () => defaultEntry()?.id || '';
   const resolve = (id) => (id && byId(id)) || defaultEntry();
   const levelsFor = (id) => resolve(id)?.reasoning_levels || [];
+  const multimodal = (id) => Boolean(resolve(id)?.multimodal);
 
   /** The model's label, with its default level in parentheses when it has one. */
   function label(entry) {
@@ -81,5 +84,5 @@ const cedarModels = (() => {
     modelSelect.addEventListener('change', () => fillLevels(levelSelect, modelSelect.value, ''));
   }
 
-  return { load, all, loaded, byId, defaultId, levelsFor, fillSelect, fillLevels, bindPair };
+  return { load, all, loaded, byId, defaultId, levelsFor, multimodal, fillSelect, fillLevels, bindPair };
 })();

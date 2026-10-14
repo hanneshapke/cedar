@@ -498,13 +498,9 @@ async fn send_message(
     // The model and level go to cedar as given: it checks them against its registry.
     let requested = blank_is_none(body.model.as_deref());
     let reasoning = blank_is_none(body.reasoning.as_deref());
+    // Whether the model takes them is cedar's call (its registry says), relayed as it answers.
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
     let prefs = state.store.preferences().await?;
-    if !attachments.is_empty() && !prefs.multimodal {
-        return Err(AppError::BadRequest(
-            "files are off: turn on \"This model accepts images and PDFs\" under Settings → Tools & model to send them".into(),
-        ));
-    }
 
     let _guard = state.send_lock.lock().await;
     let conversation = find_conversation(&state, &id).await?;
@@ -637,7 +633,6 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
         model,
         system,
         max_turns: body.max_turns,
-        multimodal: body.multimodal.unwrap_or(false),
     };
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))
@@ -650,8 +645,6 @@ struct SettingsBody {
     model: Option<String>,
     system: Option<String>,
     max_turns: Option<u32>,
-    /// The model accepts images and PDFs, so the composer offers attachments.
-    multimodal: Option<bool>,
 }
 
 /// cedar's tool groups, for the Tools settings and the composer's tools menu.

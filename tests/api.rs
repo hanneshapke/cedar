@@ -1540,9 +1540,9 @@ async fn the_registered_models_are_listed_to_any_key() {
         body,
         json!({ "models": [
             { "id": TEST_MODEL, "label": TEST_MODEL, "model": TEST_MODEL, "is_default": true,
-              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null },
+              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true },
             { "id": "small", "label": "small", "model": "small-model", "is_default": false,
-              "reasoning_levels": ["low"], "default_reasoning": null },
+              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false },
         ] })
     );
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
@@ -1629,6 +1629,39 @@ async fn a_run_asks_for_a_reasoning_level_and_a_continuation_keeps_it() {
     assert_eq!(plain["reasoning"], Value::Null);
     app.wait_status(KEY_A, &id_of(&plain), "completed").await;
     assert_eq!(app.llm.requests()[3]["reasoning_effort"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_model_registered_without_multimodal_refuses_attachments() {
+    let app = TestApp::new(vec![Step::Reply(text("ok"))]).await;
+    app.register("plain", "plain-model", &[]).await;
+    let png = json!({ "name": "dot.png", "media_type": "image/png", "data": "iVBORw0KGgo=" });
+    let (status, body) = app
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "look", "model": "plain", "attachments": [png.clone()] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("does not accept images or PDFs"),
+        "{body}"
+    );
+    // The test model takes them; an empty list is fine for any model.
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "look", "attachments": [png] }))
+        .await;
+    app.wait_status(KEY_A, &id_of(&run), "completed").await;
+    app.create_run_with(
+        KEY_A,
+        json!({ "prompt": "look", "model": "plain", "attachments": [] }),
+    )
+    .await;
 }
 
 #[tokio::test]

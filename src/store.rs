@@ -21,7 +21,7 @@ const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reas
     workspace_reused, tools, created_at, started_at, finished_at";
 
 const MODEL_COLS: &str =
-    "id, label, model, base_url, reasoning_levels, default_reasoning, is_default, \
+    "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, is_default, \
     position, listed_models, created_at, updated_at";
 
 fn now_ms() -> i64 {
@@ -81,6 +81,7 @@ fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
         base_url: r.try_get("base_url")?,
         reasoning_levels: serde_json::from_str(r.try_get("reasoning_levels")?)?,
         default_reasoning: r.try_get("default_reasoning")?,
+        multimodal: r.try_get("multimodal")?,
         is_default: r.try_get("is_default")?,
         position: r.try_get("position")?,
         listed_models: r
@@ -617,12 +618,13 @@ impl Store {
         }
         sqlx::query(
             "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
-             is_default, position, listed_models, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             multimodal, is_default, position, listed_models, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
              base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
-             default_reasoning = excluded.default_reasoning, is_default = excluded.is_default, \
-             listed_models = excluded.listed_models, updated_at = excluded.updated_at",
+             default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, \
+             is_default = excluded.is_default, listed_models = excluded.listed_models, \
+             updated_at = excluded.updated_at",
         )
         .bind(&entry.id)
         .bind(&entry.label)
@@ -630,6 +632,7 @@ impl Store {
         .bind(&entry.base_url)
         .bind(serde_json::to_string(&entry.reasoning_levels)?)
         .bind(&entry.default_reasoning)
+        .bind(entry.multimodal)
         .bind(is_default)
         .bind(position)
         .bind(

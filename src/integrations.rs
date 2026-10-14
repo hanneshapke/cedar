@@ -75,6 +75,9 @@ pub struct ModelSpec {
     pub reasoning_levels: Option<Vec<String>>,
     /// The level a run gets when it names none; empty for none. Absent keeps the saved one.
     pub default_reasoning: Option<String>,
+    /// The model accepts images and PDFs with a prompt. Absent keeps the saved value (`false`
+    /// for a new entry).
+    pub multimodal: Option<bool>,
     /// Make this the model runs get when they name none. Absent keeps it as it is.
     pub is_default: Option<bool>,
 }
@@ -250,6 +253,7 @@ impl Integrations {
                 model,
                 base_url,
                 default_reasoning: None,
+                multimodal: false,
                 is_default: true,
                 position: 0,
                 listed_models: listed,
@@ -318,6 +322,9 @@ impl Integrations {
         let is_default = spec
             .is_default
             .unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.is_default));
+        let multimodal = spec
+            .multimodal
+            .unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.multimodal));
 
         let key_name = secrets::model_api_key(&id);
         let key = match spec.api_key.as_deref().map(str::trim) {
@@ -344,6 +351,7 @@ impl Integrations {
             base_url: url,
             reasoning_levels,
             default_reasoning,
+            multimodal,
             is_default,
             position: existing.as_ref().map_or(0, |e| e.position),
             listed_models: Some(listed),

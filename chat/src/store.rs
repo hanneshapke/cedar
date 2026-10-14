@@ -138,9 +138,6 @@ pub struct Preferences {
     pub model: Option<String>,
     pub system: Option<String>,
     pub max_turns: Option<u32>,
-    /// The model accepts images and PDFs: the composer offers attachments.
-    #[serde(default)]
-    pub multimodal: bool,
 }
 
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
@@ -662,7 +659,6 @@ mod tests {
             model: Some("m".into()),
             system: Some("be brief".into()),
             max_turns: Some(5),
-            multimodal: true,
         };
         store.set_preferences(&prefs).await.unwrap();
         store.set_preferences(&prefs).await.unwrap();

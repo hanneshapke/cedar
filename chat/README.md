@@ -66,7 +66,7 @@ Both interfaces have all of these, except where noted:
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
   [the models](#models) cedar can use, its Brave Search key and its Google account
-- [Attachments](#attachments): with a multimodal model, images and PDFs go with a message, by the
+- [Attachments](#attachments): with a model registered as accepting them, images and PDFs go with a message, by the
   paperclip button, by dropping them on the message box, or by pasting an image
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, with every run's result kept
@@ -214,17 +214,18 @@ message box says so and sending is off.
 
 ### Attachments
 
-The same section has a checkbox, **This model accepts images and PDFs**. With it on, a paperclip
-button appears by the message box, and files can also be dropped on the box or pasted (a
-screenshot, say). PNG, JPEG, GIF, WebP and PDF files are taken, at most 10 per message, 20 MB each
+A model registered with **Accepts images and PDFs** (a checkbox on its entry under
+[Models](#models)) gets a paperclip button by the message box while the picker has it chosen
+(or while it is the default and the picker says so), and files can also be dropped on the box or
+pasted (a screenshot, say). PNG, JPEG, GIF, WebP and PDF files are taken, at most 10 per message, 20 MB each
 and 32 MB together; the chosen files are shown as chips, with a thumbnail for images, until the
 message is sent, and a message still needs some text. The browser sends them as base64 with the
 message, and cedar puts them in front of the prompt as [attachments](../README.md#attachments) of
 the run, so the agent sees them for the rest of the conversation. A sent message shows what went
 with it (name, type and size; the bytes stay in cedar's run). cedar passes the files to the model
 as they are and does not check that it can read them: with a text-only model the response fails
-with the model server's error, so leave the box off for one. A message with files is refused while
-the box is off.
+with the model server's error, so leave the box off for one. A message with files to a model
+registered without the box is refused by cedar, and the error is relayed.
 
 ### Integrations
 
@@ -246,8 +247,9 @@ name and the server it is on, whether an API key is saved, its reasoning levels,
 the default. **Add a model** asks for an id (filled in from the label), a label, the server address
 (`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), the model name the server
 registered, an API key if the server needs one, the reasoning levels it takes as `reasoning_effort`
-(comma-separated, like `none, low, high, max`), the level to use when a message picks none, and
-whether it is the default for new chats. cedar checks the address by listing the server's models
+(comma-separated, like `none, low, high, max`), the level to use when a message picks none,
+whether it accepts images and PDFs (see [Attachments](#attachments)), and whether it is the
+default for new chats. cedar checks the address by listing the server's models
 before saving, and the list is shown on the entry afterwards, with a warning if the model name is
 not on it. **Edit**, **Make default** and **Remove** change an entry; a removed model's
 conversations fail at their next message until another model is picked. The first model
@@ -270,7 +272,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
-| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Returns 400 for files while the multimodal setting is off, 409 if a response is still running |
+| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Files to a model registered without "accepts images and PDFs" are a 400 from cedar, relayed. Returns 409 if a response is still running |
 | `PUT /api/conversations/{id}/tools` | `{"tools": [...]}` gives the conversation its own tools; `{"tools": null}` returns it to the defaults |
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
@@ -283,8 +285,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
-| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns, multimodal}` (`null` means cedar's own; `multimodal` says whether messages may carry [attachments](#attachments)), plus `defaults`: cedar's own model (`model` and `model_id`, `null` until one is registered), system prompt and turn limit (`null` if cedar can't be reached) |
-| `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`; an absent `multimodal` means `false`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
+| `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own), plus `defaults`: cedar's own model (`model` and `model_id`, `null` until one is registered), system prompt and turn limit (`null` if cedar can't be reached) |
+| `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |

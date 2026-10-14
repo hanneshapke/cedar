@@ -114,6 +114,9 @@ pub struct ModelEntry {
     pub reasoning_levels: Vec<String>,
     /// The level a run gets when it names none; `None` sends no `reasoning_effort`.
     pub default_reasoning: Option<String>,
+    /// Accepts images and PDFs with a prompt (see [`Attachment`]); without it, a run with
+    /// attachments is refused.
+    pub multimodal: bool,
     /// The entry a run gets when it names no model. Exactly one entry has it while any exist.
     pub is_default: bool,
     /// Order in the pickers.
@@ -133,6 +136,7 @@ impl ModelEntry {
             "model": self.model,
             "reasoning_levels": self.reasoning_levels,
             "default_reasoning": self.default_reasoning,
+            "multimodal": self.multimodal,
             "is_default": self.is_default,
         })
     }

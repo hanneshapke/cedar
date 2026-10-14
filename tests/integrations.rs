@@ -762,7 +762,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         &app,
         "gpu",
         json!({ "base_url": server_url, "model": " m-1 ", "api_key": "llm-key", "label": "GPU box",
-                "reasoning_levels": ["none", "high"] }),
+                "reasoning_levels": ["none", "high"], "multimodal": true }),
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{body}");
@@ -774,6 +774,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(body["is_default"], true);
     assert_eq!(body["reasoning_levels"], json!(["none", "high"]));
     assert_eq!(body["default_reasoning"], Value::Null);
+    assert_eq!(body["multimodal"], true);
     assert_eq!(body["listed_models"], json!(["m-1"]));
     let (_, _, raw) = app
         .call(Method::GET, "/v1/admin/models", Some(KEY_B), None)
@@ -782,7 +783,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(
         app.get("/v1/models", KEY_A).await.1["models"][0],
         json!({ "id": "gpu", "label": "GPU box", "model": "m-1", "is_default": true,
-                "reasoning_levels": ["none", "high"], "default_reasoning": null })
+                "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true })
     );
 
     // The next run talks to the server, with its key and the level asked for.
@@ -810,6 +811,15 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(body["api_key_set"], true);
     assert_eq!(body["label"], "GPU box");
     assert_eq!(body["reasoning_levels"], json!(["none", "high"]));
+    assert_eq!(body["multimodal"], true, "absent keeps the saved value");
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "multimodal": false }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["multimodal"], false);
     // An empty api_key removes it (and the server then refuses the check).
     let (code, body) = put_model(
         &app,
@@ -996,6 +1006,7 @@ async fn a_model_server_saved_by_an_earlier_version_becomes_the_default_entry() 
         entry["reasoning_levels"],
         json!(["none", "low", "high", "max"])
     );
+    assert_eq!(entry["multimodal"], false);
     assert_eq!(entry["listed_models"], json!(["m-1"]));
     for old in ["llm_base_url", "llm_api_key", "llm_model"] {
         assert!(!store.has_secret(old).await.unwrap(), "{old} is gone");
