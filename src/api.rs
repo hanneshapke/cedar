@@ -238,9 +238,9 @@ fn resolve_model(
                     _ => None,
                 }
             };
-            by_id.or_else(by_name).ok_or_else(|| {
-                AppError::BadRequest(format!("model {m:?} is not registered"))
-            })?
+            by_id
+                .or_else(by_name)
+                .ok_or_else(|| AppError::BadRequest(format!("model {m:?} is not registered")))?
         }
         None => match parent {
             Some(p) => models.iter().find(|e| e.id == p.model_id).ok_or_else(|| {

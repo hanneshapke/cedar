@@ -22,9 +22,9 @@ use arc_swap::ArcSwap;
 use base64::Engine;
 use chacha20poly1305::aead::rand_core::RngCore;
 use chacha20poly1305::aead::OsRng;
+use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -817,12 +817,16 @@ mod tests {
 
     #[test]
     fn model_ids_and_reasoning_levels_are_checked() {
-        assert_eq!(clean_model_id(" deepseek-v4.flash_1 ").unwrap(), "deepseek-v4.flash_1");
+        assert_eq!(
+            clean_model_id(" deepseek-v4.flash_1 ").unwrap(),
+            "deepseek-v4.flash_1"
+        );
         for bad in ["", "Deep", "-a", "a b", "a/b", &"x".repeat(65)] {
             assert!(clean_model_id(bad).is_err(), "{bad:?}");
         }
-        let levels = clean_reasoning_levels(&["none".into(), " high ".into(), "".into(), "none".into()])
-            .unwrap();
+        let levels =
+            clean_reasoning_levels(&["none".into(), " high ".into(), "".into(), "none".into()])
+                .unwrap();
         assert_eq!(levels, ["none", "high"]);
         assert!(clean_reasoning_levels(&["hi gh".into()]).is_err());
         assert_eq!(

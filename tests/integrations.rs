@@ -599,7 +599,10 @@ struct ModelServer {
 
 /// An OpenAI-compatible model server that lists `m-1` and, when `key` is set, wants it. Its
 /// replies say `answer`.
-async fn start_model_server(key: Option<&'static str>, answer: &'static str) -> (String, Arc<ModelServer>) {
+async fn start_model_server(
+    key: Option<&'static str>,
+    answer: &'static str,
+) -> (String, Arc<ModelServer>) {
     async fn models(
         State((key, _, _)): State<(Option<&'static str>, &'static str, Arc<ModelServer>)>,
         headers: HeaderMap,
@@ -680,30 +683,75 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     // Nothing is registered: runs are refused, and the lists are empty.
     let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
     assert_eq!(status["models"], 0);
-    assert_eq!(app.get("/v1/admin/models", KEY_B).await.1, json!({ "models": [] }));
-    assert_eq!(app.get("/v1/models", KEY_A).await.1, json!({ "models": [] }));
+    assert_eq!(
+        app.get("/v1/admin/models", KEY_B).await.1,
+        json!({ "models": [] })
+    );
+    assert_eq!(
+        app.get("/v1/models", KEY_A).await.1,
+        json!({ "models": [] })
+    );
     let (code, body) = app
-        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x" })))
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x" })),
+        )
         .await;
     assert_eq!(code, StatusCode::CONFLICT, "{body}");
 
     // Nothing listening there.
-    let (code, body) = put_model(&app, "gpu", json!({ "base_url": "http://127.0.0.1:1", "model": "m-1" })).await;
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": "http://127.0.0.1:1", "model": "m-1" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
-    assert!(body["error"]["message"].as_str().unwrap().contains("could not reach"), "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("could not reach"),
+        "{body}"
+    );
     // The server wants a key.
-    let (code, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1" })).await;
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
-    assert!(body["error"]["message"].as_str().unwrap().contains("401"), "{body}");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("401"),
+        "{body}"
+    );
     for (id, body) in [
         ("gpu", json!({ "base_url": "not a url", "model": "m-1" })),
-        ("gpu", json!({ "base_url": "http://user:pw@box:8000/v1", "model": "m-1" })),
+        (
+            "gpu",
+            json!({ "base_url": "http://user:pw@box:8000/v1", "model": "m-1" }),
+        ),
         ("gpu", json!({ "base_url": server_url, "model": "" })),
-        ("gpu", json!({ "base_url": server_url, "model": "two\nlines" })),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "two\nlines" }),
+        ),
         ("GPU", json!({ "base_url": server_url, "model": "m-1" })),
-        ("gpu", json!({ "base_url": server_url, "model": "m-1", "bogus": 1 })),
-        ("gpu", json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["lo w"] })),
-        ("gpu", json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["low"], "default_reasoning": "high" })),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "bogus": 1 }),
+        ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["lo w"] }),
+        ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["low"], "default_reasoning": "high" }),
+        ),
     ] {
         let (code, resp) = put_model(&app, id, body.clone()).await;
         assert_eq!(code, StatusCode::BAD_REQUEST, "{body} -> {resp}");
@@ -752,13 +800,23 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(body["reasoning_effort"], "high");
 
     // Changing the entry without api_key keeps the saved key; absent levels stay too.
-    let (code, body) = put_model(&app, "gpu", json!({ "base_url": format!("{server_url}/v1/"), "model": "m-1" })).await;
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": format!("{server_url}/v1/"), "model": "m-1" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["api_key_set"], true);
     assert_eq!(body["label"], "GPU box");
     assert_eq!(body["reasoning_levels"], json!(["none", "high"]));
     // An empty api_key removes it (and the server then refuses the check).
-    let (code, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1", "api_key": "" })).await;
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "api_key": "" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
 
     let (code, _) = app
@@ -769,11 +827,24 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         .json(Method::DELETE, "/v1/admin/models/gpu", Some(KEY_B), None)
         .await;
     assert_eq!(code, StatusCode::NOT_FOUND);
-    assert_eq!(app.get("/v1/admin/models", KEY_B).await.1, json!({ "models": [] }));
-    assert!(!app.state.store.has_secret("model_api_key:gpu").await.unwrap());
+    assert_eq!(
+        app.get("/v1/admin/models", KEY_B).await.1,
+        json!({ "models": [] })
+    );
+    assert!(!app
+        .state
+        .store
+        .has_secret("model_api_key:gpu")
+        .await
+        .unwrap());
 
     let (code, _) = app
-        .json(Method::PUT, "/v1/admin/models/gpu", Some(KEY_A), Some(json!({ "base_url": server_url, "model": "m-1" })))
+        .json(
+            Method::PUT,
+            "/v1/admin/models/gpu",
+            Some(KEY_A),
+            Some(json!({ "base_url": server_url, "model": "m-1" })),
+        )
         .await;
     assert_eq!(code, StatusCode::FORBIDDEN);
 }
@@ -792,7 +863,12 @@ async fn each_model_has_its_own_server_levels_and_default() {
     .await;
     assert_eq!(code, StatusCode::OK, "{a}");
     assert_eq!(a["is_default"], true);
-    let (code, b) = put_model(&app, "b", json!({ "base_url": url_b, "model": "m-1", "is_default": true })).await;
+    let (code, b) = put_model(
+        &app,
+        "b",
+        json!({ "base_url": url_b, "model": "m-1", "is_default": true }),
+    )
+    .await;
     assert_eq!(code, StatusCode::OK, "{b}");
     assert_eq!(b["is_default"], true);
     let (_, list) = app.get("/v1/admin/models", KEY_B).await;
@@ -804,17 +880,36 @@ async fn each_model_has_its_own_server_levels_and_default() {
     // Unnamed: the default. Named: its own server, with its default level.
     let run = app.create_run(KEY_A, "hello").await;
     assert_eq!(run["model_id"], "b");
-    let done = app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let done = app
+        .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
     assert_eq!(done["final_text"], "from b");
-    let run = app.create_run_with(KEY_A, json!({ "prompt": "hello", "model": "a" })).await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "hello", "model": "a" }))
+        .await;
     assert_eq!(run["reasoning"], "high");
-    let done = app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let done = app
+        .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
     assert_eq!(done["final_text"], "from a");
-    assert_eq!(server_a.completions.lock().unwrap()[0].1["reasoning_effort"], "high");
-    assert_eq!(server_b.completions.lock().unwrap()[0].1.get("reasoning_effort"), None);
+    assert_eq!(
+        server_a.completions.lock().unwrap()[0].1["reasoning_effort"],
+        "high"
+    );
+    assert_eq!(
+        server_b.completions.lock().unwrap()[0]
+            .1
+            .get("reasoning_effort"),
+        None
+    );
     // Both entries name m-1, so the name alone is ambiguous.
     let (code, body) = app
-        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x", "model": "m-1" })))
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x", "model": "m-1" })),
+        )
         .await;
     assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
 
@@ -826,7 +921,12 @@ async fn each_model_has_its_own_server_levels_and_default() {
     assert_eq!(app.get("/v1/defaults", KEY_A).await.1["model_id"], "a");
     // A run on the removed model fails at its next call rather than hanging.
     let (code, body) = app
-        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x", "model": "b" })))
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x", "model": "b" })),
+        )
         .await;
     assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
 }
@@ -835,14 +935,24 @@ async fn each_model_has_its_own_server_levels_and_default() {
 async fn an_api_key_needs_the_secret_key_but_a_model_without_one_does_not() {
     let (url, _server) = start_model_server(None, "ok").await;
     let app = app_with_real_llm(&[("CEDAR_ADMIN_KEYS", KEY_B)]).await;
-    let (code, body) = put_model(&app, "m", json!({ "base_url": url, "model": "m-1", "api_key": "k" })).await;
+    let (code, body) = put_model(
+        &app,
+        "m",
+        json!({ "base_url": url, "model": "m-1", "api_key": "k" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::CONFLICT, "{body}");
-    assert!(body["error"]["message"].as_str().unwrap().contains("CEDAR_SECRET_KEY"));
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("CEDAR_SECRET_KEY"));
     let (code, body) = put_model(&app, "m", json!({ "base_url": url, "model": "m-1" })).await;
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["api_key_set"], false);
     let run = app.create_run(KEY_A, "hello").await;
-    let done = app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let done = app
+        .wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
     assert_eq!(done["final_text"], "ok");
 }
 
@@ -852,12 +962,23 @@ async fn a_model_server_saved_by_an_earlier_version_becomes_the_default_entry() 
     let key: [u8; 32] = hex::decode(SECRET_KEY).unwrap().try_into().unwrap();
     let secrets = cedar::secrets::SecretStore::new(store.clone(), &key);
     secrets
-        .put("llm_base_url", "http://gpu:9000/v1", &json!({ "base_url": "http://gpu:9000/v1", "models": ["m-1"] }))
+        .put(
+            "llm_base_url",
+            "http://gpu:9000/v1",
+            &json!({ "base_url": "http://gpu:9000/v1", "models": ["m-1"] }),
+        )
         .await
         .unwrap();
-    secrets.put("llm_api_key", "old-key", &json!({ "last4": "-key" })).await.unwrap();
     secrets
-        .put("llm_model", "deepseek-ai/DeepSeek-V4-Flash", &json!({ "model": "deepseek-ai/DeepSeek-V4-Flash" }))
+        .put("llm_api_key", "old-key", &json!({ "last4": "-key" }))
+        .await
+        .unwrap();
+    secrets
+        .put(
+            "llm_model",
+            "deepseek-ai/DeepSeek-V4-Flash",
+            &json!({ "model": "deepseek-ai/DeepSeek-V4-Flash" }),
+        )
         .await
         .unwrap();
 
@@ -871,14 +992,30 @@ async fn a_model_server_saved_by_an_earlier_version_becomes_the_default_entry() 
     assert_eq!(entry["base_url"], "http://gpu:9000/v1");
     assert_eq!(entry["api_key_set"], true);
     assert_eq!(entry["is_default"], true);
-    assert_eq!(entry["reasoning_levels"], json!(["none", "low", "high", "max"]));
+    assert_eq!(
+        entry["reasoning_levels"],
+        json!(["none", "low", "high", "max"])
+    );
     assert_eq!(entry["listed_models"], json!(["m-1"]));
     for old in ["llm_base_url", "llm_api_key", "llm_model"] {
         assert!(!store.has_secret(old).await.unwrap(), "{old} is gone");
     }
-    assert_eq!(secrets.get("model_api_key:default").await.unwrap().as_deref(), Some("old-key"));
+    assert_eq!(
+        secrets
+            .get("model_api_key:default")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("old-key")
+    );
 
     // A restart doesn't make a second one.
     let again = app_with_real_llm_on(store, &admin_env(&[])).await;
-    assert_eq!(again.get("/v1/admin/models", KEY_B).await.1["models"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        again.get("/v1/admin/models", KEY_B).await.1["models"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }

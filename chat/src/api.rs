@@ -58,6 +58,7 @@ const FILE_VIEWER_JS: &str = include_str!("../static/file-viewer.js");
 const MAP_VIEW_JS: &str = include_str!("../static/map-view.js");
 const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
 /// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
+const MODELS_JS: &str = include_str!("../static/models.js");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
@@ -156,6 +157,7 @@ pub fn router(state: AppState) -> Router {
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
         .route("/map-view.js", get(|| async { asset(JS, MAP_VIEW_JS) }))
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
+        .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))

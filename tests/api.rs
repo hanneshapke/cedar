@@ -515,7 +515,10 @@ async fn invalid_requests_are_rejected_with_json_errors() {
     // every other route keeps the small body limit, and the big one still has a ceiling.
     let (status, resp) = post(json!({ "prompt": "x".repeat(300_000) })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
-    assert!(resp["error"]["message"].as_str().unwrap().contains("prompt is longer"));
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("prompt is longer"));
     let (status, resp) = app
         .json(
             Method::POST,
@@ -567,7 +570,10 @@ async fn attachments_reach_the_model_in_the_opening_message() {
         )
         .await;
     let id = id_of(&created);
-    assert!(created.get("attachments").is_none(), "the run itself carries no file data");
+    assert!(
+        created.get("attachments").is_none(),
+        "the run itself carries no file data"
+    );
     assert_eq!(created["prompt"], "what are these?");
     app.wait_status(KEY_A, &id, "completed").await;
 
@@ -625,17 +631,30 @@ async fn a_continuation_keeps_the_parents_attachments() {
 #[tokio::test]
 async fn attachment_requests_are_validated() {
     let app = TestApp::new(vec![]).await;
-    let with = |name: &str, media_type: &str, data: &str| {
-        json!({ "name": name, "media_type": media_type, "data": data })
-    };
+    let with = |name: &str, media_type: &str, data: &str| json!({ "name": name, "media_type": media_type, "data": data });
     for (attachments, needle) in [
         (json!(vec![png(); 11]), "at most 10"),
-        (json!([with("", "image/png", "aGk=")]), "name must not be empty"),
-        (json!([with("a.txt", "text/plain", "aGk=")]), "not supported"),
+        (
+            json!([with("", "image/png", "aGk=")]),
+            "name must not be empty",
+        ),
+        (
+            json!([with("a.txt", "text/plain", "aGk=")]),
+            "not supported",
+        ),
         (json!([with("a.png", "image/png", "")]), "data is empty"),
-        (json!([with("a.png", "image/png", "@@@")]), "not valid base64"),
-        (json!([{ "name": "a.png", "media_type": "image/png", "data": "aGk=", "url": "x" }]), "url"),
-        (json!([{ "media_type": "image/png", "data": "aGk=" }]), "name"),
+        (
+            json!([with("a.png", "image/png", "@@@")]),
+            "not valid base64",
+        ),
+        (
+            json!([{ "name": "a.png", "media_type": "image/png", "data": "aGk=", "url": "x" }]),
+            "url",
+        ),
+        (
+            json!([{ "media_type": "image/png", "data": "aGk=" }]),
+            "name",
+        ),
     ] {
         let (status, resp) = app
             .json(
@@ -673,7 +692,10 @@ async fn defaults_and_clamps_are_applied() {
 
     // A model is named by its registry id...
     let custom = app
-        .create_run_with(KEY_A, json!({ "prompt": "x", "model": "small", "system": "be brief", "max_turns": 999 }))
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "x", "model": "small", "system": "be brief", "max_turns": 999 }),
+        )
         .await;
     assert_eq!(custom["model"], "small-model");
     assert_eq!(custom["model_id"], "small");
@@ -1556,7 +1578,10 @@ async fn a_run_asks_for_a_reasoning_level_and_a_continuation_keeps_it() {
     assert_eq!(same["reasoning"], "high");
     app.wait_status(KEY_A, &id_of(&same), "completed").await;
     let other = app
-        .create_run_with(KEY_A, json!({ "prompt": "more", "parent_id": id_of(&same), "reasoning": "low" }))
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "more", "parent_id": id_of(&same), "reasoning": "low" }),
+        )
         .await;
     assert_eq!(other["reasoning"], "low");
     app.wait_status(KEY_A, &id_of(&other), "completed").await;
@@ -1564,16 +1589,38 @@ async fn a_run_asks_for_a_reasoning_level_and_a_continuation_keeps_it() {
 
     // A level the model doesn't offer, or a model that offers none, is refused.
     let (status, body) = app
-        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x", "reasoning": "max" })))
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x", "reasoning": "max" })),
+        )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["error"]["message"].as_str().unwrap().contains("one of none, low, high"), "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("one of none, low, high"),
+        "{body}"
+    );
     app.register("plain", "plain-model", &[]).await;
     let (status, body) = app
-        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x", "model": "plain", "reasoning": "low" })))
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x", "model": "plain", "reasoning": "low" })),
+        )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["error"]["message"].as_str().unwrap().contains("offers no reasoning levels"), "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("offers no reasoning levels"),
+        "{body}"
+    );
 
     // Without a level, no reasoning_effort is sent at all.
     let plain = app
@@ -1590,10 +1637,18 @@ async fn runs_are_refused_while_no_model_is_registered() {
     app.state.store.delete_model(TEST_MODEL).await.unwrap();
     app.state.integrations.reload().await.unwrap();
     let (status, body) = app
-        .json(Method::POST, "/v1/runs", Some(KEY_A), Some(json!({ "prompt": "x" })))
+        .json(
+            Method::POST,
+            "/v1/runs",
+            Some(KEY_A),
+            Some(json!({ "prompt": "x" })),
+        )
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert!(body["error"]["message"].as_str().unwrap().contains("no model is registered"));
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("no model is registered"));
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
     assert_eq!(defaults["model"], Value::Null);
     let (_, ready) = app.json(Method::GET, "/readyz", None, None).await;
@@ -1612,26 +1667,41 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
     .await;
     app.register("small", "small-model", &["low", "high"]).await;
     let run = app
-        .create_run_with(KEY_A, json!({ "prompt": "say hi", "model": "small", "reasoning": "high" }))
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "say hi", "model": "small", "reasoning": "high" }),
+        )
         .await;
     let id = id_of(&run);
     app.wait_status(KEY_A, &id, "completed").await;
 
     let (status, body) = app
-        .json(Method::POST, "/v1/compact", Some(KEY_A), Some(json!({ "run_id": id })))
+        .json(
+            Method::POST,
+            "/v1/compact",
+            Some(KEY_A),
+            Some(json!({ "run_id": id })),
+        )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["prompt"], "Write hello.py that prints hi and run it.");
     assert_eq!(body["model"], "small-model", "the run's model is used");
     assert_eq!(body["model_id"], "small");
-    assert_eq!(body["usage"], json!({ "input_tokens": 10, "output_tokens": 5 }));
+    assert_eq!(
+        body["usage"],
+        json!({ "input_tokens": 10, "output_tokens": 5 })
+    );
 
     // One call, no tools, a dedicated system prompt, the run's conversation, then the instruction.
     let requests = app.llm.requests();
     assert_eq!(requests.len(), 3);
     let req = &requests[2];
     assert_eq!(req["tools"], json!([]));
-    assert_eq!(req["reasoning_effort"], Value::Null, "compaction thinks no harder than it must");
+    assert_eq!(
+        req["reasoning_effort"],
+        Value::Null,
+        "compaction thinks no harder than it must"
+    );
     assert_eq!(req["system"], cedar::compact::SYSTEM);
     let msgs = req["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 5);
@@ -1639,7 +1709,10 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
     assert_eq!(msgs[1]["content"][0]["type"], "tool_use");
     assert_eq!(msgs[2]["content"][0]["content"], "ran: echo hi");
     assert_eq!(msgs[3]["content"][0]["text"], "all done");
-    assert_eq!(msgs[4], json!({ "role": "user", "content": cedar::compact::INSTRUCTION }));
+    assert_eq!(
+        msgs[4],
+        json!({ "role": "user", "content": cedar::compact::INSTRUCTION })
+    );
 
     // Nothing was stored: the run is as it was.
     let (_, messages) = app.get(&format!("/v1/runs/{id}/messages"), KEY_A).await;
@@ -1647,7 +1720,12 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
 
     // Other keys don't see the run.
     let (status, _) = app
-        .json(Method::POST, "/v1/compact", Some(KEY_B), Some(json!({ "run_id": id })))
+        .json(
+            Method::POST,
+            "/v1/compact",
+            Some(KEY_B),
+            Some(json!({ "run_id": id })),
+        )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -1662,12 +1740,17 @@ async fn compaction_needs_a_finished_run_or_a_transcript() {
     .await;
     let post = |body: Value| app.json(Method::POST, "/v1/compact", Some(KEY_A), Some(body));
 
-    let (status, body) = post(json!({ "transcript": "<user>\nhi\n</user>\n<assistant>\nhello\n</assistant>" })).await;
+    let (status, body) =
+        post(json!({ "transcript": "<user>\nhi\n</user>\n<assistant>\nhello\n</assistant>" }))
+            .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["prompt"], "DISTILLED");
     let req = app.llm.requests().pop().unwrap();
     let content = req["messages"][0]["content"].as_str().unwrap();
-    assert!(content.starts_with("<conversation>\n<user>\nhi\n</user>"), "{content}");
+    assert!(
+        content.starts_with("<conversation>\n<user>\nhi\n</user>"),
+        "{content}"
+    );
     assert!(content.ends_with(cedar::compact::INSTRUCTION));
 
     // A model that returns nothing is a gateway error, not a prompt.

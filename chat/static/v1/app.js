@@ -7,7 +7,7 @@ const els = {
   main: $('main'), sidebar: $('sidebar'), backdrop: $('backdrop'), convList: $('conv-list'),
   scroll: $('scroll'), thread: $('thread'), greeting: $('greeting'),
   title: $('title'), titleInput: $('title-input'), deleteChat: $('delete-chat'),
-  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), hint: $('hint'),
+  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'), hint: $('hint'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
@@ -17,9 +17,11 @@ const els = {
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
 const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
+const NO_MODELS = 'No model is registered yet: an admin adds one under Settings → Model server & API keys.';
 
 const state = {
-  config: { auth_required: false, models: [] },
+  config: { auth_required: false },
+  noModels: false,     // cedar has no model registered: messages can't be sent yet
   conversations: [],
   current: null,     // the open conversation, or null on the "new chat" screen
   views: new Map(),  // turn id -> view of the open conversation
@@ -406,15 +408,36 @@ async function openConversation(id) {
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   setHeader();
-  if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) {
-    els.model.value = detail.conversation.model;
-  }
+  restorePickers(detail.conversation);
   for (const turn of detail.turns) addTurn(turn);
   renderSidebar();
   updateComposer();
   scrollToBottom(true);
   els.input.focus();
 }
+
+// -- the model and reasoning pickers -----------------------------------------------------------
+
+/** Load cedar's registry into the pickers. Without a model registered, sending is off. */
+async function loadModels() {
+  try { await cedarModels.load(api); } catch { return; } // cedar unreachable: leave the pickers as they are
+  state.noModels = !cedarModels.all().length;
+  const model = cedarModels.byId(els.model.value) ? els.model.value : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, els.model.value, els.reasoning.value);
+  updateComposer();
+}
+
+/** Put the conversation's last model and reasoning level back into the pickers. */
+function restorePickers(conversation) {
+  if (!cedarModels.loaded()) return;
+  const model = cedarModels.byId(conversation.model) ? conversation.model : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, model, conversation.reasoning || '');
+}
+
+cedarModels.bindPair(els.model, els.reasoning);
+document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
@@ -817,8 +840,8 @@ function updateComposer() {
   const busy = Boolean(state.activeTurn);
   els.send.classList.toggle('stop', busy);
   els.send.setAttribute('aria-label', busy ? 'Stop response' : 'Send message');
-  els.send.disabled = state.sending || (!busy && !els.input.value.trim());
-  els.input.placeholder = state.current ? 'Reply to Cedar…' : 'How can I help you today?';
+  els.send.disabled = state.sending || state.noModels || (!busy && !els.input.value.trim());
+  els.input.placeholder = state.noModels ? NO_MODELS : state.current ? 'Reply to Cedar…' : 'How can I help you today?';
   els.hint.textContent = busy ? 'Working… you can stop the response at any time.' : '';
   els.scheduleBtn.hidden = !state.current || busy || state.sending || !hasCompletedTurn();
 }
@@ -857,6 +880,7 @@ async function sendMessage() {
     }
     const body = { content };
     if (els.model.value) body.model = els.model.value;
+    if (els.reasoning.value) body.reasoning = els.reasoning.value;
     const attachments = cedarAttach.payload();
     if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
@@ -936,7 +960,7 @@ els.titleInput.addEventListener('keydown', (e) => {
 els.titleInput.addEventListener('blur', () => finishRename(true));
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
-els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value }));
+els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 $('new-chat').addEventListener('click', () => { toggleSidebar(false); location.hash = '#/'; if (!state.current) els.input.focus(); });
@@ -954,19 +978,18 @@ document.addEventListener('keydown', (e) => {
 async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
-  cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
+  cedarSchedule.init({ api, toast, renderMarkdown });
   cedarSettings.init({
     api, toast, authHeaders,
-    models: () => state.config.models || [],
     config: () => state.config,
     current: () => state.current,
-    anchor: els.model,
+    anchor: els.reasoning,
   });
   // The paperclip goes after the Tools button that settings.js puts after the model picker.
   cedarAttach.init({
     form: els.composer,
     textarea: els.input,
-    anchor: els.model,
+    anchor: els.reasoning,
     before: els.composer.querySelector('.composer-row'),
     toast,
   });
@@ -976,12 +999,8 @@ async function init() {
   } catch {
     toast('Could not reach the server');
   }
-  if (state.config.models?.length) {
-    els.model.append(new Option('Default model', ''));
-    for (const m of state.config.models) els.model.append(new Option(m, m));
-    els.model.hidden = false;
-  }
   if (state.config.auth_required && !memoryToken) await askToken(false);
+  await loadModels();
   cedarSettings.start();
   await loadConversations();
   route();

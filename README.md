@@ -25,25 +25,31 @@ vllm serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --tokenizer-mode de
   --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-parser deepseek_v4
 ```
 
-The tool-call flags are required: without them the model's tool calls come back as plain text and the agent can't act. Check the registered model name with `curl localhost:8000/v1/models` and set `LLM_MODEL` if it differs from the default.
+The tool-call flags are required: without them the model's tool calls come back as plain text and the agent can't act. Check the registered model name with `curl localhost:8000/v1/models`; you register it with cedar in step 3.
 
 ```sh
 # 1. Build the image the agent's tools run in
 docker build -t cedar-sandbox sandbox/
 
-# 2. Start the server (it listens on 127.0.0.1:8080 by default)
-export CEDAR_API_KEYS=$(openssl rand -hex 24)
+# 2. Start the server (it listens on 127.0.0.1:8080 by default). The key is also an admin key,
+#    so it may register models.
+export CEDAR_API_KEYS=$(openssl rand -hex 24) CEDAR_ADMIN_KEYS=$CEDAR_API_KEYS
 cargo run --release
 
-# 3. In another shell: start a run, then follow it
+# 3. In another shell: register the vLLM server as a model (cedar checks the address by listing
+#    its models first), then start a run and follow it
 KEY=<the key you generated>
+curl -s -X PUT -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+     -d '{"base_url": "http://localhost:8000/v1", "model": "deepseek-ai/DeepSeek-V4-Flash",
+          "reasoning_levels": ["none", "low", "high", "max"]}' \
+     localhost:8080/v1/admin/models/deepseek
 curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
      -d '{"prompt": "write hello.py that prints the first 10 primes, run it, and show the output"}' \
      localhost:8080/v1/runs
 curl -N -H "Authorization: Bearer $KEY" localhost:8080/v1/runs/<id>/events
 ```
 
-`GET /readyz` tells you whether the database and Docker (including the sandbox image) are usable. See `.env.example` for every setting.
+The chat UI does the same under Settings → Model server & API keys (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database and Docker (including the sandbox image) are usable, and how many models are registered. See `.env.example` for every setting.
 
 ## API
 
@@ -51,19 +57,22 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Choosing tools](#choosing-tools) for `tools` and [Attachments](#attachments) for `attachments`. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools` and [Attachments](#attachments) for `attachments`. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
-| `GET /v1/runs/{id}` | Status, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
+| `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
-| `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, usage}`. |
+| `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, system, max_turns_cap, allowed_models}`, plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
-| `PUT` / `DELETE /v1/admin/integrations/llm` | Admin: point cedar at another model server and name the model it uses by default (`{"base_url", "api_key"?, "model"?}`; checked by listing the server's models first; an absent `api_key` or `model` keeps the saved one, `""` removes it), or go back to the environment's or the default ones. |
+| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, is_default}]}` (see [Models](#models)). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap}` (`model` and `model_id` are `null` until a model is registered), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
+| `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
+| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "is_default"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels` and `default_reasoning` keep what is saved. Returns the entry as `GET /v1/admin/models` shows it. |
+| `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
 | `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. |
@@ -141,7 +150,7 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 
 | Type | `data` |
 | --- | --- |
-| `run.started` | `model`, `max_turns` |
+| `run.started` | `model`, `model_id`, `reasoning`, `max_turns` |
 | `assistant.text` | `turn`, `text` |
 | `tool.call` | `id`, `name`, `input` |
 | `tool.result` | `id`, `output`, `is_error`, `duration_ms` |
@@ -168,7 +177,7 @@ curl -s localhost:8080/v1/runs -H "Authorization: Bearer devkey" \
   result so the conversation stays valid.
 - It mounts the parent's workspace, so files under `/workspace` are kept. Each run still gets a
   new container, so running processes are not.
-- The model and system prompt come from the parent unless the request sets them. A run created before you switched `LLM_MODEL` keeps its old model name, so pass an explicit `"model"` when continuing it.
+- The model, its reasoning level and the system prompt come from the parent unless the request sets them. A continuation of a run whose model has since been removed from the registry is refused until the request names another.
 - A run can be continued once, and only after it has finished, so a chain of runs is a straight
   line and never shares a workspace with a run that is still going. To keep going, continue from
   the latest run.
@@ -226,12 +235,10 @@ Settings come from environment variables. The important ones:
 | Setting | Default |
 | --- | --- |
 | `CEDAR_API_KEYS` | required, comma-separated bearer tokens |
-| `LLM_BASE_URL` | `http://localhost:8000/v1` |
-| `LLM_API_KEY` | empty (only needed if the server runs with `--api-key`) |
+| `CEDAR_ADMIN_KEYS` | empty (the keys that may register models and manage integrations; see [Models](#models)) |
+| `CEDAR_SECRET_KEY` | empty (needed to save a model server's API key, a Brave key or a Google account) |
 | `BIND_ADDR` | `127.0.0.1:8080` |
 | `DATABASE_URL` | `sqlite://cedar.db` |
-| `LLM_MODEL` | `deepseek-ai/DeepSeek-V4-Flash` (must match the name the server registered; left unset, an admin can set it from the chat UI) |
-| `ALLOWED_MODELS` | empty (any model may be requested) |
 | `MAX_TURNS_CAP` | 25 |
 | `MAX_TOKENS` | 4096 (cap on one model reply, including a reasoning model's thinking; a reply that hits it ends with `stop_reason` `max_tokens`) |
 | `MAX_CONCURRENT_RUNS` | 4 |
@@ -385,31 +392,54 @@ ones that send mail or change events; allowed names the server doesn't list are 
 skipped. Check the startup log (`MCP tools discovered`) after an upgrade, since preview tool names
 may change.
 
+### Models
+
+The models runs can use live in a registry that admins manage through `PUT /v1/admin/models/{id}`,
+which is what the chat UI's Settings → Model server & API keys does. There is no environment
+setting for the model server: a fresh cedar has no model, says so at startup and in `/readyz`
+(`models: 0`), and refuses runs with `409` until one is registered. Each entry has:
+
+- an `id` (lowercase letters, digits, `.`, `_`, `-`), which is what `POST /v1/runs` takes as
+  `model`; the `model` name on its server is accepted too when only one entry has it;
+- a `base_url` (the OpenAI-compatible server, `/v1` added if the path is left off; a user and
+  password in the URL are refused) and an optional `api_key`, kept encrypted (see below);
+- the `model` name the server registered, and a `label` for the pickers;
+- `reasoning_levels`: the values the model accepts as `reasoning_effort`, in the order to offer
+  them, and an optional `default_reasoning` among them. A run's `reasoning` must be one of the
+  levels; without one the default level is sent, and without that nothing is. DeepSeek V4 on vLLM
+  takes `none`, `low`, `high`, `xhigh` and `max`; OpenAI-style servers take `none`, `minimal`,
+  `low`, `medium` and `high`. An entry with no levels refuses any `reasoning`;
+- `is_default`: the entry a run gets when it names no model. The first entry registered is the
+  default; removing the default hands it to the first remaining entry.
+
+Saving an entry checks the address by listing the server's models (`GET <base_url>/models`); the
+list is kept and shown, with a warning in the chat UI if the model name isn't on it (cedar doesn't
+refuse it, since some servers list nothing). A change applies to the next model call, in a new run
+or one already going; a run whose model was removed fails at its next call. A model server saved
+by an earlier version of cedar (through the old `/v1/admin/integrations/llm` route) is turned into
+the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_URL`, `LLM_API_KEY`,
+`LLM_MODEL` and `ALLOWED_MODELS` in the environment are ignored with a warning.
+
 ### Integrations
 
-Instead of putting `LLM_BASE_URL`, `LLM_API_KEY`, `BRAVE_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the
-environment, an admin can set them up through the API, which is what the chat UI's Settings →
-Model server & API keys does:
+Instead of putting `BRAVE_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the environment, an admin can set
+them up through the API, which is what the chat UI's Settings → Model server & API keys does, next
+to the models:
 
-1. Set `CEDAR_SECRET_KEY` (`openssl rand -hex 32`). Credentials saved through the API are encrypted
-   with it (XChaCha20-Poly1305) in cedar's database; keep it with your other secrets, since without
-   it they can't be read. If it changes, saved credentials are ignored (with a warning) until set
-   again.
-2. List the keys that may manage integrations in `CEDAR_ADMIN_KEYS`. For the chat UI that is
-   cedar-chat's `CEDAR_API_KEY`. Other keys get `403` on `/v1/admin/...`.
+1. Set `CEDAR_SECRET_KEY` (`openssl rand -hex 32`). Credentials saved through the API (a model
+   server's API key included) are encrypted with it (XChaCha20-Poly1305) in cedar's database; keep
+   it with your other secrets, since without it they can't be read. If it changes, saved
+   credentials are ignored (with a warning) until set again. A model whose server needs no key can
+   be registered without it.
+2. List the keys that may manage models and integrations in `CEDAR_ADMIN_KEYS`. For the chat UI
+   that is cedar-chat's `CEDAR_API_KEY`. Other keys get `403` on `/v1/admin/...`.
 3. For Google, keep `GMAIL` / `CALENDAR`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the
    environment (they identify your deployment) and leave `GOOGLE_REFRESH_TOKEN` unset. Add the
    chat's callback, `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, as an authorized redirect URI of
    the OAuth client. "Connect Google" then sends you to Google's consent page and cedar keeps the
    refresh token it gets back, along with the account's address.
 
-A model server address is checked by asking it for its models (`GET <base_url>/models`) before it
-is kept; the path defaults to `/v1`, and the models it listed are shown, with a warning if the
-model name isn't one of them. The next model call, in a new run or one already going, uses the new
-address. The model name is saved with the address and becomes the default for new runs (runs
-already created keep theirs); an `LLM_MODEL` set in the environment wins and can't be changed here.
-Only an `LLM_BASE_URL` actually set in the environment locks the address; the built-in default
-`http://localhost:8000/v1` can be changed. A saved Brave key is checked with one search before it is kept. Saving or removing a credential
+A saved Brave key is checked with one search before it is kept. Saving or removing a credential
 rebuilds the tool set at once: the next run sees the change, runs already going keep the tools they
 started with. A value set in the environment always wins; the API reports it as `"source": "env"`
 and refuses to change it.
@@ -446,7 +476,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 
 - Each run gets its own container, created at the start and removed at the end, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Containers run as a non-root user with all capabilities dropped, `no-new-privileges`, and memory, CPU, and process limits. Networking is off (`SANDBOX_NETWORK=none`) unless you change it.
 - Every file and command operation goes through `docker exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
-- `LLM_API_KEY` and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
+- Model servers' API keys and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
 - With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. Set `WEATHER=off` and `MAPS=off` if that is not acceptable.
 - With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.

@@ -103,10 +103,7 @@ pub async fn run_agent(
         };
         // Looked up each turn, so a changed address applies to the next call.
         let llm = env.llm.client_for(&run.model_id).ok_or_else(|| {
-            AgentError::Failed(format!(
-                "model {:?} is no longer registered",
-                run.model_id
-            ))
+            AgentError::Failed(format!("model {:?} is no longer registered", run.model_id))
         })?;
         let resp = tokio::select! {
             biased;

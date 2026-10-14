@@ -559,7 +559,10 @@ async fn bash_lists_the_files_it_created_or_modified() {
     );
 
     // A command that writes nothing reports nothing, and keeps its exit status.
-    let msg = Bash.call(&ctx, &json!({ "command": "ls old.txt; exit 3" })).await.unwrap();
+    let msg = Bash
+        .call(&ctx, &json!({ "command": "ls old.txt; exit 3" }))
+        .await
+        .unwrap();
     assert_eq!(msg, "old.txt\n\n[exit status: 3]");
 
     // Neither marker is left in /tmp.

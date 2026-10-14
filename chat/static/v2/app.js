@@ -15,7 +15,7 @@ const els = {
   notes: $('notes'), recents: $('recents'),
   page: $('page'), pageHead: $('page-head'), pageName: $('page-name'), pageBody: $('page-body'),
   pile: $('pile'), trail: $('trail'),
-  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'),
+  composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
 };
@@ -24,9 +24,11 @@ const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
 const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
 const DOC_RE = /\.(md|markdown|txt)$/i;
+const NO_MODELS = 'No model is registered yet: an admin adds one under Settings → Model server & API keys.';
 
 const state = {
-  config: { auth_required: false, models: [] },
+  config: { auth_required: false },
+  noModels: false,     // cedar has no model registered: messages can't be sent yet
   conversations: [],
   current: null,
   views: new Map(),   // turn id -> view
@@ -716,8 +718,9 @@ function updateChrome() {
   const doing = state.activeTurn?.workingEl?.lastChild.textContent || 'Thinking';
   els.statusText.textContent = busy ? `Working · ${doing[0].toLowerCase()}${doing.slice(1)}`
     : latest ? (latest.lastEvent === 'run.failed' ? 'Failed' : latest.lastEvent === 'run.cancelled' ? 'Stopped' : 'Done') : 'Idle';
-  els.send.disabled = state.sending || busy || !els.input.value.trim();
-  els.input.placeholder = busy ? 'Cedar is working. Type a follow-up for when it is done…' : c ? 'Change anything?' : 'What should be on the desk?';
+  els.send.disabled = state.sending || busy || state.noModels || !els.input.value.trim();
+  els.input.placeholder = state.noModels ? NO_MODELS
+    : busy ? 'Cedar is working. Type a follow-up for when it is done…' : c ? 'Change anything?' : 'What should be on the desk?';
   document.title = c?.title ? `${c.title} – Cedar` : 'Cedar';
 }
 
@@ -775,13 +778,36 @@ async function openConversation(id) {
   state.current = detail.conversation;
   cedarSettings.conversationChanged();
   cedarAttach.clear();
-  if (detail.conversation.model && state.config.models.includes(detail.conversation.model)) els.model.value = detail.conversation.model;
+  restorePickers(detail.conversation);
   for (const turn of detail.turns) addTurn(turn);
   renderDesk();
   updateChrome();
   renderRecents();
   els.input.focus();
 }
+
+// -- the model and reasoning pickers -----------------------------------------------------------
+
+/** Load cedar's registry into the pickers. Without a model registered, sending is off. */
+async function loadModels() {
+  try { await cedarModels.load(api); } catch { return; } // cedar unreachable: leave the pickers as they are
+  state.noModels = !cedarModels.all().length;
+  const model = cedarModels.byId(els.model.value) ? els.model.value : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, els.model.value, els.reasoning.value);
+  updateChrome();
+}
+
+/** Put the conversation's last model and reasoning level back into the pickers. */
+function restorePickers(conversation) {
+  if (!cedarModels.loaded()) return;
+  const model = cedarModels.byId(conversation.model) ? conversation.model : '';
+  cedarModels.fillSelect(els.model, { selected: model });
+  cedarModels.fillLevels(els.reasoning, model, conversation.reasoning || '');
+}
+
+cedarModels.bindPair(els.model, els.reasoning);
+document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
@@ -900,6 +926,7 @@ async function sendMessage() {
     }
     const body = { content };
     if (els.model.value) body.model = els.model.value;
+    if (els.reasoning.value) body.reasoning = els.reasoning.value;
     const attachments = cedarAttach.payload();
     if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
@@ -974,7 +1001,7 @@ els.stop.addEventListener('click', stopActive);
 els.newChat.addEventListener('click', () => { location.hash = '#/'; if (!state.current) els.input.focus(); });
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
-els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value }));
+els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 els.title.addEventListener('click', startRename);
@@ -992,30 +1019,25 @@ document.addEventListener('keydown', (e) => {
 async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
-  cedarSchedule.init({ api, toast, renderMarkdown, models: () => state.config.models || [] });
+  cedarSchedule.init({ api, toast, renderMarkdown });
   cedarSettings.init({
     api, toast, authHeaders,
-    models: () => state.config.models || [],
     config: () => state.config,
     current: () => state.current,
-    anchor: els.model,
+    anchor: els.reasoning,
   });
   // The paperclip goes after the Tools button that settings.js puts after the model picker; the
   // row of chosen files sits above the message box.
   cedarAttach.init({
     form: els.composer,
     textarea: els.input,
-    anchor: els.model,
+    anchor: els.reasoning,
     before: els.input,
     toast,
   });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
-  if (state.config.models?.length) {
-    els.model.append(new Option('Default model', ''));
-    for (const m of state.config.models) els.model.append(new Option(m, m));
-    els.model.hidden = false;
-  }
   if (state.config.auth_required && !memoryToken) await askToken(false);
+  await loadModels();
   cedarSettings.start();
   await loadConversations();
   route();

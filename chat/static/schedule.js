@@ -14,7 +14,8 @@
 //   api(method, path, body) -> Promise<json>   the app's /api client (sends the access token)
 //   toast(message)                             a short notice
 //   renderMarkdown(s) -> html string           the app's Markdown renderer, which escapes all text
-//   models() -> string[]                       the models offered in the picker (may be empty)
+//
+// The model and reasoning pickers take cedar's registry from cedarModels (models.js).
 
 const cedarSchedule = (() => {
   const FREQUENCIES = [['daily', 'Every day'], ['weekdays', 'Weekdays (Mon–Fri)'], ['weekly', 'Every week']];
@@ -142,6 +143,10 @@ const cedarSchedule = (() => {
     const zone = el('div', 'cedar-sched-zone');
     const model = el('select');
     const modelField = field('Model', model);
+    const reasoning = el('select');
+    const reasoningField = field('Reasoning', reasoning);
+    cedarModels.bindPair(model, reasoning);
+    model.addEventListener('change', () => { reasoningField.hidden = reasoning.hidden; });
     const error = el('div', 'cedar-sched-error');
     error.hidden = true;
     const actions = el('div', 'cedar-sched-actions');
@@ -152,14 +157,14 @@ const cedarSchedule = (() => {
 
     const row = el('div', 'cedar-sched-row');
     row.append(field('Frequency', frequency), weekdayField, field('Time', time));
-    f.append(field('Name', titleInput), field('Prompt', prompt), promptHelp, row, zone, modelField, error, actions);
+    f.append(field('Name', titleInput), field('Prompt', prompt), promptHelp, row, zone, modelField, reasoningField, error, actions);
     frequency.addEventListener('change', () => { weekdayField.hidden = frequency.value !== 'weekly'; });
     f.addEventListener('submit', (e) => { e.preventDefault(); submitForm(); });
 
     dialog.append(head, review, f);
     dialog.addEventListener('close', () => { editing = null; });
     document.body.append(dialog);
-    return { dialog, title, review, reviewText, retry, form: f, titleInput, prompt, promptHelp, frequency, weekday, weekdayField, time, zone, model, modelField, error, submit };
+    return { dialog, title, review, reviewText, retry, form: f, titleInput, prompt, promptHelp, frequency, weekday, weekdayField, time, zone, model, modelField, reasoning, reasoningField, error, submit };
   }
 
   function showStage(stage) {
@@ -167,14 +172,11 @@ const cedarSchedule = (() => {
     form.form.hidden = stage !== 'form';
   }
 
-  function fillModels(selected) {
-    const models = deps.models() || [];
-    form.model.textContent = '';
-    form.modelField.hidden = !models.length;
-    if (!models.length) return;
-    form.model.append(new Option('Default model', ''));
-    for (const m of models) form.model.append(new Option(m, m));
-    form.model.value = models.includes(selected) ? selected : '';
+  function fillModels(selected, level) {
+    const shown = cedarModels.fillSelect(form.model, { selected: selected || '' });
+    form.model.hidden = false;
+    form.modelField.hidden = !shown;
+    form.reasoningField.hidden = !cedarModels.fillLevels(form.reasoning, form.model.value, level || '');
   }
 
   function setTiming({ frequency = 'daily', weekday = null, time = defaultTime(), timezone = localZone() } = {}) {
@@ -187,7 +189,7 @@ const cedarSchedule = (() => {
   }
 
   /** Start scheduling the open conversation: compact it, then show the form. */
-  function openCreate(conversation, { model } = {}) {
+  function openCreate(conversation, { model, reasoning } = {}) {
     if (!deps || !conversation) return;
     form ??= buildForm();
     editing = { conversation };
@@ -197,7 +199,7 @@ const cedarSchedule = (() => {
     form.titleInput.value = conversation.title || '';
     form.prompt.value = '';
     form.error.hidden = true;
-    fillModels(model || conversation.model || '');
+    fillModels(model || conversation.model || '', reasoning ?? conversation.reasoning ?? '');
     setTiming();
     if (!form.dialog.open) form.dialog.showModal();
     compactNow();
@@ -214,7 +216,7 @@ const cedarSchedule = (() => {
     form.titleInput.value = schedule.title;
     form.prompt.value = schedule.prompt;
     form.error.hidden = true;
-    fillModels(schedule.model || '');
+    fillModels(schedule.model || '', schedule.reasoning || '');
     setTiming({ frequency: schedule.frequency, weekday: schedule.weekday, time: schedule.time_of_day, timezone: schedule.timezone });
     showStage('form');
     if (!form.dialog.open) form.dialog.showModal();
@@ -252,6 +254,7 @@ const cedarSchedule = (() => {
     };
     if (body.frequency === 'weekly') body.weekday = Number(form.weekday.value);
     if (!form.modelField.hidden) body.model = form.model.value;
+    body.reasoning = form.reasoningField.hidden ? '' : form.reasoning.value;
     form.error.hidden = true;
     form.submit.disabled = true;
     try {

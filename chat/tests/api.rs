@@ -635,6 +635,12 @@ async fn both_uis_are_served() {
             );
             assert!(page.contains("<script src=\"/map-view.js\">"), "{uri} loads the map view");
             assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
+            assert!(page.contains("<script src=\"/models.js\">"), "{uri} loads the model registry script");
+            assert!(
+                page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("/settings.js"),
+                "{uri} loads the models before the scripts that fill the pickers from them"
+            );
+            assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
             assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
             assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
             assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
@@ -667,6 +673,7 @@ async fn both_uis_are_served() {
         ("/image-view.css", "text/css; charset=utf-8", ".cedar-image"),
         ("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8", "Leaflet 1.9.4"),
         ("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8", ".leaflet-container"),
+        ("/models.js", "text/javascript; charset=utf-8", "cedarModels"),
         ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),
         ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),

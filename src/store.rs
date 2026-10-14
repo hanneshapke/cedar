@@ -20,7 +20,8 @@ const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reas
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
     workspace_reused, tools, created_at, started_at, finished_at";
 
-const MODEL_COLS: &str = "id, label, model, base_url, reasoning_levels, default_reasoning, is_default, \
+const MODEL_COLS: &str =
+    "id, label, model, base_url, reasoning_levels, default_reasoning, is_default, \
     position, listed_models, created_at, updated_at";
 
 fn now_ms() -> i64 {
@@ -592,7 +593,10 @@ impl Store {
             .fetch_optional(&mut *tx)
             .await?;
         let (position, created_at) = match existing {
-            Some(r) => (r.try_get::<i64, _>("position")?, r.try_get::<i64, _>("created_at")?),
+            Some(r) => (
+                r.try_get::<i64, _>("position")?,
+                r.try_get::<i64, _>("created_at")?,
+            ),
             None => {
                 let next: i64 =
                     sqlx::query_scalar("SELECT COALESCE(MAX(position), 0) + 1 FROM models")
@@ -628,7 +632,13 @@ impl Store {
         .bind(&entry.default_reasoning)
         .bind(is_default)
         .bind(position)
-        .bind(entry.listed_models.as_ref().map(serde_json::to_string).transpose()?)
+        .bind(
+            entry
+                .listed_models
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
+        )
         .bind(created_at)
         .bind(now)
         .execute(&mut *tx)
@@ -701,7 +711,6 @@ async fn insert_event(
     .fetch_one(&mut *conn)
     .await?;
     Ok(row.try_get("seq")?)
-
 }
 
 #[cfg(test)]
