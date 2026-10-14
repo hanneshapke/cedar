@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cedar</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f5;
+    --panel: #ffffff;
+    --text: #1d2420;
+    --muted: #5f6b64;
+    --line: #dde3df;
+    --accent: #1f6b47;
+    --accent-text: #ffffff;
+    --ok: #1f8a4c;
+    --warn: #b7791f;
+    --bad: #b3261e;
+    --busy: #2b6cb0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161a18;
+      --panel: #1f2522;
+      --text: #e7ebe8;
+      --muted: #9aa69f;
+      --line: #2f3833;
+      --accent: #4ca877;
+      --accent-text: #0e1511;
+      --ok: #5bc48a;
+      --warn: #e0a84a;
+      --bad: #ef7b73;
+      --busy: #6fa8e8;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  body { padding: 28px 32px 40px; max-width: 760px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  h1 { font-size: 22px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  .version { color: var(--muted); font-size: 12px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 14px; }
+  h2 { font-size: 15px; margin: 0 0 6px; display: flex; align-items: center; gap: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  .dot.warn { background: var(--warn); } .dot.busy { background: var(--busy); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  p { margin: 6px 0; } .muted { color: var(--muted); }
+  .detail { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+    color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=password], select { width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .presets button { font-size: 12px; padding: 4px 10px; }
+  .error { color: var(--bad); }
+  .hidden { display: none; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cedar</h1>
+  <span class="version" id="version"></span>
+</header>
+
+<section id="docker">
+  <h2><span class="dot" id="docker-dot"></span>Docker</h2>
+  <p id="docker-text" class="muted">Checking…</p>
+  <div class="row">
+    <button id="docker-recheck">Check again</button>
+    <a id="docker-help" class="hidden muted" href="#" target="_blank" rel="noreferrer">Get Docker Desktop or OrbStack</a>
+  </div>
+</section>
+
+<section id="images">
+  <h2><span class="dot" id="images-dot"></span>Sandbox image</h2>
+  <p id="images-text" class="muted">Waiting for Docker.</p>
+  <p class="detail" id="images-detail"></p>
+  <div class="row">
+    <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
+      <input type="checkbox" id="browser-toggle"> Browser tool (downloads a second, larger image with Chromium)
+    </label>
+  </div>
+</section>
+
+<section id="model">
+  <h2><span class="dot" id="model-dot"></span>Model server</h2>
+  <p class="muted">Any OpenAI-compatible server that supports tool calling. Ollama, LM Studio, and vLLM all work; the server can run on this Mac or on another machine.</p>
+  <div class="row presets">
+    <span class="muted">Presets:</span>
+    <button data-url="http://127.0.0.1:11434/v1">Ollama</button>
+    <button data-url="http://127.0.0.1:1234/v1">LM Studio</button>
+    <button data-url="http://127.0.0.1:8000/v1">vLLM</button>
+  </div>
+  <label for="base-url">Address</label>
+  <input type="text" id="base-url" placeholder="http://127.0.0.1:11434/v1" autocapitalize="off" autocorrect="off" spellcheck="false">
+  <label for="api-key">API key (only if the server needs one)</label>
+  <input type="password" id="api-key" autocomplete="off">
+  <div class="row">
+    <button id="probe">List models</button>
+    <span id="probe-status" class="muted"></span>
+  </div>
+  <div id="model-pick" class="hidden">
+    <label for="model-select">Model</label>
+    <select id="model-select"></select>
+    <div class="row">
+      <button class="primary" id="save">Save and start</button>
+    </div>
+  </div>
+  <p id="model-error" class="error"></p>
+</section>
+
+<section id="services">
+  <h2><span class="dot" id="services-dot"></span>Cedar</h2>
+  <p id="services-text" class="muted">Not started.</p>
+  <p class="detail" id="services-detail"></p>
+  <div class="row">
+    <button class="primary" id="open-chat" disabled>Open chat</button>
+    <button id="open-browser" disabled>Open in browser</button>
+    <button id="copy-token">Copy access token</button>
+    <button id="open-logs">Open logs</button>
+  </div>
+  <p class="muted" style="margin-top:10px">Opening the chat in a browser asks for the access token once; copy it from here. Settings live in <code id="config-path"></code>.</p>
+</section>
+
+<footer>Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

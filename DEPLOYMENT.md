@@ -3,6 +3,9 @@
 This guide sets up the whole stack on one NVIDIA DGX Spark and shows how to open the chat UI from
 your laptop.
 
+For running cedar and the chat on a Mac instead, with a model server elsewhere, see the
+[macOS app](macos/README.md): one DMG, no systemd.
+
 ```
 laptop browser ──SSH tunnel──▶ cedar-chat :3000 ──▶ cedar :8080 ──▶ vLLM :8000 (DeepSeek V4)
                                                        │

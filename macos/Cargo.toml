@@ -1,0 +1,33 @@
+[package]
+name = "cedar-app"
+# Keep in step with the workspace version in ../Cargo.toml: the release workflow checks both, and
+# this version picks the sandbox images the app pulls (ghcr.io/hanneshapke/cedar-sandbox:<version>).
+version = "0.1.0"
+edition = "2021"
+description = "Cedar for macOS: a menu-bar app that runs the cedar agent server and its chat UI"
+license = "Apache-2.0"
+
+# Not a workspace member (see ../Cargo.toml): Tauri needs system libraries the servers don't.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+hex = "0.4"
+libc = "0.2"
+open = "5"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "sync", "io-util", "fs", "net"] }
+tokio-util = "0.7"
+url = "2"
+
+[profile.release]
+strip = true
+codegen-units = 1
+lto = true

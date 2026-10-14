@@ -1,0 +1,393 @@
+//! Runs cedar and cedar-chat as child processes and keeps them running.
+//!
+//! Both binaries sit next to the app's own executable in `Contents/MacOS/` (Tauri's `externalBin`).
+//! They get their configuration as environment variables, write their logs to files, and hold a
+//! stdin pipe whose other end is this process: with `CEDAR_EXIT_ON_STDIN_EOF=1` they exit when the
+//! app goes away, however it goes. A deliberate stop is a SIGTERM and a grace period, like systemd.
+
+use crate::config::Config;
+use crate::docker::DockerCli;
+use crate::paths::Paths;
+use anyhow::{anyhow, bail, Context, Result};
+use serde::Serialize;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::process::{Child, Command};
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum ServiceState {
+    Stopped,
+    Starting(String),
+    Running,
+    Crashed(String),
+}
+
+/// How long a server gets to answer `/healthz` after it was started.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(45);
+/// cedar gives active runs 10 s to record their state on SIGTERM; wait a little longer than that.
+const STOP_GRACE: Duration = Duration::from_secs(15);
+const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
+/// An exit this soon after a start counts as a crash loop.
+const FAST_EXIT: Duration = Duration::from_secs(10);
+const MAX_FAST_CRASHES: u32 = 3;
+
+pub struct Supervisor {
+    exe_dir: PathBuf,
+    paths: Paths,
+    state: Arc<Mutex<ServiceState>>,
+    current: tokio::sync::Mutex<Option<Handle>>,
+}
+
+struct Handle {
+    stop: CancellationToken,
+    finished: tokio::task::JoinHandle<()>,
+}
+
+impl Supervisor {
+    pub fn new(exe_dir: PathBuf, paths: Paths) -> Self {
+        Self {
+            exe_dir,
+            paths,
+            state: Arc::new(Mutex::new(ServiceState::Stopped)),
+            current: tokio::sync::Mutex::new(None),
+        }
+    }
+
+    pub fn state(&self) -> ServiceState {
+        self.state.lock().unwrap().clone()
+    }
+
+    /// Starts both servers, stopping a running pair first, and returns once they answer or with
+    /// the reason they didn't. Supervision goes on in the background: a crash is restarted with
+    /// backoff until it looks like a loop.
+    pub async fn start(&self, cfg: Config, docker: DockerCli) -> Result<()> {
+        let mut current = self.current.lock().await;
+        if let Some(h) = current.take() {
+            h.stop.cancel();
+            let _ = h.finished.await;
+        }
+        let stop = CancellationToken::new();
+        let (tx, rx) = oneshot::channel();
+        let runner = Runner {
+            exe_dir: self.exe_dir.clone(),
+            paths: self.paths.clone(),
+            cfg,
+            docker,
+            state: self.state.clone(),
+            stop: stop.clone(),
+        };
+        let finished = tokio::spawn(runner.run(tx));
+        *current = Some(Handle { stop, finished });
+        drop(current);
+        rx.await
+            .unwrap_or_else(|_| Err(anyhow!("the services stopped before they came up")))
+    }
+
+    pub async fn stop(&self) {
+        let mut current = self.current.lock().await;
+        if let Some(h) = current.take() {
+            h.stop.cancel();
+            let _ = h.finished.await;
+        }
+        *self.state.lock().unwrap() = ServiceState::Stopped;
+    }
+}
+
+struct Runner {
+    exe_dir: PathBuf,
+    paths: Paths,
+    cfg: Config,
+    docker: DockerCli,
+    state: Arc<Mutex<ServiceState>>,
+    stop: CancellationToken,
+}
+
+impl Runner {
+    fn set(&self, s: ServiceState) {
+        *self.state.lock().unwrap() = s;
+    }
+
+    async fn run(self, first: oneshot::Sender<Result<()>>) {
+        let mut first = Some(first);
+        let mut fast_crashes = 0u32;
+        let mut backoff = Duration::from_secs(1);
+        loop {
+            let started = Instant::now();
+            match self.run_once(&mut first).await {
+                Ok(()) => {
+                    self.set(ServiceState::Stopped);
+                    return;
+                }
+                Err(e) => {
+                    let detail = format!("{e:#}");
+                    self.set(ServiceState::Crashed(detail.clone()));
+                    if let Some(tx) = first.take() {
+                        // The very first start failed: report it and leave it to the user.
+                        let _ = tx.send(Err(anyhow!(detail)));
+                        return;
+                    }
+                    if started.elapsed() < FAST_EXIT {
+                        fast_crashes += 1;
+                    } else {
+                        fast_crashes = 0;
+                        backoff = Duration::from_secs(1);
+                    }
+                    if fast_crashes >= MAX_FAST_CRASHES {
+                        self.set(ServiceState::Crashed(format!(
+                            "{detail}. Gave up after {fast_crashes} crashes in a row; use Restart Services once the cause is fixed"
+                        )));
+                        return;
+                    }
+                    tokio::select! {
+                        _ = self.stop.cancelled() => {
+                            self.set(ServiceState::Stopped);
+                            return;
+                        }
+                        _ = tokio::time::sleep(backoff) => {}
+                    }
+                    backoff = (backoff * 2).min(Duration::from_secs(30));
+                }
+            }
+        }
+    }
+
+    /// One life of the pair: start both, report, then wait for a stop or an exit.
+    /// `Ok` means a deliberate stop; `Err` carries why it ended otherwise.
+    async fn run_once(&self, first: &mut Option<oneshot::Sender<Result<()>>>) -> Result<()> {
+        for (port, what) in [(self.cfg.cedar_port, "cedar"), (self.cfg.chat_port, "the chat")] {
+            if std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
+                bail!(
+                    "port {port} is already in use, so {what} can't listen on it; change the port in {}",
+                    self.paths.config().display()
+                );
+            }
+        }
+
+        self.set(ServiceState::Starting("starting cedar".into()));
+        let cedar_log = self.paths.cedar_log();
+        let mut cedar = self.spawn("cedar", self.cedar_env(), &cedar_log)?;
+        if let Err(e) = wait_healthy(&mut cedar, &self.cfg.cedar_url(), "cedar", &cedar_log).await {
+            terminate(&mut cedar).await;
+            return Err(e);
+        }
+
+        self.set(ServiceState::Starting("starting the chat".into()));
+        let chat_log = self.paths.chat_log();
+        let mut chat = match self.spawn("cedar-chat", self.chat_env(), &chat_log) {
+            Ok(c) => c,
+            Err(e) => {
+                terminate(&mut cedar).await;
+                return Err(e);
+            }
+        };
+        if let Err(e) = wait_healthy(&mut chat, &self.cfg.chat_url(), "cedar-chat", &chat_log).await {
+            terminate(&mut chat).await;
+            terminate(&mut cedar).await;
+            return Err(e);
+        }
+
+        self.set(ServiceState::Running);
+        if let Some(tx) = first.take() {
+            let _ = tx.send(Ok(()));
+        }
+
+        tokio::select! {
+            _ = self.stop.cancelled() => {
+                terminate(&mut chat).await;
+                terminate(&mut cedar).await;
+                Ok(())
+            }
+            status = cedar.wait() => {
+                terminate(&mut chat).await;
+                Err(anyhow!("cedar exited ({}); see {}", describe(status), cedar_log.display()))
+            }
+            status = chat.wait() => {
+                terminate(&mut cedar).await;
+                Err(anyhow!("cedar-chat exited ({}); see {}", describe(status), chat_log.display()))
+            }
+        }
+    }
+
+    fn spawn(&self, name: &str, env: Vec<(String, String)>, log: &Path) -> Result<Child> {
+        let bin = self.exe_dir.join(name);
+        if !bin.is_file() {
+            bail!("{} is missing from the app bundle", bin.display());
+        }
+        let out = open_log(log)?;
+        let err = out.try_clone()?;
+        Command::new(&bin)
+            .current_dir(&self.paths.data)
+            .envs(env)
+            .stdin(Stdio::piped()) // held, never written: closing it tells the server to exit
+            .stdout(Stdio::from(out))
+            .stderr(Stdio::from(err))
+            .kill_on_drop(true)
+            .spawn()
+            .with_context(|| format!("starting {}", bin.display()))
+    }
+
+    fn cedar_env(&self) -> Vec<(String, String)> {
+        let cfg = &self.cfg;
+        let s = &cfg.secrets;
+        let mut env: Vec<(String, String)> = [
+            ("CEDAR_API_KEYS", s.cedar_api_key.clone()),
+            // The chat's key is the admin key, so Settings can save a Brave key or connect Google.
+            ("CEDAR_ADMIN_KEYS", s.cedar_api_key.clone()),
+            ("CEDAR_SECRET_KEY", s.cedar_secret_key.clone()),
+            ("BIND_ADDR", format!("127.0.0.1:{}", cfg.cedar_port)),
+            ("DATABASE_URL", sqlite_url(&self.paths.cedar_db())),
+            ("LLM_BASE_URL", cfg.llm_base_url.trim().to_string()),
+            ("LLM_MODEL", cfg.llm_model.trim().to_string()),
+            ("SANDBOX_IMAGE", cfg.sandbox_image()),
+            ("BROWSER", if cfg.browser { "on" } else { "off" }.to_string()),
+            ("BROWSER_IMAGE", cfg.browser_image()),
+            ("DOCKER_BIN", self.docker.bin.to_string_lossy().into_owned()),
+            ("PATH", self.docker.path_env.clone()),
+            ("CEDAR_EXIT_ON_STDIN_EOF", "1".to_string()),
+            ("RUST_LOG", "info,sqlx=warn".to_string()),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        if !cfg.llm_api_key.trim().is_empty() {
+            env.push(("LLM_API_KEY".into(), cfg.llm_api_key.trim().to_string()));
+        }
+        // The user's own entries win (later duplicates override earlier ones in `envs`).
+        env.extend(cfg.cedar_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        env
+    }
+
+    fn chat_env(&self) -> Vec<(String, String)> {
+        let cfg = &self.cfg;
+        let mut env: Vec<(String, String)> = [
+            ("CEDAR_URL", cfg.cedar_url()),
+            ("CEDAR_API_KEY", cfg.secrets.cedar_api_key.clone()),
+            ("CHAT_BIND_ADDR", format!("127.0.0.1:{}", cfg.chat_port)),
+            ("CHAT_DATABASE_URL", sqlite_url(&self.paths.chat_db())),
+            ("CHAT_ACCESS_TOKEN", cfg.secrets.chat_access_token.clone()),
+            ("CHAT_MODELS", cfg.llm_model.trim().to_string()),
+            ("PATH", self.docker.path_env.clone()),
+            ("CEDAR_EXIT_ON_STDIN_EOF", "1".to_string()),
+            ("RUST_LOG", "info,sqlx=warn".to_string()),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        env.extend(cfg.chat_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        env
+    }
+}
+
+/// Polls `/healthz` until it answers, the child exits, or the timeout passes.
+async fn wait_healthy(child: &mut Child, url: &str, name: &str, log: &Path) -> Result<()> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()?;
+    let deadline = Instant::now() + HEALTH_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            bail!(
+                "{name} exited ({}) right after starting; see {}",
+                describe(Ok(status)),
+                log.display()
+            );
+        }
+        let ok = client
+            .get(format!("{url}/healthz"))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+        if ok {
+            return Ok(());
+        }
+        if Instant::now() > deadline {
+            bail!(
+                "{name} did not answer on {url} within {}s; see {}",
+                HEALTH_TIMEOUT.as_secs(),
+                log.display()
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+/// SIGTERM, a grace period, then SIGKILL. Nothing to do if it already exited.
+async fn terminate(child: &mut Child) {
+    let Some(pid) = child.id() else { return };
+    // SAFETY: a plain signal to a process id we own; the worst case is ESRCH if it just exited.
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+    if tokio::time::timeout(STOP_GRACE, child.wait()).await.is_err() {
+        let _ = child.kill().await;
+    }
+}
+
+fn describe(status: std::io::Result<std::process::ExitStatus>) -> String {
+    match status {
+        Ok(s) => match s.code() {
+            Some(code) => format!("exit code {code}"),
+            None => "killed by a signal".to_string(),
+        },
+        Err(e) => format!("wait failed: {e}"),
+    }
+}
+
+/// Opens the log for appending, moving a large one aside first.
+fn open_log(path: &Path) -> Result<std::fs::File> {
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() > MAX_LOG_BYTES {
+            let _ = std::fs::rename(path, path.with_extension("log.1"));
+        }
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("opening {}", path.display()))
+}
+
+/// A `sqlite://` URL for an absolute path. sqlx percent-decodes the path, so the characters that
+/// would be read as URL syntax are encoded; a space is fine as it is.
+fn sqlite_url(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    let mut out = String::with_capacity(raw.len() + 9);
+    out.push_str("sqlite://");
+    for c in raw.chars() {
+        match c {
+            '%' => out.push_str("%25"),
+            '?' => out.push_str("%3F"),
+            '#' => out.push_str("%23"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlite_urls_keep_spaces_and_escape_url_syntax() {
+        assert_eq!(
+            sqlite_url(Path::new("/Users/me/Library/Application Support/x/cedar.db")),
+            "sqlite:///Users/me/Library/Application Support/x/cedar.db"
+        );
+        assert_eq!(sqlite_url(Path::new("/tmp/a#b?c%.db")), "sqlite:///tmp/a%23b%3Fc%25.db");
+    }
+
+    #[test]
+    fn service_state_serializes_for_the_page() {
+        let s = serde_json::to_value(ServiceState::Crashed("boom".into())).unwrap();
+        assert_eq!(s["state"], "crashed");
+        assert_eq!(s["detail"], "boom");
+        assert_eq!(serde_json::to_value(ServiceState::Running).unwrap()["state"], "running");
+    }
+}

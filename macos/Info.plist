@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into the bundle's Info.plist by tauri-bundler. The window loads the chat over plain
+       http from 127.0.0.1; loopback is exempt from App Transport Security, this makes it explicit. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+  <!-- A menu bar app: no Dock icon, no app switcher entry. -->
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>
