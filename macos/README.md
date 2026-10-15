@@ -31,9 +31,10 @@ Cedar.app (menu bar) ──┬── cedar-chat :13000 ──▶ cedar :18080 �
    - **Model server**: pick a preset or type the address, add an API key if the server needs
      one, click *List models*, choose one, and *Save*. The app registers it in cedar's model
      registry (as the entry `default`), which cedar keeps in its database.
-4. The window switches to the chat once both servers answer and the model is registered. Close
-   it any time; the app keeps running in the menu bar, where *Open Cedar* brings it back and
-   *Quit Cedar* stops everything.
+4. The window switches to the chat once both servers answer and the model is registered. While
+   the window is open Cedar has a Dock icon and shows up in Command-Tab like any app. Close the
+   window and it is a menu bar item again, with the servers still running; *Open Cedar* brings the
+   window back, and *Quit Cedar* (or Command-Q while the window is up) stops everything.
 
 *Open in Browser* opens the same chat in your default browser; it asks for an access token once,
 which *Copy Access Token* puts on the clipboard. Only the Mac itself can reach the servers: both

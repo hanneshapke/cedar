@@ -44,7 +44,13 @@ fn main_window(app: &AppHandle) -> Result<WebviewWindow> {
         .ok_or_else(|| anyhow!("the main window is gone"))
 }
 
+/// Shows the window and brings it forward. While the window is up the app is a regular one, with
+/// a Dock icon and a Command-Tab entry; closing it (see main.rs) makes it a menu bar app again.
 fn present(win: &WebviewWindow) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    win.app_handle()
+        .set_activation_policy(tauri::ActivationPolicy::Regular)
+        .context("switching to a regular app")?;
     win.show()?;
     win.unminimize()?;
     win.set_focus()?;

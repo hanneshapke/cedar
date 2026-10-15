@@ -20,7 +20,8 @@ use tauri::Manager;
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            // No Dock icon: the app lives in the menu bar and its window opens from there.
+            // A menu bar app until its window is shown: window::present switches to a regular
+            // app (Dock icon, Command-Tab) and closing the window switches back.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -55,7 +56,7 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Cedar could not start")
         .run(|app, event| match event {
-            // Closing the window hides it; the app stays in the menu bar.
+            // Closing the window hides it; the app goes back to being a menu bar item.
             tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -65,13 +66,13 @@ fn main() {
                 if let Some(win) = app.get_webview_window(&label) {
                     let _ = win.hide();
                 }
+                #[cfg(target_os = "macos")]
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
-            // With no windows left Tauri would exit; only Quit (which passes a code) may.
-            tauri::RunEvent::ExitRequested { api, code, .. } => {
-                if code.is_none() {
-                    api.prevent_exit();
-                }
-            }
+            // An exit request without a code comes from the system: Command-Q while the window
+            // is up, or the last window closing. The window is only ever hidden, never closed,
+            // so this is a quit, and the Exit handler below stops the servers.
+            tauri::RunEvent::ExitRequested { .. } => {}
             // Whatever ends the app, take the servers down with it.
             tauri::RunEvent::Exit => {
                 let state = app.state::<AppState>();

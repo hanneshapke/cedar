@@ -9,8 +9,5 @@
     <key>NSAllowsLocalNetworking</key>
     <true/>
   </dict>
-  <!-- A menu bar app: no Dock icon, no app switcher entry. -->
-  <key>LSUIElement</key>
-  <true/>
 </dict>
 </plist>
