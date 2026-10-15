@@ -109,7 +109,10 @@ Without the Apple secrets below the bundler signs ad hoc and skips notarization,
 for your own Mac: open the app once with right-click → Open. `cargo tauri dev` runs the app
 against the sidecars in `binaries/` without bundling.
 
-The icons in `icons/` and `tray-icon.png` come from `make-icons.py` (needs Pillow). `Info.plist`
+The icons in `icons/`, `app-icon.png`, and `tray-icon.png` are rendered by `make-icons.py` (needs
+Pillow) from the brand assets in `docs/assets/`: `cedar-app-icon.svg` with the margin a macOS icon
+carries itself, and `cedar-mark-mono.svg` as a black-on-transparent template image for the menu
+bar. Rerun it after the assets change. `Info.plist`
 is merged into the bundle's: it declares the app a menu bar app and allows the loopback HTTP the
 window uses.
 
