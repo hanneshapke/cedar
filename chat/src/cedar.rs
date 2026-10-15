@@ -245,7 +245,7 @@ pub struct RunOptions<'a> {
     pub max_turns: Option<u32>,
     pub tools: Option<&'a [String]>,
     pub parent: Option<Uuid>,
-    /// Images and PDFs to show the model with the prompt (for a multimodal model).
+    /// Images (for a multimodal model) and PDFs (for any) to send with the prompt.
     pub attachments: Option<&'a [Attachment]>,
 }
 

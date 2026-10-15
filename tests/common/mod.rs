@@ -119,12 +119,17 @@ pub fn tool_use(id: &str, name: &str, input: Value) -> LlmResponse {
 
 // -- fake sandbox ----------------------------------------------------------------------------
 
+/// How many pages every PDF has for the fake `cedar-render-pages`.
+pub const FAKE_PDF_PAGES: usize = 3;
+
 /// A workspace's files, shared by every sandbox that mounts it.
 pub type Files = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 
 /// Commands with special meaning: `fatal` (sandbox breaks), `fail` (exit 1 with stderr),
-/// `big` (output larger than the cap), and the changed-files listing that follows `bash` and
-/// `run_python` (it prints `changed`, one path per line). Anything else echoes `ran: <command>`.
+/// `big` (output larger than the cap), the changed-files listing that follows `bash` and
+/// `run_python` (it prints `changed`, one path per line), and `cedar-render-pages` (every PDF has
+/// [`FAKE_PDF_PAGES`] pages, page N renders as `jpeg N`; a path containing `broken` fails).
+/// Anything else echoes `ran: <command>`.
 #[derive(Default)]
 pub struct FakeSandbox {
     pub files: Files,
@@ -132,6 +137,43 @@ pub struct FakeSandbox {
     /// The workspace files the listing of changes reports.
     pub changed: Mutex<Vec<String>>,
     pub destroyed: AtomicBool,
+}
+
+impl FakeSandbox {
+    /// `cedar-render-pages --pages N --max-side PX --out 'DIR' -- 'PATH'`, as cedar sends it.
+    fn render_pages(&self, command: &str) -> ExecOutput {
+        let words: Vec<&str> = command.split_whitespace().collect();
+        let arg = |flag: &str| {
+            let i = words.iter().position(|w| *w == flag).unwrap();
+            words[i + 1].trim_matches('\'')
+        };
+        if command.contains("broken") {
+            return ExecOutput {
+                stderr: b"cannot open it as a PDF".to_vec(),
+                stderr_total: 23,
+                exit_code: Some(1),
+                ..Default::default()
+            };
+        }
+        let pages: usize = arg("--pages").parse().unwrap();
+        let out = arg("--out");
+        let mut images = Vec::new();
+        for n in 1..=pages.min(FAKE_PDF_PAGES) {
+            let path = format!("{out}/page-{n}.jpg");
+            self.files
+                .lock()
+                .unwrap()
+                .insert(path.clone(), format!("jpeg {n}").into_bytes());
+            images.push(path);
+        }
+        let report = json!({ "page_count": FAKE_PDF_PAGES, "images": images }).to_string();
+        ExecOutput {
+            stdout_total: report.len(),
+            stdout: report.into_bytes(),
+            exit_code: Some(0),
+            ..Default::default()
+        }
+    }
 }
 
 #[async_trait]
@@ -158,6 +200,7 @@ impl Sandbox for FakeSandbox {
                 exit_code: Some(0),
                 ..Default::default()
             }),
+            render if render.starts_with("cedar-render-pages ") => Ok(self.render_pages(render)),
             listing if listing.contains(" -newer ") => {
                 let out = self.changed.lock().unwrap().join("\n");
                 Ok(ExecOutput {

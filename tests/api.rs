@@ -1,6 +1,7 @@
 mod common;
 
 use axum::http::{Method, StatusCode};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use cedar::models::NewRun;
 use cedar::store::Store;
 use common::*;
@@ -552,13 +553,31 @@ fn image_block(attachment: &Value) -> Value {
     })
 }
 
-fn document_block(attachment: &Value) -> Value {
+/// Page `n` of a PDF as the fake renderer draws it.
+fn page_block(name: &str, n: usize) -> Value {
     json!({
-        "type": "document",
-        "source": { "type": "base64", "media_type": attachment["media_type"], "data": attachment["data"] },
-        "title": attachment["name"],
+        "type": "image",
+        "source": { "type": "base64", "media_type": "image/jpeg", "data": BASE64.encode(format!("jpeg {n}")) },
+        "title": format!("{name} p.{n}"),
     })
 }
+
+fn note_block(lines: &[&str]) -> Value {
+    let text = format!(
+        "[Files attached to this message, saved in the workspace:\n{}]\n\n",
+        lines.join("\n")
+    );
+    json!({ "type": "text", "text": text })
+}
+
+/// The files the first sandbox created for `run` holds.
+fn sandbox_file(app: &TestApp, run: usize, path: &str) -> Option<Vec<u8>> {
+    let created = app.factory.created.lock().unwrap();
+    let files = created[run].1.files.lock().unwrap();
+    files.get(path).cloned()
+}
+
+const PDF_ALL_SHOWN: &str = "PDF, 3 pages, shown above as images; read_document gives its text";
 
 #[tokio::test]
 async fn attachments_reach_the_model_in_the_opening_message() {
@@ -577,9 +596,16 @@ async fn attachments_reach_the_model_in_the_opening_message() {
     assert_eq!(created["prompt"], "what are these?");
     app.wait_status(KEY_A, &id, "completed").await;
 
+    // The image as sent, the PDF's pages as images, then a note on where the files are saved.
     let expected = json!([
         image_block(&png()),
-        document_block(&pdf()),
+        page_block("scan.pdf", 1),
+        page_block("scan.pdf", 2),
+        page_block("scan.pdf", 3),
+        note_block(&[
+            "- attachments/dot.png: image, shown above",
+            &format!("- attachments/scan.pdf: {PDF_ALL_SHOWN}"),
+        ]),
         { "type": "text", "text": "what are these?" },
     ]);
     let requests = app.llm.requests();
@@ -588,6 +614,16 @@ async fn attachments_reach_the_model_in_the_opening_message() {
     let (_, messages) = app.get(&format!("/v1/runs/{id}/messages"), KEY_A).await;
     assert_eq!(messages["messages"][0]["role"], "user");
     assert_eq!(messages["messages"][0]["content"], expected);
+
+    // Both files are in the workspace, as sent.
+    assert_eq!(
+        sandbox_file(&app, 0, "attachments/scan.pdf").unwrap(),
+        BASE64.decode("JVBERi0xLjQ=").unwrap()
+    );
+    assert_eq!(
+        sandbox_file(&app, 0, "attachments/dot.png").unwrap(),
+        BASE64.decode("iVBORw0KGgo=").unwrap()
+    );
 
     // A plain run is unaffected: its opening message is still the bare prompt.
     let plain = app
@@ -624,8 +660,59 @@ async fn a_continuation_keeps_the_parents_attachments() {
     let msgs = requests[1]["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 3);
     assert_eq!(msgs[0]["content"][0], image_block(&png()));
-    assert_eq!(msgs[0]["content"][1]["text"], "look");
+    assert_eq!(msgs[0]["content"][2]["text"], "look");
     assert_eq!(msgs[2], json!({ "role": "user", "content": "and now?" }));
+}
+
+#[tokio::test]
+async fn pdf_pages_shown_are_capped_across_the_run() {
+    let app = TestApp::with_env(vec![Step::Reply(text("ok"))], &[("PDF_PREVIEW_PAGES", "4")]).await;
+    let other =
+        json!({ "name": "scan.pdf", "media_type": "application/pdf", "data": "JVBERi0xLjQ=" });
+    let third =
+        json!({ "name": "third.pdf", "media_type": "application/pdf", "data": "JVBERi0xLjQ=" });
+    let run = app
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "read", "attachments": [pdf(), other, third] }),
+        )
+        .await;
+    app.wait_status(KEY_A, &id_of(&run), "completed").await;
+
+    // Three pages of the first, one of the second (saved under a name of its own), none of the third.
+    let expected = json!([
+        page_block("scan.pdf", 1),
+        page_block("scan.pdf", 2),
+        page_block("scan.pdf", 3),
+        page_block("scan-2.pdf", 1),
+        note_block(&[
+            &format!("- attachments/scan.pdf: {PDF_ALL_SHOWN}"),
+            "- attachments/scan-2.pdf: PDF, 3 pages; page 1 is shown above as images. Use \
+             read_document for its text, including the other pages",
+            "- attachments/third.pdf: PDF; read its text with read_document",
+        ]),
+        { "type": "text", "text": "read" },
+    ]);
+    assert_eq!(app.llm.requests()[0]["messages"][0]["content"], expected);
+    assert!(sandbox_file(&app, 0, "attachments/scan-2.pdf").is_some());
+}
+
+#[tokio::test]
+async fn a_pdf_that_cannot_be_rendered_is_still_saved_and_listed() {
+    let app = TestApp::new(vec![Step::Reply(text("ok"))]).await;
+    let broken =
+        json!({ "name": "broken.pdf", "media_type": "application/pdf", "data": "JVBERi0xLjQ=" });
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "read", "attachments": [broken] }))
+        .await;
+    app.wait_status(KEY_A, &id_of(&run), "completed").await;
+    let expected = json!([
+        note_block(&["- attachments/broken.pdf: PDF; its pages could not be shown (cannot open \
+                      it as a PDF); read its text with read_document"]),
+        { "type": "text", "text": "read" },
+    ]);
+    assert_eq!(app.llm.requests()[0]["messages"][0]["content"], expected);
+    assert!(sandbox_file(&app, 0, "attachments/broken.pdf").is_some());
 }
 
 #[tokio::test]
@@ -1632,8 +1719,8 @@ async fn a_run_asks_for_a_reasoning_level_and_a_continuation_keeps_it() {
 }
 
 #[tokio::test]
-async fn a_model_registered_without_multimodal_refuses_attachments() {
-    let app = TestApp::new(vec![Step::Reply(text("ok"))]).await;
+async fn a_model_registered_without_multimodal_refuses_images_but_takes_pdfs() {
+    let app = TestApp::new(vec![Step::Reply(text("ok")), Step::Reply(text("ok"))]).await;
     app.register("plain", "plain-model", &[]).await;
     let png = json!({ "name": "dot.png", "media_type": "image/png", "data": "iVBORw0KGgo=" });
     let (status, body) = app
@@ -1649,10 +1736,24 @@ async fn a_model_registered_without_multimodal_refuses_attachments() {
         body["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("does not accept images or PDFs"),
+            .contains("does not accept images"),
         "{body}"
     );
-    // The test model takes them; an empty list is fine for any model.
+    // A PDF is saved in the workspace and listed, without page images.
+    let run = app
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "read", "model": "plain", "attachments": [pdf()] }),
+        )
+        .await;
+    app.wait_status(KEY_A, &id_of(&run), "completed").await;
+    let expected = json!([
+        note_block(&["- attachments/scan.pdf: PDF; read its text with read_document"]),
+        { "type": "text", "text": "read" },
+    ]);
+    assert_eq!(app.llm.requests()[0]["messages"][0]["content"], expected);
+    assert!(sandbox_file(&app, 0, "attachments/scan.pdf").is_some());
+    // The test model takes images; an empty list is fine for any model.
     let run = app
         .create_run_with(KEY_A, json!({ "prompt": "look", "attachments": [png] }))
         .await;

@@ -101,6 +101,8 @@ impl AppState {
             max_tokens: cfg.max_tokens,
             tool_timeout: cfg.tool_timeout,
             tool_output_max_bytes: cfg.tool_output_max_bytes,
+            integrations: integrations.clone(),
+            pdf_preview_pages: cfg.pdf_preview_pages,
         };
         let manager = RunManager::new(
             store.clone(),
@@ -206,7 +208,7 @@ struct ResolvedModel {
     id: String,
     name: String,
     reasoning: Option<String>,
-    /// Whether the entry takes images and PDFs.
+    /// Whether the entry takes images (and is shown attached PDFs' first pages).
     multimodal: bool,
 }
 
@@ -374,10 +376,12 @@ async fn create_run(
         req.reasoning.as_deref(),
         parent.as_ref(),
     )?;
-    if !attachments.is_empty() && !model.multimodal {
+    // PDFs are fine for any model: they are saved in the workspace for the agent to read.
+    if attachments.iter().any(Attachment::is_image) && !model.multimodal {
         return Err(AppError::BadRequest(format!(
-            "model {:?} does not accept images or PDFs (an admin registers it as accepting them \
-             under Settings, or with \"multimodal\": true on PUT /v1/admin/models/{{id}})",
+            "model {:?} does not accept images (an admin registers it as accepting them under \
+             Settings, or with \"multimodal\": true on PUT /v1/admin/models/{{id}}); PDFs can be \
+             attached for any model",
             model.id
         )));
     }

@@ -75,7 +75,7 @@ pub struct ModelSpec {
     pub reasoning_levels: Option<Vec<String>>,
     /// The level a run gets when it names none; empty for none. Absent keeps the saved one.
     pub default_reasoning: Option<String>,
-    /// The model accepts images and PDFs with a prompt. Absent keeps the saved value (`false`
+    /// The model accepts images with a prompt. Absent keeps the saved value (`false`
     /// for a new entry).
     pub multimodal: Option<bool>,
     /// Make this the model runs get when they name none. Absent keeps it as it is.
