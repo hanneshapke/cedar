@@ -760,3 +760,62 @@ async fn generate_chart_draws_png_svg_and_pdf() {
 
     teardown(&f, id, &sb).await;
 }
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn attached_pdfs_are_saved_and_their_first_pages_rendered() {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+    use cedar::attachments;
+    use cedar::models::Attachment;
+
+    let (f, id, sb) = sandbox().await;
+    // A three-page PDF, made in the sandbox and read back as a client would send it.
+    let make = "python3 -c \"from matplotlib.backends.backend_pdf import PdfPages; \
+                import matplotlib.pyplot as plt; pdf = PdfPages('/tmp/three.pdf'); \
+                [pdf.savefig(plt.figure()) for _ in range(3)]; pdf.close()\"";
+    let out = sb.exec(make, 60 * SECOND, 1000).await.unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let pdf = sb.read_file("/tmp/three.pdf", 1 << 20).await.unwrap().bytes;
+    let attachment = Attachment {
+        name: "three.pdf".into(),
+        media_type: "application/pdf".into(),
+        data: BASE64.encode(&pdf),
+    };
+
+    let blocks = attachments::prepare(sb.as_ref(), &[attachment], true, 2, 60 * SECOND)
+        .await
+        .unwrap();
+    assert_eq!(blocks.len(), 3, "two pages and the note: {blocks:?}");
+    for (n, block) in blocks[..2].iter().enumerate() {
+        assert_eq!(block["title"], format!("three.pdf p.{}", n + 1));
+        assert_eq!(block["source"]["media_type"], "image/jpeg");
+        let jpeg = BASE64
+            .decode(block["source"]["data"].as_str().unwrap())
+            .unwrap();
+        assert!(jpeg.starts_with(&[0xff, 0xd8]), "page {} is a JPEG", n + 1);
+    }
+    let note = blocks[2]["text"].as_str().unwrap();
+    assert!(
+        note.contains("attachments/three.pdf: PDF, 3 pages; pages 1-2 are shown"),
+        "{note}"
+    );
+
+    // The PDF is in the workspace as sent, and the rendered pages are gone.
+    let saved = sb
+        .read_file("attachments/three.pdf", 1 << 20)
+        .await
+        .unwrap();
+    assert_eq!(saved.bytes, pdf);
+    let out = sb
+        .exec("ls -d /tmp/cedar-pages-* 2>/dev/null", 10 * SECOND, 1000)
+        .await
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
+
+    teardown(&f, id, &sb).await;
+}

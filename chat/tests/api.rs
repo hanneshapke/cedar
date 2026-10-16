@@ -70,8 +70,9 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
             return cedar_error(StatusCode::BAD_REQUEST, "bad_request", &format!("reasoning {level:?} is not offered by model {model:?}"));
         }
     }
-    if body["attachments"].as_array().is_some_and(|a| !a.is_empty()) && entry["multimodal"] != true {
-        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", &format!("model {model:?} does not accept images or PDFs"));
+    let images = body["attachments"].as_array().is_some_and(|a| a.iter().any(|f| f["media_type"] != "application/pdf"));
+    if images && entry["multimodal"] != true {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", &format!("model {model:?} does not accept images"));
     }
     s.bodies.lock().unwrap().push(body.clone());
     let parent = body["parent_id"].as_str().map(String::from);
@@ -439,18 +440,25 @@ async fn attachments_are_forwarded_to_a_model_that_takes_them() {
 }
 
 #[tokio::test]
-async fn attachments_are_refused_by_cedar_for_a_model_that_takes_none() {
+async fn images_are_refused_by_cedar_for_a_model_that_takes_none() {
     let h = Harness::new(&[]).await;
     let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
     let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
-    // model-b is registered without "accepts images and PDFs": cedar's verdict is relayed.
+    // model-b is registered without "accepts images": cedar's verdict is relayed.
     let (status, err) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "model": "model-b", "attachments": [png()] }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert!(err["error"]["message"].as_str().unwrap().contains("does not accept images or PDFs"), "{err}");
+    assert!(err["error"]["message"].as_str().unwrap().contains("does not accept images"), "{err}");
     assert!(h.cedar.bodies.lock().unwrap().is_empty(), "no run was started");
     // An empty list is the same as none.
     let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "look", "model": "model-b", "attachments": [] }))).await;
     assert_eq!(status, StatusCode::CREATED);
+    // A PDF goes to any model.
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let msgs = format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap());
+    let pdf = json!({ "name": "scan.pdf", "media_type": "application/pdf", "data": "JVBERi0xLjQ=" });
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "read", "model": "model-b", "attachments": [pdf] }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["attachments"][0]["name"], "scan.pdf");
 }
 
 #[tokio::test]

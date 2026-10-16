@@ -106,8 +106,8 @@ choice keeps working; an unknown name is a `400`. The run's `tools` are returned
 
 ### Attachments
 
-For a model registered as `multimodal` (see [Models](#models)), a run's prompt can come with
-images and PDFs; on any other model the run is refused with `400`:
+A run's prompt can come with PDFs, for any model, and with images, for a model registered as
+`multimodal` (see [Models](#models)); an image for any other model is refused with `400`:
 
 ```json
 {"prompt": "what does the invoice say?",
@@ -119,17 +119,29 @@ images and PDFs; on any other model the run is refused with `400`:
 files per run, 20 MiB each and 32 MiB together (decoded); the request body itself may be up to
 48 MiB. Anything else is a `400` that names the file.
 
-The files become part of the run's opening user message, as `image` and `document` content blocks
-(`{"type": "image", "source": {"type": "base64", "media_type", "data"}, "title": name}`), placed
-before the prompt's text. On the wire they are sent as chat-completions content parts: `image_url`
-with a `data:` URL for images, and `file` with `filename` and `file_data` for PDFs. cedar does not
-check that the model can read them: a server that can't answers with its own error, and the run
-fails with it. The files go to the model only, not into `/workspace`; use a tool call to save
-them there if the task needs it. Because they are ordinary message content, a
-[continuation](#continuing-a-run) keeps seeing them, and the stored copy grows with each
-continuation of a run that has them. `GET /v1/runs/{id}/messages` returns them verbatim;
-[compaction](#compacting-a-run-into-a-prompt) replaces each with a note like
-`[image omitted: photo.png]`.
+When the run starts, every file is saved in the workspace under `attachments/` (its name made
+safe for a path, with `-2`, `-3`, ... added to repeated names), so the agent can work on it with
+its tools: `read_document` for a PDF's text, `run_python`, and so on. What the model sees goes in
+the run's opening user message, before the prompt's text:
+
+- an image, as an `image` content block
+  (`{"type": "image", "source": {"type": "base64", "media_type", "data"}, "title": name}`);
+- for a `multimodal` model, the first pages of each PDF rendered as JPEG `image` blocks titled
+  `name p.N`, at most 1568 pixels on the longer side and 150 dpi. `PDF_PREVIEW_PAGES` (default
+  10) caps the pages across all of a run's PDFs; `0` shows none. The rendering happens in the
+  sandbox (`cedar-render-pages`, `sandbox/render_pages.py`, on pypdfium2), not in cedar;
+- a text block listing the saved files: where each one is, its page count, and which pages the
+  model was shown, pointing it to `read_document` for the rest. A PDF that can't be rendered (a
+  damaged or encrypted file, say) is listed with the reason, and the run goes on.
+
+PDFs are not sent to the model as files: OpenAI-compatible servers such as vLLM take images in a
+prompt but not PDFs. On the wire, images are chat-completions `image_url` content parts with a
+`data:` URL. cedar does not check that the model can read them: a server that can't answers with
+its own error, and the run fails with it. Because the blocks are ordinary message content, a
+[continuation](#continuing-a-run) keeps seeing them (and its workspace keeps the files, while it
+lasts), and the stored copy grows with each continuation of a run that has them.
+`GET /v1/runs/{id}/messages` returns them verbatim; [compaction](#compacting-a-run-into-a-prompt)
+replaces each image with a note like `[image omitted: photo.png]`.
 
 ### Compacting a run into a prompt
 
@@ -418,9 +430,9 @@ setting for the model server: a fresh cedar has no model, says so at startup and
 - a `base_url` (the OpenAI-compatible server, `/v1` added if the path is left off; a user and
   password in the URL are refused) and an optional `api_key`, kept encrypted (see below);
 - the `model` name the server registered, and a `label` for the pickers;
-- `multimodal`: whether the model takes images and PDFs with a prompt (see
-  [Attachments](#attachments)); a run with attachments on a model without it is refused with
-  `400`. Off unless set;
+- `multimodal`: whether the model takes images with a prompt (see [Attachments](#attachments));
+  it is also shown the first pages of attached PDFs. A run with images on a model without it is
+  refused with `400`; PDFs are fine for any model. Off unless set;
 - `reasoning_levels`: the values the model accepts as `reasoning_effort`, in the order to offer
   them, and an optional `default_reasoning` among them. A run's `reasoning` must be one of the
   levels; without one the default level is sent, and without that nothing is. DeepSeek V4 on vLLM

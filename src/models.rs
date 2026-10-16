@@ -94,7 +94,7 @@ pub struct NewRun {
     /// Continue this run: its conversation, and its workspace if that hasn't expired.
     pub parent_id: Option<Uuid>,
     pub tools: Option<Vec<String>>,
-    /// Files sent with the prompt, for a multimodal model.
+    /// Files sent with the prompt (images only for a multimodal model).
     pub attachments: Vec<Attachment>,
 }
 
@@ -114,8 +114,8 @@ pub struct ModelEntry {
     pub reasoning_levels: Vec<String>,
     /// The level a run gets when it names none; `None` sends no `reasoning_effort`.
     pub default_reasoning: Option<String>,
-    /// Accepts images and PDFs with a prompt (see [`Attachment`]); without it, a run with
-    /// attachments is refused.
+    /// Accepts images with a prompt, and is shown attached PDFs' first pages as images (see
+    /// [`crate::attachments`]). Without it, a run with images is refused; PDFs are fine.
     pub multimodal: bool,
     /// The entry a run gets when it names no model. Exactly one entry has it while any exist.
     pub is_default: bool,
@@ -151,8 +151,9 @@ pub const ALLOWED_ATTACHMENT_TYPES: [&str; 5] = [
     "application/pdf",
 ];
 
-/// A file sent with a run's prompt, base64 as received. It is shown to the model as part of the
-/// opening user message; cedar does not check that the model can read it.
+/// A file sent with a run's prompt, base64 as received. It is saved in the workspace when the run
+/// starts, and an image is shown to the model in the opening user message (see
+/// [`crate::attachments`]); cedar does not check that the model can read it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Attachment {

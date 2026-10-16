@@ -66,8 +66,8 @@ Both interfaces have all of these, except where noted:
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
   [the models](#models) cedar can use, its Brave Search key and its Google account
-- [Attachments](#attachments): with a model registered as accepting them, images and PDFs go with a message, by the
-  paperclip button, by dropping them on the message box, or by pasting an image
+- [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
+  accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, with every run's result kept
   under Settings
@@ -216,18 +216,22 @@ Until cedar has a model registered, the message box says so and sending is off.
 
 ### Attachments
 
-A model registered with **Accepts images and PDFs** (a checkbox on its entry under
-[Models](#models)) gets a paperclip button by the message box while the send button names it
-(the default model, until another is picked), and files can also be dropped on the box or
-pasted (a screenshot, say). PNG, JPEG, GIF, WebP and PDF files are taken, at most 10 per message, 20 MB each
-and 32 MB together; the chosen files are shown as chips, with a thumbnail for images, until the
-message is sent, and a message still needs some text. The browser sends them as base64 with the
-message, and cedar puts them in front of the prompt as [attachments](../README.md#attachments) of
-the run, so the agent sees them for the rest of the conversation. A sent message shows what went
-with it (name, type and size; the bytes stay in cedar's run). cedar passes the files to the model
-as they are and does not check that it can read them: with a text-only model the response fails
-with the model server's error, so leave the box off for one. A message with files to a model
-registered without the box is refused by cedar, and the error is relayed.
+A paperclip button by the message box attaches files to a message; they can also be dropped on
+the box or pasted (a screenshot, say). PDFs go to any model: cedar saves them in the run's
+workspace under `attachments/` and tells the agent, which reads them with its `read_document`
+tool. Images go only to a model registered with **Accepts images** (a checkbox on its entry under
+[Models](#models)), and only while the send button names it (the default model, until another is
+picked); such a model is also shown the first pages of each PDF as images. PNG, JPEG, GIF, WebP
+and PDF files are taken, at most 10 per message, 20 MB each and 32 MB together; the chosen files
+are shown as chips, with a thumbnail for images, until the message is sent, and a message still
+needs some text. Picking a model without the box drops chosen images and keeps PDFs. The browser
+sends the files as base64 with the message, and cedar puts them in front of the prompt as
+[attachments](../README.md#attachments) of the run, so the agent sees them for the rest of the
+conversation. A sent message shows what went with it (name, type and size; the bytes stay in
+cedar's run). cedar passes images to the model as they are and does not check that it can read
+them: with a text-only model the response fails with the model server's error, so leave the box
+off for one. A message with images to a model registered without the box is refused by cedar,
+and the error is relayed.
 
 ### Integrations
 
@@ -250,7 +254,7 @@ the default. **Add a model**, in the heading of the list, asks for an id (filled
 (`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), the model name the server
 registered, an API key if the server needs one, the reasoning levels it takes as `reasoning_effort`
 (comma-separated, like `none, low, high, max`), the level to use when a message picks none,
-whether it accepts images and PDFs (see [Attachments](#attachments)), and whether it is the
+whether it accepts images (see [Attachments](#attachments)), and whether it is the
 default for new chats. cedar checks the address by listing the server's models
 before saving; the names it listed are offered in the edit form, with a warning on the entry if
 the model name is not one of them. **Edit**, **Make default** and **Remove** change an entry; a removed model's
@@ -274,7 +278,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
-| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Files to a model registered without "accepts images and PDFs" are a 400 from cedar, relayed. Returns 409 if a response is still running |
+| `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
 | `PUT /api/conversations/{id}/tools` | `{"tools": [...]}` gives the conversation its own tools; `{"tools": null}` returns it to the defaults |
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |

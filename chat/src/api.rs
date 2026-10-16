@@ -378,7 +378,7 @@ struct MessageBody {
     model: Option<String>,
     /// One of the model's reasoning levels. Absent: the model's default.
     reasoning: Option<String>,
-    /// Images and PDFs for the model, when Settings says it accepts them.
+    /// PDFs for any model; images for one registered as accepting them.
     attachments: Option<Vec<Attachment>>,
 }
 

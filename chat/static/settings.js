@@ -458,7 +458,7 @@ const cedarSettings = (() => {
     main.append(el('small', '', `id: ${entry.id}`));
     if (entry.is_default) side.append(badge('Default', 'ok'));
     if (entry.api_key_set) side.append(badge('API key set'));
-    if (entry.multimodal) side.append(badge('Images & PDFs'));
+    if (entry.multimodal) side.append(badge('Images'));
     side.append(badge(levels.length ? `Reasoning: ${levels.join(', ')}${entry.default_reasoning ? ` (default ${entry.default_reasoning})` : ''}` : 'No reasoning levels'));
     // What the server listed when the entry was checked is offered in the edit form; the row only
     // says when the model name is not one of them.
@@ -554,8 +554,8 @@ const cedarSettings = (() => {
     multimodalBox.type = 'checkbox';
     multimodalBox.checked = Boolean(entry?.multimodal);
     const multimodalText = el('span');
-    multimodalText.append(el('strong', '', 'Accepts images and PDFs'));
-    multimodalText.append(el('small', '', 'Shows an attach button by the message box while this model is picked (files can also be dropped or pasted). cedar passes the files to the model as they are; a model that cannot read them fails the message.'));
+    multimodalText.append(el('strong', '', 'Accepts images'));
+    multimodalText.append(el('small', '', 'Lets images be attached to a message while this model is picked, and shows it the first pages of attached PDFs as images (PDFs can be attached for any model; the agent reads their text). cedar passes images to the model as they are; a model that cannot read them fails the message.'));
     multimodalLabel.append(multimodalBox, multimodalText);
     const makeDefault = el('label', 'cedar-set-check small plain');
     const defaultBox = el('input');

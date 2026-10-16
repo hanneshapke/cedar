@@ -800,9 +800,9 @@ async function loadModels() {
   updateChrome();
 }
 
-/** The paperclip is offered while the chosen model (or the default) takes images and PDFs. */
+/** The paperclip takes PDFs for any model, and images while the chosen one (or the default) does. */
 function syncAttach() {
-  cedarAttach.setEnabled(cedarModels.multimodal(els.model.value));
+  cedarAttach.setImages(cedarModels.multimodal(els.model.value));
 }
 
 /** Put the conversation's last model and reasoning level back into the pickers. */
