@@ -13,7 +13,7 @@
 //   defaultId() -> string              the default entry's id ('' when nothing is registered)
 //   levelsFor(id) -> string[]          the levels of that model ('' or unknown: the default model)
 //   multimodal(id) -> boolean          whether that model ('' or unknown: the default one) takes
-//                                      images and PDFs
+//                                      images
 //   fillSelect(select, {blank, selected}) -> boolean   the model picker; false when there is
 //                                      nothing to pick (fewer than two models and no `blank`)
 //   fillLevels(select, modelId, selected) -> boolean   the reasoning picker; false when hidden

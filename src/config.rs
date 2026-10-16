@@ -166,6 +166,9 @@ pub struct Config {
     pub run_timeout: Duration,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
+    /// How many pages of a run's attached PDFs, in all, a model that takes images sees as page
+    /// images. 0 shows none; the PDFs are still saved in the workspace.
+    pub pdf_preview_pages: usize,
     /// How long a workspace is kept after its last run ends, so a continuation can pick it up.
     pub workspace_ttl: Duration,
 
@@ -379,6 +382,7 @@ impl Config {
                 get("TOOL_OUTPUT_MAX_BYTES"),
                 32 * 1024,
             )?,
+            pdf_preview_pages: parse("PDF_PREVIEW_PAGES", get("PDF_PREVIEW_PAGES"), 10)?,
             workspace_ttl: Duration::from_secs(parse(
                 "WORKSPACE_TTL_SECS",
                 get("WORKSPACE_TTL_SECS"),

@@ -1,10 +1,12 @@
 //! The agent loop: call the model, run the tools it asks for, feed the results back, and stop
 //! when the model stops asking for tools.
 
+use crate::attachments;
 use crate::browser::BrowserSession;
 use crate::events::Emitter;
+use crate::integrations::Integrations;
 use crate::llm::{LlmRouter, MessageRequest};
-use crate::models::{event, Attachment, Run};
+use crate::models::{event, Run};
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::store::Store;
 use crate::tools::{ToolContext, ToolSet, ToolView};
@@ -28,6 +30,10 @@ pub struct AgentEnv {
     pub tool_output_max_bytes: usize,
     /// The sandbox's Docker network mode, for the note on what the sandbox can reach.
     pub sandbox_network: String,
+    /// The model registry, for whether a run's model takes images.
+    pub integrations: Arc<Integrations>,
+    /// How many pages of a run's attached PDFs, in all, a model that takes images is shown.
+    pub pdf_preview_pages: usize,
 }
 
 #[derive(Debug)]
@@ -60,7 +66,7 @@ pub async fn run_agent(
     cancel: &CancellationToken,
 ) -> Result<Completion, AgentError> {
     let ctx = ToolContext {
-        sandbox,
+        sandbox: sandbox.clone(),
         browser,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
@@ -86,10 +92,29 @@ pub async fn run_agent(
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
     let attachments = env.store.list_attachments(run.id).await?;
-    let opening = with_attachments(
-        opening,
-        attachments.iter().map(Attachment::to_block).collect(),
-    );
+    let blocks = if attachments.is_empty() {
+        vec![]
+    } else {
+        // Looked up now, so an admin's change since the run was created applies.
+        let images = env
+            .integrations
+            .models()
+            .iter()
+            .any(|m| m.id == run.model_id && m.multimodal);
+        let prepare = attachments::prepare(
+            sandbox.as_ref(),
+            &attachments,
+            images,
+            env.pdf_preview_pages,
+            env.tool_timeout,
+        );
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+            blocks = prepare => blocks?,
+        }
+    };
+    let opening = with_attachments(opening, blocks);
     push_message(env, run, &mut messages, "user", opening).await?;
 
     for turn in 1..=run.max_turns {
@@ -215,8 +240,9 @@ pub fn opening_message(history: &[Value], prompt: &str, workspace_lost: bool) ->
     Value::Array(blocks)
 }
 
-/// The opening message with the run's attachments (image and document blocks) placed before its
-/// text: any tool results first, then the files, then the prompt. Without blocks it is unchanged.
+/// The opening message with the run's attachments (image blocks and the note on the saved files,
+/// see [`attachments::prepare`]) placed before its text: any tool results first, then the files,
+/// then the prompt. Without blocks it is unchanged.
 pub fn with_attachments(opening: Value, blocks: Vec<Value>) -> Value {
     if blocks.is_empty() {
         return opening;

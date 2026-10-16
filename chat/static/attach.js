@@ -1,8 +1,9 @@
 'use strict';
 
-// Attaching images and PDFs to a message, shared by both UIs (/v1 and /v2). Shown only while
-// the model the picker has chosen is registered as accepting them (see models.js; the app calls
-// setEnabled as the picker changes). Three ways in:
+// Attaching images and PDFs to a message, shared by both UIs (/v1 and /v2). PDFs go with any
+// model (cedar saves them in the run's workspace for the agent to read); images only while the
+// model the picker has chosen is registered as accepting them (see models.js; the app calls
+// setImages as the picker changes, which also shows the button). Three ways in:
 // a paperclip button by the model picker, dropping files on the message box, and pasting an
 // image. Files are read in the browser as base64 and go with the message as
 // `attachments: [{name, media_type, data}]`; the limits here mirror the server's.
@@ -24,8 +25,11 @@ const cedarAttach = (() => {
   const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
   const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.1l-8.8 8.8a5.5 5.5 0 0 1-7.8-7.8l8.8-8.8a3.7 3.7 0 0 1 5.2 5.2l-8.8 8.8a1.8 1.8 0 0 1-2.6-2.6l8.1-8.1"/></svg>';
 
+  const PDF = 'application/pdf';
+
   let deps = null;
-  let enabled = false;
+  let enabled = false;  // set once the app knows the model
+  let images = false;   // the chosen model takes images too
   let files = [];       // [{name, media_type, size, data, url}]
   let button = null;
   let picker = null;
@@ -67,6 +71,7 @@ const cedarAttach = (() => {
     for (const file of Array.from(list)) {
       const media_type = kindOf(file);
       if (!media_type) { deps.toast(`${file.name}: only PNG, JPEG, GIF, WebP and PDF files can be attached`); continue; }
+      if (media_type !== PDF && !images) { deps.toast(`${file.name}: this model takes PDFs but not images`); continue; }
       if (!file.size) { deps.toast(`${file.name} is empty`); continue; }
       if (file.size > MAX_BYTES) { deps.toast(`${file.name} is larger than ${fmtSize(MAX_BYTES)}`); continue; }
       if (files.length >= MAX_FILES) { deps.toast(`At most ${MAX_FILES} files per message`); break; }
@@ -78,7 +83,7 @@ const cedarAttach = (() => {
         deps.toast(e.message);
         continue;
       }
-      if (!enabled) return; // turned off while reading
+      if (!enabled || (media_type !== PDF && !images)) return; // the model changed while reading
       const url = media_type.startsWith('image/') ? URL.createObjectURL(file) : null;
       files.push({ name: file.name, media_type, size: file.size, data, url });
     }
@@ -126,16 +131,31 @@ const cedarAttach = (() => {
     row.hidden = files.length === 0;
   }
 
-  function setEnabled(on) {
-    enabled = Boolean(on);
-    if (button) button.hidden = !enabled;
-    if (!enabled) clear();
+  /** Offer the button; images too if `on`. Chosen images go when the model can't take them. */
+  function setImages(on) {
+    enabled = true;
+    images = Boolean(on);
+    syncButton();
+    if (!images && files.some((f) => f.media_type !== PDF)) {
+      for (const f of files) if (f.url) URL.revokeObjectURL(f.url);
+      files = files.filter((f) => f.media_type === PDF);
+      render();
+    }
   }
 
   function clear() {
     for (const f of files) if (f.url) URL.revokeObjectURL(f.url);
     files = [];
     render();
+  }
+
+  function syncButton() {
+    if (!button) return;
+    const what = images ? 'Attach images or PDFs' : 'Attach PDFs';
+    button.hidden = !enabled;
+    button.title = what;
+    button.setAttribute('aria-label', what);
+    picker.accept = images ? ACCEPT : PDF;
   }
 
   /** What goes with the message: `[{name, media_type, data}]`. */
@@ -152,16 +172,13 @@ const cedarAttach = (() => {
     picker = el('input');
     picker.type = 'file';
     picker.multiple = true;
-    picker.accept = ACCEPT;
     picker.hidden = true;
     picker.addEventListener('change', () => { add(picker.files); picker.value = ''; });
 
     button = el('button', 'copy-btn cedar-attach-btn');
     button.type = 'button';
     button.innerHTML = CLIP;
-    button.setAttribute('aria-label', 'Attach images or PDFs');
-    button.title = 'Attach images or PDFs';
-    button.hidden = true;
+    syncButton();
     button.addEventListener('click', () => picker.click());
     const tools = anchor.nextElementSibling;
     (tools?.classList.contains('cedar-set-chip') ? tools : anchor).after(button, picker);
@@ -207,5 +224,5 @@ const cedarAttach = (() => {
     else bind();
   }
 
-  return { init, setEnabled, enabled: () => enabled, count: () => files.length, payload, clear, chips, fmtSize };
+  return { init, setImages, enabled: () => enabled, count: () => files.length, payload, clear, chips, fmtSize };
 })();
