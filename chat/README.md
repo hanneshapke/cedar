@@ -16,7 +16,7 @@ The settings button (sliders icon, top right) switches between:
 | | Style | Layout |
 | --- | --- | --- |
 | `/v1/` | **Claude style** | Conversations in a sidebar, one thread with tool calls inline |
-| `/v2/` | **Cedar style** | "The desk": the document the agent writes is the page, with web results and command output as clippings beside it and the conversation in a margin |
+| `/v2/` | **Cedar style** | Say on the left, show on the right: the conversation (prompts, Cedar's prose, its questions, and a step row per tool call) in a narrow column, and everything a tool produced as full-width cards on a "stage" beside it, grouped by turn |
 
 Your choice is saved in this browser (`localStorage`, key `cedar-chat-ui`) and decides where `/`
 goes. Without a saved choice, `/` opens Cedar style. Switching keeps the open conversation and
@@ -27,8 +27,8 @@ change the saved choice.
 
 Both interfaces have all of these, except where noted:
 
-- A conversation list (a sidebar in Claude style, an "Earlier" list in Cedar style) with new chat,
-  rename (click the title), and delete. Cedar style deletes only the open conversation
+- A conversation list (a sidebar in Claude style, a drawer behind the menu button in Cedar style)
+  with new chat, rename (click the title), and delete
 - Replies stream in as the agent works. Text, tool calls (`bash`, `run_python`, the file,
   document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
@@ -40,13 +40,19 @@ Both interfaces have all of these, except where noted:
   from `generate_chart`, a picture `write_file` or `download_file` saved, or one a `bash` command
   or `run_python` script created (from the files the call lists). A file that was rewritten
   several times is shown as it is when the response ends. Claude style puts them under the reply,
-  Cedar style in the margin below its last note. An image the agent refers to in its text as
+  Cedar style in an images card on the stage after the response's other cards. An image the agent refers to in its text as
   `![caption](chart.png)` is shown in place of the reference, and not again below. PNG, JPEG, GIF,
   WebP, BMP, AVIF, and SVG files up to 16 MB are shown; at most 12 per response, loaded as they
   scroll into view. Each has View and Download buttons under it, and a click on the picture opens
   it full size
 - In Cedar style, a Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
-  as the page, with Copy and Download
+  rendered as a document card on the stage, with Copy and Download, and the stage rests on it when the
+  response ends. Searches (each result as a link with its snippet), commands and scripts with their
+  output, and the pages and files the agent read are cards folded to one line that open on a click;
+  a failed call opens on its own. Each tool call is also a step row in the conversation, and clicking
+  it jumps to the card. The split between the two columns can be dragged (double-click resets it); on a
+  narrow screen they become **Conversation** and **Results** tabs, with a count of results that landed
+  while the conversation was showing
 - A View button opens a workspace Markdown file (`.md`, `.markdown`) as rendered Markdown, a PDF in
   the browser's own PDF viewer, and an image at full size, in a dialog. It is in the files panel, on
   finished file-tool calls, and on the page of a generated PDF. Markdown files over 2 MB and images
@@ -56,7 +62,7 @@ Both interfaces have all of these, except where noted:
 - A `show_map` tool call (when cedar offers the tool) is drawn as a map: a numbered pin for each
   place on an OpenStreetMap map you can pan and zoom (click it first, so the wheel keeps scrolling
   the conversation), a list of the places with their coordinates under it, and a note for any names
-  cedar could not find. Cedar style puts it on the desk as a clipping, Claude style under the tool
+  cedar could not find. Cedar style puts it on the stage as a card, Claude style under the tool
   call. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
   the tool call's raw output is shown
 - A `show_recipe` tool call (when cedar offers the tool) is drawn as a recipe card: the photo of the
@@ -64,8 +70,8 @@ Both interfaces have all of these, except where noted:
   is none or it fails to load), the times and servings, the ingredients as a checklist, and the steps
   as a timeline. The steps appear one after another the first time the card is on screen. Tick a
   step's number to mark it done, or use the button under the timeline to finish the current step
-  and move on: the line fills in and the next step is highlighted. Cedar style puts it on the desk
-  as a clipping, Claude style under the tool call
+  and move on: the line fills in and the next step is highlighted. Cedar style puts it on the stage
+  as a card, Claude style under the tool call
 - A `plan_trip` tool call is drawn as a trip card: the recommended way to go and why, a map of the
   chosen option's route between an A and a B pin (each transit line in its own color, walks dotted),
   a row per option (transit with its line badges, times and transfers; drive; rideshare with its
@@ -80,7 +86,7 @@ Both interfaces have all of these, except where noted:
   change the view, and key numbers (52-week and day ranges, moving averages, RSI, volatility,
   drawdown, beta). Pick a tile to see another symbol. Below are the returns of every symbol side by
   side and the news, which can be filtered by symbol; headlines open in a new tab. Cedar style puts
-  it on the desk as a clipping, Claude style under the tool call (`stock-view.js` and
+  it on the stage as a card, Claude style under the tool call (`stock-view.js` and
   `stock-view.css`; see [Stock news and privacy](#stock-news-and-privacy))
 - An `ask_user` tool call, when the agent needs a clarification before it goes on, is drawn as a
   form: each question with its options as radio buttons (pick one) or checkboxes (pick any), and
@@ -88,7 +94,7 @@ Both interfaces have all of these, except where noted:
   answer sends what you picked and wrote as your next message, with each question repeated so the
   agent knows which answer is which; you can also just reply in the message box. Once a later
   message is in, the form is closed. Claude style puts it under the tool call, Cedar style in the
-  margin (`clarify-view.js` and `clarify-view.css`). A [scheduled agent](#scheduled-agents)'s run is
+  conversation column (`clarify-view.js` and `clarify-view.css`). A [scheduled agent](#scheduled-agents)'s run is
   told nobody is there to answer, so it assumes instead of asking
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
