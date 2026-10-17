@@ -248,12 +248,11 @@ A run the user stopped is not announced. Responses from before this feature coun
 
 ### Out of the app
 
-Settings → **Notifications** picks how to be told when you are not looking at the page at all,
-and what for. The server sends it a few seconds after cedar says the run ended, unless the
-response was looked at in the meantime (a page that watched it end marks it seen first). One
-method is in use at a time:
+Settings → **Notifications** sets up the ways to be told when you are not looking at the page at
+all. Set up as many as you like; each has its credentials, a **Set up** badge once it can send, and
+**Save and send a test**. The server sends a message a few seconds after cedar says the run ended,
+unless the response was looked at in the meantime (a page that watched it end marks it seen first).
 
-- **Only in the app** (the default): the inbox, the marks and the title count, nothing else.
 - **Browser push**: a notification from this browser even when the tab is closed, through a
   service worker (`sw.js`) and the browser's push service, signed with VAPID keys the server makes
   on first use. **Turn on in this browser** asks the browser for permission and subscribes it; every
@@ -268,11 +267,19 @@ method is in use at a time:
   TLS, STARTTLS or plain, a user name and password if the server wants them, and the sender and
   recipient addresses. A Gmail account takes an app password with STARTTLS on `smtp.gmail.com`.
 
-**Send it for** chooses between what needs you (a failure, a question the agent asked, a
-scheduled run) and every response that ends while you are not watching it. Each method has
-**Save and send a test**; the last delivery, test or real, is shown with what the service
-answered. The credentials stay in this server's database (`CHAT_DATABASE_URL`), as they are, and
-are never sent back to the page; keep that file as private as the cedar key.
+Which method is used, and for what:
+
+- **Default method** (only in the app, or one of the set-up methods) covers responses in
+  conversations, and **Send it for** chooses between what needs you (a failure, a question the
+  agent asked, a scheduled run) and every response that ends while you are not watching it.
+- Each [scheduled agent](#scheduled-agents) has a **Notify me by** picker in its dialog: the
+  default, only in the app, or any set-up method, for that agent alone. An agent with a method of
+  its own is announced on every finished or failed run, whatever **Send it for** says. The choice is
+  shown with the agent in the list.
+
+The last delivery, test or real, is shown with what the service answered. The credentials stay in
+this server's database (`CHAT_DATABASE_URL`), as they are, and are never sent back to the page;
+keep that file as private as the cedar key.
 
 ## Scheduled agents
 
@@ -406,8 +413,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
-| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{method, scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
-| `PUT /api/notifications` | Change any of `{"method": "none"\|"browser"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the chosen method can't send (missing credentials, no subscribed browser) |
+| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
+| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"browser"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser) |
 | `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
 | `POST /api/notifications/push/subscriptions` | A browser's `PushSubscription` (as `JSON.stringify` gives it). Returns the settings plus `subscription_id` |
 | `DELETE /api/notifications/push/subscriptions` | `{"endpoint"}`: the browser turned push off |
@@ -415,7 +422,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |
-| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults |
+| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`browser`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
 | `GET /api/schedules/{id}` | `{schedule, runs}`, newest run first, each with its `turn` (refreshed while unfinished) or an `error` if the run could not be started |
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |

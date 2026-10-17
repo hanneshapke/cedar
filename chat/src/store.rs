@@ -91,6 +91,9 @@ pub struct Schedule {
     pub source_conversation_id: Option<Uuid>,
     /// The tools the schedule's runs use; `None` means the defaults at the time of the run.
     pub tools: Option<Vec<String>>,
+    /// How a finished run is announced out of the app: a method from `channels` (`pushover`,
+    /// `browser`, `email`), `none`, or `None` for the default method in Settings.
+    pub notify: Option<String>,
     pub frequency: String,
     pub weekday: Option<u8>,
     pub time_of_day: String,
@@ -109,6 +112,7 @@ pub struct NewSchedule<'a> {
     pub reasoning: Option<&'a str>,
     pub source_conversation_id: Option<Uuid>,
     pub tools: Option<&'a [String]>,
+    pub notify: Option<&'a str>,
     pub frequency: &'a str,
     pub weekday: Option<u8>,
     pub time_of_day: &'a str,
@@ -243,6 +247,7 @@ fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
         reasoning: r.try_get("reasoning")?,
         source_conversation_id: opt_uuid(r, "source_conversation_id")?,
         tools: opt_json(r, "tools")?,
+        notify: r.try_get("notify")?,
         frequency: r.try_get("frequency")?,
         weekday: r.try_get::<Option<i64>, _>("weekday")?.map(|d| d as u8),
         time_of_day: r.try_get("time_of_day")?,
@@ -631,9 +636,9 @@ impl Store {
         let id = Uuid::now_v7();
         let now = now_ms();
         sqlx::query(
-            "INSERT INTO schedules (id, title, prompt, model, reasoning, source_conversation_id, tools, frequency, \
+            "INSERT INTO schedules (id, title, prompt, model, reasoning, source_conversation_id, tools, notify, frequency, \
              weekday, time_of_day, timezone, enabled, next_run_at, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(new.title)
@@ -642,6 +647,7 @@ impl Store {
         .bind(new.reasoning)
         .bind(new.source_conversation_id.map(|c| c.to_string()))
         .bind(to_json(new.tools)?)
+        .bind(new.notify)
         .bind(new.frequency)
         .bind(new.weekday.map(i64::from))
         .bind(new.time_of_day)
@@ -672,7 +678,7 @@ impl Store {
     /// Write back a schedule's editable fields (everything but its id, origin and timestamps).
     pub async fn update_schedule(&self, s: &Schedule) -> Result<bool> {
         let res = sqlx::query(
-            "UPDATE schedules SET title = ?, prompt = ?, model = ?, reasoning = ?, tools = ?, frequency = ?, \
+            "UPDATE schedules SET title = ?, prompt = ?, model = ?, reasoning = ?, tools = ?, notify = ?, frequency = ?, \
              weekday = ?, time_of_day = ?, timezone = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
         )
         .bind(&s.title)
@@ -680,6 +686,7 @@ impl Store {
         .bind(&s.model)
         .bind(&s.reasoning)
         .bind(to_json(s.tools.as_ref())?)
+        .bind(&s.notify)
         .bind(&s.frequency)
         .bind(s.weekday.map(i64::from))
         .bind(&s.time_of_day)
@@ -836,6 +843,7 @@ mod tests {
                 reasoning: None,
                 source_conversation_id: None,
                 tools: Some(&["weather".to_string()]),
+                notify: Some("email"),
                 frequency: "daily",
                 weekday: None,
                 time_of_day: "09:00",
@@ -846,6 +854,11 @@ mod tests {
             .unwrap();
         assert!(s.enabled && s.last_run_at.is_none());
         assert_eq!(s.tools, Some(vec!["weather".to_string()]));
+        assert_eq!(s.notify.as_deref(), Some("email"));
+        let mut changed = s.clone();
+        changed.notify = None;
+        store.update_schedule(&changed).await.unwrap();
+        assert_eq!(store.get_schedule(s.id).await.unwrap().unwrap().notify, None);
         let plain = store.create_conversation(Some("Mine")).await.unwrap();
         let c = store.create_scheduled_conversation(s.id, "Daily digest · Mon").await.unwrap();
         assert_eq!(c.schedule_id, Some(s.id));
@@ -932,7 +945,7 @@ mod tests {
         use crate::channels::{Method, NotificationSettings};
         let store = Store::connect_memory().await.unwrap();
         assert_eq!(store.notification_settings().await.unwrap(), NotificationSettings::default());
-        let settings = NotificationSettings { method: Method::Pushover, ..Default::default() };
+        let settings = NotificationSettings { default_method: Method::Pushover, ..Default::default() };
         store.set_notification_settings(&settings).await.unwrap();
         store.set_notification_settings(&settings).await.unwrap();
         assert_eq!(store.notification_settings().await.unwrap(), settings);

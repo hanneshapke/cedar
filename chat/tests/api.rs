@@ -1638,7 +1638,8 @@ async fn notification_settings_are_saved_without_leaking_secrets() {
     let h = Harness::new(&[]).await;
     let (status, got) = h.json(Method::GET, "/api/notifications", None).await;
     assert_eq!(status, StatusCode::OK, "{got}");
-    assert_eq!((got["method"].as_str(), got["scope"].as_str()), (Some("none"), Some("attention")));
+    assert_eq!((got["default_method"].as_str(), got["scope"].as_str()), (Some("none"), Some("attention")));
+    assert_eq!(got["configured"], json!([]));
     assert_eq!(got["pushover"]["configured"], false);
     let key = got["browser"]["public_key"].as_str().expect("the push keys are made on first read");
     assert!(key.len() > 80 && !key.contains('='), "an uncompressed P-256 key, base64url: {key}");
@@ -1646,27 +1647,28 @@ async fn notification_settings_are_saved_without_leaking_secrets() {
     assert_eq!(got["last_delivery"], Value::Null);
 
     // A method that can't send is refused.
-    let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "pushover" }))).await;
+    let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(err["error"]["message"].as_str().unwrap().contains("Pushover needs"), "{err}");
-    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "email" }))).await;
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "email" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "browser" }))).await;
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "browser" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "no browser is subscribed");
-    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "pigeon" }))).await;
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pigeon" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "email": { "from": "not an address" } }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let body = json!({
-        "method": "pushover", "scope": "all",
+        "default_method": "pushover", "scope": "all",
         "pushover": { "token": "app-token-1", "user": "user-key-wxyz" },
         "email": { "host": "smtp.example", "security": "starttls", "username": "me", "password": "hunter2", "from": "Cedar <cedar@example.com>", "to": "me@example.com" },
         "contact": "ops@example.com",
     });
     let (status, got) = h.json(Method::PUT, "/api/notifications", Some(body)).await;
     assert_eq!(status, StatusCode::OK, "{got}");
-    assert_eq!((got["method"].as_str(), got["scope"].as_str()), (Some("pushover"), Some("all")));
+    assert_eq!((got["default_method"].as_str(), got["scope"].as_str()), (Some("pushover"), Some("all")));
+    assert_eq!(got["configured"], json!(["pushover", "email"]), "both are set up, whichever is the default");
     assert_eq!(got["pushover"], json!({ "configured": true, "token_set": true, "user_set": true, "user_last4": "wxyz" }));
     assert_eq!(got["email"]["password_set"], true);
     assert_eq!(got["email"]["host"], "smtp.example");
@@ -1678,7 +1680,7 @@ async fn notification_settings_are_saved_without_leaking_secrets() {
     // Leaving a secret out keeps it; an empty one clears it.
     let (_, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "pushover": { "token": "app-token-2" } }))).await;
     assert_eq!(got["pushover"]["user_last4"], "wxyz");
-    let (_, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "none", "pushover": { "token": "", "user": "" } }))).await;
+    let (_, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "none", "pushover": { "token": "", "user": "" } }))).await;
     assert_eq!(got["pushover"]["configured"], false);
     let (status, _) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "none" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1687,7 +1689,7 @@ async fn notification_settings_are_saved_without_leaking_secrets() {
 #[tokio::test]
 async fn pushover_messages_go_out_and_refusals_are_reported() {
     let h = Harness::new(&[]).await;
-    let (_, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "pushover", "pushover": { "token": "app-token", "user": "user-key" } }))).await;
+    let (_, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "pushover": { "token": "app-token", "user": "user-key" } }))).await;
     let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "pushover" }))).await;
     assert_eq!(status, StatusCode::OK, "{got}");
     assert_eq!(got["ok"], true);
@@ -1714,7 +1716,7 @@ async fn email_goes_out_over_smtp() {
     let (port, mails) = fake_smtp().await;
     let h = Harness::new(&[]).await;
     let body = json!({
-        "method": "email",
+        "default_method": "email",
         "email": { "host": "127.0.0.1", "port": port, "security": "none", "username": "me", "password": "pw", "from": "Cedar <cedar@example.com>", "to": "Me <me@example.com>" },
     });
     let (status, got) = h.json(Method::PUT, "/api/notifications", Some(body)).await;
@@ -1741,7 +1743,7 @@ async fn finished_runs_are_sent_by_the_chosen_method_unless_looked_at() {
     let plain = ended_turn(&h, "Plain", "completed", Some("end_turn")).await;
     assert_eq!(cedar_chat::channels::dispatch(&h.state, plain).await.unwrap(), None);
 
-    h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "pushover", "pushover": { "token": "t", "user": "u" } }))).await;
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "pushover": { "token": "t", "user": "u" } }))).await;
     // The default scope: a plain completion is not worth a push, a failure and a question are.
     assert_eq!(cedar_chat::channels::dispatch(&h.state, plain).await.unwrap(), None);
     let failed = ended_turn(&h, "Broken", "failed", None).await;
@@ -1787,6 +1789,70 @@ async fn finished_runs_are_sent_by_the_chosen_method_unless_looked_at() {
     assert_eq!(cedar_chat::channels::dispatch(&h.state, stopped).await.unwrap(), None);
 }
 
+#[tokio::test]
+async fn a_scheduled_agent_picks_its_own_method() {
+    let (port, mails) = fake_smtp().await;
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+
+    // Only a method that is set up can be picked; the default needs nothing.
+    let mut body = schedule_body(&cid);
+    body["notify"] = json!("email");
+    let (status, err) = h.json(Method::POST, "/api/schedules", Some(body.clone())).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("SMTP"), "{err}");
+    body["notify"] = json!("pigeon");
+    assert_eq!(h.json(Method::POST, "/api/schedules", Some(body.clone())).await.0, StatusCode::BAD_REQUEST);
+    body["notify"] = json!(null);
+    let (status, s) = h.json(Method::POST, "/api/schedules", Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED, "{s}");
+    assert_eq!(s["notify"], Value::Null);
+    let sid = s["id"].as_str().unwrap().to_string();
+
+    // Email set up, but Pushover is the default: the schedule picks email for itself.
+    let settings = json!({
+        "default_method": "pushover", "pushover": { "token": "t", "user": "u" },
+        "email": { "host": "127.0.0.1", "port": port, "security": "none", "from": "cedar@example.com", "to": "me@example.com" },
+    });
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(settings)).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["configured"], json!(["pushover", "email"]));
+    let (status, s) = h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "notify": "email" }))).await;
+    assert_eq!(status, StatusCode::OK, "{s}");
+    assert_eq!(s["notify"], "email");
+    let (_, list) = h.json(Method::GET, "/api/schedules", None).await;
+    assert_eq!(list["schedules"][0]["notify"], "email");
+
+    // Its run finishes: the mail goes, Pushover stays quiet.
+    async fn fire(h: &Harness, sid: &str) -> Uuid {
+        let (_, s) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+        let due = ts(&s["schedule"]["next_run_at"]);
+        schedule::tick(&h.state, due + Duration::hours(1)).await.unwrap();
+        let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+        let run = detail["runs"][0].clone();
+        h.finish_with(run["turn"]["run_id"].as_str().unwrap(), "completed", Some("Top story"), Some("end_turn"));
+        h.sync().await;
+        Uuid::parse_str(run["turn"]["id"].as_str().unwrap()).unwrap()
+    }
+    let turn = fire(&h, &sid).await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, turn).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    assert_eq!(mails.lock().unwrap().len(), 1);
+    assert!(mails.lock().unwrap()[0].contains("Subject: Morning digest"), "{}", mails.lock().unwrap()[0]);
+    assert!(h.cedar.pushover.lock().unwrap().is_empty());
+
+    // "Not at all" keeps it quiet even though the default would send; back to the default and it goes by Pushover.
+    h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "notify": "none" }))).await;
+    let turn = fire(&h, &sid).await;
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, turn).await.unwrap(), None);
+    let (_, s) = h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "notify": null }))).await;
+    assert_eq!(s["notify"], Value::Null);
+    let turn = fire(&h, &sid).await;
+    assert!(cedar_chat::channels::dispatch(&h.state, turn).await.unwrap().is_some());
+    assert_eq!(h.cedar.pushover.lock().unwrap().len(), 1);
+    assert_eq!(mails.lock().unwrap().len(), 1);
+}
+
 /// The receiver keys of RFC 8291's example: a valid P-256 point and a 16-byte secret.
 const P256DH: &str = "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
 const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
@@ -1826,7 +1892,7 @@ async fn browser_push_reaches_every_subscribed_browser_and_drops_dead_ones() {
     let (status, _) = h.json(Method::POST, "/api/notifications/push/subscriptions", Some(json!({ "endpoint": "ftp://x", "keys": { "p256dh": P256DH, "auth": AUTH } }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "browser", "contact": "ops@example.com" }))).await;
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "browser", "contact": "ops@example.com" }))).await;
     assert_eq!(status, StatusCode::OK, "{got}");
     let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "browser" }))).await;
     assert_eq!(status, StatusCode::OK, "{got}");
@@ -1879,7 +1945,7 @@ async fn browser_push_reaches_every_subscribed_browser_and_drops_dead_ones() {
     let (status, _) = h.json(Method::DELETE, &format!("/api/notifications/push/subscriptions/{id}"), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     // With no browser left the method can't stay "browser".
-    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "method": "browser" }))).await;
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "browser" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 

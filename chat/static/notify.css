@@ -25,14 +25,17 @@
 /* -- the Notifications section of Settings ---------------------------------------------------- */
 
 .cedar-notify-methods { display: flex; flex-direction: column; gap: 8px; }
-.cedar-notify-block { display: flex; flex-direction: column; gap: 8px; margin: -2px 0 6px 26px; }
-.cedar-notify-block[hidden] { display: none; }
+.cedar-notify-card { padding: 10px 12px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; background: rgba(128, 128, 128, .04); }
+.cedar-notify-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 13.5px; }
+.cedar-notify-card-head > span:first-child { display: flex; flex-direction: column; min-width: 0; }
+.cedar-notify-card-head small { color: var(--muted); font-size: 12px; }
+.cedar-notify-block { display: flex; flex-direction: column; gap: 8px; }
+.cedar-notify-choices { margin-top: 12px; }
 .cedar-notify-block .cedar-set-fields { margin-top: 2px; }
 .cedar-notify-block .cedar-set-note { margin: 0; }
 .cedar-notify-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .cedar-notify-subs { display: flex; flex-direction: column; gap: 2px; }
 .cedar-notify-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: 6px; background: rgba(128, 128, 128, .08); font-size: 12.5px; color: var(--muted); }
-.cedar-notify-scope { margin-top: 12px; }
 .cedar-notify-last { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
 .cedar-notify-last.err { color: #b63d2b; }
 @media (prefers-color-scheme: dark) { .cedar-notify-last.err { color: #f09080; } }

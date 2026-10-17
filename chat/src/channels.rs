@@ -1,13 +1,14 @@
 //! Telling the user out of the app when a response finishes: a phone push through Pushover, a
 //! browser push through Web Push (a service worker shows it, tab open or not), or an email over
-//! SMTP. The user picks one method and gives its credentials in Settings → Notifications; the
+//! SMTP. Each method is set up with its credentials in Settings → Notifications, as many as
+//! wanted; a default method covers conversations, and a scheduled agent can pick its own. The
 //! settings live in this service's database (see [`NotificationSettings`]) and the secrets are
 //! never sent back to the page.
 //!
 //! What gets sent is decided by [`dispatch`], which `notify` calls a few seconds after cedar
-//! says a run ended: nothing if the response was looked at meanwhile, or if the method is "none",
-//! or if the scope leaves it out. Every delivery, test or not, is recorded as `last_delivery` so
-//! Settings can show what happened last.
+//! says a run ended: nothing if the response was looked at meanwhile, if the method that applies
+//! is "none", or (for the default method) if the scope leaves it out. Every delivery, test or
+//! not, is recorded as `last_delivery` so Settings can show what happened last.
 
 use crate::api::AppState;
 use crate::error::AppError;
@@ -169,7 +170,9 @@ pub struct LastDelivery {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct NotificationSettings {
-    pub method: Method,
+    /// For responses in conversations, and for scheduled agents that pick none of their own.
+    #[serde(alias = "method")]
+    pub default_method: Method,
     pub scope: Scope,
     pub pushover: PushoverSettings,
     pub email: EmailSettings,
@@ -178,10 +181,19 @@ pub struct NotificationSettings {
 }
 
 impl NotificationSettings {
+    /// The methods that can send right now, in the order the pickers show them.
+    pub fn configured(&self, subscriptions: usize) -> Vec<Method> {
+        [Method::Browser, Method::Pushover, Method::Email]
+            .into_iter()
+            .filter(|m| self.check(*m, subscriptions).is_ok())
+            .collect()
+    }
+
     /// What the page sees: everything but the secrets, which are only reported as set.
     pub fn status(&self, subscriptions: &[PushSubscription]) -> Value {
         json!({
-            "method": self.method,
+            "default_method": self.default_method,
+            "configured": self.configured(subscriptions.len()),
             "scope": self.scope,
             "pushover": {
                 "configured": self.pushover.configured(),
@@ -503,28 +515,37 @@ pub fn wanted(scope: Scope, turn: &crate::store::Turn, scheduled: bool) -> bool 
 }
 
 /// Send the out-of-app message for a turn that ended, if the settings call for one and nobody
-/// has looked at it since. Returns what was done, for logs and tests.
+/// has looked at it since: by the schedule's own method for a scheduled run that has one (then
+/// every finished or failed run goes), else by the default method within the scope. Returns
+/// what was done, for logs and tests.
 pub async fn dispatch(state: &AppState, turn_id: Uuid) -> Result<Option<Result<String, String>>, AppError> {
     let Some(turn) = state.store.get_turn(turn_id).await? else { return Ok(None) };
     if turn.seen {
         return Ok(None);
     }
     let settings = state.store.notification_settings().await?;
-    if settings.method == Method::None {
+    let conversation = state.store.get_conversation(turn.conversation_id).await?;
+    let schedule = match conversation.as_ref().and_then(|c| c.schedule_id) {
+        Some(id) => state.store.get_schedule(id).await?,
+        None => None,
+    };
+    let own = schedule.as_ref().and_then(|s| s.notify.as_deref()).and_then(Method::parse);
+    let method = own.unwrap_or(settings.default_method);
+    if method == Method::None {
         return Ok(None);
     }
-    let conversation = state.store.get_conversation(turn.conversation_id).await?;
-    let scheduled = conversation.as_ref().is_some_and(|c| c.schedule_id.is_some());
-    if !wanted(settings.scope, &turn, scheduled) {
+    let scheduled = schedule.is_some();
+    let scope = if own.is_some() { Scope::All } else { settings.scope };
+    if !wanted(scope, &turn, scheduled) {
         return Ok(None);
     }
     let message = message_for(state, &turn, conversation.as_ref().and_then(|c| c.title.as_deref()), scheduled);
-    let outcome = send(state, &settings, settings.method, &message).await;
+    let outcome = send(state, &settings, method, &message).await;
     match &outcome {
-        Ok(detail) => tracing::info!(turn_id = %turn.id, method = settings.method.as_str(), detail, "notification sent"),
-        Err(error) => tracing::warn!(turn_id = %turn.id, method = settings.method.as_str(), error, "notification failed"),
+        Ok(detail) => tracing::info!(turn_id = %turn.id, method = method.as_str(), detail, "notification sent"),
+        Err(error) => tracing::warn!(turn_id = %turn.id, method = method.as_str(), error, "notification failed"),
     }
-    record(&state.store, settings.method, false, &outcome).await?;
+    record(&state.store, method, false, &outcome).await?;
     Ok(Some(outcome))
 }
 
@@ -541,15 +562,18 @@ mod tests {
         assert_eq!(Scope::parse("all"), Some(Scope::All));
         assert_eq!(Security::parse("starttls").map(Security::default_port), Some(587));
         let json = serde_json::to_string(&NotificationSettings::default()).unwrap();
-        assert!(json.contains("\"method\":\"none\""));
+        assert!(json.contains("\"default_method\":\"none\""));
         let back: NotificationSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(back, NotificationSettings::default());
+        // Settings saved when the field was still `method` still read.
+        let old: NotificationSettings = serde_json::from_str("{\"method\":\"email\"}").unwrap();
+        assert_eq!(old.default_method, Method::Email);
     }
 
     #[test]
     fn the_status_hides_the_secrets() {
         let settings = NotificationSettings {
-            method: Method::Pushover,
+            default_method: Method::Pushover,
             pushover: PushoverSettings { token: "app-token-secret".into(), user: "user-key-abcd".into() },
             email: EmailSettings { host: "smtp.example".into(), password: "hunter2".into(), from: "a@x".into(), to: "b@x".into(), ..Default::default() },
             vapid: Some(Vapid { private_key: "PRIVATE".into(), public_key: "PUBLIC".into(), contact: "me@x".into() }),
@@ -562,6 +586,8 @@ mod tests {
         assert!(status.contains("\"user_last4\":\"abcd\""));
         assert!(status.contains("\"password_set\":true"));
         assert!(status.contains("\"public_key\":\"PUBLIC\""));
+        assert!(status.contains("\"configured\":[\"pushover\",\"email\"]"), "{status}");
+        assert_eq!(settings.configured(2), [Method::Browser, Method::Pushover, Method::Email]);
         assert!(settings.check(Method::Pushover, 0).is_ok());
         assert!(settings.check(Method::Browser, 0).unwrap_err().contains("no browser"));
         assert!(settings.check(Method::Browser, 1).is_ok());

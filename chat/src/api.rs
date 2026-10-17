@@ -482,7 +482,8 @@ async fn get_notifications(State(state): State<AppState>) -> Result<Json<Value>,
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct NotificationsBody {
-    method: Option<String>,
+    /// For conversations, and for scheduled agents without a method of their own.
+    default_method: Option<String>,
     scope: Option<String>,
     pushover: Option<PushoverBody>,
     email: Option<EmailBody>,
@@ -522,8 +523,8 @@ fn short(what: &str, value: String) -> Result<String, AppError> {
 
 async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson<NotificationsBody>) -> Result<Json<Value>, AppError> {
     let mut settings = state.store.notification_settings().await?;
-    if let Some(m) = &body.method {
-        settings.method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("method must be none, browser, pushover or email, not {m:?}")))?;
+    if let Some(m) = &body.default_method {
+        settings.default_method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("default_method must be none, browser, pushover or email, not {m:?}")))?;
     }
     if let Some(s) = &body.scope {
         settings.scope = Scope::parse(s).ok_or_else(|| AppError::BadRequest(format!("scope must be attention or all, not {s:?}")))?;
@@ -580,9 +581,9 @@ async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson
             None => {}
         }
     }
-    // The chosen method must be able to send, so a half-filled form can't silence everything.
+    // The default method must be able to send, so a half-filled form can't silence everything.
     let subscriptions = state.store.push_subscriptions().await?.len();
-    settings.check(settings.method, subscriptions).map_err(AppError::BadRequest)?;
+    settings.check(settings.default_method, subscriptions).map_err(|why| AppError::BadRequest(format!("the default method can't send: {why}")))?;
     state.store.set_notification_settings(&settings).await?;
     notification_status(&state).await.map(Json)
 }
@@ -1156,6 +1157,27 @@ struct ScheduleBody {
     /// conversation's own tools, if it has any.
     #[serde(default, deserialize_with = "nullable")]
     tools: Option<Option<Vec<String>>>,
+    /// How a finished run is announced out of the app: a method set up under Settings →
+    /// Notifications (`browser`, `pushover`, `email`), `none`, or `null` for the default method
+    /// there (the default when creating).
+    #[serde(default, deserialize_with = "nullable")]
+    notify: Option<Option<String>>,
+}
+
+/// A schedule's `notify`: a known method that can send right now, or none.
+async fn clean_notify(state: &AppState, notify: Option<String>) -> Result<Option<String>, AppError> {
+    let Some(raw) = notify else { return Ok(None) };
+    let raw = raw.trim().to_ascii_lowercase();
+    if raw.is_empty() || raw == "default" {
+        return Ok(None);
+    }
+    let method = Method::parse(&raw).ok_or_else(|| AppError::BadRequest(format!("notify must be none, browser, pushover, email or null, not {raw:?}")))?;
+    if method != Method::None {
+        let settings = state.store.notification_settings().await?;
+        let subscriptions = state.store.push_subscriptions().await?.len();
+        settings.check(method, subscriptions).map_err(|why| AppError::BadRequest(format!("notify: {why}; set it up under Settings → Notifications first")))?;
+    }
+    Ok(Some(method.as_str().to_string()))
 }
 
 /// Tells an absent field (`None`) from an explicit `null` (`Some(None)`).
@@ -1243,6 +1265,7 @@ async fn create_schedule(
             None => None,
         },
     };
+    let notify = clean_notify(&state, body.notify.flatten()).await?;
     let schedule = state
         .store
         .create_schedule(&NewSchedule {
@@ -1252,6 +1275,7 @@ async fn create_schedule(
             reasoning: reasoning.as_deref(),
             source_conversation_id: body.conversation_id,
             tools: tools.as_deref(),
+            notify: notify.as_deref(),
             frequency: timing.frequency.as_str(),
             weekday: timing.weekday.map(|d| d.num_days_from_monday() as u8),
             time_of_day: &timing.time.format("%H:%M").to_string(),
@@ -1287,6 +1311,9 @@ async fn update_schedule(
     }
     if let Some(tools) = body.tools {
         schedule.tools = clean_tools(&state, tools).await?;
+    }
+    if let Some(notify) = body.notify {
+        schedule.notify = clean_notify(&state, notify).await?;
     }
     let retime = body.frequency.is_some() || body.weekday.is_some() || body.time.is_some() || body.timezone.is_some();
     if retime {
