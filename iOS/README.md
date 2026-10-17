@@ -119,6 +119,14 @@ xcodebuild test -project Cedar.xcodeproj -scheme Cedar \
   -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
 
+### Continuous integration
+
+`.github/workflows/ios.yml` runs the same tests on a macOS runner for every pull request and
+push to main that touches `iOS/`, and on request (Actions → iOS → Run workflow). It builds the
+app for the iPhone 16 simulator and runs the unit tests against it, then builds for a device
+unsigned, which checks the entitlements and the device SDK. When a run fails, the `.xcresult`
+is kept as an artifact for a week and opens in Xcode.
+
 ## Limitations
 
 - Events arrive per model turn and per tool call, not per token, so text appears a turn at a
