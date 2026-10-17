@@ -11,10 +11,7 @@ pub struct Exchange<'a> {
 }
 
 fn block(ex: &Exchange<'_>) -> String {
-    format!(
-        "<user>\n{}\n</user>\n<assistant>\n{}\n</assistant>\n",
-        ex.user, ex.assistant
-    )
+    format!("<user>\n{}\n</user>\n<assistant>\n{}\n</assistant>\n", ex.user, ex.assistant)
 }
 
 /// The exchanges as a plain transcript, oldest first, cut to `max_bytes` by dropping the oldest.
@@ -78,22 +75,9 @@ mod tests {
 
     #[test]
     fn history_is_inlined_oldest_first() {
-        let h = [
-            Exchange {
-                user: "q1",
-                assistant: "a1",
-            },
-            Exchange {
-                user: "q2",
-                assistant: "a2",
-            },
-        ];
+        let h = [Exchange { user: "q1", assistant: "a1" }, Exchange { user: "q2", assistant: "a2" }];
         let p = compose(&h, "q3", 10_000);
-        let (i1, i2, i3) = (
-            p.find("q1").unwrap(),
-            p.find("a2").unwrap(),
-            p.rfind("q3").unwrap(),
-        );
+        let (i1, i2, i3) = (p.find("q1").unwrap(), p.find("a2").unwrap(), p.rfind("q3").unwrap());
         assert!(i1 < i2 && i2 < i3);
         assert!(p.ends_with("q3"));
         assert!(!p.contains("omitted"));
@@ -101,37 +85,16 @@ mod tests {
 
     #[test]
     fn transcripts_keep_the_newest_exchanges() {
-        let h = [
-            Exchange {
-                user: "q1",
-                assistant: "a1",
-            },
-            Exchange {
-                user: "q2",
-                assistant: "a2",
-            },
-        ];
+        let h = [Exchange { user: "q1", assistant: "a1" }, Exchange { user: "q2", assistant: "a2" }];
         assert_eq!(transcript(&h, 10_000), "<user>\nq1\n</user>\n<assistant>\na1\n</assistant>\n<user>\nq2\n</user>\n<assistant>\na2\n</assistant>\n");
-        assert_eq!(
-            transcript(&h, 60),
-            "<user>\nq2\n</user>\n<assistant>\na2\n</assistant>\n"
-        );
+        assert_eq!(transcript(&h, 60), "<user>\nq2\n</user>\n<assistant>\na2\n</assistant>\n");
         assert_eq!(transcript(&[], 100), "");
     }
 
     #[test]
     fn oldest_exchanges_are_dropped_to_fit() {
         let long = "x".repeat(500);
-        let h = [
-            Exchange {
-                user: "old",
-                assistant: &long,
-            },
-            Exchange {
-                user: "new",
-                assistant: "short",
-            },
-        ];
+        let h = [Exchange { user: "old", assistant: &long }, Exchange { user: "new", assistant: "short" }];
         let p = compose(&h, "now", 200);
         assert!(!p.contains("old"));
         assert!(p.contains("new"));
