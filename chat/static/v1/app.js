@@ -587,12 +587,13 @@ const TOOL_ICONS = {
   bash: 'terminal', read_file: 'file', write_file: 'pencil', web_search: 'search',
   generate_pdf: 'document', read_document: 'document', run_python: 'code',
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
-  show_map: 'globe',
+  show_map: 'globe', show_recipe: 'document',
 };
 
 function toolSummary(name, input) {
   if (!input || typeof input !== 'object') return '';
   if (typeof input.command === 'string') return input.command.split('\n')[0];
+  if (name === 'show_recipe' && typeof input.title === 'string') return input.title;
   if (name === 'run_python' && typeof input.code === 'string') {
     return input.code.split('\n').find((l) => l.trim()) || '';
   }
@@ -654,11 +655,13 @@ function toolResult(view, d) {
     label.append(actions);
   }
   details.querySelector('.tool-body').append(label, out);
-  // A map is the point of show_map, so it sits under the call instead of inside the collapsed details.
-  if (details.dataset.tool === 'show_map' && !d.is_error) {
-    const spec = cedarMap.parse(text);
+  // A map is the point of show_map, and a recipe card of show_recipe, so each sits under the call
+  // instead of inside the collapsed details.
+  const card = { show_map: cedarMap, show_recipe: cedarRecipe }[details.dataset.tool];
+  if (card && !d.is_error) {
+    const spec = card.parse(text);
     if (spec) {
-      details.after(cedarMap.element(spec));
+      details.after(card.element(spec));
       scrollToBottom(false);
     }
   }
