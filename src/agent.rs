@@ -9,7 +9,7 @@ use crate::llm::{LlmRouter, MessageRequest};
 use crate::models::{event, Run};
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::store::Store;
-use crate::tools::{ToolContext, ToolSet, ToolView};
+use crate::tools::{question_text, ToolContext, ToolSet, ToolView, ASK_USER};
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
 use serde_json::{json, Value};
@@ -55,8 +55,10 @@ impl From<anyhow::Error> for AgentError {
     }
 }
 
-/// Run `run` to completion. Persists the conversation and emits events as it goes; the caller owns
-/// the run's status, the sandbox's and browser's lifetimes, and the terminal event.
+/// Run `run` to completion, or until the model asks the user something with `ask_user` (the run then
+/// completes with `stop_reason: ask_user` and the questions as its final text). Persists the
+/// conversation and emits events as it goes; the caller owns the run's status, the sandbox's and
+/// browser's lifetimes, and the terminal event.
 pub async fn run_agent(
     env: &AgentEnv,
     run: &Run,
@@ -173,10 +175,25 @@ pub async fn run_agent(
         match resp.stop_reason.as_deref() {
             Some("tool_use") if !tool_calls.is_empty() => {
                 let mut results = Vec::with_capacity(tool_calls.len());
+                let mut asked = Vec::new();
                 for block in tool_calls {
-                    results.push(execute_tool_call(&tools, &ctx, events, cancel, block).await?);
+                    let result = execute_tool_call(&tools, &ctx, events, cancel, block).await?;
+                    if block["name"] == ASK_USER && result["is_error"] != true {
+                        asked.extend(result["content"].as_str().and_then(question_text));
+                    }
+                    results.push(result);
                 }
                 push_message(env, run, &mut messages, "user", Value::Array(results)).await?;
+                // The model asked the user something: stop here, and the answer starts the next run.
+                if !asked.is_empty() {
+                    let mut parts = vec![final_text];
+                    parts.extend(asked);
+                    parts.retain(|p| !p.trim().is_empty());
+                    return Ok(Completion {
+                        final_text: parts.join("\n\n"),
+                        stop_reason: Some(ASK_USER.to_string()),
+                    });
+                }
             }
             other => {
                 return Ok(Completion {

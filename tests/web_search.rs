@@ -128,7 +128,8 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "weather_forecast",
             "show_map",
             "show_recipe",
-            "plan_trip"
+            "plan_trip",
+            "ask_user"
         ]
     );
 
@@ -296,7 +297,8 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
             "weather_forecast",
             "show_map",
             "show_recipe",
-            "plan_trip"
+            "plan_trip",
+            "ask_user"
         ]
     );
 }

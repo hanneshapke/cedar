@@ -72,6 +72,14 @@ Both interfaces have all of these, except where noted:
   estimated fare; walk), and the chosen option's steps on a timeline. Click a row to see that option
   on the map and in the steps. Times are shown in the trip's time zone when the planner gives one.
   It is placed like a map (`transit-view.js` and `transit-view.css`, which draw with the map view)
+- An `ask_user` tool call, when the agent needs a clarification before it goes on, is drawn as a
+  form: each question with its options as radio buttons (pick one) or checkboxes (pick any), and
+  always a field for an answer in your own words (for an open question, that field alone). Send
+  answer sends what you picked and wrote as your next message, with each question repeated so the
+  agent knows which answer is which; you can also just reply in the message box. Once a later
+  message is in, the form is closed. Claude style puts it under the tool call, Cedar style in the
+  margin (`clarify-view.js` and `clarify-view.css`). A [scheduled agent](#scheduled-agents)'s run is
+  told nobody is there to answer, so it assumes instead of asking
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
 - The send button names the model and reasoning level the message goes with, and opens a menu
@@ -98,7 +106,8 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat
 The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
-`map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `schedule.js` and `schedule.css` for scheduled agents, and
+`map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `clarify-view.js`
+and `clarify-view.css` for clarifying questions, `schedule.js` and `schedule.css` for scheduled agents, and
 `models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
 model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
 library, and

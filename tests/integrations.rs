@@ -101,7 +101,8 @@ async fn without_a_selection_every_tool_is_offered() {
             "weather_forecast",
             "show_map",
             "show_recipe",
-            "plan_trip"
+            "plan_trip",
+            "ask_user"
         ])
     );
 }
@@ -198,6 +199,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "maps",
             "recipes",
             "transit",
+            "ask_user",
             "browser",
             "gmail",
             "calendar"

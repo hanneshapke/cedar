@@ -280,7 +280,14 @@ const TOOLS = {
   show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i) },
   show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title },
   plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i) },
+  ask_user: { doing: 'Asking', did: 'Asked', subject: (i) => questionsSubject(i) },
 };
+
+/** What an ask_user call is about: each question's header, else the question itself. */
+function questionsSubject(input) {
+  const questions = Array.isArray(input.questions) ? input.questions : [];
+  return questions.map((q) => q?.header || q?.question).filter(Boolean).join(' · ');
+}
 
 /** What a plan_trip call is about: its title, else "from → to". */
 function tripSubject(input) {
@@ -460,6 +467,10 @@ function clippingsFor(tool) {
       return [recipeClipping(tool, meta)];
     case 'plan_trip':
       return [tripClipping(tool, meta)];
+    case 'ask_user':
+      // The questions are part of the conversation, so their form is in the margin (see applyEvent);
+      // only a call that failed lies on the desk.
+      return tool.is_error ? [clipEl('ask_user', meta, escapeHtml(questionsSubject(input)), '', raw, true)] : [];
     default:
       if (FILE_TOOLS.has(tool.name)) {
         const path = String(input.path || '');
@@ -589,6 +600,7 @@ function addTurn(turn) {
   const user = note('user', `You · ${new Date(turn.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
   if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
   user.lastChild.append(document.createTextNode(turn.prompt));
+  cedarClarify.settle(els.notes); // this message answers any question still open above it
   els.notes.append(user);
   view.workingEl = h('div', 'working');
   view.workingEl.append(h('span', 'spinner'), h('span', '', 'Thinking'));
@@ -681,6 +693,14 @@ function applyEvent(view, event) {
       const tool = view.byId.get(d.id);
       if (tool) {
         Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
+        // Questions for the user are a form in the margin, closed if a later message answered them.
+        const spec = tool.name === 'ask_user' && !tool.is_error && cedarClarify.parse(tool.output);
+        if (spec) {
+          const answered = state.order[state.order.length - 1] !== view.turn.id;
+          const n = note('clarify', 'Cedar asks', '');
+          n.lastChild.append(cedarClarify.element(spec, { answered, onSubmit: answerQuestions }));
+          placeNote(view, n);
+        }
         // The images a call produced are shown in the margin once each, after the reply: see finishTurn.
         if (!tool.is_error) {
           for (const path of cedarImages.produced(tool.name, tool.input, tool.output)) {
@@ -731,7 +751,7 @@ function finishTurn(view, event) {
     put(note('muted', '', d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.'));
   } else if (d.stop_reason === 'max_tokens') {
     put(note('error', '', CUT_OFF));
-  } else if (!view.texts.length) {
+  } else if (!view.texts.length && d.stop_reason !== 'ask_user') {
     put(note('muted', '', 'No text in this response.'));
   }
   for (const tool of view.tools) if (tool.output === undefined) Object.assign(tool, { output: '', is_error: true });
@@ -976,9 +996,23 @@ function autosize() {
   els.input.style.height = `${Math.min(els.input.scrollHeight, window.innerHeight * 0.4)}px`;
 }
 
-async function sendMessage() {
-  const content = els.input.value.trim();
-  if (!content || state.sending || state.activeTurn) return;
+/** Send the answers from a question form; throws if they could not be sent, so the form stays open. */
+async function answerQuestions(text) {
+  if (state.activeTurn || state.sending) {
+    toast('Wait for the response to finish, or stop it, before answering.');
+    throw new Error('busy');
+  }
+  if (!(await sendMessage(text))) throw new Error('not sent');
+}
+
+/**
+ * Send the message box's text, or `answer` (from a question form) with the box left as it is.
+ * Resolves to whether the message was sent.
+ */
+async function sendMessage(answer) {
+  const typed = typeof answer !== 'string';
+  const content = (typed ? els.input.value : answer).trim();
+  if (!content || state.sending || state.activeTurn) return false;
   state.sending = true;
   updateChrome();
   const token = state.loadToken;
@@ -994,21 +1028,25 @@ async function sendMessage() {
     const body = { content };
     if (els.model.value) body.model = els.model.value;
     if (els.reasoning.value) body.reasoning = els.reasoning.value;
-    const attachments = cedarAttach.payload();
+    const attachments = typed ? cedarAttach.payload() : [];
     if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
-    els.input.value = '';
-    cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
-    autosize();
-    if (token !== state.loadToken) return;
+    if (typed) {
+      els.input.value = '';
+      cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
+      autosize();
+    }
+    if (token !== state.loadToken) return true;
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
     state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
     addTurn(turn);
     renderDesk();
     renderRecents();
     loadConversations();
+    return true;
   } catch (e) {
     toast(e.message);
+    return false;
   } finally {
     state.sending = false;
     updateChrome();

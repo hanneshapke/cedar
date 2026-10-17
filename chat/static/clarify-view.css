@@ -1,0 +1,181 @@
+/* The clarifying-questions form for the ask_user tool (see clarify-view.js), shared by both UIs.
+   Like the map and recipe cards it only relies on --accent and --muted, which both define, and
+   uses translucent greys for edges so it reads in the light and dark themes alike. */
+
+.cedar-clarify {
+  --cq-line: rgba(128, 128, 128, .28);
+  --cq-soft: rgba(128, 128, 128, .07);
+  --cq-accent: var(--accent, #c96442);
+  --cq-muted: var(--muted, #6f6d66);
+  margin: 12px 0;
+  border: 1px solid var(--cq-line);
+  border-left: 3px solid var(--cq-accent);
+  border-radius: 12px;
+  background: rgba(128, 128, 128, .04);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.cedar-clarify-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.cedar-clarify-title {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--cq-accent);
+}
+
+.cedar-clarify-state {
+  font-size: 12px;
+  color: var(--cq-muted);
+}
+
+.cedar-clarify-form { padding: 4px 16px 14px; }
+
+.cedar-clarify-q {
+  margin: 0;
+  padding: 10px 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--cq-line);
+  min-width: 0;
+}
+
+.cedar-clarify-q:last-of-type { border-bottom: 0; }
+
+.cedar-clarify-question {
+  padding: 0;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.cedar-clarify-chip {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--cq-soft);
+  border: 1px solid var(--cq-line);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cq-muted);
+  vertical-align: 2px;
+}
+
+.cedar-clarify-hint {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  color: var(--cq-muted);
+}
+
+.cedar-clarify-options {
+  display: grid;
+  gap: 6px;
+}
+
+.cedar-clarify-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--cq-line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .12s, background-color .12s;
+}
+
+.cedar-clarify-opt:hover { background: var(--cq-soft); }
+
+.cedar-clarify-opt:has(input:checked) {
+  border-color: var(--cq-accent);
+  background: color-mix(in srgb, var(--cq-accent) 8%, transparent);
+}
+
+.cedar-clarify-opt input[type="radio"],
+.cedar-clarify-opt input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--cq-accent);
+  cursor: pointer;
+}
+
+.cedar-clarify-opt-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cedar-clarify-opt-label { font-weight: 550; }
+
+.cedar-clarify-opt-desc {
+  font-size: 13px;
+  color: var(--cq-muted);
+}
+
+.cedar-clarify-other { align-items: center; cursor: default; }
+.cedar-clarify-other input[type="radio"],
+.cedar-clarify-other input[type="checkbox"] { margin-top: 0; }
+
+.cedar-clarify-own {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--cq-line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.cedar-clarify-own:focus {
+  outline: 2px solid color-mix(in srgb, var(--cq-accent) 45%, transparent);
+  outline-offset: 0;
+  border-color: var(--cq-accent);
+}
+
+textarea.cedar-clarify-own { margin-top: 6px; }
+
+.cedar-clarify-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.cedar-clarify-send {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--cq-accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cedar-clarify-send:disabled { opacity: .45; cursor: default; }
+
+.cedar-clarify-alt {
+  font-size: 12px;
+  color: var(--cq-muted);
+}
+
+/* Answered (or answered by a later message): the choices stay readable, the form is done. */
+.cedar-clarify.answered { border-left-color: var(--cq-line); }
+.cedar-clarify.answered .cedar-clarify-opt { cursor: default; }
+.cedar-clarify.answered .cedar-clarify-opt:hover { background: transparent; }
+.cedar-clarify.answered .cedar-clarify-foot { display: none; }
+.cedar-clarify.answered .cedar-clarify-title { color: var(--cq-muted); }

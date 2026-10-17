@@ -159,6 +159,8 @@ pub struct Config {
     pub transit_base_url: String,
     /// Root of the OSRM router `plan_trip` asks for driving routes.
     pub driving_base_url: String,
+    /// Offer the `ask_user` tool (on by default), which ends a run with clarifying questions.
+    pub ask_user: bool,
     /// The Google account the Gmail and Calendar tools act for. Set when either is on.
     pub google_oauth: Option<GoogleClientConfig>,
     /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
@@ -370,6 +372,7 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_TRANSIT_BASE_URL.into()),
             driving_base_url: get("DRIVING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_DRIVING_BASE_URL.into()),
+            ask_user: flag("ASK_USER", true)?,
             google_oauth,
             google_apis,
             mcp_servers,
@@ -571,6 +574,15 @@ mod tests {
         let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("TRANSIT", "maybe")]))
             .unwrap_err();
         assert!(err.to_string().contains("TRANSIT"), "{err}");
+    }
+
+    #[test]
+    fn clarifying_questions_are_on_by_default_and_can_be_turned_off() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.ask_user);
+        let cfg =
+            Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("ASK_USER", "off")])).unwrap();
+        assert!(!cfg.ask_user);
     }
 
     #[test]
