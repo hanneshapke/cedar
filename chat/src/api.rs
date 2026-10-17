@@ -1,6 +1,7 @@
 //! The HTTP API and the embedded web UI.
 
 use crate::cedar::{self, Attachment, CedarClient, RunOptions};
+use crate::channels::{self, Method, Scope, Security};
 use crate::config::Config;
 use crate::error::AppError;
 use crate::prompt::{self, Exchange};
@@ -87,9 +88,12 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
-/// The inbox of finished responses, the unread count in the title and browser notifications; both UIs load it.
+/// The inbox of finished responses, the unread count in the title, the Notifications settings and
+/// the push subscription; both UIs load it.
 const NOTIFY_JS: &str = include_str!("../static/notify.js");
 const NOTIFY_CSS: &str = include_str!("../static/notify.css");
+/// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
+const SW_JS: &str = include_str!("../static/sw.js");
 /// Leaflet 1.9.4 (BSD-2-Clause, see `static/vendor/leaflet/LICENSE`), served from here so no
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
@@ -141,6 +145,8 @@ pub struct AppState {
     /// Live notices for the open tabs (`GET /api/events`): a finished response, as `notify` learns
     /// of one from cedar.
     pub notices: broadcast::Sender<Value>,
+    /// For Pushover and the push services (`channels`).
+    pub http: reqwest::Client,
 }
 
 impl AppState {
@@ -149,7 +155,8 @@ impl AppState {
         let token_digest = cfg.access_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
         let admin_digest = cfg.admin_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
         let (notices, _) = broadcast::channel(notify::NOTICE_BUFFER);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices })
+        let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, http })
     }
 }
 
@@ -164,6 +171,10 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/seen", post(mark_seen))
         .route("/inbox", get(inbox))
         .route("/events", get(notice_events))
+        .route("/notifications", get(get_notifications).put(put_notifications))
+        .route("/notifications/test", post(test_notification))
+        .route("/notifications/push/subscriptions", post(subscribe_push).delete(unsubscribe_push))
+        .route("/notifications/push/subscriptions/{id}", axum::routing::delete(delete_push_subscription))
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
@@ -213,6 +224,7 @@ pub fn router(state: AppState) -> Router {
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
         .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
         .route("/notify.css", get(|| async { asset(CSS, NOTIFY_CSS) }))
+        .route("/sw.js", get(|| async { asset(JS, SW_JS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
         .route("/vendor/leaflet/leaflet.css", get(|| async { asset(CSS, LEAFLET_CSS) }))
         .route("/assets/cedar-mark.svg", get(|| async { asset(SVG, MARK_SVG) }))
@@ -449,6 +461,211 @@ async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = 
         }
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+}
+
+// -- notifications out of the app (channels) ------------------------------------------------
+
+/// The settings as the page sees them (no secrets), with the subscribed browsers.
+async fn notification_status(state: &AppState) -> Result<Value, AppError> {
+    let settings = state.store.notification_settings().await?;
+    let subscriptions = state.store.push_subscriptions().await?;
+    Ok(settings.status(&subscriptions))
+}
+
+/// The page subscribes a browser with the server's public key, so the keys are made here.
+async fn get_notifications(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    channels::ensure_vapid(&state.store).await?;
+    Ok(Json(notification_status(&state).await?))
+}
+
+/// Any subset of the settings. A secret left out keeps its value; an empty string clears it.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct NotificationsBody {
+    method: Option<String>,
+    scope: Option<String>,
+    pushover: Option<PushoverBody>,
+    email: Option<EmailBody>,
+    /// The contact the push services may write to about this server (an email address).
+    contact: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PushoverBody {
+    token: Option<String>,
+    user: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct EmailBody {
+    host: Option<String>,
+    port: Option<u16>,
+    security: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+}
+
+const MAX_SETTING_CHARS: usize = 500;
+
+/// A trimmed field; too long is refused.
+fn short(what: &str, value: String) -> Result<String, AppError> {
+    let value = value.trim().to_string();
+    if value.chars().count() > MAX_SETTING_CHARS {
+        return Err(AppError::BadRequest(format!("{what} is longer than {MAX_SETTING_CHARS} characters")));
+    }
+    Ok(value)
+}
+
+async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson<NotificationsBody>) -> Result<Json<Value>, AppError> {
+    let mut settings = state.store.notification_settings().await?;
+    if let Some(m) = &body.method {
+        settings.method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("method must be none, browser, pushover or email, not {m:?}")))?;
+    }
+    if let Some(s) = &body.scope {
+        settings.scope = Scope::parse(s).ok_or_else(|| AppError::BadRequest(format!("scope must be attention or all, not {s:?}")))?;
+    }
+    if let Some(p) = body.pushover {
+        if let Some(token) = p.token {
+            settings.pushover.token = short("the Pushover token", token)?;
+        }
+        if let Some(user) = p.user {
+            settings.pushover.user = short("the Pushover user key", user)?;
+        }
+    }
+    if let Some(e) = body.email {
+        if let Some(host) = e.host {
+            settings.email.host = short("the SMTP host", host)?;
+        }
+        if let Some(port) = e.port {
+            settings.email.port = port;
+        }
+        if let Some(security) = &e.security {
+            settings.email.security = Security::parse(security).ok_or_else(|| AppError::BadRequest(format!("security must be tls, starttls or none, not {security:?}")))?;
+        }
+        if let Some(username) = e.username {
+            settings.email.username = short("the SMTP user name", username)?;
+        }
+        if let Some(password) = e.password {
+            settings.email.password = short("the SMTP password", password)?;
+        }
+        if let Some(from) = e.from {
+            let from = short("the sender address", from)?;
+            if !from.is_empty() {
+                from.parse::<lettre::message::Mailbox>().map_err(|err| AppError::BadRequest(format!("the sender address is invalid: {err}")))?;
+            }
+            settings.email.from = from;
+        }
+        if let Some(to) = e.to {
+            let to = short("the recipient address", to)?;
+            if !to.is_empty() {
+                to.parse::<lettre::message::Mailbox>().map_err(|err| AppError::BadRequest(format!("the recipient address is invalid: {err}")))?;
+            }
+            settings.email.to = to;
+        }
+    }
+    if let Some(contact) = body.contact {
+        let contact = short("the contact", contact)?;
+        match settings.vapid.as_mut() {
+            Some(v) => v.contact = contact,
+            None if !contact.is_empty() => {
+                // Keys are made when a browser subscribes; keep the contact for then.
+                state.store.set_notification_settings(&settings).await?;
+                settings = channels::ensure_vapid(&state.store).await?;
+                settings.vapid.as_mut().expect("just made").contact = contact;
+            }
+            None => {}
+        }
+    }
+    // The chosen method must be able to send, so a half-filled form can't silence everything.
+    let subscriptions = state.store.push_subscriptions().await?.len();
+    settings.check(settings.method, subscriptions).map_err(AppError::BadRequest)?;
+    state.store.set_notification_settings(&settings).await?;
+    notification_status(&state).await.map(Json)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TestBody {
+    method: String,
+}
+
+/// Send a test message by `method` with the saved settings. The outcome is recorded like a
+/// real delivery and returned: `{ok, detail}`, as a 502 when it failed.
+async fn test_notification(State(state): State<AppState>, ApiJson(body): ApiJson<TestBody>) -> Result<Json<Value>, AppError> {
+    let method = Method::parse(&body.method).ok_or_else(|| AppError::BadRequest(format!("unknown method {:?}", body.method)))?;
+    if method == Method::None {
+        return Err(AppError::BadRequest("pick a method to test".into()));
+    }
+    let settings = state.store.notification_settings().await?;
+    let message = channels::Message {
+        title: "Cedar: test notification".into(),
+        body: "This is how Cedar will tell you when a response finishes while you are away.".into(),
+        url: format!("{}/", state.cfg.public_url),
+        tag: "test".into(),
+    };
+    let outcome = channels::send(&state, &settings, method, &message).await;
+    channels::record(&state.store, method, true, &outcome).await?;
+    match outcome {
+        Ok(detail) => Ok(Json(json!({ "ok": true, "detail": detail }))),
+        Err(detail) => Err(AppError::BadGateway(detail)),
+    }
+}
+
+/// A browser's `PushSubscription`, as `JSON.stringify` gives it.
+#[derive(Deserialize)]
+struct SubscriptionBody {
+    endpoint: String,
+    keys: SubscriptionKeys,
+    #[serde(default)]
+    #[allow(dead_code)]
+    expiration_time: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct SubscriptionKeys {
+    p256dh: String,
+    auth: String,
+}
+
+/// A browser turned push on: keep its subscription. The server's public key is returned with
+/// the settings for the page to subscribe with (`GET /api/notifications` has it too).
+async fn subscribe_push(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<SubscriptionBody>) -> Result<Json<Value>, AppError> {
+    if !(body.endpoint.starts_with("https://") || body.endpoint.starts_with("http://")) || body.endpoint.len() > 2048 {
+        return Err(AppError::BadRequest("the subscription's endpoint must be a URL".into()));
+    }
+    if body.keys.p256dh.is_empty() || body.keys.auth.is_empty() {
+        return Err(AppError::BadRequest("the subscription has no keys".into()));
+    }
+    channels::ensure_vapid(&state.store).await?;
+    let agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(|a| a.chars().take(200).collect::<String>());
+    let sub = state.store.add_push_subscription(&body.endpoint, &body.keys.p256dh, &body.keys.auth, agent.as_deref()).await?;
+    let mut status = notification_status(&state).await?;
+    status["subscription_id"] = json!(sub.id);
+    Ok(Json(status))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnsubscribeBody {
+    endpoint: String,
+}
+
+/// The browser turned push off itself: forget its endpoint.
+async fn unsubscribe_push(State(state): State<AppState>, ApiJson(body): ApiJson<UnsubscribeBody>) -> Result<Json<Value>, AppError> {
+    state.store.delete_push_subscription_by_endpoint(&body.endpoint).await?;
+    notification_status(&state).await.map(Json)
+}
+
+async fn delete_push_subscription(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    let id = parse_id(&id, "subscription not found")?;
+    if !state.store.delete_push_subscription(id).await? {
+        return Err(AppError::NotFound("subscription not found"));
+    }
+    notification_status(&state).await.map(Json)
 }
 
 // -- messages -------------------------------------------------------------------------------

@@ -23,6 +23,8 @@ pub struct Config {
     /// How much earlier conversation is inlined into the prompt when the previous cedar run is gone
     /// and can't be continued.
     pub history_max_bytes: usize,
+    /// Where Pushover messages are POSTed; overridable so tests can point at a mock.
+    pub pushover_url: String,
 }
 
 impl Config {
@@ -54,6 +56,7 @@ impl Config {
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_else(|| format!("http://{bind_addr}")),
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
+            pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
         };
         if cfg.history_max_bytes > 60_000 {
             // cedar rejects prompts over 100 KB; leave room for the new message itself.

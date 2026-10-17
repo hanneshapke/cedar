@@ -111,7 +111,8 @@ Both interfaces have all of these, except where noted:
 - [Notifications](#notifications): a response that finishes while you are in another conversation,
   another tab, or away is marked unread in the conversation list and counted in the page title and
   on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
-  marked "Needs answer"; optionally a browser notification while the tab is hidden
+  marked "Needs answer". Out of the app, by the method you pick in Settings: a browser push (tab
+  open or not), a phone push through Pushover, or an email
 
 ## Running it
 
@@ -129,7 +130,8 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `clarify-view.js` and `clarify-view.css` for clarifying questions,
 `schedule.js` and `schedule.css` for scheduled agents, `notify.js` and `notify.css` for the inbox
-of finished responses, and
+of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
+push, and
 `models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
 model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
 library, and
@@ -189,6 +191,7 @@ cedar asks Yahoo Finance (see the top-level README). Set `STOCKS=off` on cedar t
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
+| `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -235,15 +238,41 @@ What the page does with that:
   what happened (finished, failed, needs your answer) and when; a row opens the conversation,
   and **Mark all read** clears the list.
 - A response that finishes in another conversation while the tab is visible is announced in a
-  toast. With the checkbox in the inbox turned on (the browser asks for permission once), a
-  response that finishes while the tab is hidden shows a browser notification; clicking it brings
-  the tab to the front and opens the conversation.
+  toast.
 - Looking at a conversation marks its responses seen: opening it, watching its response end with
   the tab visible, or coming back to the tab. A response that ends while the conversation is open
   but the tab is hidden stays unread until then. The page tells the server with
   `POST /api/conversations/{id}/seen`.
 
 A run the user stopped is not announced. Responses from before this feature count as seen.
+
+### Out of the app
+
+Settings → **Notifications** picks how to be told when you are not looking at the page at all,
+and what for. The server sends it a few seconds after cedar says the run ended, unless the
+response was looked at in the meantime (a page that watched it end marks it seen first). One
+method is in use at a time:
+
+- **Only in the app** (the default): the inbox, the marks and the title count, nothing else.
+- **Browser push**: a notification from this browser even when the tab is closed, through a
+  service worker (`sw.js`) and the browser's push service, signed with VAPID keys the server makes
+  on first use. **Turn on in this browser** asks the browser for permission and subscribes it; every
+  subscribed browser is listed and can be removed, and a browser the push service reports gone is
+  dropped. Browsers only allow this on `https` or on `localhost`, so it works over the SSH tunnel
+  of the [deployment guide](../DEPLOYMENT.md) and behind a TLS proxy. A push that arrives while a
+  Cedar tab is in front is left to that tab. An optional contact address goes with each push, as
+  some push services ask for one.
+- **Phone push via Pushover**: a push to the [Pushover](https://pushover.net) app on your phone.
+  Needs an application token (make an application at pushover.net/apps) and your user key.
+- **Email**: a mail through an SMTP server: host, port (left empty, the connection's usual one),
+  TLS, STARTTLS or plain, a user name and password if the server wants them, and the sender and
+  recipient addresses. A Gmail account takes an app password with STARTTLS on `smtp.gmail.com`.
+
+**Send it for** chooses between what needs you (a failure, a question the agent asked, a
+scheduled run) and every response that ends while you are not watching it. Each method has
+**Save and send a test**; the last delivery, test or real, is shown with what the service
+answered. The credentials stay in this server's database (`CHAT_DATABASE_URL`), as they are, and
+are never sent back to the page; keep that file as private as the cedar key.
 
 ## Scheduled agents
 
@@ -377,6 +406,12 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
+| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{method, scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
+| `PUT /api/notifications` | Change any of `{"method": "none"\|"browser"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the chosen method can't send (missing credentials, no subscribed browser) |
+| `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
+| `POST /api/notifications/push/subscriptions` | A browser's `PushSubscription` (as `JSON.stringify` gives it). Returns the settings plus `subscription_id` |
+| `DELETE /api/notifications/push/subscriptions` | `{"endpoint"}`: the browser turned push off |
+| `DELETE /api/notifications/push/subscriptions/{id}` | Remove a subscribed browser |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |

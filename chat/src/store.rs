@@ -37,6 +37,34 @@ pub struct Conversation {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A browser that turned on Web Push: where its push service takes messages, and the keys
+/// they are encrypted with (see `channels`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PushSubscription {
+    pub id: Uuid,
+    #[serde(skip)]
+    pub endpoint: String,
+    #[serde(skip)]
+    pub p256dh: String,
+    #[serde(skip)]
+    pub auth: String,
+    pub user_agent: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+fn push_subscription_from_row(r: &SqliteRow) -> Result<PushSubscription> {
+    Ok(PushSubscription {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        endpoint: r.try_get("endpoint")?,
+        p256dh: r.try_get("p256dh")?,
+        auth: r.try_get("auth")?,
+        user_agent: r.try_get("user_agent")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        last_used_at: r.try_get::<Option<i64>, _>("last_used_at")?.map(to_dt),
+    })
+}
+
 /// A finished response nobody has looked at, as the page's inbox lists it.
 #[derive(Debug, Clone, Serialize)]
 pub struct InboxItem {
@@ -508,6 +536,73 @@ impl Store {
         Ok(())
     }
 
+    /// How the user is told out of the app when a response finishes (see `channels`).
+    pub async fn notification_settings(&self) -> Result<crate::channels::NotificationSettings> {
+        let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications'").fetch_optional(&self.pool).await?;
+        match row {
+            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
+            None => Ok(Default::default()),
+        }
+    }
+
+    pub async fn set_notification_settings(&self, settings: &crate::channels::NotificationSettings) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('notifications', ?) \
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(serde_json::to_string(settings)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    // -- push subscriptions -----------------------------------------------------------------
+
+    /// Oldest first.
+    pub async fn push_subscriptions(&self) -> Result<Vec<PushSubscription>> {
+        let rows = sqlx::query("SELECT * FROM push_subscriptions ORDER BY created_at, id").fetch_all(&self.pool).await?;
+        rows.iter().map(push_subscription_from_row).collect()
+    }
+
+    /// Add a browser's subscription, or refresh the keys of one with the same endpoint.
+    pub async fn add_push_subscription(&self, endpoint: &str, p256dh: &str, auth: &str, user_agent: Option<&str>) -> Result<PushSubscription> {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?) \
+             ON CONFLICT (endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent",
+        )
+        .bind(id.to_string())
+        .bind(endpoint)
+        .bind(p256dh)
+        .bind(auth)
+        .bind(user_agent)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        let row = sqlx::query("SELECT * FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).fetch_one(&self.pool).await?;
+        push_subscription_from_row(&row)
+    }
+
+    pub async fn delete_push_subscription(&self, id: Uuid) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM push_subscriptions WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// The browser unsubscribed itself: forget its endpoint.
+    pub async fn delete_push_subscription_by_endpoint(&self, endpoint: &str) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    pub async fn touch_push_subscription(&self, id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE push_subscriptions SET last_used_at = ? WHERE id = ?")
+            .bind(now_ms())
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// The id of the last notification taken from cedar's event stream (0: none yet).
     pub async fn notifications_cursor(&self) -> Result<i64> {
         let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications_cursor'")
@@ -830,6 +925,35 @@ mod tests {
         store.set_notifications_cursor(42).await.unwrap();
         store.set_notifications_cursor(43).await.unwrap();
         assert_eq!(store.notifications_cursor().await.unwrap(), 43);
+    }
+
+    #[tokio::test]
+    async fn notification_settings_and_push_subscriptions_round_trip() {
+        use crate::channels::{Method, NotificationSettings};
+        let store = Store::connect_memory().await.unwrap();
+        assert_eq!(store.notification_settings().await.unwrap(), NotificationSettings::default());
+        let settings = NotificationSettings { method: Method::Pushover, ..Default::default() };
+        store.set_notification_settings(&settings).await.unwrap();
+        store.set_notification_settings(&settings).await.unwrap();
+        assert_eq!(store.notification_settings().await.unwrap(), settings);
+
+        let a = store.add_push_subscription("https://push.example/a", "pk-a", "auth-a", Some("Firefox")).await.unwrap();
+        let again = store.add_push_subscription("https://push.example/a", "pk-a2", "auth-a2", None).await.unwrap();
+        assert_eq!(a.id, again.id, "the same endpoint is one subscription");
+        assert_eq!((again.p256dh.as_str(), again.user_agent), ("pk-a2", None));
+        let b = store.add_push_subscription("https://push.example/b", "pk-b", "auth-b", Some("Chrome")).await.unwrap();
+        let listed = store.push_subscriptions().await.unwrap();
+        assert_eq!(listed.iter().map(|s| s.id).collect::<Vec<_>>(), [a.id, b.id]);
+        assert!(listed[0].last_used_at.is_none());
+        store.touch_push_subscription(a.id).await.unwrap();
+        assert!(store.push_subscriptions().await.unwrap()[0].last_used_at.is_some());
+        // The page never sees the keys.
+        let json = serde_json::to_string(&listed).unwrap();
+        assert!(!json.contains("pk-") && !json.contains("auth-") && !json.contains("push.example"));
+        assert!(store.delete_push_subscription_by_endpoint("https://push.example/b").await.unwrap());
+        assert!(store.delete_push_subscription(a.id).await.unwrap());
+        assert!(!store.delete_push_subscription(a.id).await.unwrap());
+        assert!(store.push_subscriptions().await.unwrap().is_empty());
     }
 
     #[test]

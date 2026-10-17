@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod cedar;
+pub mod channels;
 pub mod config;
 pub mod error;
 pub mod notify;

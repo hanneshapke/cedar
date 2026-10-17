@@ -20,6 +20,19 @@
 .cedar-inbox-sub { font-size: 12px; color: var(--muted); }
 .cedar-inbox-empty { padding: 12px 8px; font-size: 13px; color: var(--muted); }
 .cedar-inbox-foot { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(128, 128, 128, .3); font-size: 12.5px; color: var(--muted); }
-.cedar-inbox-foot label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
-/* Each UI's dialog rule stretches inputs to the full width; a checkbox keeps its size. */
-.cedar-inbox-foot input { width: auto; margin: 3px 0 0; padding: 0; }
+.cedar-inbox-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+
+/* -- the Notifications section of Settings ---------------------------------------------------- */
+
+.cedar-notify-methods { display: flex; flex-direction: column; gap: 8px; }
+.cedar-notify-block { display: flex; flex-direction: column; gap: 8px; margin: -2px 0 6px 26px; }
+.cedar-notify-block[hidden] { display: none; }
+.cedar-notify-block .cedar-set-fields { margin-top: 2px; }
+.cedar-notify-block .cedar-set-note { margin: 0; }
+.cedar-notify-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.cedar-notify-subs { display: flex; flex-direction: column; gap: 2px; }
+.cedar-notify-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: 6px; background: rgba(128, 128, 128, .08); font-size: 12.5px; color: var(--muted); }
+.cedar-notify-scope { margin-top: 12px; }
+.cedar-notify-last { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.cedar-notify-last.err { color: #b63d2b; }
+@media (prefers-color-scheme: dark) { .cedar-notify-last.err { color: #f09080; } }

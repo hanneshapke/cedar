@@ -125,6 +125,15 @@ pub async fn handle(state: &AppState, notification: &Value) -> Result<(), AppErr
         });
         // No tab open is fine.
         let _ = state.notices.send(notice);
+        // Out of the app too, unless a page marks it seen in the meantime (see `channels`).
+        let state = state.clone();
+        let turn_id = turn.id;
+        tokio::spawn(async move {
+            tokio::time::sleep(crate::channels::DISPATCH_DELAY).await;
+            if let Err(e) = crate::channels::dispatch(&state, turn_id).await {
+                tracing::warn!(%turn_id, error = %e, "could not send the notification");
+            }
+        });
     }
     state.store.set_notifications_cursor(id).await?;
     Ok(())
