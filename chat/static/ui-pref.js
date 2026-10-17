@@ -1,14 +1,14 @@
 'use strict';
 
-// Which front end to show: "v1" (Claude style) or "v2" (Cedar style). Shared by the loader at /
-// and by both UIs, which are separate pages under /v1/ and /v2/. The choice is kept in
-// localStorage and only decides where / goes; visiting /v1/ or /v2/ directly always shows that UI.
+// Which front end to show: "v1" (Claude style), "v2" (Cedar style), "v3" (Ledger) or "v4"
+// (Dossier). Shared by the loader at / and by every UI, each a separate page under /vN/. The choice
+// is kept in localStorage and only decides where / goes; visiting /vN/ directly always shows that UI.
 // Pages that contain #settings-dialog also get their Settings menu wired up here.
 
 const cedarUI = (() => {
   const KEY = 'cedar-chat-ui';
-  const DEFAULT = 'v2';
-  const LABELS = { v1: 'Claude style', v2: 'Cedar style' };
+  const DEFAULT = 'v3';
+  const LABELS = { v1: 'Claude style', v2: 'Cedar style', v3: 'Ledger', v4: 'Dossier' };
   const valid = (ui) => typeof ui === 'string' && Object.hasOwn(LABELS, ui);
 
   function get() {

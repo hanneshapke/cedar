@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="/settings.css">
   <link rel="stylesheet" href="/models.css">
   <link rel="stylesheet" href="/attach.css">
+  <link rel="stylesheet" href="/trust-view.css">
 </head>
 <body>
   <div class="app">
@@ -137,6 +138,14 @@
         <strong>Cedar style</strong>
         <span>Talk on the left, results on the right: documents, maps, charts and output as full-width cards.</span>
       </button>
+      <button class="ui-option" type="button" data-ui="v3" aria-pressed="false">
+        <strong>Ledger</strong>
+        <span>Talk on the left, results on the right, with the plan above the thread and the sources beside the report.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v4" aria-pressed="false">
+        <strong>Dossier</strong>
+        <span>One column. Each turn reads as a brief: plan, work, result, sources.</span>
+      </button>
     </div>
     <p class="settings-note">Saved in this browser. Switching keeps your open conversation.</p>
     <div class="cedar-set-section" id="prefs-section" aria-live="polite"></div>
@@ -158,6 +167,7 @@
   <script src="/notify.js"></script>
   <script src="/settings.js"></script>
   <script src="/attach.js"></script>
+  <script src="/trust-view.js"></script>
   <script src="/v1/app.js"></script>
 </body>
 </html>

@@ -47,6 +47,8 @@ struct FakeCedar {
     /// it answers with per endpoint name (201 once those run out).
     pushes: Mutex<Vec<(String, HeaderMap, Vec<u8>)>>,
     push_answers: Mutex<HashMap<String, VecDeque<u16>>>,
+    /// Answers to runs' plans and approvals: (path, body).
+    answers: Mutex<Vec<(String, Value)>>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -114,6 +116,16 @@ async fn cancel_run(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::resp
     }
     run["status"] = json!("cancelled");
     (StatusCode::ACCEPTED, Json(run.clone())).into_response()
+}
+
+/// cedar answers 409 unless the run waits: here, only runs whose prompt mentions "WAIT" do.
+async fn answer(s: Shared, id: Uuid, path: String, body: Value) -> axum::response::Response {
+    let waits = s.runs.lock().unwrap().get(&id).is_some_and(|r| r["prompt"].as_str().unwrap_or_default().contains("WAIT"));
+    s.answers.lock().unwrap().push((path, body.clone()));
+    if !waits {
+        return cedar_error(StatusCode::CONFLICT, "conflict", "the run is not waiting for its plan to be agreed");
+    }
+    (StatusCode::ACCEPTED, Json(body)).into_response()
 }
 
 async fn delete_run(State(s): State<Shared>, Path(id): Path<Uuid>) -> StatusCode {
@@ -338,6 +350,16 @@ impl Harness {
             .route("/v1/runs", post(create_run))
             .route("/v1/runs/{id}", get(get_run).delete(delete_run))
             .route("/v1/runs/{id}/cancel", post(cancel_run))
+            .route(
+                "/v1/runs/{id}/plan",
+                post(|State(s): State<Shared>, Path(id): Path<Uuid>, Json(b): Json<Value>| answer(s, id, "plan".into(), b)),
+            )
+            .route(
+                "/v1/runs/{id}/approvals/{aid}",
+                post(|State(s): State<Shared>, Path((id, aid)): Path<(Uuid, String)>, Json(b): Json<Value>| {
+                    answer(s, id, format!("approvals/{aid}"), b)
+                }),
+            )
             .route("/v1/runs/{id}/events", get(events))
             .route("/v1/events", get(notifications))
             .route("/v1/runs/{id}/files", get(list_files))
@@ -774,7 +796,7 @@ async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
 async fn both_uis_are_served() {
     let h = Harness::new(&[]).await;
 
-    for ui in ["v1", "v2"] {
+    for ui in ["v1", "v2", "v3", "v4"] {
         // The page is reachable with and without the trailing slash and loads its own assets.
         for uri in [format!("/{ui}"), format!("/{ui}/")] {
             let (status, headers, page) = fetch(&h, &uri).await;
@@ -1160,6 +1182,8 @@ async fn due_schedules_start_a_run_in_a_hidden_conversation() {
     assert_eq!(conv["conversation"]["reasoning"], "high");
     let sent = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
     assert_eq!((sent["model"].as_str(), sent["reasoning"].as_str()), (Some("model-a"), Some("high")));
+    // No one is there to answer a scheduled run: it neither plans nor waits.
+    assert!(sent.get("interactive").is_none() && sent.get("plan").is_none(), "{sent}");
     let title = conv["conversation"]["title"].as_str().unwrap();
     assert!(title.starts_with("Morning digest · "), "{title}");
     assert_eq!(conv["turns"].as_array().unwrap().len(), 1);
@@ -1265,16 +1289,21 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
     let first = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
     assert_eq!(first["tools"], json!(["*"]));
     assert!(first.get("system").is_none() && first.get("model").is_none());
+    // Someone is reading a message's run, so it may ask; it plans when the prompt calls for it.
+    assert_eq!(first["interactive"], true);
+    assert_eq!(first["plan"], "auto");
 
     let (status, prefs) = h
         .json(
             Method::PUT,
             "/api/settings",
-            Some(json!({ "tools": ["weather", "web_search", "weather"], "model": "model-b", "system": "  be brief  ", "max_turns": 7 })),
+            Some(json!({ "tools": ["weather", "web_search", "weather"], "model": "model-b", "system": "  be brief  ", "max_turns": 7, "plan": " Off " })),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{prefs}");
-    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7 }));
+    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "plan": "off" }));
+    let (status, _) = h.json(Method::PUT, "/api/settings", Some(json!({ "plan": "sometimes" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let (_, got) = h.json(Method::GET, "/api/settings", None).await;
     assert_eq!(got["tools"], prefs["tools"]);
     assert_eq!(got["system"], "be brief");
@@ -1291,6 +1320,7 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
     assert_eq!(second["model"], "model-b");
     assert_eq!(second["system"], "be brief");
     assert_eq!(second["max_turns"], 7);
+    assert_eq!(second["plan"], "off");
     assert!(second["parent_id"].is_string());
 
     // The conversation's own tools win; an explicit model too.
@@ -1963,4 +1993,38 @@ async fn settings_load_without_cedar() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(got["defaults"], Value::Null);
     assert_eq!(got["tools"], Value::Null);
+}
+
+// -- plans and approvals ----------------------------------------------------------------------
+
+#[tokio::test]
+async fn plans_and_approvals_are_answered_through_the_turn() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "WAIT for me" }))).await;
+    let tid = turn["id"].as_str().unwrap();
+    let run_id = turn["run_id"].as_str().unwrap();
+
+    let steps = json!({ "steps": [{ "id": "1", "title": "Search" }] });
+    let (status, body) = h.json(Method::POST, &format!("/api/turns/{tid}/plan"), Some(steps.clone())).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    let (status, _) = h.json(Method::POST, &format!("/api/turns/{tid}/approvals/a1"), Some(json!({ "decision": "allow_always" }))).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let (status, _) = h.json(Method::POST, &format!("/api/turns/{tid}/approvals/a1"), Some(json!({ "decision": "yes" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        *h.cedar.answers.lock().unwrap(),
+        [("plan".to_string(), steps), ("approvals/a1".to_string(), json!({ "decision": "allow_always" }))]
+    );
+
+    // cedar's refusal comes through, so the page can say the run moved on.
+    h.finish(run_id, "completed", Some("ok"));
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "go on" }))).await;
+    let tid = turn["id"].as_str().unwrap();
+    let (status, body) = h.json(Method::POST, &format!("/api/turns/{tid}/plan"), Some(json!({ "steps": ["x"] }))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body["error"]["message"].as_str().unwrap().contains("not waiting"), "{body}");
+    let (status, _) = h.json(Method::POST, "/api/turns/00000000-0000-0000-0000-000000000000/plan", Some(json!({ "steps": [] }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

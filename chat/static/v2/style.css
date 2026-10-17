@@ -18,6 +18,10 @@
   --accent: #1f7a5c;
   --accent: oklch(50% 0.11 160);
   --accent-wash: #e6f0ea;
+  --accent-line: #cfe3d8;
+  --warn: #8a6a1f;
+  --warn-wash: #fdf8ee;
+  --warn-line: #e9d9b8;
   --error: #a3352b;
   --error-wash: #fbeceb;
   --error-line: #e9c7c3;
@@ -46,6 +50,10 @@
     --accent: #4fb48c;
     --accent: oklch(72% 0.11 160);
     --accent-wash: #1f3029;
+    --accent-line: #2d4a3d;
+    --warn: #e2c27a;
+    --warn-wash: #332b1b;
+    --warn-line: #5a4a24;
     --error: #f2a097;
     --error-wash: #3b2422;
     --error-line: #6b3a35;
@@ -131,6 +139,8 @@ a { color: var(--accent); }
 .note.muted { color: var(--faint); font-style: italic; }
 .note.usage { font-size: 11.5px; color: var(--faint); font-family: var(--mono); }
 .working { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+.working.waiting { color: var(--warn); }
+.working.waiting .spinner { display: none; }
 
 /* The steps: one row per tool call, in order between Cedar's notes; each jumps to its result. */
 .steps { display: flex; flex-direction: column; gap: 1px; margin: -6px 0; }
@@ -247,6 +257,7 @@ a { color: var(--accent); }
 .card.widget .card-body > .cedar-stocks { font-size: 13.5px; }
 
 /* a saved file: a row; the pictures a response produced: a strip of figures */
+.card.sources .card-body { padding: 14px 16px; }
 .card.figures .card-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; padding: 12px; }
 .card.figures .card-body > .cedar-image { margin: 0; }
 .card.figures .card-body > .cedar-image-more { grid-column: 1 / -1; margin: 0; }

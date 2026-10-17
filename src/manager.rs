@@ -167,6 +167,12 @@ impl RunManager {
             .spawn(async move { inner.execute(run, token).await });
     }
 
+    /// Hand a client's answer to what a run is waiting for (`plan`, or `approval:<id>`). False if
+    /// it isn't waiting for that.
+    pub fn answer(&self, id: Uuid, key: &str, value: serde_json::Value) -> bool {
+        self.0.env.waits.answer(id, key, value)
+    }
+
     /// Ask a queued/running run to stop. Returns false if it isn't active in this process.
     /// Cancellation is asynchronous: the run reaches `cancelled` shortly after.
     pub fn cancel(&self, id: Uuid) -> bool {
@@ -263,6 +269,9 @@ impl Inner {
                     "parent_id": run.parent_id,
                     "workspace_id": run.workspace_id,
                     "workspace_reused": run.workspace_reused,
+                    "sandbox": self.env.sandbox_info,
+                    "plan": run.plan,
+                    "interactive": run.interactive,
                 }),
             )
             .await?;
@@ -280,17 +289,25 @@ impl Inner {
         };
         *slot.lock().unwrap() = Some(sandbox.clone());
 
-        match tokio::time::timeout(
-            self.run_timeout,
-            run_agent(&self.env, run, sandbox, browser, &events, token),
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(_) => Err(AgentError::Failed(format!(
-                "run exceeded the {}s time limit",
-                self.run_timeout.as_secs()
-            ))),
+        // The time limit doesn't count time spent waiting for the client (the plan, approvals):
+        // each time it is reached, it moves out by however long the run has waited so far.
+        let started = tokio::time::Instant::now();
+        let agent = run_agent(&self.env, run, sandbox, browser, &events, token);
+        tokio::pin!(agent);
+        loop {
+            let deadline = started + self.run_timeout + self.env.waits.paused(run.id);
+            tokio::select! {
+                result = &mut agent => return result,
+                _ = tokio::time::sleep_until(deadline) => {
+                    let moved = started + self.run_timeout + self.env.waits.paused(run.id);
+                    if moved <= tokio::time::Instant::now() {
+                        return Err(AgentError::Failed(format!(
+                            "run exceeded the {}s time limit",
+                            self.run_timeout.as_secs()
+                        )));
+                    }
+                }
+            }
         }
     }
 
@@ -339,6 +356,7 @@ impl Inner {
         }
         // Dropping the hub entry wakes any stream one last time so it can drain and close.
         self.hub.remove(run.id);
+        self.env.waits.forget(run.id);
         self.active.lock().unwrap().remove(&run.id);
         tracing::info!(run_id = %run.id, "run finished");
     }

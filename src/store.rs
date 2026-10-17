@@ -3,8 +3,8 @@
 //! Uses runtime-checked queries (not the `query!` macros) so building doesn't need a database.
 
 use crate::models::{
-    event, Attachment, Event, ModelEntry, NewRun, Notification, Run, RunStatus, StoredMessage,
-    Usage,
+    event, Attachment, Event, ModelEntry, NewRun, Notification, PlanMode, Run, RunStatus,
+    StoredMessage, Usage,
 };
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, callback_url, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, callback_url, created_at, started_at, finished_at";
 
 /// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
 /// its run's final state.
@@ -28,7 +28,7 @@ const NOTIFICATION_COLS: &str = "n.id, n.run_id, n.seq, r.status, r.stop_reason,
 
 const MODEL_COLS: &str =
     "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, is_default, \
-    position, listed_models, created_at, updated_at";
+    price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, updated_at";
 
 fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
@@ -74,6 +74,8 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
             .map(serde_json::from_str)
             .transpose()?,
         callback_url: r.try_get("callback_url")?,
+        plan: PlanMode::parse(r.try_get("plan")?).unwrap_or_default(),
+        interactive: r.try_get("interactive")?,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
@@ -90,6 +92,16 @@ fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
         default_reasoning: r.try_get("default_reasoning")?,
         multimodal: r.try_get("multimodal")?,
         is_default: r.try_get("is_default")?,
+        price: match (
+            r.try_get::<Option<f64>, _>("price_input_usd_per_m")?,
+            r.try_get::<Option<f64>, _>("price_output_usd_per_m")?,
+        ) {
+            (Some(input_usd_per_m), Some(output_usd_per_m)) => Some(crate::models::Price {
+                input_usd_per_m,
+                output_usd_per_m,
+            }),
+            _ => None,
+        },
         position: r.try_get("position")?,
         listed_models: r
             .try_get::<Option<&str>, _>("listed_models")?
@@ -310,8 +322,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -327,6 +339,8 @@ impl Store {
         .bind(new.tools.as_ref().map(serde_json::to_string).transpose()?)
         .bind(&callback.0)
         .bind(&callback.1)
+        .bind(new.plan.as_str())
+        .bind(new.interactive)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -402,6 +416,43 @@ impl Store {
     }
 
     /// Record that a model turn finished: the turn counter and token usage.
+    /// Whether `owner` has said to always allow every one of `scopes` for `rule`.
+    pub async fn granted(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<bool> {
+        if scopes.is_empty() {
+            return Ok(false);
+        }
+        for scope in scopes {
+            let row = sqlx::query(
+                "SELECT 1 FROM approval_grants WHERE owner = ? AND rule = ? AND scope = ?",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .fetch_optional(&self.pool)
+            .await?;
+            if row.is_none() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Remember that `owner` always allows `scopes` for `rule`.
+    pub async fn grant(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<()> {
+        for scope in scopes {
+            sqlx::query(
+                "INSERT OR IGNORE INTO approval_grants (owner, rule, scope, created_at) VALUES (?, ?, ?, ?)",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
     pub async fn record_turn(&self, id: Uuid, turns: u32, usage: Usage) -> Result<()> {
         sqlx::query(
             "UPDATE runs SET turns = ?, input_tokens = input_tokens + ?, output_tokens = output_tokens + ? WHERE id = ?",
@@ -808,12 +859,14 @@ impl Store {
         }
         sqlx::query(
             "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
-             multimodal, is_default, position, listed_models, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             multimodal, is_default, price_input_usd_per_m, price_output_usd_per_m, position, \
+             listed_models, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
              base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
              default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, \
-             is_default = excluded.is_default, listed_models = excluded.listed_models, \
+             is_default = excluded.is_default, price_input_usd_per_m = excluded.price_input_usd_per_m, \
+             price_output_usd_per_m = excluded.price_output_usd_per_m, listed_models = excluded.listed_models, \
              updated_at = excluded.updated_at",
         )
         .bind(&entry.id)
@@ -824,6 +877,8 @@ impl Store {
         .bind(&entry.default_reasoning)
         .bind(entry.multimodal)
         .bind(is_default)
+        .bind(entry.price.map(|p| p.input_usd_per_m))
+        .bind(entry.price.map(|p| p.output_usd_per_m))
         .bind(position)
         .bind(
             entry
@@ -924,6 +979,8 @@ mod tests {
             attachments: vec![],
             callback_url: None,
             callback_secret: None,
+            plan: PlanMode::Off,
+            interactive: false,
         }
     }
 
@@ -1238,6 +1295,8 @@ mod tests {
         ];
         let new = NewRun {
             attachments: files.clone(),
+            plan: PlanMode::Off,
+            interactive: false,
             ..new_run("a")
         };
         let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();

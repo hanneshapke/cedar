@@ -308,6 +308,8 @@ async fn deliveries_left_over_from_a_previous_process_are_made_at_startup() {
         attachments: vec![],
         callback_url: Some(url.clone()),
         callback_secret: None,
+        plan: cedar::models::PlanMode::Off,
+        interactive: false,
     };
     // One run finished without its webhook being sent, one was still running when the process died.
     let finished = store.insert_run_limited(&new("a"), 10).await.unwrap().unwrap();

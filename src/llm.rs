@@ -30,6 +30,9 @@ pub struct LlmResponse {
     pub content: Vec<Value>,
     pub stop_reason: Option<String>,
     pub usage: Usage,
+    /// The model's reasoning (`reasoning_content` or `reasoning`), if its server returns it. Shown
+    /// to the user, not kept in the conversation.
+    pub reasoning: Option<String>,
 }
 
 #[async_trait]
@@ -301,7 +304,12 @@ fn parse_response(body: &str) -> Result<LlmResponse> {
         .ok_or_else(|| anyhow!("API response has no choices"))?;
     let message = &choice["message"];
 
-    // Reasoning (`reasoning` / `reasoning_content`) is not part of the conversation we keep.
+    // Reasoning (`reasoning_content` / `reasoning`) is not part of the conversation we keep; it
+    // is returned on its own for the event that shows it.
+    let reasoning = ["reasoning_content", "reasoning"]
+        .iter()
+        .find_map(|k| message[k].as_str().filter(|t| !t.trim().is_empty()))
+        .map(String::from);
     let mut content = Vec::new();
     if let Some(text) = message["content"].as_str().filter(|t| !t.is_empty()) {
         content.push(json!({ "type": "text", "text": text }));
@@ -327,6 +335,7 @@ fn parse_response(body: &str) -> Result<LlmResponse> {
             input_tokens: v["usage"]["prompt_tokens"].as_u64().unwrap_or(0),
             output_tokens: v["usage"]["completion_tokens"].as_u64().unwrap_or(0),
         },
+        reasoning,
     })
 }
 
@@ -639,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_tool_calls_and_ignores_reasoning() {
+    fn parses_tool_calls_and_keeps_reasoning_out_of_the_content() {
         let body = json!({ "choices": [{ "finish_reason": "tool_calls", "message": {
             "content": null,
             "reasoning": "let me think",
@@ -659,6 +668,18 @@ mod tests {
                 json!({ "type": "tool_use", "id": "call_1", "name": "read_file", "input": { "path": "a" } }),
             ]
         );
+        assert_eq!(r.reasoning.as_deref(), Some("let me think"));
+    }
+
+    #[test]
+    fn reasoning_content_is_preferred_and_blank_reasoning_is_none() {
+        let body = |message: Value| {
+            json!({ "choices": [{ "finish_reason": "stop", "message": message }] }).to_string()
+        };
+        let r = parse_response(&body(json!({ "content": "hi", "reasoning_content": "vllm", "reasoning": "other" }))).unwrap();
+        assert_eq!(r.reasoning.as_deref(), Some("vllm"));
+        let r = parse_response(&body(json!({ "content": "hi", "reasoning_content": "  " }))).unwrap();
+        assert_eq!(r.reasoning, None);
     }
 
     #[test]

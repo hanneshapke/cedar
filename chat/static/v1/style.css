@@ -21,6 +21,20 @@
   --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, Cambria, "Times New Roman", serif;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* The names trust-view.css (the plan, approvals, reasoning, sources) draws with. */
+  --ink: var(--text);
+  --ink-2: var(--text);
+  --line: var(--border);
+  --sheet: var(--surface);
+  --wash: var(--hover);
+  --on-ink: var(--surface);
+  --accent-wash: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --accent-line: color-mix(in srgb, var(--accent) 30%, var(--border));
+  --error: var(--error-text);
+  --error-wash: var(--error-bg);
+  --warn: #8a6a1f;
+  --warn-wash: #fdf8ee;
+  --warn-line: #e9d9b8;
   color-scheme: light;
 }
 
@@ -44,6 +58,9 @@
     --error-text: #f2a097;
     --ok: #7cc28e;
     --shadow: 0 1px 2px rgba(0, 0, 0, .2), 0 4px 16px rgba(0, 0, 0, .25);
+    --warn: #e2c27a;
+    --warn-wash: #332b1b;
+    --warn-line: #5a4a24;
     color-scheme: dark;
   }
 }
@@ -174,6 +191,18 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .notice.error { background: var(--error-bg); color: var(--error-text); }
 .notice.muted { padding: 4px 0; color: var(--faint); font-style: italic; }
 
+.assistant > .cedar-plan, .assistant > .cedar-approval { margin: 12px 0; }
+.assistant > .cedar-reasoning { margin: 10px 0; }
+.thinking.waiting { color: var(--warn); }
+.thinking.waiting .logo { animation: none; }
+.sources { margin: 12px 0 4px; font-size: 13px; }
+.sources > summary { display: flex; align-items: center; gap: 7px; width: fit-content; cursor: pointer; list-style: none; color: var(--muted); user-select: none; }
+.sources > summary::-webkit-details-marker { display: none; }
+.sources > summary:hover { color: var(--text); }
+.sources > summary svg { width: 15px; height: 15px; }
+.sources .chev { transition: transform .15s; }
+.sources[open] .chev { transform: rotate(90deg); }
+.sources > .cedar-sources { margin: 10px 0 0 22px; }
 .turn-footer { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--faint); font-size: 12px; }
 .turn-footer .tokens { margin-left: 4px; }
 
