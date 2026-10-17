@@ -1,5 +1,7 @@
 //! Service configuration, read from the environment.
 
+use crate::approvals::Rules;
+use crate::models::PlanMode;
 use anyhow::{anyhow, bail, Context, Result};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -203,6 +205,14 @@ pub struct Config {
     pub pdf_preview_pages: usize,
     /// How long a workspace is kept after its last run ends, so a continuation can pick it up.
     pub workspace_ttl: Duration,
+    /// Whether a run that doesn't say plans before it starts (`PLAN`: off, on, auto).
+    pub plan: PlanMode,
+    /// Which tool calls wait for approval in interactive runs (`TOOL_APPROVALS`).
+    pub tool_approvals: Rules,
+    /// How long a run waits for its plan to be agreed or a call to be approved before it goes on
+    /// without (the plan as proposed; the call not made). The wait doesn't count toward
+    /// `run_timeout`.
+    pub approval_timeout: Duration,
 
     pub sandbox: SandboxConfig,
     pub browser: BrowserConfig,
@@ -446,6 +456,17 @@ impl Config {
                 get("WORKSPACE_TTL_SECS"),
                 24 * 3600,
             )?),
+            plan: match get("PLAN") {
+                None => PlanMode::Off,
+                Some(v) => PlanMode::parse(&v)
+                    .ok_or_else(|| anyhow!("invalid PLAN={v:?}: use off, on or auto"))?,
+            },
+            tool_approvals: Rules::parse(&get("TOOL_APPROVALS").unwrap_or_default())?,
+            approval_timeout: Duration::from_secs(parse(
+                "APPROVAL_TIMEOUT_SECS",
+                get("APPROVAL_TIMEOUT_SECS"),
+                300,
+            )?),
 
             sandbox: SandboxConfig {
                 image: get("SANDBOX_IMAGE").unwrap_or_else(|| "cedar-sandbox:latest".into()),
@@ -481,6 +502,9 @@ impl Config {
         }
         if self.tool_timeout.is_zero() {
             bail!("TOOL_TIMEOUT_SECS must be at least 1");
+        }
+        if self.approval_timeout.is_zero() {
+            bail!("APPROVAL_TIMEOUT_SECS must be at least 1");
         }
         if self.browser.enabled && self.browser.network == "none" {
             bail!("BROWSER_NETWORK=none leaves the browser without internet access; use a network that has it");

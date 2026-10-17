@@ -96,6 +96,15 @@ impl AppState {
         let env = AgentEnv {
             llm: llm.clone(),
             sandbox_network: cfg.sandbox.network.clone(),
+            sandbox_info: json!({
+                "network": cfg.sandbox.network,
+                "memory": cfg.sandbox.memory,
+                // A number when it is one ("1", "0.5"), as Docker takes it.
+                "cpus": cfg.sandbox.cpus.parse::<f64>().map_or_else(|_| json!(cfg.sandbox.cpus), |n| json!(n)),
+            }),
+            approvals: cfg.tool_approvals.clone(),
+            approval_timeout: cfg.approval_timeout,
+            waits: Arc::default(),
             tools: integrations.tools(),
             store: store.clone(),
             max_tokens: cfg.max_tokens,
@@ -141,6 +150,8 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/messages", get(get_messages))
         .route("/runs/{id}/events", get(stream_events))
         .route("/runs/{id}/cancel", post(cancel_run))
+        .route("/runs/{id}/plan", post(answer_plan))
+        .route("/runs/{id}/approvals/{approval_id}", post(decide_approval))
         .route("/runs/{id}/files", get(list_files))
         .route("/runs/{id}/files/{*path}", get(download_file))
         .route("/compact", post(compact_conversation))
@@ -428,6 +439,8 @@ async fn create_run(
         parent_id: req.parent_id,
         tools,
         attachments,
+        plan: req.plan.unwrap_or(cfg.plan),
+        interactive: req.interactive.unwrap_or(false),
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -473,6 +486,8 @@ async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
         "model_id": default.as_ref().map(|m| m.id.clone()),
         "system": cfg.default_system_prompt,
         "max_turns_cap": cfg.max_turns_cap,
+        "plan": cfg.plan,
+        "tool_approvals": !cfg.tool_approvals.is_empty(),
         "attachments": {
             "max_count": MAX_ATTACHMENTS,
             "max_bytes": MAX_ATTACHMENT_BYTES,
@@ -679,6 +694,52 @@ async fn cancel_run(
     }
     // Cancellation is asynchronous; follow the event stream or poll the run for the final state.
     Ok((StatusCode::ACCEPTED, Json(run)))
+}
+
+/// Agree to the plan an interactive run is waiting on: the steps it proposed, or edited ones.
+async fn answer_plan(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<serde_json::Value>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let run = owned_run(&state, &owner, &id).await?;
+    let steps = crate::plan::parse_answer(&body).map_err(AppError::BadRequest)?;
+    let answer = json!({ "steps": steps });
+    if !state.manager.answer(run.id, "plan", answer.clone()) {
+        return Err(AppError::Conflict("the run is not waiting for its plan to be agreed".into()));
+    }
+    Ok((StatusCode::ACCEPTED, Json(answer)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovalDecision {
+    decision: String,
+}
+
+/// Answer an `approval.required` event: `allow`, `allow_always` (and remember its scope for
+/// this API key), or `deny`.
+async fn decide_approval(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path((id, approval_id)): Path<(String, String)>,
+    ApiJson(body): ApiJson<ApprovalDecision>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let run = owned_run(&state, &owner, &id).await?;
+    if !matches!(body.decision.as_str(), "allow" | "allow_always" | "deny") {
+        return Err(AppError::BadRequest(
+            "decision must be allow, allow_always or deny".into(),
+        ));
+    }
+    let answer = json!({ "decision": body.decision });
+    if !state
+        .manager
+        .answer(run.id, &format!("approval:{approval_id}"), answer.clone())
+    {
+        return Err(AppError::Conflict("the run is not waiting for that approval".into()));
+    }
+    Ok((StatusCode::ACCEPTED, Json(answer)))
 }
 
 async fn delete_run(

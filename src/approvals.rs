@@ -1,0 +1,438 @@
+//! Which tool calls wait for the user's OK before they run, in runs whose client answers
+//! (`interactive`). The rules are a heuristic on the tool and its input: sending email, saving
+//! files from the web, installing packages, deleting files, and, when the sandbox has a network,
+//! running code that can reach it. `TOOL_APPROVALS` picks the rules; `off` turns the gate off.
+
+use crate::tools::{group_of, writes};
+use anyhow::{bail, Result};
+use serde_json::Value;
+use std::collections::BTreeSet;
+
+/// A kind of call that needs approval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Rule {
+    /// Gmail tools that send, draft or change mail.
+    Email,
+    /// `download_file`.
+    Downloads,
+    /// `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`.
+    Installs,
+    /// `rm` and friends in `bash`.
+    Deletes,
+    /// Any `bash` or `run_python` call while the sandbox has a network.
+    Network,
+}
+
+impl Rule {
+    pub const ALL: [Rule; 5] = [
+        Rule::Email,
+        Rule::Downloads,
+        Rule::Installs,
+        Rule::Deletes,
+        Rule::Network,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Rule::Email => "email",
+            Rule::Downloads => "downloads",
+            Rule::Installs => "installs",
+            Rule::Deletes => "deletes",
+            Rule::Network => "network",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        Rule::ALL.into_iter().find(|r| r.as_str() == s)
+    }
+}
+
+/// The rules in force, from `TOOL_APPROVALS`: `on` (the default) for all of them, `off` for none,
+/// or a comma-separated list of rule names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rules(BTreeSet<Rule>);
+
+impl Default for Rules {
+    fn default() -> Self {
+        Rules(Rule::ALL.into_iter().collect())
+    }
+}
+
+impl Rules {
+    pub fn none() -> Self {
+        Rules(BTreeSet::new())
+    }
+
+    pub fn parse(raw: &str) -> Result<Self> {
+        let raw = raw.trim().to_ascii_lowercase();
+        match raw.as_str() {
+            "" | "on" | "all" => return Ok(Self::default()),
+            "off" | "none" => return Ok(Self::none()),
+            _ => {}
+        }
+        let mut rules = BTreeSet::new();
+        for name in raw.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+            match Rule::parse(name) {
+                Some(rule) => {
+                    rules.insert(rule);
+                }
+                None => bail!(
+                    "TOOL_APPROVALS: unknown rule {name:?} (use on, off, or a list of: {})",
+                    Rule::ALL.map(Rule::as_str).join(", ")
+                ),
+            }
+        }
+        Ok(Rules(rules))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn has(&self, rule: Rule) -> bool {
+        self.0.contains(&rule)
+    }
+}
+
+/// Why a call waits, as shown on the approval card.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Gate {
+    pub rule: Rule,
+    /// One line on what the call will do.
+    pub reason: String,
+    /// What "Always for ..." would allow from now on (a host, package names), as shown. `None`:
+    /// this kind of call is asked about every time.
+    pub scope: Option<String>,
+    /// The scope, split into what is remembered: one entry per host or package.
+    pub grants: Vec<String>,
+}
+
+/// Whether calling `name` with `input` needs the user's OK under `rules`, given the sandbox's
+/// Docker network mode.
+pub fn check(rules: &Rules, name: &str, input: &Value, sandbox_network: &str) -> Option<Gate> {
+    let networked = sandbox_network != "none";
+    match name {
+        "download_file" if rules.has(Rule::Downloads) => {
+            let url = input["url"].as_str().unwrap_or_default();
+            let host = host_of(url);
+            let file = input["path"]
+                .as_str()
+                .filter(|p| !p.is_empty())
+                .or_else(|| url.rsplit('/').next().filter(|f| !f.is_empty()))
+                .unwrap_or("a file");
+            let from = host
+                .as_deref()
+                .map_or(String::new(), |h| format!(" from {h}"));
+            Some(Gate {
+                rule: Rule::Downloads,
+                reason: format!("Save {file}{from} to the workspace."),
+                grants: host.iter().cloned().collect(),
+                scope: host,
+            })
+        }
+        "bash" | "run_python" => {
+            let code = input[if name == "bash" { "command" } else { "code" }]
+                .as_str()
+                .unwrap_or_default();
+            if name == "bash" && rules.has(Rule::Deletes) && deletes(code) {
+                return Some(Gate {
+                    rule: Rule::Deletes,
+                    reason: format!("Delete files in the workspace: {}", one_line(code)),
+                    scope: None,
+                    grants: vec![],
+                });
+            }
+            // Without a network an install can't fetch anything, so there is nothing to ask.
+            let packages = installs(code);
+            if networked && rules.has(Rule::Installs) && !packages.is_empty() {
+                return Some(Gate {
+                    rule: Rule::Installs,
+                    reason: format!("Install {} from the internet.", packages.join(", ")),
+                    scope: Some(packages.join(", ")),
+                    grants: packages,
+                });
+            }
+            if networked && rules.has(Rule::Network) {
+                let what = if name == "bash" {
+                    "Run a command"
+                } else {
+                    "Run Python"
+                };
+                return Some(Gate {
+                    rule: Rule::Network,
+                    reason: format!("{what} with internet access: {}", one_line(code)),
+                    scope: Some("code with internet access".into()),
+                    grants: vec!["sandbox".into()],
+                });
+            }
+            None
+        }
+        _ if rules.has(Rule::Email) && group_of(name) == "gmail" && writes(name) => {
+            let to = ["to", "recipient", "recipients"]
+                .iter()
+                .find_map(|k| match &input[k] {
+                    Value::String(s) if !s.is_empty() => Some(s.clone()),
+                    Value::Array(a) if !a.is_empty() => Some(
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                    _ => None,
+                });
+            let subject = input["subject"].as_str().filter(|s| !s.is_empty());
+            let mut reason = format!("{} in your Gmail", humanize(name));
+            if let Some(to) = to {
+                reason.push_str(&format!(" to {to}"));
+            }
+            if let Some(subject) = subject {
+                reason.push_str(&format!(": \"{}\"", one_line(subject)));
+            }
+            reason.push('.');
+            Some(Gate {
+                rule: Rule::Email,
+                reason,
+                scope: None,
+                grants: vec![],
+            })
+        }
+        _ => None,
+    }
+}
+
+/// `gmail_send_message` -> "Send message".
+fn humanize(name: &str) -> String {
+    let words: Vec<&str> = name.split('_').skip(1).collect();
+    let mut s = words.join(" ");
+    if let Some(first) = s.get(..1) {
+        s = first.to_uppercase() + &s[1..];
+    }
+    s
+}
+
+fn host_of(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    Some(host.strip_prefix("www.").map(String::from).unwrap_or(host))
+}
+
+/// The first line of `s`, cut to a readable length.
+fn one_line(s: &str) -> String {
+    let line = s.trim().lines().next().unwrap_or_default();
+    let mut out: String = line.chars().take(160).collect();
+    if out.len() < line.len() || s.trim().lines().nth(1).is_some() {
+        out.push('…');
+    }
+    out
+}
+
+/// The commands in a script, each as its words: split at `;`, `&&`, `||`, pipes, subshells and
+/// line breaks, then at whitespace and quotes. Rough, but enough to find what runs.
+fn commands(code: &str) -> Vec<Vec<&str>> {
+    code.split(['\n', ';', '&', '|', '(', ')', '`'])
+        .map(|cmd| {
+            cmd.split(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+                .filter(|w| !w.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// A command's words without the wrappers that run it (`sudo`, `xargs`, `exec`, ...).
+fn unwrapped<'a, 'b>(words: &'b [&'a str]) -> &'b [&'a str] {
+    let skip = words
+        .iter()
+        .take_while(|w| {
+            matches!(
+                **w,
+                "sudo" | "xargs" | "exec" | "then" | "do" | "else" | "env" | "time" | "nohup"
+            )
+        })
+        .count();
+    &words[skip..]
+}
+
+/// Whether a command removes files: `rm`, `rmdir`, `shred`, `unlink`, or `find ... -delete`.
+fn deletes(code: &str) -> bool {
+    commands(code).iter().any(|words| {
+        let words = unwrapped(words);
+        matches!(words.first(), Some(&("rm" | "rmdir" | "shred" | "unlink")))
+            || words.contains(&"-delete")
+            || words.windows(2).any(|w| w[0] == "-exec" && w[1] == "rm")
+    })
+}
+
+/// The packages a command or script installs, by name, in order and without repeats.
+fn installs(code: &str) -> Vec<String> {
+    const MANAGERS: &[(&[&str], &[&str])] = &[
+        (&["pip", "pip3"], &["install"]),
+        (&["uv"], &["add"]),
+        (&["npm", "pnpm"], &["i", "install", "add"]),
+        (&["yarn"], &["add"]),
+        (&["apt", "apt-get"], &["install"]),
+        (&["cargo", "gem", "go", "conda", "brew"], &["install"]),
+    ];
+    let mut out: Vec<String> = Vec::new();
+    for words in commands(code) {
+        // Find the package manager anywhere in the command: `python -m pip install`, `!pip ...`,
+        // `os.system('pip install ...')`.
+        let Some(i) = words.iter().position(|w| {
+            let w = w.trim_start_matches(['!', '%']);
+            MANAGERS.iter().any(|(names, _)| names.contains(&w))
+        }) else {
+            continue;
+        };
+        let tool = words[i].trim_start_matches(['!', '%']);
+        let (_, verbs) = MANAGERS
+            .iter()
+            .find(|(names, _)| names.contains(&tool))
+            .unwrap();
+        let mut j = i + 1;
+        if tool == "uv" && words.get(j) == Some(&"pip") {
+            j += 1;
+        }
+        let verb = words.get(j).copied().unwrap_or_default();
+        if !(verbs.contains(&verb) || (tool == "uv" && verb == "install")) {
+            continue;
+        }
+        for arg in &words[j + 1..] {
+            if arg.starts_with('#') {
+                break;
+            }
+            if arg.starts_with('-') {
+                continue;
+            }
+            let name = if arg.starts_with('@') {
+                arg.to_ascii_lowercase()
+            } else {
+                arg.split(['=', '<', '>', '[', '@', '~', '!'])
+                    .next()
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+            };
+            let valid = !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-_./@".contains(c));
+            if valid && !out.contains(&name) {
+                out.push(name);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn all() -> Rules {
+        Rules::default()
+    }
+
+    #[test]
+    fn rules_parse_from_the_setting() {
+        assert_eq!(Rules::parse("on").unwrap(), Rules::default());
+        assert!(Rules::parse("off").unwrap().is_empty());
+        let some = Rules::parse("email, downloads").unwrap();
+        assert!(some.has(Rule::Email) && some.has(Rule::Downloads) && !some.has(Rule::Network));
+        assert!(Rules::parse("emails").is_err());
+    }
+
+    #[test]
+    fn downloads_are_scoped_to_their_host() {
+        let gate = check(
+            &all(),
+            "download_file",
+            &json!({ "url": "https://www.example.com/r/x.pdf", "path": "attachments/x.pdf" }),
+            "none",
+        )
+        .unwrap();
+        assert_eq!(gate.rule, Rule::Downloads);
+        assert_eq!(gate.scope.as_deref(), Some("example.com"));
+        assert_eq!(gate.grants, ["example.com"]);
+        assert_eq!(
+            gate.reason,
+            "Save attachments/x.pdf from example.com to the workspace."
+        );
+    }
+
+    #[test]
+    fn sending_mail_asks_every_time_but_reading_does_not() {
+        let gate = check(
+            &all(),
+            "gmail_send_message",
+            &json!({ "to": ["a@x.org"], "subject": "Q3 numbers" }),
+            "none",
+        )
+        .unwrap();
+        assert_eq!(gate.rule, Rule::Email);
+        assert_eq!(gate.scope, None);
+        assert_eq!(
+            gate.reason,
+            "Send message in your Gmail to a@x.org: \"Q3 numbers\"."
+        );
+        assert!(check(&all(), "gmail_search_threads", &json!({}), "none").is_none());
+        assert!(check(&all(), "calendar_create_event", &json!({}), "none").is_none());
+    }
+
+    #[test]
+    fn deletes_are_caught_as_commands_only() {
+        let rm = |c: &str| check(&all(), "bash", &json!({ "command": c }), "none");
+        assert_eq!(rm("rm -rf out/").unwrap().rule, Rule::Deletes);
+        assert_eq!(rm("cd x && rm a.txt").unwrap().rule, Rule::Deletes);
+        assert_eq!(
+            rm("find . -name '*.tmp' -delete").unwrap().rule,
+            Rule::Deletes
+        );
+        assert!(rm("grep rm notes.txt").is_none());
+        assert!(rm("ls -la").is_none());
+    }
+
+    #[test]
+    fn installs_need_a_network_and_name_their_packages() {
+        let input = json!({ "command": "pip install -q pandas==2.2 'numpy>=1' && python a.py" });
+        assert!(check(&all(), "bash", &input, "none").is_none());
+        let gate = check(&all(), "bash", &input, "bridge").unwrap();
+        assert_eq!(gate.rule, Rule::Installs);
+        assert_eq!(gate.grants, ["pandas", "numpy"]);
+        assert_eq!(gate.scope.as_deref(), Some("pandas, numpy"));
+        assert_eq!(
+            installs("npm i -D typescript @types/node"),
+            ["typescript", "@types/node"]
+        );
+        assert_eq!(installs("uv pip install requests"), ["requests"]);
+        assert_eq!(installs("sudo apt-get install -y jq"), ["jq"]);
+        assert_eq!(
+            installs("import os\nos.system('pip install rich')"),
+            ["rich"]
+        );
+        assert!(installs("pip list").is_empty());
+    }
+
+    #[test]
+    fn code_with_a_network_asks_unless_that_rule_is_off() {
+        let input = json!({ "code": "print(1)" });
+        let gate = check(&all(), "run_python", &input, "bridge").unwrap();
+        assert_eq!(gate.rule, Rule::Network);
+        assert_eq!(gate.grants, ["sandbox"]);
+        assert!(check(&all(), "run_python", &input, "none").is_none());
+        let rules = Rules::parse("email,downloads,installs,deletes").unwrap();
+        assert!(check(&rules, "run_python", &input, "bridge").is_none());
+    }
+
+    #[test]
+    fn nothing_is_asked_with_the_gate_off() {
+        let off = Rules::none();
+        assert!(check(
+            &off,
+            "download_file",
+            &json!({ "url": "https://a.b/c" }),
+            "none"
+        )
+        .is_none());
+        assert!(check(&off, "bash", &json!({ "command": "rm x" }), "none").is_none());
+    }
+}

@@ -799,7 +799,8 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(
         app.get("/v1/models", KEY_A).await.1["models"][0],
         json!({ "id": "gpu", "label": "GPU box", "model": "m-1", "is_default": true,
-                "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true })
+                "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true,
+                "price": null })
     );
 
     // The next run talks to the server, with its key and the level asked for.
