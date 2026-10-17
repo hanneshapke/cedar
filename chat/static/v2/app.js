@@ -278,6 +278,7 @@ const TOOLS = {
     subject: (i) => i.location || (i.latitude != null ? `${i.latitude}, ${i.longitude}` : ''),
   },
   show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i) },
+  show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title },
   plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i) },
 };
 
@@ -390,6 +391,29 @@ function mapClipping(tool, meta) {
   return el;
 }
 
+/**
+ * The clipping for a show_recipe call: the recipe card once the result is in. Like a map, the card
+ * keeps state (what is ticked off), so it is built once and moved into each redrawn clipping.
+ */
+function recipeClipping(tool, meta) {
+  const head = escapeHtml(String(tool.input?.title || 'Recipe'));
+  if (tool.output === undefined) {
+    const el = clipEl('show_recipe', meta, head, 'finding a photo…');
+    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
+    return el;
+  }
+  if (tool.is_error) return clipEl('show_recipe', meta, head, '', tool.output, true);
+  const spec = cedarRecipe.parse(tool.output);
+  if (!spec) return clipEl('show_recipe', meta, head, '', tool.output);
+  tool.recipeEl ??= cedarRecipe.element(spec);
+  // The card shows the title, so the clipping's head only counts the steps.
+  const n = spec.steps.length;
+  const el = clipEl('show_recipe', meta, `Recipe · ${n} step${n === 1 ? '' : 's'}`, '');
+  el.classList.add('recipe');
+  el.append(tool.recipeEl);
+  return el;
+}
+
 /** The clipping for a plan_trip call: the trip card once the result is in, kept like a map's. */
 function tripClipping(tool, meta) {
   const head = escapeHtml(tripSubject(tool.input || {}));
@@ -432,6 +456,8 @@ function clippingsFor(tool) {
       return [clipEl('fetch_url', meta, linkHtml(String(input.url || '')), '', raw, tool.is_error)];
     case 'show_map':
       return [mapClipping(tool, meta)];
+    case 'show_recipe':
+      return [recipeClipping(tool, meta)];
     case 'plan_trip':
       return [tripClipping(tool, meta)];
     default:

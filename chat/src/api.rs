@@ -57,6 +57,9 @@ const FILE_VIEWER_JS: &str = include_str!("../static/file-viewer.js");
 /// Draws the `show_map` tool's result as a map; both UIs load it, and it loads Leaflet on demand.
 const MAP_VIEW_JS: &str = include_str!("../static/map-view.js");
 const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
+/// Draws the `show_recipe` tool's result as a recipe card with the steps as a timeline; both UIs load it.
+const RECIPE_VIEW_JS: &str = include_str!("../static/recipe-view.js");
+const RECIPE_VIEW_CSS: &str = include_str!("../static/recipe-view.css");
 /// Draws the `plan_trip` tool's result as a route map with the options; it needs the map view.
 const TRANSIT_VIEW_JS: &str = include_str!("../static/transit-view.js");
 const TRANSIT_VIEW_CSS: &str = include_str!("../static/transit-view.css");
@@ -169,6 +172,8 @@ pub fn router(state: AppState) -> Router {
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
         .route("/map-view.js", get(|| async { asset(JS, MAP_VIEW_JS) }))
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
+        .route("/recipe-view.js", get(|| async { asset(JS, RECIPE_VIEW_JS) }))
+        .route("/recipe-view.css", get(|| async { asset(CSS, RECIPE_VIEW_CSS) }))
         .route("/transit-view.js", get(|| async { asset(JS, TRANSIT_VIEW_JS) }))
         .route("/transit-view.css", get(|| async { asset(CSS, TRANSIT_VIEW_CSS) }))
         .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))

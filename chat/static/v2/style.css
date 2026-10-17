@@ -140,6 +140,9 @@ a { color: var(--accent); }
 /* A map is a live widget: a tilted clipping would skew where Leaflet thinks the pointer is. */
 .clip.map:nth-child(n) { transform: none; margin-left: 0; }
 .clip.map .cedar-map, .clip.map .cedar-trip { margin: 10px 0 0; }
+/* A recipe card is worked through (ticked off step by step), so it lies flat too. */
+.clip.recipe:nth-child(n) { transform: none; margin-left: 0; }
+.clip.recipe .cedar-recipe { margin: 10px 0 0; font-size: 13px; }
 /* The images a response produced are in the margin, which is narrow: the name sits above the buttons. */
 .note .cedar-image { margin: 8px 0 0; }
 .note .cedar-image-img { max-height: 220px; }

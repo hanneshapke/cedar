@@ -59,6 +59,13 @@ Both interfaces have all of these, except where noted:
   cedar could not find. Cedar style puts it on the desk as a clipping, Claude style under the tool
   call. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
   the tool call's raw output is shown
+- A `show_recipe` tool call (when cedar offers the tool) is drawn as a recipe card: the photo of the
+  dish cedar found (loaded from Wikimedia, see [Recipe photos and privacy](#recipe-photos-and-privacy); credited with a link to its page; the title alone if there
+  is none or it fails to load), the times and servings, the ingredients as a checklist, and the steps
+  as a timeline. The steps appear one after another the first time the card is on screen. Tick a
+  step's number to mark it done, or use the button under the timeline to finish the current step
+  and move on: the line fills in and the next step is highlighted. Cedar style puts it on the desk
+  as a clipping, Claude style under the tool call
 - A `plan_trip` tool call is drawn as a trip card: the recommended way to go and why, a map of the
   chosen option's route between an A and a B pin (each transit line in its own color, walks dotted),
   a row per option (transit with its line badges, times and transfers; drive; rideshare with its
@@ -120,6 +127,15 @@ area shown. OpenStreetMap's [tile usage policy](https://operations.osmfoundation
 allows light use like this and asks for the attribution the map displays; a busy deployment should
 use its own tile server (the URL is `TILES` in `static/map-view.js`). The chat server itself makes
 no requests for maps; cedar looks the places up (see the top-level README).
+
+### Recipe photos and privacy
+
+The photo on a recipe card is the other thing that comes from elsewhere: the browser loads it from
+the `https` address cedar found, normally `upload.wikimedia.org`, without a referrer, so Wikimedia
+sees the viewer's IP address and which photo was shown, but not this page. The photo is an `<img>`
+and the rest of the card is set as text, so nothing in the tool's result runs in the page. The chat
+server itself makes no requests for recipes; cedar searches Wikipedia and Commons (see the top-level
+README). Set `RECIPES=off` on cedar to remove the tool.
 
 ## Configuration
 

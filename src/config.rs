@@ -13,6 +13,8 @@ pub const DEFAULT_BRAVE_BASE_URL: &str = "https://api.search.brave.com/res/v1/we
 pub const DEFAULT_WEATHER_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
 pub const DEFAULT_WEATHER_GEOCODING_BASE_URL: &str =
     "https://geocoding-api.open-meteo.com/v1/search";
+pub const DEFAULT_RECIPE_WIKIPEDIA_URL: &str = "https://en.wikipedia.org/w/api.php";
+pub const DEFAULT_RECIPE_COMMONS_URL: &str = "https://commons.wikimedia.org/w/api.php";
 /// The public Transitous trip planner (a MOTIS server), for transit routes and geocoding.
 pub const DEFAULT_TRANSIT_BASE_URL: &str = "https://api.transitous.org";
 /// The OSRM project's public demo router, for driving routes.
@@ -145,6 +147,12 @@ pub struct Config {
     pub weather_geocoding_base_url: String,
     /// Offer the `show_map` tool (on by default).
     pub maps: bool,
+    /// Offer the `show_recipe` tool (on by default).
+    pub recipes: bool,
+    /// MediaWiki API endpoints `show_recipe` searches for a photo of the dish: Wikipedia first,
+    /// then Wikimedia Commons.
+    pub recipe_wikipedia_url: String,
+    pub recipe_commons_url: String,
     /// Offer the `plan_trip` tool (on by default).
     pub transit: bool,
     /// Root of the MOTIS trip planner `plan_trip` asks for transit routes and looks places up with.
@@ -352,6 +360,11 @@ impl Config {
             weather_geocoding_base_url: get("WEATHER_GEOCODING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_WEATHER_GEOCODING_BASE_URL.into()),
             maps: flag("MAPS", true)?,
+            recipes: flag("RECIPES", true)?,
+            recipe_wikipedia_url: get("RECIPE_WIKIPEDIA_URL")
+                .unwrap_or_else(|| DEFAULT_RECIPE_WIKIPEDIA_URL.into()),
+            recipe_commons_url: get("RECIPE_COMMONS_URL")
+                .unwrap_or_else(|| DEFAULT_RECIPE_COMMONS_URL.into()),
             transit: flag("TRANSIT", true)?,
             transit_base_url: get("TRANSIT_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_TRANSIT_BASE_URL.into()),
@@ -519,6 +532,24 @@ mod tests {
         let err =
             Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAPS", "maybe")])).unwrap_err();
         assert!(err.to_string().contains("MAPS"), "{err}");
+    }
+
+    #[test]
+    fn recipes_are_on_by_default_and_can_be_turned_off() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.recipes);
+        assert_eq!(cfg.recipe_wikipedia_url, DEFAULT_RECIPE_WIKIPEDIA_URL);
+        assert_eq!(cfg.recipe_commons_url, DEFAULT_RECIPE_COMMONS_URL);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("RECIPES", "off"),
+            ("RECIPE_WIKIPEDIA_URL", "http://localhost:9999/wiki"),
+            ("RECIPE_COMMONS_URL", "http://localhost:9999/commons"),
+        ]))
+        .unwrap();
+        assert!(!cfg.recipes);
+        assert_eq!(cfg.recipe_wikipedia_url, "http://localhost:9999/wiki");
+        assert_eq!(cfg.recipe_commons_url, "http://localhost:9999/commons");
     }
 
     #[test]

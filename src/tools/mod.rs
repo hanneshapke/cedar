@@ -1,6 +1,6 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
 //! run's sandbox; `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and
-//! `plan_trip` run in the cedar process, because the sandbox has no network; `browser` drives the run's browser
+//! `show_recipe`, and `plan_trip` run in the cedar process, because the sandbox has no network; `browser` drives the run's browser
 //! container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
 //! in the cedar process too.
 
@@ -19,6 +19,7 @@ mod mcp;
 mod open_meteo;
 mod pdf;
 mod python;
+mod recipe;
 mod transit;
 mod weather;
 mod web_search;
@@ -33,6 +34,7 @@ pub use map::ShowMap;
 pub use mcp::{McpServer, McpTool};
 pub use pdf::GeneratePdf;
 pub use python::RunPython;
+pub use recipe::ShowRecipe;
 pub use transit::PlanTrip;
 pub use weather::WeatherForecast;
 pub use web_search::BraveSearch;
@@ -108,7 +110,8 @@ impl ToolSet {
 
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
-    /// `show_map` unless `MAPS` is off, `plan_trip` unless `TRANSIT` is off, `browser` if `BROWSER` is on, and the Gmail and Calendar
+    /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
+    /// `TRANSIT` is off, `browser` if `BROWSER` is on, and the Gmail and Calendar
     /// tools if `GMAIL` or `CALENDAR` is on (through the REST APIs, or MCP servers whose tools are
     /// discovered later).
     pub fn from_config(cfg: &Config) -> Result<Self> {
@@ -144,6 +147,12 @@ impl ToolSet {
         if cfg.maps {
             set.tools.push(Box::new(ShowMap::new(
                 cfg.weather_geocoding_base_url.clone(),
+            )?));
+        }
+        if cfg.recipes {
+            set.tools.push(Box::new(ShowRecipe::new(
+                cfg.recipe_wikipedia_url.clone(),
+                cfg.recipe_commons_url.clone(),
             )?));
         }
         if cfg.transit {
@@ -294,6 +303,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("web_fetch", "Read web pages"),
     ("weather", "Weather"),
     ("maps", "Maps"),
+    ("recipes", "Recipes"),
     ("transit", "Directions & transit"),
     ("browser", "Browser"),
     ("gmail", "Gmail"),
@@ -307,6 +317,7 @@ pub fn group_of(name: &str) -> &'static str {
         "fetch_url" | "download_file" => "web_fetch",
         "weather_forecast" => "weather",
         "show_map" => "maps",
+        "show_recipe" => "recipes",
         "plan_trip" => "transit",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
@@ -393,6 +404,12 @@ impl<'a> ToolView<'a> {
         }
         if self.get("show_map").is_some() {
             note.push_str(" To show the user where places are, use show_map.");
+        }
+        if self.get("show_recipe").is_some() {
+            note.push_str(
+                " When your answer is a recipe, present it with show_recipe instead of writing it \
+                 out as text.",
+            );
         }
         if self.get("plan_trip").is_some() {
             note.push_str(
@@ -619,6 +636,7 @@ mod tests {
             ("WEB_FETCH", "off"),
             ("WEATHER", "off"),
             ("MAPS", "off"),
+            ("RECIPES", "off"),
             ("TRANSIT", "off"),
         ]))
         .unwrap();
@@ -631,6 +649,7 @@ mod tests {
         assert!(note.contains("use fetch_url") && note.contains("use download_file"));
         assert!(note.contains("use weather_forecast"));
         assert!(note.contains("use show_map"));
+        assert!(note.contains("present it with show_recipe"));
         assert!(note.contains("use plan_trip"), "{note}");
         assert!(note.contains("![caption](path.png)"), "{note}");
         assert!(!note.contains("browser tool"));
@@ -644,6 +663,7 @@ mod tests {
         assert!(!note.contains("fetch_url"));
         assert!(!note.contains("weather_forecast"));
         assert!(!note.contains("show_map"));
+        assert!(!note.contains("show_recipe"));
         assert!(!note.contains("plan_trip"));
         assert!(plain
             .environment_note("bridge")
@@ -673,6 +693,7 @@ mod tests {
                 "download_file",
                 "weather_forecast",
                 "show_map",
+                "show_recipe",
                 "plan_trip"
             ])
         );
@@ -684,16 +705,23 @@ mod tests {
                 "download_file",
                 "weather_forecast",
                 "show_map",
+                "show_recipe",
                 "plan_trip"
             ])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "off")])),
-            with(&["weather_forecast", "show_map", "plan_trip"])
+            with(&["weather_forecast", "show_map", "show_recipe", "plan_trip"])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEATHER", "off")])),
-            with(&["fetch_url", "download_file", "show_map", "plan_trip"])
+            with(&[
+                "fetch_url",
+                "download_file",
+                "show_map",
+                "show_recipe",
+                "plan_trip"
+            ])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("MAPS", "off")])),
@@ -701,12 +729,29 @@ mod tests {
                 "fetch_url",
                 "download_file",
                 "weather_forecast",
+                "show_recipe",
+                "plan_trip"
+            ])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("RECIPES", "off")])),
+            with(&[
+                "fetch_url",
+                "download_file",
+                "weather_forecast",
+                "show_map",
                 "plan_trip"
             ])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("TRANSIT", "off")])),
-            with(&["fetch_url", "download_file", "weather_forecast", "show_map"])
+            with(&[
+                "fetch_url",
+                "download_file",
+                "weather_forecast",
+                "show_map",
+                "show_recipe"
+            ])
         );
         assert_eq!(
             tool_names(&cfg(&[
@@ -714,6 +759,7 @@ mod tests {
                 ("WEB_FETCH", "off"),
                 ("WEATHER", "off"),
                 ("MAPS", "off"),
+                ("RECIPES", "off"),
                 ("TRANSIT", "off")
             ])),
             with(&[])
@@ -725,6 +771,7 @@ mod tests {
                 "download_file",
                 "weather_forecast",
                 "show_map",
+                "show_recipe",
                 "plan_trip",
                 "browser"
             ])
