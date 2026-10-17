@@ -225,7 +225,7 @@ outside `/workspace` is reported as missing.
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
-Claude-style or a Cedar-style ("desk") layout that you pick in Settings: your conversations, live
+Claude-style or a Cedar-style (conversation beside a stage of result cards) layout that you pick in Settings: your conversations, live
 tool calls, a files panel for downloading what the agent produced, and stop and rename buttons. It calls cedar's HTTP API with a key it keeps on the server.
 
 ```sh

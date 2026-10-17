@@ -1,20 +1,25 @@
 'use strict';
 
-// cedar-chat v2 "Desk" ("Cedar style"). Plain JavaScript, no build step. Talks only to /api on
-// this origin. The markdown renderer and the API/token helpers are the same as in /v1/app.js;
-// everything from "-- desk model --" on is new. The document the agent wrote (a .md/.txt file, or
-// a PDF made from Markdown) is the page; web results, command output, and other tool results are
-// clippings; the conversation is the margin.
+// cedar-chat v2 ("Cedar style"). Plain JavaScript, no build step. Talks only to /api on this
+// origin. The markdown renderer and the API/token helpers are the same as in /v1/app.js.
+//
+// The idea: say on the left, show on the right. The conversation column holds your prompts,
+// Cedar's prose, its questions, and one step row per tool call. Everything a tool produced goes
+// on the stage beside it as a full-width card, grouped by turn: the document Cedar wrote, a map,
+// recipe, trip or stock card, the images it made, and (folded to one line) its searches, commands
+// and the pages and files it read. A step row jumps to its card. Cards are built when a tool is
+// called and filled in when its result arrives, so nothing is redrawn and widgets keep their state.
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  title: $('title'), titleInput: $('title-input'), when: $('when'), status: $('status'), statusText: $('status-text'),
+  app: $('app'), title: $('title'), titleInput: $('title-input'), when: $('when'), status: $('status'), statusText: $('status-text'),
   stop: $('stop'), newChat: $('new-chat'), deleteChat: $('delete-chat'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
   scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'),
-  notes: $('notes'), recents: $('recents'),
-  page: $('page'), pageHead: $('page-head'), pageName: $('page-name'), pageBody: $('page-body'),
-  pile: $('pile'), trail: $('trail'),
+  chatsBtn: $('chats-btn'), drawer: $('drawer'), drawerClose: $('drawer-close'), backdrop: $('backdrop'), recents: $('recents'),
+  tabs: $('tabs'), stageBadge: $('stage-badge'),
+  talk: $('talk'), notes: $('notes'), splitter: $('splitter'),
+  stage: $('stage'), stageBody: $('stage-body'), stageEmpty: $('stage-empty'),
   composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
@@ -23,8 +28,10 @@ const els = {
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
 const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
+const SPLIT_KEY = 'cedar-chat-v2-talk-width';
 const DOC_RE = /\.(md|markdown|txt)$/i;
 const NO_MODELS = 'No model is registered yet: an admin adds one under Settings → Model server & API keys.';
+const narrow = matchMedia('(max-width: 800px)');
 
 const state = {
   config: { auth_required: false },
@@ -36,7 +43,7 @@ const state = {
   activeTurn: null,
   sending: false,
   loadToken: 0,
-  showAllClips: false,
+  unseen: 0,          // cards that landed on the stage while a narrow screen showed the conversation
 };
 
 // -- small helpers -----------------------------------------------------------------------------
@@ -52,6 +59,13 @@ function h(tag, className, html) {
   return el;
 }
 
+/** An element whose text is set safely (tool output is untrusted). */
+function t(tag, className, text) {
+  const el = h(tag, className);
+  el.textContent = text ?? '';
+  return el;
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let toastTimer;
@@ -62,15 +76,16 @@ function toast(message) {
   toastTimer = setTimeout(() => els.toast.classList.remove('show'), 4000);
 }
 
-function storage(op, value) {
+function storage(op, key, value) {
   try {
-    if (op === 'get') return localStorage.getItem(TOKEN_KEY);
-    if (op === 'set') localStorage.setItem(TOKEN_KEY, value);
-  } catch { /* token then lasts for this page only */ }
+    if (op === 'get') return localStorage.getItem(key);
+    if (op === 'set') localStorage.setItem(key, value);
+    if (op === 'del') localStorage.removeItem(key);
+  } catch { /* storage unavailable: the value then lasts for this page only */ }
   return null;
 }
 
-let memoryToken = storage('get');
+let memoryToken = storage('get', TOKEN_KEY);
 
 async function copyText(text, button) {
   try {
@@ -86,8 +101,12 @@ async function copyText(text, button) {
 }
 
 const fmtMs = (ms) => (typeof ms !== 'number' ? '' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+const fmtTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-// -- markdown (same renderer as /app.js) -------------------------------------------------------
+/** Whether a scrolling element is at (or within `slack` of) its end: the reader is following along. */
+const nearEnd = (el, slack = 160) => el.scrollHeight - el.scrollTop - el.clientHeight < slack;
+
+// -- markdown (same renderer as /v1/app.js) ----------------------------------------------------
 
 function renderInline(text) {
   const slots = [];
@@ -223,7 +242,7 @@ function askToken(rejected) {
       els.tokenInput.value = '';
       els.tokenForm.onsubmit = () => {
         memoryToken = els.tokenInput.value.trim();
-        storage('set', memoryToken);
+        storage('set', TOKEN_KEY, memoryToken);
         tokenPrompt = null;
         resolve();
       };
@@ -245,9 +264,7 @@ async function api(method, path, body) {
   return data;
 }
 
-// -- desk model --------------------------------------------------------------------------------
-// Each turn is a view: the prompt, the assistant's texts, and its tool calls in order. The desk
-// (page, pile, trail) is re-derived from all views whenever an event arrives.
+// -- what each tool is -------------------------------------------------------------------------
 
 function workspacePath(path) {
   if (typeof path !== 'string') return null;
@@ -258,31 +275,53 @@ function workspacePath(path) {
   return p;
 }
 
-// How each tool reads in the trail ("Ran ls") and in the "working" label ("Running ls"), and
-// what its one-line subject is. Tools not listed here fall back to their bare name.
 const firstLine = (s) => String(s || '').split('\n').find((l) => l.trim()) || '';
+
+// How each tool reads as a step ("Ran ls" / "Running ls") and in a card's title, and what its
+// one-line subject is. `code` marks a subject that is code. Tools not listed fall back to their name.
 const TOOLS = {
-  web_search: { doing: 'Searching', did: 'Searched', subject: (i) => `“${i.query || ''}”` },
-  bash: { doing: 'Running', did: 'Ran', subject: (i) => firstLine(i.command) },
-  run_python: { doing: 'Running', did: 'Ran', subject: (i) => firstLine(i.code) },
-  read_file: { doing: 'Reading', did: 'Read', subject: (i) => i.path },
-  read_document: { doing: 'Reading', did: 'Read', subject: (i) => i.path },
-  fetch_url: { doing: 'Fetching', did: 'Fetched', subject: (i) => i.url },
-  download_file: { doing: 'Downloading', did: 'Downloaded', subject: (i) => (i.path ? `${i.url} → ${i.path}` : i.url) },
-  write_file: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path },
-  generate_pdf: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path },
-  generate_chart: { doing: 'Drawing', did: 'Drew', subject: (i) => i.path },
+  web_search: { doing: 'Searching', did: 'Searched', subject: (i) => `“${i.query || ''}”`, icon: 'search' },
+  bash: { doing: 'Running', did: 'Ran', subject: (i) => `$ ${firstLine(i.command)}`, code: true, icon: 'terminal' },
+  run_python: { doing: 'Running', did: 'Ran', subject: (i) => firstLine(i.code), code: true, icon: 'python' },
+  read_file: { doing: 'Reading', did: 'Read', subject: (i) => i.path, icon: 'file' },
+  read_document: { doing: 'Reading', did: 'Read', subject: (i) => i.path, icon: 'file' },
+  fetch_url: { doing: 'Fetching', did: 'Fetched', subject: (i) => i.url, icon: 'globe' },
+  download_file: { doing: 'Downloading', did: 'Downloaded', subject: (i) => (i.path ? `${i.url} → ${i.path}` : i.url), icon: 'download' },
+  write_file: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path, icon: 'doc' },
+  generate_pdf: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path, icon: 'doc' },
+  generate_chart: { doing: 'Drawing', did: 'Drew', subject: (i) => i.path, icon: 'chart' },
   weather_forecast: {
     doing: 'Checking the weather for',
     did: 'Checked the weather for',
     subject: (i) => i.location || (i.latitude != null ? `${i.latitude}, ${i.longitude}` : ''),
+    icon: 'weather',
   },
-  show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i) },
-  show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title },
-  plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i) },
-  compare_stocks: { doing: 'Looking up', did: 'Looked up', subject: (i) => stocksSubject(i) },
-  ask_user: { doing: 'Asking', did: 'Asked', subject: (i) => questionsSubject(i) },
+  show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i), icon: 'map' },
+  show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title, icon: 'recipe' },
+  plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i), icon: 'trip' },
+  compare_stocks: { doing: 'Looking up', did: 'Looked up', subject: (i) => stocksSubject(i), icon: 'stocks' },
+  ask_user: { doing: 'Asking', did: 'Asked', subject: (i) => questionsSubject(i), icon: 'question' },
 };
+
+const ICONS = {
+  search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+  terminal: '<path d="M5 7l5 5-5 5M12 17h7"/>',
+  python: '<path d="M8 4h8v5H8zM8 15h8v5H8zM4 9h16v6H4z"/>',
+  file: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h5M10 17h5"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h3"/>',
+  chart: '<path d="M4 20h16M7 16V9M12 16V5M17 16v-6"/>',
+  weather: '<path d="M7 17a4 4 0 1 1 1-7.9A5.5 5.5 0 0 1 18.5 11 3 3 0 0 1 18 17z"/>',
+  map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  recipe: '<path d="M6 3v7a3 3 0 0 0 6 0V3M9 3v18M18 3c-2 1-3 3-3 7h3v11"/>',
+  trip: '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 17h5a3 3 0 0 0 0-6h-2a3 3 0 0 1 0-6h5"/>',
+  stocks: '<path d="M3 17l5-5 4 3 5-7 4 4"/><path d="M17 8h4v4"/>',
+  question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
+  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-9 8"/>',
+  tool: '<path d="M14 4a4 4 0 0 0 5 5l-9 9a2.5 2.5 0 0 1-3.5-3.5l9-9z"/><path d="M5 19l1-1"/>',
+};
+const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.tool}</svg>`;
 
 /** What a compare_stocks call is about: its symbols. */
 function stocksSubject(input) {
@@ -309,33 +348,41 @@ function mapSubject(input) {
   const places = Array.isArray(input.markers) ? input.markers : [];
   return places.map((m) => m?.location || m?.label || `${m?.latitude}, ${m?.longitude}`).join(' · ');
 }
-// Tools whose `path` input is a file they write, so a finished call gets a download button.
-const FILE_TOOLS = new Set(['write_file', 'generate_pdf', 'generate_chart', 'download_file']);
 
-function toolText(tool, done) {
-  const t = TOOLS[tool.name];
-  if (!t) return done ? tool.name : `Running ${tool.name}`;
-  return `${done ? t.did : t.doing} ${t.subject(tool.input || {}) || ''}`.trim();
+// Tools whose `path` input is a file they write, so a finished call gets View and Download buttons.
+const FILE_TOOLS = new Set(['write_file', 'generate_pdf', 'generate_chart', 'download_file']);
+// Tools whose result is drawn as a widget (map-view.js and friends), which keeps state once built.
+const WIDGETS = {
+  show_map: { lib: () => cedarMap, waiting: 'locating…', count: (s) => `${s.markers.length} place${s.markers.length === 1 ? '' : 's'}` },
+  show_recipe: { lib: () => cedarRecipe, waiting: 'finding a photo…', count: (s) => `${s.steps.length} step${s.steps.length === 1 ? '' : 's'}` },
+  plan_trip: { lib: () => cedarTransit, waiting: 'finding routes…', count: (s) => `${s.options.length} way${s.options.length === 1 ? '' : 's'} to go` },
+  compare_stocks: { lib: () => cedarStocks, waiting: 'reading prices and news…', count: (s) => (s.stocks.length === 1 ? '1 stock' : `${s.stocks.length} stocks compared`) },
+};
+
+const subjectOf = (tool) => (TOOLS[tool.name]?.subject(tool.input || {}) || '').trim();
+
+/** "Ran <code>$ ls</code>", "Searching “x”", or the bare tool name: HTML for a step or card title. */
+function toolHtml(tool, done) {
+  const spec = TOOLS[tool.name];
+  if (!spec) return done ? escapeHtml(tool.name) : `Running ${escapeHtml(tool.name)}`;
+  const subject = subjectOf(tool);
+  const subjectHtml = spec.code ? `<code>${escapeHtml(subject)}</code>` : escapeHtml(subject);
+  return `${done ? spec.did : spec.doing} ${subjectHtml}`.trim();
 }
 
-/** A tool call that produces the page: a Markdown/text file, or a PDF made from Markdown. */
+/** The same, as plain text, for the header's status and tooltips. */
+function toolText(tool, done) {
+  const spec = TOOLS[tool.name];
+  if (!spec) return done ? tool.name : `Running ${tool.name}`;
+  return `${done ? spec.did : spec.doing} ${subjectOf(tool)}`.trim();
+}
+
+/** A tool call that produces a document: a Markdown/text file, or a PDF made from Markdown. */
 function isDocument(tool) {
   const { path, format } = tool.input || {};
   if (typeof path !== 'string') return false;
   if (tool.name === 'write_file') return DOC_RE.test(path);
   return tool.name === 'generate_pdf' && (!format || format === 'markdown');
-}
-
-/** The newest document written across all turns, or null. */
-function currentDocument() {
-  for (let t = state.order.length - 1; t >= 0; t--) {
-    const view = state.views.get(state.order[t]);
-    for (let i = view.tools.length - 1; i >= 0; i--) {
-      const tool = view.tools[i];
-      if (isDocument(tool) && tool.is_error !== true) return tool;
-    }
-  }
-  return null;
 }
 
 /** Brave results as cedar formats them: "1. Title\n   url (age)\n   snippet". */
@@ -359,166 +406,7 @@ function linkHtml(url, label) {
   return /^https?:\/\//i.test(url) ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${text}</a>` : text;
 }
 
-function clipEl(kind, meta, headHtml, subHtml, pre, isError) {
-  const el = h('div', `clip${isError ? ' err' : ''}`);
-  el.append(h('div', 'kind', `<span>Clipping · ${escapeHtml(kind)}</span><span class="ms">${escapeHtml(meta)}</span>`));
-  if (headHtml) el.append(h('div', 'head', headHtml));
-  if (subHtml) el.append(h('div', 'sub', subHtml));
-  if (pre !== undefined) { const p = h('pre'); p.textContent = pre; el.append(p); }
-  return el;
-}
-
-function searchClippings(tool, meta) {
-  const query = tool.input?.query || '';
-  if (tool.output === undefined) {
-    const el = clipEl('web_search', meta, escapeHtml(query), 'searching…');
-    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
-    return [el];
-  }
-  if (tool.is_error) return [clipEl('web_search', meta, escapeHtml(query), '', tool.output, true)];
-  const results = parseSearchResults(tool.output);
-  if (!results.length) return [clipEl('web_search', meta, escapeHtml(query), escapeHtml(tool.output || 'No results.'))];
-  return results.map((r) => clipEl('web_search', meta, linkHtml(r.url, r.title),
-    [hostOf(r.url), r.snippet, r.age].filter(Boolean).map(escapeHtml).join(' · ')));
-}
-
-/**
- * The clipping for a show_map call: the map itself once the result is in. A map is a live widget, so
- * it is built once and the same element is moved into each new clipping when the desk is redrawn.
- */
-function mapClipping(tool, meta) {
-  const head = escapeHtml(mapSubject(tool.input || {}));
-  if (tool.output === undefined) {
-    const el = clipEl('show_map', meta, head, 'locating…');
-    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
-    return el;
-  }
-  if (tool.is_error) return clipEl('show_map', meta, head, '', tool.output, true);
-  const spec = cedarMap.parse(tool.output);
-  if (!spec) return clipEl('show_map', meta, head, '', tool.output);
-  tool.mapEl ??= cedarMap.element(spec);
-  // The map's own card shows the title, so the clipping's head only counts the pins.
-  const n = spec.markers.length;
-  const el = clipEl('show_map', meta, `${n} place${n === 1 ? '' : 's'}`, '');
-  el.classList.add('map');
-  el.append(tool.mapEl);
-  return el;
-}
-
-/**
- * The clipping for a show_recipe call: the recipe card once the result is in. Like a map, the card
- * keeps state (what is ticked off), so it is built once and moved into each redrawn clipping.
- */
-function recipeClipping(tool, meta) {
-  const head = escapeHtml(String(tool.input?.title || 'Recipe'));
-  if (tool.output === undefined) {
-    const el = clipEl('show_recipe', meta, head, 'finding a photo…');
-    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
-    return el;
-  }
-  if (tool.is_error) return clipEl('show_recipe', meta, head, '', tool.output, true);
-  const spec = cedarRecipe.parse(tool.output);
-  if (!spec) return clipEl('show_recipe', meta, head, '', tool.output);
-  tool.recipeEl ??= cedarRecipe.element(spec);
-  // The card shows the title, so the clipping's head only counts the steps.
-  const n = spec.steps.length;
-  const el = clipEl('show_recipe', meta, `Recipe · ${n} step${n === 1 ? '' : 's'}`, '');
-  el.classList.add('recipe');
-  el.append(tool.recipeEl);
-  return el;
-}
-
-/** The clipping for a plan_trip call: the trip card once the result is in, kept like a map's. */
-function tripClipping(tool, meta) {
-  const head = escapeHtml(tripSubject(tool.input || {}));
-  if (tool.output === undefined) {
-    const el = clipEl('plan_trip', meta, head, 'finding routes…');
-    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
-    return el;
-  }
-  if (tool.is_error) return clipEl('plan_trip', meta, head, '', tool.output, true);
-  const spec = cedarTransit.parse(tool.output);
-  if (!spec) return clipEl('plan_trip', meta, head, '', tool.output);
-  tool.tripEl ??= cedarTransit.element(spec);
-  const n = spec.options.length;
-  const el = clipEl('plan_trip', meta, `${n} way${n === 1 ? '' : 's'} to go`, '');
-  el.classList.add('map');
-  el.append(tool.tripEl);
-  return el;
-}
-
-/**
- * The clipping for a compare_stocks call: the stock card once the result is in. The card keeps state
- * (the symbol, period and view picked), so it is built once and moved like a map's.
- */
-function stocksClipping(tool, meta) {
-  const head = escapeHtml(stocksSubject(tool.input || {}) || 'Stocks');
-  if (tool.output === undefined) {
-    const el = clipEl('compare_stocks', meta, head, 'reading prices and news…');
-    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
-    return el;
-  }
-  if (tool.is_error) return clipEl('compare_stocks', meta, head, '', tool.output, true);
-  const spec = cedarStocks.parse(tool.output);
-  if (!spec) return clipEl('compare_stocks', meta, head, '', tool.output);
-  tool.stocksEl ??= cedarStocks.element(spec);
-  const n = spec.stocks.length;
-  const el = clipEl('compare_stocks', meta, n === 1 ? 'Stock' : `${n} stocks compared`, '');
-  el.classList.add('stocks');
-  el.append(tool.stocksEl);
-  return el;
-}
-
-/** Clippings for one tool call; web_search gives one per result, and the page's document gives none. */
-function clippingsFor(tool) {
-  if (isDocument(tool) && tool.is_error !== true) return [];
-  const input = tool.input || {};
-  const done = tool.output !== undefined;
-  const meta = done ? fmtMs(tool.duration_ms) : 'running';
-  const shell = done ? (String(tool.output).trim() || '(no output)') : undefined;
-  const raw = done ? String(tool.output) : undefined;
-  switch (tool.name) {
-    case 'web_search':
-      return searchClippings(tool, meta);
-    case 'bash':
-      return [clipEl('bash', meta, `<code>$ ${escapeHtml(firstLine(input.command))}</code>`, '', shell, tool.is_error)];
-    case 'run_python': {
-      return [clipEl('run_python', meta, `<code>${escapeHtml(firstLine(input.code))}</code>`, '', shell, tool.is_error)];
-    }
-    case 'read_file':
-    case 'read_document':
-      return [clipEl(tool.name, meta, escapeHtml(String(input.path || '')), '', raw, tool.is_error)];
-    case 'fetch_url':
-      return [clipEl('fetch_url', meta, linkHtml(String(input.url || '')), '', raw, tool.is_error)];
-    case 'show_map':
-      return [mapClipping(tool, meta)];
-    case 'show_recipe':
-      return [recipeClipping(tool, meta)];
-    case 'plan_trip':
-      return [tripClipping(tool, meta)];
-    case 'compare_stocks':
-      return [stocksClipping(tool, meta)];
-    case 'ask_user':
-      // The questions are part of the conversation, so their form is in the margin (see applyEvent);
-      // only a call that failed lies on the desk.
-      return tool.is_error ? [clipEl('ask_user', meta, escapeHtml(questionsSubject(input)), '', raw, true)] : [];
-    default:
-      if (FILE_TOOLS.has(tool.name)) {
-        const path = String(input.path || '');
-        const saved = done && !tool.is_error;
-        const el = clipEl(tool.name, meta, escapeHtml(path), saved ? 'saved to the workspace' : '', tool.is_error ? String(tool.output) : undefined, tool.is_error);
-        const rel = saved && workspacePath(path);
-        if (rel) {
-          const view = cedarViewer.viewButton(rel);
-          if (view) el.querySelector('.sub').append(' · ', view);
-          el.querySelector('.sub').append(' · ', downloadLink(rel));
-        }
-        return [el];
-      }
-      // A tool this page doesn't know yet: still show what it was given and what it returned.
-      return [clipEl(tool.name, meta, `<code>${escapeHtml(JSON.stringify(input).slice(0, 120))}</code>`, '', shell, tool.is_error)];
-  }
-}
+// -- the stage: one card per tool call -----------------------------------------------------------
 
 function downloadLink(path, primary) {
   const b = h('button', `copy-btn${primary ? ' primary' : ''}`, 'Download');
@@ -528,88 +416,267 @@ function downloadLink(path, primary) {
   return b;
 }
 
-/** Rendered Markdown for the page, with the workspace images it refers to. */
-function pageMarkdown(text) {
+/** Rendered Markdown with the workspace images it refers to. */
+function markdownEl(text, onLoad) {
   const md = h('div', 'md', renderMarkdown(text));
-  cedarImages.hydrate(md);
+  cedarImages.hydrate(md, onLoad ? { onLoad } : undefined);
   return md;
 }
 
-function renderDesk() {
-  // page
-  const doc = currentDocument();
-  const latest = state.views.get(state.order[state.order.length - 1]);
-  els.page.classList.toggle('drafting', Boolean(doc && doc.output === undefined));
-  els.pageHead.textContent = '';
-  els.pageBody.textContent = '';
-  if (doc) {
-    const path = String(doc.input.path);
-    const name = path.split('/').pop();
-    const written = doc.output !== undefined;
-    const size = doc.name === 'generate_pdf' ? 'PDF' : `${new Blob([doc.input.content || '']).size.toLocaleString()} B`;
-    els.pageHead.append(h('span', 'page-name', escapeHtml(name)), h('span', '', written ? `written · ${escapeHtml(fmtMs(doc.duration_ms))} · ${size}` : 'being written…'));
-    const actions = h('div', 'actions');
-    const copy = h('button', 'copy-btn', 'Copy');
-    copy.type = 'button';
-    copy.addEventListener('click', () => copyText(doc.input.content || '', copy));
-    actions.append(copy);
-    const rel = written && workspacePath(path);
-    if (rel) {
-      // The page shows a PDF's Markdown source; the finished PDF opens in the viewer.
-      const view = doc.name === 'generate_pdf' ? cedarViewer.viewButton(rel, { label: 'View PDF' }) : null;
-      if (view) actions.append(view);
-      actions.append(downloadLink(rel, true));
-    }
-    els.pageHead.append(actions);
-    const content = String(doc.input.content ?? '');
-    if (/\.txt$/i.test(path)) { const pre = h('pre', 'plain'); pre.textContent = content; els.pageBody.append(pre); }
-    else els.pageBody.append(pageMarkdown(content));
-  } else if (latest && latest.texts.length) {
-    els.pageHead.append(h('span', 'page-name', 'Answer'), h('span', '', 'no file was written; this is what Cedar said'));
-    els.pageBody.append(pageMarkdown(latest.texts.join('\n\n')));
-  } else if (latest) {
-    els.pageHead.append(h('span', 'page-name', 'Working'));
-    const w = h('div', 'working');
-    w.append(h('span', 'spinner'), 'Nothing on the desk yet.');
-    els.pageBody.append(w);
-  } else {
-    els.pageHead.append(h('span', 'page-name', 'Nothing on the desk yet'));
-    els.pageBody.append(h('div', 'page-empty', '<div class="slot">your first file lands here</div><p>Give Cedar a task. It reads, writes, and leaves the results on the desk.</p>'));
-  }
-
-  // pile: the latest turn's clippings, newest on top; earlier turns behind a count
-  els.pile.textContent = '';
-  els.trail.textContent = '';
-  if (!latest) return;
-  const turnsShown = state.showAllClips ? state.order : state.order.slice(-1);
-  const clips = [];
-  for (const id of turnsShown) for (const tool of state.views.get(id).tools) clips.push(...clippingsFor(tool));
-  clips.reverse();
-  for (const c of clips) els.pile.append(c);
-  const earlier = state.order.length - 1;
-  if (earlier > 0) {
-    const more = h('button', 'clip more');
-    more.type = 'button';
-    more.textContent = state.showAllClips ? 'Show only this turn' : `${earlier} earlier turn${earlier > 1 ? 's' : ''} of clippings`;
-    more.addEventListener('click', () => { state.showAllClips = !state.showAllClips; renderDesk(); });
-    els.pile.append(more);
-  }
-
-  // trail: the latest turn's steps
-  if (latest.tools.length) {
-    els.trail.append(h('div', 'label', 'Trail'));
-    latest.tools.forEach((tool, i) => {
-      const done = tool.output !== undefined;
-      const row = h('div', `step${!done ? ' pending' : tool.is_error ? ' err' : ''}`);
-      const what = toolText(tool, done);
-      row.append(h('span', '', String(i + 1)), h('span', 'path', escapeHtml(what)), h('span', 'ms', done ? (tool.is_error ? 'failed' : fmtMs(tool.duration_ms)) : 'running'));
-      row.querySelector('.path').title = what;
-      els.trail.append(row);
-    });
-  }
+/** A labelled block of output (a command's result, a fetched page, …). */
+function outputBlock(text, label, extraClass) {
+  const frag = document.createDocumentFragment();
+  if (label) frag.append(t('div', 'out-label', label));
+  frag.append(t('pre', `out${extraClass ? ` ${extraClass}` : ''}`, text));
+  return frag;
 }
 
-// -- margin ------------------------------------------------------------------------------------
+/** The kind of card a tool call gets: doc, widget, file, trace, or none (its result lives elsewhere). */
+function cardKind(tool) {
+  if (tool.name === 'ask_user') return tool.is_error ? 'trace' : 'none'; // the questions are a form in the conversation
+  if (isDocument(tool) && tool.is_error !== true) return 'doc';
+  if (WIDGETS[tool.name] && tool.is_error !== true) return 'widget';
+  if (FILE_TOOLS.has(tool.name) && tool.is_error !== true) return 'file';
+  return 'trace';
+}
+
+/** The stage group for a turn, made when its first card lands. */
+function ensureGroup(view) {
+  if (view.group) return view.group;
+  const group = h('section', 'turn');
+  group.dataset.turn = view.turn.id;
+  const n = state.order.indexOf(view.turn.id) + 1;
+  const head = h('div', 'turn-head');
+  head.append(t('span', 'n', `Turn ${n}`), t('span', 'q', firstLine(view.turn.prompt).slice(0, 160)), t('span', 't', fmtTime(view.turn.created_at)));
+  head.querySelector('.q').title = view.turn.prompt;
+  group.append(head);
+  // Turns are replayed side by side when a conversation opens, so a group goes after the groups of earlier turns.
+  const later = state.order.slice(state.order.indexOf(view.turn.id) + 1).map((id) => state.views.get(id)?.group).find((g) => g?.isConnected);
+  if (later) els.stageBody.insertBefore(group, later); else els.stageBody.append(group);
+  view.group = group;
+  els.stageEmpty.hidden = true;
+  return group;
+}
+
+/** Put a card on the stage for `view`, following along if the reader was at the end. */
+function placeCard(view, card) {
+  const follow = nearEnd(els.stage, 240) || view === state.activeTurn;
+  ensureGroup(view).append(card);
+  if (follow) els.stage.scrollTop = els.stage.scrollHeight;
+  if (narrow.matches && els.app.dataset.pane !== 'stage') { state.unseen++; updateTabs(); }
+}
+
+/** After a picture or map on the stage loads: stay at the end if the reader was there. */
+function keepStageAtEnd() {
+  if (nearEnd(els.stage, 240)) els.stage.scrollTop = els.stage.scrollHeight;
+}
+
+function cardHead(iconName, titleHtml, { meta, actions, chevron } = {}) {
+  const head = h('div', 'card-head');
+  head.append(h('span', 'ico', icon(iconName)));
+  if (chevron) head.insertAdjacentHTML('beforeend', '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>');
+  const ttl = h('span', 'ttl', titleHtml);
+  head.append(ttl);
+  const m = h('span', 'meta');
+  if (meta) m.append(...(Array.isArray(meta) ? meta : [meta]));
+  head.append(m);
+  if (actions?.length) { const a = h('span', 'acts'); a.append(...actions); head.append(a); }
+  return head;
+}
+
+const spinnerMeta = (text) => { const s = document.createDocumentFragment(); s.append(h('span', 'spinner'), t('span', '', text)); return s; };
+
+/** The card for a tool call (`tool.card` once made); `fillCard` draws its current state. */
+function cardFor(tool) {
+  if (tool.card) return tool.card;
+  const card = h('article', 'card');
+  card.dataset.tool = tool.id;
+  tool.card = card;
+  fillCard(tool);
+  return card;
+}
+
+function fillCard(tool) {
+  const card = tool.card;
+  const kind = cardKind(tool);
+  const done = tool.output !== undefined;
+  const err = done && tool.is_error;
+  card.className = `card ${kind}${!done ? ' running' : ''}${err ? ' err' : ''}${tool.open ? ' open' : ''}`;
+  card.textContent = '';
+  if (kind === 'none') { card.hidden = true; return; }
+  card.hidden = false;
+  if (kind === 'doc') return fillDocument(tool, card, done);
+  if (kind === 'widget') return fillWidget(tool, card, done);
+  if (kind === 'file') return fillFile(tool, card, done);
+  return fillTrace(tool, card, done);
+}
+
+function fillDocument(tool, card, done) {
+  const path = String(tool.input.path);
+  const name = path.split('/').pop();
+  const content = String(tool.input.content ?? '');
+  const size = tool.name === 'generate_pdf' ? 'PDF' : `${new Blob([content]).size.toLocaleString()} B`;
+  card.classList.toggle('drafting', !done);
+  const copy = h('button', 'copy-btn', 'Copy');
+  copy.type = 'button';
+  copy.addEventListener('click', () => copyText(content, copy));
+  const actions = [copy];
+  const rel = done && workspacePath(path);
+  if (rel) {
+    // The card shows a PDF's Markdown source; the finished PDF opens in the viewer.
+    const view = tool.name === 'generate_pdf' ? cedarViewer.viewButton(rel, { label: 'View PDF' }) : null;
+    if (view) actions.push(view);
+    actions.push(downloadLink(rel, true));
+  }
+  const meta = done ? t('span', '', `${fmtMs(tool.duration_ms)} · ${size}`) : spinnerMeta('being written…');
+  card.append(cardHead('doc', escapeHtml(name), { meta, actions }));
+  const body = h('div', 'card-body');
+  if (/\.txt$/i.test(path)) body.append(t('pre', 'plain', content));
+  else body.append(markdownEl(content, keepStageAtEnd));
+  card.append(body);
+}
+
+function fillWidget(tool, card, done) {
+  const w = WIDGETS[tool.name];
+  const spec = done ? w.lib().parse(tool.output) : null;
+  const iconName = TOOLS[tool.name].icon;
+  if (!done) { card.append(cardHead(iconName, toolHtml(tool, false), { meta: spinnerMeta(w.waiting) })); return; }
+  if (!spec) {
+    // Not a usable result: fall back to the raw output, folded like a trace.
+    card.classList.add('trace');
+    card.append(cardHead(iconName, toolHtml(tool, true), { meta: t('span', '', fmtMs(tool.duration_ms)), chevron: true }));
+    const body = h('div', 'card-body');
+    body.append(outputBlock(String(tool.output)));
+    card.append(body);
+    bindTrace(tool, card);
+    return;
+  }
+  const key = `${tool.name}El`;
+  tool[key] ??= w.lib().element(spec);
+  card.append(cardHead(iconName, toolHtml(tool, true), { meta: t('span', '', `${w.count(spec)} · ${fmtMs(tool.duration_ms)}`) }));
+  const body = h('div', 'card-body');
+  body.append(tool[key]);
+  card.append(body);
+}
+
+function fillFile(tool, card, done) {
+  const path = String(tool.input?.path || '');
+  const actions = [];
+  const rel = done && workspacePath(path);
+  if (rel) {
+    const view = cedarViewer.viewButton(rel);
+    if (view) actions.push(view);
+    actions.push(downloadLink(rel));
+  }
+  const meta = done ? t('span', '', `saved · ${fmtMs(tool.duration_ms)}`) : spinnerMeta('saving…');
+  card.append(cardHead(TOOLS[tool.name].icon, toolHtml(tool, done), { meta, actions }));
+}
+
+function fillTrace(tool, card, done) {
+  card.classList.add('trace');
+  const input = tool.input || {};
+  const spec = TOOLS[tool.name];
+  const iconName = spec?.icon || 'tool';
+  const err = done && tool.is_error;
+  const body = h('div', 'card-body');
+  let meta;
+  if (!done) meta = spinnerMeta('running');
+  else if (err) meta = t('span', '', 'failed');
+  else meta = t('span', '', fmtMs(tool.duration_ms));
+  let title = toolHtml(tool, done);
+
+  switch (tool.name) {
+    case 'web_search': {
+      const results = done && !err ? parseSearchResults(tool.output) : [];
+      if (results.length) {
+        meta = t('span', '', `${results.length} result${results.length === 1 ? '' : 's'} · ${fmtMs(tool.duration_ms)}`);
+        const list = h('div', 'results');
+        for (const r of results) {
+          const item = h('div', 'result');
+          item.append(h('div', 'head', linkHtml(r.url, r.title)));
+          if (r.url) item.append(t('div', 'host', [hostOf(r.url), r.age].filter(Boolean).join(' · ')));
+          if (r.snippet) item.append(t('div', 'snip', r.snippet));
+          list.append(item);
+        }
+        body.append(list);
+      } else if (done) body.append(outputBlock(String(tool.output).trim() || 'No results.'));
+      break;
+    }
+    case 'bash': {
+      const command = String(input.command || '');
+      if (command.includes('\n')) body.append(outputBlock(command, 'command', 'cmd'));
+      if (done) body.append(outputBlock(String(tool.output).trim() || '(no output)', command.includes('\n') ? 'output' : ''));
+      break;
+    }
+    case 'run_python': {
+      body.append(outputBlock(String(input.code || ''), 'code', 'cmd'));
+      if (done) body.append(outputBlock(String(tool.output).trim() || '(no output)', 'output'));
+      break;
+    }
+    case 'fetch_url':
+      title = `${done ? 'Fetched' : 'Fetching'} ${linkHtml(String(input.url || ''))}`;
+      if (done) body.append(outputBlock(String(tool.output)));
+      break;
+    case 'read_file':
+    case 'read_document':
+    case 'weather_forecast':
+    case 'ask_user':
+      if (done) body.append(outputBlock(String(tool.output)));
+      break;
+    default:
+      if (FILE_TOOLS.has(tool.name) || WIDGETS[tool.name]) {
+        // A file or widget tool that failed: what it was asked and what came back.
+        if (done) body.append(outputBlock(String(tool.output)));
+      } else {
+        // A tool this page doesn't know yet: still show what it was given and what it returned.
+        if (!spec) title = `${done ? '' : 'Running '}<code>${escapeHtml(tool.name)}</code>`;
+        body.append(outputBlock(JSON.stringify(input, null, 2), 'input', 'cmd'));
+        if (done) body.append(outputBlock(String(tool.output).trim() || '(no output)', 'output'));
+      }
+  }
+  card.append(cardHead(iconName, title, { meta, chevron: true }));
+  if (body.childNodes.length) card.append(body);
+  bindTrace(tool, card);
+}
+
+/** A trace card opens and closes from its head (a link inside it still works as a link). */
+function bindTrace(tool, card) {
+  const head = card.querySelector('.card-head');
+  head.setAttribute('role', 'button');
+  head.setAttribute('aria-expanded', String(Boolean(tool.open)));
+  head.tabIndex = 0;
+  const toggle = () => { tool.open = !tool.open; card.classList.toggle('open', tool.open); head.setAttribute('aria-expanded', String(tool.open)); };
+  head.addEventListener('click', (e) => { if (!e.target.closest('a, button')) toggle(); });
+  head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+}
+
+/** The card of figures a response produced (its charts and pictures), after its other cards. */
+function figuresCard(figures) {
+  const card = h('article', 'card figures');
+  const n = figures.filter((f) => f.classList?.contains('cedar-image')).length;
+  card.append(cardHead('image', n === 1 ? 'Image' : `${n} images`, { meta: t('span', '', 'from this response') }));
+  const body = h('div', 'card-body');
+  body.append(...figures);
+  card.append(body);
+  return card;
+}
+
+/** Scroll the stage to a tool's card (opening a folded one) and flash it. */
+function focusCard(tool) {
+  const card = tool.card;
+  if (!card || card.hidden) return;
+  if (narrow.matches) setPane('stage');
+  if (card.classList.contains('trace') && !tool.open) {
+    tool.open = true;
+    card.classList.add('open');
+    card.querySelector('.card-head')?.setAttribute('aria-expanded', 'true');
+  }
+  card.scrollIntoView({ block: 'center', behavior: narrow.matches ? 'auto' : 'smooth' });
+  card.classList.remove('flash');
+  requestAnimationFrame(() => card.classList.add('flash'));
+}
+
+// -- the conversation column -------------------------------------------------------------------
 
 function note(cls, who, html) {
   const el = h('div', `note ${cls}`);
@@ -625,10 +692,12 @@ function addTurn(turn) {
     turn, texts: [], textNotes: [], tools: [], images: [], byId: new Map(), usage: { input: 0, output: 0 },
     abort: new AbortController(), done: false,
     workingEl: null,
+    stepsEl: null,  // the open run of step rows; a note from Cedar closes it
+    group: null,    // this turn's group of cards on the stage
   };
   state.views.set(turn.id, view);
   state.order.push(turn.id);
-  const user = note('user', `You · ${new Date(turn.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+  const user = note('user', `You · ${fmtTime(turn.created_at)}`);
   if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
   user.lastChild.append(document.createTextNode(turn.prompt));
   cedarClarify.settle(els.notes); // this message answers any question still open above it
@@ -642,19 +711,49 @@ function addTurn(turn) {
   return view;
 }
 
-/** After a picture in the margin loads: stay at the end if the reader was there, else leave them be. */
+/** After a picture in the conversation loads: stay at the end if the reader was there. */
 function keepNotesAtEnd() {
-  const n = els.notes;
-  if (n.scrollHeight - n.scrollTop - n.clientHeight < 160) n.scrollTop = n.scrollHeight;
+  if (nearEnd(els.notes)) els.notes.scrollTop = els.notes.scrollHeight;
 }
 
 function placeNote(view, el) {
+  const follow = nearEnd(els.notes) || view === state.activeTurn;
   els.notes.insertBefore(el, view.workingEl);
-  els.notes.scrollTop = els.notes.scrollHeight;
+  if (follow) els.notes.scrollTop = els.notes.scrollHeight;
 }
 
+/** What the turn is doing, for the header; the working line under the notes just says so, since
+ *  the step row above it already names the tool. */
 function setWorking(view, text) {
-  if (view.workingEl) view.workingEl.lastChild.textContent = text;
+  view.doing = text;
+  if (view.workingEl) view.workingEl.lastChild.textContent = text === 'Thinking' ? 'Thinking' : 'Working';
+}
+
+/** A step row for a tool call, in the conversation, that jumps to its card. */
+function addStep(view, tool) {
+  if (!view.stepsEl) {
+    view.stepsEl = h('div', 'steps');
+    placeNote(view, view.stepsEl);
+  }
+  const row = h('button', 'step running');
+  row.type = 'button';
+  row.append(t('span', 'i', String(view.tools.length)), h('span', 'what'), t('span', 'ms', ''));
+  row.addEventListener('click', () => focusCard(tool));
+  tool.step = row;
+  view.stepsEl.append(row);
+  fillStep(tool);
+  if (nearEnd(els.notes, 200) || view === state.activeTurn) els.notes.scrollTop = els.notes.scrollHeight;
+}
+
+function fillStep(tool) {
+  const row = tool.step;
+  if (!row) return;
+  const done = tool.output !== undefined;
+  row.className = `step ${!done ? 'running' : tool.is_error ? 'err' : 'done'}`;
+  row.querySelector('.what').innerHTML = toolHtml(tool, done);
+  row.querySelector('.ms').textContent = !done ? '…' : tool.is_error ? 'failed' : fmtMs(tool.duration_ms);
+  const where = cardKind(tool) === 'none' ? '' : ' · click to see the result';
+  row.title = toolText(tool, done) + where;
 }
 
 // -- events ------------------------------------------------------------------------------------
@@ -707,16 +806,22 @@ async function followEvents(view) {
 function applyEvent(view, event) {
   const d = event.data || {};
   switch (event.type) {
-    case 'assistant.text':
+    case 'assistant.text': {
       view.texts.push(d.text);
-      view.textNotes.push(note('cedar', 'Cedar', renderMarkdown(d.text)));
-      placeNote(view, view.textNotes[view.textNotes.length - 1]);
+      const n = note('cedar', 'Cedar', renderMarkdown(d.text));
+      view.textNotes.push(n);
+      placeNote(view, n);
+      view.stepsEl = null; // the next tool call starts a new run of steps, after this note
       setWorking(view, 'Thinking');
       break;
+    }
     case 'tool.call': {
-      const tool = { id: d.id, name: d.name, input: d.input || {} };
+      const tool = { id: d.id, name: d.name, input: d.input || {}, open: false };
       view.tools.push(tool);
       view.byId.set(d.id, tool);
+      addStep(view, tool);
+      const card = cardFor(tool);
+      if (!card.hidden) placeCard(view, card);
       setWorking(view, toolText(tool, false));
       break;
     }
@@ -724,15 +829,23 @@ function applyEvent(view, event) {
       const tool = view.byId.get(d.id);
       if (tool) {
         Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
-        // Questions for the user are a form in the margin, closed if a later message answered them.
+        if (tool.is_error) tool.open = true; // a failure is worth reading
+        fillStep(tool);
+        const wasHidden = tool.card.hidden;
+        const follow = nearEnd(els.stage, 240) || view === state.activeTurn;
+        fillCard(tool);
+        if (wasHidden && !tool.card.hidden) placeCard(view, tool.card);
+        else if (follow && !tool.card.hidden) els.stage.scrollTop = els.stage.scrollHeight;
+        // Questions for the user are a form in the conversation, closed if a later message answered them.
         const spec = tool.name === 'ask_user' && !tool.is_error && cedarClarify.parse(tool.output);
         if (spec) {
           const answered = state.order[state.order.length - 1] !== view.turn.id;
           const n = note('clarify', 'Cedar asks', '');
           n.lastChild.append(cedarClarify.element(spec, { answered, onSubmit: answerQuestions }));
           placeNote(view, n);
+          view.stepsEl = null;
         }
-        // The images a call produced are shown in the margin once each, after the reply: see finishTurn.
+        // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
         if (!tool.is_error) {
           for (const path of cedarImages.produced(tool.name, tool.input, tool.output)) {
             if (!view.images.includes(path)) view.images.push(path);
@@ -750,7 +863,6 @@ function applyEvent(view, event) {
       if (TERMINAL.has(event.type)) { finishTurn(view, event); return; }
       return;
   }
-  renderDesk();
   updateChrome();
 }
 
@@ -762,18 +874,15 @@ function finishTurn(view, event) {
   if (view.done) return;
   view.done = true;
   // The working line marks where this turn's notes end, so they land there even when a later turn's
-  // notes are already in the margin (a conversation's turns are replayed side by side).
+  // notes are already in the column (a conversation's turns are replayed side by side).
   const anchor = view.workingEl;
   view.workingEl = null;
   const put = (node) => (anchor?.isConnected ? els.notes.insertBefore(node, anchor) : els.notes.append(node));
   const d = event.data || {};
-  const inText = new Set(view.textNotes.flatMap((n) => [...cedarImages.shown(n)])); // pictures the reply itself places
-  const figures = cedarImages.figuresFor(view.images, { skip: inText, onLoad: keepNotesAtEnd });
-  if (figures.length) {
-    const n = note('cedar', '', '');
-    n.lastChild.append(...figures);
-    put(n);
-  }
+  // Pictures the reply itself places, in its notes or in the document it wrote, are not shown again.
+  const shown = new Set([...view.textNotes, view.group].flatMap((n) => [...cedarImages.shown(n)]));
+  const figures = cedarImages.figuresFor(view.images, { skip: shown, onLoad: keepStageAtEnd });
+  if (figures.length) placeCard(view, figuresCard(figures));
   if (event.type === 'run.failed') {
     const n = note('error', '');
     n.lastChild.textContent = d.error || 'Something went wrong.';
@@ -785,15 +894,22 @@ function finishTurn(view, event) {
   } else if (!view.texts.length && d.stop_reason !== 'ask_user') {
     put(note('muted', '', 'No text in this response.'));
   }
-  for (const tool of view.tools) if (tool.output === undefined) Object.assign(tool, { output: '', is_error: true });
+  for (const tool of view.tools) {
+    if (tool.output === undefined) { Object.assign(tool, { output: '', is_error: true }); fillStep(tool); fillCard(tool); }
+  }
   if (view.usage.input || view.usage.output) {
     put(note('usage', '', `${view.usage.input.toLocaleString()} in · ${view.usage.output.toLocaleString()} out`));
   }
   anchor?.remove();
-  els.notes.scrollTop = els.notes.scrollHeight;
+  if (state.activeTurn === view) {
+    state.activeTurn = null;
+    els.notes.scrollTop = els.notes.scrollHeight;
+    // Once the turn is over, the stage rests on the top of its main result: the document it wrote,
+    // else its map, recipe, trip or stock card; a turn of searches and commands stays at the end.
+    const main = view.tools.find((tool) => tool.card && cardKind(tool) === 'doc') || view.tools.find((tool) => tool.card && cardKind(tool) === 'widget');
+    if (main) main.card.scrollIntoView({ block: 'start' });
+  }
   view.lastEvent = event.type;
-  if (state.activeTurn === view) state.activeTurn = null;
-  renderDesk();
   updateChrome();
   renderRecents();
   if (els.filesDialog.open) loadFiles(); // the response may have added or changed files
@@ -813,6 +929,7 @@ function updateChrome() {
   const c = state.current;
   const busy = Boolean(state.activeTurn);
   const latest = state.views.get(state.order[state.order.length - 1]);
+  els.app.classList.toggle('empty', !c);
   els.title.textContent = c ? (c.title || 'New chat') : '';
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
@@ -821,24 +938,110 @@ function updateChrome() {
   els.stop.hidden = !busy;
   els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }) : '';
   els.status.className = 'status' + (busy ? ' live' : latest?.lastEvent === 'run.failed' ? ' error' : '');
-  const doing = state.activeTurn?.workingEl?.lastChild.textContent || 'Thinking';
+  const doing = state.activeTurn?.doing || 'Thinking';
   els.statusText.textContent = busy ? `Working · ${doing[0].toLowerCase()}${doing.slice(1)}`
     : latest ? (latest.lastEvent === 'run.failed' ? 'Failed' : latest.lastEvent === 'run.cancelled' ? 'Stopped' : 'Done') : 'Idle';
   els.send.disabled = state.sending || busy || state.noModels || !els.input.value.trim();
   els.input.placeholder = state.noModels ? NO_MODELS
-    : busy ? 'Cedar is working. Type a follow-up for when it is done…' : c ? 'Change anything?' : 'What should be on the desk?';
+    : busy ? 'Cedar is working. Type a follow-up for when it is done…' : c ? 'Reply or ask for a change…' : 'What should Cedar work on?';
   document.title = c?.title ? `${c.title} – Cedar` : 'Cedar';
+}
+
+// -- the two panes on a narrow screen ----------------------------------------------------------
+
+function setPane(pane) {
+  els.app.dataset.pane = pane;
+  if (pane === 'stage') state.unseen = 0;
+  updateTabs();
+}
+
+function updateTabs() {
+  for (const tab of els.tabs.querySelectorAll('.tab')) tab.setAttribute('aria-selected', String(tab.dataset.pane === els.app.dataset.pane));
+  els.stageBadge.hidden = !state.unseen;
+  els.stageBadge.textContent = state.unseen > 99 ? '99+' : String(state.unseen);
+}
+
+// -- the splitter ------------------------------------------------------------------------------
+
+const TALK_MIN = 300;
+const talkMax = () => Math.max(TALK_MIN, Math.min(720, window.innerWidth - 560));
+
+function setTalkWidth(px, save) {
+  const w = Math.round(Math.min(talkMax(), Math.max(TALK_MIN, px)));
+  document.documentElement.style.setProperty('--talk-w', `${w}px`);
+  if (save) storage('set', SPLIT_KEY, String(w));
+}
+
+function bindSplitter() {
+  const saved = Number(storage('get', SPLIT_KEY));
+  if (saved) setTalkWidth(saved, false);
+  let startX = 0;
+  let startW = 0;
+  els.splitter.addEventListener('pointerdown', (e) => {
+    startX = e.clientX;
+    startW = els.talk.getBoundingClientRect().width;
+    els.splitter.setPointerCapture(e.pointerId);
+    els.splitter.classList.add('active');
+    els.app.classList.add('resizing');
+  });
+  els.splitter.addEventListener('pointermove', (e) => {
+    if (!els.splitter.hasPointerCapture(e.pointerId)) return;
+    setTalkWidth(startW + e.clientX - startX, false);
+  });
+  const end = (e) => {
+    if (!els.splitter.hasPointerCapture(e.pointerId)) return;
+    els.splitter.releasePointerCapture(e.pointerId);
+    els.splitter.classList.remove('active');
+    els.app.classList.remove('resizing');
+    setTalkWidth(els.talk.getBoundingClientRect().width, true);
+  };
+  els.splitter.addEventListener('pointerup', end);
+  els.splitter.addEventListener('pointercancel', end);
+  els.splitter.addEventListener('dblclick', () => { document.documentElement.style.removeProperty('--talk-w'); storage('del', SPLIT_KEY); });
+  els.splitter.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowLeft' ? -24 : e.key === 'ArrowRight' ? 24 : 0;
+    if (!step) return;
+    e.preventDefault();
+    setTalkWidth(els.talk.getBoundingClientRect().width + step, true);
+  });
+  window.addEventListener('resize', () => {
+    const w = parseInt(document.documentElement.style.getPropertyValue('--talk-w'), 10);
+    if (w && w > talkMax()) setTalkWidth(w, false);
+  });
+}
+
+// -- the conversations drawer ------------------------------------------------------------------
+
+function openDrawer() {
+  els.drawer.hidden = false;
+  els.backdrop.hidden = false;
+  els.chatsBtn.setAttribute('aria-expanded', 'true');
+  renderRecents();
+  (els.recents.querySelector('.conv.active') || els.recents.querySelector('.conv') || els.drawerClose).focus();
+}
+
+function closeDrawer() {
+  if (els.drawer.hidden) return;
+  els.drawer.hidden = true;
+  els.backdrop.hidden = true;
+  els.chatsBtn.setAttribute('aria-expanded', 'false');
 }
 
 function renderRecents() {
   els.recents.textContent = '';
   if (!state.conversations.length) { els.recents.append(h('div', 'empty-list', 'No conversations yet')); return; }
   for (const c of state.conversations) {
-    const a = h('a');
+    const a = h('a', 'conv');
     a.href = `#/c/${c.id}`;
     if (state.current?.id === c.id) a.classList.add('active');
+    a.append(t('span', 'name', c.title || 'New chat'));
+    a.title = c.title || 'New chat';
     if (state.current?.id === c.id && state.activeTurn) a.append(h('span', 'live'));
-    a.append(document.createTextNode(c.title || 'New chat'));
+    const del = h('button', 'del', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>');
+    del.type = 'button';
+    del.setAttribute('aria-label', `Delete "${c.title || 'New chat'}"`);
+    del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteConversation(c); });
+    a.append(del);
     els.recents.append(a);
   }
 }
@@ -853,8 +1056,11 @@ function resetView() {
   state.views.clear();
   state.order = [];
   state.activeTurn = null;
-  state.showAllClips = false;
+  state.unseen = 0;
   els.notes.textContent = '';
+  els.stageBody.textContent = '';
+  els.stageEmpty.hidden = false;
+  updateTabs();
   if (els.filesDialog.open) els.filesDialog.close();
 }
 
@@ -864,7 +1070,6 @@ function showNewChat() {
   state.current = null;
   cedarSettings.conversationChanged();
   cedarAttach.clear();
-  renderDesk();
   updateChrome();
   renderRecents();
   els.input.focus();
@@ -886,9 +1091,9 @@ async function openConversation(id) {
   cedarAttach.clear();
   restorePickers(detail.conversation);
   for (const turn of detail.turns) addTurn(turn);
-  renderDesk();
   updateChrome();
   renderRecents();
+  if (narrow.matches) setPane('talk');
   els.input.focus();
 }
 
@@ -928,6 +1133,7 @@ let sendMenu = null;
 document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
+  closeDrawer();
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
   if (m) { if (state.current?.id !== m[1]) openConversation(m[1]); } else showNewChat();
 }
@@ -1071,7 +1277,6 @@ async function sendMessage(answer) {
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
     state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
     addTurn(turn);
-    renderDesk();
     renderRecents();
     loadConversations();
     return true;
@@ -1140,6 +1345,11 @@ els.filesBtn.addEventListener('click', openFiles);
 els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
+els.chatsBtn.addEventListener('click', () => (els.drawer.hidden ? openDrawer() : closeDrawer()));
+els.drawerClose.addEventListener('click', closeDrawer);
+els.backdrop.addEventListener('click', closeDrawer);
+$('drawer-new').addEventListener('click', () => { closeDrawer(); if (!state.current) els.input.focus(); });
+els.tabs.addEventListener('click', (e) => { const tab = e.target.closest('.tab'); if (tab) setPane(tab.dataset.pane); });
 els.title.addEventListener('click', startRename);
 els.titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') finishRename(true); if (e.key === 'Escape') finishRename(false); });
 els.titleInput.addEventListener('blur', () => finishRename(true));
@@ -1150,7 +1360,9 @@ document.addEventListener('click', (e) => {
 window.addEventListener('hashchange', route);
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); location.hash = '#/'; }
+  if (e.key === 'Escape' && !els.drawer.hidden) { closeDrawer(); els.chatsBtn.focus(); }
 });
+narrow.addEventListener('change', () => { if (!narrow.matches) { state.unseen = 0; updateTabs(); } });
 
 async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
@@ -1171,6 +1383,8 @@ async function init() {
     before: els.input,
     toast,
   });
+  bindSplitter();
+  updateTabs();
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   if (state.config.auth_required && !memoryToken) await askToken(false);
