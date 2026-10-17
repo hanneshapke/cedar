@@ -19,7 +19,7 @@ struct RootView: View {
                 ContentUnavailableView {
                     Label("cedar", systemImage: "leaf")
                 } description: {
-                    Text("Ask the agent to write and run code in its sandbox.")
+                    Text("Ask the agent to search, write and run code, and build things in its sandbox.")
                 } actions: {
                     Button("New Chat") { app.newChat() }
                         .buttonStyle(.borderedProminent)
@@ -29,9 +29,15 @@ struct RootView: View {
         .sheet(isPresented: $app.showingSettings) {
             SettingsView()
         }
-        .task { await app.refresh() }
+        .onChange(of: app.selection) { _, id in
+            if let id, app.conversation(id: id) != nil { app.markSeen(conversationId: id) }
+        }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await app.refresh() } }
+            switch phase {
+            case .active: app.becameActive()
+            case .background, .inactive: app.isActive = false
+            @unknown default: break
+            }
         }
     }
 }

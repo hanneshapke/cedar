@@ -1,15 +1,15 @@
 import Foundation
 import Observation
 
-/// One conversation's exchanges, kept up to date from cedar's event streams.
+/// One conversation's turns, kept up to date from the server's event streams.
 @MainActor
 @Observable
 final class ChatModel {
     /// Stable identity, also used as the selection key while the chat is still a draft.
     let key = UUID().uuidString
     private(set) var conversationId: String?
-    private(set) var exchanges: [Exchange] = []
-    /// The message being sent, shown until cedar accepts the run.
+    private(set) var turns: [TurnTranscript] = []
+    /// The message being sent, shown until the server accepts it.
     private(set) var pendingPrompt: String?
     private(set) var isLoading = false
     var errorMessage: String?
@@ -23,34 +23,67 @@ final class ChatModel {
         self.conversationId = conversationId
     }
 
-    var isActive: Bool { pendingPrompt != nil || exchanges.contains { $0.isActive } }
+    var client: ChatClient? { app?.client }
+    var isActive: Bool { pendingPrompt != nil || turns.contains { $0.isActive } }
     var canSend: Bool { !isActive && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// The questions the last turn asked, until a later turn answers them.
+    var openQuestions: Questions? {
+        guard let last = turns.last, !last.isActive, last.turn.needsAnswer else { return nil }
+        return last.questions
+    }
 
     // MARK: Loading
 
     /// Loads the conversation when first shown.
     func start() async {
-        guard let conversationId, exchanges.isEmpty, let app else { return }
-        if let conversation = app.conversation(id: conversationId) {
-            sync(with: conversation)
-            return
-        }
+        guard conversationId != nil, turns.isEmpty else { return }
         isLoading = true
-        await app.refresh()
+        await reload()
         isLoading = false
-        if let conversation = app.conversation(id: conversationId) {
-            sync(with: conversation)
-        } else if app.listError == nil {
+    }
+
+    /// Reads the conversation from the server and follows any turn not seen yet.
+    func reload() async {
+        guard let conversationId, let client else { return }
+        do {
+            let detail = try await client.conversation(id: conversationId)
+            sync(with: detail.turns)
+            errorMessage = nil
+        } catch let error as ChatError where error.status == 404 {
             errorMessage = "This conversation no longer exists on the server."
+        } catch is CancellationError {
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
-    /// Adds runs this chat hasn't seen (from a refresh of the run list) and replays their events.
-    func sync(with conversation: Conversation) {
-        guard conversation.id == conversationId else { return }
-        for run in conversation.runs where !exchanges.contains(where: { $0.id == run.id }) {
-            exchanges.append(Exchange(run: run))
-            follow(runId: run.id)
+    /// Adds turns this chat hasn't seen and replays their events; refreshes the state of the
+    /// ones it has, in case a stream was missed.
+    private func sync(with fresh: [Turn]) {
+        for turn in fresh.sorted(by: { $0.seq < $1.seq }) {
+            if let index = turns.firstIndex(where: { $0.id == turn.id }) {
+                if turns[index].isActive && turn.status.isTerminal {
+                    // It ended without the stream saying so: read what's left, then take the
+                    // server's final state.
+                    follow(turnId: turn.id)
+                    turns[index].turn = turn
+                }
+            } else {
+                turns.append(TurnTranscript(turn: turn))
+                follow(turnId: turn.id)
+            }
+        }
+    }
+
+    /// A response ended somewhere: if here, make sure its stream was read to the end.
+    func noticed(_ notice: Notice) {
+        guard notice.conversationId == conversationId else { return }
+        if let index = turns.firstIndex(where: { $0.id == notice.turnId }), turns[index].isActive, followers[notice.turnId] == nil {
+            follow(turnId: notice.turnId)
+        } else if !turns.contains(where: { $0.id == notice.turnId }) {
+            // Sent from another device: pick it up.
+            Task { await reload() }
         }
     }
 
@@ -59,40 +92,38 @@ final class ChatModel {
         followers = [:]
     }
 
-    /// Streams a run's events into its exchange until the run ends, reconnecting after
+    /// Streams a turn's events into its transcript until the run ends, reconnecting after
     /// dropped connections (from the last event seen, so nothing is applied twice).
-    private func follow(runId: String) {
-        guard followers[runId] == nil else { return }
-        followers[runId] = Task { [weak self] in
+    private func follow(turnId: String) {
+        guard followers[turnId] == nil else { return }
+        followers[turnId] = Task { [weak self] in
             var failures = 0
             while !Task.isCancelled {
-                guard let self, let client = self.app?.client,
-                      let after = self.exchange(runId)?.lastSeq
-                else { return }
+                guard let self, let client = self.client, let after = self.transcript(turnId)?.lastSeq else { return }
                 do {
-                    for try await event in client.events(runId: runId, after: after) {
-                        self.update(runId) { $0.apply(event) }
+                    for try await event in client.turnEvents(turnId: turnId, after: after) {
+                        self.update(turnId) { $0.apply(event) }
                         failures = 0
                     }
-                    if self.exchange(runId)?.isActive != true { break }
-                    // The stream closed before the run ended: see where the run is.
-                    let run = try await client.run(id: runId)
-                    if run.status.isTerminal {
-                        // It ended in the meantime: read what's left of the log, then take the
-                        // run's final state in case the log has no terminal event.
-                        let last = self.exchange(runId)?.lastSeq ?? 0
-                        for try await event in client.events(runId: runId, after: last) {
-                            self.update(runId) { $0.apply(event) }
+                    if self.transcript(turnId)?.isActive != true { break }
+                    // The stream closed before the run ended: see where the turn is.
+                    if let conversationId = self.conversationId {
+                        let detail = try await client.conversation(id: conversationId)
+                        if let turn = detail.turns.first(where: { $0.id == turnId }), turn.status.isTerminal {
+                            let last = self.transcript(turnId)?.lastSeq ?? 0
+                            for try await event in client.turnEvents(turnId: turnId, after: last) {
+                                self.update(turnId) { $0.apply(event) }
+                            }
+                            self.update(turnId) { if $0.isActive { $0.turn = turn } }
+                            break
                         }
-                        self.update(runId) { if $0.isActive { $0.run = run } }
-                        break
                     }
                 } catch is CancellationError {
                     return
-                } catch let error as CedarError where error.status == 404 {
-                    self.update(runId) {
-                        $0.run.status = .failed
-                        $0.run.error = "This run no longer exists on the server."
+                } catch let error as ChatError where error.status == 404 {
+                    self.update(turnId) {
+                        $0.turn.status = .failed
+                        $0.turn.error = "This response no longer exists on the server."
                     }
                     break
                 } catch {
@@ -103,115 +134,119 @@ final class ChatModel {
                 try? await Task.sleep(for: .seconds(delay))
             }
             guard let self else { return }
-            self.followers[runId] = nil
-            if self.exchange(runId)?.isActive == false {
+            self.followers[turnId] = nil
+            if self.transcript(turnId)?.isActive == false, let conversationId = self.conversationId {
                 self.errorMessage = nil
-                self.app?.runDidChange()
+                self.app?.turnDidEnd(conversationId: conversationId)
             }
         }
     }
 
-    private func exchange(_ runId: String) -> Exchange? {
-        exchanges.first { $0.id == runId }
+    private func transcript(_ turnId: String) -> TurnTranscript? {
+        turns.first { $0.id == turnId }
     }
 
-    private func update(_ runId: String, _ change: (inout Exchange) -> Void) {
-        guard let index = exchanges.firstIndex(where: { $0.id == runId }) else { return }
-        change(&exchanges[index])
+    private func update(_ turnId: String, _ change: (inout TurnTranscript) -> Void) {
+        guard let index = turns.firstIndex(where: { $0.id == turnId }) else { return }
+        change(&turns[index])
     }
 
     // MARK: Sending
 
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canSend, let app else { return }
-        guard let client = app.client else {
-            errorMessage = CedarError.notConfigured.errorDescription
-            return
-        }
+        guard canSend else { return }
         draft = ""
-        pendingPrompt = text
-        errorMessage = nil
-        defer { pendingPrompt = nil }
-
-        let settings = app.settings
-        let model = settings.model.isEmpty ? nil : settings.model
-        let system = settings.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parent = exchanges.last?.run.id
-        do {
-            let run: Run
-            do {
-                run = try await client.createRun(.init(
-                    prompt: text,
-                    model: model,
-                    // A continuation keeps its conversation's system prompt.
-                    system: parent == nil && !system.isEmpty ? system : nil,
-                    parentId: parent
-                ))
-            } catch let error as CedarError where error.status == 404 && parent != nil {
-                // The previous run is gone from cedar: start over, with the history inlined.
-                let history = exchanges.map { (user: $0.prompt, assistant: $0.answer) }
-                run = try await client.createRun(.init(
-                    prompt: PromptComposer.compose(history: history, message: text),
-                    model: model,
-                    system: system.isEmpty ? nil : system
-                ))
-            }
-            exchanges.append(Exchange(run: run))
-            follow(runId: run.id)
-            if conversationId == nil {
-                conversationId = run.id
-                app.chatDidStart(self, conversationId: run.id)
-            } else {
-                app.runDidChange()
-            }
-        } catch {
+        if !(await send(text: text)) {
             draft = text
-            errorMessage = error.localizedDescription
-            if (error as? CedarError)?.status == 409 {
-                // Most likely continued from another device: pick up its runs.
-                await app.refresh()
-            }
         }
     }
 
-    func stop() async {
-        guard let active = exchanges.last(where: { $0.isActive }), let client = app?.client else { return }
+    /// Sends `text` as the next message. Returns whether the server took it.
+    @discardableResult
+    func send(text: String) async -> Bool {
+        guard let app, !isActive else { return false }
+        guard let client = app.client else {
+            errorMessage = ChatError.notConfigured.errorDescription
+            return false
+        }
+        pendingPrompt = text
+        errorMessage = nil
+        defer { pendingPrompt = nil }
+        let settings = app.settings
         do {
-            try await client.cancelRun(id: active.id)
-        } catch CedarError.api(409, _, _) {
+            let id: String
+            if let conversationId {
+                id = conversationId
+            } else {
+                id = try await client.createConversation().id
+                conversationId = id
+                app.chatDidStart(self, conversationId: id)
+            }
+            let turn = try await client.send(conversationId: id, .init(
+                content: text,
+                model: settings.model.isEmpty ? nil : settings.model,
+                reasoning: settings.reasoning.isEmpty ? nil : settings.reasoning
+            ))
+            turns.append(TurnTranscript(turn: turn))
+            follow(turnId: turn.id)
+            Task { await app.refresh() }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            if (error as? ChatError)?.status == 409 {
+                // A response is running, most likely started from another device: show it.
+                await reload()
+            }
+            return false
+        }
+    }
+
+    /// Answers the open clarifying questions.
+    func answer(_ questions: Questions, with answers: [ClarifyAnswer.Answer]) async {
+        await send(text: ClarifyAnswer.text(for: questions, answers: answers))
+    }
+
+    func stop() async {
+        guard let active = turns.last(where: { $0.isActive }), let client else { return }
+        do {
+            try await client.cancel(turnId: active.id)
+        } catch ChatError.api(409, _, _) {
             // Already finished; the stream will deliver the terminal event.
         } catch {
             errorMessage = error.localizedDescription
         }
     }
-}
 
-/// Builds a prompt that carries earlier exchanges, for when the run to continue no longer exists.
-/// Mirrors cedar-chat's fallback.
-enum PromptComposer {
-    static func compose(history: [(user: String, assistant: String)], message: String, maxHistoryBytes: Int = 40_000) -> String {
-        guard !history.isEmpty else { return message }
-        var kept: [String] = []
-        var used = 0
-        for exchange in history.reversed() {
-            let block = "<user>\n\(exchange.user)\n</user>\n<assistant>\n\(exchange.assistant)\n</assistant>\n"
-            if used + block.utf8.count > maxHistoryBytes { break }
-            used += block.utf8.count
-            kept.append(block)
+    // MARK: Plans and approvals
+
+    func decide(_ approval: Approval, in turn: TurnTranscript, decision: String) async {
+        guard let client else { return }
+        do {
+            try await client.decideApproval(turnId: turn.id, approvalId: approval.id, decision: decision)
+            // The stream brings `approval.resolved`; until then, show the choice.
+            update(turn.id) { transcript in
+                if let index = transcript.items.firstIndex(where: { $0.id == "approval-\(approval.id)" }),
+                   case .approval(var a) = transcript.items[index], a.isPending {
+                    a.decision = decision
+                    a.by = "user"
+                    transcript.items[index] = .approval(a)
+                }
+            }
+        } catch ChatError.api(409, _, _) {
+            // No longer waiting: the stream has, or will have, the outcome.
+        } catch {
+            errorMessage = error.localizedDescription
         }
-        var out = """
-            This message continues an earlier conversation, shown below for context. Your sandbox has \
-            been reset since then, so files and processes from earlier exchanges no longer exist.
+    }
 
-            <conversation_history>
-
-            """
-        let omitted = history.count - kept.count
-        if omitted > 0 { out += "(\(omitted) earlier exchange(s) omitted)\n" }
-        out += kept.reversed().joined()
-        out += "</conversation_history>\n\nReply to this new message:\n\n"
-        out += message
-        return out
+    func agree(to plan: Plan, in turn: TurnTranscript) async {
+        guard let client else { return }
+        do {
+            try await client.answerPlan(turnId: turn.id, steps: plan.steps)
+        } catch ChatError.api(409, _, _) {
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

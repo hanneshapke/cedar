@@ -359,10 +359,11 @@ for what it does, where it keeps its files, and how releases are built.
 
 ## iOS app
 
-`iOS/` holds a native SwiftUI app for iPhone and iPad that talks to cedar's API directly, with the
-same conversation model as cedar-chat: live tool calls, follow-ups that continue the previous run,
-and stop, rename, and delete. Open `iOS/Cedar.xcodeproj` in Xcode 16 or newer. See
-[iOS/README.md](iOS/README.md).
+`iOS/` holds a native SwiftUI app for iPhone and iPad. It is a thin client for cedar-chat's API, so
+the phone and the browser share the same conversations, unread marks, settings and notifications:
+live tool calls, the agent's images, its clarifying questions and approval prompts, and push
+notifications through APNs when a response ends while you are away. Open `iOS/Cedar.xcodeproj`
+in Xcode 16 or newer. See [iOS/README.md](iOS/README.md).
 
 ## Configuration
 

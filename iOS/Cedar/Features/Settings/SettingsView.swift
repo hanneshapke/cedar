@@ -3,8 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = ServerSettings(serverURL: "", apiKey: "", model: "", systemPrompt: "")
+    @State private var draft = ServerSettings(serverURL: "", accessToken: "", model: "", reasoning: "")
     @State private var check: CheckState = .idle
+    @State private var models: [ModelInfo] = []
+    @State private var pushStatus: String?
 
     enum CheckState: Equatable {
         case idle, checking, ok
@@ -15,18 +17,18 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("http://127.0.0.1:8080", text: $draft.serverURL)
+                    TextField(ServerSettings.defaultServerURL, text: $draft.serverURL)
                         .keyboardType(.URL)
                         .textContentType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    SecureField("API key", text: $draft.apiKey)
+                    SecureField("Access token (if the server has one)", text: $draft.accessToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("The cedar server's URL and one of its CEDAR_API_KEYS. The key is stored in the Keychain.")
+                    Text("The cedar-chat server's URL (where you open the web UI) and its CHAT_ACCESS_TOKEN, if it is set. The token is stored in the Keychain; cedar's own key stays on the server.")
                 }
 
                 Section {
@@ -53,22 +55,44 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    TextField("Server default", text: $draft.model)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    Picker("Model", selection: $draft.model) {
+                        Text("Server default").tag("")
+                        ForEach(models) { model in
+                            Text(model.label).tag(model.id)
+                        }
+                    }
+                    if let levels = selectedModel?.reasoningLevels, !levels.isEmpty {
+                        Picker("Reasoning", selection: $draft.reasoning) {
+                            Text("Default").tag("")
+                            ForEach(levels, id: \.self) { level in
+                                Text(level.capitalized).tag(level)
+                            }
+                        }
+                    }
                 } header: {
                     Text("Model")
                 } footer: {
-                    Text("Leave empty to use the server's LLM_MODEL. A model must be in the server's ALLOWED_MODELS if that is set.")
+                    Text(models.isEmpty
+                         ? "The models cedar has registered are listed once the server is reachable."
+                         : "Used for your messages. Tools, the turn limit and the system prompt follow the server's Settings.")
                 }
 
                 Section {
-                    TextField("Server default", text: $draft.systemPrompt, axis: .vertical)
-                        .lineLimit(3...8)
+                    Button("Allow Notifications") {
+                        Task {
+                            await PushRegistrar.shared?.requestAuthorization()
+                            pushStatus = "If notifications are allowed, this phone is registered with the server the next time it starts a response."
+                        }
+                    }
+                    if let pushStatus {
+                        Text(pushStatus)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 } header: {
-                    Text("System Prompt")
+                    Text("Notifications")
                 } footer: {
-                    Text("Used for new conversations. Follow-ups keep the prompt their conversation started with.")
+                    Text("Pushes come from the server: set up iPhone push under Settings → Notifications in the web UI, with your Apple team id and APNs key. This phone registers itself there.")
                 }
             }
             .navigationTitle("Settings")
@@ -86,17 +110,33 @@ struct SettingsView: View {
                     .disabled(!draft.isConfigured)
                 }
             }
-            .onAppear { draft = app.settings }
+            .onAppear {
+                draft = app.settings
+                models = app.models
+            }
             .onChange(of: draft.serverURL) { check = .idle }
-            .onChange(of: draft.apiKey) { check = .idle }
+            .onChange(of: draft.accessToken) { check = .idle }
+            .onChange(of: draft.model) {
+                // A level the new model doesn't offer is dropped; while the models aren't
+                // loaded yet, the saved choice is kept.
+                if let levels = selectedModel?.reasoningLevels, !draft.reasoning.isEmpty, !levels.contains(draft.reasoning) {
+                    draft.reasoning = ""
+                }
+            }
         }
         .interactiveDismissDisabled(!app.settings.isConfigured)
+    }
+
+    private var selectedModel: ModelInfo? {
+        models.first { $0.id == draft.model }
     }
 
     private func testConnection() async {
         check = .checking
         do {
-            try await CedarClient(settings: draft).verify()
+            let client = try ChatClient(settings: draft)
+            try await client.verify()
+            models = (try? await client.models()) ?? []
             check = .ok
         } catch {
             check = .failed(error.localizedDescription)

@@ -11,15 +11,21 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    if chat.exchanges.isEmpty && chat.pendingPrompt == nil {
+                    if chat.turns.isEmpty && chat.pendingPrompt == nil {
                         if chat.isLoading {
                             ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
                         } else if chat.conversationId == nil {
                             Greeting()
                         }
                     }
-                    ForEach(chat.exchanges) { exchange in
-                        ExchangeView(exchange: exchange)
+                    ForEach(chat.turns) { turn in
+                        TurnView(turn: turn, chat: chat, webURL: webURL, isLast: turn.id == chat.turns.last?.id)
+                    }
+                    if let questions = chat.openQuestions, chat.pendingPrompt == nil {
+                        QuestionsView(questions: questions) { answers in
+                            Task { await chat.answer(questions, with: answers) }
+                        }
+                        .id(chat.turns.last?.id ?? "")
                     }
                     if let pending = chat.pendingPrompt {
                         UserBubble(text: pending)
@@ -46,6 +52,15 @@ struct ChatView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let webURL {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Link(destination: webURL) {
+                        Label("Open on the web", systemImage: "safari")
+                    }
+                }
+            }
+        }
         .task { await chat.start() }
         .onAppear {
             if chat.conversationId == nil { composerFocused = true }
@@ -56,12 +71,22 @@ struct ChatView: View {
         if let id = chat.conversationId, let conversation = app.conversation(id: id) {
             return app.title(for: conversation)
         }
-        return chat.exchanges.first.map { Conversation(runs: [$0.run]).defaultTitle } ?? "New Chat"
+        return chat.turns.first.map { firstLine($0.prompt) } ?? "New Chat"
+    }
+
+    private var webURL: URL? {
+        guard let id = chat.conversationId, let client = app.client else { return nil }
+        return client.webURL(conversationId: id)
+    }
+
+    private func firstLine(_ text: String) -> String {
+        let line = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "New Chat"
+        return line.count > 80 ? String(line.prefix(80)) + "…" : line
     }
 
     /// Changes whenever new content arrives, to keep the newest content in view.
     private var scrollSignature: [Int] {
-        [chat.exchanges.count, chat.exchanges.last?.lastSeq ?? 0, chat.pendingPrompt == nil ? 0 : 1]
+        [chat.turns.count, chat.turns.last?.lastSeq ?? 0, chat.pendingPrompt == nil ? 0 : 1, chat.openQuestions == nil ? 0 : 1]
     }
 }
 
@@ -73,7 +98,7 @@ private struct Greeting: View {
                 .foregroundStyle(.tint)
             Text("What should the agent do?")
                 .font(.title2.weight(.semibold))
-            Text("It can write files and run commands in its own sandbox. Follow-ups keep its files.")
+            Text("It can search the web, write files and run code in its own sandbox. Follow-ups keep its files.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -86,15 +111,30 @@ private struct Greeting: View {
 
 struct UserBubble: View {
     let text: String
+    var attachments: [AttachmentInfo] = []
 
     var body: some View {
         HStack {
             Spacer(minLength: 48)
-            Text(text)
-                .textSelection(.enabled)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(text)
+                    .textSelection(.enabled)
+                if !attachments.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(attachments, id: \.self) { file in
+                            Label(file.name, systemImage: file.mediaType == "application/pdf" ? "doc.richtext" : "photo")
+                                .font(.caption)
+                                .lineLimit(1)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color(.tertiarySystemBackground), in: Capsule())
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
         }
     }
 }
@@ -126,7 +166,7 @@ private struct Composer: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message cedar", text: $chat.draft, axis: .vertical)
+            TextField(chat.openQuestions == nil ? "Message cedar" : "Or answer in your own words", text: $chat.draft, axis: .vertical)
                 .lineLimit(1...8)
                 .focused(focused)
                 .padding(.horizontal, 14)

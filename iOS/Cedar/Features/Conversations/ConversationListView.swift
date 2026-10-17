@@ -4,7 +4,7 @@ struct ConversationListView: View {
     @Environment(AppModel.self) private var app
     @State private var renaming: Conversation?
     @State private var newTitle = ""
-    @State private var deleteError: String?
+    @State private var actionError: String?
 
     var body: some View {
         @Bindable var app = app
@@ -17,7 +17,7 @@ struct ConversationListView: View {
                 }
             }
             ForEach(app.conversations) { conversation in
-                ConversationRow(title: app.title(for: conversation), conversation: conversation)
+                ConversationRow(title: app.title(for: conversation), conversation: conversation, isActive: app.isActive(conversationId: conversation.id))
                     .tag(conversation.id)
                     .swipeActions {
                         Button(role: .destructive) {
@@ -25,7 +25,6 @@ struct ConversationListView: View {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
-                        .disabled(conversation.isActive)
                         Button {
                             newTitle = app.title(for: conversation)
                             renaming = conversation
@@ -41,12 +40,16 @@ struct ConversationListView: View {
                         } label: {
                             Label("Rename", systemImage: "pencil")
                         }
+                        if let client = app.client {
+                            Link(destination: client.webURL(conversationId: conversation.id)) {
+                                Label("Open on the Web", systemImage: "safari")
+                            }
+                        }
                         Button(role: .destructive) {
                             delete(conversation)
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
-                        .disabled(conversation.isActive)
                     }
             }
         }
@@ -81,18 +84,30 @@ struct ConversationListView: View {
         )) {
             TextField("Title", text: $newTitle)
             Button("Save") {
-                if let renaming { app.rename(renaming, to: newTitle) }
+                if let renaming { rename(renaming, to: newTitle) }
                 renaming = nil
             }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
-        .alert("Could Not Delete", isPresented: Binding(
-            get: { deleteError != nil },
-            set: { if !$0 { deleteError = nil } }
+        .alert("Could Not Do That", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
         )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(deleteError ?? "")
+            Text(actionError ?? "")
+        }
+    }
+
+    private func rename(_ conversation: Conversation, to title: String) {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        Task {
+            do {
+                try await app.rename(conversation, to: title)
+            } catch {
+                actionError = error.localizedDescription
+            }
         }
     }
 
@@ -101,7 +116,7 @@ struct ConversationListView: View {
             do {
                 try await app.delete(conversation)
             } catch {
-                deleteError = error.localizedDescription
+                actionError = error.localizedDescription
                 await app.refresh()
             }
         }
@@ -111,31 +126,48 @@ struct ConversationListView: View {
 private struct ConversationRow: View {
     let title: String
     let conversation: Conversation
+    let isActive: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .lineLimit(1)
-                    .font(.body)
-                if conversation.isActive {
-                    ProgressView()
-                        .controlSize(.mini)
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 8, height: 8)
+                .padding(.top, 7)
+                .opacity(conversation.unread ? 1 : 0)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .lineLimit(1)
+                        .font(conversation.unread ? .body.weight(.semibold) : .body)
+                    if isActive {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
                 }
+                HStack(spacing: 6) {
+                    Text(conversation.updatedAt, format: .relative(presentation: .named))
+                    if conversation.needsAnswer {
+                        Text("Needs answer")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.18), in: Capsule())
+                            .foregroundStyle(.orange)
+                    } else if conversation.unread {
+                        Text("Unread")
+                    }
+                    if let model = conversation.model, !model.isEmpty {
+                        Text("· \(model)")
+                            .lineLimit(1)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            HStack(spacing: 4) {
-                Text(conversation.updatedAt, format: .relative(presentation: .named))
-                if conversation.runs.count > 1 {
-                    Text("· \(conversation.runs.count) messages")
-                }
-                if conversation.latest.status == .failed {
-                    Image(systemName: "exclamationmark.circle")
-                        .foregroundStyle(.red)
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
+        .accessibilityLabel(conversation.unread ? "\(title), unread" : title)
     }
 }
