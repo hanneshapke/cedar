@@ -15,7 +15,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),
+        )
         .init();
 
     let cfg = Config::from_env()?;
@@ -31,7 +33,9 @@ async fn main() -> Result<()> {
     let stop = CancellationToken::new();
     let scheduler = schedule::start(state.clone(), stop.clone());
 
-    let listener = tokio::net::TcpListener::bind(bind_addr).await.with_context(|| format!("binding {bind_addr}"))?;
+    let listener = tokio::net::TcpListener::bind(bind_addr)
+        .await
+        .with_context(|| format!("binding {bind_addr}"))?;
     tracing::info!("open http://{bind_addr}");
     axum::serve(listener, api::router(state))
         .with_graceful_shutdown(async {
@@ -41,7 +45,10 @@ async fn main() -> Result<()> {
 
     // Let a tick that is starting runs finish recording them.
     stop.cancel();
-    if tokio::time::timeout(Duration::from_secs(10), scheduler).await.is_err() {
+    if tokio::time::timeout(Duration::from_secs(10), scheduler)
+        .await
+        .is_err()
+    {
         tracing::warn!("the scheduler was still starting runs at shutdown");
     }
     Ok(())

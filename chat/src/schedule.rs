@@ -59,22 +59,46 @@ pub struct Timing {
 
 impl Timing {
     /// Validate the API's strings. The error is a message for the client.
-    pub fn parse(frequency: &str, weekday: Option<u8>, time: &str, timezone: &str) -> Result<Self, String> {
-        let frequency = Frequency::parse(frequency)
-            .ok_or_else(|| format!("frequency must be daily, weekdays or weekly, not {frequency:?}"))?;
+    pub fn parse(
+        frequency: &str,
+        weekday: Option<u8>,
+        time: &str,
+        timezone: &str,
+    ) -> Result<Self, String> {
+        let frequency = Frequency::parse(frequency).ok_or_else(|| {
+            format!("frequency must be daily, weekdays or weekly, not {frequency:?}")
+        })?;
         let weekday = match (frequency, weekday) {
-            (Frequency::Weekly, None) => return Err("a weekly schedule needs a weekday (0 = Monday .. 6 = Sunday)".into()),
-            (Frequency::Weekly, Some(d)) if d > 6 => return Err("weekday must be between 0 (Monday) and 6 (Sunday)".into()),
+            (Frequency::Weekly, None) => {
+                return Err("a weekly schedule needs a weekday (0 = Monday .. 6 = Sunday)".into())
+            }
+            (Frequency::Weekly, Some(d)) if d > 6 => {
+                return Err("weekday must be between 0 (Monday) and 6 (Sunday)".into())
+            }
             (Frequency::Weekly, Some(d)) => Some(Weekday::try_from(d).expect("0..=6")),
             _ => None,
         };
-        let time = NaiveTime::parse_from_str(time.trim(), "%H:%M").map_err(|_| format!("time must look like 09:30, not {time:?}"))?;
-        let tz: Tz = timezone.trim().parse().map_err(|_| format!("unknown time zone {timezone:?}"))?;
-        Ok(Self { frequency, weekday, time, tz })
+        let time = NaiveTime::parse_from_str(time.trim(), "%H:%M")
+            .map_err(|_| format!("time must look like 09:30, not {time:?}"))?;
+        let tz: Tz = timezone
+            .trim()
+            .parse()
+            .map_err(|_| format!("unknown time zone {timezone:?}"))?;
+        Ok(Self {
+            frequency,
+            weekday,
+            time,
+            tz,
+        })
     }
 
     pub fn of(schedule: &Schedule) -> Result<Self, String> {
-        Self::parse(&schedule.frequency, schedule.weekday, &schedule.time_of_day, &schedule.timezone)
+        Self::parse(
+            &schedule.frequency,
+            schedule.weekday,
+            &schedule.time_of_day,
+            &schedule.timezone,
+        )
     }
 
     fn runs_on(&self, day: Weekday) -> bool {
@@ -93,10 +117,17 @@ impl Timing {
             if self.runs_on(date.weekday()) {
                 let local = date.and_time(self.time);
                 // On a DST gap the wall-clock time doesn't exist; take the first instant after it.
-                let at = self.tz.from_local_datetime(&local).earliest().unwrap_or_else(|| {
-                    let later = local + ChronoDuration::hours(1);
-                    self.tz.from_local_datetime(&later).earliest().expect("an hour past a gap is valid")
-                });
+                let at = self
+                    .tz
+                    .from_local_datetime(&local)
+                    .earliest()
+                    .unwrap_or_else(|| {
+                        let later = local + ChronoDuration::hours(1);
+                        self.tz
+                            .from_local_datetime(&later)
+                            .earliest()
+                            .expect("an hour past a gap is valid")
+                    });
                 let at = at.with_timezone(&Utc);
                 if at > after {
                     return at;
@@ -131,7 +162,9 @@ pub async fn tick(state: &AppState, now: DateTime<Utc>) -> anyhow::Result<usize>
     for schedule in state.store.due_schedules(now).await? {
         match fire(state, &schedule, schedule.next_run_at, now, false).await {
             Ok(_) => started += 1,
-            Err(e) => tracing::warn!(schedule_id = %schedule.id, error = %e, "could not start the scheduled run"),
+            Err(e) => {
+                tracing::warn!(schedule_id = %schedule.id, error = %e, "could not start the scheduled run")
+            }
         }
     }
     Ok(started)
@@ -157,16 +190,32 @@ pub async fn fire(
     now: DateTime<Utc>,
     manual: bool,
 ) -> Result<ScheduleRun, AppError> {
-    let timing = Timing::of(schedule).map_err(|e| AppError::Internal(anyhow::anyhow!("schedule {} is invalid: {e}", schedule.id)))?;
+    let timing = Timing::of(schedule).map_err(|e| {
+        AppError::Internal(anyhow::anyhow!("schedule {} is invalid: {e}", schedule.id))
+    })?;
     let next = (!manual).then(|| timing.next_after(now));
     let prefs = state.store.preferences().await?;
-    let settings = RunSettings::resolve(state, &prefs, schedule.model.clone(), schedule.reasoning.clone(), schedule.tools.clone()).await;
+    let settings = RunSettings::resolve(
+        state,
+        &prefs,
+        schedule.model.clone(),
+        schedule.reasoning.clone(),
+        schedule.tools.clone(),
+    )
+    .await;
     let model = settings.model.as_deref();
     let when = due_at.with_timezone(&timing.tz).format("%a %-d %b %H:%M");
     let title = format!("{} · {when}", schedule.title);
 
-    let conversation = state.store.create_scheduled_conversation(schedule.id, &title).await?;
-    let run = match state.cedar.create_run(&schedule.prompt, &settings.options(None)).await {
+    let conversation = state
+        .store
+        .create_scheduled_conversation(schedule.id, &title)
+        .await?;
+    let run = match state
+        .cedar
+        .create_run(&schedule.prompt, &settings.options(None))
+        .await
+    {
         Ok(run) => run,
         Err(e) => {
             // Nothing happened; don't leave an empty conversation behind.
@@ -198,7 +247,15 @@ pub async fn fire(
     // A schedule's prompt is text only; it never carries attachments.
     let turn = state
         .store
-        .insert_turn(conversation.id, run.id, &schedule.prompt, &run.status, model, settings.reasoning.as_deref(), &[])
+        .insert_turn(
+            conversation.id,
+            run.id,
+            &schedule.prompt,
+            &run.status,
+            model,
+            settings.reasoning.as_deref(),
+            &[],
+        )
         .await?;
     let record = state
         .store
@@ -231,59 +288,114 @@ mod tests {
     #[test]
     fn parsing_checks_every_field() {
         assert!(Timing::parse("hourly", None, "09:00", "UTC").is_err());
-        assert!(Timing::parse("weekly", None, "09:00", "UTC").unwrap_err().contains("weekday"));
+        assert!(Timing::parse("weekly", None, "09:00", "UTC")
+            .unwrap_err()
+            .contains("weekday"));
         assert!(Timing::parse("weekly", Some(7), "09:00", "UTC").is_err());
-        assert!(Timing::parse("daily", None, "9am", "UTC").unwrap_err().contains("09:30"));
-        assert!(Timing::parse("daily", None, "09:00", "Mars/Olympus").unwrap_err().contains("time zone"));
+        assert!(Timing::parse("daily", None, "9am", "UTC")
+            .unwrap_err()
+            .contains("09:30"));
+        assert!(Timing::parse("daily", None, "09:00", "Mars/Olympus")
+            .unwrap_err()
+            .contains("time zone"));
         // A weekday on a non-weekly schedule is ignored rather than refused.
         assert_eq!(timing("daily", Some(3), "09:00", "UTC").weekday, None);
-        assert_eq!(timing("weekly", Some(6), " 23:59 ", " Europe/Berlin ").weekday, Some(Weekday::Sun));
+        assert_eq!(
+            timing("weekly", Some(6), " 23:59 ", " Europe/Berlin ").weekday,
+            Some(Weekday::Sun)
+        );
     }
 
     #[test]
     fn daily_runs_later_today_or_tomorrow() {
         let t = timing("daily", None, "09:00", "UTC");
-        assert_eq!(t.next_after(utc("2026-10-12T08:59:00Z")), utc("2026-10-12T09:00:00Z"));
-        assert_eq!(t.next_after(utc("2026-10-12T09:00:00Z")), utc("2026-10-13T09:00:00Z"), "strictly after");
-        assert_eq!(t.next_after(utc("2026-10-12T15:00:00Z")), utc("2026-10-13T09:00:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-10-12T08:59:00Z")),
+            utc("2026-10-12T09:00:00Z")
+        );
+        assert_eq!(
+            t.next_after(utc("2026-10-12T09:00:00Z")),
+            utc("2026-10-13T09:00:00Z"),
+            "strictly after"
+        );
+        assert_eq!(
+            t.next_after(utc("2026-10-12T15:00:00Z")),
+            utc("2026-10-13T09:00:00Z")
+        );
     }
 
     #[test]
     fn local_time_zones_are_honored() {
         let t = timing("daily", None, "09:00", "America/Los_Angeles");
         // 09:00 PDT is 16:00 UTC; 2026-10-12 is a Monday.
-        assert_eq!(t.next_after(utc("2026-10-12T15:00:00Z")), utc("2026-10-12T16:00:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-10-12T15:00:00Z")),
+            utc("2026-10-12T16:00:00Z")
+        );
         // After the November switch to PST it's 17:00 UTC.
-        assert_eq!(t.next_after(utc("2026-11-02T00:00:00Z")), utc("2026-11-02T17:00:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-11-02T00:00:00Z")),
+            utc("2026-11-02T17:00:00Z")
+        );
         let t = timing("daily", None, "00:30", "Asia/Tokyo");
-        assert_eq!(t.next_after(utc("2026-10-12T15:00:00Z")), utc("2026-10-12T15:30:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-10-12T15:00:00Z")),
+            utc("2026-10-12T15:30:00Z")
+        );
     }
 
     #[test]
     fn weekdays_skip_the_weekend() {
         let t = timing("weekdays", None, "18:00", "UTC");
         // Friday 2026-10-16 after 18:00 -> Monday 2026-10-19.
-        assert_eq!(t.next_after(utc("2026-10-16T18:00:00Z")), utc("2026-10-19T18:00:00Z"));
-        assert_eq!(t.next_after(utc("2026-10-17T10:00:00Z")), utc("2026-10-19T18:00:00Z"));
-        assert_eq!(t.next_after(utc("2026-10-19T10:00:00Z")), utc("2026-10-19T18:00:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-10-16T18:00:00Z")),
+            utc("2026-10-19T18:00:00Z")
+        );
+        assert_eq!(
+            t.next_after(utc("2026-10-17T10:00:00Z")),
+            utc("2026-10-19T18:00:00Z")
+        );
+        assert_eq!(
+            t.next_after(utc("2026-10-19T10:00:00Z")),
+            utc("2026-10-19T18:00:00Z")
+        );
     }
 
     #[test]
     fn weekly_runs_on_its_weekday() {
         let t = timing("weekly", Some(2), "07:00", "UTC"); // Wednesday
-        assert_eq!(t.next_after(utc("2026-10-12T00:00:00Z")), utc("2026-10-14T07:00:00Z"));
-        assert_eq!(t.next_after(utc("2026-10-14T07:00:00Z")), utc("2026-10-21T07:00:00Z"));
-        assert_eq!(t.next_after(utc("2026-10-14T06:59:59Z")), utc("2026-10-14T07:00:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-10-12T00:00:00Z")),
+            utc("2026-10-14T07:00:00Z")
+        );
+        assert_eq!(
+            t.next_after(utc("2026-10-14T07:00:00Z")),
+            utc("2026-10-21T07:00:00Z")
+        );
+        assert_eq!(
+            t.next_after(utc("2026-10-14T06:59:59Z")),
+            utc("2026-10-14T07:00:00Z")
+        );
     }
 
     #[test]
     fn dst_gaps_and_overlaps_resolve() {
         // Berlin skips 02:00-03:00 on 2026-03-29; 02:30 becomes 03:30 CEST (01:30 UTC).
         let t = timing("daily", None, "02:30", "Europe/Berlin");
-        assert_eq!(t.next_after(utc("2026-03-28T12:00:00Z")), utc("2026-03-29T01:30:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-03-28T12:00:00Z")),
+            utc("2026-03-29T01:30:00Z")
+        );
         // Berlin repeats 02:00-03:00 on 2026-10-25; the first (CEST, 00:30 UTC) is used.
-        assert_eq!(t.next_after(utc("2026-10-24T12:00:00Z")), utc("2026-10-25T00:30:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-10-24T12:00:00Z")),
+            utc("2026-10-25T00:30:00Z")
+        );
         // And the day after is back to a plain CET 02:30 (01:30 UTC).
-        assert_eq!(t.next_after(utc("2026-10-25T00:30:00Z")), utc("2026-10-26T01:30:00Z"));
+        assert_eq!(
+            t.next_after(utc("2026-10-25T00:30:00Z")),
+            utc("2026-10-26T01:30:00Z")
+        );
     }
 }

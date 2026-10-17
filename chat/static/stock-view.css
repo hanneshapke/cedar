@@ -1,0 +1,864 @@
+/* The stock card for the compare_stocks tool (see stock-view.js), shared by both UIs. Like the map
+   and recipe cards it relies only on --accent and --muted from the page and uses translucent greys
+   for edges. Its own colors are set for light and dark: the series lines take a fixed categorical
+   order (slot 0 is the benchmark, a neutral dashed line), and buy, hold, and sell use status colors
+   that always come with an icon and a word. */
+
+.cedar-stocks {
+  --sk-line: rgba(128, 128, 128, .26);
+  --sk-grid: rgba(128, 128, 128, .18);
+  --sk-soft: rgba(128, 128, 128, .07);
+  --sk-muted: var(--muted, #6f6d66);
+  --sk-accent: var(--accent, #c96442);
+  --sk-surface: #fcfcfb;
+  --sk-s0: #898781;
+  --sk-s1: #2a78d6;
+  --sk-s2: #eb6834;
+  --sk-s3: #1baf7a;
+  --sk-s4: #eda100;
+  --sk-s5: #e87ba4;
+  --sk-s6: #6250d6;
+  --sk-up: #006300;
+  --sk-down: #c03232;
+  --sk-buy: #0ca30c;
+  --sk-hold: #fab219;
+  --sk-sell: #d03b3b;
+  container-type: inline-size;
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .04);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cedar-stocks {
+    --sk-surface: #1a1a19;
+    --sk-s1: #3987e5;
+    --sk-s2: #d95926;
+    --sk-s3: #199e70;
+    --sk-s4: #c98500;
+    --sk-s5: #d55181;
+    --sk-s6: #9085e9;
+    --sk-up: #3fbf3f;
+    --sk-down: #ef7676;
+  }
+}
+
+.cedar-stocks button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cedar-stocks :focus-visible {
+  outline: 2px solid var(--sk-accent);
+  outline-offset: 2px;
+}
+
+/* Series keys: a short stroke in the series color, used in tiles, the legend, and the tooltip. */
+.cedar-stocks .key {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 0;
+  border-top: 2.5px solid var(--sk-k, var(--sk-s1));
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.cedar-stocks .s0 { --sk-k: var(--sk-s0); }
+.cedar-stocks .s1 { --sk-k: var(--sk-s1); }
+.cedar-stocks .s2 { --sk-k: var(--sk-s2); }
+.cedar-stocks .s3 { --sk-k: var(--sk-s3); }
+.cedar-stocks .s4 { --sk-k: var(--sk-s4); }
+.cedar-stocks .s5 { --sk-k: var(--sk-s5); }
+.cedar-stocks .s6 { --sk-k: var(--sk-s6); }
+.cedar-stocks .key.s0 { border-top-style: dashed; }
+
+.cedar-stocks .up { color: var(--sk-up); }
+.cedar-stocks .down { color: var(--sk-down); }
+.cedar-stocks .flat { color: var(--sk-muted); }
+
+/* ---- header ---- */
+
+.cedar-stocks-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px 10px;
+}
+
+.cedar-stocks-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sk-accent) 14%, transparent);
+  color: var(--sk-accent);
+}
+
+.cedar-stocks-icon svg,
+.cedar-stocks-call svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cedar-stocks-title {
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.cedar-stocks-sub {
+  font-size: 12px;
+  color: var(--sk-muted);
+}
+
+/* ---- the call: a status pill with an icon and the word ---- */
+
+.cedar-stocks-call {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 12px 4px 8px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cedar-stocks-call.buy { background: var(--sk-buy); color: #fff; }
+.cedar-stocks-call.hold { background: var(--sk-hold); color: #2a2100; }
+.cedar-stocks-call.sell { background: var(--sk-sell); color: #fff; }
+
+.cedar-stocks-call.small {
+  gap: 2px;
+  margin-left: auto;
+  padding: 1px 7px 1px 4px;
+  font-size: 10.5px;
+}
+
+.cedar-stocks-call.small svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.6;
+}
+
+/* ---- quote tiles ---- */
+
+.cedar-stocks-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  padding: 0 14px 12px;
+}
+
+.cedar-stocks-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--sk-line);
+  border-radius: 10px;
+  background: var(--sk-soft);
+  text-align: left;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+
+.cedar-stocks-tile:hover {
+  border-color: rgba(128, 128, 128, .5);
+}
+
+.cedar-stocks-tile[aria-selected="true"] {
+  border-color: var(--sk-accent);
+  background: color-mix(in srgb, var(--sk-accent) 7%, transparent);
+  box-shadow: 0 0 0 1px var(--sk-accent) inset;
+}
+
+.cedar-stocks-tile .top {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cedar-stocks-tile .sym {
+  font-weight: 700;
+}
+
+.cedar-stocks-tile .name {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--sk-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cedar-stocks-tile .price {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-stocks-tile .chg {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the chart ---- */
+
+.cedar-stocks-chart {
+  padding: 10px 14px 6px;
+  border-top: 1px solid var(--sk-line);
+}
+
+.cedar-stocks-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.cedar-stocks-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--sk-line);
+  border-radius: 8px;
+  background: var(--sk-soft);
+}
+
+.cedar-stocks-seg button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-size: 12px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-seg button:hover {
+  color: inherit;
+}
+
+.cedar-stocks-seg button[aria-pressed="true"] {
+  background: var(--sk-surface);
+  color: inherit;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+
+.cedar-stocks-plot {
+  position: relative;
+  min-height: 240px;
+}
+
+.cedar-stocks-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.cedar-stocks-svg:focus { outline: none; }
+.cedar-stocks-svg:focus-visible { outline: 2px solid var(--sk-accent); outline-offset: 4px; border-radius: 4px; }
+
+.cedar-stocks-svg .grid line {
+  stroke: var(--sk-grid);
+  stroke-width: 1;
+}
+
+.cedar-stocks-svg .grid line.zero {
+  stroke: rgba(128, 128, 128, .55);
+}
+
+.cedar-stocks-svg text {
+  fill: var(--sk-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-stocks-svg .end-label {
+  fill: currentColor;
+  font-weight: 600;
+}
+
+.cedar-stocks-svg .line {
+  fill: none;
+  stroke: var(--sk-k);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.cedar-stocks-svg .line.s0 {
+  stroke-width: 1.6;
+  stroke-dasharray: 4 3;
+}
+
+/* The lines draw themselves in once, left to right. The benchmark is dashed, so it fades in. */
+.cedar-stocks-svg .line.draw:not(.s0) {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: cedar-stocks-draw 1s ease-out forwards;
+}
+
+.cedar-stocks-svg .line.draw.s0 {
+  animation: cedar-stocks-fade .8s ease-out;
+}
+
+@keyframes cedar-stocks-draw { to { stroke-dashoffset: 0; } }
+@keyframes cedar-stocks-fade { from { opacity: 0; } }
+
+.cedar-stocks-svg .area {
+  fill: var(--sk-k);
+  opacity: .1;
+}
+
+.cedar-stocks-svg .end,
+.cedar-stocks-svg .dot {
+  fill: var(--sk-k);
+  stroke: var(--sk-surface);
+  stroke-width: 2;
+}
+
+.cedar-stocks-svg .cross {
+  stroke: rgba(128, 128, 128, .6);
+  stroke-width: 1;
+}
+
+.cedar-stocks-svg .hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.cedar-stocks-tip {
+  position: absolute;
+  top: 6px;
+  z-index: 2;
+  min-width: 120px;
+  padding: 7px 9px;
+  border: 1px solid var(--sk-line);
+  border-radius: 8px;
+  background: var(--sk-surface);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .14);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.cedar-stocks-tip .when {
+  margin-bottom: 3px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-tip .row {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.cedar-stocks-tip strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-stocks-tip .who {
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 4px 0 6px;
+  font-size: 12px;
+}
+
+.cedar-stocks-legend .item {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cedar-stocks-legend .chg {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the rating ---- */
+
+.cedar-stocks-rating {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-top: 1px solid var(--sk-line);
+  animation: cedar-stocks-fade .25s ease-out;
+}
+
+.cedar-stocks-verdict {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--sk-soft);
+}
+
+.cedar-stocks-verdict-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+}
+
+.cedar-stocks-verdict-meta .who {
+  overflow-wrap: anywhere;
+}
+
+.cedar-stocks-verdict-meta .conf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-verdict-meta .lean {
+  padding: 0 7px;
+  border: 1px solid var(--sk-line);
+  border-radius: 999px;
+}
+
+/* Confidence: three bars, filled up to the level. */
+.cedar-stocks .meter {
+  display: inline-flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 12px;
+}
+
+.cedar-stocks .meter i {
+  width: 4px;
+  border-radius: 1px;
+  background: rgba(128, 128, 128, .3);
+}
+
+.cedar-stocks .meter i:nth-child(1) { height: 5px; }
+.cedar-stocks .meter i:nth-child(2) { height: 8px; }
+.cedar-stocks .meter i:nth-child(3) { height: 12px; }
+.cedar-stocks .meter.low i:nth-child(-n+1),
+.cedar-stocks .meter.medium i:nth-child(-n+2),
+.cedar-stocks .meter.high i { background: currentColor; }
+
+.cedar-stocks-verdict .summary {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* The gauge: sell, hold, and buy zones on a track, and a marker at the score. */
+.cedar-stocks-gauge .track {
+  position: relative;
+  height: 10px;
+  margin: 6px 0 4px;
+}
+
+.cedar-stocks-gauge .zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.cedar-stocks-gauge .zone.sell { border-radius: 5px 0 0 5px; background: color-mix(in srgb, var(--sk-sell) 40%, transparent); }
+.cedar-stocks-gauge .zone.hold { background: rgba(128, 128, 128, .22); }
+.cedar-stocks-gauge .zone.buy { border-radius: 0 5px 5px 0; background: color-mix(in srgb, var(--sk-buy) 40%, transparent); }
+
+.cedar-stocks-gauge .marker {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--sk-surface);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+  transform: translate(-50%, -50%);
+  transition: left .6s cubic-bezier(.2, .8, .2, 1);
+}
+
+.cedar-stocks-gauge .marker.buy { background: var(--sk-buy); }
+.cedar-stocks-gauge .marker.hold { background: var(--sk-hold); }
+.cedar-stocks-gauge .marker.sell { background: var(--sk-sell); }
+
+.cedar-stocks-gauge .labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--sk-muted);
+}
+
+/* The factors: name, headline, a score bar, and the reasoning. A colored edge marks for or against. */
+.cedar-stocks-factors {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cedar-stocks-factors li {
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--sk-line);
+  border-left: 3px solid rgba(128, 128, 128, .45);
+  border-radius: 8px;
+}
+
+.cedar-stocks-factors li.for { border-left-color: var(--sk-buy); }
+.cedar-stocks-factors li.against { border-left-color: var(--sk-sell); }
+
+.cedar-stocks-factors .line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.cedar-stocks-factors .name {
+  font-weight: 650;
+}
+
+.cedar-stocks-factors .headline {
+  font-size: 12px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-factors .detail {
+  margin: 4px 0 0;
+}
+
+.cedar-stocks-scorewrap {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-stocks-scorewrap .n {
+  min-width: 18px;
+  text-align: right;
+}
+
+/* -2 to +2 from the middle of a short track. */
+.cedar-stocks-score {
+  position: relative;
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, .18);
+}
+
+.cedar-stocks-score::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: 1px;
+  background: rgba(128, 128, 128, .6);
+}
+
+.cedar-stocks-score .fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+
+.cedar-stocks-score.for .fill { left: 50%; background: var(--sk-buy); }
+.cedar-stocks-score.against .fill { right: 50%; background: var(--sk-sell); }
+
+.cedar-stocks-watch ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.cedar-stocks-watch li + li {
+  margin-top: 3px;
+}
+
+/* Key numbers in a grid of small tiles. */
+.cedar-stocks-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+}
+
+.cedar-stocks-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--sk-soft);
+}
+
+.cedar-stocks-stat .k {
+  font-size: 11px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-stat .v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-stocks-range {
+  position: relative;
+  height: 4px;
+  margin: 6px 2px 2px;
+  border-radius: 2px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--sk-sell) 55%, transparent), rgba(128, 128, 128, .3), color-mix(in srgb, var(--sk-buy) 55%, transparent));
+}
+
+.cedar-stocks-range .mark {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--sk-surface);
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+/* ---- returns ---- */
+
+.cedar-stocks-returns {
+  padding: 12px 14px;
+  border-top: 1px solid var(--sk-line);
+}
+
+.cedar-stocks-returns .scroll {
+  overflow-x: auto;
+}
+
+.cedar-stocks-returns table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-stocks-returns th {
+  padding: 3px 6px;
+  font-weight: 600;
+  color: var(--sk-muted);
+  text-align: right;
+}
+
+.cedar-stocks-returns tbody th {
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cedar-stocks-returns tbody th .key {
+  margin-right: 7px;
+}
+
+.cedar-stocks-returns td {
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* A tint that deepens with the size of the move; the sign says the direction too. */
+.cedar-stocks-returns td.up { background: color-mix(in srgb, var(--sk-buy) calc(6% + var(--mag, 0) * 26%), transparent); }
+.cedar-stocks-returns td.down { background: color-mix(in srgb, var(--sk-sell) calc(6% + var(--mag, 0) * 26%), transparent); }
+
+/* ---- news ---- */
+
+.cedar-stocks-news {
+  padding: 12px 14px;
+  border-top: 1px solid var(--sk-line);
+}
+
+.cedar-stocks-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cedar-stocks-chips button {
+  padding: 2px 10px;
+  border: 1px solid var(--sk-line);
+  border-radius: 999px;
+  background: none;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-chips button[aria-pressed="true"] {
+  border-color: var(--sk-accent);
+  background: color-mix(in srgb, var(--sk-accent) 12%, transparent);
+  color: inherit;
+  font-weight: 650;
+}
+
+.cedar-stocks-articles {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cedar-stocks-articles a {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background .15s;
+}
+
+.cedar-stocks-articles a:hover {
+  background: var(--sk-soft);
+}
+
+.cedar-stocks-articles a:hover .title {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cedar-stocks-articles .body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cedar-stocks-articles .title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cedar-stocks-articles .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-articles .pub {
+  font-weight: 600;
+}
+
+.cedar-stocks-articles .tag {
+  padding: 0 6px;
+  border: 1px solid var(--sk-line);
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.cedar-stocks-articles .thumb {
+  flex: none;
+  width: 72px;
+  height: 54px;
+  border-radius: 6px;
+  background: var(--sk-soft);
+  object-fit: cover;
+}
+
+.cedar-stocks-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--sk-muted);
+}
+
+.cedar-stocks-foot {
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--sk-line);
+}
+
+.cedar-stocks-foot .disclaimer {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--sk-muted);
+}
+
+/* ---- wide cards: the rating's reasoning beside the key numbers ---- */
+
+@container (min-width: 720px) {
+  .cedar-stocks-rating {
+    grid-template-columns: 3fr 2fr;
+    align-items: start;
+  }
+
+  .cedar-stocks-verdict { grid-column: 1; grid-row: 1; }
+  .cedar-stocks-why { grid-column: 1; grid-row: 2; }
+
+  .cedar-stocks-watch,
+  .cedar-stocks-stats {
+    grid-column: 2;
+  }
+
+  .cedar-stocks-watch { grid-row: 1; }
+  .cedar-stocks-stats { grid-row: 2; grid-template-columns: 1fr 1fr; }
+}
+
+@container (max-width: 420px) {
+  .cedar-stocks-tiles { grid-template-columns: 1fr 1fr; }
+  .cedar-stocks-articles .thumb { width: 56px; height: 42px; }
+  .cedar-stocks-scorewrap { margin-left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cedar-stocks-svg .line.draw:not(.s0) { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .cedar-stocks-svg .line.draw.s0,
+  .cedar-stocks-rating { animation: none; }
+  .cedar-stocks-gauge .marker { transition: none; }
+}

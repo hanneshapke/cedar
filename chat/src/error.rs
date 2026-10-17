@@ -25,7 +25,11 @@ pub enum AppError {
     PayloadTooLarge(String),
     /// cedar answered with an error; relay it.
     #[error("{message}")]
-    Upstream { status: StatusCode, code: String, message: String },
+    Upstream {
+        status: StatusCode,
+        code: String,
+        message: String,
+    },
     /// cedar could not be reached or answered with something unreadable.
     #[error("{0}")]
     BadGateway(String),
@@ -59,21 +63,39 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, "bad_request".to_string(), m),
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".into(), self.to_string()),
+            AppError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "unauthorized".into(),
+                self.to_string(),
+            ),
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, "forbidden".into(), m),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found".into(), m.to_string()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "conflict".into(), m),
-            AppError::PayloadTooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large".into(), m),
-            AppError::Upstream { status, code, message } => (status, code, message),
+            AppError::PayloadTooLarge(m) => {
+                (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large".into(), m)
+            }
+            AppError::Upstream {
+                status,
+                code,
+                message,
+            } => (status, code, message),
             AppError::BadGateway(m) => {
                 tracing::warn!(error = %m, "cedar request failed");
                 (StatusCode::BAD_GATEWAY, "bad_gateway".into(), m)
             }
             AppError::Internal(e) => {
                 tracing::error!(error = ?e, "internal error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal".into(), "internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal".into(),
+                    "internal server error".into(),
+                )
             }
         };
-        (status, Json(json!({ "error": { "code": code, "message": message } }))).into_response()
+        (
+            status,
+            Json(json!({ "error": { "code": code, "message": message } })),
+        )
+            .into_response()
     }
 }
