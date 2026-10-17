@@ -635,6 +635,8 @@ async fn both_uis_are_served() {
             );
             assert!(page.contains("<script src=\"/map-view.js\">"), "{uri} loads the map view");
             assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
+            assert!(page.contains("<script src=\"/recipe-view.js\">"), "{uri} loads the recipe view");
+            assert!(page.contains("href=\"/recipe-view.css\""), "{uri} loads the recipe styles");
             assert!(page.contains("<script src=\"/models.js\">"), "{uri} loads the model registry script");
             assert!(
                 page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("/settings.js"),
@@ -670,6 +672,8 @@ async fn both_uis_are_served() {
     for (uri, content_type, marker) in [
         ("/map-view.js", "text/javascript; charset=utf-8", "cedarMap"),
         ("/map-view.css", "text/css; charset=utf-8", ".cedar-map"),
+        ("/recipe-view.js", "text/javascript; charset=utf-8", "cedarRecipe"),
+        ("/recipe-view.css", "text/css; charset=utf-8", ".cedar-recipe"),
         ("/image-view.js", "text/javascript; charset=utf-8", "cedarImages"),
         ("/image-view.css", "text/css; charset=utf-8", ".cedar-image"),
         ("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8", "Leaflet 1.9.4"),
