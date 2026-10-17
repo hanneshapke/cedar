@@ -111,8 +111,9 @@ Both interfaces have all of these, except where noted:
 - [Notifications](#notifications): a response that finishes while you are in another conversation,
   another tab, or away is marked unread in the conversation list and counted in the page title and
   on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
-  marked "Needs answer". Out of the app, by the method you pick in Settings: a browser push (tab
-  open or not), a phone push through Pushover, or an email
+  marked "Needs answer". Out of the app, by the method you pick in Settings: a Mac notification
+  from [Cedar for macOS](../macos/README.md), a browser push (tab open or not), a phone push
+  through Pushover, or an email
 
 ## Running it
 
@@ -253,6 +254,12 @@ all. Set up as many as you like; each has its credentials, a **Set up** badge on
 **Save and send a test**. The server sends a message a few seconds after cedar says the run ended,
 unless the response was looked at in the meantime (a page that watched it end marks it seen first).
 
+- **Mac notification**: a notification in Notification Center from [Cedar for macOS](../macos/README.md),
+  its window open or not; clicking it is meant to open the conversation. The app follows
+  `GET /api/notifications/desktop/events`, and its first connection sets the method up (and makes
+  it the default if none was chosen). It is offered once the app has connected; a send while the app
+  isn't running fails and says so. The app's web view can't take browser push, so the app hides
+  that method.
 - **Browser push**: a notification from this browser even when the tab is closed, through a
   service worker (`sw.js`) and the browser's push service, signed with VAPID keys the server makes
   on first use. **Turn on in this browser** asks the browser for permission and subscribes it; every
@@ -413,16 +420,17 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
-| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
-| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"browser"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser) |
+| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, desktop: {configured, connected_at, listening}, last_delivery}`. Never the secrets. Makes the push keys on first read |
+| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"desktop"\|"browser"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser, the Mac app never connected) |
 | `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
+| `GET /api/notifications/desktop/events` | For Cedar for macOS: SSE, a `notification` event `{type, title, body, url, tag}` for every message sent by the `desktop` method. Connecting sets the method up |
 | `POST /api/notifications/push/subscriptions` | A browser's `PushSubscription` (as `JSON.stringify` gives it). Returns the settings plus `subscription_id` |
 | `DELETE /api/notifications/push/subscriptions` | `{"endpoint"}`: the browser turned push off |
 | `DELETE /api/notifications/push/subscriptions/{id}` | Remove a subscribed browser |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |
-| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`browser`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
+| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`desktop`, `browser`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
 | `GET /api/schedules/{id}` | `{schedule, runs}`, newest run first, each with its `turn` (refreshed while unfinished) or an `error` if the run could not be started |
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |

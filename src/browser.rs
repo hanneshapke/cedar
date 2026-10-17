@@ -206,7 +206,7 @@ pub struct DockerBrowserFactory {
 impl DockerBrowserFactory {
     pub fn new(cfg: BrowserConfig) -> Self {
         Self {
-            docker: "docker".into(),
+            docker: cfg.docker_bin.clone(),
             cfg,
         }
     }
@@ -279,6 +279,7 @@ mod tests {
     fn cfg() -> BrowserConfig {
         BrowserConfig {
             enabled: true,
+            docker_bin: "docker".into(),
             image: "browser:1".into(),
             network: "bridge".into(),
             memory: "1g".into(),

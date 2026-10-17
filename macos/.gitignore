@@ -1,0 +1,7 @@
+# Built by cargo; the DMG lands in target/<triple>/release/bundle/dmg/
+/target
+# The cedar and cedar-chat binaries, copied here (with the target-triple suffix) before `cargo tauri build`
+/binaries/*
+!/binaries/.gitkeep
+# Written by tauri-build on every compile
+/gen/schemas

@@ -519,7 +519,7 @@ pub struct DockerSandboxFactory {
 impl DockerSandboxFactory {
     pub fn new(cfg: SandboxConfig) -> Self {
         Self {
-            docker: "docker".into(),
+            docker: cfg.docker_bin.clone(),
             cfg,
         }
     }
@@ -713,6 +713,7 @@ mod tests {
 
     fn cfg() -> SandboxConfig {
         SandboxConfig {
+            docker_bin: "docker".into(),
             image: "img:1".into(),
             network: "none".into(),
             memory: "256m".into(),

@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 fn config(network: &str) -> SandboxConfig {
     SandboxConfig {
+        docker_bin: "docker".into(),
         image: std::env::var("CEDAR_TEST_SANDBOX_IMAGE")
             .unwrap_or_else(|_| "cedar-sandbox:latest".into()),
         network: network.into(),

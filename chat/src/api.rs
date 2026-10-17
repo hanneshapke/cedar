@@ -183,6 +183,9 @@ pub struct AppState {
     /// Live notices for the open tabs (`GET /api/events`): a finished response, as `notify` learns
     /// of one from cedar.
     pub notices: broadcast::Sender<Value>,
+    /// Messages for the Cedar app for macOS (`GET /api/notifications/desktop/events`), as
+    /// `channels` sends them.
+    pub desktop: broadcast::Sender<Value>,
     /// For Pushover and the push services (`channels`).
     pub http: reqwest::Client,
 }
@@ -193,8 +196,9 @@ impl AppState {
         let token_digest = cfg.access_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
         let admin_digest = cfg.admin_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
         let (notices, _) = broadcast::channel(notify::NOTICE_BUFFER);
+        let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, http })
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http })
     }
 }
 
@@ -213,6 +217,7 @@ pub fn router(state: AppState) -> Router {
         .route("/notifications/test", post(test_notification))
         .route("/notifications/push/subscriptions", post(subscribe_push).delete(unsubscribe_push))
         .route("/notifications/push/subscriptions/{id}", axum::routing::delete(delete_push_subscription))
+        .route("/notifications/desktop/events", get(desktop_events))
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
@@ -491,7 +496,26 @@ async fn inbox(State(state): State<AppState>) -> Result<Json<Inbox>, AppError> {
 /// Server-Sent Events for the page: a `turn.finished` event for every response that ends, as
 /// cedar tells this service. It has no replay; the page reads `/api/inbox` when it connects.
 async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-    let rx = state.notices.subscribe();
+    relay(state.notices.subscribe())
+}
+
+/// Server-Sent Events for the Cedar app for macOS: a `notification` event for every message
+/// sent by the `desktop` method, which the app shows in Notification Center. Connecting is what
+/// sets the method up; the first time, it also becomes the default if none was chosen.
+async fn desktop_events(State(state): State<AppState>) -> Result<Sse<impl Stream<Item = Result<SseEvent, Infallible>>>, AppError> {
+    // Listening before saving, so a test send right after the app connects reaches it.
+    let rx = state.desktop.subscribe();
+    let mut settings = state.store.notification_settings().await?;
+    if settings.desktop_connected_at.is_none() && settings.default_method == Method::None {
+        settings.default_method = Method::Desktop;
+    }
+    settings.desktop_connected_at = Some(Utc::now());
+    state.store.set_notification_settings(&settings).await?;
+    Ok(relay(rx))
+}
+
+/// A broadcast channel of JSON, as Server-Sent Events named by each value's `type`.
+fn relay(rx: broadcast::Receiver<Value>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
     let stream = futures_util::stream::unfold(rx, |mut rx| async move {
         loop {
             match rx.recv().await {
@@ -501,7 +525,7 @@ async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = 
                         .data(notice.to_string());
                     return Some((Ok(event), rx));
                 }
-                // Behind: the page re-reads the inbox on the next notice; keep going.
+                // Behind: some were missed (the page re-reads the inbox on the next notice); keep going.
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
@@ -516,7 +540,9 @@ async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = 
 async fn notification_status(state: &AppState) -> Result<Value, AppError> {
     let settings = state.store.notification_settings().await?;
     let subscriptions = state.store.push_subscriptions().await?;
-    Ok(settings.status(&subscriptions))
+    let mut status = settings.status(&subscriptions);
+    status["desktop"]["listening"] = json!(state.desktop.receiver_count() > 0);
+    Ok(status)
 }
 
 /// The page subscribes a browser with the server's public key, so the keys are made here.
@@ -571,7 +597,7 @@ fn short(what: &str, value: String) -> Result<String, AppError> {
 async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson<NotificationsBody>) -> Result<Json<Value>, AppError> {
     let mut settings = state.store.notification_settings().await?;
     if let Some(m) = &body.default_method {
-        settings.default_method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("default_method must be none, browser, pushover or email, not {m:?}")))?;
+        settings.default_method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("default_method must be none, desktop, browser, pushover or email, not {m:?}")))?;
     }
     if let Some(s) = &body.scope {
         settings.scope = Scope::parse(s).ok_or_else(|| AppError::BadRequest(format!("scope must be attention or all, not {s:?}")))?;
@@ -1237,7 +1263,7 @@ async fn clean_notify(state: &AppState, notify: Option<String>) -> Result<Option
     if raw.is_empty() || raw == "default" {
         return Ok(None);
     }
-    let method = Method::parse(&raw).ok_or_else(|| AppError::BadRequest(format!("notify must be none, browser, pushover, email or null, not {raw:?}")))?;
+    let method = Method::parse(&raw).ok_or_else(|| AppError::BadRequest(format!("notify must be none, desktop, browser, pushover, email or null, not {raw:?}")))?;
     if method != Method::None {
         let settings = state.store.notification_settings().await?;
         let subscriptions = state.store.push_subscriptions().await?.len();

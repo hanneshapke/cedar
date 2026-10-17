@@ -1,0 +1,331 @@
+# Builds a release when a pull request from a `release/<version>` branch is merged into main:
+#
+#   1. verify   the branch's version matches both Cargo.toml versions, the tag is free, tests pass
+#   2. images   the sandbox and browser images, built natively for amd64 and arm64 and pushed to
+#               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
+#   3. dmg      cedar and cedar-chat for Apple Silicon and Intel, wrapped in Cedar.app, signed,
+#               notarized, and packed into a DMG (one per architecture)
+#   4. release  tag v<version> at the merge commit and publish a GitHub Release with the DMGs
+#
+# Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
+# current commit as artifacts, without tagging or publishing. Images are still pushed, under the
+# version given.
+#
+# Secrets (Settings -> Secrets and variables -> Actions), all required by the dmg job:
+#   APPLE_CERTIFICATE           the Developer ID Application certificate as a base64 .p12
+#   APPLE_CERTIFICATE_PASSWORD  its password
+#   APPLE_SIGNING_IDENTITY      "Developer ID Application: <name> (<team id>)"
+#   APPLE_ID                    the Apple ID that owns the certificate
+#   APPLE_PASSWORD              an app-specific password for it (appleid.apple.com)
+#   APPLE_TEAM_ID               the ten-character team id
+# GHCR uses the workflow's own GITHUB_TOKEN. See macos/README.md for the one-time steps.
+
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, as it would appear in a release/<version> branch (no tag or release is created)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.event.pull_request.head.ref || inputs.version }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    # A merged PR from a release/* branch of this repository, or a manual run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'release/') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      sha: ${{ steps.meta.outputs.sha }}
+      publish: ${{ steps.meta.outputs.publish }}
+      image_owner: ${{ steps.meta.outputs.image_owner }}
+    steps:
+      - name: Work out the version and the commit to build
+        id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PUSH_SHA: ${{ github.sha }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -eu
+          if [ "$EVENT" = workflow_dispatch ]; then
+            version=$INPUT_VERSION; sha=$PUSH_SHA; publish=false
+          else
+            version=${HEAD_REF#release/}; sha=$MERGE_SHA; publish=true
+          fi
+          case "$version" in
+            ''|*[!0-9A-Za-z.+-]*) echo "::error::'$version' is not a usable version"; exit 1 ;;
+          esac
+          {
+            echo "version=$version"
+            echo "sha=$sha"
+            echo "publish=$publish"
+            echo "image_owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          } >> "$GITHUB_OUTPUT"
+          echo "building $version from $sha (publish: $publish)"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo.toml versions match the branch
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -eu
+          ws=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cedar") | .version')
+          app=$(cargo metadata --no-deps --format-version 1 --manifest-path macos/Cargo.toml | jq -r '.packages[] | select(.name == "cedar-app") | .version')
+          echo "workspace: $ws, macos app: $app, branch: $VERSION"
+          [ "$ws" = "$VERSION" ] || { echo "::error::Cargo.toml [workspace.package] version is $ws, the branch says $VERSION"; exit 1; }
+          [ "$app" = "$VERSION" ] || { echo "::error::macos/Cargo.toml version is $app, the branch says $VERSION"; exit 1; }
+
+      - name: The tag does not exist yet
+        if: steps.meta.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::tag v$VERSION already exists"; exit 1
+          fi
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo test --workspace --locked
+
+  images:
+    needs: verify
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the sandbox image (${{ matrix.arch }})
+        uses: docker/build-push-action@v6
+        with:
+          context: sandbox
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/${{ needs.verify.outputs.image_owner }}/cedar-sandbox:${{ needs.verify.outputs.version }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=The environment cedar runs an agent's tools in
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+          cache-from: type=gha,scope=sandbox-${{ matrix.arch }}
+          cache-to: type=gha,scope=sandbox-${{ matrix.arch }},mode=max
+
+      - name: Build and push the browser image (${{ matrix.arch }})
+        uses: docker/build-push-action@v6
+        with:
+          context: browser
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/${{ needs.verify.outputs.image_owner }}/cedar-browser:${{ needs.verify.outputs.version }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=The headless Chromium behind cedar's browser tool
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+          cache-from: type=gha,scope=browser-${{ matrix.arch }}
+          cache-to: type=gha,scope=browser-${{ matrix.arch }},mode=max
+
+  manifests:
+    # One multi-arch tag per image, pointing at the two builds above.
+    needs: [verify, images]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the multi-arch tags
+        env:
+          REPO: ghcr.io/${{ needs.verify.outputs.image_owner }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PUBLISH: ${{ needs.verify.outputs.publish }}
+        run: |
+          set -eu
+          for image in cedar-sandbox cedar-browser; do
+            tags="-t $REPO/$image:$VERSION"
+            # A manual run must not move :latest.
+            [ "$PUBLISH" = true ] && tags="$tags -t $REPO/$image:latest"
+            docker buildx imagetools create $tags "$REPO/$image:$VERSION-amd64" "$REPO/$image:$VERSION-arm64"
+            docker buildx imagetools inspect "$REPO/$image:$VERSION"
+          done
+
+  dmg:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: apple-silicon
+          - target: x86_64-apple-darwin
+            arch: intel
+    # An Apple Silicon runner; the Intel build is a cross-compile (cedar has no native dependencies
+    # that care, and Apple's toolchain links both).
+    runs-on: macos-15
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Signing and notarization secrets are set
+        # Without them tauri-bundler only warns and ships an unsigned app, so check up front.
+        run: |
+          missing=
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            eval "val=\${$v:-}"
+            [ -n "$val" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::missing repository secrets:$missing (see .github/workflows/release.yml)"; exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          workspaces: |
+            . -> target
+            macos -> target
+
+      - name: Build cedar and cedar-chat
+        run: cargo build --release --locked -p cedar -p cedar-chat --target ${{ matrix.target }}
+
+      - name: Put them where the bundler expects sidecars
+        run: |
+          set -eu
+          install -m 0755 "target/${{ matrix.target }}/release/cedar" "macos/binaries/cedar-${{ matrix.target }}"
+          install -m 0755 "target/${{ matrix.target }}/release/cedar-chat" "macos/binaries/cedar-chat-${{ matrix.target }}"
+          ls -l macos/binaries
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install the Tauri CLI
+        run: cargo binstall -y --locked tauri-cli --version '^2'
+
+      - name: Build, sign, and notarize Cedar.app, then pack the DMG
+        working-directory: macos
+        run: cargo tauri build --ci --target ${{ matrix.target }} --bundles dmg
+
+      - name: Notarize and staple the DMG itself
+        # tauri-bundler notarizes and staples the .app inside; the DMG gets its own ticket so
+        # Gatekeeper is happy before the app is even copied out of it.
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          built=$(ls macos/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
+          mkdir -p dist
+          dmg="dist/Cedar-$VERSION-$ARCH.dmg"
+          mv "$built" "$dmg"
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$dmg"
+          spctl -a -t open --context context:primary-signature -vv "$dmg" || echo "::warning::spctl did not accept $dmg on this runner; check it on a Mac after the release"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: [verify, manifests, dmg]
+    if: needs.verify.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dmg-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.dmg | tee checksums.txt
+
+      - name: Tag and publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          SHA: ${{ needs.verify.outputs.sha }}
+          REPO: ghcr.io/${{ needs.verify.outputs.image_owner }}
+        run: |
+          set -eu
+          cat > notes.md <<EOF
+          ## Cedar $VERSION for macOS
+
+          Download the DMG for your Mac, drag Cedar to Applications, and open it. The first launch
+          needs Docker Desktop (or OrbStack, Colima) running and asks for your model server.
+
+          | Mac | File |
+          | --- | --- |
+          | Apple Silicon | \`Cedar-$VERSION-apple-silicon.dmg\` |
+          | Intel | \`Cedar-$VERSION-intel.dmg\` |
+
+          Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
+          EOF
+          gh release create "v$VERSION" \
+            --target "$SHA" \
+            --title "Cedar $VERSION" \
+            --notes "$(cat notes.md)" \
+            --generate-notes \
+            dist/*.dmg dist/checksums.txt

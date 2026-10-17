@@ -11,8 +11,9 @@
 //   - "Seen": the app says when the open conversation has been looked at (it was opened, its
 //     response finished while the tab was visible), this module adds the tab becoming visible
 //     again, and the server clears the marks.
-//   - The Notifications section of Settings: the ways to be told out of the app (browser push
-//     through the service worker at /sw.js, a phone push through Pushover, an email), each set up
+//   - The Notifications section of Settings: the ways to be told out of the app (a notification
+//     from the Cedar app for macOS, browser push through the service worker at /sw.js, a phone
+//     push through Pushover, an email), each set up
 //     with its credentials and a test send, the default method for conversations, and which
 //     responses are worth it (GET/PUT /api/notifications). schedule.js asks cedarNotify for the
 //     set-up methods to offer in a scheduled agent's own picker.
@@ -33,6 +34,7 @@
 const cedarNotify = (() => {
   const METHODS = [
     ['none', 'Only in the app', 'The inbox, the marks in the conversation list and the count in the title.'],
+    ['desktop', 'Mac notification', 'A notification in Notification Center from the Cedar app on this Mac, its window open or not.'],
     ['browser', 'Browser push', 'A notification from this browser even when the tab is closed. Needs https, or localhost.'],
     ['pushover', 'Phone push via Pushover', 'A push to your phone through pushover.net and its app.'],
     ['email', 'Email', 'A mail through an SMTP server of yours.'],
@@ -55,6 +57,8 @@ const cedarNotify = (() => {
   let status = null;    // GET /api/notifications, as last loaded
   let started = false;
   const announced = new Set(); // turn ids already told about, so a reconnect doesn't repeat them
+  // Inside the Cedar app for macOS (its window sets this): its web view can't take browser push.
+  const inMacApp = window.__CEDAR_MAC_APP__ === true;
 
   // -- helpers -----------------------------------------------------------------------------------
 
@@ -357,6 +361,9 @@ const cedarNotify = (() => {
     const cards = el('div', 'cedar-notify-methods');
     for (const [id, label, sub] of METHODS) {
       if (id === 'none') continue;
+      // The Mac app's method only where there is one; browser push not in the app's web view.
+      if (id === 'desktop' && !inMacApp && !status.desktop?.configured) continue;
+      if (id === 'browser' && inMacApp) continue;
       const card = el('div', 'cedar-notify-card');
       const head = el('div', 'cedar-notify-card-head');
       const text = el('span');
@@ -364,6 +371,7 @@ const cedarNotify = (() => {
       head.append(text, badge(configured.has(id) ? 'Set up' : 'Not set up', configured.has(id) ? 'ok' : ''));
       card.append(head);
       const block = el('div', 'cedar-notify-block');
+      if (id === 'desktop') block.append(...desktopBlock());
       if (id === 'browser') block.append(...browserBlock(local));
       if (id === 'pushover') block.append(...pushoverBlock());
       if (id === 'email') block.append(...emailBlock());
@@ -446,6 +454,19 @@ const cedarNotify = (() => {
         }
       });
       return b;
+    }
+
+    function desktopBlock() {
+      const d = status.desktop || {};
+      const line = el('div', 'cedar-notify-row');
+      if (d.listening) {
+        line.append(el('span', '', 'The Cedar app is running and will show them.'), testButton('desktop'));
+      } else if (d.configured) {
+        line.append(el('span', '', `The Cedar app last connected ${when(d.connected_at)}; it isn't running now, so nothing would show.`));
+      } else {
+        line.append(el('span', '', 'Waiting for the Cedar app to connect.'));
+      }
+      return [line, note('If nothing appears, allow notifications for Cedar in System Settings → Notifications.')];
     }
 
     function browserBlock(local) {

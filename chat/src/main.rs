@@ -38,7 +38,8 @@ async fn main() -> Result<()> {
     tracing::info!("open http://{bind_addr}");
     axum::serve(listener, api::router(state))
         .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+            shutdown_signal().await;
+            tracing::info!("shutting down");
         })
         .await?;
 
@@ -49,4 +50,50 @@ async fn main() -> Result<()> {
     }
     let _ = tokio::time::timeout(Duration::from_secs(2), notifier).await;
     Ok(())
+}
+
+/// Ctrl-C, SIGTERM (what systemd and the macOS app send), or, with `CEDAR_EXIT_ON_STDIN_EOF=1`,
+/// stdin reaching end-of-file because the launcher holding the pipe is gone.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+        _ = stdin_closed() => {
+            tracing::info!("stdin closed; the launcher is gone");
+        }
+    }
+}
+
+async fn stdin_closed() {
+    use tokio::io::AsyncReadExt;
+    let on = matches!(
+        std::env::var("CEDAR_EXIT_ON_STDIN_EOF").as_deref().map(str::trim),
+        Ok("1") | Ok("on") | Ok("true") | Ok("yes")
+    );
+    if !on {
+        return std::future::pending().await;
+    }
+    let mut stdin = tokio::io::stdin();
+    let mut buf = [0u8; 256];
+    loop {
+        match stdin.read(&mut buf).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+    }
 }
