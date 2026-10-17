@@ -87,6 +87,25 @@ const TRUST_VIEW_CSS: &str = include_str!("../static/trust-view.css");
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
 const LEAFLET_CSS: &str = include_str!("../static/vendor/leaflet/leaflet.css");
+/// The v3 and v4 typefaces (SIL Open Font License 1.1, see `static/fonts/OFL-*.txt`), served from
+/// here so the pages load no fonts from another host. `fonts.css` holds their `@font-face` rules.
+const FONTS_CSS: &str = include_str!("../static/fonts/fonts.css");
+const FONTS: &[(&str, &[u8])] = &[
+    ("figtree-latin-ext.woff2", include_bytes!("../static/fonts/figtree-latin-ext.woff2")),
+    ("figtree-latin.woff2", include_bytes!("../static/fonts/figtree-latin.woff2")),
+    ("instrument-sans-latin-ext.woff2", include_bytes!("../static/fonts/instrument-sans-latin-ext.woff2")),
+    ("instrument-sans-latin.woff2", include_bytes!("../static/fonts/instrument-sans-latin.woff2")),
+    ("instrument-serif-italic-latin-ext.woff2", include_bytes!("../static/fonts/instrument-serif-italic-latin-ext.woff2")),
+    ("instrument-serif-italic-latin.woff2", include_bytes!("../static/fonts/instrument-serif-italic-latin.woff2")),
+    ("instrument-serif-latin-ext.woff2", include_bytes!("../static/fonts/instrument-serif-latin-ext.woff2")),
+    ("instrument-serif-latin.woff2", include_bytes!("../static/fonts/instrument-serif-latin.woff2")),
+    ("jetbrains-mono-latin-ext.woff2", include_bytes!("../static/fonts/jetbrains-mono-latin-ext.woff2")),
+    ("jetbrains-mono-latin.woff2", include_bytes!("../static/fonts/jetbrains-mono-latin.woff2")),
+    ("lora-italic-latin-ext.woff2", include_bytes!("../static/fonts/lora-italic-latin-ext.woff2")),
+    ("lora-italic-latin.woff2", include_bytes!("../static/fonts/lora-italic-latin.woff2")),
+    ("lora-latin-ext.woff2", include_bytes!("../static/fonts/lora-latin-ext.woff2")),
+    ("lora-latin.woff2", include_bytes!("../static/fonts/lora-latin.woff2")),
+];
 /// The logo and icons, shared with the README and the landing page in `docs/assets`. The mark has a
 /// light and a dark variant; the pages pick one with `prefers-color-scheme`.
 const MARK_SVG: &str = include_str!("../../docs/assets/cedar-mark.svg");
@@ -225,7 +244,11 @@ pub fn router(state: AppState) -> Router {
         .route("/assets/favicon-32.png", get(|| async { asset(PNG, FAVICON_32_PNG) }))
         .route("/assets/favicon-16.png", get(|| async { asset(PNG, FAVICON_16_PNG) }))
         .route("/assets/apple-touch-icon.png", get(|| async { asset(PNG, APPLE_TOUCH_ICON_PNG) }))
+        .route("/fonts/fonts.css", get(|| async { asset(CSS, FONTS_CSS) }))
         .route("/healthz", get(|| async { "ok" }));
+    let pages = FONTS.iter().fold(pages, |pages, &(name, bytes)| {
+        pages.route(&format!("/fonts/{name}"), get(move || async move { asset(WOFF2, bytes) }))
+    });
     with_ui(with_ui(with_ui(with_ui(pages, V1), V2), V3), V4)
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
@@ -239,6 +262,7 @@ const JS: &str = "text/javascript; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
+const WOFF2: &str = "font/woff2";
 
 /// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.
 fn with_ui(router: Router<AppState>, ui: Ui) -> Router<AppState> {
