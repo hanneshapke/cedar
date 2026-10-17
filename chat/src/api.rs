@@ -80,6 +80,9 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
+/// The plan, approval cards, folded reasoning, sources and citations; v3 and v4 load it.
+const TRUST_VIEW_JS: &str = include_str!("../static/trust-view.js");
+const TRUST_VIEW_CSS: &str = include_str!("../static/trust-view.css");
 /// Leaflet 1.9.4 (BSD-2-Clause, see `static/vendor/leaflet/LICENSE`), served from here so no
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
@@ -93,7 +96,7 @@ const FAVICON_32_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-32.png")
 const FAVICON_16_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-16.png");
 const APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../docs/assets/apple-touch-icon.png");
 
-/// One of the two front ends, served under its own prefix.
+/// One of the front ends, served under its own prefix.
 struct Ui {
     prefix: &'static str,
     index: &'static str,
@@ -115,6 +118,22 @@ const V2: Ui = Ui {
     index: include_str!("../static/v2/index.html"),
     js: include_str!("../static/v2/app.js"),
     css: include_str!("../static/v2/style.css"),
+};
+
+/// "Ledger": the v2 split with the plan, approvals, citations and a sources rail.
+const V3: Ui = Ui {
+    prefix: "/v3",
+    index: include_str!("../static/v3/index.html"),
+    js: include_str!("../static/v3/app.js"),
+    css: include_str!("../static/v3/style.css"),
+};
+
+/// "Dossier": one column; each turn is a brief of plan, work, result and sources.
+const V4: Ui = Ui {
+    prefix: "/v4",
+    index: include_str!("../static/v4/index.html"),
+    js: include_str!("../static/v4/app.js"),
+    css: include_str!("../static/v4/style.css"),
 };
 
 #[derive(Clone)]
@@ -151,6 +170,8 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
         .route("/turns/{id}/cancel", post(cancel_turn))
+        .route("/turns/{id}/plan", post(approve_plan))
+        .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
@@ -194,6 +215,8 @@ pub fn router(state: AppState) -> Router {
         .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
+        .route("/trust-view.js", get(|| async { asset(JS, TRUST_VIEW_JS) }))
+        .route("/trust-view.css", get(|| async { asset(CSS, TRUST_VIEW_CSS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
         .route("/vendor/leaflet/leaflet.css", get(|| async { asset(CSS, LEAFLET_CSS) }))
         .route("/assets/cedar-mark.svg", get(|| async { asset(SVG, MARK_SVG) }))
@@ -203,7 +226,7 @@ pub fn router(state: AppState) -> Router {
         .route("/assets/favicon-16.png", get(|| async { asset(PNG, FAVICON_16_PNG) }))
         .route("/assets/apple-touch-icon.png", get(|| async { asset(PNG, APPLE_TOUCH_ICON_PNG) }))
         .route("/healthz", get(|| async { "ok" }));
-    with_ui(with_ui(pages, V1), V2)
+    with_ui(with_ui(with_ui(with_ui(pages, V1), V2), V3), V4)
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -1127,4 +1150,21 @@ async fn cancel_turn(State(state): State<AppState>, Path(id): Path<String>) -> R
     }
     state.cedar.cancel_run(turn.run_id).await?;
     Ok((StatusCode::ACCEPTED, Json(turn)))
+}
+
+/// Answer a run's `plan` event with the agreed steps. cedar does not send plans yet, so no run
+/// waits for one; this answers 404 until it does.
+async fn approve_plan(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
+    find_turn(&state, &id).await?;
+    Err(AppError::NotFound("this turn has no plan waiting for an answer"))
+}
+
+/// Answer a run's `approval.required` event. cedar does not gate tool calls yet, so no run waits
+/// for a decision; this answers 404 until it does.
+async fn decide_approval(
+    State(state): State<AppState>,
+    Path((id, _approval_id)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    find_turn(&state, &id).await?;
+    Err(AppError::NotFound("this turn has no approval waiting for a decision"))
 }

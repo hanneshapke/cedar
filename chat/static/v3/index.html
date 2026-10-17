@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en" data-ui="v3">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cedar</title>
+  <link rel="icon" href="/assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="/assets/favicon-16.png" type="image/png" sizes="16x16">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <!-- Figtree for the interface, Lora for documents. Self-host them (see chat/REDESIGN.md) if the
+       deployment should not reach Google; the stacks fall back to system fonts. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/v3/style.css">
+  <link rel="stylesheet" href="/trust-view.css">
+  <link rel="stylesheet" href="/map-view.css">
+  <link rel="stylesheet" href="/recipe-view.css">
+  <link rel="stylesheet" href="/clarify-view.css">
+  <link rel="stylesheet" href="/transit-view.css">
+  <link rel="stylesheet" href="/stock-view.css">
+  <link rel="stylesheet" href="/image-view.css">
+  <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/models.css">
+  <link rel="stylesheet" href="/attach.css">
+</head>
+<body>
+  <div class="app empty" id="app" data-pane="talk">
+    <header class="top">
+      <button class="ghost icon" id="chats-btn" type="button" aria-label="Conversations" title="Conversations" aria-expanded="false" aria-controls="drawer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+      </button>
+      <a class="brand" href="#/" aria-label="Cedar, new conversation"><picture><source media="(prefers-color-scheme: dark)" srcset="/assets/cedar-mark-on-dark.svg"><img class="mark" src="/assets/cedar-mark.svg" alt="" width="22" height="22"></picture><span class="brand-name">Cedar</span></a>
+      <span class="crumb" aria-hidden="true">/</span>
+      <div class="title-wrap">
+        <button class="title" id="title" type="button" title="Rename"></button>
+        <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
+      </div>
+      <span class="cedar-sched-badge" id="schedule-badge" hidden>Scheduled run</span>
+      <span class="when" id="when"></span>
+      <span class="status pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Idle</span></span>
+      <span class="cost" id="cost" title="Tokens this conversation used, and what they cost where the server knows the price"></span>
+      <button class="ghost" id="stop" type="button" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl">Stop</span>
+      </button>
+      <button class="ghost" id="files-btn" type="button" hidden aria-label="Workspace files" title="Workspace files">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl">Files</span>
+      </button>
+      <button class="ghost" id="schedule-btn" type="button" hidden aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Schedule</span>
+      </button>
+      <button class="ghost" id="new-chat" type="button" title="New conversation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New</span>
+      </button>
+      <button class="ghost icon danger" id="delete-chat" type="button" hidden aria-label="Delete conversation" title="Delete conversation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+      <button class="ghost icon" id="settings-btn" type="button" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
+      </button>
+    </header>
+
+    <!-- On a narrow screen the two panes become tabs. -->
+    <div class="tabs" id="tabs" role="tablist" aria-label="Panes">
+      <button class="tab" role="tab" type="button" data-pane="talk" aria-selected="true">Conversation</button>
+      <button class="tab" role="tab" type="button" data-pane="stage" aria-selected="false">Results <span class="badge" id="stage-badge" hidden></span></button>
+    </div>
+
+    <section class="talk" id="talk" aria-label="Conversation">
+      <div class="hero" id="hero">
+        <h1 id="greeting">What should Cedar take on?</h1>
+        <p>Cedar plans first, shows you the plan, then works through it in an isolated sandbox. Every claim it makes links back to where it came from.</p>
+      </div>
+      <div class="notes" id="notes"></div>
+      <footer class="slip">
+        <form class="composer" id="composer">
+          <textarea id="input" rows="1" placeholder="What should Cedar take on?" aria-label="Message"></textarea>
+          <div class="composer-row">
+            <select id="model" class="cedar-picker-state" aria-label="Model" hidden></select>
+            <select id="reasoning" class="cedar-picker-state" aria-label="Reasoning level" hidden></select>
+            <span class="grow"></span>
+            <span class="hint" id="plan-hint">Plan shown before work starts</span>
+            <button class="send" id="send" type="submit" aria-label="Send message" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+            </button>
+          </div>
+        </form>
+      </footer>
+      <div class="examples" id="examples" aria-label="Example tasks">
+        <button type="button" class="example" data-prompt="Compare the three largest EV battery makers by 2025 market share. Write a short report with sources and show how their stocks did this year."><span class="kind">Research</span><span>Compare the three largest EV battery makers and write a sourced report</span></button>
+        <button type="button" class="example" data-prompt="Read the attached PDFs and put every invoice line into one spreadsheet, invoices.xlsx, with a totals sheet."><span class="kind">Documents</span><span>Read these PDFs and turn the numbers into one spreadsheet</span></button>
+        <button type="button" class="example" data-prompt="What is the best way from Berlin Hbf to Potsdam tomorrow at 9:00? Show the options on a map."><span class="kind">Plan a trip</span><span>Best way from Berlin Hbf to Potsdam tomorrow at 9, with a map</span></button>
+      </div>
+      <div class="caps" id="caps">
+        <span><strong>Searches and reads the web</strong> · results shown with links</span>
+        <span><strong>Runs code and writes files</strong> · in a container you can inspect</span>
+        <span><strong>Asks before anything risky</strong> · downloads, installs, email</span>
+      </div>
+      <aside class="home-recents" id="home-recents-wrap" aria-label="Recent conversations">
+        <div class="home-recents-head"><span class="label">Recent</span><button class="linkish" id="all-chats" type="button">All conversations</button></div>
+        <div id="home-recents"></div>
+      </aside>
+    </section>
+
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the conversation column" title="Drag to resize · double-click to reset" tabindex="0"></div>
+
+    <main class="stage" id="stage" aria-label="Results">
+      <div class="stage-empty" id="stage-empty">
+        <div class="slot">results land here</div>
+        <p>The report, maps, charts and files Cedar produces appear on this side as it works, with the sources it used beside them.</p>
+      </div>
+      <div class="stage-body" id="stage-body"></div>
+    </main>
+  </div>
+
+  <div class="backdrop" id="backdrop" hidden></div>
+  <aside class="drawer" id="drawer" aria-label="Conversations" hidden>
+    <div class="drawer-head">
+      <h3>Conversations</h3>
+      <button class="ghost icon" id="drawer-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <a class="drawer-new" href="#/" id="drawer-new">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New conversation
+    </a>
+    <nav class="recents" id="recents"></nav>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="token-dialog">
+    <form method="dialog" id="token-form">
+      <h3>Access token</h3>
+      <p id="token-message">This server requires an access token.</p>
+      <input id="token-input" type="password" autocomplete="current-password" required aria-label="Access token">
+      <div class="dialog-actions"><button type="submit" class="primary">Continue</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="files-dialog" class="files-dialog" aria-labelledby="files-title">
+    <div class="dialog-head">
+      <h3 id="files-title">Workspace files</h3>
+      <button class="ghost icon" id="files-refresh" type="button" aria-label="Refresh" title="Refresh">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+      </button>
+      <button class="ghost icon" id="files-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p>Files the agent saved under <code>/workspace</code>. They are removed once the workspace expires.</p>
+    <div class="files-list" id="files-list"></div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-head">
+      <h3 id="settings-title">Settings</h3>
+      <button class="ghost icon" id="settings-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="ui-choice" role="group" aria-label="Interface">
+      <div class="label">Interface</div>
+      <button class="ui-option" type="button" data-ui="v3" aria-pressed="false">
+        <strong>Ledger</strong>
+        <span>Talk on the left, results on the right, with the plan above the thread and the sources beside the report.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v4" aria-pressed="false">
+        <strong>Dossier</strong>
+        <span>One column. Each turn reads as a brief: plan, work, result, sources.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v2" aria-pressed="false">
+        <strong>Cedar style</strong>
+        <span>The earlier split view: conversation beside a stage of result cards.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v1" aria-pressed="false">
+        <strong>Claude style</strong>
+        <span>A familiar chat: conversations in a sidebar, tool calls inline in the thread.</span>
+      </button>
+    </div>
+    <p class="settings-note">Saved in this browser. Switching keeps your open conversation.</p>
+    <div class="cedar-set-section" id="prefs-section" aria-live="polite"></div>
+    <div class="cedar-set-section" id="integrations-section" aria-live="polite" hidden></div>
+    <div class="cedar-sched-section" id="schedules-section" aria-live="polite"></div>
+  </dialog>
+
+  <script src="/ui-pref.js"></script>
+  <script src="/image-view.js"></script>
+  <script src="/file-viewer.js"></script>
+  <script src="/map-view.js"></script>
+  <script src="/recipe-view.js"></script>
+  <script src="/clarify-view.js"></script>
+  <script src="/transit-view.js"></script>
+  <script src="/stock-view.js"></script>
+  <script src="/trust-view.js"></script>
+  <script src="/models.js"></script>
+  <script src="/schedule.js"></script>
+  <script src="/settings.js"></script>
+  <script src="/attach.js"></script>
+  <script src="/v3/app.js"></script>
+</body>
+</html>
