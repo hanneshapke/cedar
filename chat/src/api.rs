@@ -5,8 +5,13 @@ use crate::config::Config;
 use crate::error::AppError;
 use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
-use crate::store::{AttachmentInfo, Conversation, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
+use crate::notify;
+use crate::store::{AttachmentInfo, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
+use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use chrono::Utc;
+use futures_util::Stream;
+use std::convert::Infallible;
+use tokio::sync::broadcast;
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query, Request, State};
 use axum::http::header::{self, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE};
@@ -34,6 +39,8 @@ const MAX_SCHEDULE_RUNS: u32 = 100;
 const MAX_TOOLS: usize = 100;
 const MAX_SYSTEM_BYTES: usize = 20_000;
 const MAX_TURNS: u32 = 1000;
+/// How many finished responses the inbox lists.
+const MAX_INBOX: u32 = 50;
 /// Attachments, mirroring cedar's limits: how many per message, how big each and all together
 /// (decoded), and the body limit that leaves room for their base64 on the messages route only.
 const MAX_ATTACHMENTS: usize = 10;
@@ -80,6 +87,9 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
+/// The inbox of finished responses, the unread count in the title and browser notifications; both UIs load it.
+const NOTIFY_JS: &str = include_str!("../static/notify.js");
+const NOTIFY_CSS: &str = include_str!("../static/notify.css");
 /// Leaflet 1.9.4 (BSD-2-Clause, see `static/vendor/leaflet/LICENSE`), served from here so no
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
@@ -128,6 +138,9 @@ pub struct AppState {
     admin_digest: Option<[u8; 32]>,
     /// Serializes sending messages, so two tabs can't start overlapping runs in one conversation.
     send_lock: Arc<Mutex<()>>,
+    /// Live notices for the open tabs (`GET /api/events`): a finished response, as `notify` learns
+    /// of one from cedar.
+    pub notices: broadcast::Sender<Value>,
 }
 
 impl AppState {
@@ -135,7 +148,8 @@ impl AppState {
         let cedar = CedarClient::new(&cfg.cedar_url, &cfg.cedar_api_key)?;
         let token_digest = cfg.access_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
         let admin_digest = cfg.admin_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default() })
+        let (notices, _) = broadcast::channel(notify::NOTICE_BUFFER);
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices })
     }
 }
 
@@ -147,6 +161,9 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/messages", post(send_message).layer(DefaultBodyLimit::max(MAX_MESSAGE_BODY_BYTES)))
         .route("/conversations/{id}/tools", put(set_conversation_tools))
         .route("/conversations/{id}/compact", post(compact_conversation))
+        .route("/conversations/{id}/seen", post(mark_seen))
+        .route("/inbox", get(inbox))
+        .route("/events", get(notice_events))
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
@@ -194,6 +211,8 @@ pub fn router(state: AppState) -> Router {
         .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
+        .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
+        .route("/notify.css", get(|| async { asset(CSS, NOTIFY_CSS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
         .route("/vendor/leaflet/leaflet.css", get(|| async { asset(CSS, LEAFLET_CSS) }))
         .route("/assets/cedar-mark.svg", get(|| async { asset(SVG, MARK_SVG) }))
@@ -271,18 +290,19 @@ async fn find_turn(state: &AppState, raw_id: &str) -> Result<Turn, AppError> {
 }
 
 /// Bring a turn's status up to date with its cedar run, until the run is over.
-async fn refresh(state: &AppState, turn: Turn) -> Result<Turn, AppError> {
+pub(crate) async fn refresh(state: &AppState, turn: Turn) -> Result<Turn, AppError> {
     if cedar::is_terminal(&turn.status) {
         return Ok(turn);
     }
-    let (status, final_text, error) = match state.cedar.get_run(turn.run_id).await? {
-        Some(run) => (run.status, run.final_text, run.error),
-        None => ("failed".to_string(), None, Some("the run no longer exists on the cedar server".to_string())),
+    let (status, final_text, error, stop_reason) = match state.cedar.get_run(turn.run_id).await? {
+        Some(run) => (run.status, run.final_text, run.error, run.stop_reason),
+        None => ("failed".to_string(), None, Some("the run no longer exists on the cedar server".to_string()), None),
     };
     if status != turn.status {
-        state.store.update_turn(turn.id, &status, final_text.as_deref(), error.as_deref()).await?;
+        state.store.update_turn(turn.id, &status, final_text.as_deref(), error.as_deref(), stop_reason.as_deref()).await?;
     }
-    Ok(Turn { status, final_text, error, ..turn })
+    let finished_at = cedar::is_terminal(&status).then(|| turn.finished_at.unwrap_or_else(Utc::now));
+    Ok(Turn { status, final_text, error, stop_reason, finished_at, ..turn })
 }
 
 /// Refresh every unfinished turn. If cedar can't be reached, keep the last known state.
@@ -386,6 +406,49 @@ async fn delete_conversation(State(state): State<AppState>, Path(id): Path<Strin
     }
     state.store.delete_conversation(conversation.id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The conversation has been looked at: its finished responses leave the inbox. Unfinished
+/// turns are refreshed first, so a response the page just watched end counts as seen.
+async fn mark_seen(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
+    let conversation = find_conversation(&state, &id).await?;
+    refresh_all(&state, state.store.list_turns(conversation.id).await?).await;
+    state.store.mark_seen(conversation.id).await?;
+    Ok(Json(state.store.get_conversation(conversation.id).await?.unwrap_or(conversation)))
+}
+
+#[derive(Serialize)]
+struct Inbox {
+    items: Vec<InboxItem>,
+    /// How many there are in all (the list is capped).
+    unread: i64,
+}
+
+/// Finished responses nobody has looked at, newest first, scheduled runs included.
+async fn inbox(State(state): State<AppState>) -> Result<Json<Inbox>, AppError> {
+    Ok(Json(Inbox { items: state.store.inbox(MAX_INBOX).await?, unread: state.store.count_unseen().await? }))
+}
+
+/// Server-Sent Events for the page: a `turn.finished` event for every response that ends, as
+/// cedar tells this service. It has no replay; the page reads `/api/inbox` when it connects.
+async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    let rx = state.notices.subscribe();
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(notice) => {
+                    let event = SseEvent::default()
+                        .event(notice["type"].as_str().unwrap_or("notice"))
+                        .data(notice.to_string());
+                    return Some((Ok(event), rx));
+                }
+                // Behind: the page re-reads the inbox on the next notice; keep going.
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
 }
 
 // -- messages -------------------------------------------------------------------------------

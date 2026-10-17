@@ -14,7 +14,7 @@ mod changes;
 mod chart;
 pub mod custom;
 mod document;
-mod fetch;
+pub(crate) mod fetch;
 mod files;
 mod gmail;
 mod google;

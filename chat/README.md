@@ -108,6 +108,10 @@ Both interfaces have all of these, except where noted:
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, with every run's result kept
   under Settings
+- [Notifications](#notifications): a response that finishes while you are in another conversation,
+  another tab, or away is marked unread in the conversation list and counted in the page title and
+  on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
+  marked "Needs answer"; optionally a browser notification while the tab is hidden
 
 ## Running it
 
@@ -124,7 +128,8 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `clarify-view.js` and `clarify-view.css` for clarifying questions,
-`schedule.js` and `schedule.css` for scheduled agents, and
+`schedule.js` and `schedule.css` for scheduled agents, `notify.js` and `notify.css` for the inbox
+of finished responses, and
 `models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
 model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
 library, and
@@ -210,6 +215,35 @@ with it; only the new message's files go along.
 Only one response per conversation runs at a time. The UI replays each turn from cedar's event log,
 so reloading the page or opening a conversation shows the full tool trace. Deleting a conversation
 also deletes its runs on cedar (best effort), which frees the workspace.
+
+## Notifications
+
+A response that ends while nobody is looking at its conversation is not lost in the list. The
+server follows cedar's stream of the key's finished runs (`GET /v1/events`, see [Being told when
+a run ends](../README.md#being-told-when-a-run-ends)) in the background, from the id of the last
+notification it handled, which it keeps in its database: a restart of either service loses
+nothing. When a run ends it brings the turn up to date, marks it unseen, and tells every open tab
+over `GET /api/events`.
+
+What the page does with that:
+
+- The conversation list marks a conversation with an unseen finished (or failed) response with a
+  dot and a bold title, and one whose last response was a question (`ask_user`) with a **Needs
+  answer** chip, until the answer is sent.
+- The bell button in the header counts the unseen responses, scheduled runs included, and the
+  page title carries the count (`(2) Cedar`). Clicking the bell lists them, newest first, with
+  what happened (finished, failed, needs your answer) and when; a row opens the conversation,
+  and **Mark all read** clears the list.
+- A response that finishes in another conversation while the tab is visible is announced in a
+  toast. With the checkbox in the inbox turned on (the browser asks for permission once), a
+  response that finishes while the tab is hidden shows a browser notification; clicking it brings
+  the tab to the front and opens the conversation.
+- Looking at a conversation marks its responses seen: opening it, watching its response end with
+  the tab visible, or coming back to the tab. A response that ends while the conversation is open
+  but the tab is hidden stays unread until then. The page tells the server with
+  `POST /api/conversations/{id}/seen`.
+
+A run the user stopped is not announced. Responses from before this feature count as seen.
 
 ## Scheduled agents
 
@@ -330,9 +364,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/config` | `{auth_required, admin_enabled}` |
-| `GET /api/conversations` | Conversations, most recently active first. Conversations a schedule created are left out |
+| `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations a schedule created are left out |
 | `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
-| `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar |
+| `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen` |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
@@ -340,6 +374,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
 | `POST /api/conversations/{id}/compact` | Have cedar write one prompt for the conversation so far: `{prompt, source}` where `source` is `run` or, when cedar has lost the run, `history`. Returns 409 while a response is running, 404 without a finished response |
+| `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
+| `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
+| `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |

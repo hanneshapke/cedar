@@ -10,12 +10,17 @@ use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 use uuid::Uuid;
 
 #[derive(Default)]
 pub struct EventHub {
     channels: Mutex<HashMap<Uuid, watch::Sender<i64>>>,
+    /// Per owner, the id of the latest notification (a finished run), for `GET /v1/events`.
+    /// Entries are made by the first stream and dropped once no stream is left.
+    owners: Mutex<HashMap<String, watch::Sender<i64>>>,
+    /// Wakes the webhook worker when a run with a callback has finished.
+    deliveries: Notify,
 }
 
 impl EventHub {
@@ -50,6 +55,35 @@ impl EventHub {
     /// The run is over. Dropping the sender wakes every subscriber one last time.
     pub fn remove(&self, run_id: Uuid) {
         self.channels.lock().unwrap().remove(&run_id);
+    }
+
+    /// Follow an owner's finished runs. The receiver carries the latest notification id, which
+    /// a stream only uses as a wake-up: it reads the rows from the database.
+    pub fn subscribe_owner(&self, owner: &str) -> watch::Receiver<i64> {
+        let mut owners = self.owners.lock().unwrap();
+        // A sender nobody receives from any more is stale: start over.
+        owners.retain(|_, tx| tx.receiver_count() > 0);
+        owners
+            .entry(owner.to_string())
+            .or_insert_with(|| watch::channel(0).0)
+            .subscribe()
+    }
+
+    /// A run of `owner` ended with notification `id`: wake its streams and, if it has a
+    /// callback, the webhook worker.
+    pub fn finished(&self, owner: &str, id: i64, callback: bool) {
+        if let Some(tx) = self.owners.lock().unwrap().get(owner) {
+            tx.send_replace(id);
+        }
+        if callback {
+            self.deliveries.notify_one();
+        }
+    }
+
+    /// Resolves once [`EventHub::finished`] has been called with a callback since the last
+    /// time (a permit is kept, so a call before the wait is not lost).
+    pub async fn delivery_due(&self) {
+        self.deliveries.notified().await;
     }
 }
 
@@ -96,6 +130,26 @@ mod tests {
         hub.remove(id);
         assert!(rx.changed().await.is_err());
         assert!(hub.subscribe(id).is_none());
+    }
+
+    #[tokio::test]
+    async fn owner_streams_are_woken_by_finished_runs() {
+        let hub = EventHub::new();
+        let mut rx = hub.subscribe_owner("a");
+        assert_eq!(*rx.borrow(), 0);
+        hub.finished("b", 7, false);
+        assert!(!rx.has_changed().unwrap(), "another owner's run");
+        hub.finished("a", 3, true);
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow_and_update(), 3);
+        // The worker's permit was kept for it.
+        tokio::time::timeout(std::time::Duration::from_millis(50), hub.delivery_due())
+            .await
+            .unwrap();
+        // Once the last stream is gone, the next subscriber starts from a fresh channel.
+        drop(rx);
+        let rx = hub.subscribe_owner("a");
+        assert_eq!(*rx.borrow(), 0);
     }
 
     #[tokio::test]

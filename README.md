@@ -59,12 +59,13 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools` and [Attachments](#attachments) for `attachments`. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
-| `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
+| `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
+| `GET /v1/events` | Server-Sent Events: every run of the key that ends, as it ends. Replays from `?after=<id>` or the `Last-Event-ID` header, then follows live, and never closes on its own. See [Being told when a run ends](#being-told-when-a-run-ends). |
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
@@ -181,6 +182,58 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 
 `run.completed`, `run.failed`, and `run.cancelled` are terminal: the stream closes after one of them.
 
+## Being told when a run ends
+
+A run's event stream is for watching it. A client that started a run and went away, or that runs
+many, wants to be told when one ends, once, and not to miss it over a dropped connection or a
+restart. cedar keeps that promise with an outbox: when a run reaches its terminal state, a
+*notification* is written in the same transaction as its terminal event, and two things deliver
+it. Nothing is sent for anything else, and in particular not per tool call: a notification means
+the run is over, or (`stop_reason: "ask_user"`) is waiting for an answer.
+
+A notification is JSON like
+
+```json
+{"id": 42, "type": "run.completed", "run_id": "0190...", "seq": 7, "status": "completed",
+ "stop_reason": "end_turn", "error": null, "parent_id": null, "finished_at": "2026-10-17T09:30:00Z"}
+```
+
+`type` is the terminal event's (`run.completed`, `run.failed`, `run.cancelled`), `seq` that
+event's number in the run's stream, and `id` the notification's number, which only grows across
+all of a key's runs. It carries no text: fetch the run for `final_text`, or its events from
+`seq` on. Deleting a run deletes its notification too.
+
+**Webhooks.** `POST /v1/runs` takes a `callback_url` (http or https) and an optional
+`callback_secret`. When the run ends, cedar POSTs the notification there as `application/json`,
+with the headers `X-Cedar-Event` (the type), `X-Cedar-Delivery` (the id) and `X-Cedar-Run`, and,
+with a secret, `X-Cedar-Signature: t=<unix seconds>,v1=<hex>`, where the hex is HMAC-SHA256 with
+the secret over `<t>.<raw body>`; verify it over the bytes as received and reject a `t` older
+than a few minutes. Any 2xx counts as delivered. A connection failure, timeout (10 seconds),
+5xx, 408, 425 or 429 is retried with a doubling wait, `WEBHOOK_RETRY_SECS` (5) at first and at
+most an hour, up to 12 times in all; any other 4xx is given up on at once. Undelivered calls
+survive a restart, and a run that was cut short by one (it ends `failed`) is announced like any
+other. A [continuation](#continuing-a-run) keeps its parent's callback and secret unless it names
+its own. The run reports its `callback_url`, never the secret.
+
+The calls come from the cedar host, so like `fetch_url` a `callback_url` may only point at a
+public address (loopback, private and link-local addresses, and names that resolve to them, are
+refused with `400`) unless `WEBHOOK_ALLOW_PRIVATE=on`. Redirects are not followed.
+
+**The key's event stream.** A client that can't take a webhook (nothing to listen on, or behind
+a NAT) follows a stream instead: `GET /v1/events` is an SSE stream of the key's
+notifications, each with `id:` set to the notification's id and `event:` to its type. It replays
+from the beginning, or from `?after=<id>` / the `Last-Event-ID` header, then stays open and
+sends each run's notification as it ends; the client closes it. Keep the last `id` seen and
+resume from it after a reconnect or a restart, and nothing is missed. [cedar-chat](chat/README.md#notifications)
+is such a client.
+
+```sh
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+     -d '{"prompt": "...", "callback_url": "https://hooks.example/cedar", "callback_secret": "s3cret"}' \
+     localhost:8080/v1/runs
+curl -N -H "Authorization: Bearer $KEY" "localhost:8080/v1/events?after=41"
+```
+
 ## Continuing a run
 
 `POST /v1/runs` accepts `"parent_id": "<run id>"` to continue a finished run instead of starting a
@@ -269,6 +322,8 @@ Settings come from environment variables. The important ones:
 | `BRAVE_API_BASE_URL` | `https://api.search.brave.com/res/v1/web/search` |
 | `WEB_FETCH` | `on` (set `off` to remove the `fetch_url` and `download_file` tools) |
 | `WEB_FETCH_ALLOW_PRIVATE` | `off` (set `on` to let those tools reach loopback and private addresses) |
+| `WEBHOOK_ALLOW_PRIVATE` | `off` (set `on` to let a run's `callback_url` point at loopback and private addresses; see [Being told when a run ends](#being-told-when-a-run-ends)) |
+| `WEBHOOK_RETRY_SECS` | 5 (the wait before a failed webhook call is retried; each later retry doubles it) |
 | `WEATHER` | `on` (set `off` to remove the `weather_forecast` tool) |
 | `WEATHER_BASE_URL` / `WEATHER_GEOCODING_BASE_URL` | `https://api.open-meteo.com/v1/forecast` / `https://geocoding-api.open-meteo.com/v1/search` (point both at a self-hosted Open-Meteo to avoid the public API; `show_map` uses the geocoding URL too) |
 | `MAPS` | `on` (set `off` to remove the `show_map` tool) |
@@ -594,6 +649,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
+- A run's `callback_url` is a request from the cedar host too, to a URL the API client chooses. It carries only the run's id and final status, never its text, and refuses non-public addresses unless `WEBHOOK_ALLOW_PRIVATE` is on. A `callback_secret` is stored in cedar's database as given (it signs the calls; it is not a credential for anything else) and never returned.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
@@ -604,7 +660,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 ## Operations
 
 - **Restarts:** SQLite file plus in-process queue means one instance only. Runs that were queued or running when the process stopped cannot be resumed, so at startup they are marked `failed` and leftover containers are removed. Workspace volumes that still belong to a run in the database are kept until `WORKSPACE_TTL_SECS` expires; any other workspace volume is removed.
-- **Shutdown:** on SIGTERM or Ctrl-C cedar stops accepting connections, cancels active runs (they end as `cancelled` with reason `server shutting down`), and waits up to 10 seconds for them to record their final state.
+- **Shutdown:** on SIGTERM or Ctrl-C cedar stops accepting connections, cancels active runs (they end as `cancelled` with reason `server shutting down`), waits up to 10 seconds for them to record their final state, and gives their webhooks two seconds to go out. What isn't delivered by then is sent at the next start.
 - **API errors:** requests to the LLM server time out and retry on 429, 5xx, and connection errors (up to 4 attempts, exponential backoff, honoring `retry-after`). Other 4xx errors fail the run immediately with the API's message.
 - **Logs:** `RUST_LOG` controls verbosity (default `info`). Prompts and keys are not logged.
 

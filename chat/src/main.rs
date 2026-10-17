@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use cedar_chat::api::{self, AppState};
 use cedar_chat::config::Config;
-use cedar_chat::schedule;
+use cedar_chat::{notify, schedule};
 use cedar_chat::store::Store;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -30,6 +30,9 @@ async fn main() -> Result<()> {
     // Scheduled agents run from this process: due schedules are started in the background.
     let stop = CancellationToken::new();
     let scheduler = schedule::start(state.clone(), stop.clone());
+    // Finished runs are learned from cedar's event stream, so a response that ends while no
+    // tab is open is still marked unread and announced.
+    let notifier = notify::start(state.clone(), stop.clone());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await.with_context(|| format!("binding {bind_addr}"))?;
     tracing::info!("open http://{bind_addr}");
@@ -44,5 +47,6 @@ async fn main() -> Result<()> {
     if tokio::time::timeout(Duration::from_secs(10), scheduler).await.is_err() {
         tracing::warn!("the scheduler was still starting runs at shutdown");
     }
+    let _ = tokio::time::timeout(Duration::from_secs(2), notifier).await;
     Ok(())
 }

@@ -8,8 +8,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use cedar_chat::api::{self, AppState};
 use cedar_chat::config::Config;
-use cedar_chat::schedule;
 use cedar_chat::store::Store;
+use cedar_chat::{notify, schedule};
+use tokio_util::sync::CancellationToken;
 use chrono::{DateTime, Duration, Utc};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -37,6 +38,8 @@ struct FakeCedar {
     admin_calls: Mutex<Vec<(String, Value)>>,
     /// When set, the admin routes refuse the key, as cedar does for a key not in CEDAR_ADMIN_KEYS.
     not_admin: Mutex<bool>,
+    /// The key's finished runs, as `GET /v1/events` streams them (see `Harness::finish_with`).
+    notifications: Mutex<Vec<Value>>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -128,6 +131,20 @@ async fn compact(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<V
         return cedar_error(StatusCode::BAD_GATEWAY, "bad_gateway", "the model returned no text");
     }
     Json(json!({ "prompt": format!("DO: {text}"), "model": body["model"], "usage": { "input_tokens": 1, "output_tokens": 1 } })).into_response()
+}
+
+/// cedar's per-key stream of finished runs: the notifications after `after`, then the end of the
+/// stream (cedar would keep it open; the chat server reconnects from its cursor either way).
+async fn notifications(State(s): State<Shared>, headers: HeaderMap, axum::extract::RawQuery(q): axum::extract::RawQuery) -> axum::response::Response {
+    if !authorized(&headers) {
+        return cedar_error(StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key");
+    }
+    let after: i64 = q.as_deref().and_then(|q| q.strip_prefix("after=")).and_then(|n| n.parse().ok()).unwrap_or(0);
+    let mut body = String::from(": keep-alive\n\n");
+    for n in s.notifications.lock().unwrap().iter().filter(|n| n["id"].as_i64().unwrap() > after) {
+        body.push_str(&format!("id: {}\nevent: {}\ndata: {n}\n\n", n["id"], n["type"].as_str().unwrap()));
+    }
+    ([("content-type", "text/event-stream")], body).into_response()
 }
 
 async fn events(Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract::RawQuery) -> impl IntoResponse {
@@ -250,6 +267,7 @@ impl Harness {
             .route("/v1/runs/{id}", get(get_run).delete(delete_run))
             .route("/v1/runs/{id}/cancel", post(cancel_run))
             .route("/v1/runs/{id}/events", get(events))
+            .route("/v1/events", get(notifications))
             .route("/v1/runs/{id}/files", get(list_files))
             .route("/v1/runs/{id}/files/{*path}", get(download_file))
             .route("/v1/compact", post(compact))
@@ -343,6 +361,63 @@ impl Harness {
         let run = runs.get_mut(&id).unwrap();
         run["status"] = json!(status);
         run["final_text"] = json!(text);
+    }
+
+    /// End a run the way cedar does: its state, and a notification on the key's event stream.
+    fn finish_with(&self, run_id: &str, status: &str, text: Option<&str>, stop_reason: Option<&str>) -> i64 {
+        self.finish(run_id, status, text);
+        let mut runs = self.cedar.runs.lock().unwrap();
+        let run = runs.get_mut(&Uuid::parse_str(run_id).unwrap()).unwrap();
+        run["stop_reason"] = json!(stop_reason);
+        if status == "failed" {
+            run["error"] = json!("it broke");
+        }
+        drop(runs);
+        self.notify(run_id, status, stop_reason)
+    }
+
+    /// A notification for a run, as cedar's stream carries it; returns its id.
+    fn notify(&self, run_id: &str, status: &str, stop_reason: Option<&str>) -> i64 {
+        let mut notifications = self.cedar.notifications.lock().unwrap();
+        let id = notifications.len() as i64 + 1;
+        notifications.push(json!({
+            "id": id, "type": format!("run.{status}"), "run_id": run_id, "seq": 2, "status": status,
+            "stop_reason": stop_reason, "error": if status == "failed" { json!("it broke") } else { Value::Null },
+            "parent_id": null, "finished_at": "2026-10-17T09:30:00Z",
+        }));
+        id
+    }
+
+    /// Follow cedar's stream once, from the saved cursor, until the fake closes it.
+    async fn sync(&self) -> usize {
+        notify::sync(&self.state, &CancellationToken::new()).await.unwrap()
+    }
+
+    /// Open `GET /api/events` and return its body, to read notices from.
+    async fn notice_stream(&self) -> Body {
+        let req = Request::builder().uri("/api/events").body(Body::empty()).unwrap();
+        let resp = self.app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers()["content-type"], "text/event-stream");
+        resp.into_body()
+    }
+}
+
+/// The next notice on an `/api/events` body, within a second.
+async fn next_notice(body: &mut Body) -> Value {
+    let mut buf = String::new();
+    loop {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(1), body.frame()).await.expect("a notice in time").unwrap().unwrap();
+        if let Ok(data) = frame.into_data() {
+            buf.push_str(std::str::from_utf8(&data).unwrap());
+        }
+        if let Some(end) = buf.find("\n\n") {
+            let block: String = buf.drain(..end + 2).collect();
+            let data: String = block.lines().filter_map(|l| l.strip_prefix("data:")).map(|l| l.trim_start()).collect();
+            if !data.is_empty() {
+                return serde_json::from_str(&data).unwrap();
+            }
+        }
     }
 }
 
@@ -654,6 +729,9 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
             assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
             assert!(page.contains("href=\"/attach.css\""), "{uri} loads the attachments styles");
+            assert!(page.contains("<script src=\"/notify.js\">"), "{uri} loads the inbox script");
+            assert!(page.contains("href=\"/notify.css\""), "{uri} loads the inbox styles");
+            assert!(page.contains("id=\"inbox-btn\""), "{uri} has the inbox button");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in Settings");
             assert!(page.contains("id=\"schedule-btn\""), "{uri} has a Schedule button");
@@ -696,6 +774,8 @@ async fn both_uis_are_served() {
         ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
         ("/attach.css", "text/css; charset=utf-8", ".cedar-attach"),
+        ("/notify.js", "text/javascript; charset=utf-8", "cedarNotify"),
+        ("/notify.css", "text/css; charset=utf-8", ".cedar-inbox"),
     ] {
         let (status, headers, body) = fetch(&h, uri).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
@@ -1302,6 +1382,165 @@ async fn the_google_callback_needs_no_token_and_redirects_to_the_page() {
     assert!(headers["location"].to_str().unwrap().contains("access_denied"));
     let (_, headers, _) = h.call_full(get("/api/oauth/google/callback")).await;
     assert!(headers["location"].to_str().unwrap().contains("incomplete"));
+}
+
+// -- being told when a response finishes -------------------------------------------------------
+
+#[tokio::test]
+async fn finished_runs_are_learned_from_cedars_event_stream() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    assert_eq!((&conv["unread"], &conv["needs_answer"]), (&json!(false), &json!(false)));
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "hi" }))).await;
+    let tid = turn["id"].as_str().unwrap().to_string();
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    assert_eq!((&turn["seen"], &turn["finished_at"]), (&json!(false), &Value::Null));
+
+    // Nothing has finished: the stream has nothing, the inbox is empty.
+    assert_eq!(h.sync().await, 0);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox, json!({ "items": [], "unread": 0 }));
+
+    // The run ends; cedar's stream says so; the turn is brought up to date and the tabs told.
+    let mut notices = h.notice_stream().await;
+    let nid = h.finish_with(&run_id, "completed", Some("hello"), Some("end_turn"));
+    assert_eq!(h.sync().await, 1);
+    let notice = next_notice(&mut notices).await;
+    assert_eq!(notice["type"], "turn.finished");
+    assert_eq!(notice["turn_id"], tid);
+    assert_eq!(notice["conversation_id"], cid);
+    assert_eq!(notice["status"], "completed");
+    assert_eq!(notice["stop_reason"], "end_turn");
+    assert_eq!(notice["needs_answer"], false);
+    assert_eq!(notice["title"], "hi");
+    assert_eq!(notice["schedule_id"], Value::Null);
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), nid);
+
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["conversation"]["unread"], true);
+    assert_eq!(detail["turns"][0]["status"], "completed");
+    assert_eq!(detail["turns"][0]["final_text"], "hello");
+    assert_eq!(detail["turns"][0]["stop_reason"], "end_turn");
+    assert!(detail["turns"][0]["finished_at"].is_string());
+    assert_eq!(detail["turns"][0]["seen"], false);
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!(list["conversations"][0]["unread"], true);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 1);
+    assert_eq!(inbox["items"][0]["turn_id"], tid);
+    assert_eq!(inbox["items"][0]["conversation_id"], cid);
+    assert_eq!(inbox["items"][0]["title"], "hi");
+    assert_eq!(inbox["items"][0]["status"], "completed");
+    assert_eq!(inbox["items"][0]["needs_answer"], false);
+
+    // Looking at the conversation clears it; the stream has nothing new after the cursor.
+    let (status, seen) = h.json(Method::POST, &format!("/api/conversations/{cid}/seen"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(seen["unread"], false);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox, json!({ "items": [], "unread": 0 }));
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["turns"][0]["seen"], true);
+    assert_eq!(h.sync().await, 0);
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), nid);
+
+    // A failure is announced too, and a run cedar reports that this service never started is skipped.
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "more" }))).await;
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    h.notify(&Uuid::new_v4().to_string(), "completed", Some("end_turn"));
+    let nid = h.finish_with(&run_id, "failed", None, None);
+    assert_eq!(h.sync().await, 2);
+    let notice = next_notice(&mut notices).await;
+    assert_eq!((notice["status"].as_str(), notice["error"].as_str()), (Some("failed"), Some("it broke")));
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), nid);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 1);
+    assert_eq!(inbox["items"][0]["status"], "failed");
+
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{}/seen", Uuid::new_v4()), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_question_leaves_the_conversation_waiting_for_an_answer() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "do it" }))).await;
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    let mut notices = h.notice_stream().await;
+    h.finish_with(&run_id, "completed", Some("Which one?"), Some("ask_user"));
+    h.sync().await;
+    assert_eq!(next_notice(&mut notices).await["needs_answer"], true);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["items"][0]["needs_answer"], true);
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!((&list["conversations"][0]["unread"], &list["conversations"][0]["needs_answer"]), (&json!(true), &json!(true)));
+
+    // Seen, but still waiting; the answer settles it.
+    let (_, seen) = h.json(Method::POST, &format!("/api/conversations/{cid}/seen"), None).await;
+    assert_eq!((&seen["unread"], &seen["needs_answer"]), (&json!(false), &json!(true)));
+    h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "the first" }))).await;
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["conversation"]["needs_answer"], false);
+}
+
+#[tokio::test]
+async fn a_scheduled_run_that_finishes_lands_in_the_inbox() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let sid = s["id"].as_str().unwrap().to_string();
+    let due = ts(&s["next_run_at"]);
+    assert_eq!(schedule::tick(&h.state, due + Duration::hours(1)).await.unwrap(), 1);
+    let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    let run = &detail["runs"][0];
+    let run_cid = run["conversation_id"].as_str().unwrap().to_string();
+
+    let mut notices = h.notice_stream().await;
+    h.finish_with(run["turn"]["run_id"].as_str().unwrap(), "completed", Some("Top story"), Some("end_turn"));
+    h.sync().await;
+    let notice = next_notice(&mut notices).await;
+    assert_eq!(notice["schedule_id"], sid);
+    assert_eq!(notice["conversation_id"], run_cid);
+    // Out of the conversation list, in the inbox.
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!(list["conversations"].as_array().unwrap().len(), 1);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 1);
+    assert_eq!(inbox["items"][0]["schedule_id"], sid);
+    assert_eq!(inbox["items"][0]["conversation_id"], run_cid);
+    assert!(inbox["items"][0]["title"].as_str().unwrap().starts_with("Morning digest"));
+    h.json(Method::POST, &format!("/api/conversations/{run_cid}/seen"), None).await;
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 0);
+}
+
+#[tokio::test]
+async fn a_page_that_watched_the_response_end_marks_it_seen_before_the_notice_arrives() {
+    // The page's own stream shows the end first; it calls `seen`, which refreshes the turn from
+    // cedar. The notification that comes later must not make the response unread again.
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "hi" }))).await;
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    h.finish_with(&run_id, "completed", Some("hello"), Some("end_turn"));
+    let (_, seen) = h.json(Method::POST, &format!("/api/conversations/{cid}/seen"), None).await;
+    assert_eq!(seen["unread"], false);
+    assert_eq!(h.sync().await, 1);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 0);
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!((&detail["conversation"]["unread"], &detail["turns"][0]["seen"]), (&json!(false), &json!(true)));
+}
+
+#[tokio::test]
+async fn an_unreachable_cedar_fails_the_sync_without_moving_the_cursor() {
+    let h = Harness::new(&[("CEDAR_URL", "http://127.0.0.1:1")]).await;
+    assert!(notify::sync(&h.state, &CancellationToken::new()).await.is_err());
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), 0);
 }
 
 #[tokio::test]

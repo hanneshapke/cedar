@@ -17,6 +17,7 @@ use crate::models::{
 use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
 use crate::sse;
 use crate::store::{InsertRefused, Store};
+use crate::webhooks::{self, Webhooks};
 use anyhow::Result;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
@@ -64,6 +65,8 @@ pub struct AppState {
     pub llm: Arc<LlmRouter>,
     /// The current tools, and the credentials admins can set up for them.
     pub integrations: Arc<Integrations>,
+    /// Delivers runs' `callback_url` notifications; `main` starts its loop.
+    pub webhooks: Arc<Webhooks>,
 }
 
 impl AppState {
@@ -114,6 +117,12 @@ impl AppState {
             cfg.run_timeout,
         );
         let auth = AuthKeys::with_admins(&cfg.api_keys, &cfg.admin_keys);
+        let webhooks = Arc::new(Webhooks::new(
+            store.clone(),
+            hub.clone(),
+            cfg.webhook_allow_private,
+            cfg.webhook_retry,
+        )?);
         Ok(Self {
             cfg,
             store,
@@ -124,6 +133,7 @@ impl AppState {
             auth,
             llm,
             integrations,
+            webhooks,
         })
     }
 }
@@ -143,6 +153,7 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/cancel", post(cancel_run))
         .route("/runs/{id}/files", get(list_files))
         .route("/runs/{id}/files/{*path}", get(download_file))
+        .route("/events", get(stream_notifications))
         .route("/compact", post(compact_conversation))
         .route("/tools", get(list_tools))
         .route("/models", get(list_models))
@@ -417,6 +428,36 @@ async fn create_run(
         Some(n) => n.min(cfg.max_turns_cap),
     };
 
+    // A continuation without a callback of its own keeps its parent's (the store copies it).
+    let callback_url = req
+        .callback_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty());
+    let callback_secret = match req.callback_secret.filter(|s| !s.is_empty()) {
+        None => None,
+        Some(_) if callback_url.is_none() => {
+            return Err(AppError::BadRequest(
+                "callback_secret needs a callback_url to sign deliveries to".into(),
+            ))
+        }
+        Some(s) if s.len() > webhooks::MAX_SECRET_LEN => {
+            return Err(AppError::BadRequest(format!(
+                "callback_secret is longer than {} bytes",
+                webhooks::MAX_SECRET_LEN
+            )))
+        }
+        Some(s) => Some(s),
+    };
+    let callback_url = match callback_url {
+        None => None,
+        Some(raw) => Some(
+            webhooks::check_callback_url(raw, cfg.webhook_allow_private)
+                .await
+                .map_err(AppError::BadRequest)?,
+        ),
+    };
+
     let new = NewRun {
         owner: owner.0,
         prompt: req.prompt,
@@ -428,6 +469,8 @@ async fn create_run(
         parent_id: req.parent_id,
         tools,
         attachments,
+        callback_url,
+        callback_secret,
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -733,6 +776,27 @@ async fn stream_events(
         run.id,
         after,
     ))
+}
+
+/// `GET /v1/events`: the key's finished runs as Server-Sent Events, from after `after` (or the
+/// `Last-Event-ID` header) onwards, live. See [`sse::notification_stream`].
+async fn stream_notifications(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiQuery(params): ApiQuery<EventsParams>,
+    headers: HeaderMap,
+) -> Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
+    let after = params
+        .after
+        .or_else(|| {
+            headers
+                .get("last-event-id")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.trim().parse().ok())
+        })
+        .unwrap_or(0)
+        .max(0);
+    sse::notification_stream(state.store.clone(), state.hub.clone(), owner.0, after)
 }
 
 // -- compaction -----------------------------------------------------------------------------

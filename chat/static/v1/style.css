@@ -76,6 +76,10 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .conv.active { background: var(--active); }
 .conv .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .live { width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+/* A response finished that nobody looked at (a dot), or is waiting for an answer (a chip). */
+.conv .unread { width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.conv .needs { margin-left: 6px; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 10.5px; line-height: 16px; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+.conv.is-unread .name { font-weight: 600; }
 .conv .del { display: grid; place-items: center; width: 24px; height: 24px; margin: -4px -4px -4px 4px; border: 0; border-radius: 6px; background: none; color: var(--muted); opacity: 0; }
 .conv:hover .del, .conv .del:focus-visible { opacity: 1; }
 .conv .del:hover { background: var(--border); color: var(--text); }
