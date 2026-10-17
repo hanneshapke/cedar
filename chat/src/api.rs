@@ -63,6 +63,9 @@ const RECIPE_VIEW_CSS: &str = include_str!("../static/recipe-view.css");
 /// Draws the `plan_trip` tool's result as a route map with the options; it needs the map view.
 const TRANSIT_VIEW_JS: &str = include_str!("../static/transit-view.js");
 const TRANSIT_VIEW_CSS: &str = include_str!("../static/transit-view.css");
+/// Draws the `compare_stocks` tool's result as quotes, a chart, the ratings and the news; both UIs load it.
+const STOCK_VIEW_JS: &str = include_str!("../static/stock-view.js");
+const STOCK_VIEW_CSS: &str = include_str!("../static/stock-view.css");
 /// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
 const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
@@ -176,6 +179,8 @@ pub fn router(state: AppState) -> Router {
         .route("/recipe-view.css", get(|| async { asset(CSS, RECIPE_VIEW_CSS) }))
         .route("/transit-view.js", get(|| async { asset(JS, TRANSIT_VIEW_JS) }))
         .route("/transit-view.css", get(|| async { asset(CSS, TRANSIT_VIEW_CSS) }))
+        .route("/stock-view.js", get(|| async { asset(JS, STOCK_VIEW_JS) }))
+        .route("/stock-view.css", get(|| async { asset(CSS, STOCK_VIEW_CSS) }))
         .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
