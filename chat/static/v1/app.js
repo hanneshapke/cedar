@@ -483,6 +483,7 @@ function addTurn(turn) {
   const thinking = h('div', 'thinking', `${ICONS.logo}<span>Thinking…</span>`);
   body.append(thinking);
   el.append(user, body);
+  cedarClarify.settle(els.thread); // this message answers any question still open above it
   els.thread.append(el);
 
   const view = {
@@ -588,6 +589,7 @@ const TOOL_ICONS = {
   generate_pdf: 'document', read_document: 'document', run_python: 'code',
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
   show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', compare_stocks: 'chart',
+  show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', ask_user: 'tool',
 };
 
 function toolSummary(name, input) {
@@ -595,6 +597,9 @@ function toolSummary(name, input) {
   if (typeof input.command === 'string') return input.command.split('\n')[0];
   if (name === 'show_recipe' && typeof input.title === 'string') return input.title;
   if (name === 'compare_stocks') return stocksSubject(input);
+  if (name === 'ask_user' && Array.isArray(input.questions)) {
+    return input.questions.map((q) => q?.header || q?.question).filter(Boolean).join(' · ');
+  }
   if (name === 'run_python' && typeof input.code === 'string') {
     return input.code.split('\n').find((l) => l.trim()) || '';
   }
@@ -688,6 +693,16 @@ function toolResult(view, d) {
       scrollToBottom(false);
     }
   }
+  // And an ask_user result, drawn as a form whose answer is sent as the next message. A later
+  // message has already answered it.
+  if (details.dataset.tool === 'ask_user' && !d.is_error) {
+    const spec = cedarClarify.parse(text);
+    if (spec) {
+      const answered = view.el.nextElementSibling !== null;
+      details.after(cedarClarify.element(spec, { answered, onSubmit: answerQuestions }));
+      scrollToBottom(false);
+    }
+  }
   // The images a call produced (a chart, a picture it saved, or one a command or script wrote) are
   // shown with the reply, once each: see finishTurn.
   if (!d.is_error) {
@@ -718,7 +733,7 @@ function finishTurn(view, event) {
     view.body.append(note);
   } else if (d.stop_reason === 'max_tokens') {
     view.body.append(h('div', 'notice error', CUT_OFF));
-  } else if (!view.texts.length) {
+  } else if (!view.texts.length && d.stop_reason !== 'ask_user') {
     view.body.append(h('div', 'notice muted', 'No text in this response.'));
   }
   for (const tool of view.tools.values()) {
@@ -901,9 +916,23 @@ async function stopActive() {
   }
 }
 
-async function sendMessage() {
-  const content = els.input.value.trim();
-  if (!content || state.sending || state.activeTurn) return;
+/** Send the answers from a question form; throws if they could not be sent, so the form stays open. */
+async function answerQuestions(text) {
+  if (state.activeTurn || state.sending) {
+    toast('Wait for the response to finish, or stop it, before answering.');
+    throw new Error('busy');
+  }
+  if (!(await sendMessage(text))) throw new Error('not sent');
+}
+
+/**
+ * Send the message box's text, or `answer` (from a question form) with the box left as it is.
+ * Resolves to whether the message was sent.
+ */
+async function sendMessage(answer) {
+  const typed = typeof answer !== 'string';
+  const content = (typed ? els.input.value : answer).trim();
+  if (!content || state.sending || state.activeTurn) return false;
   state.sending = true;
   updateComposer();
   const token = state.loadToken;
@@ -919,23 +948,27 @@ async function sendMessage() {
     const body = { content };
     if (els.model.value) body.model = els.model.value;
     if (els.reasoning.value) body.reasoning = els.reasoning.value;
-    const attachments = cedarAttach.payload();
+    const attachments = typed ? cedarAttach.payload() : [];
     if (attachments.length) body.attachments = attachments;
     const turn = await api('POST', `/conversations/${conversation.id}/messages`, body);
-    els.input.value = '';
-    cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
-    autosize();
-    if (token !== state.loadToken) return; // the user navigated away meanwhile
+    if (typed) {
+      els.input.value = '';
+      cedarAttach.clear(); // only once sent: a failed send keeps the files, like the text
+      autosize();
+    }
+    if (token !== state.loadToken) return true; // the user navigated away meanwhile
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
     state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
     setHeader();
     addTurn(turn);
     scrollToBottom(true);
     loadConversations(); // picks up the server-side title
+    return true;
   } catch (e) {
     toast(e.message);
     setHeader();
     renderSidebar();
+    return false;
   } finally {
     state.sending = false;
     updateComposer();

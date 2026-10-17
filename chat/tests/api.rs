@@ -637,6 +637,8 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
             assert!(page.contains("<script src=\"/recipe-view.js\">"), "{uri} loads the recipe view");
             assert!(page.contains("href=\"/recipe-view.css\""), "{uri} loads the recipe styles");
+            assert!(page.contains("<script src=\"/clarify-view.js\">"), "{uri} loads the question form");
+            assert!(page.contains("href=\"/clarify-view.css\""), "{uri} loads the question form styles");
             assert!(page.find("/map-view.js") < page.find("/transit-view.js"), "{uri} loads the trip view after the map view it draws with");
             assert!(page.contains("href=\"/transit-view.css\""), "{uri} loads the trip styles");
             assert!(page.contains("<script src=\"/stock-view.js\">"), "{uri} loads the stock view");
@@ -678,6 +680,8 @@ async fn both_uis_are_served() {
         ("/map-view.css", "text/css; charset=utf-8", ".cedar-map"),
         ("/recipe-view.js", "text/javascript; charset=utf-8", "cedarRecipe"),
         ("/recipe-view.css", "text/css; charset=utf-8", ".cedar-recipe"),
+        ("/clarify-view.js", "text/javascript; charset=utf-8", "cedarClarify"),
+        ("/clarify-view.css", "text/css; charset=utf-8", ".cedar-clarify"),
         ("/transit-view.js", "text/javascript; charset=utf-8", "cedarTransit"),
         ("/transit-view.css", "text/css; charset=utf-8", ".cedar-trip"),
         ("/stock-view.js", "text/javascript; charset=utf-8", "cedarStocks"),
@@ -961,7 +965,10 @@ async fn due_schedules_start_a_run_in_a_hidden_conversation() {
     assert_eq!(schedule::tick(&h.state, later).await.unwrap(), 1);
     assert_eq!(schedule::tick(&h.state, later).await.unwrap(), 0, "a slot fires once");
     let prompts = h.cedar.prompts.lock().unwrap().clone();
-    assert_eq!(prompts.last().map(String::as_str), Some("DO: summarize the news"));
+    // cedar is told nobody is there to answer questions; the conversation keeps the prompt as written.
+    let sent = prompts.last().unwrap();
+    assert!(sent.starts_with("DO: summarize the news\n\n"), "{sent}");
+    assert!(sent.contains("nobody is there to answer questions"), "{sent}");
     assert_eq!(h.cedar.parents.lock().unwrap().last().unwrap(), &None, "a fresh run, not a continuation");
     let stored = h.state.store.get_schedule(sid).await.unwrap().unwrap();
     assert!(stored.next_run_at > Utc::now(), "{}", stored.next_run_at);
