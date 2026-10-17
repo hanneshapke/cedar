@@ -58,9 +58,10 @@ fn results() -> Value {
     ] } })
 }
 
+/// What the model sees: each result numbered as a source it can cite as [n].
 const FORMATTED: &str =
-    "1. Rust 1.90\n   https://blog.rust-lang.org/1.90 (3 days ago)\n   Release notes\n\n\
-                         2. Rust\n   https://rust-lang.org";
+    "[1] Rust 1.90\n   https://blog.rust-lang.org/1.90 (3 days ago)\n   Release notes\n\n\
+                         [2] Rust\n   https://rust-lang.org";
 
 async fn app_with_search(script: Vec<Step>, url: &str) -> TestApp {
     TestApp::with_env(

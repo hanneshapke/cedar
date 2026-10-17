@@ -1,6 +1,11 @@
 'use strict';
 
 // cedar-chat front end. Plain JavaScript, no build step. Talks only to /api on this origin.
+//
+// cedar's newer events show inline in the reply (trust-view.js draws them; an older cedar sends
+// none): the plan it proposes, which it waits on until "start" (POST /api/turns/{id}/plan);
+// approval cards for risky calls (POST /api/turns/{id}/approvals/{approval_id}); its reasoning,
+// folded; [n] citations with the sources listed under the reply; and the cost and sandbox.
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -490,6 +495,13 @@ function addTurn(turn) {
     turn, el, body, thinking,
     tools: new Map(), texts: [], images: [], usage: { input: 0, output: 0 },
     abort: new AbortController(), done: false,
+    calls: [],            // {id, name, input, output?, is_error?, sources?}, for the sources
+    mds: [],              // Cedar's text blocks, for linking [n]
+    started: null,        // run.started, for the sandbox line
+    planEl: null, planData: null,
+    approvals: new Map(), // approval id -> its card
+    approvalsGranted: 0,
+    reasoningEl: null,    // the fold reasoning is being added to
   };
   state.views.set(turn.id, view);
   if (ACTIVE.has(turn.status)) {
@@ -560,21 +572,113 @@ async function followEvents(view) {
   }
 }
 
+// -- the plan, approvals, reasoning and sources ------------------------------------------------
+
+/** What the indicator under a running reply says. */
+function setThinking(view, text) {
+  const label = view.thinking.querySelector('span');
+  if (label) label.textContent = text;
+  view.thinking.classList.toggle('waiting', text.startsWith('Waiting'));
+}
+
+const sourcesOf = (view) => cedarTrust.sources.collect(view.calls);
+
+/** The plan Cedar sent: editable while the run waits on it, a checklist once it is going. */
+function showPlan(view, data, awaiting) {
+  const plan = cedarTrust.plan.parse(data);
+  if (!plan) return;
+  view.planData = data;
+  // Only a turn still going can be answered (a finished one is replayed when a chat opens).
+  const waits = awaiting && !view.done && ACTIVE.has(view.turn.status);
+  const el = cedarTrust.plan.element(plan, {
+    awaiting: waits,
+    note: waits ? 'Change anything, then start.' : data.by === 'user' ? 'Agreed' : data.by === 'timeout' ? 'No answer, so Cedar went ahead' : '',
+    onApprove: async (steps) => {
+      try { await api('POST', `/turns/${view.turn.id}/plan`, { steps }); } catch (e) { toast(e.message); throw e; }
+      setThinking(view, 'Thinking…');
+    },
+  });
+  if (view.planEl) view.planEl.replaceWith(el); else place(view, el);
+  view.planEl = el;
+  if (waits) setThinking(view, 'Waiting for your go on the plan');
+}
+
+/** A risky call waits on the reader: the card with Allow once / Always / Skip. */
+function showApproval(view, d) {
+  const spec = { id: d.id, tool: d.tool, input: d.input || {}, reason: d.reason, scope: d.scope, rule: d.rule };
+  const el = cedarTrust.approval.element(spec, {
+    onDecide: async (decision) => {
+      try { await api('POST', `/turns/${view.turn.id}/approvals/${encodeURIComponent(spec.id)}`, { decision }); }
+      catch (e) { toast(e.message); throw e; }
+      setThinking(view, 'Thinking…');
+    },
+  });
+  if (view.done || !ACTIVE.has(view.turn.status)) el.querySelector('.cedar-approval-actions').hidden = true;
+  view.approvals.set(String(d.id), el);
+  place(view, el);
+  setThinking(view, 'Waiting for your OK');
+}
+
+/** Cedar's reasoning, folded; text for the same stretch of thinking is added to one fold. */
+function showReasoning(view, d) {
+  if (!view.reasoningEl) {
+    view.reasoningEl = cedarTrust.reasoning.element(d.text || '', d.duration_ms);
+    place(view, view.reasoningEl);
+  } else {
+    view.reasoningEl.cedarReasoning.append(d.text || '');
+    if (typeof d.duration_ms === 'number') view.reasoningEl.cedarReasoning.done(d.duration_ms);
+  }
+  if (d.done) view.reasoningEl = null;
+}
+
 function applyEvent(view, event) {
   const d = event.data || {};
   switch (event.type) {
+    case 'run.started': view.started = d; break;
+    case 'plan': showPlan(view, d, d.awaiting === true); break;
+    case 'plan.updated': showPlan(view, d, false); setThinking(view, 'Thinking…'); break;
+    case 'assistant.reasoning': showReasoning(view, d); break;
+    case 'approval.required': showApproval(view, d); break;
+    case 'approval.resolved': {
+      const el = view.approvals.get(String(d.id));
+      if (el && el.dataset.state === 'pending') {
+        cedarTrust.approval.settle(el, d.decision, event.created_at);
+        el.querySelector('.cedar-approval-actions').hidden = false;
+      }
+      if (d.decision === 'allow' || d.decision === 'allow_always') view.approvalsGranted++;
+      setThinking(view, 'Thinking…');
+      break;
+    }
     case 'assistant.text': {
       view.texts.push(d.text);
+      view.reasoningEl = null;
       const md = h('div', 'md', renderMarkdown(d.text));
       cedarImages.hydrate(md, { onLoad: () => scrollToBottom(false) });
+      view.mds.push(md);
+      const sources = sourcesOf(view);
+      if (sources.length) cedarTrust.sources.cite(md, sources);
       place(view, md);
       break;
     }
-    case 'tool.call': place(view, toolCall(view, d)); break;
-    case 'tool.result': toolResult(view, d); break;
+    case 'tool.call':
+      view.calls.push({ id: d.id, name: d.name, input: d.input || {}, stepId: d.step ?? null });
+      view.reasoningEl = null;
+      if (d.step != null) view.planEl?.cedarPlan.mark(d.step, 'running');
+      place(view, toolCall(view, d));
+      break;
+    case 'tool.result': {
+      const call = view.calls.find((c) => c.id === d.id);
+      if (call) {
+        Object.assign(call, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), sources: d.sources });
+        if (call.stepId != null) view.planEl?.cedarPlan.mark(call.stepId, call.is_error ? 'error' : 'done');
+      }
+      toolResult(view, d);
+      break;
+    }
     case 'usage':
       view.usage.input += d.input_tokens || 0;
       view.usage.output += d.output_tokens || 0;
+      if (typeof d.cost_usd === 'number') view.usage.cost_usd = (view.usage.cost_usd || 0) + d.cost_usd;
       break;
     default:
       if (TERMINAL.has(event.type)) finishTurn(view, event);
@@ -742,6 +846,20 @@ function finishTurn(view, event) {
       tool.querySelector('.state').innerHTML = ICONS.cross;
     }
   }
+  // A plan or approval still waiting when the run ended can no longer be answered.
+  if (view.planEl?.dataset.state === 'awaiting') showPlan(view, view.planData, false);
+  view.planEl?.cedarPlan?.finish(event.type === 'run.completed');
+  for (const el of view.approvals.values()) {
+    if (el.dataset.state === 'pending') el.querySelector('.cedar-approval-actions').hidden = true;
+  }
+  const sources = sourcesOf(view);
+  if (sources.length) {
+    for (const md of view.mds) cedarTrust.sources.cite(md, sources);
+    const box = h('details', 'sources');
+    box.append(h('summary', '', `${ICONS.globe}<span>Sources · ${sources.length}</span>${ICONS.chevron}`));
+    box.append(cedarTrust.sources.element(sources, { onOpen: (s) => s.path && downloadFile(workspacePath(s.path)) }));
+    view.body.append(box);
+  }
 
   const footer = h('div', 'turn-footer');
   if (view.texts.length) {
@@ -752,7 +870,8 @@ function finishTurn(view, event) {
   }
   if (view.usage.input || view.usage.output) {
     const tokens = h('span', 'tokens');
-    tokens.textContent = `${view.usage.input.toLocaleString()} in · ${view.usage.output.toLocaleString()} out tokens`;
+    const sandbox = view.started?.sandbox ? ` · ${cedarTrust.sandbox.text(view.started, view.approvalsGranted)}` : '';
+    tokens.textContent = `${cedarTrust.cost.text(view.usage)}${sandbox}`;
     footer.append(tokens);
   }
   if (footer.childElementCount) view.body.append(footer);

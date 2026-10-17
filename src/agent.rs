@@ -1,15 +1,19 @@
 //! The agent loop: call the model, run the tools it asks for, feed the results back, and stop
 //! when the model stops asking for tools.
 
+use crate::approvals::{self, Rules};
 use crate::attachments;
 use crate::browser::BrowserSession;
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmRouter, MessageRequest};
-use crate::models::{event, Run};
+use crate::models::{event, Run, Usage};
+use crate::plan;
 use crate::sandbox::{Sandbox, SandboxFatal};
+use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{question_text, ToolContext, ToolSet, ToolView, ASK_USER};
+use crate::waits::{Answer, Waits};
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
 use serde_json::{json, Value};
@@ -28,8 +32,17 @@ pub struct AgentEnv {
     pub max_tokens: u32,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
-    /// The sandbox's Docker network mode, for the note on what the sandbox can reach.
+    /// The sandbox's Docker network mode, for the note on what the sandbox can reach and for
+    /// which calls need approval.
     pub sandbox_network: String,
+    /// What `run.started` says about the sandbox: `{network, memory, cpus}`.
+    pub sandbox_info: Value,
+    /// Which calls wait for approval in interactive runs.
+    pub approvals: Rules,
+    /// How long a run waits for an answer to its plan or an approval.
+    pub approval_timeout: Duration,
+    /// Where runs wait for those answers.
+    pub waits: Arc<Waits>,
     /// The model registry, for whether a run's model takes images.
     pub integrations: Arc<Integrations>,
     /// How many pages of a run's attached PDFs, in all, a model that takes images is shown.
@@ -82,7 +95,15 @@ pub async fn run_agent(
     }
     let tools = tool_set.select(run.tools.as_deref());
     let tool_defs = tools.definitions();
-    let system = with_note(&run.system, &tools.environment_note(&env.sandbox_network));
+    let mut note = tools.environment_note(&env.sandbox_network);
+    if ["web_search", "fetch_url", "download_file"]
+        .iter()
+        .any(|t| tools.get(t).is_some())
+    {
+        note.push(' ');
+        note.push_str(CITE_NOTE);
+    }
+    let mut system = with_note(&run.system, &note);
     // A continuation starts with a copy of its parent's conversation (made when it was created).
     let mut messages: Vec<Value> = env
         .store
@@ -117,7 +138,15 @@ pub async fn run_agent(
         }
     };
     let opening = with_attachments(opening, blocks);
+
+    if plan::wanted(run.plan, &run.prompt) {
+        let names: Vec<&str> = tool_defs.iter().filter_map(|d| d["name"].as_str()).collect();
+        if let Some(steps) = make_plan(env, run, &names, &messages, events, cancel).await? {
+            system = with_note(&system, &plan::note(&steps));
+        }
+    }
     push_message(env, run, &mut messages, "user", opening).await?;
+    let mut sources = Sources::default();
 
     for turn in 1..=run.max_turns {
         let req = MessageRequest {
@@ -132,18 +161,24 @@ pub async fn run_agent(
         let llm = env.llm.client_for(&run.model_id).ok_or_else(|| {
             AgentError::Failed(format!("model {:?} is no longer registered", run.model_id))
         })?;
+        let started = Instant::now();
         let resp = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Err(AgentError::Cancelled),
             r = llm.create_message(&req) => r?,
         };
+        if let Some(text) = &resp.reasoning {
+            events
+                .emit(
+                    event::ASSISTANT_REASONING,
+                    json!({ "turn": turn, "text": text, "duration_ms": started.elapsed().as_millis() as u64, "done": true }),
+                )
+                .await?;
+        }
 
         env.store.record_turn(run.id, turn, resp.usage).await?;
         events
-            .emit(
-                event::USAGE,
-                json!({ "turn": turn, "input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens }),
-            )
+            .emit(event::USAGE, usage_event(env, run, turn, resp.usage))
             .await?;
         push_message(
             env,
@@ -177,7 +212,9 @@ pub async fn run_agent(
                 let mut results = Vec::with_capacity(tool_calls.len());
                 let mut asked = Vec::new();
                 for block in tool_calls {
-                    let result = execute_tool_call(&tools, &ctx, events, cancel, block).await?;
+                    let result =
+                        execute_tool_call(env, run, &tools, &ctx, &mut sources, events, cancel, block)
+                            .await?;
                     if block["name"] == ASK_USER && result["is_error"] != true {
                         asked.extend(result["content"].as_str().and_then(question_text));
                     }
@@ -275,10 +312,164 @@ pub fn with_attachments(opening: Value, blocks: Vec<Value>) -> Value {
     Value::Array(parts)
 }
 
+/// The `usage` event for one model call, with what it cost when the model has a price.
+fn usage_event(env: &AgentEnv, run: &Run, turn: u32, usage: Usage) -> Value {
+    let mut data = json!({ "turn": turn, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens });
+    let price = env
+        .integrations
+        .models()
+        .iter()
+        .find(|m| m.id == run.model_id)
+        .and_then(|m| m.price);
+    if let Some(price) = price {
+        data["cost_usd"] = json!(price.cost_usd(usage));
+    }
+    data
+}
+
+/// Ask the model for a plan and, in an interactive run, wait for the user to agree to it.
+/// Returns the steps to follow, or `None` when the model gave no usable plan; a failed planning
+/// call is logged and the run goes on without one.
+async fn make_plan(
+    env: &AgentEnv,
+    run: &Run,
+    tool_names: &[&str],
+    history: &[Value],
+    events: &Emitter,
+    cancel: &CancellationToken,
+) -> Result<Option<Vec<plan::Step>>, AgentError> {
+    let Some(llm) = env.llm.client_for(&run.model_id) else {
+        return Ok(None);
+    };
+    let system = plan::system(tool_names);
+    let messages = plan::messages(history, &run.prompt);
+    let req = MessageRequest {
+        model: &run.model,
+        max_tokens: env.max_tokens,
+        reasoning_effort: run.reasoning.as_deref(),
+        system: &system,
+        tools: &[],
+        messages: &messages,
+    };
+    let resp = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+        r = llm.create_message(&req) => r,
+    };
+    let resp = match resp {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "planning call failed; going on without a plan");
+            return Ok(None);
+        }
+    };
+    env.store.record_turn(run.id, 0, resp.usage).await?;
+    let mut usage = usage_event(env, run, 0, resp.usage);
+    usage["purpose"] = json!("plan");
+    events.emit(event::USAGE, usage).await?;
+    let text: String = resp
+        .content
+        .iter()
+        .filter(|b| b["type"] == "text")
+        .filter_map(|b| b["text"].as_str())
+        .collect();
+    let Some(steps) = plan::parse_reply(&text) else {
+        tracing::info!(run_id = %run.id, "the planning call gave no usable plan");
+        return Ok(None);
+    };
+
+    if !run.interactive {
+        events
+            .emit(event::PLAN, json!({ "steps": steps, "editable": false, "awaiting": false }))
+            .await?;
+        return Ok(Some(steps));
+    }
+    let rx = env.waits.register(run.id, "plan");
+    events
+        .emit(event::PLAN, json!({ "steps": steps, "editable": true, "awaiting": true }))
+        .await?;
+    match env.waits.wait(run.id, "plan", rx, env.approval_timeout, cancel).await {
+        Answer::Cancelled => Err(AgentError::Cancelled),
+        Answer::TimedOut => {
+            events
+                .emit(event::PLAN_UPDATED, json!({ "steps": steps, "by": "timeout" }))
+                .await?;
+            Ok(Some(steps))
+        }
+        Answer::Given(answer) => {
+            // The API checked the steps before handing them over.
+            let agreed = plan::parse_answer(&answer).unwrap_or(steps);
+            events
+                .emit(event::PLAN_UPDATED, json!({ "steps": agreed, "by": "user" }))
+                .await?;
+            Ok(Some(agreed))
+        }
+    }
+}
+
+/// What the model is told when a call it asked for was not approved.
+const DECLINED: &str = "The user declined this call, so it did not run. Don't try it again     another way; go on without it, or say what you would need.";
+const NOT_APPROVED: &str = "No one approved this call in time, so it did not run. Go on without     it, or say what you would need.";
+
+/// In an interactive run, wait for the user's OK if the call needs one (and isn't always
+/// allowed already). `Ok(None)`: go ahead; `Ok(Some(message))`: don't, and tell the model this.
+async fn approve(
+    env: &AgentEnv,
+    run: &Run,
+    events: &Emitter,
+    cancel: &CancellationToken,
+    call_id: &str,
+    name: &str,
+    input: &Value,
+) -> Result<Option<&'static str>, AgentError> {
+    if !run.interactive {
+        return Ok(None);
+    }
+    let Some(gate) = approvals::check(&env.approvals, name, input, &env.sandbox_network) else {
+        return Ok(None);
+    };
+    let rule = gate.rule.as_str();
+    if env.store.granted(&run.owner, rule, &gate.grants).await? {
+        return Ok(None);
+    }
+    let id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
+    let key = format!("approval:{id}");
+    let rx = env.waits.register(run.id, &key);
+    events
+        .emit(
+            event::APPROVAL_REQUIRED,
+            json!({ "id": id, "call_id": call_id, "tool": name, "input": input, "rule": rule,
+                    "reason": gate.reason, "scope": gate.scope }),
+        )
+        .await?;
+    let decision = match env.waits.wait(run.id, &key, rx, env.approval_timeout, cancel).await {
+        Answer::Cancelled => return Err(AgentError::Cancelled),
+        Answer::TimedOut => "timeout".to_string(),
+        Answer::Given(v) => v["decision"].as_str().unwrap_or("deny").to_string(),
+    };
+    let by = if decision == "timeout" { "timeout" } else { "user" };
+    events
+        .emit(event::APPROVAL_RESOLVED, json!({ "id": id, "decision": decision, "by": by }))
+        .await?;
+    match decision.as_str() {
+        "allow" => Ok(None),
+        "allow_always" => {
+            env.store.grant(&run.owner, rule, &gate.grants).await?;
+            Ok(None)
+        }
+        "timeout" => Ok(Some(NOT_APPROVED)),
+        _ => Ok(Some(DECLINED)),
+    }
+}
+
 /// Execute one `tool_use` block and return the matching `tool_result` block.
+#[allow(clippy::too_many_arguments)]
 async fn execute_tool_call(
+    env: &AgentEnv,
+    run: &Run,
     tools: &ToolView<'_>,
     ctx: &ToolContext,
+    sources: &mut Sources,
     events: &Emitter,
     cancel: &CancellationToken,
     block: &Value,
@@ -286,6 +477,12 @@ async fn execute_tool_call(
     let id = block["id"].as_str().unwrap_or_default();
     let name = block["name"].as_str().unwrap_or_default();
     let input = &block["input"];
+    // A call to a tool the run doesn't have fails below without running, so it needs no OK.
+    let refused = if tools.get(name).is_some() {
+        approve(env, run, events, cancel, id, name, input).await?
+    } else {
+        None
+    };
     events
         .emit(
             event::TOOL_CALL,
@@ -295,6 +492,9 @@ async fn execute_tool_call(
 
     let started = Instant::now();
     let call = async {
+        if let Some(message) = refused {
+            return Err(anyhow!(message));
+        }
         // A tool left out of the run's selection is as unknown as a made-up one.
         match tools.get(name) {
             Some(tool) => tool.call(ctx, input).await,
@@ -315,14 +515,19 @@ async fn execute_tool_call(
         // Errors go back to the model so it can recover.
         Err(e) => (format!("{e:#}"), true),
     };
-    events
-        .emit(
-            event::TOOL_RESULT,
-            json!({ "id": id, "output": output, "is_error": is_error, "duration_ms": started.elapsed().as_millis() as u64 }),
-        )
-        .await?;
+    let mut data = json!({ "id": id, "output": output, "is_error": is_error, "duration_ms": started.elapsed().as_millis() as u64 });
+    // The model sees the numbers it cites by; the event keeps the output as the tool wrote it
+    // and lists the numbered sources beside it.
+    let mut for_model = output;
+    if !is_error {
+        if let Some(numbered) = sources.number_result(name, input, &for_model) {
+            data["sources"] = json!(numbered.sources);
+            for_model = numbered.output;
+        }
+    }
+    events.emit(event::TOOL_RESULT, data).await?;
 
-    let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": output });
+    let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": for_model });
     if is_error {
         block["is_error"] = Value::Bool(true);
     }

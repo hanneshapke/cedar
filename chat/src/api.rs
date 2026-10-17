@@ -80,10 +80,32 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
+/// The plan, approval cards, folded reasoning, sources and citations; v3 and v4 load it.
+const TRUST_VIEW_JS: &str = include_str!("../static/trust-view.js");
+const TRUST_VIEW_CSS: &str = include_str!("../static/trust-view.css");
 /// Leaflet 1.9.4 (BSD-2-Clause, see `static/vendor/leaflet/LICENSE`), served from here so no
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
 const LEAFLET_CSS: &str = include_str!("../static/vendor/leaflet/leaflet.css");
+/// The v3 and v4 typefaces (SIL Open Font License 1.1, see `static/fonts/OFL-*.txt`), served from
+/// here so the pages load no fonts from another host. `fonts.css` holds their `@font-face` rules.
+const FONTS_CSS: &str = include_str!("../static/fonts/fonts.css");
+const FONTS: &[(&str, &[u8])] = &[
+    ("figtree-latin-ext.woff2", include_bytes!("../static/fonts/figtree-latin-ext.woff2")),
+    ("figtree-latin.woff2", include_bytes!("../static/fonts/figtree-latin.woff2")),
+    ("instrument-sans-latin-ext.woff2", include_bytes!("../static/fonts/instrument-sans-latin-ext.woff2")),
+    ("instrument-sans-latin.woff2", include_bytes!("../static/fonts/instrument-sans-latin.woff2")),
+    ("instrument-serif-italic-latin-ext.woff2", include_bytes!("../static/fonts/instrument-serif-italic-latin-ext.woff2")),
+    ("instrument-serif-italic-latin.woff2", include_bytes!("../static/fonts/instrument-serif-italic-latin.woff2")),
+    ("instrument-serif-latin-ext.woff2", include_bytes!("../static/fonts/instrument-serif-latin-ext.woff2")),
+    ("instrument-serif-latin.woff2", include_bytes!("../static/fonts/instrument-serif-latin.woff2")),
+    ("jetbrains-mono-latin-ext.woff2", include_bytes!("../static/fonts/jetbrains-mono-latin-ext.woff2")),
+    ("jetbrains-mono-latin.woff2", include_bytes!("../static/fonts/jetbrains-mono-latin.woff2")),
+    ("lora-italic-latin-ext.woff2", include_bytes!("../static/fonts/lora-italic-latin-ext.woff2")),
+    ("lora-italic-latin.woff2", include_bytes!("../static/fonts/lora-italic-latin.woff2")),
+    ("lora-latin-ext.woff2", include_bytes!("../static/fonts/lora-latin-ext.woff2")),
+    ("lora-latin.woff2", include_bytes!("../static/fonts/lora-latin.woff2")),
+];
 /// The logo and icons, shared with the README and the landing page in `docs/assets`. The mark has a
 /// light and a dark variant; the pages pick one with `prefers-color-scheme`.
 const MARK_SVG: &str = include_str!("../../docs/assets/cedar-mark.svg");
@@ -93,7 +115,7 @@ const FAVICON_32_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-32.png")
 const FAVICON_16_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-16.png");
 const APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../docs/assets/apple-touch-icon.png");
 
-/// One of the two front ends, served under its own prefix.
+/// One of the front ends, served under its own prefix.
 struct Ui {
     prefix: &'static str,
     index: &'static str,
@@ -115,6 +137,22 @@ const V2: Ui = Ui {
     index: include_str!("../static/v2/index.html"),
     js: include_str!("../static/v2/app.js"),
     css: include_str!("../static/v2/style.css"),
+};
+
+/// "Ledger": the v2 split with the plan, approvals, citations and a sources rail.
+const V3: Ui = Ui {
+    prefix: "/v3",
+    index: include_str!("../static/v3/index.html"),
+    js: include_str!("../static/v3/app.js"),
+    css: include_str!("../static/v3/style.css"),
+};
+
+/// "Dossier": one column; each turn is a brief of plan, work, result and sources.
+const V4: Ui = Ui {
+    prefix: "/v4",
+    index: include_str!("../static/v4/index.html"),
+    js: include_str!("../static/v4/app.js"),
+    css: include_str!("../static/v4/style.css"),
 };
 
 #[derive(Clone)]
@@ -151,6 +189,8 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
         .route("/turns/{id}/cancel", post(cancel_turn))
+        .route("/turns/{id}/plan", post(approve_plan))
+        .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
@@ -194,6 +234,8 @@ pub fn router(state: AppState) -> Router {
         .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
+        .route("/trust-view.js", get(|| async { asset(JS, TRUST_VIEW_JS) }))
+        .route("/trust-view.css", get(|| async { asset(CSS, TRUST_VIEW_CSS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
         .route("/vendor/leaflet/leaflet.css", get(|| async { asset(CSS, LEAFLET_CSS) }))
         .route("/assets/cedar-mark.svg", get(|| async { asset(SVG, MARK_SVG) }))
@@ -202,8 +244,12 @@ pub fn router(state: AppState) -> Router {
         .route("/assets/favicon-32.png", get(|| async { asset(PNG, FAVICON_32_PNG) }))
         .route("/assets/favicon-16.png", get(|| async { asset(PNG, FAVICON_16_PNG) }))
         .route("/assets/apple-touch-icon.png", get(|| async { asset(PNG, APPLE_TOUCH_ICON_PNG) }))
+        .route("/fonts/fonts.css", get(|| async { asset(CSS, FONTS_CSS) }))
         .route("/healthz", get(|| async { "ok" }));
-    with_ui(with_ui(pages, V1), V2)
+    let pages = FONTS.iter().fold(pages, |pages, &(name, bytes)| {
+        pages.route(&format!("/fonts/{name}"), get(move || async move { asset(WOFF2, bytes) }))
+    });
+    with_ui(with_ui(with_ui(with_ui(pages, V1), V2), V3), V4)
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -216,6 +262,7 @@ const JS: &str = "text/javascript; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
+const WOFF2: &str = "font/woff2";
 
 /// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.
 fn with_ui(router: Router<AppState>, ui: Ui) -> Router<AppState> {
@@ -545,7 +592,13 @@ async fn send_message(
     let turns = settled_turns(&state, &conversation).await?;
     let settings = RunSettings::resolve(&state, &prefs, requested, reasoning, conversation.tools.clone()).await;
     let model = settings.model.as_deref();
-    let options = |parent| RunOptions { attachments: Some(&attachments), ..settings.options(parent) };
+    // Someone is reading along, so the run may ask: agree to its plan, approve a risky call.
+    let options = |parent| RunOptions {
+        attachments: Some(&attachments),
+        plan: Some(settings.plan.as_deref().unwrap_or(DEFAULT_PLAN)),
+        interactive: true,
+        ..settings.options(parent)
+    };
 
     // Continue the previous run, so the agent keeps the whole conversation (tool calls and
     // earlier attachments included) and the files in its sandbox workspace.
@@ -582,7 +635,12 @@ pub struct RunSettings {
     pub max_turns: Option<u32>,
     /// `*` when every tool is meant, so a continuation doesn't keep its parent's narrower choice.
     pub tools: Vec<String>,
+    /// Whether a message's run plans first; only messages use it, not schedules.
+    pub plan: Option<String>,
 }
+
+/// What a message's run does about a plan when Settings doesn't say.
+const DEFAULT_PLAN: &str = "auto";
 
 impl RunSettings {
     /// `model`, `reasoning` and `tools` win over the defaults. A default model that is no longer
@@ -599,7 +657,7 @@ impl RunSettings {
             None => still_registered(state, prefs.model.as_deref()).await,
         };
         let tools = tools.or_else(|| prefs.tools.clone()).unwrap_or_else(|| vec!["*".to_string()]);
-        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools }
+        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools, plan: prefs.plan.clone() }
     }
 
     pub fn options(&self, parent: Option<Uuid>) -> RunOptions<'_> {
@@ -611,6 +669,8 @@ impl RunSettings {
             tools: Some(&self.tools),
             parent,
             attachments: None,
+            plan: None,
+            interactive: false,
         }
     }
 }
@@ -666,11 +726,16 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
         return Err(AppError::BadRequest(format!("max_turns must be between 1 and {MAX_TURNS}")));
     }
     let (model, _) = clean_model_choice(&state, body.model.as_deref(), None).await?;
+    let plan = body.plan.map(|p| p.trim().to_ascii_lowercase()).filter(|p| !p.is_empty());
+    if plan.as_deref().is_some_and(|p| !matches!(p, "off" | "on" | "auto")) {
+        return Err(AppError::BadRequest("plan must be off, on or auto".into()));
+    }
     let prefs = Preferences {
         tools: clean_tools(&state, body.tools).await?,
         model,
         system,
         max_turns: body.max_turns,
+        plan,
     };
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))
@@ -683,6 +748,7 @@ struct SettingsBody {
     model: Option<String>,
     system: Option<String>,
     max_turns: Option<u32>,
+    plan: Option<String>,
 }
 
 /// cedar's tool groups, for the Tools settings and the composer's tools menu.
@@ -1127,4 +1193,42 @@ async fn cancel_turn(State(state): State<AppState>, Path(id): Path<String>) -> R
     }
     state.cedar.cancel_run(turn.run_id).await?;
     Ok((StatusCode::ACCEPTED, Json(turn)))
+}
+
+/// Agree to the plan a turn's run is waiting on (`{"steps": [{id, title}, ...]}`); cedar checks
+/// the steps and says whether the run is waiting.
+async fn approve_plan(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<PlanBody>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let turn = find_turn(&state, &id).await?;
+    let answer = state.cedar.answer_plan(turn.run_id, &json!({ "steps": body.steps })).await?;
+    Ok((StatusCode::ACCEPTED, Json(answer)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlanBody {
+    steps: Vec<Value>,
+}
+
+/// Answer an approval a turn's run is waiting on: `allow`, `allow_always` or `deny`.
+async fn decide_approval(
+    State(state): State<AppState>,
+    Path((id, approval_id)): Path<(String, String)>,
+    ApiJson(body): ApiJson<ApprovalBody>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let turn = find_turn(&state, &id).await?;
+    if !matches!(body.decision.as_str(), "allow" | "allow_always" | "deny") {
+        return Err(AppError::BadRequest("decision must be allow, allow_always or deny".into()));
+    }
+    let answer = state.cedar.decide_approval(turn.run_id, &approval_id, &json!({ "decision": body.decision })).await?;
+    Ok((StatusCode::ACCEPTED, Json(answer)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovalBody {
+    decision: String,
 }

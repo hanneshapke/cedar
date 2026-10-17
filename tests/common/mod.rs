@@ -103,6 +103,7 @@ pub fn reply(content: Vec<Value>, stop_reason: &str) -> LlmResponse {
             input_tokens: 10,
             output_tokens: 5,
         },
+        reasoning: None,
     }
 }
 
@@ -462,6 +463,7 @@ pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]
             default_reasoning: None,
             multimodal: id == TEST_MODEL,
             is_default: false,
+            price: None,
             position: 0,
             listed_models: None,
             created_at: now,

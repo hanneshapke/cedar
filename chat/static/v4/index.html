@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en" data-ui="v4">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cedar</title>
+  <link rel="icon" href="/assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="/assets/favicon-16.png" type="image/png" sizes="16x16">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <!-- Instrument Sans for the interface, Instrument Serif for prompts and documents, JetBrains Mono for code; served from /fonts/. -->
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/v4/style.css">
+  <link rel="stylesheet" href="/trust-view.css">
+  <link rel="stylesheet" href="/map-view.css">
+  <link rel="stylesheet" href="/recipe-view.css">
+  <link rel="stylesheet" href="/clarify-view.css">
+  <link rel="stylesheet" href="/transit-view.css">
+  <link rel="stylesheet" href="/stock-view.css">
+  <link rel="stylesheet" href="/image-view.css">
+  <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/models.css">
+  <link rel="stylesheet" href="/attach.css">
+</head>
+<body>
+  <div class="app empty" id="app">
+    <!-- The sidebar: conversations, and an outline of the open brief. On a narrow screen it slides in. -->
+    <aside class="side" id="drawer" aria-label="Conversations">
+      <div class="side-head">
+        <a class="brand" href="#/" aria-label="Cedar, new conversation"><picture><source media="(prefers-color-scheme: dark)" srcset="/assets/cedar-mark-on-dark.svg"><img class="mark" src="/assets/cedar-mark.svg" alt="" width="22" height="22"></picture><span class="brand-name">Cedar</span></a>
+        <button class="ghost icon side-close" id="drawer-close" type="button" aria-label="Close" title="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <a class="side-new" href="#/" id="drawer-new">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task
+      </a>
+      <div class="label side-label">Conversations</div>
+      <nav class="recents" id="recents"></nav>
+      <div class="outline-wrap" id="outline-wrap" hidden>
+        <div class="label side-label">In this brief</div>
+        <nav class="outline" id="outline" aria-label="Sections of the open brief"></nav>
+      </div>
+      <div class="side-foot" id="side-status">
+        <span class="status" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Idle</span></span>
+        <span class="cost" id="cost"></span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="top">
+        <button class="ghost icon menu" id="chats-btn" type="button" aria-label="Conversations" title="Conversations" aria-expanded="false" aria-controls="drawer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        </button>
+        <div class="title-wrap">
+          <button class="title" id="title" type="button" title="Rename"></button>
+          <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
+        </div>
+        <span class="cedar-sched-badge" id="schedule-badge" hidden>Scheduled run</span>
+        <span class="when" id="when"></span>
+        <span class="grow"></span>
+        <button class="ghost" id="stop" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl">Stop</span>
+        </button>
+        <button class="ghost" id="files-btn" type="button" hidden aria-label="Workspace files" title="Workspace files">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl">Files</span>
+        </button>
+        <button class="ghost" id="schedule-btn" type="button" hidden aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Schedule</span>
+        </button>
+        <button class="ghost" id="new-chat" type="button" title="New conversation" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New</span>
+        </button>
+        <button class="ghost icon danger" id="delete-chat" type="button" hidden aria-label="Delete conversation" title="Delete conversation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+        </button>
+        <button class="ghost icon" id="settings-btn" type="button" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
+        </button>
+      </header>
+
+      <div class="scroll" id="scroll">
+        <div class="column">
+          <div class="hero" id="hero">
+            <h1 id="greeting">What do you need worked out?</h1>
+            <p>Cedar writes a plan, waits for your go, does the work in a sealed container and hands back one document with its sources.</p>
+          </div>
+          <!-- One brief per turn: the prompt, then Plan, Work, Result and Sources. -->
+          <div class="briefs" id="briefs"></div>
+          <div class="examples" id="examples" aria-label="Example tasks">
+            <button type="button" class="example" data-prompt="Compare the three largest EV battery makers by 2025 market share. Write a short report with sources and show how their stocks did this year."><span class="n">01</span><span>Compare the three largest EV battery makers and write a sourced report</span></button>
+            <button type="button" class="example" data-prompt="Read the attached PDFs and put every invoice line into one spreadsheet, invoices.xlsx, with a totals sheet."><span class="n">02</span><span>Read these PDFs and put every invoice line into one spreadsheet</span></button>
+            <button type="button" class="example" data-prompt="How should I get from Berlin Hbf to Potsdam tomorrow at 9:00? Compare driving and transit on a map."><span class="n">03</span><span>How should I get from Berlin Hbf to Potsdam tomorrow at 9?</span></button>
+            <button type="button" class="example" data-prompt="Track NVDA, AMD and the S&amp;P 500 and tell me what changed this week, with the headlines that explain it."><span class="n">04</span><span>Track NVDA, AMD and the S&amp;P 500 and tell me what changed this week</span></button>
+          </div>
+          <div class="caps" id="caps">
+            <div><strong>Nothing hidden</strong>Every step, every source, every command is in the brief.</div>
+            <div><strong>Nothing leaves the box</strong>Code runs in a container with the network off.</div>
+            <div><strong>Nothing risky without a nod</strong>Downloads, installs and email wait for you.</div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="slip">
+        <form class="composer" id="composer">
+          <textarea id="input" rows="1" placeholder="Describe the task…" aria-label="Message"></textarea>
+          <div class="composer-row">
+            <select id="model" class="cedar-picker-state" aria-label="Model" hidden></select>
+            <select id="reasoning" class="cedar-picker-state" aria-label="Reasoning level" hidden></select>
+            <span class="grow"></span>
+            <button class="send" id="send" type="submit" aria-label="Send message" disabled><span class="send-lbl">Plan it</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+            </button>
+          </div>
+        </form>
+      </footer>
+    </main>
+  </div>
+
+  <div class="backdrop" id="backdrop" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="token-dialog">
+    <form method="dialog" id="token-form">
+      <h3>Access token</h3>
+      <p id="token-message">This server requires an access token.</p>
+      <input id="token-input" type="password" autocomplete="current-password" required aria-label="Access token">
+      <div class="dialog-actions"><button type="submit" class="primary">Continue</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="files-dialog" class="files-dialog" aria-labelledby="files-title">
+    <div class="dialog-head">
+      <h3 id="files-title">Workspace files</h3>
+      <button class="ghost icon" id="files-refresh" type="button" aria-label="Refresh" title="Refresh">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+      </button>
+      <button class="ghost icon" id="files-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p>Files the agent saved under <code>/workspace</code>. They are removed once the workspace expires.</p>
+    <div class="files-list" id="files-list"></div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-head">
+      <h3 id="settings-title">Settings</h3>
+      <button class="ghost icon" id="settings-close" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="ui-choice" role="group" aria-label="Interface">
+      <div class="label">Interface</div>
+      <button class="ui-option" type="button" data-ui="v4" aria-pressed="false">
+        <strong>Dossier</strong>
+        <span>One column. Each turn reads as a brief: plan, work, result, sources.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v3" aria-pressed="false">
+        <strong>Ledger</strong>
+        <span>Talk on the left, results on the right, with the plan above the thread and the sources beside the report.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v2" aria-pressed="false">
+        <strong>Cedar style</strong>
+        <span>The earlier split view: conversation beside a stage of result cards.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v1" aria-pressed="false">
+        <strong>Claude style</strong>
+        <span>A familiar chat: conversations in a sidebar, tool calls inline in the thread.</span>
+      </button>
+    </div>
+    <p class="settings-note">Saved in this browser. Switching keeps your open conversation.</p>
+    <div class="cedar-set-section" id="prefs-section" aria-live="polite"></div>
+    <div class="cedar-set-section" id="integrations-section" aria-live="polite" hidden></div>
+    <div class="cedar-sched-section" id="schedules-section" aria-live="polite"></div>
+  </dialog>
+
+  <script src="/ui-pref.js"></script>
+  <script src="/image-view.js"></script>
+  <script src="/file-viewer.js"></script>
+  <script src="/map-view.js"></script>
+  <script src="/recipe-view.js"></script>
+  <script src="/clarify-view.js"></script>
+  <script src="/transit-view.js"></script>
+  <script src="/stock-view.js"></script>
+  <script src="/trust-view.js"></script>
+  <script src="/models.js"></script>
+  <script src="/schedule.js"></script>
+  <script src="/settings.js"></script>
+  <script src="/attach.js"></script>
+  <script src="/v4/app.js"></script>
+</body>
+</html>

@@ -5,6 +5,7 @@
 
 pub mod agent;
 pub mod api;
+pub mod approvals;
 pub mod attachments;
 pub mod auth;
 pub mod browser;
@@ -17,8 +18,11 @@ pub mod llm;
 pub mod manager;
 pub mod mcp;
 pub mod models;
+pub mod plan;
 pub mod sandbox;
 pub mod secrets;
+pub mod sources;
 pub mod sse;
 pub mod store;
 pub mod tools;
+pub mod waits;

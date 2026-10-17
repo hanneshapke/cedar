@@ -138,6 +138,9 @@ pub struct Preferences {
     pub model: Option<String>,
     pub system: Option<String>,
     pub max_turns: Option<u32>,
+    /// Whether a message's run plans before it starts: `off`, `on` or `auto`. `None` is `auto`.
+    #[serde(default)]
+    pub plan: Option<String>,
 }
 
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
@@ -659,6 +662,7 @@ mod tests {
             model: Some("m".into()),
             system: Some("be brief".into()),
             max_turns: Some(5),
+            plan: Some("off".into()),
         };
         store.set_preferences(&prefs).await.unwrap();
         store.set_preferences(&prefs).await.unwrap();

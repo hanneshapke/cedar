@@ -59,21 +59,23 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools` and [Attachments](#attachments) for `attachments`. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
+| `POST /v1/runs/{id}/plan` | Agree to the plan an interactive run is waiting on: `{"steps": [{"id", "title"}, ...]}` (1–12, edited, reordered, added or removed as you like). Returns `202`; `409` if the run isn't waiting for its plan. |
+| `POST /v1/runs/{id}/approvals/{approval_id}` | Answer an `approval.required` event: `{"decision": "allow" \| "allow_always" \| "deny"}`. Returns `202`; `409` if the run isn't waiting for that approval. |
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
-| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, is_default}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap}` (`model` and `model_id` are `null` until a model is registered), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
+| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, is_default, price}]}` (see [Models](#models)). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
-| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "is_default"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning` and `multimodal` keep what is saved. Returns the entry as `GET /v1/admin/models` shows it. |
+| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
@@ -170,16 +172,61 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 
 | Type | `data` |
 | --- | --- |
-| `run.started` | `model`, `model_id`, `reasoning`, `max_turns` |
+| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{network, memory, cpus}` |
+| `plan` | `steps` (`[{id, title}]`), `editable`, `awaiting` (see [Plans and approvals](#plans-and-approvals)) |
+| `plan.updated` | `steps`, `by` (`user`, or `timeout` when no answer came) |
+| `assistant.reasoning` | `turn`, `text`, `duration_ms`, `done`: the model's reasoning, when its server returns it (`reasoning_content` or `reasoning`). Not kept in the conversation |
 | `assistant.text` | `turn`, `text` |
+| `approval.required` | `id`, `call_id`, `tool`, `input`, `rule`, `reason`, `scope` |
+| `approval.resolved` | `id`, `decision` (`allow`, `allow_always`, `deny` or `timeout`), `by` |
 | `tool.call` | `id`, `name`, `input` |
-| `tool.result` | `id`, `output`, `is_error`, `duration_ms` |
-| `usage` | `turn`, `input_tokens`, `output_tokens` |
+| `tool.result` | `id`, `output`, `is_error`, `duration_ms`, and `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite |
+| `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call |
 | `run.completed` | `final_text`, `stop_reason` |
 | `run.failed` | `error` |
 | `run.cancelled` | `reason` |
 
 `run.completed`, `run.failed`, and `run.cancelled` are terminal: the stream closes after one of them.
+
+The sources a run reads are numbered in the order it reads them: each page `fetch_url` fetched
+(by its final URL), file `download_file` saved, and `web_search` result gets the next number the
+first time its URL turns up. The model sees `[n]` with each, and the system prompt asks it to cite
+them that way; the event's `output` stays as the tool wrote it, with the numbers under `sources`.
+
+## Plans and approvals
+
+A run can plan before it starts, and a run whose client is there to answer can wait for the user
+to agree to the plan and to approve risky tool calls.
+
+**Plans.** With `"plan": "on"` (or `auto`, which plans for prompts of 15 words or more; the
+default comes from `PLAN`, which is `off`), cedar first makes one model call without tools that
+breaks the prompt into 3–7 steps, and sends them as a `plan` event. The steps then go into the
+system prompt for the rest of the run. If the reply holds no usable plan, or the call fails, the
+run goes on without one.
+
+**Interactive runs.** `"interactive": true` says the client will answer while the run goes. Then:
+
+- the `plan` event has `awaiting: true`, and the run waits until `POST /v1/runs/{id}/plan` sends
+  the steps to follow (`plan.updated` with `by: "user"`);
+- a tool call that matches a `TOOL_APPROVALS` rule waits for `POST
+  /v1/runs/{id}/approvals/{approval_id}`. `allow` runs it, `deny` doesn't (the model is told the
+  user declined), and `allow_always` runs it and remembers its `scope` (a host, package names)
+  for the API key, so the same kind of call goes ahead without asking from then on.
+
+Each wait ends after `APPROVAL_TIMEOUT_SECS`: the plan as proposed is followed, and the call is
+not made. Time spent waiting doesn't count toward `RUN_TIMEOUT_SECS`. A run that isn't
+interactive (the default, and what scheduled runs should use) shows its plan without waiting and
+asks nothing.
+
+The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-separated list):
+
+| Rule | Calls |
+| --- | --- |
+| `email` | Gmail tools that send, draft or change mail |
+| `downloads` | `download_file`; "always" is per host |
+| `installs` | `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`, when the sandbox has a network; "always" is per package |
+| `deletes` | `rm`, `rmdir`, `shred`, `unlink` and `find -delete` in `bash`; asked every time |
+| `network` | any other `bash` or `run_python` call when the sandbox has a network (`SANDBOX_NETWORK` isn't `none`) |
 
 ## Continuing a run
 
@@ -264,6 +311,9 @@ Settings come from environment variables. The important ones:
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
+| `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first; see [Plans and approvals](#plans-and-approvals)) |
+| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `downloads`, `installs`, `deletes`, `network`) |
+| `APPROVAL_TIMEOUT_SECS` | 300 (how long an interactive run waits for its plan to be agreed or a call to be approved) |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
 | `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
 | `BRAVE_API_BASE_URL` | `https://api.search.brave.com/res/v1/web/search` |
@@ -447,6 +497,8 @@ setting for the model server: a fresh cedar has no model, says so at startup and
   levels; without one the default level is sent, and without that nothing is. DeepSeek V4 on vLLM
   takes `none`, `low`, `high`, `xhigh` and `max`; OpenAI-style servers take `none`, `minimal`,
   `low`, `medium` and `high`. An entry with no levels refuses any `reasoning`;
+- `price`: `{"input_usd_per_m", "output_usd_per_m"}`, what the model costs in US dollars per
+  million tokens; with it, each `usage` event carries `cost_usd`. None unless set;
 - `is_default`: the entry a run gets when it names no model. The first entry registered is the
   default; removing the default hands it to the first remaining entry.
 

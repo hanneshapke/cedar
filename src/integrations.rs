@@ -13,7 +13,7 @@ use crate::config::{Config, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL};
 use crate::error::AppError;
 use crate::llm::{list_models, ChatCompletionsClient, LlmClient, LlmRouter};
 use crate::mcp::http_client;
-use crate::models::ModelEntry;
+use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
 use crate::tools::{BraveSearch, Overrides, ToolSet};
@@ -80,6 +80,19 @@ pub struct ModelSpec {
     pub multimodal: Option<bool>,
     /// Make this the model runs get when they name none. Absent keeps it as it is.
     pub is_default: Option<bool>,
+    /// What its tokens cost, for the cost shown with a run's usage. Absent keeps the saved price;
+    /// `null` removes it.
+    #[serde(default, deserialize_with = "present")]
+    pub price: Option<Option<Price>>,
+}
+
+/// Tells an explicit `null` (`Some(None)`) apart from an absent field (`None`, via `default`).
+fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
 }
 
 #[derive(Deserialize)]
@@ -255,6 +268,7 @@ impl Integrations {
                 default_reasoning: None,
                 multimodal: false,
                 is_default: true,
+                price: None,
                 position: 0,
                 listed_models: listed,
                 created_at: now,
@@ -325,6 +339,19 @@ impl Integrations {
         let multimodal = spec
             .multimodal
             .unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.multimodal));
+        let price = match spec.price {
+            Some(Some(p)) => {
+                let ok = |v: f64| v.is_finite() && (0.0..=100_000.0).contains(&v);
+                if !ok(p.input_usd_per_m) || !ok(p.output_usd_per_m) {
+                    return Err(AppError::BadRequest(
+                        "price must be between 0 and 100000 US dollars per million tokens".into(),
+                    ));
+                }
+                Some(p)
+            }
+            Some(None) => None,
+            None => existing.as_ref().and_then(|e| e.price),
+        };
 
         let key_name = secrets::model_api_key(&id);
         let key = match spec.api_key.as_deref().map(str::trim) {
@@ -353,6 +380,7 @@ impl Integrations {
             default_reasoning,
             multimodal,
             is_default,
+            price,
             position: existing.as_ref().map_or(0, |e| e.position),
             listed_models: Some(listed),
             created_at: existing.as_ref().map_or(now, |e| e.created_at),
