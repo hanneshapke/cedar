@@ -1,6 +1,7 @@
 //! Telling the user out of the app when a response finishes: a phone push through Pushover, a
-//! browser push through Web Push (a service worker shows it, tab open or not), or an email over
-//! SMTP. Each method is set up with its credentials in Settings → Notifications, as many as
+//! browser push through Web Push (a service worker shows it, tab open or not), an email over
+//! SMTP, or a notification from the Cedar app for macOS, which follows
+//! `GET /api/notifications/desktop/events` and shows what comes on it in Notification Center. Each method is set up with its credentials in Settings → Notifications, as many as
 //! wanted; a default method covers conversations, and a scheduled agent can pick its own. The
 //! settings live in this service's database (see [`NotificationSettings`]) and the secrets are
 //! never sent back to the page.
@@ -32,6 +33,8 @@ pub const DISPATCH_DELAY: Duration = Duration::from_secs(3);
 const SEND_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a push service keeps a message for a browser that is offline.
 const PUSH_TTL: u32 = 24 * 3600;
+/// How many messages the Cedar app may fall behind on its stream before it misses some.
+pub const DESKTOP_BUFFER: usize = 16;
 
 /// Which channel carries the message. `None` keeps notifications in the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -42,6 +45,8 @@ pub enum Method {
     Browser,
     Pushover,
     Email,
+    /// The Cedar app for macOS (see [`DESKTOP_BUFFER`]).
+    Desktop,
 }
 
 impl Method {
@@ -51,6 +56,7 @@ impl Method {
             "browser" => Method::Browser,
             "pushover" => Method::Pushover,
             "email" => Method::Email,
+            "desktop" => Method::Desktop,
             _ => return None,
         })
     }
@@ -61,6 +67,7 @@ impl Method {
             Method::Browser => "browser",
             Method::Pushover => "pushover",
             Method::Email => "email",
+            Method::Desktop => "desktop",
         }
     }
 }
@@ -177,13 +184,17 @@ pub struct NotificationSettings {
     pub pushover: PushoverSettings,
     pub email: EmailSettings,
     pub vapid: Option<Vapid>,
+    /// When the Cedar app for macOS last opened its stream; set once it has, which is what makes
+    /// `desktop` a method that can be picked (whether the app is listening right now is only
+    /// known when sending).
+    pub desktop_connected_at: Option<DateTime<Utc>>,
     pub last_delivery: Option<LastDelivery>,
 }
 
 impl NotificationSettings {
     /// The methods that can send right now, in the order the pickers show them.
     pub fn configured(&self, subscriptions: usize) -> Vec<Method> {
-        [Method::Browser, Method::Pushover, Method::Email]
+        [Method::Desktop, Method::Browser, Method::Pushover, Method::Email]
             .into_iter()
             .filter(|m| self.check(*m, subscriptions).is_ok())
             .collect()
@@ -216,6 +227,10 @@ impl NotificationSettings {
                 "contact": self.vapid.as_ref().map(|v| v.contact.clone()).unwrap_or_default(),
                 "subscriptions": subscriptions,
             },
+            "desktop": {
+                "configured": self.desktop_connected_at.is_some(),
+                "connected_at": self.desktop_connected_at,
+            },
             "last_delivery": self.last_delivery,
         })
     }
@@ -233,6 +248,9 @@ impl NotificationSettings {
             Method::Browser if subscriptions == 0 => {
                 Err("no browser has turned on push notifications yet".into())
             }
+            Method::Desktop if self.desktop_connected_at.is_none() => {
+                Err("the Cedar app for macOS has not connected yet".into())
+            }
             _ => Ok(()),
         }
     }
@@ -243,7 +261,7 @@ fn last4(s: &str) -> Option<String> {
 }
 
 /// What is sent, however it goes: a title, a line or two, and where to look.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Message {
     pub title: String,
     pub body: String,
@@ -281,6 +299,17 @@ pub async fn send(state: &AppState, settings: &NotificationSettings, method: Met
         Method::Pushover => send_pushover(state, &settings.pushover, message).await,
         Method::Email => send_email(&settings.email, message).await,
         Method::Browser => send_web_push(state, settings, message).await,
+        Method::Desktop => send_desktop(state, message),
+    }
+}
+
+/// Hand the message to the Cedar app, if it is following its stream.
+fn send_desktop(state: &AppState, message: &Message) -> Result<String, String> {
+    let mut payload = serde_json::to_value(message).map_err(|e| e.to_string())?;
+    payload["type"] = json!("notification");
+    match state.desktop.send(payload) {
+        Ok(_) => Ok("handed to the Cedar app".into()),
+        Err(_) => Err("the Cedar app for macOS is not listening; is it running?".into()),
     }
 }
 
@@ -555,7 +584,7 @@ mod tests {
 
     #[test]
     fn methods_scopes_and_security_round_trip() {
-        for m in [Method::None, Method::Browser, Method::Pushover, Method::Email] {
+        for m in [Method::None, Method::Browser, Method::Pushover, Method::Email, Method::Desktop] {
             assert_eq!(Method::parse(m.as_str()), Some(m));
         }
         assert_eq!(Method::parse("carrier pigeon"), None);
@@ -588,6 +617,9 @@ mod tests {
         assert!(status.contains("\"public_key\":\"PUBLIC\""));
         assert!(status.contains("\"configured\":[\"pushover\",\"email\"]"), "{status}");
         assert_eq!(settings.configured(2), [Method::Browser, Method::Pushover, Method::Email]);
+        assert!(settings.check(Method::Desktop, 0).unwrap_err().contains("Cedar app"));
+        let with_app = NotificationSettings { desktop_connected_at: Some(Utc::now()), ..settings.clone() };
+        assert_eq!(with_app.configured(0), [Method::Desktop, Method::Pushover, Method::Email]);
         assert!(settings.check(Method::Pushover, 0).is_ok());
         assert!(settings.check(Method::Browser, 0).unwrap_err().contains("no browser"));
         assert!(settings.check(Method::Browser, 1).is_ok());

@@ -1767,6 +1767,56 @@ async fn email_goes_out_over_smtp() {
 }
 
 #[tokio::test]
+async fn the_mac_app_is_a_method_once_it_has_connected() {
+    let h = Harness::new(&[]).await;
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "desktop" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "no app has connected yet");
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(got["desktop"], json!({ "configured": false, "connected_at": null, "listening": false }));
+
+    // The app connects: the method is set up and, nothing having been chosen, the default.
+    let req = Request::builder().uri("/api/notifications/desktop/events").body(Body::empty()).unwrap();
+    let resp = h.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers()["content-type"], "text/event-stream");
+    let mut stream = resp.into_body();
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(got["default_method"], "desktop");
+    assert_eq!(got["configured"], json!(["desktop"]));
+    assert_eq!((&got["desktop"]["configured"], &got["desktop"]["listening"]), (&json!(true), &json!(true)));
+
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "desktop" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    let sent = next_notice(&mut stream).await;
+    assert_eq!(sent["type"], "notification");
+    assert_eq!(sent["title"], "Cedar: test notification");
+    assert_eq!(sent["tag"], "test");
+
+    let failed = ended_turn(&h, "Broken", "failed", None).await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, failed).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let sent = next_notice(&mut stream).await;
+    assert_eq!(sent["title"], "Broken: failed");
+    let cid = h.state.store.get_turn(failed).await.unwrap().unwrap().conversation_id;
+    assert!(sent["url"].as_str().unwrap().ends_with(&format!("/#/c/{cid}")), "{sent}");
+
+    // The app quits: still a method to pick, but a send says nobody is listening.
+    drop(stream);
+    let (status, err) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "desktop" }))).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(err["error"]["message"].as_str().unwrap().contains("not listening"), "{err}");
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!((&got["configured"], &got["desktop"]["listening"]), (&json!(["desktop"]), &json!(false)));
+
+    // A later connection leaves a chosen default alone.
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "none" }))).await;
+    let req = Request::builder().uri("/api/notifications/desktop/events").body(Body::empty()).unwrap();
+    let _stream = h.app.clone().oneshot(req).await.unwrap().into_body();
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(got["default_method"], "none");
+}
+
+#[tokio::test]
 async fn finished_runs_are_sent_by_the_chosen_method_unless_looked_at() {
     let h = Harness::new(&[]).await;
     // Nothing is chosen: nothing goes out.

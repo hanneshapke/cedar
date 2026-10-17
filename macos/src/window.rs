@@ -27,7 +27,9 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
 
 /// Runs before every page the window loads. On the chat's own origin it hands the page the access
 /// token the server expects (so there is no token prompt) and the admin token its Settings page
-/// sends with changes to cedar's models and integrations; anywhere else it does nothing.
+/// sends with changes to cedar's models and integrations, and tells it that it runs in the app
+/// (whose web view can't take browser push; it offers Mac notifications instead); anywhere else
+/// it does nothing.
 fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
     let origin = serde_json::to_string(chat_url).unwrap_or_default();
     let token = serde_json::to_string(token).unwrap_or_default();
@@ -35,7 +37,8 @@ fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
     format!(
         "(function () {{\n  try {{\n    if (window.location.origin === {origin}) {{\n      \
          window.localStorage.setItem('cedar-chat-token', {token});\n      \
-         window.sessionStorage.setItem('cedar-chat-admin', {admin});\n    }}\n  }} catch (e) {{}}\n}})();"
+         window.sessionStorage.setItem('cedar-chat-admin', {admin});\n      \
+         window.__CEDAR_MAC_APP__ = true;\n    }}\n  }} catch (e) {{}}\n}})();"
     )
 }
 
@@ -67,6 +70,28 @@ pub fn show_chat(app: &AppHandle) -> Result<()> {
         .unwrap_or(false);
     if !on_chat {
         win.navigate(Url::parse(&chat)?)?;
+    }
+    present(&win)
+}
+
+/// Opens a conversation in the chat (`None`: just the chat) and brings the window forward. On
+/// the chat already, only the hash changes, so the page keeps its state.
+pub fn show_conversation(app: &AppHandle, conversation: Option<&str>) -> Result<()> {
+    let Some(id) = conversation else {
+        return show_chat(app);
+    };
+    let win = main_window(app)?;
+    let chat = app.state::<AppState>().config().chat_url();
+    let hash = format!("#/c/{id}");
+    let on_chat = win
+        .url()
+        .map(|u| u.origin().ascii_serialization() == chat)
+        .unwrap_or(false);
+    if on_chat {
+        let hash = serde_json::to_string(&hash)?;
+        win.eval(format!("window.location.hash = {hash};"))?;
+    } else {
+        win.navigate(Url::parse(&format!("{chat}/{hash}"))?)?;
     }
     present(&win)
 }
@@ -104,5 +129,6 @@ mod tests {
         assert!(s.contains(r#"window.location.origin === "http://127.0.0.1:13000""#));
         assert!(s.contains(r#"localStorage.setItem('cedar-chat-token', "abc\"def")"#));
         assert!(s.contains(r#"sessionStorage.setItem('cedar-chat-admin', "adm")"#));
+        assert!(s.contains("window.__CEDAR_MAC_APP__ = true;"));
     }
 }

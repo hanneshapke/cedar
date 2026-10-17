@@ -160,4 +160,5 @@ One-time setup:
 | "Cedar could not register …" | cedar checks the model server itself before keeping the entry, so the server must be running when you save and when the app starts. Start it and click *Save* again; a model registered earlier keeps working meanwhile. |
 | Runs finish instantly with tool calls printed as text | The model or server doesn't do tool calling. Pick a model that does; for vLLM see the [deployment guide](../DEPLOYMENT.md#2-make-sure-vllm-is-ready-for-cedar). |
 | "port … is already in use" | Something else listens on 18080 or 13000. Change `cedar_port` or `chat_port` in `config.json`, then *Restart Services*. |
+| No notification when a response finishes | Settings → Notifications in the chat should list *Mac notification* as set up and the default (the app sets that up on its first start, unless another method was already chosen). Then allow notifications for Cedar in System Settings → Notifications. A response you looked at within a few seconds of it ending isn't announced. |
 | Cedar stopped with an error | *Open Logs Folder*; `cedar.log` says why. After three quick crashes the app stops retrying until *Restart Services*. |

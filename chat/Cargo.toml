@@ -25,11 +25,7 @@ sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 subtle = "2"
 thiserror = "2"
-<<<<<<< HEAD
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time", "io-util", "io-std"] }
-=======
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time", "io-util"] }
->>>>>>> main
 tokio-util = "0.7"
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"

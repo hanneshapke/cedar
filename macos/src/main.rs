@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod docker;
 mod models;
+mod notify;
 mod paths;
 mod supervisor;
 mod tray;
@@ -39,6 +40,7 @@ fn main() {
             if let Ok(url) = win.url() {
                 app.state::<AppState>().set_setup_url(url);
             }
+            notify::start(handle.clone());
             tauri::async_runtime::spawn(app::bootstrap(handle));
             Ok(())
         })
