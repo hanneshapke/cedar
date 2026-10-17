@@ -139,7 +139,7 @@ a { color: var(--accent); }
 .clip.err { border-color: var(--error-line); } .clip.err pre { color: var(--error); }
 /* A map is a live widget: a tilted clipping would skew where Leaflet thinks the pointer is. */
 .clip.map:nth-child(n) { transform: none; margin-left: 0; }
-.clip.map .cedar-map { margin: 10px 0 0; }
+.clip.map .cedar-map, .clip.map .cedar-trip { margin: 10px 0 0; }
 /* A recipe card is worked through (ticked off step by step), so it lies flat too. */
 .clip.recipe:nth-child(n) { transform: none; margin-left: 0; }
 .clip.recipe .cedar-recipe { margin: 10px 0 0; font-size: 13px; }

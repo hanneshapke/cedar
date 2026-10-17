@@ -279,7 +279,15 @@ const TOOLS = {
   },
   show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i) },
   show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title },
+  plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i) },
 };
+
+/** What a plan_trip call is about: its title, else "from → to". */
+function tripSubject(input) {
+  if (input.title) return input.title;
+  const end = (e) => (typeof e === 'string' ? e : e?.label || e?.location || (e ? `${e.latitude}, ${e.longitude}` : '?'));
+  return `${end(input.from)} → ${end(input.to)}`;
+}
 
 /** What a show_map call is about: its title, else the places it names. */
 function mapSubject(input) {
@@ -406,6 +414,25 @@ function recipeClipping(tool, meta) {
   return el;
 }
 
+/** The clipping for a plan_trip call: the trip card once the result is in, kept like a map's. */
+function tripClipping(tool, meta) {
+  const head = escapeHtml(tripSubject(tool.input || {}));
+  if (tool.output === undefined) {
+    const el = clipEl('plan_trip', meta, head, 'finding routes…');
+    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
+    return el;
+  }
+  if (tool.is_error) return clipEl('plan_trip', meta, head, '', tool.output, true);
+  const spec = cedarTransit.parse(tool.output);
+  if (!spec) return clipEl('plan_trip', meta, head, '', tool.output);
+  tool.tripEl ??= cedarTransit.element(spec);
+  const n = spec.options.length;
+  const el = clipEl('plan_trip', meta, `${n} way${n === 1 ? '' : 's'} to go`, '');
+  el.classList.add('map');
+  el.append(tool.tripEl);
+  return el;
+}
+
 /** Clippings for one tool call; web_search gives one per result, and the page's document gives none. */
 function clippingsFor(tool) {
   if (isDocument(tool) && tool.is_error !== true) return [];
@@ -431,6 +458,8 @@ function clippingsFor(tool) {
       return [mapClipping(tool, meta)];
     case 'show_recipe':
       return [recipeClipping(tool, meta)];
+    case 'plan_trip':
+      return [tripClipping(tool, meta)];
     default:
       if (FILE_TOOLS.has(tool.name)) {
         const path = String(input.path || '');

@@ -437,6 +437,7 @@ impl Integrations {
             ("weather", off("WEATHER")),
             ("maps", off("MAPS")),
             ("recipes", off("RECIPES")),
+            ("transit", off("TRANSIT")),
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),
             ("calendar", google("calendar", "CALENDAR")),
