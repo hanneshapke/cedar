@@ -19,6 +19,7 @@ fn config(network: &str) -> SandboxConfig {
         network: network.into(),
         memory: "256m".into(),
         cpus: "1".into(),
+        tools_dir: None,
     }
 }
 
@@ -817,4 +818,59 @@ async fn attached_pdfs_are_saved_and_their_first_pages_rendered() {
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
 
     teardown(&f, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn personal_python_tools_run_from_the_mounted_directory() {
+    use cedar::tools::ToolSet;
+    use serde_json::json;
+
+    // The sample tools in examples/tools, mounted the way `TOOLS_DIR` is.
+    let dir = std::fs::canonicalize("examples/tools").unwrap();
+    let mut cfg = config("none");
+    cfg.tools_dir = Some(dir.clone());
+    let factory = DockerSandboxFactory::new(cfg);
+    let id = Uuid::new_v4();
+    let sb = factory.create(id, id).await.expect("create sandbox");
+    let ctx = tool_ctx(&sb);
+    let mut set = ToolSet::standard();
+    set.load_custom(&dir).unwrap();
+    let word_count = set.get("word_count").expect("the sample tool is loaded");
+
+    sb.write_file("notes.txt", b"one two\nthree\n")
+        .await
+        .unwrap();
+    let msg = word_count
+        .call(&ctx, &json!({ "path": "notes.txt" }))
+        .await
+        .unwrap();
+    assert_eq!(msg.trim(), r#"{"lines": 2, "words": 3, "characters": 14}"#);
+
+    // A failing script is a tool error carrying its stderr, and the staged input is cleaned up.
+    let err = word_count
+        .call(&ctx, &json!({ "path": "missing.txt" }))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.starts_with("word_count failed (exit status 1): "),
+        "{err}"
+    );
+    assert!(err.contains("missing.txt"), "{err}");
+    let out = sb.exec("ls /tmp", 10 * SECOND, 1000).await.unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
+
+    // The mount is read-only: the agent can run the tools but not change them.
+    let out = sb
+        .exec(
+            "echo x >> /opt/cedar/tools/word_count/tool.py",
+            10 * SECOND,
+            1000,
+        )
+        .await
+        .unwrap();
+    assert_ne!(out.exit_code, Some(0));
+
+    teardown(&factory, id, &sb).await;
 }

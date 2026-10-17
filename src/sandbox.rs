@@ -182,14 +182,20 @@ pub fn run_args(cfg: &SandboxConfig, run_id: Uuid, workspace_id: Uuid) -> Vec<St
         "/workspace",
         "-v",
         &format!("{}:/workspace", volume_name(workspace_id)),
-        &cfg.image,
-        "sleep",
-        "infinity",
     ]
     .iter()
     .map(|s| s.to_string())
     .collect();
-    args.shrink_to_fit();
+    if let Some(dir) = &cfg.tools_dir {
+        // Personal tools, read-only: a run may run them, not change them (see `tools::custom`).
+        args.push("-v".into());
+        args.push(format!(
+            "{}:{}:ro",
+            dir.display(),
+            crate::tools::custom::MOUNT
+        ));
+    }
+    args.extend([cfg.image.clone(), "sleep".into(), "infinity".into()]);
     args
 }
 
@@ -711,6 +717,7 @@ mod tests {
             network: "none".into(),
             memory: "256m".into(),
             cpus: "2".into(),
+            tools_dir: None,
         }
     }
 
@@ -733,6 +740,17 @@ mod tests {
         // Image and the idle command come last, so nothing after the image is parsed as a docker flag.
         assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
         assert!(!joined.contains("LLM_API_KEY"));
+        assert!(!joined.contains("/opt/cedar/tools"));
+
+        let with_tools = SandboxConfig {
+            tools_dir: Some("/home/me/.cedar/tools".into()),
+            ..cfg()
+        };
+        let args = run_args(&with_tools, id, ws);
+        assert!(args
+            .join(" ")
+            .contains("-v /home/me/.cedar/tools:/opt/cedar/tools:ro"));
+        assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
     }
 
     #[test]

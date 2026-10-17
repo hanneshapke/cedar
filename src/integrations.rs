@@ -443,6 +443,13 @@ impl Integrations {
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),
             ("calendar", google("calendar", "CALENDAR")),
+            (
+                "custom",
+                match &cfg.sandbox.tools_dir {
+                    None => "No TOOLS_DIR is set".to_string(),
+                    Some(dir) => format!("No usable tool folder in {}", dir.display()),
+                },
+            ),
         ]
     }
 

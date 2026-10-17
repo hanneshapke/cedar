@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -50,6 +51,9 @@ pub struct SandboxConfig {
     pub network: String,
     pub memory: String,
     pub cpus: String,
+    /// A directory of personal tools written in Python (`TOOLS_DIR`), mounted read-only into
+    /// every sandbox. See `tools::custom`.
+    pub tools_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +206,16 @@ pub struct Config {
 
     pub sandbox: SandboxConfig,
     pub browser: BrowserConfig,
+}
+
+/// Docker wants an absolute host path for a bind mount, so a relative `TOOLS_DIR` is resolved
+/// against the working directory cedar started in.
+fn absolute(p: PathBuf) -> PathBuf {
+    if p.is_absolute() {
+        p
+    } else {
+        std::env::current_dir().map(|d| d.join(&p)).unwrap_or(p)
+    }
 }
 
 impl Config {
@@ -438,6 +452,7 @@ impl Config {
                 network: get("SANDBOX_NETWORK").unwrap_or_else(|| "none".into()),
                 memory: get("SANDBOX_MEMORY").unwrap_or_else(|| "512m".into()),
                 cpus: get("SANDBOX_CPUS").unwrap_or_else(|| "1".into()),
+                tools_dir: get("TOOLS_DIR").map(|d| absolute(PathBuf::from(d))),
             },
             browser: BrowserConfig {
                 enabled: flag("BROWSER", false)?,
