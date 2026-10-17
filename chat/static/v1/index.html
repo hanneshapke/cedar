@@ -11,12 +11,16 @@
   <link rel="stylesheet" href="/v1/style.css">
   <link rel="stylesheet" href="/map-view.css">
   <link rel="stylesheet" href="/recipe-view.css">
+  <link rel="stylesheet" href="/clarify-view.css">
   <link rel="stylesheet" href="/transit-view.css">
+  <link rel="stylesheet" href="/stock-view.css">
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/notify.css">
   <link rel="stylesheet" href="/settings.css">
   <link rel="stylesheet" href="/models.css">
   <link rel="stylesheet" href="/attach.css">
+  <link rel="stylesheet" href="/trust-view.css">
 </head>
 <body>
   <div class="app">
@@ -57,6 +61,9 @@
         </button>
         <button class="icon-btn" id="delete-chat" type="button" aria-label="Delete conversation" title="Delete conversation" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+        </button>
+        <button class="icon-btn" id="inbox-btn" type="button" aria-label="Finished responses" title="Finished responses">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>
         </button>
         <button class="icon-btn" id="settings-btn" type="button" aria-label="Settings" title="Settings">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
@@ -129,11 +136,20 @@
       </button>
       <button class="ui-option" type="button" data-ui="v2" aria-pressed="false">
         <strong>Cedar style</strong>
-        <span>The desk: the file Cedar writes is the page, with search results and output beside it.</span>
+        <span>Talk on the left, results on the right: documents, maps, charts and output as full-width cards.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v3" aria-pressed="false">
+        <strong>Ledger</strong>
+        <span>Talk on the left, results on the right, with the plan above the thread and the sources beside the report.</span>
+      </button>
+      <button class="ui-option" type="button" data-ui="v4" aria-pressed="false">
+        <strong>Dossier</strong>
+        <span>One column. Each turn reads as a brief: plan, work, result, sources.</span>
       </button>
     </div>
     <p class="settings-note">Saved in this browser. Switching keeps your open conversation.</p>
     <div class="cedar-set-section" id="prefs-section" aria-live="polite"></div>
+    <div class="cedar-set-section" id="notify-section" aria-live="polite"></div>
     <div class="cedar-set-section" id="integrations-section" aria-live="polite" hidden></div>
     <div class="cedar-sched-section" id="schedules-section" aria-live="polite"></div>
   </dialog>
@@ -143,11 +159,15 @@
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>
   <script src="/recipe-view.js"></script>
+  <script src="/clarify-view.js"></script>
   <script src="/transit-view.js"></script>
+  <script src="/stock-view.js"></script>
   <script src="/models.js"></script>
   <script src="/schedule.js"></script>
+  <script src="/notify.js"></script>
   <script src="/settings.js"></script>
   <script src="/attach.js"></script>
+  <script src="/trust-view.js"></script>
   <script src="/v1/app.js"></script>
 </body>
 </html>

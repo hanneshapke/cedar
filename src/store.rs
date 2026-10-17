@@ -3,7 +3,8 @@
 //! Uses runtime-checked queries (not the `query!` macros) so building doesn't need a database.
 
 use crate::models::{
-    event, Attachment, Event, ModelEntry, NewRun, Run, RunStatus, StoredMessage, Usage,
+    event, Attachment, Event, ModelEntry, NewRun, Notification, PlanMode, Run, RunStatus,
+    StoredMessage, Usage,
 };
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -18,11 +19,16 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, callback_url, created_at, started_at, finished_at";
+
+/// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
+/// its run's final state.
+const NOTIFICATION_COLS: &str = "n.id, n.run_id, n.seq, r.status, r.stop_reason, r.error, \
+    r.parent_id, r.finished_at";
 
 const MODEL_COLS: &str =
     "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, is_default, \
-    position, listed_models, created_at, updated_at";
+    price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, updated_at";
 
 fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
@@ -67,6 +73,9 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
             .try_get::<Option<&str>, _>("tools")?
             .map(serde_json::from_str)
             .transpose()?,
+        callback_url: r.try_get("callback_url")?,
+        plan: PlanMode::parse(r.try_get("plan")?).unwrap_or_default(),
+        interactive: r.try_get("interactive")?,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
@@ -83,6 +92,16 @@ fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
         default_reasoning: r.try_get("default_reasoning")?,
         multimodal: r.try_get("multimodal")?,
         is_default: r.try_get("is_default")?,
+        price: match (
+            r.try_get::<Option<f64>, _>("price_input_usd_per_m")?,
+            r.try_get::<Option<f64>, _>("price_output_usd_per_m")?,
+        ) {
+            (Some(input_usd_per_m), Some(output_usd_per_m)) => Some(crate::models::Price {
+                input_usd_per_m,
+                output_usd_per_m,
+            }),
+            _ => None,
+        },
         position: r.try_get("position")?,
         listed_models: r
             .try_get::<Option<&str>, _>("listed_models")?
@@ -104,6 +123,47 @@ pub enum InsertRefused {
     ParentActive,
     /// The parent was already continued by this run.
     ParentContinued(Uuid),
+}
+
+fn notification_from_row(r: &SqliteRow) -> Result<Notification> {
+    let status: &str = r.try_get("status")?;
+    let status =
+        RunStatus::parse(status).ok_or_else(|| anyhow!("unknown run status {status:?}"))?;
+    Ok(Notification {
+        id: r.try_get("id")?,
+        kind: status
+            .terminal_event()
+            .ok_or_else(|| anyhow!("a notification for a run that is still {status:?}"))?,
+        run_id: Uuid::parse_str(r.try_get::<&str, _>("run_id")?)?,
+        seq: r.try_get("seq")?,
+        status,
+        stop_reason: r.try_get("stop_reason")?,
+        error: r.try_get("error")?,
+        parent_id: r
+            .try_get::<Option<&str>, _>("parent_id")?
+            .map(Uuid::parse_str)
+            .transpose()?,
+        finished_at: to_dt(r.try_get::<Option<i64>, _>("finished_at")?.unwrap_or_default()),
+    })
+}
+
+/// A webhook call the worker has to make: the notification, where to POST it, and with what.
+#[derive(Debug, Clone)]
+pub struct Delivery {
+    pub notification: Notification,
+    pub url: String,
+    pub secret: Option<String>,
+    /// How many times it has been tried so far.
+    pub attempts: i64,
+}
+
+/// What [`Store::finish_run`] wrote: the terminal event's seq and the notification's id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Finished {
+    pub seq: i64,
+    pub notification: i64,
+    /// Whether the run has a webhook to deliver.
+    pub callback: bool,
 }
 
 /// How a run ended, as written by [`Store::finish_run`].
@@ -199,8 +259,12 @@ impl Store {
         }
 
         let mut workspace = None;
+        // A continuation keeps its parent's webhook unless the request names one.
+        let mut callback = (new.callback_url.clone(), new.callback_secret.clone());
         if let Some(parent_id) = new.parent_id {
-            let parent = sqlx::query("SELECT owner, status, workspace_id FROM runs WHERE id = ?")
+            let parent = sqlx::query(
+                "SELECT owner, status, workspace_id, callback_url, callback_secret FROM runs WHERE id = ?",
+            )
                 .bind(parent_id.to_string())
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -220,6 +284,12 @@ impl Store {
                 return Ok(Err(InsertRefused::ParentContinued(Uuid::parse_str(
                     child.try_get("id")?,
                 )?)));
+            }
+            if callback.0.is_none() {
+                callback = (
+                    parent.try_get("callback_url")?,
+                    parent.try_get("callback_secret")?,
+                );
             }
             let parent_ws: Option<String> = parent.try_get("workspace_id")?;
             if let Some(ws) = parent_ws {
@@ -252,8 +322,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -267,6 +337,10 @@ impl Store {
         .bind(workspace_id.to_string())
         .bind(reused)
         .bind(new.tools.as_ref().map(serde_json::to_string).transpose()?)
+        .bind(&callback.0)
+        .bind(&callback.1)
+        .bind(new.plan.as_str())
+        .bind(new.interactive)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -342,6 +416,43 @@ impl Store {
     }
 
     /// Record that a model turn finished: the turn counter and token usage.
+    /// Whether `owner` has said to always allow every one of `scopes` for `rule`.
+    pub async fn granted(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<bool> {
+        if scopes.is_empty() {
+            return Ok(false);
+        }
+        for scope in scopes {
+            let row = sqlx::query(
+                "SELECT 1 FROM approval_grants WHERE owner = ? AND rule = ? AND scope = ?",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .fetch_optional(&self.pool)
+            .await?;
+            if row.is_none() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Remember that `owner` always allows `scopes` for `rule`.
+    pub async fn grant(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<()> {
+        for scope in scopes {
+            sqlx::query(
+                "INSERT OR IGNORE INTO approval_grants (owner, rule, scope, created_at) VALUES (?, ?, ?, ?)",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
     pub async fn record_turn(&self, id: Uuid, turns: u32, usage: Usage) -> Result<()> {
         sqlx::query(
             "UPDATE runs SET turns = ?, input_tokens = input_tokens + ?, output_tokens = output_tokens + ? WHERE id = ?",
@@ -355,34 +466,164 @@ impl Store {
         Ok(())
     }
 
-    /// Move a queued/running run to a terminal state and append its terminal event, atomically.
-    /// Returns the event's seq, or `None` if the run was already terminal (so finishing twice is a no-op).
-    pub async fn finish_run(&self, id: Uuid, f: Finish<'_>) -> Result<Option<i64>> {
+    /// Move a queued/running run to a terminal state, append its terminal event and queue its
+    /// notification, atomically. Returns `None` if the run was already terminal (so finishing
+    /// twice is a no-op).
+    pub async fn finish_run(&self, id: Uuid, f: Finish<'_>) -> Result<Option<Finished>> {
+        let now = now_ms();
         let mut tx = self.pool.begin().await?;
-        let res = sqlx::query(
+        let row = sqlx::query(
             "UPDATE runs SET status = ?, final_text = ?, stop_reason = ?, error = ?, finished_at = ? \
-             WHERE id = ? AND status IN ('queued', 'running')",
+             WHERE id = ? AND status IN ('queued', 'running') RETURNING owner, callback_url",
         )
         .bind(f.status.as_str())
         .bind(f.final_text)
         .bind(f.stop_reason)
         .bind(f.error)
-        .bind(now_ms())
+        .bind(now)
         .bind(id.to_string())
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await?;
-        if res.rows_affected() == 0 {
+        let Some(row) = row else {
             return Ok(None);
-        }
+        };
+        let owner: String = row.try_get("owner")?;
+        let callback_url: Option<String> = row.try_get("callback_url")?;
         // The idle clock for the workspace starts when its run ends.
         sqlx::query("UPDATE workspaces SET last_used_at = ? WHERE id = (SELECT workspace_id FROM runs WHERE id = ?)")
-            .bind(now_ms())
+            .bind(now)
             .bind(id.to_string())
             .execute(&mut *tx)
             .await?;
         let seq = insert_event(&mut tx, id, f.event_kind, &f.event_data).await?;
+        // The notification feeds the owner's event stream, and the webhook worker if there is a
+        // callback: due right away.
+        let notification: i64 = sqlx::query_scalar(
+            "INSERT INTO run_notifications (run_id, owner, seq, callback_url, next_attempt_at, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        )
+        .bind(id.to_string())
+        .bind(&owner)
+        .bind(seq)
+        .bind(&callback_url)
+        .bind(callback_url.as_ref().map(|_| now))
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await?;
         tx.commit().await?;
-        Ok(Some(seq))
+        Ok(Some(Finished {
+            seq,
+            notification,
+            callback: callback_url.is_some(),
+        }))
+    }
+
+    // -- notifications ----------------------------------------------------------------------
+
+    /// An owner's notifications with `id > after`, oldest first. Deleted runs' are gone.
+    pub async fn notifications_after(
+        &self,
+        owner: &str,
+        after: i64,
+        limit: u32,
+    ) -> Result<Vec<Notification>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {NOTIFICATION_COLS} FROM run_notifications n JOIN runs r ON r.id = n.run_id \
+             WHERE n.owner = ? AND n.id > ? ORDER BY n.id LIMIT ?"
+        ))
+        .bind(owner)
+        .bind(after)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(notification_from_row).collect()
+    }
+
+    /// Webhook calls whose time has come, oldest first.
+    pub async fn due_deliveries(&self, limit: u32) -> Result<Vec<Delivery>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {NOTIFICATION_COLS}, n.callback_url, n.attempts, r.callback_secret \
+             FROM run_notifications n JOIN runs r ON r.id = n.run_id \
+             WHERE n.next_attempt_at IS NOT NULL AND n.next_attempt_at <= ? ORDER BY n.next_attempt_at, n.id LIMIT ?"
+        ))
+        .bind(now_ms())
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(Delivery {
+                    notification: notification_from_row(r)?,
+                    url: r.try_get("callback_url")?,
+                    secret: r.try_get("callback_secret")?,
+                    attempts: r.try_get("attempts")?,
+                })
+            })
+            .collect()
+    }
+
+    /// When the next webhook call is due, if any is pending.
+    pub async fn next_delivery_at(&self) -> Result<Option<DateTime<Utc>>> {
+        let at: Option<i64> =
+            sqlx::query_scalar("SELECT MIN(next_attempt_at) FROM run_notifications")
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(at.map(to_dt))
+    }
+
+    /// Record a webhook call: delivered, or failed with `error` and tried again at `retry_at`
+    /// (`None` gives up).
+    pub async fn record_delivery(
+        &self,
+        id: i64,
+        outcome: Result<(), (String, Option<DateTime<Utc>>)>,
+    ) -> Result<()> {
+        match outcome {
+            Ok(()) => {
+                sqlx::query(
+                    "UPDATE run_notifications SET attempts = attempts + 1, delivered_at = ?, \
+                     next_attempt_at = NULL, last_error = NULL WHERE id = ?",
+                )
+                .bind(now_ms())
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+            }
+            Err((error, retry_at)) => {
+                sqlx::query(
+                    "UPDATE run_notifications SET attempts = attempts + 1, next_attempt_at = ?, \
+                     last_error = ? WHERE id = ?",
+                )
+                .bind(retry_at.map(|t| t.timestamp_millis()))
+                .bind(error)
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// How a run's webhook delivery stands, for tests and diagnostics:
+    /// `(attempts, delivered_at, last_error)`; `None` for a run without a notification.
+    pub async fn delivery_status(
+        &self,
+        run_id: Uuid,
+    ) -> Result<Option<(i64, Option<DateTime<Utc>>, Option<String>)>> {
+        let row = sqlx::query(
+            "SELECT attempts, delivered_at, last_error FROM run_notifications WHERE run_id = ?",
+        )
+        .bind(run_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|r| {
+            Ok((
+                r.try_get("attempts")?,
+                r.try_get::<Option<i64>, _>("delivered_at")?.map(to_dt),
+                r.try_get("last_error")?,
+            ))
+        })
+        .transpose()
     }
 
     /// Runs left `queued`/`running` by a previous process can never finish; mark them failed.
@@ -618,12 +859,14 @@ impl Store {
         }
         sqlx::query(
             "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
-             multimodal, is_default, position, listed_models, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             multimodal, is_default, price_input_usd_per_m, price_output_usd_per_m, position, \
+             listed_models, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
              base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
              default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, \
-             is_default = excluded.is_default, listed_models = excluded.listed_models, \
+             is_default = excluded.is_default, price_input_usd_per_m = excluded.price_input_usd_per_m, \
+             price_output_usd_per_m = excluded.price_output_usd_per_m, listed_models = excluded.listed_models, \
              updated_at = excluded.updated_at",
         )
         .bind(&entry.id)
@@ -634,6 +877,8 @@ impl Store {
         .bind(&entry.default_reasoning)
         .bind(entry.multimodal)
         .bind(is_default)
+        .bind(entry.price.map(|p| p.input_usd_per_m))
+        .bind(entry.price.map(|p| p.output_usd_per_m))
         .bind(position)
         .bind(
             entry
@@ -732,6 +977,10 @@ mod tests {
             parent_id: None,
             tools: None,
             attachments: vec![],
+            callback_url: None,
+            callback_secret: None,
+            plan: PlanMode::Off,
+            interactive: false,
         }
     }
 
@@ -844,14 +1093,21 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            store.finish_run(run.id, completed("ok")).await.unwrap(),
-            Some(2)
-        );
+        let finished = store.finish_run(run.id, completed("ok")).await.unwrap().unwrap();
+        assert_eq!((finished.seq, finished.callback), (2, false));
         assert_eq!(
             store.finish_run(run.id, completed("again")).await.unwrap(),
             None
         );
+        // The notification is in the owner's stream, and nothing is queued for delivery.
+        let notes = store.notifications_after("a", 0, 10).await.unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!((notes[0].id, notes[0].run_id, notes[0].seq), (finished.notification, run.id, 2));
+        assert_eq!((notes[0].kind, notes[0].stop_reason.as_deref()), ("run.completed", Some("end_turn")));
+        assert!(store.notifications_after("a", finished.notification, 10).await.unwrap().is_empty());
+        assert!(store.notifications_after("b", 0, 10).await.unwrap().is_empty());
+        assert!(store.due_deliveries(10).await.unwrap().is_empty());
+        assert_eq!(store.next_delivery_at().await.unwrap(), None);
 
         let got = store.get_run(run.id).await.unwrap().unwrap();
         assert_eq!(got.status, RunStatus::Completed);
@@ -860,6 +1116,65 @@ mod tests {
         assert_eq!(events.iter().map(|e| e.seq).collect::<Vec<_>>(), [1, 2]);
         assert!(events[1].is_terminal());
         assert_eq!(store.events_after(run.id, 1, 100).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_run_with_a_callback_queues_a_delivery_that_a_continuation_inherits() {
+        let store = Store::connect_memory().await.unwrap();
+        let new = NewRun {
+            callback_url: Some("https://hooks.example/cedar".into()),
+            callback_secret: Some("s3cret".into()),
+            ..new_run("a")
+        };
+        let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();
+        assert_eq!(run.callback_url.as_deref(), Some("https://hooks.example/cedar"));
+        assert_eq!(store.delivery_status(run.id).await.unwrap(), None);
+
+        let finished = store.finish_run(run.id, completed("ok")).await.unwrap().unwrap();
+        assert!(finished.callback);
+        let due = store.due_deliveries(10).await.unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].url, "https://hooks.example/cedar");
+        assert_eq!(due[0].secret.as_deref(), Some("s3cret"));
+        assert_eq!((due[0].attempts, due[0].notification.id), (0, finished.notification));
+        assert!(store.next_delivery_at().await.unwrap().is_some());
+
+        // A failed attempt is retried later; a delivered one is done.
+        let later = Utc::now() + chrono::Duration::hours(1);
+        store
+            .record_delivery(finished.notification, Err(("503".into(), Some(later))))
+            .await
+            .unwrap();
+        assert!(store.due_deliveries(10).await.unwrap().is_empty());
+        assert_eq!(store.next_delivery_at().await.unwrap().unwrap().timestamp(), later.timestamp());
+        let (attempts, delivered, error) = store.delivery_status(run.id).await.unwrap().unwrap();
+        assert_eq!((attempts, delivered, error.as_deref()), (1, None, Some("503")));
+        store.record_delivery(finished.notification, Ok(())).await.unwrap();
+        assert_eq!(store.next_delivery_at().await.unwrap(), None);
+        let (attempts, delivered, error) = store.delivery_status(run.id).await.unwrap().unwrap();
+        assert!(attempts == 2 && delivered.is_some() && error.is_none());
+
+        // The continuation keeps the webhook unless it names its own.
+        let child = NewRun { parent_id: Some(run.id), ..new_run("a") };
+        let child = store.insert_run(&child, 5).await.unwrap().unwrap();
+        assert_eq!(child.callback_url.as_deref(), Some("https://hooks.example/cedar"));
+        store.finish_run(child.id, completed("ok")).await.unwrap();
+        let due = store.due_deliveries(10).await.unwrap();
+        assert_eq!((due.len(), due[0].secret.as_deref()), (1, Some("s3cret")));
+        assert_eq!(due[0].notification.parent_id, Some(run.id));
+        let own = NewRun {
+            parent_id: Some(child.id),
+            callback_url: Some("https://other.example/".into()),
+            ..new_run("a")
+        };
+        let own = store.insert_run(&own, 5).await.unwrap().unwrap();
+        assert_eq!(own.callback_url.as_deref(), Some("https://other.example/"));
+
+        // Deleting a run takes its notification with it.
+        store.finish_run(own.id, completed("ok")).await.unwrap();
+        assert!(store.delete_finished_run(own.id).await.unwrap());
+        assert_eq!(store.delivery_status(own.id).await.unwrap(), None);
+        assert_eq!(store.notifications_after("a", 0, 10).await.unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -980,6 +1295,8 @@ mod tests {
         ];
         let new = NewRun {
             attachments: files.clone(),
+            plan: PlanMode::Off,
+            interactive: false,
             ..new_run("a")
         };
         let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();

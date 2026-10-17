@@ -1,16 +1,20 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
 //! run's sandbox; `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and
-//! `show_recipe`, and `plan_trip` run in the cedar process, because the sandbox has no network; `browser` drives the run's browser
+//! `show_recipe`, `plan_trip`, and `compare_stocks` run in the cedar process, because the sandbox
+//! has no network; so does `ask_user`, which only checks its questions; `browser` drives the run's browser
 //! container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
-//! in the cedar process too.
+//! in the cedar process too. Personal tools written in Python (`custom`) run in the sandbox like
+//! `run_python`.
 
+mod ask_user;
 mod bash;
 mod browser;
 mod calendar;
 mod changes;
 mod chart;
+pub mod custom;
 mod document;
-mod fetch;
+pub(crate) mod fetch;
 mod files;
 mod gmail;
 mod google;
@@ -20,13 +24,16 @@ mod open_meteo;
 mod pdf;
 mod python;
 mod recipe;
+mod stocks;
 mod transit;
 mod weather;
 mod web_search;
 
+pub use ask_user::{as_text as question_text, AskUser, NAME as ASK_USER};
 pub use bash::Bash;
 pub use browser::BrowserTool;
 pub use chart::GenerateChart;
+pub use custom::PythonTool;
 pub use document::ReadDocument;
 pub use fetch::{DownloadFile, FetchUrl, WebClient};
 pub use files::{ReadFile, WriteFile};
@@ -35,6 +42,7 @@ pub use mcp::{McpServer, McpTool};
 pub use pdf::GeneratePdf;
 pub use python::RunPython;
 pub use recipe::ShowRecipe;
+pub use stocks::CompareStocks;
 pub use transit::PlanTrip;
 pub use weather::WeatherForecast;
 pub use web_search::BraveSearch;
@@ -47,6 +55,7 @@ use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -84,6 +93,8 @@ pub struct ToolSet {
     tools: Vec<Box<dyn Tool>>,
     /// MCP servers; their tools join the set once discovered (see [`Self::connect_remote`]).
     remote: Vec<McpServer>,
+    /// The names of the personal tools loaded from `TOOLS_DIR`, which form the `custom` group.
+    custom: HashSet<String>,
 }
 
 impl ToolSet {
@@ -91,6 +102,7 @@ impl ToolSet {
         Self {
             tools,
             remote: Vec::new(),
+            custom: HashSet::new(),
         }
     }
 
@@ -111,9 +123,10 @@ impl ToolSet {
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
-    /// `TRANSIT` is off, `browser` if `BROWSER` is on, and the Gmail and Calendar
-    /// tools if `GMAIL` or `CALENDAR` is on (through the REST APIs, or MCP servers whose tools are
-    /// discovered later).
+    /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `ask_user` unless `ASK_USER` is
+    /// off, `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
+    /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
+    /// personal Python tools in `TOOLS_DIR`, if set.
     pub fn from_config(cfg: &Config) -> Result<Self> {
         Self::build(cfg, &Overrides::default())
     }
@@ -161,6 +174,15 @@ impl ToolSet {
                 cfg.driving_base_url.clone(),
             )?));
         }
+        if cfg.stocks {
+            set.tools.push(Box::new(CompareStocks::new(
+                cfg.stocks_chart_url.clone(),
+                cfg.stocks_news_url.clone(),
+            )?));
+        }
+        if cfg.ask_user {
+            set.tools.push(Box::new(AskUser));
+        }
         if cfg.browser.enabled {
             set.tools
                 .push(Box::new(BrowserTool::new(cfg.web_fetch_allow_private)));
@@ -190,7 +212,35 @@ impl ToolSet {
                 set.remote.push(McpServer::new(server, auth.clone())?);
             }
         }
+        if let Some(dir) = &cfg.sandbox.tools_dir {
+            set.load_custom(dir)?;
+        }
         Ok(set)
+    }
+
+    /// Add the personal tools in `dir` (see [`custom`]). Names cedar's own tools use are skipped.
+    pub fn load_custom(&mut self, dir: &std::path::Path) -> Result<()> {
+        let taken: HashSet<&str> = self.tools.iter().map(|t| t.name()).collect();
+        let loaded = custom::load_dir(dir, &taken)?;
+        for tool in loaded {
+            self.custom.insert(tool.name().to_string());
+            self.tools.push(Box::new(tool));
+        }
+        if !self.custom.is_empty() {
+            let mut names: Vec<&str> = self.custom.iter().map(|s| s.as_str()).collect();
+            names.sort();
+            tracing::info!(dir = %dir.display(), tools = ?names, "personal tools loaded");
+        }
+        Ok(())
+    }
+
+    /// The group a tool belongs to: `custom` for a personal tool, else by name (see [`group_of`]).
+    pub fn group(&self, name: &str) -> &'static str {
+        if self.custom.contains(name) {
+            custom::GROUP
+        } else {
+            group_of(name)
+        }
     }
 
     /// Discover the tools of every MCP server not discovered yet. A server that can't be reached
@@ -252,7 +302,7 @@ impl ToolSet {
             .map(|(id, label)| {
                 let tools: Vec<Value> = self
                     .all()
-                    .filter(|t| group_of(t.name()) == *id)
+                    .filter(|t| self.group(t.name()) == *id)
                     .map(|t| json!({ "name": t.name(), "description": t.description(), "writes": writes(t.name()) }))
                     .collect();
                 let remote = self.remote.iter().find(|s| s.prefix() == *id);
@@ -305,12 +355,16 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("maps", "Maps"),
     ("recipes", "Recipes"),
     ("transit", "Directions & transit"),
+    ("stocks", "Stocks & markets"),
+    ("ask_user", "Clarifying questions"),
     ("browser", "Browser"),
     ("gmail", "Gmail"),
     ("calendar", "Calendar"),
+    (custom::GROUP, "Personal tools"),
 ];
 
-/// The group a tool belongs to.
+/// The group a tool belongs to, by name. Personal tools can have any name, so use
+/// [`ToolSet::group`] where the set is at hand.
 pub fn group_of(name: &str) -> &'static str {
     match name {
         "web_search" => "web_search",
@@ -319,6 +373,8 @@ pub fn group_of(name: &str) -> &'static str {
         "show_map" => "maps",
         "show_recipe" => "recipes",
         "plan_trip" => "transit",
+        "compare_stocks" => "stocks",
+        "ask_user" => "ask_user",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
         n if n.starts_with("calendar_") => "calendar",
@@ -351,7 +407,7 @@ impl<'a> ToolView<'a> {
         let Some(allow) = self.allow else {
             return true;
         };
-        let group = group_of(name);
+        let group = self.set.group(name);
         group == "core" || allow.iter().any(|a| a == "*" || a == name || a == group)
     }
 
@@ -415,6 +471,20 @@ impl<'a> ToolView<'a> {
             note.push_str(
                 " For how to get somewhere (public transit, driving, walking, or a rideshare), use \
                  plan_trip; it shows the routes on a map.",
+            );
+        }
+        if self.get("compare_stocks").is_some() {
+            note.push_str(
+                " For stock, ETF, or index prices, comparisons, market news, or whether to buy, \
+                 hold, or sell, use compare_stocks; it shows charts, headlines, and a rating with \
+                 its reasoning, which you then weigh in your own call.",
+            );
+        }
+        if self.get(ASK_USER).is_some() {
+            note.push_str(
+                " When a request is ambiguous and the answer would change what you do, ask with \
+                 ask_user, offering the likely choices, instead of guessing; don't ask about what \
+                 you can find out or reasonably assume.",
             );
         }
         if ["bash", "run_python", "write_file", "generate_chart"]
@@ -638,6 +708,8 @@ mod tests {
             ("MAPS", "off"),
             ("RECIPES", "off"),
             ("TRANSIT", "off"),
+            ("STOCKS", "off"),
+            ("ASK_USER", "off"),
         ]))
         .unwrap();
         let search =
@@ -651,6 +723,8 @@ mod tests {
         assert!(note.contains("use show_map"));
         assert!(note.contains("present it with show_recipe"));
         assert!(note.contains("use plan_trip"), "{note}");
+        assert!(note.contains("use compare_stocks"), "{note}");
+        assert!(note.contains("ask with ask_user"), "{note}");
         assert!(note.contains("![caption](path.png)"), "{note}");
         assert!(!note.contains("browser tool"));
         let browser = ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BROWSER", "on")]))
@@ -665,6 +739,8 @@ mod tests {
         assert!(!note.contains("show_map"));
         assert!(!note.contains("show_recipe"));
         assert!(!note.contains("plan_trip"));
+        assert!(!note.contains("compare_stocks"));
+        assert!(!note.contains("ask_user"));
         assert!(plain
             .environment_note("bridge")
             .contains("outbound network access"));
@@ -694,7 +770,9 @@ mod tests {
                 "weather_forecast",
                 "show_map",
                 "show_recipe",
-                "plan_trip"
+                "plan_trip",
+                "compare_stocks",
+                "ask_user"
             ])
         );
         assert_eq!(
@@ -706,12 +784,21 @@ mod tests {
                 "weather_forecast",
                 "show_map",
                 "show_recipe",
-                "plan_trip"
+                "plan_trip",
+                "compare_stocks",
+                "ask_user"
             ])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "off")])),
-            with(&["weather_forecast", "show_map", "show_recipe", "plan_trip"])
+            with(&[
+                "weather_forecast",
+                "show_map",
+                "show_recipe",
+                "plan_trip",
+                "compare_stocks",
+                "ask_user"
+            ])
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEATHER", "off")])),
@@ -720,7 +807,9 @@ mod tests {
                 "download_file",
                 "show_map",
                 "show_recipe",
-                "plan_trip"
+                "plan_trip",
+                "compare_stocks",
+                "ask_user"
             ])
         );
         assert_eq!(
@@ -730,7 +819,9 @@ mod tests {
                 "download_file",
                 "weather_forecast",
                 "show_recipe",
-                "plan_trip"
+                "plan_trip",
+                "compare_stocks",
+                "ask_user"
             ])
         );
         assert_eq!(
@@ -740,7 +831,9 @@ mod tests {
                 "download_file",
                 "weather_forecast",
                 "show_map",
-                "plan_trip"
+                "plan_trip",
+                "compare_stocks",
+                "ask_user"
             ])
         );
         assert_eq!(
@@ -750,7 +843,21 @@ mod tests {
                 "download_file",
                 "weather_forecast",
                 "show_map",
-                "show_recipe"
+                "show_recipe",
+                "compare_stocks",
+                "ask_user"
+            ])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("STOCKS", "off")])),
+            with(&[
+                "fetch_url",
+                "download_file",
+                "weather_forecast",
+                "show_map",
+                "show_recipe",
+                "plan_trip",
+                "ask_user"
             ])
         );
         assert_eq!(
@@ -760,7 +867,9 @@ mod tests {
                 ("WEATHER", "off"),
                 ("MAPS", "off"),
                 ("RECIPES", "off"),
-                ("TRANSIT", "off")
+                ("TRANSIT", "off"),
+                ("STOCKS", "off"),
+                ("ASK_USER", "off")
             ])),
             with(&[])
         );
@@ -773,6 +882,8 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
+                "compare_stocks",
+                "ask_user",
                 "browser"
             ])
         );
@@ -783,6 +894,8 @@ mod tests {
         assert_eq!(group_of("bash"), "core");
         assert_eq!(group_of("download_file"), "web_fetch");
         assert_eq!(group_of("plan_trip"), "transit");
+        assert_eq!(group_of("compare_stocks"), "stocks");
+        assert_eq!(group_of("ask_user"), "ask_user");
         assert_eq!(group_of("gmail_search_threads"), "gmail");
         assert_eq!(group_of("calendar_list_events"), "calendar");
         assert!(!writes("gmail_search_threads"));

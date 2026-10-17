@@ -137,6 +137,15 @@ pub async fn tick(state: &AppState, now: DateTime<Utc>) -> anyhow::Result<usize>
     Ok(started)
 }
 
+/// Nobody is there to answer a scheduled run's clarifying questions (`ask_user`), so the prompt cedar
+/// gets says so. The conversation keeps the schedule's prompt as it was written.
+fn unattended(prompt: &str) -> String {
+    format!(
+        "{prompt}\n\n(This is a scheduled run and nobody is there to answer questions: don't ask any, \
+         make reasonable assumptions and say what you assumed.)"
+    )
+}
+
 /// Whether a failure to start a run is worth another try on a later tick.
 fn worth_retrying(e: &AppError) -> bool {
     match e {
@@ -166,7 +175,7 @@ pub async fn fire(
     let title = format!("{} · {when}", schedule.title);
 
     let conversation = state.store.create_scheduled_conversation(schedule.id, &title).await?;
-    let run = match state.cedar.create_run(&schedule.prompt, &settings.options(None)).await {
+    let run = match state.cedar.create_run(&unattended(&schedule.prompt), &settings.options(None)).await {
         Ok(run) => run,
         Err(e) => {
             // Nothing happened; don't leave an empty conversation behind.

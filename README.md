@@ -59,21 +59,24 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools` and [Attachments](#attachments) for `attachments`. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
-| `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, timestamps. |
+| `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
+| `POST /v1/runs/{id}/plan` | Agree to the plan an interactive run is waiting on: `{"steps": [{"id", "title"}, ...]}` (1–12, edited, reordered, added or removed as you like). Returns `202`; `409` if the run isn't waiting for its plan. |
+| `POST /v1/runs/{id}/approvals/{approval_id}` | Answer an `approval.required` event: `{"decision": "allow" \| "allow_always" \| "deny"}`. Returns `202`; `409` if the run isn't waiting for that approval. |
+| `GET /v1/events` | Server-Sent Events: every run of the key that ends, as it ends. Replays from `?after=<id>` or the `Last-Event-ID` header, then follows live, and never closes on its own. See [Being told when a run ends](#being-told-when-a-run-ends). |
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
-| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, is_default}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap}` (`model` and `model_id` are `null` until a model is registered), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
+| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, is_default, price}]}` (see [Models](#models)). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
-| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "is_default"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning` and `multimodal` keep what is saved. Returns the entry as `GET /v1/admin/models` shows it. |
+| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
@@ -96,8 +99,11 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `maps` | `show_map` |
 | `recipes` | `show_recipe` |
 | `transit` | `plan_trip` |
+| `stocks` | `compare_stocks` |
+| `ask_user` | `ask_user` |
 | `browser` | `browser` |
 | `gmail`, `calendar` | every `gmail_*` or `calendar_*` tool, or name single ones (`gmail_search_threads`) |
+| `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
 
 The sandbox tools (`bash`, the file, Python, document, PDF, and chart tools) are always included,
 and `*` means every tool. Leaving `tools` out gives a fresh run every tool and a continuation its
@@ -167,16 +173,113 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 
 | Type | `data` |
 | --- | --- |
-| `run.started` | `model`, `model_id`, `reasoning`, `max_turns` |
+| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{network, memory, cpus}` |
+| `plan` | `steps` (`[{id, title}]`), `editable`, `awaiting` (see [Plans and approvals](#plans-and-approvals)) |
+| `plan.updated` | `steps`, `by` (`user`, or `timeout` when no answer came) |
+| `assistant.reasoning` | `turn`, `text`, `duration_ms`, `done`: the model's reasoning, when its server returns it (`reasoning_content` or `reasoning`). Not kept in the conversation |
 | `assistant.text` | `turn`, `text` |
+| `approval.required` | `id`, `call_id`, `tool`, `input`, `rule`, `reason`, `scope` |
+| `approval.resolved` | `id`, `decision` (`allow`, `allow_always`, `deny` or `timeout`), `by` |
 | `tool.call` | `id`, `name`, `input` |
-| `tool.result` | `id`, `output`, `is_error`, `duration_ms` |
-| `usage` | `turn`, `input_tokens`, `output_tokens` |
+| `tool.result` | `id`, `output`, `is_error`, `duration_ms`, and `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite |
+| `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call |
 | `run.completed` | `final_text`, `stop_reason` |
 | `run.failed` | `error` |
 | `run.cancelled` | `reason` |
 
 `run.completed`, `run.failed`, and `run.cancelled` are terminal: the stream closes after one of them.
+
+The sources a run reads are numbered in the order it reads them: each page `fetch_url` fetched
+(by its final URL), file `download_file` saved, and `web_search` result gets the next number the
+first time its URL turns up. The model sees `[n]` with each, and the system prompt asks it to cite
+them that way; the event's `output` stays as the tool wrote it, with the numbers under `sources`.
+
+## Plans and approvals
+
+A run can plan before it starts, and a run whose client is there to answer can wait for the user
+to agree to the plan and to approve risky tool calls.
+
+**Plans.** With `"plan": "on"` (or `auto`, which plans for prompts of 15 words or more; the
+default comes from `PLAN`, which is `off`), cedar first makes one model call without tools that
+breaks the prompt into 3–7 steps, and sends them as a `plan` event. The steps then go into the
+system prompt for the rest of the run. If the reply holds no usable plan, or the call fails, the
+run goes on without one.
+
+**Interactive runs.** `"interactive": true` says the client will answer while the run goes. Then:
+
+- the `plan` event has `awaiting: true`, and the run waits until `POST /v1/runs/{id}/plan` sends
+  the steps to follow (`plan.updated` with `by: "user"`);
+- a tool call that matches a `TOOL_APPROVALS` rule waits for `POST
+  /v1/runs/{id}/approvals/{approval_id}`. `allow` runs it, `deny` doesn't (the model is told the
+  user declined), and `allow_always` runs it and remembers its `scope` (a host, package names)
+  for the API key, so the same kind of call goes ahead without asking from then on.
+
+Each wait ends after `APPROVAL_TIMEOUT_SECS`: the plan as proposed is followed, and the call is
+not made. Time spent waiting doesn't count toward `RUN_TIMEOUT_SECS`. A run that isn't
+interactive (the default, and what scheduled runs should use) shows its plan without waiting and
+asks nothing.
+
+The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-separated list):
+
+| Rule | Calls |
+| --- | --- |
+| `email` | Gmail tools that send, draft or change mail |
+| `downloads` | `download_file`; "always" is per host |
+| `installs` | `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`, when the sandbox has a network; "always" is per package |
+| `deletes` | `rm`, `rmdir`, `shred`, `unlink` and `find -delete` in `bash`; asked every time |
+| `network` | any other `bash` or `run_python` call when the sandbox has a network (`SANDBOX_NETWORK` isn't `none`) |
+
+## Being told when a run ends
+
+A run's event stream is for watching it. A client that started a run and went away, or that runs
+many, wants to be told when one ends, once, and not to miss it over a dropped connection or a
+restart. cedar keeps that promise with an outbox: when a run reaches its terminal state, a
+*notification* is written in the same transaction as its terminal event, and two things deliver
+it. Nothing is sent for anything else, and in particular not per tool call: a notification means
+the run is over, or (`stop_reason: "ask_user"`) is waiting for an answer.
+
+A notification is JSON like
+
+```json
+{"id": 42, "type": "run.completed", "run_id": "0190...", "seq": 7, "status": "completed",
+ "stop_reason": "end_turn", "error": null, "parent_id": null, "finished_at": "2026-10-17T09:30:00Z"}
+```
+
+`type` is the terminal event's (`run.completed`, `run.failed`, `run.cancelled`), `seq` that
+event's number in the run's stream, and `id` the notification's number, which only grows across
+all of a key's runs. It carries no text: fetch the run for `final_text`, or its events from
+`seq` on. Deleting a run deletes its notification too.
+
+**Webhooks.** `POST /v1/runs` takes a `callback_url` (http or https) and an optional
+`callback_secret`. When the run ends, cedar POSTs the notification there as `application/json`,
+with the headers `X-Cedar-Event` (the type), `X-Cedar-Delivery` (the id) and `X-Cedar-Run`, and,
+with a secret, `X-Cedar-Signature: t=<unix seconds>,v1=<hex>`, where the hex is HMAC-SHA256 with
+the secret over `<t>.<raw body>`; verify it over the bytes as received and reject a `t` older
+than a few minutes. Any 2xx counts as delivered. A connection failure, timeout (10 seconds),
+5xx, 408, 425 or 429 is retried with a doubling wait, `WEBHOOK_RETRY_SECS` (5) at first and at
+most an hour, up to 12 times in all; any other 4xx is given up on at once. Undelivered calls
+survive a restart, and a run that was cut short by one (it ends `failed`) is announced like any
+other. A [continuation](#continuing-a-run) keeps its parent's callback and secret unless it names
+its own. The run reports its `callback_url`, never the secret.
+
+The calls come from the cedar host, so like `fetch_url` a `callback_url` may only point at a
+public address (loopback, private and link-local addresses, and names that resolve to them, are
+refused with `400`) unless `WEBHOOK_ALLOW_PRIVATE=on`. Redirects are not followed.
+
+**The key's event stream.** A client that can't take a webhook (nothing to listen on, or behind
+a NAT) follows a stream instead: `GET /v1/events` is an SSE stream of the key's
+notifications, each with `id:` set to the notification's id and `event:` to its type. It replays
+from the beginning, or from `?after=<id>` / the `Last-Event-ID` header, then stays open and
+sends each run's notification as it ends; the client closes it. Keep the last `id` seen and
+resume from it after a reconnect or a restart, and nothing is missed. [cedar-chat](chat/README.md#notifications)
+is such a client.
+
+```sh
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+     -d '{"prompt": "...", "callback_url": "https://hooks.example/cedar", "callback_secret": "s3cret"}' \
+     localhost:8080/v1/runs
+curl -N -H "Authorization: Bearer $KEY" "localhost:8080/v1/events?after=41"
+```
 
 ## Continuing a run
 
@@ -223,7 +326,7 @@ outside `/workspace` is reported as missing.
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
-Claude-style or a Cedar-style ("desk") layout that you pick in Settings: your conversations, live
+Claude-style or a Cedar-style (conversation beside a stage of result cards) layout that you pick in Settings: your conversations, live
 tool calls, a files panel for downloading what the agent produced, and stop and rename buttons. It calls cedar's HTTP API with a key it keeps on the server.
 
 ```sh
@@ -270,18 +373,26 @@ Settings come from environment variables. The important ones:
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
+| `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first; see [Plans and approvals](#plans-and-approvals)) |
+| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `downloads`, `installs`, `deletes`, `network`) |
+| `APPROVAL_TIMEOUT_SECS` | 300 (how long an interactive run waits for its plan to be agreed or a call to be approved) |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
 | `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
 | `BRAVE_API_BASE_URL` | `https://api.search.brave.com/res/v1/web/search` |
 | `WEB_FETCH` | `on` (set `off` to remove the `fetch_url` and `download_file` tools) |
 | `WEB_FETCH_ALLOW_PRIVATE` | `off` (set `on` to let those tools reach loopback and private addresses) |
+| `WEBHOOK_ALLOW_PRIVATE` | `off` (set `on` to let a run's `callback_url` point at loopback and private addresses; see [Being told when a run ends](#being-told-when-a-run-ends)) |
+| `WEBHOOK_RETRY_SECS` | 5 (the wait before a failed webhook call is retried; each later retry doubles it) |
 | `WEATHER` | `on` (set `off` to remove the `weather_forecast` tool) |
 | `WEATHER_BASE_URL` / `WEATHER_GEOCODING_BASE_URL` | `https://api.open-meteo.com/v1/forecast` / `https://geocoding-api.open-meteo.com/v1/search` (point both at a self-hosted Open-Meteo to avoid the public API; `show_map` uses the geocoding URL too) |
 | `MAPS` | `on` (set `off` to remove the `show_map` tool) |
 | `RECIPES` | `on` (set `off` to remove the `show_recipe` tool) |
 | `RECIPE_WIKIPEDIA_URL` / `RECIPE_COMMONS_URL` | `https://en.wikipedia.org/w/api.php` / `https://commons.wikimedia.org/w/api.php` (the MediaWiki APIs `show_recipe` searches for a photo of the dish) |
 | `TRANSIT` | `on` (set `off` to remove the `plan_trip` tool) |
+| `ASK_USER` | `on` (set `off` to remove the `ask_user` tool, so the model never stops a run to ask a question) |
 | `TRANSIT_BASE_URL` / `DRIVING_BASE_URL` | `https://api.transitous.org` / `https://router.project-osrm.org` (the roots of the MOTIS trip planner and the OSRM router `plan_trip` uses; point them at your own instances for anything beyond light use) |
+| `STOCKS` | `on` (set `off` to remove the `compare_stocks` tool) |
+| `STOCKS_CHART_URL` / `STOCKS_NEWS_URL` | `https://query1.finance.yahoo.com/v8/finance/chart` / `https://query1.finance.yahoo.com/v1/finance/search` (Yahoo Finance's chart API, which `compare_stocks` reads daily prices from, and its search API, which it reads headlines from) |
 | `GMAIL` / `CALENDAR` | `off` (set `on` to offer the Gmail or Calendar tools; see [Gmail and Calendar](#gmail-and-calendar)) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty (required when `GMAIL` or `CALENDAR` is on) |
 | `GOOGLE_REFRESH_TOKEN` | empty (required when `GMAIL` or `CALENDAR` is on, unless the account is connected from the chat UI; see [Integrations](#integrations)) |
@@ -295,6 +406,7 @@ Settings come from environment variables. The important ones:
 | `CEDAR_EXIT_ON_STDIN_EOF` | `off` (set `1` to shut down when stdin reaches end-of-file: a launcher holding a pipe to cedar then takes it down with itself) |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
+| `TOOLS_DIR` | empty (a directory of [personal tools in Python](#personal-tools-in-python), mounted read-only into every sandbox) |
 | `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
 | `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the browser needs internet access, so `none` is refused) |
 | `BROWSER_MEMORY` / `BROWSER_CPUS` | `1g` / `1` |
@@ -317,12 +429,15 @@ Settings come from environment variables. The important ones:
 | `show_map` | Shows the user a map in the chat, with a numbered pin for each place. Takes `markers` (1–25 objects, each with a `location` such as `Berlin` or `Paris, France`, or `latitude` and `longitude`, and an optional `label`) and an optional `title`. Names are looked up with Open-Meteo's geocoding API, which knows cities, towns, and regions but not street addresses or businesses. Returns JSON with the coordinates used; names that could not be found are listed under `not_found`, and a call where none are found is an error. The chat interfaces draw the JSON as a map ([chat/README.md](chat/README.md)); other clients just get the JSON. Unless `MAPS=off`. |
 | `show_recipe` | Shows the user a recipe in the chat: a photo of the dish, the times and servings, the ingredients as a checklist, and the steps as a timeline. Takes `title`, `ingredients` (1–60, each `{quantity?, item}` or a string), `steps` (1–40, each `{title?, text, duration?}` or a string), and optional `description`, `servings`, `prep_time`, `cook_time`, `total_time`, `tips`, and `image_query` (what to search for the photo; defaults to the title). A photo is always looked up: the lead image of the best matching Wikipedia article, else the best matching bitmap on Wikimedia Commons. Returns the checked recipe as JSON with an `image` (`url`, `page_url`, `title`, `source`), or an `image_note` saying why there is none; a missing photo never fails the call. The system prompt asks the model to use it whenever its answer is a recipe. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Unless `RECIPES=off`. |
 | `plan_trip` | Answers "how do I get there?" and "should I drive, take transit, or a rideshare?". Takes `from` and `to` (each an address, stop, or place name as a string or `{"location"}`, or `{"latitude", "longitude"}`, with an optional `label`), optionally `depart_at` or `arrive_by` (ISO 8601 with a UTC offset; defaults to now), `has_car` (default `true`), and `title`. Looks the places up and asks a [MOTIS](https://github.com/motis-project/motis) trip planner (by default the free, community-run [Transitous](https://transitous.org)) for up to three transit itineraries and the direct walk, and an [OSRM](https://project-osrm.org) router for the drive, at the same time. Returns JSON with each option's duration, times, transfers, walking time, the lines ridden (name, headsign, color, stops), driving distance, a rideshare fare range estimated from the drive at typical US rates (there is no rideshare API), the routes as encoded polylines, and a `recommendation` with its reason: a walk of up to 20 minutes, else transit when it is within about 1.5× the drive plus parking with at most two transfers, else the car (or a rideshare when `has_car` is `false`). A service that fails or finds nothing is listed under `unavailable` with the reason; it is an error only if no option is left. The chat interfaces draw the JSON as a trip card with a route map ([chat/README.md](chat/README.md)). Unless `TRANSIT=off`. |
+| `compare_stocks` | Tracks and compares stocks, ETFs, and indices. Takes `symbols` (1–6 Yahoo Finance tickers such as `AAPL`, `BRK-B`, `SAP.DE`, `^GSPC`, `BTC-USD`), optional `benchmark` (an index to compare against, default `^GSPC`, or `none`), `range` (the period the chart opens on: `1mo`, `3mo`, `6mo`, `1y` (default), `2y`, `5y`), and `news_count` (headlines per symbol, 0–8, default 4). Reads at least a year of daily prices per symbol and the benchmark from Yahoo Finance's chart API and the headlines from its search API, all at once. Returns JSON with each symbol's quote and day's move, 52-week and day ranges, returns over 1 week to 1 year and year to date, indicators (50- and 200-day averages, 14-day RSI, annualized volatility, the past year's maximum drawdown, distance from the 52-week high, beta and 6-month performance against the benchmark), the closes for the chart (thinned to 300 points), and a `rating`: six factors (long-term trend, momentum, performance against the benchmark, RSI, distance from the high, volatility) each score −2 to +2 with a sentence saying why, and their sum makes the call (`buy` at +3 or more, `sell` at −3 or less, else `hold`, with a lean at ±2), with a confidence, a summary, and what would change the view. Headlines several symbols share are listed once. A symbol that can't be found is listed under `unavailable`; it is an error only if none is found, and failing news never fails the call. The rating reads price history only, so the description asks the model to give its own call afterwards, weighing the headlines, and to say it is not financial advice. The chat interfaces draw the JSON as a card with a chart ([chat/README.md](chat/README.md)). Unless `STOCKS=off`. |
+| `ask_user` | Asks the user clarifying questions when a request is ambiguous and the answer would change what the agent does. Takes `questions` (1–4 objects, each with a `question`, an optional short `header`, up to 8 `options` with a `label` and optional `description`, given as 2 or more or left out for an open question, and `multi_select` to let several options be chosen). An "Other" option is dropped, since the user can always answer in their own words. The run then ends as `completed` with `stop_reason: "ask_user"` and the questions as its `final_text`; the tool result holds them as JSON, which the chat interfaces draw as a form (radio buttons, or checkboxes with `multi_select`, plus a free-form answer). The answer is the prompt of the next run, started with `parent_id`. Unless `ASK_USER=off`. |
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
+| personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Run in the sandbox like `run_python`, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
 `writes` in `GET /v1/tools` marks Gmail and Calendar tools whose names say they send, create, change, or delete something, so clients can ask before switching them on.
 
-`web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and `show_recipe` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
+`web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `show_recipe`, `plan_trip`, and `compare_stocks` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
 
 `weather_forecast` talks only to the two Open-Meteo endpoints in the settings above, never to a URL the model picks, so it needs no address checks. A rate-limited request is retried once. Open-Meteo's public API is free for non-commercial use only; for commercial use, run your own instance or buy their commercial plan and set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to it. The forecast ends with Open-Meteo's CC BY 4.0 attribution line so the model can pass it on.
 
@@ -448,6 +563,8 @@ setting for the model server: a fresh cedar has no model, says so at startup and
   levels; without one the default level is sent, and without that nothing is. DeepSeek V4 on vLLM
   takes `none`, `low`, `high`, `xhigh` and `max`; OpenAI-style servers take `none`, `minimal`,
   `low`, `medium` and `high`. An entry with no levels refuses any `reasoning`;
+- `price`: `{"input_usd_per_m", "output_usd_per_m"}`, what the model costs in US dollars per
+  million tokens; with it, each `usage` event carries `cost_usd`. None unless set;
 - `is_default`: the entry a run gets when it names no model. The first entry registered is the
   default; removing the default hands it to the first remaining entry.
 
@@ -483,9 +600,82 @@ rebuilds the tool set at once: the next run sees the change, runs already going 
 started with. A value set in the environment always wins; the API reports it as `"source": "env"`
 and refuses to change it.
 
+## Personal tools in Python
+
+Tools can be added without touching the Rust code: point `TOOLS_DIR` at a directory and put one
+folder per tool in it. The folder's name is the tool's name (lowercase letters, digits, and
+underscores, at most 64 characters, and not the name of a built-in tool or group). Each folder
+holds a manifest and a script:
+
+```
+~/.cedar/tools/              # TOOLS_DIR
+├── csv_summary/
+│   ├── tool.json
+│   └── tool.py
+└── word_count/
+    ├── tool.json
+    └── tool.py
+```
+
+`tool.json` is what the model is told about the tool:
+
+```json
+{
+  "description": "Count the lines, words, and characters of a text file in the workspace.",
+  "input_schema": {
+    "type": "object",
+    "properties": { "path": { "type": "string", "description": "The file, relative to /workspace." } },
+    "required": ["path"]
+  }
+}
+```
+
+`description` is required. `input_schema` is a JSON Schema for an object and defaults to one with
+no properties. `entry` names the script to run when it isn't `tool.py` (a file name in the
+folder), and `timeout_secs` replaces `TOOL_TIMEOUT_SECS` for this tool (at most 600). A `name`,
+if given, must match the folder.
+
+The script gets the call's input as JSON on stdin and runs with `/workspace` as the working
+directory (and on the import path, like `run_python`). Whatever it prints is the tool result, and
+the workspace files it created or modified are listed after it, the way `bash` and `run_python`
+report theirs. A non-zero exit status makes the call a tool error carrying the script's stderr
+(or stdout when stderr is empty), which the model sees with `is_error: true` and can recover from:
+
+```python
+#!/usr/bin/env python3
+import json, sys
+
+args = json.load(sys.stdin)
+try:
+    text = open(args["path"], encoding="utf-8", errors="replace").read()
+except OSError as e:
+    sys.exit(str(e))
+print(json.dumps({"lines": text.count("\n"), "words": len(text.split()), "characters": len(text)}))
+```
+
+[examples/tools](examples/tools) holds this tool and `csv_summary`; `TOOLS_DIR=examples/tools`
+tries them out.
+
+The directory is mounted read-only at `/opt/cedar/tools` in every sandbox, so a personal tool
+runs exactly where the agent's own code runs: as the sandbox user, offline unless
+`SANDBOX_NETWORK` says otherwise, under the run's memory, CPU, and time limits, and unable to
+change the tools themselves. It can use the standard library and whatever the sandbox image
+ships (matplotlib, pypdf, openpyxl, python-docx, python-pptx, pillow); for anything else, add the
+package to `sandbox/Dockerfile` and rebuild the image, or set `SANDBOX_NETWORK=bridge` and have
+the script `pip install` it (installs land in the workspace and persist for continuations). Since
+`TOOLS_DIR` is bind-mounted by Docker, it must be a path the Docker daemon can see; with a remote
+daemon, that is a path on the daemon's host. A relative path is resolved against the directory
+cedar starts in.
+
+The manifests are read when the tool set is built: at startup, and again whenever a credential is
+saved or removed through the admin API. A folder whose manifest or script can't be used is logged
+with the reason (`personal tool left out`) and skipped, so one broken tool doesn't stop the rest.
+The tools form the `custom` group of `GET /v1/tools` ("Personal tools" in the chat's settings),
+which a run's `tools` can switch on or off like any other, by the group or by single names.
+
 ## Adding a tool
 
-A tool is a name, a description, a JSON schema for its input, and an async function. Implement the `Tool` trait in `src/tools/` and add it to `ToolSet::standard`.
+For a tool in Python that runs in the sandbox, see [Personal tools in Python](#personal-tools-in-python); no build is needed. A built-in tool is a name, a description, a JSON schema for its input, and an async function. Implement the `Tool` trait in `src/tools/` and add it to `ToolSet::standard`.
 
 ```rust
 struct Now;
@@ -518,9 +708,11 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - Model servers' API keys and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
 - With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. With `plan_trip` enabled, a trip's start, destination, and time go to the transit planner and the driving router (Transitous and the OSRM demo server by default). Set `WEATHER=off`, `MAPS=off`, and `TRANSIT=off` if that is not acceptable.
 - With `show_recipe` enabled, the names of the dishes the model writes recipes for leave your machine for Wikipedia and Wikimedia Commons. Set `RECIPES=off` if that is not acceptable.
+- With `compare_stocks` enabled, the ticker symbols the model looks up leave your machine for Yahoo Finance. Its chart and search APIs are public but unofficial: they need no key, but Yahoo may change or rate-limit them, and its terms limit them to personal use. Set `STOCKS=off` if that is not acceptable.
 - With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
+- A run's `callback_url` is a request from the cedar host too, to a URL the API client chooses. It carries only the run's id and final status, never its text, and refuses non-public addresses unless `WEBHOOK_ALLOW_PRIVATE` is on. A `callback_secret` is stored in cedar's database as given (it signs the calls; it is not a credential for anything else) and never returned.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
@@ -531,7 +723,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 ## Operations
 
 - **Restarts:** SQLite file plus in-process queue means one instance only. Runs that were queued or running when the process stopped cannot be resumed, so at startup they are marked `failed` and leftover containers are removed. Workspace volumes that still belong to a run in the database are kept until `WORKSPACE_TTL_SECS` expires; any other workspace volume is removed.
-- **Shutdown:** on SIGTERM or Ctrl-C cedar stops accepting connections, cancels active runs (they end as `cancelled` with reason `server shutting down`), and waits up to 10 seconds for them to record their final state.
+- **Shutdown:** on SIGTERM or Ctrl-C cedar stops accepting connections, cancels active runs (they end as `cancelled` with reason `server shutting down`), waits up to 10 seconds for them to record their final state, and gives their webhooks two seconds to go out. What isn't delivered by then is sent at the next start.
 - **API errors:** requests to the LLM server time out and retry on 429, 5xx, and connection errors (up to 4 attempts, exponential backoff, honoring `retry-after`). Other 4xx errors fail the run immediately with the API's message.
 - **Logs:** `RUST_LOG` controls verbosity (default `info`). Prompts and keys are not logged.
 

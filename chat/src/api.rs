@@ -1,12 +1,18 @@
 //! The HTTP API and the embedded web UI.
 
 use crate::cedar::{self, Attachment, CedarClient, RunOptions};
+use crate::channels::{self, Method, Scope, Security};
 use crate::config::Config;
 use crate::error::AppError;
 use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
-use crate::store::{AttachmentInfo, Conversation, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
+use crate::notify;
+use crate::store::{AttachmentInfo, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
+use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use chrono::Utc;
+use futures_util::Stream;
+use std::convert::Infallible;
+use tokio::sync::broadcast;
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query, Request, State};
 use axum::http::header::{self, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE};
@@ -34,6 +40,8 @@ const MAX_SCHEDULE_RUNS: u32 = 100;
 const MAX_TOOLS: usize = 100;
 const MAX_SYSTEM_BYTES: usize = 20_000;
 const MAX_TURNS: u32 = 1000;
+/// How many finished responses the inbox lists.
+const MAX_INBOX: u32 = 50;
 /// Attachments, mirroring cedar's limits: how many per message, how big each and all together
 /// (decoded), and the body limit that leaves room for their base64 on the messages route only.
 const MAX_ATTACHMENTS: usize = 10;
@@ -60,9 +68,15 @@ const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
 /// Draws the `show_recipe` tool's result as a recipe card with the steps as a timeline; both UIs load it.
 const RECIPE_VIEW_JS: &str = include_str!("../static/recipe-view.js");
 const RECIPE_VIEW_CSS: &str = include_str!("../static/recipe-view.css");
+/// Draws the `ask_user` tool's result as a form with choices and a free-form answer; both UIs load it.
+const CLARIFY_VIEW_JS: &str = include_str!("../static/clarify-view.js");
+const CLARIFY_VIEW_CSS: &str = include_str!("../static/clarify-view.css");
 /// Draws the `plan_trip` tool's result as a route map with the options; it needs the map view.
 const TRANSIT_VIEW_JS: &str = include_str!("../static/transit-view.js");
 const TRANSIT_VIEW_CSS: &str = include_str!("../static/transit-view.css");
+/// Draws the `compare_stocks` tool's result as quotes, a chart, the ratings and the news; both UIs load it.
+const STOCK_VIEW_JS: &str = include_str!("../static/stock-view.js");
+const STOCK_VIEW_CSS: &str = include_str!("../static/stock-view.css");
 /// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
 const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
@@ -74,10 +88,38 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
+/// The inbox of finished responses, the unread count in the title, the Notifications settings and
+/// the push subscription; both UIs load it.
+const NOTIFY_JS: &str = include_str!("../static/notify.js");
+const NOTIFY_CSS: &str = include_str!("../static/notify.css");
+/// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
+const SW_JS: &str = include_str!("../static/sw.js");
+/// The plan, approval cards, folded reasoning, sources and citations; v3 and v4 load it.
+const TRUST_VIEW_JS: &str = include_str!("../static/trust-view.js");
+const TRUST_VIEW_CSS: &str = include_str!("../static/trust-view.css");
 /// Leaflet 1.9.4 (BSD-2-Clause, see `static/vendor/leaflet/LICENSE`), served from here so no
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
 const LEAFLET_CSS: &str = include_str!("../static/vendor/leaflet/leaflet.css");
+/// The v3 and v4 typefaces (SIL Open Font License 1.1, see `static/fonts/OFL-*.txt`), served from
+/// here so the pages load no fonts from another host. `fonts.css` holds their `@font-face` rules.
+const FONTS_CSS: &str = include_str!("../static/fonts/fonts.css");
+const FONTS: &[(&str, &[u8])] = &[
+    ("figtree-latin-ext.woff2", include_bytes!("../static/fonts/figtree-latin-ext.woff2")),
+    ("figtree-latin.woff2", include_bytes!("../static/fonts/figtree-latin.woff2")),
+    ("instrument-sans-latin-ext.woff2", include_bytes!("../static/fonts/instrument-sans-latin-ext.woff2")),
+    ("instrument-sans-latin.woff2", include_bytes!("../static/fonts/instrument-sans-latin.woff2")),
+    ("instrument-serif-italic-latin-ext.woff2", include_bytes!("../static/fonts/instrument-serif-italic-latin-ext.woff2")),
+    ("instrument-serif-italic-latin.woff2", include_bytes!("../static/fonts/instrument-serif-italic-latin.woff2")),
+    ("instrument-serif-latin-ext.woff2", include_bytes!("../static/fonts/instrument-serif-latin-ext.woff2")),
+    ("instrument-serif-latin.woff2", include_bytes!("../static/fonts/instrument-serif-latin.woff2")),
+    ("jetbrains-mono-latin-ext.woff2", include_bytes!("../static/fonts/jetbrains-mono-latin-ext.woff2")),
+    ("jetbrains-mono-latin.woff2", include_bytes!("../static/fonts/jetbrains-mono-latin.woff2")),
+    ("lora-italic-latin-ext.woff2", include_bytes!("../static/fonts/lora-italic-latin-ext.woff2")),
+    ("lora-italic-latin.woff2", include_bytes!("../static/fonts/lora-italic-latin.woff2")),
+    ("lora-latin-ext.woff2", include_bytes!("../static/fonts/lora-latin-ext.woff2")),
+    ("lora-latin.woff2", include_bytes!("../static/fonts/lora-latin.woff2")),
+];
 /// The logo and icons, shared with the README and the landing page in `docs/assets`. The mark has a
 /// light and a dark variant; the pages pick one with `prefers-color-scheme`.
 const MARK_SVG: &str = include_str!("../../docs/assets/cedar-mark.svg");
@@ -87,7 +129,7 @@ const FAVICON_32_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-32.png")
 const FAVICON_16_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-16.png");
 const APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../docs/assets/apple-touch-icon.png");
 
-/// One of the two front ends, served under its own prefix.
+/// One of the front ends, served under its own prefix.
 struct Ui {
     prefix: &'static str,
     index: &'static str,
@@ -111,6 +153,22 @@ const V2: Ui = Ui {
     css: include_str!("../static/v2/style.css"),
 };
 
+/// "Ledger": the v2 split with the plan, approvals, citations and a sources rail.
+const V3: Ui = Ui {
+    prefix: "/v3",
+    index: include_str!("../static/v3/index.html"),
+    js: include_str!("../static/v3/app.js"),
+    css: include_str!("../static/v3/style.css"),
+};
+
+/// "Dossier": one column; each turn is a brief of plan, work, result and sources.
+const V4: Ui = Ui {
+    prefix: "/v4",
+    index: include_str!("../static/v4/index.html"),
+    js: include_str!("../static/v4/app.js"),
+    css: include_str!("../static/v4/style.css"),
+};
+
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
@@ -122,6 +180,11 @@ pub struct AppState {
     admin_digest: Option<[u8; 32]>,
     /// Serializes sending messages, so two tabs can't start overlapping runs in one conversation.
     send_lock: Arc<Mutex<()>>,
+    /// Live notices for the open tabs (`GET /api/events`): a finished response, as `notify` learns
+    /// of one from cedar.
+    pub notices: broadcast::Sender<Value>,
+    /// For Pushover and the push services (`channels`).
+    pub http: reqwest::Client,
 }
 
 impl AppState {
@@ -129,7 +192,9 @@ impl AppState {
         let cedar = CedarClient::new(&cfg.cedar_url, &cfg.cedar_api_key)?;
         let token_digest = cfg.access_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
         let admin_digest = cfg.admin_token.as_deref().map(|t| Sha256::digest(t.as_bytes()).into());
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default() })
+        let (notices, _) = broadcast::channel(notify::NOTICE_BUFFER);
+        let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, http })
     }
 }
 
@@ -141,10 +206,19 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/messages", post(send_message).layer(DefaultBodyLimit::max(MAX_MESSAGE_BODY_BYTES)))
         .route("/conversations/{id}/tools", put(set_conversation_tools))
         .route("/conversations/{id}/compact", post(compact_conversation))
+        .route("/conversations/{id}/seen", post(mark_seen))
+        .route("/inbox", get(inbox))
+        .route("/events", get(notice_events))
+        .route("/notifications", get(get_notifications).put(put_notifications))
+        .route("/notifications/test", post(test_notification))
+        .route("/notifications/push/subscriptions", post(subscribe_push).delete(unsubscribe_push))
+        .route("/notifications/push/subscriptions/{id}", axum::routing::delete(delete_push_subscription))
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
         .route("/turns/{id}/cancel", post(cancel_turn))
+        .route("/turns/{id}/plan", post(approve_plan))
+        .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
@@ -174,8 +248,12 @@ pub fn router(state: AppState) -> Router {
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
         .route("/recipe-view.js", get(|| async { asset(JS, RECIPE_VIEW_JS) }))
         .route("/recipe-view.css", get(|| async { asset(CSS, RECIPE_VIEW_CSS) }))
+        .route("/clarify-view.js", get(|| async { asset(JS, CLARIFY_VIEW_JS) }))
+        .route("/clarify-view.css", get(|| async { asset(CSS, CLARIFY_VIEW_CSS) }))
         .route("/transit-view.js", get(|| async { asset(JS, TRANSIT_VIEW_JS) }))
         .route("/transit-view.css", get(|| async { asset(CSS, TRANSIT_VIEW_CSS) }))
+        .route("/stock-view.js", get(|| async { asset(JS, STOCK_VIEW_JS) }))
+        .route("/stock-view.css", get(|| async { asset(CSS, STOCK_VIEW_CSS) }))
         .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
@@ -184,6 +262,11 @@ pub fn router(state: AppState) -> Router {
         .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
+        .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
+        .route("/notify.css", get(|| async { asset(CSS, NOTIFY_CSS) }))
+        .route("/sw.js", get(|| async { asset(JS, SW_JS) }))
+        .route("/trust-view.js", get(|| async { asset(JS, TRUST_VIEW_JS) }))
+        .route("/trust-view.css", get(|| async { asset(CSS, TRUST_VIEW_CSS) }))
         .route("/vendor/leaflet/leaflet.js", get(|| async { asset(JS, LEAFLET_JS) }))
         .route("/vendor/leaflet/leaflet.css", get(|| async { asset(CSS, LEAFLET_CSS) }))
         .route("/assets/cedar-mark.svg", get(|| async { asset(SVG, MARK_SVG) }))
@@ -192,8 +275,12 @@ pub fn router(state: AppState) -> Router {
         .route("/assets/favicon-32.png", get(|| async { asset(PNG, FAVICON_32_PNG) }))
         .route("/assets/favicon-16.png", get(|| async { asset(PNG, FAVICON_16_PNG) }))
         .route("/assets/apple-touch-icon.png", get(|| async { asset(PNG, APPLE_TOUCH_ICON_PNG) }))
+        .route("/fonts/fonts.css", get(|| async { asset(CSS, FONTS_CSS) }))
         .route("/healthz", get(|| async { "ok" }));
-    with_ui(with_ui(pages, V1), V2)
+    let pages = FONTS.iter().fold(pages, |pages, &(name, bytes)| {
+        pages.route(&format!("/fonts/{name}"), get(move || async move { asset(WOFF2, bytes) }))
+    });
+    with_ui(with_ui(with_ui(with_ui(pages, V1), V2), V3), V4)
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -206,6 +293,7 @@ const JS: &str = "text/javascript; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
+const WOFF2: &str = "font/woff2";
 
 /// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.
 fn with_ui(router: Router<AppState>, ui: Ui) -> Router<AppState> {
@@ -261,18 +349,19 @@ async fn find_turn(state: &AppState, raw_id: &str) -> Result<Turn, AppError> {
 }
 
 /// Bring a turn's status up to date with its cedar run, until the run is over.
-async fn refresh(state: &AppState, turn: Turn) -> Result<Turn, AppError> {
+pub(crate) async fn refresh(state: &AppState, turn: Turn) -> Result<Turn, AppError> {
     if cedar::is_terminal(&turn.status) {
         return Ok(turn);
     }
-    let (status, final_text, error) = match state.cedar.get_run(turn.run_id).await? {
-        Some(run) => (run.status, run.final_text, run.error),
-        None => ("failed".to_string(), None, Some("the run no longer exists on the cedar server".to_string())),
+    let (status, final_text, error, stop_reason) = match state.cedar.get_run(turn.run_id).await? {
+        Some(run) => (run.status, run.final_text, run.error, run.stop_reason),
+        None => ("failed".to_string(), None, Some("the run no longer exists on the cedar server".to_string()), None),
     };
     if status != turn.status {
-        state.store.update_turn(turn.id, &status, final_text.as_deref(), error.as_deref()).await?;
+        state.store.update_turn(turn.id, &status, final_text.as_deref(), error.as_deref(), stop_reason.as_deref()).await?;
     }
-    Ok(Turn { status, final_text, error, ..turn })
+    let finished_at = cedar::is_terminal(&status).then(|| turn.finished_at.unwrap_or_else(Utc::now));
+    Ok(Turn { status, final_text, error, stop_reason, finished_at, ..turn })
 }
 
 /// Refresh every unfinished turn. If cedar can't be reached, keep the last known state.
@@ -376,6 +465,255 @@ async fn delete_conversation(State(state): State<AppState>, Path(id): Path<Strin
     }
     state.store.delete_conversation(conversation.id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The conversation has been looked at: its finished responses leave the inbox. Unfinished
+/// turns are refreshed first, so a response the page just watched end counts as seen.
+async fn mark_seen(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
+    let conversation = find_conversation(&state, &id).await?;
+    refresh_all(&state, state.store.list_turns(conversation.id).await?).await;
+    state.store.mark_seen(conversation.id).await?;
+    Ok(Json(state.store.get_conversation(conversation.id).await?.unwrap_or(conversation)))
+}
+
+#[derive(Serialize)]
+struct Inbox {
+    items: Vec<InboxItem>,
+    /// How many there are in all (the list is capped).
+    unread: i64,
+}
+
+/// Finished responses nobody has looked at, newest first, scheduled runs included.
+async fn inbox(State(state): State<AppState>) -> Result<Json<Inbox>, AppError> {
+    Ok(Json(Inbox { items: state.store.inbox(MAX_INBOX).await?, unread: state.store.count_unseen().await? }))
+}
+
+/// Server-Sent Events for the page: a `turn.finished` event for every response that ends, as
+/// cedar tells this service. It has no replay; the page reads `/api/inbox` when it connects.
+async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    let rx = state.notices.subscribe();
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(notice) => {
+                    let event = SseEvent::default()
+                        .event(notice["type"].as_str().unwrap_or("notice"))
+                        .data(notice.to_string());
+                    return Some((Ok(event), rx));
+                }
+                // Behind: the page re-reads the inbox on the next notice; keep going.
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+}
+
+// -- notifications out of the app (channels) ------------------------------------------------
+
+/// The settings as the page sees them (no secrets), with the subscribed browsers.
+async fn notification_status(state: &AppState) -> Result<Value, AppError> {
+    let settings = state.store.notification_settings().await?;
+    let subscriptions = state.store.push_subscriptions().await?;
+    Ok(settings.status(&subscriptions))
+}
+
+/// The page subscribes a browser with the server's public key, so the keys are made here.
+async fn get_notifications(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    channels::ensure_vapid(&state.store).await?;
+    Ok(Json(notification_status(&state).await?))
+}
+
+/// Any subset of the settings. A secret left out keeps its value; an empty string clears it.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct NotificationsBody {
+    /// For conversations, and for scheduled agents without a method of their own.
+    default_method: Option<String>,
+    scope: Option<String>,
+    pushover: Option<PushoverBody>,
+    email: Option<EmailBody>,
+    /// The contact the push services may write to about this server (an email address).
+    contact: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PushoverBody {
+    token: Option<String>,
+    user: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct EmailBody {
+    host: Option<String>,
+    port: Option<u16>,
+    security: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+}
+
+const MAX_SETTING_CHARS: usize = 500;
+
+/// A trimmed field; too long is refused.
+fn short(what: &str, value: String) -> Result<String, AppError> {
+    let value = value.trim().to_string();
+    if value.chars().count() > MAX_SETTING_CHARS {
+        return Err(AppError::BadRequest(format!("{what} is longer than {MAX_SETTING_CHARS} characters")));
+    }
+    Ok(value)
+}
+
+async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson<NotificationsBody>) -> Result<Json<Value>, AppError> {
+    let mut settings = state.store.notification_settings().await?;
+    if let Some(m) = &body.default_method {
+        settings.default_method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("default_method must be none, browser, pushover or email, not {m:?}")))?;
+    }
+    if let Some(s) = &body.scope {
+        settings.scope = Scope::parse(s).ok_or_else(|| AppError::BadRequest(format!("scope must be attention or all, not {s:?}")))?;
+    }
+    if let Some(p) = body.pushover {
+        if let Some(token) = p.token {
+            settings.pushover.token = short("the Pushover token", token)?;
+        }
+        if let Some(user) = p.user {
+            settings.pushover.user = short("the Pushover user key", user)?;
+        }
+    }
+    if let Some(e) = body.email {
+        if let Some(host) = e.host {
+            settings.email.host = short("the SMTP host", host)?;
+        }
+        if let Some(port) = e.port {
+            settings.email.port = port;
+        }
+        if let Some(security) = &e.security {
+            settings.email.security = Security::parse(security).ok_or_else(|| AppError::BadRequest(format!("security must be tls, starttls or none, not {security:?}")))?;
+        }
+        if let Some(username) = e.username {
+            settings.email.username = short("the SMTP user name", username)?;
+        }
+        if let Some(password) = e.password {
+            settings.email.password = short("the SMTP password", password)?;
+        }
+        if let Some(from) = e.from {
+            let from = short("the sender address", from)?;
+            if !from.is_empty() {
+                from.parse::<lettre::message::Mailbox>().map_err(|err| AppError::BadRequest(format!("the sender address is invalid: {err}")))?;
+            }
+            settings.email.from = from;
+        }
+        if let Some(to) = e.to {
+            let to = short("the recipient address", to)?;
+            if !to.is_empty() {
+                to.parse::<lettre::message::Mailbox>().map_err(|err| AppError::BadRequest(format!("the recipient address is invalid: {err}")))?;
+            }
+            settings.email.to = to;
+        }
+    }
+    if let Some(contact) = body.contact {
+        let contact = short("the contact", contact)?;
+        match settings.vapid.as_mut() {
+            Some(v) => v.contact = contact,
+            None if !contact.is_empty() => {
+                // Keys are made when a browser subscribes; keep the contact for then.
+                state.store.set_notification_settings(&settings).await?;
+                settings = channels::ensure_vapid(&state.store).await?;
+                settings.vapid.as_mut().expect("just made").contact = contact;
+            }
+            None => {}
+        }
+    }
+    // The default method must be able to send, so a half-filled form can't silence everything.
+    let subscriptions = state.store.push_subscriptions().await?.len();
+    settings.check(settings.default_method, subscriptions).map_err(|why| AppError::BadRequest(format!("the default method can't send: {why}")))?;
+    state.store.set_notification_settings(&settings).await?;
+    notification_status(&state).await.map(Json)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TestBody {
+    method: String,
+}
+
+/// Send a test message by `method` with the saved settings. The outcome is recorded like a
+/// real delivery and returned: `{ok, detail}`, as a 502 when it failed.
+async fn test_notification(State(state): State<AppState>, ApiJson(body): ApiJson<TestBody>) -> Result<Json<Value>, AppError> {
+    let method = Method::parse(&body.method).ok_or_else(|| AppError::BadRequest(format!("unknown method {:?}", body.method)))?;
+    if method == Method::None {
+        return Err(AppError::BadRequest("pick a method to test".into()));
+    }
+    let settings = state.store.notification_settings().await?;
+    let message = channels::Message {
+        title: "Cedar: test notification".into(),
+        body: "This is how Cedar will tell you when a response finishes while you are away.".into(),
+        url: format!("{}/", state.cfg.public_url),
+        tag: "test".into(),
+    };
+    let outcome = channels::send(&state, &settings, method, &message).await;
+    channels::record(&state.store, method, true, &outcome).await?;
+    match outcome {
+        Ok(detail) => Ok(Json(json!({ "ok": true, "detail": detail }))),
+        Err(detail) => Err(AppError::BadGateway(detail)),
+    }
+}
+
+/// A browser's `PushSubscription`, as `JSON.stringify` gives it.
+#[derive(Deserialize)]
+struct SubscriptionBody {
+    endpoint: String,
+    keys: SubscriptionKeys,
+    #[serde(default)]
+    #[allow(dead_code)]
+    expiration_time: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct SubscriptionKeys {
+    p256dh: String,
+    auth: String,
+}
+
+/// A browser turned push on: keep its subscription. The server's public key is returned with
+/// the settings for the page to subscribe with (`GET /api/notifications` has it too).
+async fn subscribe_push(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<SubscriptionBody>) -> Result<Json<Value>, AppError> {
+    if !(body.endpoint.starts_with("https://") || body.endpoint.starts_with("http://")) || body.endpoint.len() > 2048 {
+        return Err(AppError::BadRequest("the subscription's endpoint must be a URL".into()));
+    }
+    if body.keys.p256dh.is_empty() || body.keys.auth.is_empty() {
+        return Err(AppError::BadRequest("the subscription has no keys".into()));
+    }
+    channels::ensure_vapid(&state.store).await?;
+    let agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(|a| a.chars().take(200).collect::<String>());
+    let sub = state.store.add_push_subscription(&body.endpoint, &body.keys.p256dh, &body.keys.auth, agent.as_deref()).await?;
+    let mut status = notification_status(&state).await?;
+    status["subscription_id"] = json!(sub.id);
+    Ok(Json(status))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnsubscribeBody {
+    endpoint: String,
+}
+
+/// The browser turned push off itself: forget its endpoint.
+async fn unsubscribe_push(State(state): State<AppState>, ApiJson(body): ApiJson<UnsubscribeBody>) -> Result<Json<Value>, AppError> {
+    state.store.delete_push_subscription_by_endpoint(&body.endpoint).await?;
+    notification_status(&state).await.map(Json)
+}
+
+async fn delete_push_subscription(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    let id = parse_id(&id, "subscription not found")?;
+    if !state.store.delete_push_subscription(id).await? {
+        return Err(AppError::NotFound("subscription not found"));
+    }
+    notification_status(&state).await.map(Json)
 }
 
 // -- messages -------------------------------------------------------------------------------
@@ -535,7 +873,13 @@ async fn send_message(
     let turns = settled_turns(&state, &conversation).await?;
     let settings = RunSettings::resolve(&state, &prefs, requested, reasoning, conversation.tools.clone()).await;
     let model = settings.model.as_deref();
-    let options = |parent| RunOptions { attachments: Some(&attachments), ..settings.options(parent) };
+    // Someone is reading along, so the run may ask: agree to its plan, approve a risky call.
+    let options = |parent| RunOptions {
+        attachments: Some(&attachments),
+        plan: Some(settings.plan.as_deref().unwrap_or(DEFAULT_PLAN)),
+        interactive: true,
+        ..settings.options(parent)
+    };
 
     // Continue the previous run, so the agent keeps the whole conversation (tool calls and
     // earlier attachments included) and the files in its sandbox workspace.
@@ -572,7 +916,12 @@ pub struct RunSettings {
     pub max_turns: Option<u32>,
     /// `*` when every tool is meant, so a continuation doesn't keep its parent's narrower choice.
     pub tools: Vec<String>,
+    /// Whether a message's run plans first; only messages use it, not schedules.
+    pub plan: Option<String>,
 }
+
+/// What a message's run does about a plan when Settings doesn't say.
+const DEFAULT_PLAN: &str = "auto";
 
 impl RunSettings {
     /// `model`, `reasoning` and `tools` win over the defaults. A default model that is no longer
@@ -589,7 +938,7 @@ impl RunSettings {
             None => still_registered(state, prefs.model.as_deref()).await,
         };
         let tools = tools.or_else(|| prefs.tools.clone()).unwrap_or_else(|| vec!["*".to_string()]);
-        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools }
+        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools, plan: prefs.plan.clone() }
     }
 
     pub fn options(&self, parent: Option<Uuid>) -> RunOptions<'_> {
@@ -601,6 +950,8 @@ impl RunSettings {
             tools: Some(&self.tools),
             parent,
             attachments: None,
+            plan: None,
+            interactive: false,
         }
     }
 }
@@ -656,11 +1007,16 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
         return Err(AppError::BadRequest(format!("max_turns must be between 1 and {MAX_TURNS}")));
     }
     let (model, _) = clean_model_choice(&state, body.model.as_deref(), None).await?;
+    let plan = body.plan.map(|p| p.trim().to_ascii_lowercase()).filter(|p| !p.is_empty());
+    if plan.as_deref().is_some_and(|p| !matches!(p, "off" | "on" | "auto")) {
+        return Err(AppError::BadRequest("plan must be off, on or auto".into()));
+    }
     let prefs = Preferences {
         tools: clean_tools(&state, body.tools).await?,
         model,
         system,
         max_turns: body.max_turns,
+        plan,
     };
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))
@@ -673,6 +1029,7 @@ struct SettingsBody {
     model: Option<String>,
     system: Option<String>,
     max_turns: Option<u32>,
+    plan: Option<String>,
 }
 
 /// cedar's tool groups, for the Tools settings and the composer's tools menu.
@@ -866,6 +1223,27 @@ struct ScheduleBody {
     /// conversation's own tools, if it has any.
     #[serde(default, deserialize_with = "nullable")]
     tools: Option<Option<Vec<String>>>,
+    /// How a finished run is announced out of the app: a method set up under Settings →
+    /// Notifications (`browser`, `pushover`, `email`), `none`, or `null` for the default method
+    /// there (the default when creating).
+    #[serde(default, deserialize_with = "nullable")]
+    notify: Option<Option<String>>,
+}
+
+/// A schedule's `notify`: a known method that can send right now, or none.
+async fn clean_notify(state: &AppState, notify: Option<String>) -> Result<Option<String>, AppError> {
+    let Some(raw) = notify else { return Ok(None) };
+    let raw = raw.trim().to_ascii_lowercase();
+    if raw.is_empty() || raw == "default" {
+        return Ok(None);
+    }
+    let method = Method::parse(&raw).ok_or_else(|| AppError::BadRequest(format!("notify must be none, browser, pushover, email or null, not {raw:?}")))?;
+    if method != Method::None {
+        let settings = state.store.notification_settings().await?;
+        let subscriptions = state.store.push_subscriptions().await?.len();
+        settings.check(method, subscriptions).map_err(|why| AppError::BadRequest(format!("notify: {why}; set it up under Settings → Notifications first")))?;
+    }
+    Ok(Some(method.as_str().to_string()))
 }
 
 /// Tells an absent field (`None`) from an explicit `null` (`Some(None)`).
@@ -953,6 +1331,7 @@ async fn create_schedule(
             None => None,
         },
     };
+    let notify = clean_notify(&state, body.notify.flatten()).await?;
     let schedule = state
         .store
         .create_schedule(&NewSchedule {
@@ -962,6 +1341,7 @@ async fn create_schedule(
             reasoning: reasoning.as_deref(),
             source_conversation_id: body.conversation_id,
             tools: tools.as_deref(),
+            notify: notify.as_deref(),
             frequency: timing.frequency.as_str(),
             weekday: timing.weekday.map(|d| d.num_days_from_monday() as u8),
             time_of_day: &timing.time.format("%H:%M").to_string(),
@@ -997,6 +1377,9 @@ async fn update_schedule(
     }
     if let Some(tools) = body.tools {
         schedule.tools = clean_tools(&state, tools).await?;
+    }
+    if let Some(notify) = body.notify {
+        schedule.notify = clean_notify(&state, notify).await?;
     }
     let retime = body.frequency.is_some() || body.weekday.is_some() || body.time.is_some() || body.timezone.is_some();
     if retime {
@@ -1117,4 +1500,42 @@ async fn cancel_turn(State(state): State<AppState>, Path(id): Path<String>) -> R
     }
     state.cedar.cancel_run(turn.run_id).await?;
     Ok((StatusCode::ACCEPTED, Json(turn)))
+}
+
+/// Agree to the plan a turn's run is waiting on (`{"steps": [{id, title}, ...]}`); cedar checks
+/// the steps and says whether the run is waiting.
+async fn approve_plan(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<PlanBody>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let turn = find_turn(&state, &id).await?;
+    let answer = state.cedar.answer_plan(turn.run_id, &json!({ "steps": body.steps })).await?;
+    Ok((StatusCode::ACCEPTED, Json(answer)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlanBody {
+    steps: Vec<Value>,
+}
+
+/// Answer an approval a turn's run is waiting on: `allow`, `allow_always` or `deny`.
+async fn decide_approval(
+    State(state): State<AppState>,
+    Path((id, approval_id)): Path<(String, String)>,
+    ApiJson(body): ApiJson<ApprovalBody>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let turn = find_turn(&state, &id).await?;
+    if !matches!(body.decision.as_str(), "allow" | "allow_always" | "deny") {
+        return Err(AppError::BadRequest("decision must be allow, allow_always or deny".into()));
+    }
+    let answer = state.cedar.decide_approval(turn.run_id, &approval_id, &json!({ "decision": body.decision })).await?;
+    Ok((StatusCode::ACCEPTED, Json(answer)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovalBody {
+    decision: String,
 }

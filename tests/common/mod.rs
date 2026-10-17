@@ -103,6 +103,7 @@ pub fn reply(content: Vec<Value>, stop_reason: &str) -> LlmResponse {
             input_tokens: 10,
             output_tokens: 5,
         },
+        reasoning: None,
     }
 }
 
@@ -462,6 +463,7 @@ pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]
             default_reasoning: None,
             multimodal: id == TEST_MODEL,
             is_default: false,
+            price: None,
             position: 0,
             listed_models: None,
             created_at: now,
@@ -533,6 +535,8 @@ impl TestApp {
         )
         .unwrap();
         state.integrations.reload().await.unwrap();
+        // As `main` does: deliver webhooks in the background.
+        state.webhooks.start();
         let router = api::router(state.clone());
         Self {
             state,
@@ -659,8 +663,13 @@ pub struct LiveStream {
 
 impl LiveStream {
     pub async fn open(app: &TestApp, key: &str, id: &str, last_event_id: Option<i64>) -> Self {
+        Self::open_uri(app, key, &format!("/v1/runs/{id}/events"), last_event_id).await
+    }
+
+    /// Any SSE route (`/v1/events` for the key's finished runs).
+    pub async fn open_uri(app: &TestApp, key: &str, uri: &str, last_event_id: Option<i64>) -> Self {
         let mut req = Request::builder()
-            .uri(format!("/v1/runs/{id}/events"))
+            .uri(uri)
             .header("authorization", format!("Bearer {key}"));
         if let Some(n) = last_event_id {
             req = req.header("last-event-id", n.to_string());

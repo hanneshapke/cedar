@@ -1,0 +1,15 @@
+{
+  "description": "Summarize a CSV file in the workspace: the row count and, per column, how many values are filled in, how many are distinct, the min and max of numeric columns, and the most common values of text columns. Use it before writing analysis code, to learn what a file holds.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string", "description": "The CSV file, relative to /workspace." },
+      "max_rows": { "type": "integer", "minimum": 1, "default": 100000,
+                    "description": "Read at most this many data rows." },
+      "top": { "type": "integer", "minimum": 1, "maximum": 20, "default": 3,
+               "description": "How many of the most common values to show for a text column." }
+    },
+    "required": ["path"]
+  },
+  "timeout_secs": 60
+}

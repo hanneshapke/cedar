@@ -206,7 +206,7 @@ fn check_url(url: &Url, allow_private: bool) -> Result<()> {
 
 /// Resolves names with the system resolver and keeps only public addresses, so a hostname that
 /// points at the host itself or the internal network can't be fetched.
-struct PublicOnly;
+pub(crate) struct PublicOnly;
 
 impl Resolve for PublicOnly {
     fn resolve(&self, name: Name) -> Resolving {

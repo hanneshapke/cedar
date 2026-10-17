@@ -78,7 +78,7 @@ async fn a_run_only_gets_and_can_only_call_the_tools_it_selects() {
     let system = requests[0]["system"].as_str().unwrap();
     assert!(system.contains("use weather_forecast"), "{system}");
     assert!(!system.contains("fetch_url") && !system.contains("show_map"));
-    assert!(!system.contains("show_recipe"));
+    assert!(!system.contains("show_recipe") && !system.contains("compare_stocks"));
 
     // The model asked for a tool outside the selection: it is as unknown as a made-up one.
     let result = &requests[1]["messages"].as_array().unwrap().last().unwrap()["content"][0];
@@ -101,7 +101,9 @@ async fn without_a_selection_every_tool_is_offered() {
             "weather_forecast",
             "show_map",
             "show_recipe",
-            "plan_trip"
+            "plan_trip",
+            "compare_stocks",
+            "ask_user"
         ])
     );
 }
@@ -198,9 +200,12 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "maps",
             "recipes",
             "transit",
+            "stocks",
+            "ask_user",
             "browser",
             "gmail",
-            "calendar"
+            "calendar",
+            "custom"
         ]
     );
 
@@ -215,6 +220,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
         group(&catalog, "gmail")["reason"],
         "Turned off on the server (GMAIL=off)"
     );
+    assert_eq!(group(&catalog, "custom")["reason"], "No TOOLS_DIR is set");
     let fetch = group(&catalog, "web_fetch");
     assert_eq!(fetch["available"], true);
     assert_eq!(fetch["tools"][0]["name"], "fetch_url");
@@ -793,7 +799,8 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(
         app.get("/v1/models", KEY_A).await.1["models"][0],
         json!({ "id": "gpu", "label": "GPU box", "model": "m-1", "is_default": true,
-                "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true })
+                "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true,
+                "price": null })
     );
 
     // The next run talks to the server, with its key and the level asked for.

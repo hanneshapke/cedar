@@ -240,6 +240,17 @@ const cedarSettings = (() => {
     turns.value = prefs.max_turns ?? '';
     turns.addEventListener('input', dirty);
     fields.append(field('Max turns per message', turns));
+    const plan = el('select');
+    for (const [value, label] of [['auto', 'For longer requests'], ['on', 'Always'], ['off', 'Never']]) {
+      const o = el('option', '', label);
+      o.value = value;
+      plan.append(o);
+    }
+    plan.value = prefs.plan || 'auto';
+    plan.addEventListener('change', dirty);
+    const planField = field('Plan before starting', plan);
+    planField.append(el('small', 'cedar-set-field-note', 'Cedar proposes its steps first and waits until you start it; you can edit them.'));
+    fields.append(planField);
     // Without a saved prompt the field shows cedar's default text; it is only saved when changed.
     const defaultSystem = defaults?.system ?? '';
     const system = el('textarea');
@@ -270,6 +281,7 @@ const cedarSettings = (() => {
         // The default text is saved as "unset", so the prompt keeps following cedar's SYSTEM_PROMPT.
         system: isDefault() || !system.value.trim() ? null : system.value.trim(),
         max_turns: turns.value ? Number(turns.value) : null,
+        plan: plan.value,
       };
       try {
         prefs = { ...(await deps.api('PUT', '/settings', body)), defaults };

@@ -58,9 +58,10 @@ fn results() -> Value {
     ] } })
 }
 
+/// What the model sees: each result numbered as a source it can cite as [n].
 const FORMATTED: &str =
-    "1. Rust 1.90\n   https://blog.rust-lang.org/1.90 (3 days ago)\n   Release notes\n\n\
-                         2. Rust\n   https://rust-lang.org";
+    "[1] Rust 1.90\n   https://blog.rust-lang.org/1.90 (3 days ago)\n   Release notes\n\n\
+                         [2] Rust\n   https://rust-lang.org";
 
 async fn app_with_search(script: Vec<Step>, url: &str) -> TestApp {
     TestApp::with_env(
@@ -128,7 +129,9 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "weather_forecast",
             "show_map",
             "show_recipe",
-            "plan_trip"
+            "plan_trip",
+            "compare_stocks",
+            "ask_user"
         ]
     );
 
@@ -296,7 +299,9 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
             "weather_forecast",
             "show_map",
             "show_recipe",
-            "plan_trip"
+            "plan_trip",
+            "compare_stocks",
+            "ask_user"
         ]
     );
 }

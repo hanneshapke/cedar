@@ -1,7 +1,10 @@
 //! Service configuration, read from the environment.
 
+use crate::approvals::Rules;
+use crate::models::PlanMode;
 use anyhow::{anyhow, bail, Context, Result};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -19,6 +22,9 @@ pub const DEFAULT_RECIPE_COMMONS_URL: &str = "https://commons.wikimedia.org/w/ap
 pub const DEFAULT_TRANSIT_BASE_URL: &str = "https://api.transitous.org";
 /// The OSRM project's public demo router, for driving routes.
 pub const DEFAULT_DRIVING_BASE_URL: &str = "https://router.project-osrm.org";
+/// Yahoo Finance's chart API (daily prices; the symbol goes under it) and search API (news).
+pub const DEFAULT_STOCKS_CHART_URL: &str = "https://query1.finance.yahoo.com/v8/finance/chart";
+pub const DEFAULT_STOCKS_NEWS_URL: &str = "https://query1.finance.yahoo.com/v1/finance/search";
 pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const DEFAULT_GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 /// What "Connect Google" asks for: the account's address, and what the default tools need.
@@ -49,6 +55,9 @@ pub struct SandboxConfig {
     pub network: String,
     pub memory: String,
     pub cpus: String,
+    /// A directory of personal tools written in Python (`TOOLS_DIR`), mounted read-only into
+    /// every sandbox. See `tools::custom`.
+    pub tools_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -163,6 +172,13 @@ pub struct Config {
     pub transit_base_url: String,
     /// Root of the OSRM router `plan_trip` asks for driving routes.
     pub driving_base_url: String,
+    /// Offer the `compare_stocks` tool (on by default).
+    pub stocks: bool,
+    /// The chart API `compare_stocks` reads prices from, and the search API it reads news from.
+    pub stocks_chart_url: String,
+    pub stocks_news_url: String,
+    /// Offer the `ask_user` tool (on by default), which ends a run with clarifying questions.
+    pub ask_user: bool,
     /// The Google account the Gmail and Calendar tools act for. Set when either is on.
     pub google_oauth: Option<GoogleClientConfig>,
     /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
@@ -193,9 +209,32 @@ pub struct Config {
     pub pdf_preview_pages: usize,
     /// How long a workspace is kept after its last run ends, so a continuation can pick it up.
     pub workspace_ttl: Duration,
+    /// Let a run's `callback_url` point at loopback, private and link-local addresses. Off by
+    /// default, since the webhook calls come from the cedar host.
+    pub webhook_allow_private: bool,
+    /// The wait before the first retry of a failed webhook call; each later one doubles it.
+    pub webhook_retry: Duration,
+    /// Whether a run that doesn't say plans before it starts (`PLAN`: off, on, auto).
+    pub plan: PlanMode,
+    /// Which tool calls wait for approval in interactive runs (`TOOL_APPROVALS`).
+    pub tool_approvals: Rules,
+    /// How long a run waits for its plan to be agreed or a call to be approved before it goes on
+    /// without (the plan as proposed; the call not made). The wait doesn't count toward
+    /// `run_timeout`.
+    pub approval_timeout: Duration,
 
     pub sandbox: SandboxConfig,
     pub browser: BrowserConfig,
+}
+
+/// Docker wants an absolute host path for a bind mount, so a relative `TOOLS_DIR` is resolved
+/// against the working directory cedar started in.
+fn absolute(p: PathBuf) -> PathBuf {
+    if p.is_absolute() {
+        p
+    } else {
+        std::env::current_dir().map(|d| d.join(&p)).unwrap_or(p)
+    }
 }
 
 impl Config {
@@ -376,6 +415,12 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_TRANSIT_BASE_URL.into()),
             driving_base_url: get("DRIVING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_DRIVING_BASE_URL.into()),
+            stocks: flag("STOCKS", true)?,
+            stocks_chart_url: get("STOCKS_CHART_URL")
+                .unwrap_or_else(|| DEFAULT_STOCKS_CHART_URL.into()),
+            stocks_news_url: get("STOCKS_NEWS_URL")
+                .unwrap_or_else(|| DEFAULT_STOCKS_NEWS_URL.into()),
+            ask_user: flag("ASK_USER", true)?,
             google_oauth,
             google_apis,
             mcp_servers,
@@ -422,6 +467,23 @@ impl Config {
                 get("WORKSPACE_TTL_SECS"),
                 24 * 3600,
             )?),
+            webhook_allow_private: flag("WEBHOOK_ALLOW_PRIVATE", false)?,
+            webhook_retry: Duration::from_secs(parse(
+                "WEBHOOK_RETRY_SECS",
+                get("WEBHOOK_RETRY_SECS"),
+                5,
+            )?),
+            plan: match get("PLAN") {
+                None => PlanMode::Off,
+                Some(v) => PlanMode::parse(&v)
+                    .ok_or_else(|| anyhow!("invalid PLAN={v:?}: use off, on or auto"))?,
+            },
+            tool_approvals: Rules::parse(&get("TOOL_APPROVALS").unwrap_or_default())?,
+            approval_timeout: Duration::from_secs(parse(
+                "APPROVAL_TIMEOUT_SECS",
+                get("APPROVAL_TIMEOUT_SECS"),
+                300,
+            )?),
 
             sandbox: SandboxConfig {
                 docker_bin: docker_bin.clone(),
@@ -429,6 +491,7 @@ impl Config {
                 network: get("SANDBOX_NETWORK").unwrap_or_else(|| "none".into()),
                 memory: get("SANDBOX_MEMORY").unwrap_or_else(|| "512m".into()),
                 cpus: get("SANDBOX_CPUS").unwrap_or_else(|| "1".into()),
+                tools_dir: get("TOOLS_DIR").map(|d| absolute(PathBuf::from(d))),
             },
             browser: BrowserConfig {
                 enabled: flag("BROWSER", false)?,
@@ -458,6 +521,9 @@ impl Config {
         }
         if self.tool_timeout.is_zero() {
             bail!("TOOL_TIMEOUT_SECS must be at least 1");
+        }
+        if self.approval_timeout.is_zero() {
+            bail!("APPROVAL_TIMEOUT_SECS must be at least 1");
         }
         if self.browser.enabled && self.browser.network == "none" {
             bail!("BROWSER_NETWORK=none leaves the browser without internet access; use a network that has it");
@@ -581,6 +647,51 @@ mod tests {
         let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("TRANSIT", "maybe")]))
             .unwrap_err();
         assert!(err.to_string().contains("TRANSIT"), "{err}");
+    }
+
+    #[test]
+    fn stocks_are_on_by_default_and_their_apis_can_be_moved() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.stocks);
+        assert_eq!(cfg.stocks_chart_url, DEFAULT_STOCKS_CHART_URL);
+        assert_eq!(cfg.stocks_news_url, DEFAULT_STOCKS_NEWS_URL);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("STOCKS", "off"),
+            ("STOCKS_CHART_URL", "http://localhost:9999/chart"),
+            ("STOCKS_NEWS_URL", "http://localhost:9999/search"),
+        ]))
+        .unwrap();
+        assert!(!cfg.stocks);
+        assert_eq!(cfg.stocks_chart_url, "http://localhost:9999/chart");
+        assert_eq!(cfg.stocks_news_url, "http://localhost:9999/search");
+    }
+
+    #[test]
+    fn clarifying_questions_are_on_by_default_and_can_be_turned_off() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.ask_user);
+        let cfg =
+            Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("ASK_USER", "off")])).unwrap();
+        assert!(!cfg.ask_user);
+    }
+
+    #[test]
+    fn webhook_settings_have_safe_defaults() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(!cfg.webhook_allow_private);
+        assert_eq!(cfg.webhook_retry, Duration::from_secs(5));
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("WEBHOOK_ALLOW_PRIVATE", "on"),
+            ("WEBHOOK_RETRY_SECS", "0"),
+        ]))
+        .unwrap();
+        assert!(cfg.webhook_allow_private);
+        assert_eq!(cfg.webhook_retry, Duration::ZERO);
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("WEBHOOK_RETRY_SECS", "soon")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("WEBHOOK_RETRY_SECS"), "{err}");
     }
 
     #[test]

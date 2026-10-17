@@ -101,7 +101,8 @@ async fn a_page_is_fetched_as_text_with_its_title() {
     assert!(page.get("is_error").is_none(), "{page}");
     let content = page["content"].as_str().unwrap();
     assert!(
-        content.starts_with(&format!("URL: {base}/page\nTitle: Cedar & tools\n\n")),
+        // Prefixed with its source number, which the model cites it by.
+        content.starts_with(&format!("[1] {base}/page\nURL: {base}/page\nTitle: Cedar & tools\n\n")),
         "{content}"
     );
     assert!(content.contains("Release notes"), "{content}");
@@ -115,7 +116,7 @@ async fn a_page_is_fetched_as_text_with_its_title() {
         .unwrap()
         .to_string();
     assert!(
-        redirected.starts_with(&format!("URL: {base}/page\n")),
+        redirected.starts_with(&format!("[1] {base}/page\nURL: {base}/page\n")),
         "{redirected}"
     );
 
@@ -123,7 +124,7 @@ async fn a_page_is_fetched_as_text_with_its_title() {
         .as_str()
         .unwrap()
         .to_string();
-    assert_eq!(data, format!("URL: {base}/data.json\n\n{{\"a\": 1}}"));
+    assert_eq!(data, format!("[2] {base}/data.json\nURL: {base}/data.json\n\n{{\"a\": 1}}"));
 }
 
 #[tokio::test]
@@ -152,7 +153,8 @@ async fn long_pages_are_cut_and_can_be_continued() {
         .as_str()
         .unwrap()
         .to_string();
-    assert_eq!(second, format!("URL: {url}\n\n{}", "x".repeat(10)));
+    // The same page keeps its source number.
+    assert_eq!(second, format!("[1] {url}\nURL: {url}\n\n{}", "x".repeat(10)));
 }
 
 #[tokio::test]
@@ -238,7 +240,7 @@ async fn downloads_land_in_the_workspace() {
     assert!(ok.get("is_error").is_none(), "{ok}");
     assert_eq!(
         ok["content"],
-        format!("saved {base}/report.pdf to in/report.pdf: 13 bytes, application/pdf")
+        format!("[1] {base}/report.pdf\nsaved {base}/report.pdf to in/report.pdf: 13 bytes, application/pdf")
     );
     let huge = tool_result(&app, 2);
     assert_eq!(huge["is_error"], true);

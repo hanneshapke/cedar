@@ -1580,6 +1580,10 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         parent_id: None,
         tools: None,
         attachments: vec![],
+        callback_url: None,
+        callback_secret: None,
+        plan: cedar::models::PlanMode::Off,
+        interactive: false,
     };
     let running = store
         .insert_run_limited(&new("was running"), 10)
@@ -1627,9 +1631,9 @@ async fn the_registered_models_are_listed_to_any_key() {
         body,
         json!({ "models": [
             { "id": TEST_MODEL, "label": TEST_MODEL, "model": TEST_MODEL, "is_default": true,
-              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true },
+              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "price": null },
             { "id": "small", "label": "small", "model": "small-model", "is_default": false,
-              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false },
+              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "price": null },
         ] })
     );
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;

@@ -1,0 +1,10 @@
+{
+  "description": "Count the lines, words, and characters of a text file in the workspace.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string", "description": "The file, relative to /workspace." }
+    },
+    "required": ["path"]
+  }
+}

@@ -16,7 +16,7 @@ The settings button (sliders icon, top right) switches between:
 | | Style | Layout |
 | --- | --- | --- |
 | `/v1/` | **Claude style** | Conversations in a sidebar, one thread with tool calls inline |
-| `/v2/` | **Cedar style** | "The desk": the document the agent writes is the page, with web results and command output as clippings beside it and the conversation in a margin |
+| `/v2/` | **Cedar style** | Say on the left, show on the right: the conversation (prompts, Cedar's prose, its questions, and a step row per tool call) in a narrow column, and everything a tool produced as full-width cards on a "stage" beside it, grouped by turn |
 
 Your choice is saved in this browser (`localStorage`, key `cedar-chat-ui`) and decides where `/`
 goes. Without a saved choice, `/` opens Cedar style. Switching keeps the open conversation and
@@ -27,8 +27,8 @@ change the saved choice.
 
 Both interfaces have all of these, except where noted:
 
-- A conversation list (a sidebar in Claude style, an "Earlier" list in Cedar style) with new chat,
-  rename (click the title), and delete. Cedar style deletes only the open conversation
+- A conversation list (a sidebar in Claude style, a drawer behind the menu button in Cedar style)
+  with new chat, rename (click the title), and delete
 - Replies stream in as the agent works. Text, tool calls (`bash`, `run_python`, the file,
   document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
@@ -40,13 +40,19 @@ Both interfaces have all of these, except where noted:
   from `generate_chart`, a picture `write_file` or `download_file` saved, or one a `bash` command
   or `run_python` script created (from the files the call lists). A file that was rewritten
   several times is shown as it is when the response ends. Claude style puts them under the reply,
-  Cedar style in the margin below its last note. An image the agent refers to in its text as
+  Cedar style in an images card on the stage after the response's other cards. An image the agent refers to in its text as
   `![caption](chart.png)` is shown in place of the reference, and not again below. PNG, JPEG, GIF,
   WebP, BMP, AVIF, and SVG files up to 16 MB are shown; at most 12 per response, loaded as they
   scroll into view. Each has View and Download buttons under it, and a click on the picture opens
   it full size
 - In Cedar style, a Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
-  as the page, with Copy and Download
+  rendered as a document card on the stage, with Copy and Download, and the stage rests on it when the
+  response ends. Searches (each result as a link with its snippet), commands and scripts with their
+  output, and the pages and files the agent read are cards folded to one line that open on a click;
+  a failed call opens on its own. Each tool call is also a step row in the conversation, and clicking
+  it jumps to the card. The split between the two columns can be dragged (double-click resets it); on a
+  narrow screen they become **Conversation** and **Results** tabs, with a count of results that landed
+  while the conversation was showing
 - A View button opens a workspace Markdown file (`.md`, `.markdown`) as rendered Markdown, a PDF in
   the browser's own PDF viewer, and an image at full size, in a dialog. It is in the files panel, on
   finished file-tool calls, and on the page of a generated PDF. Markdown files over 2 MB and images
@@ -56,7 +62,7 @@ Both interfaces have all of these, except where noted:
 - A `show_map` tool call (when cedar offers the tool) is drawn as a map: a numbered pin for each
   place on an OpenStreetMap map you can pan and zoom (click it first, so the wheel keeps scrolling
   the conversation), a list of the places with their coordinates under it, and a note for any names
-  cedar could not find. Cedar style puts it on the desk as a clipping, Claude style under the tool
+  cedar could not find. Cedar style puts it on the stage as a card, Claude style under the tool
   call. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
   the tool call's raw output is shown
 - A `show_recipe` tool call (when cedar offers the tool) is drawn as a recipe card: the photo of the
@@ -64,14 +70,32 @@ Both interfaces have all of these, except where noted:
   is none or it fails to load), the times and servings, the ingredients as a checklist, and the steps
   as a timeline. The steps appear one after another the first time the card is on screen. Tick a
   step's number to mark it done, or use the button under the timeline to finish the current step
-  and move on: the line fills in and the next step is highlighted. Cedar style puts it on the desk
-  as a clipping, Claude style under the tool call
+  and move on: the line fills in and the next step is highlighted. Cedar style puts it on the stage
+  as a card, Claude style under the tool call
 - A `plan_trip` tool call is drawn as a trip card: the recommended way to go and why, a map of the
   chosen option's route between an A and a B pin (each transit line in its own color, walks dotted),
   a row per option (transit with its line badges, times and transfers; drive; rideshare with its
   estimated fare; walk), and the chosen option's steps on a timeline. Click a row to see that option
   on the map and in the steps. Times are shown in the trip's time zone when the planner gives one.
   It is placed like a map (`transit-view.js` and `transit-view.css`, which draw with the map view)
+- A `compare_stocks` tool call is drawn as a stock card: a quote tile per symbol (price, the day's
+  move, and its buy/hold/sell call), a line chart of the period (1M to 5Y) as % change against the
+  benchmark index (dashed) or as one symbol's price, with a crosshair that lists every line's value
+  (arrow keys move it too), then the selected symbol's rating: the call on a sell–hold–buy gauge with
+  its confidence and summary, every factor with its score bar and the reasoning behind it, what would
+  change the view, and key numbers (52-week and day ranges, moving averages, RSI, volatility,
+  drawdown, beta). Pick a tile to see another symbol. Below are the returns of every symbol side by
+  side and the news, which can be filtered by symbol; headlines open in a new tab. Cedar style puts
+  it on the stage as a card, Claude style under the tool call (`stock-view.js` and
+  `stock-view.css`; see [Stock news and privacy](#stock-news-and-privacy))
+- An `ask_user` tool call, when the agent needs a clarification before it goes on, is drawn as a
+  form: each question with its options as radio buttons (pick one) or checkboxes (pick any), and
+  always a field for an answer in your own words (for an open question, that field alone). Send
+  answer sends what you picked and wrote as your next message, with each question repeated so the
+  agent knows which answer is which; you can also just reply in the message box. Once a later
+  message is in, the form is closed. Claude style puts it under the tool call, Cedar style in the
+  conversation column (`clarify-view.js` and `clarify-view.css`). A [scheduled agent](#scheduled-agents)'s run is
+  told nobody is there to answer, so it assumes instead of asking
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
 - The send button names the model and reasoning level the message goes with, and opens a menu
@@ -84,6 +108,11 @@ Both interfaces have all of these, except where noted:
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, with every run's result kept
   under Settings
+- [Notifications](#notifications): a response that finishes while you are in another conversation,
+  another tab, or away is marked unread in the conversation list and counted in the page title and
+  on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
+  marked "Needs answer". Out of the app, by the method you pick in Settings: a browser push (tab
+  open or not), a phone push through Pushover, or an email
 
 ## Running it
 
@@ -98,7 +127,11 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat
 The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
-`map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `schedule.js` and `schedule.css` for scheduled agents, and
+`map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
+`stock-view.css` for stocks, `clarify-view.js` and `clarify-view.css` for clarifying questions,
+`schedule.js` and `schedule.css` for scheduled agents, `notify.js` and `notify.css` for the inbox
+of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
+push, and
 `models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
 model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
 library, and
@@ -137,6 +170,15 @@ and the rest of the card is set as text, so nothing in the tool's result runs in
 server itself makes no requests for recipes; cedar searches Wikipedia and Commons (see the top-level
 README). Set `RECIPES=off` on cedar to remove the tool.
 
+### Stock news and privacy
+
+The stock chart is drawn in the page from the prices in the tool's result; nothing is loaded for it.
+Headline thumbnails are the one thing on a stock card that comes from elsewhere: the browser loads
+them from the `https` addresses Yahoo Finance gave, without a referrer, and leaves them out if they
+fail. Headlines are links that open in a new tab without a referrer. Everything else is set as text,
+so nothing in the tool's result runs in the page. The chat server makes no requests for stocks;
+cedar asks Yahoo Finance (see the top-level README). Set `STOCKS=off` on cedar to remove the tool.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -149,6 +191,7 @@ README). Set `RECIPES=off` on cedar to remove the tool.
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
+| `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -175,6 +218,68 @@ with it; only the new message's files go along.
 Only one response per conversation runs at a time. The UI replays each turn from cedar's event log,
 so reloading the page or opening a conversation shows the full tool trace. Deleting a conversation
 also deletes its runs on cedar (best effort), which frees the workspace.
+
+## Notifications
+
+A response that ends while nobody is looking at its conversation is not lost in the list. The
+server follows cedar's stream of the key's finished runs (`GET /v1/events`, see [Being told when
+a run ends](../README.md#being-told-when-a-run-ends)) in the background, from the id of the last
+notification it handled, which it keeps in its database: a restart of either service loses
+nothing. When a run ends it brings the turn up to date, marks it unseen, and tells every open tab
+over `GET /api/events`.
+
+What the page does with that:
+
+- The conversation list marks a conversation with an unseen finished (or failed) response with a
+  dot and a bold title, and one whose last response was a question (`ask_user`) with a **Needs
+  answer** chip, until the answer is sent.
+- The bell button in the header counts the unseen responses, scheduled runs included, and the
+  page title carries the count (`(2) Cedar`). Clicking the bell lists them, newest first, with
+  what happened (finished, failed, needs your answer) and when; a row opens the conversation,
+  and **Mark all read** clears the list.
+- A response that finishes in another conversation while the tab is visible is announced in a
+  toast.
+- Looking at a conversation marks its responses seen: opening it, watching its response end with
+  the tab visible, or coming back to the tab. A response that ends while the conversation is open
+  but the tab is hidden stays unread until then. The page tells the server with
+  `POST /api/conversations/{id}/seen`.
+
+A run the user stopped is not announced. Responses from before this feature count as seen.
+
+### Out of the app
+
+Settings → **Notifications** sets up the ways to be told when you are not looking at the page at
+all. Set up as many as you like; each has its credentials, a **Set up** badge once it can send, and
+**Save and send a test**. The server sends a message a few seconds after cedar says the run ended,
+unless the response was looked at in the meantime (a page that watched it end marks it seen first).
+
+- **Browser push**: a notification from this browser even when the tab is closed, through a
+  service worker (`sw.js`) and the browser's push service, signed with VAPID keys the server makes
+  on first use. **Turn on in this browser** asks the browser for permission and subscribes it; every
+  subscribed browser is listed and can be removed, and a browser the push service reports gone is
+  dropped. Browsers only allow this on `https` or on `localhost`, so it works over the SSH tunnel
+  of the [deployment guide](../DEPLOYMENT.md) and behind a TLS proxy. A push that arrives while a
+  Cedar tab is in front is left to that tab. An optional contact address goes with each push, as
+  some push services ask for one.
+- **Phone push via Pushover**: a push to the [Pushover](https://pushover.net) app on your phone.
+  Needs an application token (make an application at pushover.net/apps) and your user key.
+- **Email**: a mail through an SMTP server: host, port (left empty, the connection's usual one),
+  TLS, STARTTLS or plain, a user name and password if the server wants them, and the sender and
+  recipient addresses. A Gmail account takes an app password with STARTTLS on `smtp.gmail.com`.
+
+Which method is used, and for what:
+
+- **Default method** (only in the app, or one of the set-up methods) covers responses in
+  conversations, and **Send it for** chooses between what needs you (a failure, a question the
+  agent asked, a scheduled run) and every response that ends while you are not watching it.
+- Each [scheduled agent](#scheduled-agents) has a **Notify me by** picker in its dialog: the
+  default, only in the app, or any set-up method, for that agent alone. An agent with a method of
+  its own is announced on every finished or failed run, whatever **Send it for** says. The choice is
+  shown with the agent in the list.
+
+The last delivery, test or real, is shown with what the service answered. The credentials stay in
+this server's database (`CHAT_DATABASE_URL`), as they are, and are never sent back to the page;
+keep that file as private as the cedar key.
 
 ## Scheduled agents
 
@@ -295,9 +400,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/config` | `{auth_required, admin_enabled}` |
-| `GET /api/conversations` | Conversations, most recently active first. Conversations a schedule created are left out |
+| `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations a schedule created are left out |
 | `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
-| `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar |
+| `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen` |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
@@ -305,10 +410,19 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
 | `POST /api/conversations/{id}/compact` | Have cedar write one prompt for the conversation so far: `{prompt, source}` where `source` is `run` or, when cedar has lost the run, `history`. Returns 409 while a response is running, 404 without a finished response |
+| `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
+| `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
+| `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
+| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
+| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"browser"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser) |
+| `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
+| `POST /api/notifications/push/subscriptions` | A browser's `PushSubscription` (as `JSON.stringify` gives it). Returns the settings plus `subscription_id` |
+| `DELETE /api/notifications/push/subscriptions` | `{"endpoint"}`: the browser turned push off |
+| `DELETE /api/notifications/push/subscriptions/{id}` | Remove a subscribed browser |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |
-| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults |
+| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`browser`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
 | `GET /api/schedules/{id}` | `{schedule, runs}`, newest run first, each with its `turn` (refreshed while unfinished) or an `error` if the run could not be started |
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |

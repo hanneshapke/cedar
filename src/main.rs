@@ -72,6 +72,8 @@ async fn main() -> Result<()> {
     }
     state.manager.recover().await?;
     state.manager.start_janitor(workspace_ttl);
+    // Delivers the webhooks of runs that end (and any left undelivered by a previous process).
+    let webhooks = state.webhooks.start();
 
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
@@ -80,6 +82,7 @@ async fn main() -> Result<()> {
 
     let manager = state.manager.clone();
     let on_signal = manager.clone();
+    let state_for_shutdown = state.webhooks.clone();
     axum::serve(listener, api::router(state))
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
@@ -90,8 +93,22 @@ async fn main() -> Result<()> {
         .await?;
 
     manager.drain(SHUTDOWN_GRACE).await;
+    // The runs just cancelled have webhooks to send; give them a moment.
+    state_webhooks_stop(&state_for_shutdown, webhooks).await;
     tracing::info!("stopped");
     Ok(())
+}
+
+/// Let the worker finish the deliveries that shutdown's cancellations queued, briefly.
+async fn state_webhooks_stop(
+    webhooks: &std::sync::Arc<cedar::webhooks::Webhooks>,
+    worker: tokio::task::JoinHandle<()>,
+) {
+    if let Err(e) = tokio::time::timeout(Duration::from_secs(2), webhooks.deliver_due()).await {
+        tracing::warn!(error = %e, "webhooks were still being delivered at shutdown");
+    }
+    webhooks.stop();
+    let _ = worker.await;
 }
 
 async fn shutdown_signal() {
