@@ -102,6 +102,10 @@ a { color: var(--accent); }
 .conv.active { background: var(--line-soft); color: var(--ink); font-weight: 500; }
 .conv .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .live { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; flex-shrink: 0; }
+/* A response finished that nobody looked at (a dot), or is waiting for an answer (a chip). */
+.conv .unread { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.conv .needs { padding: 0 7px; border-radius: 999px; background: var(--accent-wash); color: var(--accent); font-size: 10.5px; line-height: 16px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.conv.is-unread .name { font-weight: 600; color: var(--ink); }
 .conv .del { display: grid; place-items: center; width: 24px; height: 24px; margin: -4px -4px -4px 0; border: 0; border-radius: 6px; background: none; color: var(--muted); opacity: 0; }
 .conv .del svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .conv:hover .del, .conv .del:focus-visible { opacity: 1; }

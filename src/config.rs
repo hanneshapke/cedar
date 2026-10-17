@@ -205,6 +205,11 @@ pub struct Config {
     pub pdf_preview_pages: usize,
     /// How long a workspace is kept after its last run ends, so a continuation can pick it up.
     pub workspace_ttl: Duration,
+    /// Let a run's `callback_url` point at loopback, private and link-local addresses. Off by
+    /// default, since the webhook calls come from the cedar host.
+    pub webhook_allow_private: bool,
+    /// The wait before the first retry of a failed webhook call; each later one doubles it.
+    pub webhook_retry: Duration,
     /// Whether a run that doesn't say plans before it starts (`PLAN`: off, on, auto).
     pub plan: PlanMode,
     /// Which tool calls wait for approval in interactive runs (`TOOL_APPROVALS`).
@@ -456,6 +461,12 @@ impl Config {
                 get("WORKSPACE_TTL_SECS"),
                 24 * 3600,
             )?),
+            webhook_allow_private: flag("WEBHOOK_ALLOW_PRIVATE", false)?,
+            webhook_retry: Duration::from_secs(parse(
+                "WEBHOOK_RETRY_SECS",
+                get("WEBHOOK_RETRY_SECS"),
+                5,
+            )?),
             plan: match get("PLAN") {
                 None => PlanMode::Off,
                 Some(v) => PlanMode::parse(&v)
@@ -653,6 +664,24 @@ mod tests {
         let cfg =
             Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("ASK_USER", "off")])).unwrap();
         assert!(!cfg.ask_user);
+    }
+
+    #[test]
+    fn webhook_settings_have_safe_defaults() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(!cfg.webhook_allow_private);
+        assert_eq!(cfg.webhook_retry, Duration::from_secs(5));
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("WEBHOOK_ALLOW_PRIVATE", "on"),
+            ("WEBHOOK_RETRY_SECS", "0"),
+        ]))
+        .unwrap();
+        assert!(cfg.webhook_allow_private);
+        assert_eq!(cfg.webhook_retry, Duration::ZERO);
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("WEBHOOK_RETRY_SECS", "soon")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("WEBHOOK_RETRY_SECS"), "{err}");
     }
 
     #[test]

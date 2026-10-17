@@ -77,6 +77,9 @@ pub struct Run {
     pub workspace_reused: bool,
     /// The tool groups and tools the run may use besides the sandbox tools; `None` means all.
     pub tools: Option<Vec<String>>,
+    /// Where a notification is POSTed when the run ends (see [`crate::webhooks`]). The secret
+    /// its deliveries are signed with is never returned.
+    pub callback_url: Option<String>,
     /// Whether the run plans its steps before it starts.
     pub plan: PlanMode,
     /// The client answers what the run asks while it goes: it waits for the plan to be agreed and
@@ -101,6 +104,9 @@ pub struct NewRun {
     pub tools: Option<Vec<String>>,
     /// Files sent with the prompt (images only for a multimodal model).
     pub attachments: Vec<Attachment>,
+    /// A webhook to call when the run ends, and the secret to sign the call with.
+    pub callback_url: Option<String>,
+    pub callback_secret: Option<String>,
     pub plan: PlanMode,
     pub interactive: bool,
 }
@@ -272,6 +278,38 @@ impl Event {
     }
 }
 
+/// That a run ended: one per finished run, numbered across all runs of an owner so a client can
+/// resume `GET /v1/events` from the last `id` it saw. The same JSON is POSTed to a run's
+/// `callback_url` (see [`crate::webhooks`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Notification {
+    pub id: i64,
+    /// The terminal event's type: `run.completed`, `run.failed` or `run.cancelled`.
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub run_id: Uuid,
+    /// The terminal event's seq in the run's event stream.
+    pub seq: i64,
+    pub status: RunStatus,
+    pub stop_reason: Option<String>,
+    pub error: Option<String>,
+    /// The run this one continued, if any.
+    pub parent_id: Option<Uuid>,
+    pub finished_at: DateTime<Utc>,
+}
+
+impl RunStatus {
+    /// The terminal event a run in this status ended with; `None` while it is still going.
+    pub fn terminal_event(self) -> Option<&'static str> {
+        Some(match self {
+            RunStatus::Completed => event::RUN_COMPLETED,
+            RunStatus::Failed => event::RUN_FAILED,
+            RunStatus::Cancelled => event::RUN_CANCELLED,
+            RunStatus::Queued | RunStatus::Running => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct StoredMessage {
     pub seq: i64,
@@ -298,6 +336,12 @@ pub struct CreateRunRequest {
     pub tools: Option<Vec<String>>,
     /// Images and PDFs to show the model with the prompt (see [`Attachment`]).
     pub attachments: Option<Vec<Attachment>>,
+    /// An http(s) URL that is POSTed a notification when the run ends (see
+    /// [`crate::webhooks`]). Absent: the parent's for a continuation, else none.
+    pub callback_url: Option<String>,
+    /// Signs those notifications (`X-Cedar-Signature`). Only with `callback_url`; absent for a
+    /// continuation keeps the parent's.
+    pub callback_secret: Option<String>,
     /// Plan before starting: `on`, `off` or `auto`. Absent: the server's `PLAN` setting.
     pub plan: Option<PlanMode>,
     /// The client will answer the run's questions while it goes: agree to its plan

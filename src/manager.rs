@@ -343,7 +343,11 @@ impl Inner {
         };
 
         match self.store.finish_run(run.id, finish).await {
-            Ok(Some(seq)) => self.hub.notify(run.id, seq),
+            Ok(Some(done)) => {
+                self.hub.notify(run.id, done.seq);
+                // The owner's event stream, and the webhook worker if the run has a callback.
+                self.hub.finished(&run.owner, done.notification, done.callback);
+            }
             Ok(None) => {}
             // The run stays `running` in the database until the next startup recovery fails it.
             Err(e) => {

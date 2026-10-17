@@ -29,8 +29,53 @@ pub struct Conversation {
     pub schedule_id: Option<Uuid>,
     /// The tools this conversation uses instead of the default ones.
     pub tools: Option<Vec<String>>,
+    /// A response finished (or failed) that nobody has looked at yet.
+    pub unread: bool,
+    /// The last response ended with a question (`ask_user`) that has not been answered.
+    pub needs_answer: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// A browser that turned on Web Push: where its push service takes messages, and the keys
+/// they are encrypted with (see `channels`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PushSubscription {
+    pub id: Uuid,
+    #[serde(skip)]
+    pub endpoint: String,
+    #[serde(skip)]
+    pub p256dh: String,
+    #[serde(skip)]
+    pub auth: String,
+    pub user_agent: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+fn push_subscription_from_row(r: &SqliteRow) -> Result<PushSubscription> {
+    Ok(PushSubscription {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        endpoint: r.try_get("endpoint")?,
+        p256dh: r.try_get("p256dh")?,
+        auth: r.try_get("auth")?,
+        user_agent: r.try_get("user_agent")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        last_used_at: r.try_get::<Option<i64>, _>("last_used_at")?.map(to_dt),
+    })
+}
+
+/// A finished response nobody has looked at, as the page's inbox lists it.
+#[derive(Debug, Clone, Serialize)]
+pub struct InboxItem {
+    pub turn_id: Uuid,
+    pub conversation_id: Uuid,
+    pub title: Option<String>,
+    pub schedule_id: Option<Uuid>,
+    pub status: String,
+    pub stop_reason: Option<String>,
+    pub needs_answer: bool,
+    pub finished_at: DateTime<Utc>,
 }
 
 /// A prompt that runs on its own at a local time of day. `frequency`, `weekday`, `time_of_day`
@@ -46,6 +91,9 @@ pub struct Schedule {
     pub source_conversation_id: Option<Uuid>,
     /// The tools the schedule's runs use; `None` means the defaults at the time of the run.
     pub tools: Option<Vec<String>>,
+    /// How a finished run is announced out of the app: a method from `channels` (`pushover`,
+    /// `browser`, `email`), `none`, or `None` for the default method in Settings.
+    pub notify: Option<String>,
     pub frequency: String,
     pub weekday: Option<u8>,
     pub time_of_day: String,
@@ -64,6 +112,7 @@ pub struct NewSchedule<'a> {
     pub reasoning: Option<&'a str>,
     pub source_conversation_id: Option<Uuid>,
     pub tools: Option<&'a [String]>,
+    pub notify: Option<&'a str>,
     pub frequency: &'a str,
     pub weekday: Option<u8>,
     pub time_of_day: &'a str,
@@ -104,6 +153,12 @@ pub struct Turn {
     pub status: String,
     pub final_text: Option<String>,
     pub error: Option<String>,
+    /// Why a completed run stopped; `ask_user` means it is waiting for an answer.
+    pub stop_reason: Option<String>,
+    /// When this service saw the run end; `None` while it is going.
+    pub finished_at: Option<DateTime<Utc>>,
+    /// Whether the conversation was looked at after the response finished.
+    pub seen: bool,
     /// The files sent with the message (name, type and size only; the bytes are in cedar's run).
     pub attachments: Vec<AttachmentInfo>,
     pub created_at: DateTime<Utc>,
@@ -151,10 +206,40 @@ fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
         reasoning: r.try_get("reasoning")?,
         schedule_id: opt_uuid(r, "schedule_id")?,
         tools: opt_json(r, "tools")?,
+        unread: r.try_get::<i64, _>("unread")? != 0,
+        needs_answer: r.try_get::<i64, _>("needs_answer")? != 0,
         created_at: to_dt(r.try_get("created_at")?),
         updated_at: to_dt(r.try_get("updated_at")?),
     })
 }
+
+fn inbox_item_from_row(r: &SqliteRow) -> Result<InboxItem> {
+    let status: String = r.try_get("status")?;
+    let stop_reason: Option<String> = r.try_get("stop_reason")?;
+    Ok(InboxItem {
+        turn_id: Uuid::parse_str(r.try_get("turn_id")?)?,
+        conversation_id: Uuid::parse_str(r.try_get("conversation_id")?)?,
+        title: r.try_get("title")?,
+        schedule_id: opt_uuid(r, "schedule_id")?,
+        needs_answer: status == "completed" && stop_reason.as_deref() == Some("ask_user"),
+        status,
+        stop_reason,
+        finished_at: to_dt(r.try_get::<Option<i64>, _>("finished_at")?.unwrap_or_default()),
+    })
+}
+
+/// A conversation with what the page marks it with: `unread` (a finished or failed response
+/// nobody looked at) and `needs_answer` (its last response is a question awaiting an answer).
+const CONVERSATION_SELECT: &str = "SELECT c.*, \
+    EXISTS (SELECT 1 FROM turns t WHERE t.conversation_id = c.id AND t.seen = 0 \
+            AND t.status IN ('completed', 'failed')) AS unread, \
+    COALESCE((SELECT t.status = 'completed' AND t.stop_reason = 'ask_user' FROM turns t \
+              WHERE t.conversation_id = c.id ORDER BY t.seq DESC LIMIT 1), 0) AS needs_answer \
+    FROM conversations c";
+
+/// Runs that ended as `completed` or `failed` are worth telling about; a `cancelled` one was
+/// stopped by the user.
+const NOTEWORTHY: &str = "('completed', 'failed')";
 
 fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
     Ok(Schedule {
@@ -165,6 +250,7 @@ fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
         reasoning: r.try_get("reasoning")?,
         source_conversation_id: opt_uuid(r, "source_conversation_id")?,
         tools: opt_json(r, "tools")?,
+        notify: r.try_get("notify")?,
         frequency: r.try_get("frequency")?,
         weekday: r.try_get::<Option<i64>, _>("weekday")?.map(|d| d as u8),
         time_of_day: r.try_get("time_of_day")?,
@@ -200,12 +286,16 @@ fn turn_from_row(r: &SqliteRow) -> Result<Turn> {
         status: r.try_get("status")?,
         final_text: r.try_get("final_text")?,
         error: r.try_get("error")?,
+        stop_reason: r.try_get("stop_reason")?,
+        finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
+        seen: r.try_get::<i64, _>("seen")? != 0,
         attachments: opt_json(r, "attachments")?.unwrap_or_default(),
         created_at: to_dt(r.try_get("created_at")?),
     })
 }
 
-const TURN_COLS: &str = "id, conversation_id, seq, run_id, prompt, status, final_text, error, attachments, created_at";
+const TURN_COLS: &str =
+    "id, conversation_id, seq, run_id, prompt, status, final_text, error, stop_reason, finished_at, seen, attachments, created_at";
 
 #[derive(Clone)]
 pub struct Store {
@@ -256,7 +346,7 @@ impl Store {
     }
 
     pub async fn get_conversation(&self, id: Uuid) -> Result<Option<Conversation>> {
-        let row = sqlx::query("SELECT * FROM conversations WHERE id = ?")
+        let row = sqlx::query(&format!("{CONVERSATION_SELECT} WHERE c.id = ?"))
             .bind(id.to_string())
             .fetch_optional(&self.pool)
             .await?;
@@ -266,13 +356,50 @@ impl Store {
     /// Most recently active first. Conversations a schedule created are left out; they are
     /// listed under their schedule.
     pub async fn list_conversations(&self, limit: u32) -> Result<Vec<Conversation>> {
-        let rows = sqlx::query(
-            "SELECT * FROM conversations WHERE schedule_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT ?",
-        )
-            .bind(limit as i64)
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(&format!(
+            "{CONVERSATION_SELECT} WHERE c.schedule_id IS NULL ORDER BY c.updated_at DESC, c.id DESC LIMIT ?"
+        ))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
         rows.iter().map(conversation_from_row).collect()
+    }
+
+    /// The conversation has been looked at: its finished responses are no longer unread. Returns
+    /// how many were marked.
+    pub async fn mark_seen(&self, conversation_id: Uuid) -> Result<u64> {
+        let res = sqlx::query(
+            "UPDATE turns SET seen = 1 WHERE conversation_id = ? AND seen = 0 \
+             AND status NOT IN ('queued', 'running')",
+        )
+        .bind(conversation_id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
+    /// Finished responses nobody has looked at, newest first, scheduled runs included.
+    pub async fn inbox(&self, limit: u32) -> Result<Vec<InboxItem>> {
+        let rows = sqlx::query(&format!(
+            "SELECT t.id AS turn_id, t.conversation_id, t.status, t.stop_reason, t.finished_at, \
+             c.title, c.schedule_id FROM turns t JOIN conversations c ON c.id = t.conversation_id \
+             WHERE t.seen = 0 AND t.status IN {NOTEWORTHY} \
+             ORDER BY t.finished_at DESC, t.id DESC LIMIT ?"
+        ))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(inbox_item_from_row).collect()
+    }
+
+    /// How many responses the inbox holds.
+    pub async fn count_unseen(&self) -> Result<i64> {
+        let n: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM turns WHERE seen = 0 AND status IN {NOTEWORTHY}"
+        ))
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(n)
     }
 
     /// Set (or, with `None`, clear) the tools a conversation uses instead of the defaults.
@@ -352,6 +479,15 @@ impl Store {
         row.as_ref().map(turn_from_row).transpose()
     }
 
+    /// The turn that holds a cedar run, if this service started it.
+    pub async fn get_turn_by_run(&self, run_id: Uuid) -> Result<Option<Turn>> {
+        let row = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE run_id = ?"))
+            .bind(run_id.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        row.as_ref().map(turn_from_row).transpose()
+    }
+
     pub async fn list_turns(&self, conversation_id: Uuid) -> Result<Vec<Turn>> {
         let rows = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE conversation_id = ? ORDER BY seq"))
             .bind(conversation_id.to_string())
@@ -360,14 +496,30 @@ impl Store {
         rows.iter().map(turn_from_row).collect()
     }
 
-    pub async fn update_turn(&self, id: Uuid, status: &str, final_text: Option<&str>, error: Option<&str>) -> Result<()> {
-        sqlx::query("UPDATE turns SET status = ?, final_text = ?, error = ? WHERE id = ?")
-            .bind(status)
-            .bind(final_text)
-            .bind(error)
-            .bind(id.to_string())
-            .execute(&self.pool)
-            .await?;
+    /// Bring a turn up to date with its run. A turn reaching a terminal status gets its
+    /// `finished_at` now (kept on later updates); one still going has none.
+    pub async fn update_turn(
+        &self,
+        id: Uuid,
+        status: &str,
+        final_text: Option<&str>,
+        error: Option<&str>,
+        stop_reason: Option<&str>,
+    ) -> Result<()> {
+        let terminal = !matches!(status, "queued" | "running");
+        sqlx::query(
+            "UPDATE turns SET status = ?, final_text = ?, error = ?, stop_reason = ?, \
+             finished_at = CASE WHEN ? THEN COALESCE(finished_at, ?) ELSE NULL END WHERE id = ?",
+        )
+        .bind(status)
+        .bind(final_text)
+        .bind(error)
+        .bind(stop_reason)
+        .bind(terminal)
+        .bind(now_ms())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -392,15 +544,104 @@ impl Store {
         Ok(())
     }
 
+    /// How the user is told out of the app when a response finishes (see `channels`).
+    pub async fn notification_settings(&self) -> Result<crate::channels::NotificationSettings> {
+        let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications'").fetch_optional(&self.pool).await?;
+        match row {
+            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
+            None => Ok(Default::default()),
+        }
+    }
+
+    pub async fn set_notification_settings(&self, settings: &crate::channels::NotificationSettings) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('notifications', ?) \
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(serde_json::to_string(settings)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    // -- push subscriptions -----------------------------------------------------------------
+
+    /// Oldest first.
+    pub async fn push_subscriptions(&self) -> Result<Vec<PushSubscription>> {
+        let rows = sqlx::query("SELECT * FROM push_subscriptions ORDER BY created_at, id").fetch_all(&self.pool).await?;
+        rows.iter().map(push_subscription_from_row).collect()
+    }
+
+    /// Add a browser's subscription, or refresh the keys of one with the same endpoint.
+    pub async fn add_push_subscription(&self, endpoint: &str, p256dh: &str, auth: &str, user_agent: Option<&str>) -> Result<PushSubscription> {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?) \
+             ON CONFLICT (endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent",
+        )
+        .bind(id.to_string())
+        .bind(endpoint)
+        .bind(p256dh)
+        .bind(auth)
+        .bind(user_agent)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        let row = sqlx::query("SELECT * FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).fetch_one(&self.pool).await?;
+        push_subscription_from_row(&row)
+    }
+
+    pub async fn delete_push_subscription(&self, id: Uuid) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM push_subscriptions WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// The browser unsubscribed itself: forget its endpoint.
+    pub async fn delete_push_subscription_by_endpoint(&self, endpoint: &str) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    pub async fn touch_push_subscription(&self, id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE push_subscriptions SET last_used_at = ? WHERE id = ?")
+            .bind(now_ms())
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// The id of the last notification taken from cedar's event stream (0: none yet).
+    pub async fn notifications_cursor(&self) -> Result<i64> {
+        let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications_cursor'")
+            .fetch_optional(&self.pool)
+            .await?;
+        match row {
+            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
+            None => Ok(0),
+        }
+    }
+
+    pub async fn set_notifications_cursor(&self, id: i64) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('notifications_cursor', ?) \
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     // -- schedules --------------------------------------------------------------------------
 
     pub async fn create_schedule(&self, new: &NewSchedule<'_>) -> Result<Schedule> {
         let id = Uuid::now_v7();
         let now = now_ms();
         sqlx::query(
-            "INSERT INTO schedules (id, title, prompt, model, reasoning, source_conversation_id, tools, frequency, \
+            "INSERT INTO schedules (id, title, prompt, model, reasoning, source_conversation_id, tools, notify, frequency, \
              weekday, time_of_day, timezone, enabled, next_run_at, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(new.title)
@@ -409,6 +650,7 @@ impl Store {
         .bind(new.reasoning)
         .bind(new.source_conversation_id.map(|c| c.to_string()))
         .bind(to_json(new.tools)?)
+        .bind(new.notify)
         .bind(new.frequency)
         .bind(new.weekday.map(i64::from))
         .bind(new.time_of_day)
@@ -439,7 +681,7 @@ impl Store {
     /// Write back a schedule's editable fields (everything but its id, origin and timestamps).
     pub async fn update_schedule(&self, s: &Schedule) -> Result<bool> {
         let res = sqlx::query(
-            "UPDATE schedules SET title = ?, prompt = ?, model = ?, reasoning = ?, tools = ?, frequency = ?, \
+            "UPDATE schedules SET title = ?, prompt = ?, model = ?, reasoning = ?, tools = ?, notify = ?, frequency = ?, \
              weekday = ?, time_of_day = ?, timezone = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
         )
         .bind(&s.title)
@@ -447,6 +689,7 @@ impl Store {
         .bind(&s.model)
         .bind(&s.reasoning)
         .bind(to_json(s.tools.as_ref())?)
+        .bind(&s.notify)
         .bind(&s.frequency)
         .bind(s.weekday.map(i64::from))
         .bind(&s.time_of_day)
@@ -572,9 +815,13 @@ mod tests {
         let c = store.get_conversation(c.id).await.unwrap().unwrap();
         assert_eq!(c.title.as_deref(), Some("first question"));
 
-        store.update_turn(t1.id, "completed", Some("answer"), None).await.unwrap();
+        store.update_turn(t1.id, "completed", Some("answer"), None, Some("end_turn")).await.unwrap();
         let turns = store.list_turns(c.id).await.unwrap();
         assert_eq!(turns[0].final_text.as_deref(), Some("answer"));
+        assert_eq!(turns[0].stop_reason.as_deref(), Some("end_turn"));
+        assert!(turns[0].finished_at.is_some() && !turns[0].seen);
+        assert!(turns[1].finished_at.is_none());
+        assert_eq!(store.get_turn_by_run(t1.run_id).await.unwrap().unwrap().id, t1.id);
 
         assert!(store.delete_conversation(c.id).await.unwrap());
         assert!(store.get_turn(t2.id).await.unwrap().is_none());
@@ -599,6 +846,7 @@ mod tests {
                 reasoning: None,
                 source_conversation_id: None,
                 tools: Some(&["weather".to_string()]),
+                notify: Some("email"),
                 frequency: "daily",
                 weekday: None,
                 time_of_day: "09:00",
@@ -609,6 +857,11 @@ mod tests {
             .unwrap();
         assert!(s.enabled && s.last_run_at.is_none());
         assert_eq!(s.tools, Some(vec!["weather".to_string()]));
+        assert_eq!(s.notify.as_deref(), Some("email"));
+        let mut changed = s.clone();
+        changed.notify = None;
+        store.update_schedule(&changed).await.unwrap();
+        assert_eq!(store.get_schedule(s.id).await.unwrap().unwrap().notify, None);
         let plain = store.create_conversation(Some("Mine")).await.unwrap();
         let c = store.create_scheduled_conversation(s.id, "Daily digest · Mon").await.unwrap();
         assert_eq!(c.schedule_id, Some(s.id));
@@ -643,6 +896,80 @@ mod tests {
         assert!(store.get_turn(t.id).await.unwrap().is_none());
         assert!(store.list_schedule_runs(s.id, 10).await.unwrap().is_empty());
         assert!(store.get_conversation(plain.id).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn finished_responses_are_unread_until_the_conversation_is_seen() {
+        let store = Store::connect_memory().await.unwrap();
+        let c = store.create_conversation(None).await.unwrap();
+        let t1 = store.insert_turn(c.id, Uuid::new_v4(), "one", "queued", None, None, &[]).await.unwrap();
+        let conv = store.get_conversation(c.id).await.unwrap().unwrap();
+        assert!(!conv.unread && !conv.needs_answer, "nothing has finished");
+        assert!(store.inbox(10).await.unwrap().is_empty());
+
+        store.update_turn(t1.id, "completed", Some("a"), None, Some("ask_user")).await.unwrap();
+        let conv = store.get_conversation(c.id).await.unwrap().unwrap();
+        assert!(conv.unread && conv.needs_answer);
+        let inbox = store.inbox(10).await.unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!((inbox[0].turn_id, inbox[0].conversation_id), (t1.id, c.id));
+        assert!(inbox[0].needs_answer && inbox[0].title.is_some());
+        assert_eq!(store.count_unseen().await.unwrap(), 1);
+        let listed = store.list_conversations(10).await.unwrap();
+        assert!(listed[0].unread, "the list carries the marks too");
+
+        assert_eq!(store.mark_seen(c.id).await.unwrap(), 1);
+        assert_eq!(store.mark_seen(c.id).await.unwrap(), 0);
+        let conv = store.get_conversation(c.id).await.unwrap().unwrap();
+        assert!(!conv.unread && conv.needs_answer, "seen, but still waiting for the answer");
+        assert!(store.inbox(10).await.unwrap().is_empty());
+
+        // The answer's turn: the question is answered, and a stopped run is not announced.
+        let t2 = store.insert_turn(c.id, Uuid::new_v4(), "b", "running", None, None, &[]).await.unwrap();
+        assert!(!store.get_conversation(c.id).await.unwrap().unwrap().needs_answer);
+        assert_eq!(store.mark_seen(c.id).await.unwrap(), 0, "a running turn can't be seen yet");
+        store.update_turn(t2.id, "cancelled", None, None, None).await.unwrap();
+        assert!(!store.get_conversation(c.id).await.unwrap().unwrap().unread);
+        assert!(store.inbox(10).await.unwrap().is_empty());
+        // A failure is.
+        let t3 = store.insert_turn(c.id, Uuid::new_v4(), "c", "running", None, None, &[]).await.unwrap();
+        store.update_turn(t3.id, "failed", None, Some("boom"), None).await.unwrap();
+        assert!(store.get_conversation(c.id).await.unwrap().unwrap().unread);
+        assert_eq!(store.inbox(10).await.unwrap()[0].status, "failed");
+
+        assert_eq!(store.notifications_cursor().await.unwrap(), 0);
+        store.set_notifications_cursor(42).await.unwrap();
+        store.set_notifications_cursor(43).await.unwrap();
+        assert_eq!(store.notifications_cursor().await.unwrap(), 43);
+    }
+
+    #[tokio::test]
+    async fn notification_settings_and_push_subscriptions_round_trip() {
+        use crate::channels::{Method, NotificationSettings};
+        let store = Store::connect_memory().await.unwrap();
+        assert_eq!(store.notification_settings().await.unwrap(), NotificationSettings::default());
+        let settings = NotificationSettings { default_method: Method::Pushover, ..Default::default() };
+        store.set_notification_settings(&settings).await.unwrap();
+        store.set_notification_settings(&settings).await.unwrap();
+        assert_eq!(store.notification_settings().await.unwrap(), settings);
+
+        let a = store.add_push_subscription("https://push.example/a", "pk-a", "auth-a", Some("Firefox")).await.unwrap();
+        let again = store.add_push_subscription("https://push.example/a", "pk-a2", "auth-a2", None).await.unwrap();
+        assert_eq!(a.id, again.id, "the same endpoint is one subscription");
+        assert_eq!((again.p256dh.as_str(), again.user_agent), ("pk-a2", None));
+        let b = store.add_push_subscription("https://push.example/b", "pk-b", "auth-b", Some("Chrome")).await.unwrap();
+        let listed = store.push_subscriptions().await.unwrap();
+        assert_eq!(listed.iter().map(|s| s.id).collect::<Vec<_>>(), [a.id, b.id]);
+        assert!(listed[0].last_used_at.is_none());
+        store.touch_push_subscription(a.id).await.unwrap();
+        assert!(store.push_subscriptions().await.unwrap()[0].last_used_at.is_some());
+        // The page never sees the keys.
+        let json = serde_json::to_string(&listed).unwrap();
+        assert!(!json.contains("pk-") && !json.contains("auth-") && !json.contains("push.example"));
+        assert!(store.delete_push_subscription_by_endpoint("https://push.example/b").await.unwrap());
+        assert!(store.delete_push_subscription(a.id).await.unwrap());
+        assert!(!store.delete_push_subscription(a.id).await.unwrap());
+        assert!(store.push_subscriptions().await.unwrap().is_empty());
     }
 
     #[test]

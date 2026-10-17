@@ -8,13 +8,15 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use cedar_chat::api::{self, AppState};
 use cedar_chat::config::Config;
-use cedar_chat::schedule;
 use cedar_chat::store::Store;
+use cedar_chat::{notify, schedule};
+use tokio_util::sync::CancellationToken;
 use chrono::{DateTime, Duration, Utc};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -37,6 +39,14 @@ struct FakeCedar {
     admin_calls: Mutex<Vec<(String, Value)>>,
     /// When set, the admin routes refuse the key, as cedar does for a key not in CEDAR_ADMIN_KEYS.
     not_admin: Mutex<bool>,
+    /// The key's finished runs, as `GET /v1/events` streams them (see `Harness::finish_with`).
+    notifications: Mutex<Vec<Value>>,
+    /// The fake Pushover API: every form it received. A token of `bad` is refused.
+    pushover: Mutex<Vec<HashMap<String, String>>>,
+    /// The fake push service: (endpoint name, headers, body) of every push, and the statuses
+    /// it answers with per endpoint name (201 once those run out).
+    pushes: Mutex<Vec<(String, HeaderMap, Vec<u8>)>>,
+    push_answers: Mutex<HashMap<String, VecDeque<u16>>>,
     /// Answers to runs' plans and approvals: (path, body).
     answers: Mutex<Vec<(String, Value)>>,
 }
@@ -140,6 +150,85 @@ async fn compact(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<V
         return cedar_error(StatusCode::BAD_GATEWAY, "bad_gateway", "the model returned no text");
     }
     Json(json!({ "prompt": format!("DO: {text}"), "model": body["model"], "usage": { "input_tokens": 1, "output_tokens": 1 } })).into_response()
+}
+
+async fn pushover(State(s): State<Shared>, axum::Form(form): axum::Form<HashMap<String, String>>) -> axum::response::Response {
+    let bad = form.get("token").map(String::as_str) == Some("bad");
+    s.pushover.lock().unwrap().push(form);
+    if bad {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "status": 0, "errors": ["application token is invalid"] }))).into_response();
+    }
+    Json(json!({ "status": 1, "request": "r-1" })).into_response()
+}
+
+async fn push_service(State(s): State<Shared>, Path(name): Path<String>, headers: HeaderMap, body: axum::body::Bytes) -> StatusCode {
+    s.pushes.lock().unwrap().push((name.clone(), headers, body.to_vec()));
+    let status = s.push_answers.lock().unwrap().get_mut(&name).and_then(|q| q.pop_front()).unwrap_or(201);
+    StatusCode::from_u16(status).unwrap()
+}
+
+/// A mail server that takes anything: returns its port and the messages it was given.
+async fn fake_smtp() -> (u16, Arc<Mutex<Vec<String>>>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let mails = Arc::new(Mutex::new(Vec::new()));
+    let store = mails.clone();
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let store = store.clone();
+            tokio::spawn(async move {
+                let (reader, mut writer) = socket.split();
+                let mut lines = BufReader::new(reader).lines();
+                writer.write_all(b"220 fake ESMTP\r\n").await.unwrap();
+                let mut in_data = false;
+                let mut mail = String::new();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if in_data {
+                        if line == "." {
+                            in_data = false;
+                            store.lock().unwrap().push(std::mem::take(&mut mail));
+                            writer.write_all(b"250 queued\r\n").await.unwrap();
+                        } else {
+                            mail.push_str(&line);
+                            mail.push('\n');
+                        }
+                        continue;
+                    }
+                    let upper = line.to_ascii_uppercase();
+                    let reply: &[u8] = if upper.starts_with("EHLO") {
+                        b"250-fake\r\n250 AUTH PLAIN LOGIN\r\n"
+                    } else if upper.starts_with("AUTH") {
+                        b"235 authenticated\r\n"
+                    } else if upper.starts_with("DATA") {
+                        in_data = true;
+                        b"354 go ahead\r\n"
+                    } else if upper.starts_with("QUIT") {
+                        writer.write_all(b"221 bye\r\n").await.unwrap();
+                        return;
+                    } else {
+                        b"250 ok\r\n"
+                    };
+                    writer.write_all(reply).await.unwrap();
+                }
+            });
+        }
+    });
+    (port, mails)
+}
+
+/// cedar's per-key stream of finished runs: the notifications after `after`, then the end of the
+/// stream (cedar would keep it open; the chat server reconnects from its cursor either way).
+async fn notifications(State(s): State<Shared>, headers: HeaderMap, axum::extract::RawQuery(q): axum::extract::RawQuery) -> axum::response::Response {
+    if !authorized(&headers) {
+        return cedar_error(StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key");
+    }
+    let after: i64 = q.as_deref().and_then(|q| q.strip_prefix("after=")).and_then(|n| n.parse().ok()).unwrap_or(0);
+    let mut body = String::from(": keep-alive\n\n");
+    for n in s.notifications.lock().unwrap().iter().filter(|n| n["id"].as_i64().unwrap() > after) {
+        body.push_str(&format!("id: {}\nevent: {}\ndata: {n}\n\n", n["id"], n["type"].as_str().unwrap()));
+    }
+    ([("content-type", "text/event-stream")], body).into_response()
 }
 
 async fn events(Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract::RawQuery) -> impl IntoResponse {
@@ -272,6 +361,7 @@ impl Harness {
                 }),
             )
             .route("/v1/runs/{id}/events", get(events))
+            .route("/v1/events", get(notifications))
             .route("/v1/runs/{id}/files", get(list_files))
             .route("/v1/runs/{id}/files/{*path}", get(download_file))
             .route("/v1/compact", post(compact))
@@ -308,13 +398,19 @@ impl Harness {
             .route("/v1/admin/integrations/google", axum::routing::delete(|State(s): State<Shared>| delete_integration(s, "google")))
             .route("/v1/admin/integrations/google/authorize", post(authorize))
             .route("/v1/admin/integrations/google/callback", post(callback))
+            // Not cedar, but on the same port: the services the chat's notifications go to.
+            .route("/pushover", post(pushover))
+            .route("/push/{name}", post(push_service))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
 
-        let mut env: HashMap<String, String> =
-            [("CEDAR_URL", url.as_str()), ("CEDAR_API_KEY", CEDAR_KEY)].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let pushover_url = format!("{url}/pushover");
+        let mut env: HashMap<String, String> = [("CEDAR_URL", url.as_str()), ("CEDAR_API_KEY", CEDAR_KEY), ("CHAT_PUSHOVER_URL", pushover_url.as_str())]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         for (k, v) in extra {
             env.insert(k.to_string(), v.to_string());
         }
@@ -365,6 +461,68 @@ impl Harness {
         let run = runs.get_mut(&id).unwrap();
         run["status"] = json!(status);
         run["final_text"] = json!(text);
+    }
+
+    /// End a run the way cedar does: its state, and a notification on the key's event stream.
+    fn finish_with(&self, run_id: &str, status: &str, text: Option<&str>, stop_reason: Option<&str>) -> i64 {
+        self.finish(run_id, status, text);
+        let mut runs = self.cedar.runs.lock().unwrap();
+        let run = runs.get_mut(&Uuid::parse_str(run_id).unwrap()).unwrap();
+        run["stop_reason"] = json!(stop_reason);
+        if status == "failed" {
+            run["error"] = json!("it broke");
+        }
+        drop(runs);
+        self.notify(run_id, status, stop_reason)
+    }
+
+    /// A notification for a run, as cedar's stream carries it; returns its id.
+    fn notify(&self, run_id: &str, status: &str, stop_reason: Option<&str>) -> i64 {
+        let mut notifications = self.cedar.notifications.lock().unwrap();
+        let id = notifications.len() as i64 + 1;
+        notifications.push(json!({
+            "id": id, "type": format!("run.{status}"), "run_id": run_id, "seq": 2, "status": status,
+            "stop_reason": stop_reason, "error": if status == "failed" { json!("it broke") } else { Value::Null },
+            "parent_id": null, "finished_at": "2026-10-17T09:30:00Z",
+        }));
+        id
+    }
+
+    /// Follow cedar's stream once, from the saved cursor, until the fake closes it.
+    async fn sync(&self) -> usize {
+        notify::sync(&self.state, &CancellationToken::new()).await.unwrap()
+    }
+
+    /// The fake services' base URL (the same port as the fake cedar).
+    fn base_url(&self) -> String {
+        self.state.cfg.cedar_url.clone()
+    }
+
+    /// Open `GET /api/events` and return its body, to read notices from.
+    async fn notice_stream(&self) -> Body {
+        let req = Request::builder().uri("/api/events").body(Body::empty()).unwrap();
+        let resp = self.app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers()["content-type"], "text/event-stream");
+        resp.into_body()
+    }
+}
+
+/// The next notice on an `/api/events` body, within a second.
+async fn next_notice(body: &mut Body) -> Value {
+    let mut buf = String::new();
+    loop {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(1), body.frame()).await.expect("a notice in time").unwrap().unwrap();
+        if let Ok(data) = frame.into_data() {
+            buf.push_str(std::str::from_utf8(&data).unwrap());
+        }
+        if let Some(end) = buf.find("\n\n") {
+            let block: String = buf.drain(..end + 2).collect();
+            let data: String = block.lines().filter_map(|l| l.strip_prefix("data:")).map(|l| l.trim_start()).collect();
+            if !data.is_empty() {
+                return serde_json::from_str(&data).unwrap();
+            }
+        }
     }
 }
 
@@ -638,7 +796,7 @@ async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
 async fn both_uis_are_served() {
     let h = Harness::new(&[]).await;
 
-    for ui in ["v1", "v2"] {
+    for ui in ["v1", "v2", "v3", "v4"] {
         // The page is reachable with and without the trailing slash and loads its own assets.
         for uri in [format!("/{ui}"), format!("/{ui}/")] {
             let (status, headers, page) = fetch(&h, &uri).await;
@@ -676,6 +834,10 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
             assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
             assert!(page.contains("href=\"/attach.css\""), "{uri} loads the attachments styles");
+            assert!(page.contains("<script src=\"/notify.js\">"), "{uri} loads the inbox script");
+            assert!(page.contains("href=\"/notify.css\""), "{uri} loads the inbox styles");
+            assert!(page.contains("id=\"inbox-btn\""), "{uri} has the inbox button");
+            assert!(page.contains("id=\"notify-section\""), "{uri} has the Notifications settings");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in Settings");
             assert!(page.contains("id=\"schedule-btn\""), "{uri} has a Schedule button");
@@ -718,6 +880,9 @@ async fn both_uis_are_served() {
         ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
         ("/attach.css", "text/css; charset=utf-8", ".cedar-attach"),
+        ("/notify.js", "text/javascript; charset=utf-8", "cedarNotify"),
+        ("/notify.css", "text/css; charset=utf-8", ".cedar-inbox"),
+        ("/sw.js", "text/javascript; charset=utf-8", "showNotification"),
     ] {
         let (status, headers, body) = fetch(&h, uri).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
@@ -1332,6 +1497,493 @@ async fn the_google_callback_needs_no_token_and_redirects_to_the_page() {
     assert!(headers["location"].to_str().unwrap().contains("access_denied"));
     let (_, headers, _) = h.call_full(get("/api/oauth/google/callback")).await;
     assert!(headers["location"].to_str().unwrap().contains("incomplete"));
+}
+
+// -- being told when a response finishes -------------------------------------------------------
+
+#[tokio::test]
+async fn finished_runs_are_learned_from_cedars_event_stream() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    assert_eq!((&conv["unread"], &conv["needs_answer"]), (&json!(false), &json!(false)));
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "hi" }))).await;
+    let tid = turn["id"].as_str().unwrap().to_string();
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    assert_eq!((&turn["seen"], &turn["finished_at"]), (&json!(false), &Value::Null));
+
+    // Nothing has finished: the stream has nothing, the inbox is empty.
+    assert_eq!(h.sync().await, 0);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox, json!({ "items": [], "unread": 0 }));
+
+    // The run ends; cedar's stream says so; the turn is brought up to date and the tabs told.
+    let mut notices = h.notice_stream().await;
+    let nid = h.finish_with(&run_id, "completed", Some("hello"), Some("end_turn"));
+    assert_eq!(h.sync().await, 1);
+    let notice = next_notice(&mut notices).await;
+    assert_eq!(notice["type"], "turn.finished");
+    assert_eq!(notice["turn_id"], tid);
+    assert_eq!(notice["conversation_id"], cid);
+    assert_eq!(notice["status"], "completed");
+    assert_eq!(notice["stop_reason"], "end_turn");
+    assert_eq!(notice["needs_answer"], false);
+    assert_eq!(notice["title"], "hi");
+    assert_eq!(notice["schedule_id"], Value::Null);
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), nid);
+
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["conversation"]["unread"], true);
+    assert_eq!(detail["turns"][0]["status"], "completed");
+    assert_eq!(detail["turns"][0]["final_text"], "hello");
+    assert_eq!(detail["turns"][0]["stop_reason"], "end_turn");
+    assert!(detail["turns"][0]["finished_at"].is_string());
+    assert_eq!(detail["turns"][0]["seen"], false);
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!(list["conversations"][0]["unread"], true);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 1);
+    assert_eq!(inbox["items"][0]["turn_id"], tid);
+    assert_eq!(inbox["items"][0]["conversation_id"], cid);
+    assert_eq!(inbox["items"][0]["title"], "hi");
+    assert_eq!(inbox["items"][0]["status"], "completed");
+    assert_eq!(inbox["items"][0]["needs_answer"], false);
+
+    // Looking at the conversation clears it; the stream has nothing new after the cursor.
+    let (status, seen) = h.json(Method::POST, &format!("/api/conversations/{cid}/seen"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(seen["unread"], false);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox, json!({ "items": [], "unread": 0 }));
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["turns"][0]["seen"], true);
+    assert_eq!(h.sync().await, 0);
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), nid);
+
+    // A failure is announced too, and a run cedar reports that this service never started is skipped.
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "more" }))).await;
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    h.notify(&Uuid::new_v4().to_string(), "completed", Some("end_turn"));
+    let nid = h.finish_with(&run_id, "failed", None, None);
+    assert_eq!(h.sync().await, 2);
+    let notice = next_notice(&mut notices).await;
+    assert_eq!((notice["status"].as_str(), notice["error"].as_str()), (Some("failed"), Some("it broke")));
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), nid);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 1);
+    assert_eq!(inbox["items"][0]["status"], "failed");
+
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{}/seen", Uuid::new_v4()), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_question_leaves_the_conversation_waiting_for_an_answer() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "do it" }))).await;
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    let mut notices = h.notice_stream().await;
+    h.finish_with(&run_id, "completed", Some("Which one?"), Some("ask_user"));
+    h.sync().await;
+    assert_eq!(next_notice(&mut notices).await["needs_answer"], true);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["items"][0]["needs_answer"], true);
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!((&list["conversations"][0]["unread"], &list["conversations"][0]["needs_answer"]), (&json!(true), &json!(true)));
+
+    // Seen, but still waiting; the answer settles it.
+    let (_, seen) = h.json(Method::POST, &format!("/api/conversations/{cid}/seen"), None).await;
+    assert_eq!((&seen["unread"], &seen["needs_answer"]), (&json!(false), &json!(true)));
+    h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "the first" }))).await;
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(detail["conversation"]["needs_answer"], false);
+}
+
+#[tokio::test]
+async fn a_scheduled_run_that_finishes_lands_in_the_inbox() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let sid = s["id"].as_str().unwrap().to_string();
+    let due = ts(&s["next_run_at"]);
+    assert_eq!(schedule::tick(&h.state, due + Duration::hours(1)).await.unwrap(), 1);
+    let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+    let run = &detail["runs"][0];
+    let run_cid = run["conversation_id"].as_str().unwrap().to_string();
+
+    let mut notices = h.notice_stream().await;
+    h.finish_with(run["turn"]["run_id"].as_str().unwrap(), "completed", Some("Top story"), Some("end_turn"));
+    h.sync().await;
+    let notice = next_notice(&mut notices).await;
+    assert_eq!(notice["schedule_id"], sid);
+    assert_eq!(notice["conversation_id"], run_cid);
+    // Out of the conversation list, in the inbox.
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!(list["conversations"].as_array().unwrap().len(), 1);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 1);
+    assert_eq!(inbox["items"][0]["schedule_id"], sid);
+    assert_eq!(inbox["items"][0]["conversation_id"], run_cid);
+    assert!(inbox["items"][0]["title"].as_str().unwrap().starts_with("Morning digest"));
+    h.json(Method::POST, &format!("/api/conversations/{run_cid}/seen"), None).await;
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 0);
+}
+
+#[tokio::test]
+async fn a_page_that_watched_the_response_end_marks_it_seen_before_the_notice_arrives() {
+    // The page's own stream shows the end first; it calls `seen`, which refreshes the turn from
+    // cedar. The notification that comes later must not make the response unread again.
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "hi" }))).await;
+    let run_id = turn["run_id"].as_str().unwrap().to_string();
+    h.finish_with(&run_id, "completed", Some("hello"), Some("end_turn"));
+    let (_, seen) = h.json(Method::POST, &format!("/api/conversations/{cid}/seen"), None).await;
+    assert_eq!(seen["unread"], false);
+    assert_eq!(h.sync().await, 1);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert_eq!(inbox["unread"], 0);
+    let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!((&detail["conversation"]["unread"], &detail["turns"][0]["seen"]), (&json!(false), &json!(true)));
+}
+
+// -- out of the app: Pushover, email, browser push ---------------------------------------------
+
+/// A conversation whose one run ended as `status`; returns its turn id.
+async fn ended_turn(h: &Harness, title: &str, status: &str, stop_reason: Option<&str>) -> Uuid {
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({ "title": title }))).await;
+    let cid = conv["id"].as_str().unwrap();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "do it" }))).await;
+    h.finish_with(turn["run_id"].as_str().unwrap(), status, Some("The answer is 42."), stop_reason);
+    h.sync().await;
+    Uuid::parse_str(turn["id"].as_str().unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn notification_settings_are_saved_without_leaking_secrets() {
+    let h = Harness::new(&[]).await;
+    let (status, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!((got["default_method"].as_str(), got["scope"].as_str()), (Some("none"), Some("attention")));
+    assert_eq!(got["configured"], json!([]));
+    assert_eq!(got["pushover"]["configured"], false);
+    let key = got["browser"]["public_key"].as_str().expect("the push keys are made on first read");
+    assert!(key.len() > 80 && !key.contains('='), "an uncompressed P-256 key, base64url: {key}");
+    assert_eq!(got["browser"]["subscriptions"], json!([]));
+    assert_eq!(got["last_delivery"], Value::Null);
+
+    // A method that can't send is refused.
+    let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("Pushover needs"), "{err}");
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "email" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "browser" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "no browser is subscribed");
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pigeon" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "email": { "from": "not an address" } }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let body = json!({
+        "default_method": "pushover", "scope": "all",
+        "pushover": { "token": "app-token-1", "user": "user-key-wxyz" },
+        "email": { "host": "smtp.example", "security": "starttls", "username": "me", "password": "hunter2", "from": "Cedar <cedar@example.com>", "to": "me@example.com" },
+        "contact": "ops@example.com",
+    });
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!((got["default_method"].as_str(), got["scope"].as_str()), (Some("pushover"), Some("all")));
+    assert_eq!(got["configured"], json!(["pushover", "email"]), "both are set up, whichever is the default");
+    assert_eq!(got["pushover"], json!({ "configured": true, "token_set": true, "user_set": true, "user_last4": "wxyz" }));
+    assert_eq!(got["email"]["password_set"], true);
+    assert_eq!(got["email"]["host"], "smtp.example");
+    assert_eq!(got["email"]["security"], "starttls");
+    assert_eq!(got["browser"]["contact"], "ops@example.com");
+    let text = got.to_string();
+    assert!(!text.contains("app-token-1") && !text.contains("user-key-wxyz") && !text.contains("hunter2"), "{text}");
+
+    // Leaving a secret out keeps it; an empty one clears it.
+    let (_, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "pushover": { "token": "app-token-2" } }))).await;
+    assert_eq!(got["pushover"]["user_last4"], "wxyz");
+    let (_, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "none", "pushover": { "token": "", "user": "" } }))).await;
+    assert_eq!(got["pushover"]["configured"], false);
+    let (status, _) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "none" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn pushover_messages_go_out_and_refusals_are_reported() {
+    let h = Harness::new(&[]).await;
+    let (_, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "pushover": { "token": "app-token", "user": "user-key" } }))).await;
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "pushover" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["ok"], true);
+    let sent = h.cedar.pushover.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1);
+    assert_eq!((sent[0]["token"].as_str(), sent[0]["user"].as_str()), ("app-token", "user-key"));
+    assert!(sent[0]["title"].contains("test"));
+    assert!(sent[0]["url"].starts_with("http://127.0.0.1:3000/"), "{}", sent[0]["url"]);
+    let (_, settings) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!((&settings["last_delivery"]["ok"], &settings["last_delivery"]["test"]), (&json!(true), &json!(true)));
+    assert_eq!(settings["last_delivery"]["method"], "pushover");
+
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "pushover": { "token": "bad" } }))).await;
+    let (status, err) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "pushover" }))).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(err["error"]["message"].as_str().unwrap().contains("application token is invalid"), "{err}");
+    let (_, settings) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(settings["last_delivery"]["ok"], false);
+    assert!(settings["last_delivery"]["detail"].as_str().unwrap().contains("invalid"));
+}
+
+#[tokio::test]
+async fn email_goes_out_over_smtp() {
+    let (port, mails) = fake_smtp().await;
+    let h = Harness::new(&[]).await;
+    let body = json!({
+        "default_method": "email",
+        "email": { "host": "127.0.0.1", "port": port, "security": "none", "username": "me", "password": "pw", "from": "Cedar <cedar@example.com>", "to": "Me <me@example.com>" },
+    });
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "email" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    let sent = mails.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].contains("Subject: Cedar: test notification"), "{}", sent[0]);
+    assert!(sent[0].contains("From: \"Cedar\" <cedar@example.com>") || sent[0].contains("From: Cedar <cedar@example.com>"), "{}", sent[0]);
+    assert!(sent[0].contains("http://127.0.0.1:3000/"), "{}", sent[0]);
+
+    // Nothing listening: the error names the problem.
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "email": { "port": 1 } }))).await;
+    let (status, err) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "email" }))).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(err["error"]["message"].as_str().unwrap().contains("mail server"), "{err}");
+}
+
+#[tokio::test]
+async fn finished_runs_are_sent_by_the_chosen_method_unless_looked_at() {
+    let h = Harness::new(&[]).await;
+    // Nothing is chosen: nothing goes out.
+    let plain = ended_turn(&h, "Plain", "completed", Some("end_turn")).await;
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, plain).await.unwrap(), None);
+
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "pushover": { "token": "t", "user": "u" } }))).await;
+    // The default scope: a plain completion is not worth a push, a failure and a question are.
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, plain).await.unwrap(), None);
+    let failed = ended_turn(&h, "Broken", "failed", None).await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, failed).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let question = ended_turn(&h, "Lisbon", "completed", Some("ask_user")).await;
+    assert!(cedar_chat::channels::dispatch(&h.state, question).await.unwrap().is_some());
+    let sent = h.cedar.pushover.lock().unwrap().clone();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0]["title"], "Broken: failed");
+    assert!(sent[0]["message"].contains("it broke"), "{}", sent[0]["message"]);
+    assert_eq!(sent[1]["title"], "Lisbon: needs your answer");
+    assert!(sent[1]["message"].contains("The answer is 42."));
+    assert!(sent[1]["url"].ends_with(&format!("/#/c/{}", h.state.store.get_turn(question).await.unwrap().unwrap().conversation_id)));
+    let (_, settings) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(settings["last_delivery"]["test"], false);
+
+    // Looked at meanwhile: not sent. The wider scope sends plain completions too.
+    let seen = ended_turn(&h, "Seen", "failed", None).await;
+    let cid = h.state.store.get_turn(seen).await.unwrap().unwrap().conversation_id;
+    h.json(Method::POST, &format!("/api/conversations/{cid}/seen"), None).await;
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, seen).await.unwrap(), None);
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "scope": "all" }))).await;
+    assert!(cedar_chat::channels::dispatch(&h.state, plain).await.unwrap().is_some());
+    assert_eq!(h.cedar.pushover.lock().unwrap().last().unwrap()["title"], "Plain: finished");
+
+    // A scheduled run counts as needing attention; a stopped one never goes out.
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "scope": "attention" }))).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let due = ts(&s["next_run_at"]);
+    schedule::tick(&h.state, due + Duration::hours(1)).await.unwrap();
+    let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{}", s["id"].as_str().unwrap()), None).await;
+    let run = &detail["runs"][0];
+    h.finish_with(run["turn"]["run_id"].as_str().unwrap(), "completed", Some("Top story"), Some("end_turn"));
+    h.sync().await;
+    let turn_id = Uuid::parse_str(run["turn"]["id"].as_str().unwrap()).unwrap();
+    assert!(cedar_chat::channels::dispatch(&h.state, turn_id).await.unwrap().is_some());
+    let last = h.cedar.pushover.lock().unwrap().last().unwrap().clone();
+    assert!(last["title"].starts_with("Morning digest"), "{}", last["title"]);
+    assert!(last["message"].starts_with("A scheduled run"), "{}", last["message"]);
+    let stopped = ended_turn(&h, "Stopped", "cancelled", None).await;
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, stopped).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_scheduled_agent_picks_its_own_method() {
+    let (port, mails) = fake_smtp().await;
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+
+    // Only a method that is set up can be picked; the default needs nothing.
+    let mut body = schedule_body(&cid);
+    body["notify"] = json!("email");
+    let (status, err) = h.json(Method::POST, "/api/schedules", Some(body.clone())).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("SMTP"), "{err}");
+    body["notify"] = json!("pigeon");
+    assert_eq!(h.json(Method::POST, "/api/schedules", Some(body.clone())).await.0, StatusCode::BAD_REQUEST);
+    body["notify"] = json!(null);
+    let (status, s) = h.json(Method::POST, "/api/schedules", Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED, "{s}");
+    assert_eq!(s["notify"], Value::Null);
+    let sid = s["id"].as_str().unwrap().to_string();
+
+    // Email set up, but Pushover is the default: the schedule picks email for itself.
+    let settings = json!({
+        "default_method": "pushover", "pushover": { "token": "t", "user": "u" },
+        "email": { "host": "127.0.0.1", "port": port, "security": "none", "from": "cedar@example.com", "to": "me@example.com" },
+    });
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(settings)).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["configured"], json!(["pushover", "email"]));
+    let (status, s) = h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "notify": "email" }))).await;
+    assert_eq!(status, StatusCode::OK, "{s}");
+    assert_eq!(s["notify"], "email");
+    let (_, list) = h.json(Method::GET, "/api/schedules", None).await;
+    assert_eq!(list["schedules"][0]["notify"], "email");
+
+    // Its run finishes: the mail goes, Pushover stays quiet.
+    async fn fire(h: &Harness, sid: &str) -> Uuid {
+        let (_, s) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+        let due = ts(&s["schedule"]["next_run_at"]);
+        schedule::tick(&h.state, due + Duration::hours(1)).await.unwrap();
+        let (_, detail) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
+        let run = detail["runs"][0].clone();
+        h.finish_with(run["turn"]["run_id"].as_str().unwrap(), "completed", Some("Top story"), Some("end_turn"));
+        h.sync().await;
+        Uuid::parse_str(run["turn"]["id"].as_str().unwrap()).unwrap()
+    }
+    let turn = fire(&h, &sid).await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, turn).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    assert_eq!(mails.lock().unwrap().len(), 1);
+    assert!(mails.lock().unwrap()[0].contains("Subject: Morning digest"), "{}", mails.lock().unwrap()[0]);
+    assert!(h.cedar.pushover.lock().unwrap().is_empty());
+
+    // "Not at all" keeps it quiet even though the default would send; back to the default and it goes by Pushover.
+    h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "notify": "none" }))).await;
+    let turn = fire(&h, &sid).await;
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, turn).await.unwrap(), None);
+    let (_, s) = h.json(Method::PATCH, &format!("/api/schedules/{sid}"), Some(json!({ "notify": null }))).await;
+    assert_eq!(s["notify"], Value::Null);
+    let turn = fire(&h, &sid).await;
+    assert!(cedar_chat::channels::dispatch(&h.state, turn).await.unwrap().is_some());
+    assert_eq!(h.cedar.pushover.lock().unwrap().len(), 1);
+    assert_eq!(mails.lock().unwrap().len(), 1);
+}
+
+/// The receiver keys of RFC 8291's example: a valid P-256 point and a 16-byte secret.
+const P256DH: &str = "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
+const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
+
+#[tokio::test]
+async fn browser_push_reaches_every_subscribed_browser_and_drops_dead_ones() {
+    let h = Harness::new(&[]).await;
+    let subscribe = |name: &str, agent: &str| {
+        let h = &h;
+        let endpoint = format!("{}/push/{name}", h.base_url());
+        let body = json!({ "endpoint": endpoint, "expirationTime": null, "keys": { "p256dh": P256DH, "auth": AUTH } });
+        let agent = agent.to_string();
+        async move {
+            let req = Request::builder()
+                .method(Method::POST)
+                .uri("/api/notifications/push/subscriptions")
+                .header("content-type", "application/json")
+                .header("user-agent", agent)
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            let (status, _, text) = h.call_full(req).await;
+            assert_eq!(status, StatusCode::OK, "{text}");
+            serde_json::from_str::<Value>(&text).unwrap()
+        }
+    };
+    let got = subscribe("a", "Mozilla/5.0 (X11; Linux) Firefox/130.0").await;
+    assert!(got["subscription_id"].is_string());
+    let got = subscribe("b", "Mozilla/5.0 (Macintosh) Chrome/129.0").await;
+    let subs = got["browser"]["subscriptions"].as_array().unwrap();
+    assert_eq!(subs.len(), 2);
+    assert!(subs[0]["user_agent"].as_str().unwrap().contains("Firefox"));
+    assert!(!got["browser"]["subscriptions"].to_string().contains("push/a"), "endpoints and keys stay on the server");
+    // Subscribing again from the same browser is one subscription.
+    subscribe("a", "Mozilla/5.0 (X11; Linux) Firefox/131.0").await;
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(got["browser"]["subscriptions"].as_array().unwrap().len(), 2);
+    let (status, _) = h.json(Method::POST, "/api/notifications/push/subscriptions", Some(json!({ "endpoint": "ftp://x", "keys": { "p256dh": P256DH, "auth": AUTH } }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "browser", "contact": "ops@example.com" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "browser" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert!(got["detail"].as_str().unwrap().contains("2 browsers"), "{got}");
+    let pushes = h.cedar.pushes.lock().unwrap().clone();
+    assert_eq!(pushes.len(), 2);
+    let mut names: Vec<&str> = pushes.iter().map(|(n, _, _)| n.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["a", "b"]);
+    let (_, headers, body) = &pushes[0];
+    let auth = headers["authorization"].to_str().unwrap();
+    assert!(auth.starts_with("vapid t=") && auth.contains("k="), "{auth}");
+    assert_eq!(headers["content-encoding"], "aes128gcm");
+    assert_eq!(headers["content-type"], "application/octet-stream");
+    assert_eq!(headers["ttl"], "86400");
+    assert_eq!(headers["urgency"], "high");
+    assert!(body.len() > 100, "an encrypted payload with its header: {} bytes", body.len());
+    assert!(!String::from_utf8_lossy(body).contains("test notification"), "the payload is encrypted");
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert!(got["browser"]["subscriptions"][0]["last_used_at"].is_string());
+
+    // A browser the push service no longer knows is dropped; the other still gets it.
+    h.cedar.push_answers.lock().unwrap().insert("b".into(), [410].into());
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "browser" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert!(got["detail"].as_str().unwrap().contains("1 browser,") && got["detail"].as_str().unwrap().contains("no longer subscribed"), "{got}");
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    let subs = got["browser"]["subscriptions"].as_array().unwrap();
+    assert_eq!(subs.len(), 1);
+    assert!(subs[0]["user_agent"].as_str().unwrap().contains("Firefox"));
+
+    // A finished run goes to the browser too; a push service failure is reported, not fatal.
+    let failed = ended_turn(&h, "Broken", "failed", None).await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, failed).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    h.cedar.push_answers.lock().unwrap().insert("a".into(), [500].into());
+    let (status, err) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "browser" }))).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(err["error"]["message"].as_str().unwrap().contains("500"), "{err}");
+
+    // The browser turns push off, or the user removes a browser from the list.
+    let (status, got) = h.json(Method::DELETE, "/api/notifications/push/subscriptions", Some(json!({ "endpoint": format!("{}/push/a", h.base_url()) }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["browser"]["subscriptions"], json!([]));
+    let got = subscribe("c", "Safari/605").await;
+    let id = got["subscription_id"].as_str().unwrap().to_string();
+    let (status, got) = h.json(Method::DELETE, &format!("/api/notifications/push/subscriptions/{id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["browser"]["subscriptions"], json!([]));
+    let (status, _) = h.json(Method::DELETE, &format!("/api/notifications/push/subscriptions/{id}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // With no browser left the method can't stay "browser".
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "browser" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn an_unreachable_cedar_fails_the_sync_without_moving_the_cursor() {
+    let h = Harness::new(&[("CEDAR_URL", "http://127.0.0.1:1")]).await;
+    assert!(notify::sync(&h.state, &CancellationToken::new()).await.is_err());
+    assert_eq!(h.state.store.notifications_cursor().await.unwrap(), 0);
 }
 
 #[tokio::test]

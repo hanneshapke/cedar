@@ -535,6 +535,8 @@ impl TestApp {
         )
         .unwrap();
         state.integrations.reload().await.unwrap();
+        // As `main` does: deliver webhooks in the background.
+        state.webhooks.start();
         let router = api::router(state.clone());
         Self {
             state,
@@ -661,8 +663,13 @@ pub struct LiveStream {
 
 impl LiveStream {
     pub async fn open(app: &TestApp, key: &str, id: &str, last_event_id: Option<i64>) -> Self {
+        Self::open_uri(app, key, &format!("/v1/runs/{id}/events"), last_event_id).await
+    }
+
+    /// Any SSE route (`/v1/events` for the key's finished runs).
+    pub async fn open_uri(app: &TestApp, key: &str, uri: &str, last_event_id: Option<i64>) -> Self {
         let mut req = Request::builder()
-            .uri(format!("/v1/runs/{id}/events"))
+            .uri(uri)
             .header("authorization", format!("Bearer {key}"));
         if let Some(n) = last_event_id {
             req = req.header("last-event-id", n.to_string());

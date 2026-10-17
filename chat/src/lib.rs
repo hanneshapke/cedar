@@ -6,8 +6,10 @@
 
 pub mod api;
 pub mod cedar;
+pub mod channels;
 pub mod config;
 pub mod error;
+pub mod notify;
 pub mod prompt;
 pub mod schedule;
 pub mod store;

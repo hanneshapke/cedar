@@ -18,7 +18,7 @@ const els = {
   app: $('app'), title: $('title'), titleInput: $('title-input'), when: $('when'), status: $('status'), statusText: $('status-text'),
   stop: $('stop'), newChat: $('new-chat'), deleteChat: $('delete-chat'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
-  scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'),
+  scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'), inboxBtn: $('inbox-btn'),
   chatsBtn: $('chats-btn'), drawer: $('drawer'), drawerClose: $('drawer-close'), backdrop: $('backdrop'), recents: $('recents'),
   outline: $('outline'), outlineWrap: $('outline-wrap'), cost: $('cost'), examples: $('examples'), greeting: $('greeting'), hero: $('hero'), slip: document.querySelector('.slip'),
   scroll: $('scroll'), briefs: $('briefs'),
@@ -1115,6 +1115,8 @@ function finishTurn(view, event) {
   renderOutline();
   if (state.activeTurn === view) {
     state.activeTurn = null;
+    // Watched to the end: not news. Hidden tabs leave it unread, for the inbox and the title.
+    markSeen();
     // Once the turn is over, the page rests on the top of its Result.
     const target = view.blocks.result.hidden ? view.blocks.work : view.blocks.result;
     els.scroll.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
@@ -1165,7 +1167,17 @@ function updateChrome() {
   }
   els.cost.textContent = c && (total.input || total.output) ? cedarTrust.cost.text(total) : '';
   if (!c) renderOutline();
-  document.title = c?.title ? `${c.title} – Cedar` : 'Cedar';
+  cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
+}
+
+/** The open conversation has been looked at: nothing in it is unread any more. */
+function markSeen() {
+  const c = state.current;
+  if (!c || document.visibilityState !== 'visible') return;
+  c.unread = false;
+  const listed = state.conversations.find((x) => x.id === c.id);
+  if (listed) listed.unread = false;
+  cedarNotify.seen(c.id);
 }
 
 // (v4 has one column: no panes, no splitter.)
@@ -1199,7 +1211,10 @@ function renderRecents() {
     if (state.current?.id === c.id) a.classList.add('active');
     a.append(t('span', 'name', c.title || 'New chat'));
     a.title = c.title || 'New chat';
+    a.classList.toggle('is-unread', Boolean(c.unread));
     if (state.current?.id === c.id && state.activeTurn) a.append(h('span', 'live'));
+    else if (c.needs_answer) a.append(t('span', 'needs', 'Needs answer'));
+    else if (c.unread) a.append(h('span', 'unread'));
     const del = h('button', 'del', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>');
     del.type = 'button';
     del.setAttribute('aria-label', `Delete "${c.title || 'New chat'}"`);
@@ -1257,6 +1272,7 @@ async function openConversation(id) {
   renderRecents();
   if (narrow.matches) setPane('talk');
   els.input.focus();
+  markSeen();
 }
 
 // -- the model and reasoning pickers -----------------------------------------------------------
@@ -1559,11 +1575,13 @@ async function init() {
   });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
+  cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: loadConversations });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
   await loadConversations();
   route();
+  cedarNotify.start();
 }
 
 init();

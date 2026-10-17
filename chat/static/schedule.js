@@ -59,6 +59,13 @@ const cedarSchedule = (() => {
     return new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
+  /** "Notifies by email", for the list. */
+  function notifyText(s) {
+    if (!s.notify) return '';
+    if (s.notify === 'none') return 'Only in the app';
+    return `Notifies by ${typeof cedarNotify === 'undefined' ? s.notify : cedarNotify.methodLabel(s.notify).toLowerCase()}`;
+  }
+
   /** "Every weekday at 09:00 (Europe/Berlin)". */
   function describe(s) {
     const freq = FREQUENCIES.find(([k]) => k === s.frequency)?.[1] || s.frequency;
@@ -147,6 +154,12 @@ const cedarSchedule = (() => {
     const reasoningField = field('Reasoning', reasoning);
     cedarModels.bindPair(model, reasoning);
     model.addEventListener('change', () => { reasoningField.hidden = reasoning.hidden; });
+    // How a finished run is announced: the default from Settings → Notifications, not at all, or
+    // one of the methods set up there (cedarNotify knows which).
+    const notify = el('select');
+    const notifyField = field('Notify me by', notify);
+    const notifyHelp = el('div', 'cedar-sched-help');
+    notifyHelp.append(el('span', '', 'Phone push, browser push and email are set up under Settings → Notifications.'));
     const error = el('div', 'cedar-sched-error');
     error.hidden = true;
     const actions = el('div', 'cedar-sched-actions');
@@ -157,14 +170,14 @@ const cedarSchedule = (() => {
 
     const row = el('div', 'cedar-sched-row');
     row.append(field('Frequency', frequency), weekdayField, field('Time', time));
-    f.append(field('Name', titleInput), field('Prompt', prompt), promptHelp, row, zone, modelField, reasoningField, error, actions);
+    f.append(field('Name', titleInput), field('Prompt', prompt), promptHelp, row, zone, modelField, reasoningField, notifyField, notifyHelp, error, actions);
     frequency.addEventListener('change', () => { weekdayField.hidden = frequency.value !== 'weekly'; });
     f.addEventListener('submit', (e) => { e.preventDefault(); submitForm(); });
 
     dialog.append(head, review, f);
     dialog.addEventListener('close', () => { editing = null; });
     document.body.append(dialog);
-    return { dialog, title, review, reviewText, retry, form: f, titleInput, prompt, promptHelp, frequency, weekday, weekdayField, time, zone, model, modelField, reasoning, reasoningField, error, submit };
+    return { dialog, title, review, reviewText, retry, form: f, titleInput, prompt, promptHelp, frequency, weekday, weekdayField, time, zone, model, modelField, reasoning, reasoningField, notify, notifyField, error, submit };
   }
 
   function showStage(stage) {
@@ -177,6 +190,22 @@ const cedarSchedule = (() => {
     form.model.hidden = false;
     form.modelField.hidden = !shown;
     form.reasoningField.hidden = !cedarModels.fillLevels(form.reasoning, form.model.value, level || '');
+  }
+
+  /** Fill the notify picker with the methods that are set up; `selected` is a schedule's choice (null: the default). */
+  async function fillNotify(selected) {
+    const current = selected ?? '';
+    form.notify.textContent = '';
+    form.notify.append(new Option('Default', ''), new Option('Only in the app', 'none'));
+    form.notify.value = current === 'none' ? 'none' : '';
+    if (typeof cedarNotify === 'undefined') return;
+    try { await cedarNotify.loadStatus(true); } catch { return; }
+    form.notify.textContent = '';
+    for (const { value, label } of cedarNotify.methodOptions(true)) form.notify.append(new Option(label, value));
+    if (current && ![...form.notify.options].some((o) => o.value === current)) {
+      form.notify.append(new Option(`${cedarNotify.methodLabel(current)} (no longer set up)`, current));
+    }
+    form.notify.value = current;
   }
 
   function setTiming({ frequency = 'daily', weekday = null, time = defaultTime(), timezone = localZone() } = {}) {
@@ -201,6 +230,7 @@ const cedarSchedule = (() => {
     form.error.hidden = true;
     fillModels(model || conversation.model || '', reasoning ?? conversation.reasoning ?? '');
     setTiming();
+    fillNotify(null);
     if (!form.dialog.open) form.dialog.showModal();
     compactNow();
   }
@@ -218,6 +248,7 @@ const cedarSchedule = (() => {
     form.error.hidden = true;
     fillModels(schedule.model || '', schedule.reasoning || '');
     setTiming({ frequency: schedule.frequency, weekday: schedule.weekday, time: schedule.time_of_day, timezone: schedule.timezone });
+    fillNotify(schedule.notify ?? null);
     showStage('form');
     if (!form.dialog.open) form.dialog.showModal();
     form.titleInput.focus();
@@ -255,6 +286,7 @@ const cedarSchedule = (() => {
     if (body.frequency === 'weekly') body.weekday = Number(form.weekday.value);
     if (!form.modelField.hidden) body.model = form.model.value;
     body.reasoning = form.reasoningField.hidden ? '' : form.reasoning.value;
+    body.notify = form.notify.value || null;
     form.error.hidden = true;
     form.submit.disabled = true;
     try {
@@ -321,7 +353,7 @@ const cedarSchedule = (() => {
       const item = el('div', `cedar-sched-item${s.enabled ? '' : ' paused'}`);
       const main = el('div', 'cedar-sched-item-main');
       const name = el('strong', '', s.title);
-      main.append(name, el('div', 'cedar-sched-sub', describe(s)));
+      main.append(name, el('div', 'cedar-sched-sub', [describe(s), notifyText(s)].filter(Boolean).join(' · ')));
       const next = el('div', 'cedar-sched-sub');
       if (!s.enabled) next.append(el('span', 'cedar-sched-chip muted', 'paused'));
       else next.textContent = `Next run ${when(s.next_run_at)}`;
@@ -348,7 +380,7 @@ const cedarSchedule = (() => {
   function renderDetail({ schedule: s, runs }) {
     const box = el('div', 'cedar-sched-detail');
     const main = el('div', 'cedar-sched-item-main');
-    main.append(el('strong', '', s.title), el('div', 'cedar-sched-sub', describe(s)));
+    main.append(el('strong', '', s.title), el('div', 'cedar-sched-sub', [describe(s), notifyText(s)].filter(Boolean).join(' · ')));
     main.append(el('div', 'cedar-sched-sub', s.enabled ? `Next run ${when(s.next_run_at)}` : 'Paused'));
     const promptBox = el('details', 'cedar-sched-prompt');
     promptBox.append(el('summary', '', 'Prompt'), el('pre', '', s.prompt));
