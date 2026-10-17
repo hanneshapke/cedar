@@ -72,6 +72,16 @@ Both interfaces have all of these, except where noted:
   estimated fare; walk), and the chosen option's steps on a timeline. Click a row to see that option
   on the map and in the steps. Times are shown in the trip's time zone when the planner gives one.
   It is placed like a map (`transit-view.js` and `transit-view.css`, which draw with the map view)
+- A `compare_stocks` tool call is drawn as a stock card: a quote tile per symbol (price, the day's
+  move, and its buy/hold/sell call), a line chart of the period (1M to 5Y) as % change against the
+  benchmark index (dashed) or as one symbol's price, with a crosshair that lists every line's value
+  (arrow keys move it too), then the selected symbol's rating: the call on a sell–hold–buy gauge with
+  its confidence and summary, every factor with its score bar and the reasoning behind it, what would
+  change the view, and key numbers (52-week and day ranges, moving averages, RSI, volatility,
+  drawdown, beta). Pick a tile to see another symbol. Below are the returns of every symbol side by
+  side and the news, which can be filtered by symbol; headlines open in a new tab. Cedar style puts
+  it on the desk as a clipping, Claude style under the tool call (`stock-view.js` and
+  `stock-view.css`; see [Stock news and privacy](#stock-news-and-privacy))
 - An `ask_user` tool call, when the agent needs a clarification before it goes on, is drawn as a
   form: each question with its options as radio buttons (pick one) or checkboxes (pick any), and
   always a field for an answer in your own words (for an open question, that field alone). Send
@@ -106,8 +116,9 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat
 The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
-`map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `clarify-view.js`
-and `clarify-view.css` for clarifying questions, `schedule.js` and `schedule.css` for scheduled agents, and
+`map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
+`stock-view.css` for stocks, `clarify-view.js` and `clarify-view.css` for clarifying questions,
+`schedule.js` and `schedule.css` for scheduled agents, and
 `models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
 model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
 library, and
@@ -145,6 +156,15 @@ sees the viewer's IP address and which photo was shown, but not this page. The p
 and the rest of the card is set as text, so nothing in the tool's result runs in the page. The chat
 server itself makes no requests for recipes; cedar searches Wikipedia and Commons (see the top-level
 README). Set `RECIPES=off` on cedar to remove the tool.
+
+### Stock news and privacy
+
+The stock chart is drawn in the page from the prices in the tool's result; nothing is loaded for it.
+Headline thumbnails are the one thing on a stock card that comes from elsewhere: the browser loads
+them from the `https` addresses Yahoo Finance gave, without a referrer, and leaves them out if they
+fail. Headlines are links that open in a new tab without a referrer. Everything else is set as text,
+so nothing in the tool's result runs in the page. The chat server makes no requests for stocks;
+cedar asks Yahoo Finance (see the top-level README). Set `STOCKS=off` on cedar to remove the tool.
 
 ## Configuration
 

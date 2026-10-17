@@ -438,6 +438,7 @@ impl Integrations {
             ("maps", off("MAPS")),
             ("recipes", off("RECIPES")),
             ("transit", off("TRANSIT")),
+            ("stocks", off("STOCKS")),
             ("ask_user", off("ASK_USER")),
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),

@@ -19,6 +19,9 @@ pub const DEFAULT_RECIPE_COMMONS_URL: &str = "https://commons.wikimedia.org/w/ap
 pub const DEFAULT_TRANSIT_BASE_URL: &str = "https://api.transitous.org";
 /// The OSRM project's public demo router, for driving routes.
 pub const DEFAULT_DRIVING_BASE_URL: &str = "https://router.project-osrm.org";
+/// Yahoo Finance's chart API (daily prices; the symbol goes under it) and search API (news).
+pub const DEFAULT_STOCKS_CHART_URL: &str = "https://query1.finance.yahoo.com/v8/finance/chart";
+pub const DEFAULT_STOCKS_NEWS_URL: &str = "https://query1.finance.yahoo.com/v1/finance/search";
 pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const DEFAULT_GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 /// What "Connect Google" asks for: the account's address, and what the default tools need.
@@ -159,6 +162,11 @@ pub struct Config {
     pub transit_base_url: String,
     /// Root of the OSRM router `plan_trip` asks for driving routes.
     pub driving_base_url: String,
+    /// Offer the `compare_stocks` tool (on by default).
+    pub stocks: bool,
+    /// The chart API `compare_stocks` reads prices from, and the search API it reads news from.
+    pub stocks_chart_url: String,
+    pub stocks_news_url: String,
     /// Offer the `ask_user` tool (on by default), which ends a run with clarifying questions.
     pub ask_user: bool,
     /// The Google account the Gmail and Calendar tools act for. Set when either is on.
@@ -372,6 +380,11 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_TRANSIT_BASE_URL.into()),
             driving_base_url: get("DRIVING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_DRIVING_BASE_URL.into()),
+            stocks: flag("STOCKS", true)?,
+            stocks_chart_url: get("STOCKS_CHART_URL")
+                .unwrap_or_else(|| DEFAULT_STOCKS_CHART_URL.into()),
+            stocks_news_url: get("STOCKS_NEWS_URL")
+                .unwrap_or_else(|| DEFAULT_STOCKS_NEWS_URL.into()),
             ask_user: flag("ASK_USER", true)?,
             google_oauth,
             google_apis,
@@ -574,6 +587,24 @@ mod tests {
         let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("TRANSIT", "maybe")]))
             .unwrap_err();
         assert!(err.to_string().contains("TRANSIT"), "{err}");
+    }
+
+    #[test]
+    fn stocks_are_on_by_default_and_their_apis_can_be_moved() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.stocks);
+        assert_eq!(cfg.stocks_chart_url, DEFAULT_STOCKS_CHART_URL);
+        assert_eq!(cfg.stocks_news_url, DEFAULT_STOCKS_NEWS_URL);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("STOCKS", "off"),
+            ("STOCKS_CHART_URL", "http://localhost:9999/chart"),
+            ("STOCKS_NEWS_URL", "http://localhost:9999/search"),
+        ]))
+        .unwrap();
+        assert!(!cfg.stocks);
+        assert_eq!(cfg.stocks_chart_url, "http://localhost:9999/chart");
+        assert_eq!(cfg.stocks_news_url, "http://localhost:9999/search");
     }
 
     #[test]

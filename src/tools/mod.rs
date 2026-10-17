@@ -1,7 +1,7 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
 //! run's sandbox; `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and
-//! `show_recipe`, and `plan_trip` run in the cedar process, because the sandbox has no network; so
-//! does `ask_user`, which only checks its questions; `browser` drives the run's browser
+//! `show_recipe`, `plan_trip`, and `compare_stocks` run in the cedar process, because the sandbox
+//! has no network; so does `ask_user`, which only checks its questions; `browser` drives the run's browser
 //! container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
 //! in the cedar process too.
 
@@ -22,6 +22,7 @@ mod open_meteo;
 mod pdf;
 mod python;
 mod recipe;
+mod stocks;
 mod transit;
 mod weather;
 mod web_search;
@@ -38,6 +39,7 @@ pub use mcp::{McpServer, McpTool};
 pub use pdf::GeneratePdf;
 pub use python::RunPython;
 pub use recipe::ShowRecipe;
+pub use stocks::CompareStocks;
 pub use transit::PlanTrip;
 pub use weather::WeatherForecast;
 pub use web_search::BraveSearch;
@@ -114,9 +116,9 @@ impl ToolSet {
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
-    /// `TRANSIT` is off, `ask_user` unless `ASK_USER` is off, `browser` if `BROWSER` is on, and the
-    /// Gmail and Calendar tools if `GMAIL` or `CALENDAR` is on (through the REST APIs, or MCP
-    /// servers whose tools are discovered later).
+    /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `ask_user` unless `ASK_USER` is
+    /// off, `browser` if `BROWSER` is on, and the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
+    /// is on (through the REST APIs, or MCP servers whose tools are discovered later).
     pub fn from_config(cfg: &Config) -> Result<Self> {
         Self::build(cfg, &Overrides::default())
     }
@@ -162,6 +164,12 @@ impl ToolSet {
             set.tools.push(Box::new(PlanTrip::new(
                 cfg.transit_base_url.clone(),
                 cfg.driving_base_url.clone(),
+            )?));
+        }
+        if cfg.stocks {
+            set.tools.push(Box::new(CompareStocks::new(
+                cfg.stocks_chart_url.clone(),
+                cfg.stocks_news_url.clone(),
             )?));
         }
         if cfg.ask_user {
@@ -311,6 +319,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("maps", "Maps"),
     ("recipes", "Recipes"),
     ("transit", "Directions & transit"),
+    ("stocks", "Stocks & markets"),
     ("ask_user", "Clarifying questions"),
     ("browser", "Browser"),
     ("gmail", "Gmail"),
@@ -326,6 +335,7 @@ pub fn group_of(name: &str) -> &'static str {
         "show_map" => "maps",
         "show_recipe" => "recipes",
         "plan_trip" => "transit",
+        "compare_stocks" => "stocks",
         "ask_user" => "ask_user",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
@@ -423,6 +433,13 @@ impl<'a> ToolView<'a> {
             note.push_str(
                 " For how to get somewhere (public transit, driving, walking, or a rideshare), use \
                  plan_trip; it shows the routes on a map.",
+            );
+        }
+        if self.get("compare_stocks").is_some() {
+            note.push_str(
+                " For stock, ETF, or index prices, comparisons, market news, or whether to buy, \
+                 hold, or sell, use compare_stocks; it shows charts, headlines, and a rating with \
+                 its reasoning, which you then weigh in your own call.",
             );
         }
         if self.get(ASK_USER).is_some() {
@@ -653,6 +670,7 @@ mod tests {
             ("MAPS", "off"),
             ("RECIPES", "off"),
             ("TRANSIT", "off"),
+            ("STOCKS", "off"),
             ("ASK_USER", "off"),
         ]))
         .unwrap();
@@ -667,6 +685,7 @@ mod tests {
         assert!(note.contains("use show_map"));
         assert!(note.contains("present it with show_recipe"));
         assert!(note.contains("use plan_trip"), "{note}");
+        assert!(note.contains("use compare_stocks"), "{note}");
         assert!(note.contains("ask with ask_user"), "{note}");
         assert!(note.contains("![caption](path.png)"), "{note}");
         assert!(!note.contains("browser tool"));
@@ -682,6 +701,7 @@ mod tests {
         assert!(!note.contains("show_map"));
         assert!(!note.contains("show_recipe"));
         assert!(!note.contains("plan_trip"));
+        assert!(!note.contains("compare_stocks"));
         assert!(!note.contains("ask_user"));
         assert!(plain
             .environment_note("bridge")
@@ -713,6 +733,7 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
+                "compare_stocks",
                 "ask_user"
             ])
         );
@@ -726,6 +747,7 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
+                "compare_stocks",
                 "ask_user"
             ])
         );
@@ -736,6 +758,7 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
+                "compare_stocks",
                 "ask_user"
             ])
         );
@@ -747,6 +770,7 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
+                "compare_stocks",
                 "ask_user"
             ])
         );
@@ -758,6 +782,7 @@ mod tests {
                 "weather_forecast",
                 "show_recipe",
                 "plan_trip",
+                "compare_stocks",
                 "ask_user"
             ])
         );
@@ -769,6 +794,7 @@ mod tests {
                 "weather_forecast",
                 "show_map",
                 "plan_trip",
+                "compare_stocks",
                 "ask_user"
             ])
         );
@@ -780,6 +806,19 @@ mod tests {
                 "weather_forecast",
                 "show_map",
                 "show_recipe",
+                "compare_stocks",
+                "ask_user"
+            ])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("STOCKS", "off")])),
+            with(&[
+                "fetch_url",
+                "download_file",
+                "weather_forecast",
+                "show_map",
+                "show_recipe",
+                "plan_trip",
                 "ask_user"
             ])
         );
@@ -791,6 +830,7 @@ mod tests {
                 ("MAPS", "off"),
                 ("RECIPES", "off"),
                 ("TRANSIT", "off"),
+                ("STOCKS", "off"),
                 ("ASK_USER", "off")
             ])),
             with(&[])
@@ -804,6 +844,7 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
+                "compare_stocks",
                 "ask_user",
                 "browser"
             ])
@@ -815,6 +856,7 @@ mod tests {
         assert_eq!(group_of("bash"), "core");
         assert_eq!(group_of("download_file"), "web_fetch");
         assert_eq!(group_of("plan_trip"), "transit");
+        assert_eq!(group_of("compare_stocks"), "stocks");
         assert_eq!(group_of("ask_user"), "ask_user");
         assert_eq!(group_of("gmail_search_threads"), "gmail");
         assert_eq!(group_of("calendar_list_events"), "calendar");

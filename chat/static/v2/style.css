@@ -143,6 +143,9 @@ a { color: var(--accent); }
 /* A recipe card is worked through (ticked off step by step), so it lies flat too. */
 .clip.recipe:nth-child(n) { transform: none; margin-left: 0; }
 .clip.recipe .cedar-recipe { margin: 10px 0 0; font-size: 13px; }
+/* So does the stock card: it has a chart with a crosshair, and tiles and tabs to pick from. */
+.clip.stocks:nth-child(n) { transform: none; margin-left: 0; }
+.clip.stocks .cedar-stocks { margin: 10px 0 0; font-size: 13px; }
 /* Questions for the user sit in the narrow margin: a tighter form. */
 .note.clarify .cedar-clarify { margin: 2px 0 0; font-size: 13px; }
 .note.clarify .cedar-clarify-question { font-size: 14px; }

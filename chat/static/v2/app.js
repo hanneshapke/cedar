@@ -280,8 +280,15 @@ const TOOLS = {
   show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i) },
   show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title },
   plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i) },
+  compare_stocks: { doing: 'Looking up', did: 'Looked up', subject: (i) => stocksSubject(i) },
   ask_user: { doing: 'Asking', did: 'Asked', subject: (i) => questionsSubject(i) },
 };
+
+/** What a compare_stocks call is about: its symbols. */
+function stocksSubject(input) {
+  const symbols = Array.isArray(input.symbols) ? input.symbols : [input.symbols];
+  return symbols.filter((s) => typeof s === 'string').join(' · ');
+}
 
 /** What an ask_user call is about: each question's header, else the question itself. */
 function questionsSubject(input) {
@@ -440,6 +447,28 @@ function tripClipping(tool, meta) {
   return el;
 }
 
+/**
+ * The clipping for a compare_stocks call: the stock card once the result is in. The card keeps state
+ * (the symbol, period and view picked), so it is built once and moved like a map's.
+ */
+function stocksClipping(tool, meta) {
+  const head = escapeHtml(stocksSubject(tool.input || {}) || 'Stocks');
+  if (tool.output === undefined) {
+    const el = clipEl('compare_stocks', meta, head, 'reading prices and news…');
+    el.querySelector('.sub').prepend(h('span', 'spinner'), ' ');
+    return el;
+  }
+  if (tool.is_error) return clipEl('compare_stocks', meta, head, '', tool.output, true);
+  const spec = cedarStocks.parse(tool.output);
+  if (!spec) return clipEl('compare_stocks', meta, head, '', tool.output);
+  tool.stocksEl ??= cedarStocks.element(spec);
+  const n = spec.stocks.length;
+  const el = clipEl('compare_stocks', meta, n === 1 ? 'Stock' : `${n} stocks compared`, '');
+  el.classList.add('stocks');
+  el.append(tool.stocksEl);
+  return el;
+}
+
 /** Clippings for one tool call; web_search gives one per result, and the page's document gives none. */
 function clippingsFor(tool) {
   if (isDocument(tool) && tool.is_error !== true) return [];
@@ -467,6 +496,8 @@ function clippingsFor(tool) {
       return [recipeClipping(tool, meta)];
     case 'plan_trip':
       return [tripClipping(tool, meta)];
+    case 'compare_stocks':
+      return [stocksClipping(tool, meta)];
     case 'ask_user':
       // The questions are part of the conversation, so their form is in the margin (see applyEvent);
       // only a call that failed lies on the desk.
