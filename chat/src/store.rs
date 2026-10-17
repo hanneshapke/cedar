@@ -65,6 +65,28 @@ fn push_subscription_from_row(r: &SqliteRow) -> Result<PushSubscription> {
     })
 }
 
+/// An iPhone that registered for push through the iOS app: the device token APNs gave it
+/// (never shown to the page) and a name for Settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ApnsDevice {
+    pub id: Uuid,
+    #[serde(skip)]
+    pub token: String,
+    pub name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+fn apns_device_from_row(r: &SqliteRow) -> Result<ApnsDevice> {
+    Ok(ApnsDevice {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        token: r.try_get("token")?,
+        name: r.try_get("name")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        last_used_at: r.try_get::<Option<i64>, _>("last_used_at")?.map(to_dt),
+    })
+}
+
 /// A finished response nobody has looked at, as the page's inbox lists it.
 #[derive(Debug, Clone, Serialize)]
 pub struct InboxItem {
@@ -611,6 +633,51 @@ impl Store {
         Ok(())
     }
 
+    // -- iPhones (APNs) -----------------------------------------------------------------------
+
+    /// Oldest first.
+    pub async fn apns_devices(&self) -> Result<Vec<ApnsDevice>> {
+        let rows = sqlx::query("SELECT * FROM apns_devices ORDER BY created_at, id").fetch_all(&self.pool).await?;
+        rows.iter().map(apns_device_from_row).collect()
+    }
+
+    /// Add an iPhone's device token, or rename the one that already has it.
+    pub async fn add_apns_device(&self, token: &str, name: Option<&str>) -> Result<ApnsDevice> {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO apns_devices (id, token, name, created_at) VALUES (?, ?, ?, ?) \
+             ON CONFLICT (token) DO UPDATE SET name = excluded.name",
+        )
+        .bind(id.to_string())
+        .bind(token)
+        .bind(name)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        let row = sqlx::query("SELECT * FROM apns_devices WHERE token = ?").bind(token).fetch_one(&self.pool).await?;
+        apns_device_from_row(&row)
+    }
+
+    pub async fn delete_apns_device(&self, id: Uuid) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM apns_devices WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// The app turned push off, or moved to another server: forget its token.
+    pub async fn delete_apns_device_by_token(&self, token: &str) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM apns_devices WHERE token = ?").bind(token).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    pub async fn touch_apns_device(&self, id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE apns_devices SET last_used_at = ? WHERE id = ?")
+            .bind(now_ms())
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// The id of the last notification taken from cedar's event stream (0: none yet).
     pub async fn notifications_cursor(&self) -> Result<i64> {
         let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications_cursor'")
@@ -970,6 +1037,28 @@ mod tests {
         assert!(store.delete_push_subscription(a.id).await.unwrap());
         assert!(!store.delete_push_subscription(a.id).await.unwrap());
         assert!(store.push_subscriptions().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn apns_devices_round_trip() {
+        let store = Store::connect_memory().await.unwrap();
+        let a = store.add_apns_device("aa".repeat(32).as_str(), Some("Hannes's iPhone")).await.unwrap();
+        let again = store.add_apns_device("aa".repeat(32).as_str(), Some("iPhone 16")).await.unwrap();
+        assert_eq!(a.id, again.id, "the same token is one device");
+        assert_eq!(again.name.as_deref(), Some("iPhone 16"));
+        let b = store.add_apns_device("bb".repeat(32).as_str(), None).await.unwrap();
+        let listed = store.apns_devices().await.unwrap();
+        assert_eq!(listed.iter().map(|d| d.id).collect::<Vec<_>>(), [a.id, b.id]);
+        assert!(listed[0].last_used_at.is_none());
+        store.touch_apns_device(a.id).await.unwrap();
+        assert!(store.apns_devices().await.unwrap()[0].last_used_at.is_some());
+        // The page never sees the tokens.
+        let json = serde_json::to_string(&listed).unwrap();
+        assert!(!json.contains("aaaa") && !json.contains("bbbb"));
+        assert!(store.delete_apns_device_by_token(&"bb".repeat(32)).await.unwrap());
+        assert!(store.delete_apns_device(a.id).await.unwrap());
+        assert!(!store.delete_apns_device(a.id).await.unwrap());
+        assert!(store.apns_devices().await.unwrap().is_empty());
     }
 
     #[test]

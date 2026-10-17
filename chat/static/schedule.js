@@ -159,7 +159,7 @@ const cedarSchedule = (() => {
     const notify = el('select');
     const notifyField = field('Notify me by', notify);
     const notifyHelp = el('div', 'cedar-sched-help');
-    notifyHelp.append(el('span', '', 'Phone push, browser push and email are set up under Settings → Notifications.'));
+    notifyHelp.append(el('span', '', 'Phone push, iPhone push, browser push and email are set up under Settings → Notifications.'));
     const error = el('div', 'cedar-sched-error');
     error.hidden = true;
     const actions = el('div', 'cedar-sched-actions');

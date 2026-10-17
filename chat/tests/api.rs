@@ -167,6 +167,22 @@ async fn push_service(State(s): State<Shared>, Path(name): Path<String>, headers
     StatusCode::from_u16(status).unwrap()
 }
 
+/// The fake APNs: records pushes under the device token, answers like `push_service` (200 by
+/// default), and gives a 400 Apple's `BadDeviceToken` reason.
+async fn apns_service(State(s): State<Shared>, Path(token): Path<String>, headers: HeaderMap, body: axum::body::Bytes) -> axum::response::Response {
+    s.pushes.lock().unwrap().push((token.clone(), headers, body.to_vec()));
+    let status = s.push_answers.lock().unwrap().get_mut(&token).and_then(|q| q.pop_front()).unwrap_or(200);
+    let status = StatusCode::from_u16(status).unwrap();
+    let reason = match status.as_u16() {
+        200 => return status.into_response(),
+        400 => "BadDeviceToken",
+        403 => "ExpiredProviderToken",
+        410 => "Unregistered",
+        _ => "InternalServerError",
+    };
+    (status, Json(json!({ "reason": reason }))).into_response()
+}
+
 /// A mail server that takes anything: returns its port and the messages it was given.
 async fn fake_smtp() -> (u16, Arc<Mutex<Vec<String>>>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -401,13 +417,16 @@ impl Harness {
             // Not cedar, but on the same port: the services the chat's notifications go to.
             .route("/pushover", post(pushover))
             .route("/push/{name}", post(push_service))
+            .route("/apns/3/device/{token}", post(apns_service))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
 
         let pushover_url = format!("{url}/pushover");
-        let mut env: HashMap<String, String> = [("CEDAR_URL", url.as_str()), ("CEDAR_API_KEY", CEDAR_KEY), ("CHAT_PUSHOVER_URL", pushover_url.as_str())]
+        let apns_url = format!("{url}/apns");
+        let mut env: HashMap<String, String> =
+            [("CEDAR_URL", url.as_str()), ("CEDAR_API_KEY", CEDAR_KEY), ("CHAT_PUSHOVER_URL", pushover_url.as_str()), ("CHAT_APNS_URL", apns_url.as_str())]
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
@@ -1674,9 +1693,16 @@ async fn notification_settings_are_saved_without_leaking_secrets() {
     let key = got["browser"]["public_key"].as_str().expect("the push keys are made on first read");
     assert!(key.len() > 80 && !key.contains('='), "an uncompressed P-256 key, base64url: {key}");
     assert_eq!(got["browser"]["subscriptions"], json!([]));
+    assert_eq!(got["ios"], json!({ "configured": false, "team_id": "", "key_id": "", "key_set": false, "topic": "dev.cedar.Cedar", "environment": "production", "devices": [] }));
     assert_eq!(got["last_delivery"], Value::Null);
 
     // A method that can't send is refused.
+    let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "ios" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("team id"), "{err}");
+    let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "ios": { "private_key": "not a key" } }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains(".p8"), "{err}");
     let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(err["error"]["message"].as_str().unwrap().contains("Pushover needs"), "{err}");
@@ -1693,19 +1719,22 @@ async fn notification_settings_are_saved_without_leaking_secrets() {
         "default_method": "pushover", "scope": "all",
         "pushover": { "token": "app-token-1", "user": "user-key-wxyz" },
         "email": { "host": "smtp.example", "security": "starttls", "username": "me", "password": "hunter2", "from": "Cedar <cedar@example.com>", "to": "me@example.com" },
+        "ios": { "team_id": "TEAM42", "key_id": "KEY42", "private_key": "-----BEGIN PRIVATE KEY-----\nP8SECRET\n-----END PRIVATE KEY-----", "environment": "sandbox" },
         "contact": "ops@example.com",
     });
     let (status, got) = h.json(Method::PUT, "/api/notifications", Some(body)).await;
     assert_eq!(status, StatusCode::OK, "{got}");
     assert_eq!((got["default_method"].as_str(), got["scope"].as_str()), (Some("pushover"), Some("all")));
-    assert_eq!(got["configured"], json!(["pushover", "email"]), "both are set up, whichever is the default");
+    assert_eq!(got["configured"], json!(["pushover", "email"]), "both are set up, whichever is the default; iOS waits for a phone");
+    assert_eq!(got["ios"]["configured"], true);
+    assert_eq!((got["ios"]["key_set"].as_bool(), got["ios"]["environment"].as_str(), got["ios"]["key_id"].as_str()), (Some(true), Some("sandbox"), Some("KEY42")));
     assert_eq!(got["pushover"], json!({ "configured": true, "token_set": true, "user_set": true, "user_last4": "wxyz" }));
     assert_eq!(got["email"]["password_set"], true);
     assert_eq!(got["email"]["host"], "smtp.example");
     assert_eq!(got["email"]["security"], "starttls");
     assert_eq!(got["browser"]["contact"], "ops@example.com");
     let text = got.to_string();
-    assert!(!text.contains("app-token-1") && !text.contains("user-key-wxyz") && !text.contains("hunter2"), "{text}");
+    assert!(!text.contains("app-token-1") && !text.contains("user-key-wxyz") && !text.contains("hunter2") && !text.contains("P8SECRET"), "{text}");
 
     // Leaving a secret out keeps it; an empty one clears it.
     let (_, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "pushover": { "token": "app-token-2" } }))).await;
@@ -2027,6 +2056,129 @@ async fn browser_push_reaches_every_subscribed_browser_and_drops_dead_ones() {
     // With no browser left the method can't stay "browser".
     let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "browser" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// A device token as the iOS app reads it from APNs: 32 bytes, hex.
+fn device_token(fill: char) -> String {
+    std::iter::repeat_n(fill, 64).collect()
+}
+
+#[tokio::test]
+async fn iphone_push_reaches_every_registered_phone_and_drops_dead_ones() {
+    let h = Harness::new(&[]).await;
+    let register = |token: String, name: Option<&str>| {
+        let h = &h;
+        let body = json!({ "token": token, "name": name });
+        async move {
+            let (status, got) = h.json(Method::POST, "/api/notifications/apns/devices", Some(body)).await;
+            assert_eq!(status, StatusCode::OK, "{got}");
+            got
+        }
+    };
+    let got = register(device_token('a'), Some("Hannes's iPhone")).await;
+    assert!(got["device_id"].is_string());
+    let got = register(device_token('b'), None).await;
+    let devices = got["ios"]["devices"].as_array().unwrap();
+    assert_eq!(devices.len(), 2);
+    assert_eq!(devices[0]["name"], "Hannes's iPhone");
+    assert!(!got.to_string().contains(&device_token('a')), "tokens stay on the server");
+    // Registering again from the same phone (the token in upper case, as some code hands it over) is one device.
+    register(device_token('a').to_ascii_uppercase(), Some("iPhone 16")).await;
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(got["ios"]["devices"].as_array().unwrap().len(), 2);
+    assert_eq!(got["ios"]["devices"][0]["name"], "iPhone 16");
+    let (status, _) = h.json(Method::POST, "/api/notifications/apns/devices", Some(json!({ "token": "not hex" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Without the key the method can't be chosen, even with phones registered.
+    let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "ios" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("team id"), "{err}");
+    let key = jwt_simple::algorithms::ES256KeyPair::generate().to_pem().unwrap();
+    let body = json!({ "default_method": "ios", "ios": { "team_id": "TEAM42", "key_id": "KEY42", "private_key": key, "topic": "dev.cedar.Cedar" } });
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["configured"], json!(["ios"]));
+
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "ios" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert!(got["detail"].as_str().unwrap().contains("2 iPhones"), "{got}");
+    let pushes = h.cedar.pushes.lock().unwrap().clone();
+    assert_eq!(pushes.len(), 2);
+    let mut tokens: Vec<&str> = pushes.iter().map(|(n, _, _)| n.as_str()).collect();
+    tokens.sort();
+    assert_eq!(tokens, [device_token('a'), device_token('b')]);
+    let (_, headers, body) = &pushes[0];
+    let auth = headers["authorization"].to_str().unwrap();
+    assert!(auth.starts_with("bearer ") && auth.matches('.').count() == 2, "a JWT: {auth}");
+    assert_eq!(headers["apns-topic"], "dev.cedar.Cedar");
+    assert_eq!(headers["apns-push-type"], "alert");
+    assert_eq!(headers["apns-priority"], "10");
+    assert_eq!(headers["apns-collapse-id"], "test");
+    let payload: Value = serde_json::from_slice(body).unwrap();
+    assert_eq!(payload["aps"]["alert"]["title"], "Cedar: test notification");
+    assert_eq!(payload["aps"]["sound"], "default");
+    assert!(payload["url"].as_str().unwrap().ends_with('/'));
+    assert_eq!(payload["conversation_id"], Value::Null);
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert!(got["ios"]["devices"][0]["last_used_at"].is_string());
+    assert_eq!(got["last_delivery"]["method"], "ios");
+
+    // A phone Apple no longer knows is dropped; the other still gets it.
+    h.cedar.push_answers.lock().unwrap().insert(device_token('b'), [400].into());
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "ios" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert!(got["detail"].as_str().unwrap().contains("1 iPhone,") && got["detail"].as_str().unwrap().contains("no longer registered"), "{got}");
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(got["ios"]["devices"].as_array().unwrap().len(), 1);
+
+    // An expired provider token is signed again and the push retried, once.
+    h.cedar.push_answers.lock().unwrap().insert(device_token('a'), [403].into());
+    h.cedar.pushes.lock().unwrap().clear();
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "ios" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    let pushes = h.cedar.pushes.lock().unwrap().clone();
+    assert_eq!(pushes.len(), 2, "the refused push and its retry");
+    assert_ne!(pushes[0].1["authorization"], pushes[1].1["authorization"], "with a new token");
+
+    // A finished run goes to the phone with the conversation to open; a question is wanted
+    // under the default scope.
+    h.cedar.pushes.lock().unwrap().clear();
+    let asked = ended_turn(&h, "Trip", "completed", Some("ask_user")).await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, asked).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let pushes = h.cedar.pushes.lock().unwrap().clone();
+    assert_eq!(pushes.len(), 1);
+    let payload: Value = serde_json::from_slice(&pushes[0].2).unwrap();
+    assert_eq!(payload["aps"]["alert"]["title"], "Trip: needs your answer");
+    let cid = payload["conversation_id"].as_str().expect("the conversation to open");
+    assert_eq!(payload["aps"]["thread-id"], cid);
+    assert!(payload["url"].as_str().unwrap().ends_with(&format!("/#/c/{cid}")));
+    assert_eq!(pushes[0].1["apns-collapse-id"].to_str().unwrap(), asked.to_string());
+    // An APNs failure is reported, not fatal.
+    h.cedar.push_answers.lock().unwrap().insert(device_token('a'), [500].into());
+    let (status, err) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "ios" }))).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(err["error"]["message"].as_str().unwrap().contains("500"), "{err}");
+
+    // The app turns push off, or the user removes a phone from the list.
+    let (status, got) = h.json(Method::DELETE, "/api/notifications/apns/devices", Some(json!({ "token": device_token('a') }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["ios"]["devices"], json!([]));
+    let got = register(device_token('c'), Some("iPad")).await;
+    let id = got["device_id"].as_str().unwrap().to_string();
+    let (status, got) = h.json(Method::DELETE, &format!("/api/notifications/apns/devices/{id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["ios"]["devices"], json!([]));
+    let (status, _) = h.json(Method::DELETE, &format!("/api/notifications/apns/devices/{id}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // With no phone left the method can't stay "ios".
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "ios" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // A schedule can't pick it either.
+    let (status, err) = h.json(Method::POST, "/api/schedules", Some(json!({ "title": "t", "prompt": "p", "frequency": "daily", "time": "09:00", "timezone": "UTC", "notify": "ios" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert!(err["error"]["message"].as_str().unwrap().contains("no iPhone"), "{err}");
 }
 
 #[tokio::test]

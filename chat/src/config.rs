@@ -25,6 +25,9 @@ pub struct Config {
     pub history_max_bytes: usize,
     /// Where Pushover messages are POSTed; overridable so tests can point at a mock.
     pub pushover_url: String,
+    /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
+    /// addresses (for a mock in tests, or a relay).
+    pub apns_url: Option<String>,
 }
 
 impl Config {
@@ -57,6 +60,7 @@ impl Config {
                 .unwrap_or_else(|| format!("http://{bind_addr}")),
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
+            apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
         };
         if cfg.history_max_bytes > 60_000 {
             // cedar rejects prompts over 100 KB; leave room for the new message itself.
@@ -64,6 +68,11 @@ impl Config {
         }
         if !(cfg.public_url.starts_with("http://") || cfg.public_url.starts_with("https://")) {
             bail!("CHAT_PUBLIC_URL must start with http:// or https://");
+        }
+        if let Some(u) = &cfg.apns_url {
+            if !(u.starts_with("http://") || u.starts_with("https://")) {
+                bail!("CHAT_APNS_URL must start with http:// or https://");
+            }
         }
         if cfg.admin_token.is_some() && cfg.admin_token == cfg.access_token {
             bail!("CHAT_ADMIN_TOKEN must differ from CHAT_ACCESS_TOKEN");
@@ -95,5 +104,9 @@ mod tests {
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_ACCESS_TOKEN", "t"), ("CHAT_ADMIN_TOKEN", "t")])).is_err());
         assert!(Config::from_lookup(lookup(&[])).is_err());
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_HISTORY_MAX_BYTES", "999999")])).is_err());
+        assert!(cfg.apns_url.is_none());
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "http://127.0.0.1:1/apns/")])).unwrap();
+        assert_eq!(cfg.apns_url.as_deref(), Some("http://127.0.0.1:1/apns"));
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "apns.example")])).is_err());
     }
 }
