@@ -133,6 +133,14 @@ const cedarTrust = (() => {
     fetch_url: { what: 'reach the web', scope: (i) => host(i.url) },
   };
   function host(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return null; } }
+  // What cedar's approval rules (`approval.required.rule`) are about.
+  const RULE_WHAT = {
+    email: 'send or change email',
+    downloads: 'download from the web',
+    installs: 'install packages',
+    deletes: 'delete files',
+    network: 'run code with internet access',
+  };
 
   /**
    * "Cedar wants to <do a thing>. Allow once / Always for <scope> / Skip". `onDecide(decision)`
@@ -140,11 +148,13 @@ const cedarTrust = (() => {
    */
   function approvalElement(spec, { onDecide } = {}) {
     const kind = APPROVAL_KINDS[spec.tool] || { what: `use ${spec.tool}`, scope: () => null };
-    const scope = spec.scope || kind.scope(spec.input || {});
+    const what = RULE_WHAT[spec.rule] || kind.what;
+    // A cedar that names the rule also says what "always" would cover; none means ask every time.
+    const scope = spec.rule ? spec.scope : spec.scope || kind.scope(spec.input || {});
     const el = h('section', 'cedar-approval');
     el.dataset.state = 'pending';
     const head = h('header', 'cedar-approval-head');
-    head.append(h('span', 'cedar-approval-label', 'Needs your OK'), h('span', 'cedar-approval-what', `· ${kind.what}`));
+    head.append(h('span', 'cedar-approval-label', 'Needs your OK'), h('span', 'cedar-approval-what', `· ${what}`));
     el.append(head);
     const body = h('div', 'cedar-approval-body');
     body.textContent = spec.reason || describe(spec);
@@ -208,11 +218,14 @@ const cedarTrust = (() => {
   // -- sources and citations -----------------------------------------------------------------
 
   /**
-   * The pages and files a turn read, in order, from its finished tool calls: fetched and
-   * downloaded URLs, PDFs it read, then search results. Each gets a number; `[n]` in Cedar's
-   * text points at it. Returns [{n, url, title, host, kind, path?}].
+   * The pages and files a turn read, numbered; `[n]` in Cedar's text points at one. A cedar that
+   * numbers sources itself sends them with each result (`tool.sources`, the numbers the model
+   * saw and cites by), and those are used as they are. Otherwise they are numbered here from the
+   * finished tool calls: fetched and downloaded URLs, PDFs it read, then search results.
+   * Returns [{n, url, title, host, kind, path?}].
    */
   function collectSources(tools, searchParser) {
+    if (tools.some((t) => Array.isArray(t.sources))) return numberedByServer(tools);
     const out = [];
     const seen = new Set();
     const push = (s) => { const key = s.url || s.path; if (!key || seen.has(key)) return; seen.add(key); out.push({ n: out.length + 1, host: s.url ? host(s.url) : null, ...s }); };
@@ -234,6 +247,20 @@ const cedarTrust = (() => {
       for (const r of (searchParser ? searchParser(t.output) : [])) if (r.url) push({ url: r.url, title: r.title, kind: 'result', age: r.age });
     }
     return out;
+  }
+
+  const KIND_OF = { fetch_url: 'page', download_file: 'file', web_search: 'result' };
+  function numberedByServer(tools) {
+    const byN = new Map();
+    for (const t of tools) {
+      if (!Array.isArray(t.sources) || t.is_error) continue;
+      for (const s of t.sources) {
+        if (!s || typeof s.n !== 'number' || !s.url || byN.has(s.n)) continue;
+        const path = t.name === 'download_file' ? t.input?.path : undefined;
+        byN.set(s.n, { n: s.n, url: s.url, title: s.title || s.url, host: host(s.url), kind: KIND_OF[t.name] || 'page', ...(path ? { path } : {}) });
+      }
+    }
+    return [...byN.values()].sort((a, b) => a.n - b.n);
   }
 
   /** The first heading-ish line of a fetched page, as fetch_url formats it. */

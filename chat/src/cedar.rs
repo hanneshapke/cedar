@@ -96,6 +96,12 @@ impl CedarClient {
         if let Some(p) = opts.parent {
             body["parent_id"] = Value::String(p.to_string());
         }
+        if let Some(p) = opts.plan {
+            body["plan"] = json!(p);
+        }
+        if opts.interactive {
+            body["interactive"] = json!(true);
+        }
         let mut timeout = REQUEST_TIMEOUT;
         if let Some(a) = opts.attachments.filter(|a| !a.is_empty()) {
             body["attachments"] = json!(a);
@@ -185,6 +191,17 @@ impl CedarClient {
         Ok(())
     }
 
+    /// Agree to the plan a run is waiting on: `{"steps": [{id, title}, ...]}`.
+    pub async fn answer_plan(&self, id: Uuid, body: &Value) -> Result<Value, AppError> {
+        self.json(self.http.post(self.url(&format!("/runs/{id}/plan"))).json(body)).await
+    }
+
+    /// Answer an approval a run is waiting on: `{"decision": "allow" | "allow_always" | "deny"}`.
+    pub async fn decide_approval(&self, id: Uuid, approval_id: &str, body: &Value) -> Result<Value, AppError> {
+        let path = format!("/runs/{id}/approvals/{}", encode_path(approval_id));
+        self.json(self.http.post(self.url(&path)).json(body)).await
+    }
+
     pub async fn delete_run(&self, id: Uuid) -> Result<(), AppError> {
         self.send(self.http.delete(self.url(&format!("/runs/{id}"))).timeout(REQUEST_TIMEOUT)).await?;
         Ok(())
@@ -247,6 +264,11 @@ pub struct RunOptions<'a> {
     pub parent: Option<Uuid>,
     /// Images (for a multimodal model) and PDFs (for any) to send with the prompt.
     pub attachments: Option<&'a [Attachment]>,
+    /// Plan before starting: `off`, `on` or `auto`. `None` leaves it to cedar.
+    pub plan: Option<&'a str>,
+    /// Someone is there to answer: the run waits for its plan to be agreed and for risky calls
+    /// to be approved. Off for scheduled runs.
+    pub interactive: bool,
 }
 
 /// cedar refuses the admin routes to a key that isn't an admin key: say which setting to fix.

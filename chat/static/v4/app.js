@@ -841,7 +841,7 @@ async function approvePlan(view, steps) {
 }
 
 function showApproval(view, d, at) {
-  const spec = { id: d.id, tool: d.tool, input: d.input || {}, reason: d.reason, scope: d.scope };
+  const spec = { id: d.id, tool: d.tool, input: d.input || {}, reason: d.reason, scope: d.scope, rule: d.rule };
   const el = cedarTrust.approval.element(spec, {
     onDecide: async (decision) => {
       try { await api('POST', `/turns/${view.turn.id}/approvals/${encodeURIComponent(spec.id)}`, { decision }); }
@@ -1018,7 +1018,7 @@ function applyEvent(view, event) {
     case 'tool.result': {
       const tool = view.byId.get(d.id);
       if (tool) {
-        Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
+        Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms, sources: d.sources });
         if (tool.is_error) tool.open = true; // a failure is worth reading
         fillStep(tool);
         updateWorkLabel(view);

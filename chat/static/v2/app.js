@@ -9,6 +9,11 @@
 // recipe, trip or stock card, the images it made, and (folded to one line) its searches, commands
 // and the pages and files it read. A step row jumps to its card. Cards are built when a tool is
 // called and filled in when its result arrives, so nothing is redrawn and widgets keep their state.
+//
+// From cedar's newer events (trust-view.js draws them; an older cedar sends none and none show):
+// the plan it proposes, which it waits on until "start" (POST /api/turns/{id}/plan); approval
+// cards for risky calls (POST /api/turns/{id}/approvals/{approval_id}); its reasoning, folded;
+// [n] citations linked to a Sources card on the stage; and the turn's cost and sandbox.
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -691,6 +696,11 @@ function addTurn(turn) {
   const view = {
     turn, texts: [], textNotes: [], tools: [], images: [], byId: new Map(), usage: { input: 0, output: 0 },
     abort: new AbortController(), done: false,
+    started: null,        // run.started, for the sandbox line
+    planEl: null,         // the plan, while there is one
+    approvals: new Map(), // approval id -> its card
+    approvalsGranted: 0,
+    reasoningEl: null,    // the fold reasoning is being added to
     workingEl: null,
     stepsEl: null,  // the open run of step rows; a note from Cedar closes it
     group: null,    // this turn's group of cards on the stage
@@ -726,7 +736,12 @@ function placeNote(view, el) {
  *  the step row above it already names the tool. */
 function setWorking(view, text) {
   view.doing = text;
-  if (view.workingEl) view.workingEl.lastChild.textContent = text === 'Thinking' ? 'Thinking' : 'Working';
+  const waiting = text.startsWith('Waiting');
+  if (view.workingEl) {
+    view.workingEl.lastChild.textContent = text === 'Thinking' || waiting ? text : 'Working';
+    view.workingEl.classList.toggle('waiting', waiting);
+  }
+  updateChrome();
 }
 
 /** A step row for a tool call, in the conversation, that jumps to its card. */
@@ -754,6 +769,87 @@ function fillStep(tool) {
   row.querySelector('.ms').textContent = !done ? '…' : tool.is_error ? 'failed' : fmtMs(tool.duration_ms);
   const where = cardKind(tool) === 'none' ? '' : ' · click to see the result';
   row.title = toolText(tool, done) + where;
+}
+
+// -- the plan, approvals, reasoning and sources ------------------------------------------------
+
+/** The sources a turn has read so far, with the numbers Cedar cites them by. */
+const sourcesOf = (view) => cedarTrust.sources.collect(view.tools, parseSearchResults);
+
+/** Link "[n]" in Cedar's notes and the documents it wrote. Safe to repeat. */
+function citeAll(view) {
+  const sources = sourcesOf(view);
+  if (!sources.length) return;
+  for (const n of view.textNotes) cedarTrust.sources.cite(n.lastChild, sources);
+  for (const tool of view.tools) {
+    if (tool.card && cardKind(tool) === 'doc') cedarTrust.sources.cite(tool.card.querySelector('.card-body'), sources);
+  }
+}
+
+/** The plan Cedar sent: editable while the run waits on it, a checklist once it is going. */
+function showPlan(view, data, awaiting) {
+  const plan = cedarTrust.plan.parse(data);
+  if (!plan) return;
+  view.planData = data;
+  // Only a turn still going can be answered (a finished one is replayed when a chat opens).
+  const waits = awaiting && !view.done && ACTIVE.has(view.turn.status);
+  const el = cedarTrust.plan.element(plan, {
+    awaiting: waits,
+    note: waits ? 'Change anything, then start.' : data.by === 'user' ? 'Agreed' : data.by === 'timeout' ? 'No answer, so Cedar went ahead' : '',
+    onApprove: (steps) => approvePlan(view, steps),
+  });
+  if (view.planEl) view.planEl.replaceWith(el); else placeNote(view, el);
+  view.planEl = el;
+  view.stepsEl = null;
+  if (waits) setWorking(view, 'Waiting for your go on the plan');
+}
+
+async function approvePlan(view, steps) {
+  try {
+    await api('POST', `/turns/${view.turn.id}/plan`, { steps });
+  } catch (e) { toast(e.message); throw e; }
+  setWorking(view, 'Thinking');
+}
+
+/** A risky call waits on the reader: the card with Allow once / Always / Skip. */
+function showApproval(view, d) {
+  const spec = { id: d.id, tool: d.tool, input: d.input || {}, reason: d.reason, scope: d.scope, rule: d.rule };
+  const el = cedarTrust.approval.element(spec, {
+    onDecide: async (decision) => {
+      try { await api('POST', `/turns/${view.turn.id}/approvals/${encodeURIComponent(spec.id)}`, { decision }); }
+      catch (e) { toast(e.message); throw e; }
+      setWorking(view, 'Thinking');
+    },
+  });
+  // A replayed turn that is over can't be answered any more.
+  if (view.done || !ACTIVE.has(view.turn.status)) el.querySelector('.cedar-approval-actions').hidden = true;
+  view.approvals.set(String(d.id), el);
+  placeNote(view, el);
+  view.stepsEl = null;
+  setWorking(view, 'Waiting for your OK');
+}
+
+/** Cedar's reasoning, folded; text for the same stretch of thinking is added to one fold. */
+function showReasoning(view, d) {
+  if (!view.reasoningEl) {
+    view.reasoningEl = cedarTrust.reasoning.element(d.text || '', d.duration_ms);
+    placeNote(view, view.reasoningEl);
+    view.stepsEl = null;
+  } else {
+    view.reasoningEl.cedarReasoning.append(d.text || '');
+    if (typeof d.duration_ms === 'number') view.reasoningEl.cedarReasoning.done(d.duration_ms);
+  }
+  if (d.done) view.reasoningEl = null;
+}
+
+/** The numbered sources of a finished turn, as a card after its other cards. */
+function sourcesCard(sources) {
+  const card = h('article', 'card sources');
+  card.append(cardHead('globe', `Sources · ${sources.length}`, { meta: t('span', '', 'cited as [n]') }));
+  const body = h('div', 'card-body');
+  body.append(cedarTrust.sources.element(sources, { onOpen: (s) => s.path && downloadFile(workspacePath(s.path)) }));
+  card.append(body);
+  return card;
 }
 
 // -- events ------------------------------------------------------------------------------------
@@ -806,19 +902,50 @@ async function followEvents(view) {
 function applyEvent(view, event) {
   const d = event.data || {};
   switch (event.type) {
+    case 'run.started':
+      view.started = d;
+      return;
+    case 'plan':
+      showPlan(view, d, d.awaiting === true);
+      break;
+    case 'plan.updated':
+      showPlan(view, d, false);
+      setWorking(view, 'Thinking');
+      break;
+    case 'assistant.reasoning':
+      showReasoning(view, d);
+      break;
+    case 'approval.required':
+      showApproval(view, d);
+      break;
+    case 'approval.resolved': {
+      const el = view.approvals.get(String(d.id));
+      if (el && el.dataset.state === 'pending') {
+        cedarTrust.approval.settle(el, d.decision, event.created_at);
+        el.querySelector('.cedar-approval-actions').hidden = false;
+      }
+      if (d.decision === 'allow' || d.decision === 'allow_always') view.approvalsGranted++;
+      setWorking(view, 'Thinking');
+      break;
+    }
     case 'assistant.text': {
       view.texts.push(d.text);
+      view.reasoningEl = null;
       const n = note('cedar', 'Cedar', renderMarkdown(d.text));
       view.textNotes.push(n);
+      const sources = sourcesOf(view);
+      if (sources.length) cedarTrust.sources.cite(n.lastChild, sources);
       placeNote(view, n);
       view.stepsEl = null; // the next tool call starts a new run of steps, after this note
       setWorking(view, 'Thinking');
       break;
     }
     case 'tool.call': {
-      const tool = { id: d.id, name: d.name, input: d.input || {}, open: false };
+      const tool = { id: d.id, name: d.name, input: d.input || {}, open: false, stepId: d.step ?? null };
       view.tools.push(tool);
       view.byId.set(d.id, tool);
+      view.reasoningEl = null;
+      if (tool.stepId != null) view.planEl?.cedarPlan.mark(tool.stepId, 'running');
       addStep(view, tool);
       const card = cardFor(tool);
       if (!card.hidden) placeCard(view, card);
@@ -828,9 +955,10 @@ function applyEvent(view, event) {
     case 'tool.result': {
       const tool = view.byId.get(d.id);
       if (tool) {
-        Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms });
+        Object.assign(tool, { output: String(d.output ?? ''), is_error: Boolean(d.is_error), duration_ms: d.duration_ms, sources: d.sources });
         if (tool.is_error) tool.open = true; // a failure is worth reading
         fillStep(tool);
+        if (tool.stepId != null) view.planEl?.cedarPlan.mark(tool.stepId, tool.is_error ? 'error' : 'done');
         const wasHidden = tool.card.hidden;
         const follow = nearEnd(els.stage, 240) || view === state.activeTurn;
         fillCard(tool);
@@ -858,6 +986,7 @@ function applyEvent(view, event) {
     case 'usage':
       view.usage.input += d.input_tokens || 0;
       view.usage.output += d.output_tokens || 0;
+      if (typeof d.cost_usd === 'number') view.usage.cost_usd = (view.usage.cost_usd || 0) + d.cost_usd;
       return;
     default:
       if (TERMINAL.has(event.type)) { finishTurn(view, event); return; }
@@ -883,6 +1012,14 @@ function finishTurn(view, event) {
   const shown = new Set([...view.textNotes, view.group].flatMap((n) => [...cedarImages.shown(n)]));
   const figures = cedarImages.figuresFor(view.images, { skip: shown, onLoad: keepStageAtEnd });
   if (figures.length) placeCard(view, figuresCard(figures));
+  const sources = sourcesOf(view);
+  if (sources.length) { citeAll(view); placeCard(view, sourcesCard(sources)); }
+  // A plan or approval still waiting when the run ended can no longer be answered.
+  if (view.planEl?.dataset.state === 'awaiting') showPlan(view, view.planData, false);
+  view.planEl?.cedarPlan?.finish(event.type === 'run.completed');
+  for (const el of view.approvals.values()) {
+    if (el.dataset.state === 'pending') el.querySelector('.cedar-approval-actions').hidden = true;
+  }
   if (event.type === 'run.failed') {
     const n = note('error', '');
     n.lastChild.textContent = d.error || 'Something went wrong.';
@@ -898,7 +1035,9 @@ function finishTurn(view, event) {
     if (tool.output === undefined) { Object.assign(tool, { output: '', is_error: true }); fillStep(tool); fillCard(tool); }
   }
   if (view.usage.input || view.usage.output) {
-    put(note('usage', '', `${view.usage.input.toLocaleString()} in · ${view.usage.output.toLocaleString()} out`));
+    // The sandbox line only from a cedar that says how the run was sandboxed.
+    const sandbox = view.started?.sandbox ? ` · ${cedarTrust.sandbox.text(view.started, view.approvalsGranted)}` : '';
+    put(note('usage', '', `${cedarTrust.cost.text(view.usage)}${sandbox}`));
   }
   anchor?.remove();
   if (state.activeTurn === view) {

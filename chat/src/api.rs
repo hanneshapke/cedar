@@ -592,7 +592,13 @@ async fn send_message(
     let turns = settled_turns(&state, &conversation).await?;
     let settings = RunSettings::resolve(&state, &prefs, requested, reasoning, conversation.tools.clone()).await;
     let model = settings.model.as_deref();
-    let options = |parent| RunOptions { attachments: Some(&attachments), ..settings.options(parent) };
+    // Someone is reading along, so the run may ask: agree to its plan, approve a risky call.
+    let options = |parent| RunOptions {
+        attachments: Some(&attachments),
+        plan: Some(settings.plan.as_deref().unwrap_or(DEFAULT_PLAN)),
+        interactive: true,
+        ..settings.options(parent)
+    };
 
     // Continue the previous run, so the agent keeps the whole conversation (tool calls and
     // earlier attachments included) and the files in its sandbox workspace.
@@ -629,7 +635,12 @@ pub struct RunSettings {
     pub max_turns: Option<u32>,
     /// `*` when every tool is meant, so a continuation doesn't keep its parent's narrower choice.
     pub tools: Vec<String>,
+    /// Whether a message's run plans first; only messages use it, not schedules.
+    pub plan: Option<String>,
 }
+
+/// What a message's run does about a plan when Settings doesn't say.
+const DEFAULT_PLAN: &str = "auto";
 
 impl RunSettings {
     /// `model`, `reasoning` and `tools` win over the defaults. A default model that is no longer
@@ -646,7 +657,7 @@ impl RunSettings {
             None => still_registered(state, prefs.model.as_deref()).await,
         };
         let tools = tools.or_else(|| prefs.tools.clone()).unwrap_or_else(|| vec!["*".to_string()]);
-        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools }
+        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools, plan: prefs.plan.clone() }
     }
 
     pub fn options(&self, parent: Option<Uuid>) -> RunOptions<'_> {
@@ -658,6 +669,8 @@ impl RunSettings {
             tools: Some(&self.tools),
             parent,
             attachments: None,
+            plan: None,
+            interactive: false,
         }
     }
 }
@@ -713,11 +726,16 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
         return Err(AppError::BadRequest(format!("max_turns must be between 1 and {MAX_TURNS}")));
     }
     let (model, _) = clean_model_choice(&state, body.model.as_deref(), None).await?;
+    let plan = body.plan.map(|p| p.trim().to_ascii_lowercase()).filter(|p| !p.is_empty());
+    if plan.as_deref().is_some_and(|p| !matches!(p, "off" | "on" | "auto")) {
+        return Err(AppError::BadRequest("plan must be off, on or auto".into()));
+    }
     let prefs = Preferences {
         tools: clean_tools(&state, body.tools).await?,
         model,
         system,
         max_turns: body.max_turns,
+        plan,
     };
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))
@@ -730,6 +748,7 @@ struct SettingsBody {
     model: Option<String>,
     system: Option<String>,
     max_turns: Option<u32>,
+    plan: Option<String>,
 }
 
 /// cedar's tool groups, for the Tools settings and the composer's tools menu.
@@ -1176,19 +1195,40 @@ async fn cancel_turn(State(state): State<AppState>, Path(id): Path<String>) -> R
     Ok((StatusCode::ACCEPTED, Json(turn)))
 }
 
-/// Answer a run's `plan` event with the agreed steps. cedar does not send plans yet, so no run
-/// waits for one; this answers 404 until it does.
-async fn approve_plan(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
-    find_turn(&state, &id).await?;
-    Err(AppError::NotFound("this turn has no plan waiting for an answer"))
+/// Agree to the plan a turn's run is waiting on (`{"steps": [{id, title}, ...]}`); cedar checks
+/// the steps and says whether the run is waiting.
+async fn approve_plan(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<PlanBody>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let turn = find_turn(&state, &id).await?;
+    let answer = state.cedar.answer_plan(turn.run_id, &json!({ "steps": body.steps })).await?;
+    Ok((StatusCode::ACCEPTED, Json(answer)))
 }
 
-/// Answer a run's `approval.required` event. cedar does not gate tool calls yet, so no run waits
-/// for a decision; this answers 404 until it does.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlanBody {
+    steps: Vec<Value>,
+}
+
+/// Answer an approval a turn's run is waiting on: `allow`, `allow_always` or `deny`.
 async fn decide_approval(
     State(state): State<AppState>,
-    Path((id, _approval_id)): Path<(String, String)>,
-) -> Result<StatusCode, AppError> {
-    find_turn(&state, &id).await?;
-    Err(AppError::NotFound("this turn has no approval waiting for a decision"))
+    Path((id, approval_id)): Path<(String, String)>,
+    ApiJson(body): ApiJson<ApprovalBody>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let turn = find_turn(&state, &id).await?;
+    if !matches!(body.decision.as_str(), "allow" | "allow_always" | "deny") {
+        return Err(AppError::BadRequest("decision must be allow, allow_always or deny".into()));
+    }
+    let answer = state.cedar.decide_approval(turn.run_id, &approval_id, &json!({ "decision": body.decision })).await?;
+    Ok((StatusCode::ACCEPTED, Json(answer)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovalBody {
+    decision: String,
 }
