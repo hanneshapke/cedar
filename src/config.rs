@@ -13,6 +13,12 @@ pub const DEFAULT_BRAVE_BASE_URL: &str = "https://api.search.brave.com/res/v1/we
 pub const DEFAULT_WEATHER_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
 pub const DEFAULT_WEATHER_GEOCODING_BASE_URL: &str =
     "https://geocoding-api.open-meteo.com/v1/search";
+pub const DEFAULT_RECIPE_WIKIPEDIA_URL: &str = "https://en.wikipedia.org/w/api.php";
+pub const DEFAULT_RECIPE_COMMONS_URL: &str = "https://commons.wikimedia.org/w/api.php";
+/// The public Transitous trip planner (a MOTIS server), for transit routes and geocoding.
+pub const DEFAULT_TRANSIT_BASE_URL: &str = "https://api.transitous.org";
+/// The OSRM project's public demo router, for driving routes.
+pub const DEFAULT_DRIVING_BASE_URL: &str = "https://router.project-osrm.org";
 pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const DEFAULT_GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 /// What "Connect Google" asks for: the account's address, and what the default tools need.
@@ -145,6 +151,18 @@ pub struct Config {
     pub weather_geocoding_base_url: String,
     /// Offer the `show_map` tool (on by default).
     pub maps: bool,
+    /// Offer the `show_recipe` tool (on by default).
+    pub recipes: bool,
+    /// MediaWiki API endpoints `show_recipe` searches for a photo of the dish: Wikipedia first,
+    /// then Wikimedia Commons.
+    pub recipe_wikipedia_url: String,
+    pub recipe_commons_url: String,
+    /// Offer the `plan_trip` tool (on by default).
+    pub transit: bool,
+    /// Root of the MOTIS trip planner `plan_trip` asks for transit routes and looks places up with.
+    pub transit_base_url: String,
+    /// Root of the OSRM router `plan_trip` asks for driving routes.
+    pub driving_base_url: String,
     /// The Google account the Gmail and Calendar tools act for. Set when either is on.
     pub google_oauth: Option<GoogleClientConfig>,
     /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
@@ -348,6 +366,16 @@ impl Config {
             weather_geocoding_base_url: get("WEATHER_GEOCODING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_WEATHER_GEOCODING_BASE_URL.into()),
             maps: flag("MAPS", true)?,
+            recipes: flag("RECIPES", true)?,
+            recipe_wikipedia_url: get("RECIPE_WIKIPEDIA_URL")
+                .unwrap_or_else(|| DEFAULT_RECIPE_WIKIPEDIA_URL.into()),
+            recipe_commons_url: get("RECIPE_COMMONS_URL")
+                .unwrap_or_else(|| DEFAULT_RECIPE_COMMONS_URL.into()),
+            transit: flag("TRANSIT", true)?,
+            transit_base_url: get("TRANSIT_BASE_URL")
+                .unwrap_or_else(|| DEFAULT_TRANSIT_BASE_URL.into()),
+            driving_base_url: get("DRIVING_BASE_URL")
+                .unwrap_or_else(|| DEFAULT_DRIVING_BASE_URL.into()),
             google_oauth,
             google_apis,
             mcp_servers,
@@ -514,6 +542,45 @@ mod tests {
         let err =
             Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAPS", "maybe")])).unwrap_err();
         assert!(err.to_string().contains("MAPS"), "{err}");
+    }
+
+    #[test]
+    fn recipes_are_on_by_default_and_can_be_turned_off() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.recipes);
+        assert_eq!(cfg.recipe_wikipedia_url, DEFAULT_RECIPE_WIKIPEDIA_URL);
+        assert_eq!(cfg.recipe_commons_url, DEFAULT_RECIPE_COMMONS_URL);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("RECIPES", "off"),
+            ("RECIPE_WIKIPEDIA_URL", "http://localhost:9999/wiki"),
+            ("RECIPE_COMMONS_URL", "http://localhost:9999/commons"),
+        ]))
+        .unwrap();
+        assert!(!cfg.recipes);
+        assert_eq!(cfg.recipe_wikipedia_url, "http://localhost:9999/wiki");
+        assert_eq!(cfg.recipe_commons_url, "http://localhost:9999/commons");
+    }
+
+    #[test]
+    fn trip_planning_is_on_by_default_and_its_servers_can_be_moved() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.transit);
+        assert_eq!(cfg.transit_base_url, DEFAULT_TRANSIT_BASE_URL);
+        assert_eq!(cfg.driving_base_url, DEFAULT_DRIVING_BASE_URL);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("TRANSIT", "off"),
+            ("TRANSIT_BASE_URL", "http://localhost:9999/motis"),
+            ("DRIVING_BASE_URL", "http://localhost:9999/osrm"),
+        ]))
+        .unwrap();
+        assert!(!cfg.transit);
+        assert_eq!(cfg.transit_base_url, "http://localhost:9999/motis");
+        assert_eq!(cfg.driving_base_url, "http://localhost:9999/osrm");
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("TRANSIT", "maybe")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("TRANSIT"), "{err}");
     }
 
     #[test]

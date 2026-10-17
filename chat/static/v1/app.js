@@ -587,12 +587,13 @@ const TOOL_ICONS = {
   bash: 'terminal', read_file: 'file', write_file: 'pencil', web_search: 'search',
   generate_pdf: 'document', read_document: 'document', run_python: 'code',
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
-  show_map: 'globe',
+  show_map: 'globe', show_recipe: 'document', plan_trip: 'globe',
 };
 
 function toolSummary(name, input) {
   if (!input || typeof input !== 'object') return '';
   if (typeof input.command === 'string') return input.command.split('\n')[0];
+  if (name === 'show_recipe' && typeof input.title === 'string') return input.title;
   if (name === 'run_python' && typeof input.code === 'string') {
     return input.code.split('\n').find((l) => l.trim()) || '';
   }
@@ -600,10 +601,18 @@ function toolSummary(name, input) {
   if (typeof input.path === 'string') return input.path;
   if (typeof input.query === 'string') return input.query;
   if (typeof input.location === 'string') return input.location;
+  if (name === 'plan_trip') return tripSubject(input);
   if (Array.isArray(input.markers)) {
     return input.title || input.markers.map((m) => m?.location || m?.label || `${m?.latitude}, ${m?.longitude}`).join(' · ');
   }
   return JSON.stringify(input);
+}
+
+/** What a plan_trip call is about: its title, else "from → to". */
+function tripSubject(input) {
+  if (input.title) return input.title;
+  const end = (e) => (typeof e === 'string' ? e : e?.label || e?.location || (e ? `${e.latitude}, ${e.longitude}` : '?'));
+  return `${end(input.from)} → ${end(input.to)}`;
 }
 
 function toolCall(view, d) {
@@ -654,11 +663,21 @@ function toolResult(view, d) {
     label.append(actions);
   }
   details.querySelector('.tool-body').append(label, out);
-  // A map is the point of show_map, so it sits under the call instead of inside the collapsed details.
-  if (details.dataset.tool === 'show_map' && !d.is_error) {
-    const spec = cedarMap.parse(text);
+  // A map is the point of show_map, and a recipe card of show_recipe, so each sits under the call
+  // instead of inside the collapsed details.
+  const card = { show_map: cedarMap, show_recipe: cedarRecipe }[details.dataset.tool];
+  if (card && !d.is_error) {
+    const spec = card.parse(text);
     if (spec) {
-      details.after(cedarMap.element(spec));
+      details.after(card.element(spec));
+      scrollToBottom(false);
+    }
+  }
+  // The same goes for a plan_trip result, drawn as the trip's routes and options.
+  if (details.dataset.tool === 'plan_trip' && !d.is_error) {
+    const spec = cedarTransit.parse(text);
+    if (spec) {
+      details.after(cedarTransit.element(spec));
       scrollToBottom(false);
     }
   }

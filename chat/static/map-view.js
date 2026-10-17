@@ -6,6 +6,8 @@
 //
 //   cedarMap.parse(output) -> spec | null   the validated result, or null if it isn't a usable map
 //   cedarMap.element(spec) -> HTMLElement   the card; the map is drawn once the library has loaded
+//   cedarMap.loadLeaflet() -> Promise<L>    the map library, for other views (transit-view.js)
+//   cedarMap.tiles(L)      -> TileLayer     the base map those views draw on
 //
 // It needs nothing from the app. The map library (Leaflet, vendored under /vendor/leaflet and served
 // by this server) is only loaded when the first map is shown. Everything in the result came from the
@@ -103,8 +105,7 @@ const cedarMap = (() => {
   function draw(L, canvas, spec, tilesFailed) {
     const map = L.map(canvas, { scrollWheelZoom: false, worldCopyJump: true });
     map.setView([0, 0], 1);
-    const tiles = L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(map);
-    tiles.once('tileerror', tilesFailed);
+    tiles(L).addTo(map).once('tileerror', tilesFailed);
     spec.markers.forEach((m, i) => {
       L.marker([m.latitude, m.longitude], { icon: pin(L, i + 1), title: m.label, alt: m.label })
         .bindPopup(popup(m))
@@ -168,5 +169,8 @@ const cedarMap = (() => {
     return card;
   }
 
-  return { parse, element };
+  /** The OpenStreetMap base layer, with its attribution. */
+  const tiles = (L) => L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIBUTION });
+
+  return { parse, element, loadLeaflet, tiles };
 })();
