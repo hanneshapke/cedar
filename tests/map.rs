@@ -219,5 +219,8 @@ async fn by_default_the_tool_is_offered_after_the_weather_tool() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(&names[names.len() - 2..], ["weather_forecast", "show_map"]);
+    assert_eq!(
+        &names[names.len() - 3..],
+        ["weather_forecast", "show_map", "plan_trip"]
+    );
 }

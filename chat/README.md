@@ -59,6 +59,12 @@ Both interfaces have all of these, except where noted:
   cedar could not find. Cedar style puts it on the desk as a clipping, Claude style under the tool
   call. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
   the tool call's raw output is shown
+- A `plan_trip` tool call is drawn as a trip card: the recommended way to go and why, a map of the
+  chosen option's route between an A and a B pin (each transit line in its own color, walks dotted),
+  a row per option (transit with its line badges, times and transfers; drive; rideshare with its
+  estimated fare; walk), and the chosen option's steps on a timeline. Click a row to see that option
+  on the map and in the steps. Times are shown in the trip's time zone when the planner gives one.
+  It is placed like a map (`transit-view.js` and `transit-view.css`, which draw with the map view)
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
 - The send button names the model and reasoning level the message goes with, and opens a menu
@@ -85,7 +91,7 @@ CEDAR_API_KEY=devkey cargo run -p cedar-chat
 The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the two interfaces,
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
-`map-view.css` for the maps, `schedule.js` and `schedule.css` for scheduled agents, and
+`map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `schedule.js` and `schedule.css` for scheduled agents, and
 `models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
 model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
 library, and

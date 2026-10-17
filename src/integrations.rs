@@ -436,6 +436,7 @@ impl Integrations {
             ("web_fetch", off("WEB_FETCH")),
             ("weather", off("WEATHER")),
             ("maps", off("MAPS")),
+            ("transit", off("TRANSIT")),
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),
             ("calendar", google("calendar", "CALENDAR")),

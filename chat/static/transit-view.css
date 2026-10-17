@@ -1,0 +1,346 @@
+/* The trip card for the plan_trip tool (see transit-view.js), shared by both UIs. Like map-view.css
+   (whose frame, status, note and pin styles it reuses) it only relies on --accent and --muted, and
+   uses translucent greys for edges so it reads in the light and dark themes alike. */
+
+.cedar-trip {
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .06);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cedar-trip-head {
+  padding: 10px 12px 9px;
+}
+
+.cedar-trip-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cedar-trip-sub {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--muted, #6f6d66);
+  overflow-wrap: anywhere;
+}
+
+.cedar-trip-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The recommendation: a tinted band in the accent color. */
+.cedar-trip-rec {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 12px;
+  border-top: 1px solid rgba(128, 128, 128, .2);
+  background: color-mix(in srgb, var(--accent, #c96442) 12%, transparent);
+}
+
+.cedar-trip-rec .cedar-trip-mode {
+  background: var(--accent, #c96442);
+  color: #fff;
+}
+
+.cedar-trip-reason {
+  margin-top: 1px;
+  color: var(--muted, #6f6d66);
+}
+
+.cedar-trip-frame {
+  height: 260px;
+}
+
+/* Leaflet draws the routes in an SVG it sizes itself; undo the chat's icon sizing for svg elements. */
+.cedar-trip .leaflet-pane svg {
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  flex-shrink: 1;
+}
+
+.cedar-pin.start {
+  background: #2f7d4f;
+}
+
+.cedar-pin.end {
+  background: #b23a2e;
+}
+
+/* The options: one button per way to go, the chosen one marked by an accent edge. */
+.cedar-trip-options {
+  display: grid;
+  border-top: 1px solid rgba(128, 128, 128, .2);
+}
+
+.cedar-trip-option {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 12px 8px 9px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid rgba(128, 128, 128, .14);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cedar-trip-option:last-child {
+  border-bottom: 0;
+}
+
+.cedar-trip-option:hover {
+  background: rgba(128, 128, 128, .08);
+}
+
+.cedar-trip-option:focus-visible {
+  outline: 2px solid var(--accent, #c96442);
+  outline-offset: -2px;
+}
+
+.cedar-trip-option[aria-pressed="true"] {
+  border-left-color: var(--accent, #c96442);
+  background: rgba(128, 128, 128, .1);
+}
+
+.cedar-trip-mode {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, .16);
+}
+
+.cedar-trip-option[aria-pressed="true"] .cedar-trip-mode {
+  background: var(--accent, #c96442);
+  color: #fff;
+}
+
+.cedar-trip-option-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cedar-trip-option-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+
+.cedar-trip-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, .4);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+  color: var(--muted, #6f6d66);
+}
+
+.cedar-trip-tag.rec {
+  border-color: transparent;
+  background: var(--accent, #c96442);
+  color: #fff;
+}
+
+.cedar-trip-facts {
+  font-size: 12px;
+  color: var(--muted, #6f6d66);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.cedar-trip-duration {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A line badge: icon and route name, on the line's own color when the planner gives one. */
+.cedar-trip-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.cedar-trip-chev {
+  color: var(--muted, #6f6d66);
+}
+
+.cedar-trip-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px 1px 4px;
+  border-radius: 5px;
+  background: rgba(128, 128, 128, .2);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.cedar-trip-line .cedar-trip-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The steps of the chosen option: times on the left, a rail with a stop on each step. */
+.cedar-trip-detail {
+  border-top: 1px solid rgba(128, 128, 128, .2);
+  padding: 10px 12px 4px;
+}
+
+.cedar-trip-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cedar-trip-step {
+  --leg: var(--accent, #c96442);
+  position: relative;
+  display: grid;
+  grid-template-columns: 58px 14px 1fr;
+  column-gap: 8px;
+  padding-bottom: 10px;
+}
+
+.cedar-trip-time {
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--muted, #6f6d66);
+  padding-top: 1px;
+}
+
+.cedar-trip-dot {
+  position: relative;
+  justify-self: center;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 2px solid var(--leg);
+  background: var(--sheet, var(--bg, #fff));
+  box-sizing: border-box;
+  z-index: 1;
+}
+
+/* The rail runs from each stop down to the next; rides are solid in their line color, walks dotted. */
+.cedar-trip-step::before {
+  content: "";
+  position: absolute;
+  left: calc(58px + 8px + 6px);
+  top: 12px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--leg);
+}
+
+.cedar-trip-step.walk {
+  --leg: var(--muted, #6f6d66);
+}
+
+.cedar-trip-step.walk::before {
+  background: repeating-linear-gradient(to bottom, var(--leg) 0 2px, transparent 2px 6px);
+}
+
+.cedar-trip-step.end::before {
+  display: none;
+}
+
+.cedar-trip-step.end .cedar-trip-dot {
+  background: var(--leg);
+}
+
+.cedar-trip-step.ride::before {
+  width: 4px;
+  left: calc(58px + 8px + 5px);
+  border-radius: 2px;
+}
+
+.cedar-trip-step-body {
+  min-width: 0;
+}
+
+.cedar-trip-step-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.cedar-trip-step-sub {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--muted, #6f6d66);
+  overflow-wrap: anywhere;
+}
+
+.cedar-trip-foot {
+  display: grid;
+  gap: 2px;
+  padding: 7px 12px 9px;
+  border-top: 1px solid rgba(128, 128, 128, .2);
+  font-size: 12px;
+  color: var(--muted, #6f6d66);
+}
+
+.cedar-trip-attr {
+  font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .cedar-trip-frame {
+    height: 220px;
+  }
+
+  .cedar-trip-step {
+    grid-template-columns: 52px 14px 1fr;
+    column-gap: 6px;
+  }
+
+  .cedar-trip-time {
+    font-size: 11px;
+  }
+
+  .cedar-trip-step::before {
+    left: calc(52px + 6px + 6px);
+  }
+
+  .cedar-trip-step.ride::before {
+    left: calc(52px + 6px + 5px);
+  }
+}

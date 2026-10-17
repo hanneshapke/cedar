@@ -587,7 +587,7 @@ const TOOL_ICONS = {
   bash: 'terminal', read_file: 'file', write_file: 'pencil', web_search: 'search',
   generate_pdf: 'document', read_document: 'document', run_python: 'code',
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
-  show_map: 'globe',
+  show_map: 'globe', plan_trip: 'globe',
 };
 
 function toolSummary(name, input) {
@@ -600,10 +600,18 @@ function toolSummary(name, input) {
   if (typeof input.path === 'string') return input.path;
   if (typeof input.query === 'string') return input.query;
   if (typeof input.location === 'string') return input.location;
+  if (name === 'plan_trip') return tripSubject(input);
   if (Array.isArray(input.markers)) {
     return input.title || input.markers.map((m) => m?.location || m?.label || `${m?.latitude}, ${m?.longitude}`).join(' · ');
   }
   return JSON.stringify(input);
+}
+
+/** What a plan_trip call is about: its title, else "from → to". */
+function tripSubject(input) {
+  if (input.title) return input.title;
+  const end = (e) => (typeof e === 'string' ? e : e?.label || e?.location || (e ? `${e.latitude}, ${e.longitude}` : '?'));
+  return `${end(input.from)} → ${end(input.to)}`;
 }
 
 function toolCall(view, d) {
@@ -659,6 +667,14 @@ function toolResult(view, d) {
     const spec = cedarMap.parse(text);
     if (spec) {
       details.after(cedarMap.element(spec));
+      scrollToBottom(false);
+    }
+  }
+  // The same goes for a plan_trip result, drawn as the trip's routes and options.
+  if (details.dataset.tool === 'plan_trip' && !d.is_error) {
+    const spec = cedarTransit.parse(text);
+    if (spec) {
+      details.after(cedarTransit.element(spec));
       scrollToBottom(false);
     }
   }
