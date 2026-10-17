@@ -197,11 +197,11 @@ fn load_folder(folder: &Path, name: &str) -> Result<Option<PythonTool>> {
 }
 
 /// Stage the input, touch the marker, run the script on it, remove the input, and keep the
-/// script's exit status.
+/// script's exit status. A failed call never lists changed files, so it removes the marker too.
 fn run_command(script: &str, input: &str, marker: &str) -> String {
     format!(
         "touch {marker} && PYTHONPATH=\"$PWD${{PYTHONPATH:+:$PYTHONPATH}}\" python3 -- {script} < {input}; \
-         s=$?; rm -f -- {input}; exit $s",
+         s=$?; rm -f -- {input}; [ $s -eq 0 ] || rm -f -- {marker}; exit $s",
         marker = shell_quote(marker),
         script = shell_quote(script),
         input = shell_quote(input),
@@ -347,7 +347,8 @@ mod tests {
         assert_eq!(
             run_command("/opt/cedar/tools/x/tool.py", "/tmp/i.json", "/tmp/i.mark"),
             "touch '/tmp/i.mark' && PYTHONPATH=\"$PWD${PYTHONPATH:+:$PYTHONPATH}\" python3 -- \
-             '/opt/cedar/tools/x/tool.py' < '/tmp/i.json'; s=$?; rm -f -- '/tmp/i.json'; exit $s"
+             '/opt/cedar/tools/x/tool.py' < '/tmp/i.json'; s=$?; rm -f -- '/tmp/i.json'; \
+             [ $s -eq 0 ] || rm -f -- '/tmp/i.mark'; exit $s"
         );
     }
 
