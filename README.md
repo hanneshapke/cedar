@@ -643,7 +643,11 @@ print(json.dumps({"lines": text.count("\n"), "words": len(text.split()), "charac
 ```
 
 [examples/tools](examples/tools) holds this tool and `csv_summary`; `TOOLS_DIR=examples/tools`
-tries them out.
+tries them out. It also holds `tandem_glucose`, which downloads glucose and insulin data from a
+Tandem pump account, compares the last day with the week before, and suggests what to try today.
+It reads its credentials from a `.env` in its own folder (see its `.env.example`; `.env` files
+are git-ignored), and needs `SANDBOX_NETWORK=bridge` to reach Tandem and to `pip install`
+tconnectsync on its first run.
 
 The directory is mounted read-only at `/opt/cedar/tools` in every sandbox, so a personal tool
 runs exactly where the agent's own code runs: as the sandbox user, offline unless
