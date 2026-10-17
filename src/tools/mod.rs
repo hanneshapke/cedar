@@ -3,7 +3,8 @@
 //! `show_recipe`, `plan_trip`, and `compare_stocks` run in the cedar process, because the sandbox
 //! has no network; so does `ask_user`, which only checks its questions; `browser` drives the run's browser
 //! container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
-//! in the cedar process too.
+//! in the cedar process too. Personal tools written in Python (`custom`) run in the sandbox like
+//! `run_python`.
 
 mod ask_user;
 mod bash;
@@ -11,6 +12,7 @@ mod browser;
 mod calendar;
 mod changes;
 mod chart;
+pub mod custom;
 mod document;
 mod fetch;
 mod files;
@@ -31,6 +33,7 @@ pub use ask_user::{as_text as question_text, AskUser, NAME as ASK_USER};
 pub use bash::Bash;
 pub use browser::BrowserTool;
 pub use chart::GenerateChart;
+pub use custom::PythonTool;
 pub use document::ReadDocument;
 pub use fetch::{DownloadFile, FetchUrl, WebClient};
 pub use files::{ReadFile, WriteFile};
@@ -52,6 +55,7 @@ use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -89,6 +93,8 @@ pub struct ToolSet {
     tools: Vec<Box<dyn Tool>>,
     /// MCP servers; their tools join the set once discovered (see [`Self::connect_remote`]).
     remote: Vec<McpServer>,
+    /// The names of the personal tools loaded from `TOOLS_DIR`, which form the `custom` group.
+    custom: HashSet<String>,
 }
 
 impl ToolSet {
@@ -96,6 +102,7 @@ impl ToolSet {
         Self {
             tools,
             remote: Vec::new(),
+            custom: HashSet::new(),
         }
     }
 
@@ -117,8 +124,9 @@ impl ToolSet {
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
     /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `ask_user` unless `ASK_USER` is
-    /// off, `browser` if `BROWSER` is on, and the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
-    /// is on (through the REST APIs, or MCP servers whose tools are discovered later).
+    /// off, `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
+    /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
+    /// personal Python tools in `TOOLS_DIR`, if set.
     pub fn from_config(cfg: &Config) -> Result<Self> {
         Self::build(cfg, &Overrides::default())
     }
@@ -204,7 +212,35 @@ impl ToolSet {
                 set.remote.push(McpServer::new(server, auth.clone())?);
             }
         }
+        if let Some(dir) = &cfg.sandbox.tools_dir {
+            set.load_custom(dir)?;
+        }
         Ok(set)
+    }
+
+    /// Add the personal tools in `dir` (see [`custom`]). Names cedar's own tools use are skipped.
+    pub fn load_custom(&mut self, dir: &std::path::Path) -> Result<()> {
+        let taken: HashSet<&str> = self.tools.iter().map(|t| t.name()).collect();
+        let loaded = custom::load_dir(dir, &taken)?;
+        for tool in loaded {
+            self.custom.insert(tool.name().to_string());
+            self.tools.push(Box::new(tool));
+        }
+        if !self.custom.is_empty() {
+            let mut names: Vec<&str> = self.custom.iter().map(|s| s.as_str()).collect();
+            names.sort();
+            tracing::info!(dir = %dir.display(), tools = ?names, "personal tools loaded");
+        }
+        Ok(())
+    }
+
+    /// The group a tool belongs to: `custom` for a personal tool, else by name (see [`group_of`]).
+    pub fn group(&self, name: &str) -> &'static str {
+        if self.custom.contains(name) {
+            custom::GROUP
+        } else {
+            group_of(name)
+        }
     }
 
     /// Discover the tools of every MCP server not discovered yet. A server that can't be reached
@@ -266,7 +302,7 @@ impl ToolSet {
             .map(|(id, label)| {
                 let tools: Vec<Value> = self
                     .all()
-                    .filter(|t| group_of(t.name()) == *id)
+                    .filter(|t| self.group(t.name()) == *id)
                     .map(|t| json!({ "name": t.name(), "description": t.description(), "writes": writes(t.name()) }))
                     .collect();
                 let remote = self.remote.iter().find(|s| s.prefix() == *id);
@@ -324,9 +360,11 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("browser", "Browser"),
     ("gmail", "Gmail"),
     ("calendar", "Calendar"),
+    (custom::GROUP, "Personal tools"),
 ];
 
-/// The group a tool belongs to.
+/// The group a tool belongs to, by name. Personal tools can have any name, so use
+/// [`ToolSet::group`] where the set is at hand.
 pub fn group_of(name: &str) -> &'static str {
     match name {
         "web_search" => "web_search",
@@ -369,7 +407,7 @@ impl<'a> ToolView<'a> {
         let Some(allow) = self.allow else {
             return true;
         };
-        let group = group_of(name);
+        let group = self.set.group(name);
         group == "core" || allow.iter().any(|a| a == "*" || a == name || a == group)
     }
 

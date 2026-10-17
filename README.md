@@ -100,6 +100,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `ask_user` | `ask_user` |
 | `browser` | `browser` |
 | `gmail`, `calendar` | every `gmail_*` or `calendar_*` tool, or name single ones (`gmail_search_threads`) |
+| `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
 
 The sandbox tools (`bash`, the file, Python, document, PDF, and chart tools) are always included,
 and `*` means every tool. Leaving `tools` out gives a fresh run every tool and a continuation its
@@ -289,6 +290,7 @@ Settings come from environment variables. The important ones:
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
+| `TOOLS_DIR` | empty (a directory of [personal tools in Python](#personal-tools-in-python), mounted read-only into every sandbox) |
 | `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
 | `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the browser needs internet access, so `none` is refused) |
 | `BROWSER_MEMORY` / `BROWSER_CPUS` | `1g` / `1` |
@@ -314,6 +316,7 @@ Settings come from environment variables. The important ones:
 | `compare_stocks` | Tracks and compares stocks, ETFs, and indices. Takes `symbols` (1–6 Yahoo Finance tickers such as `AAPL`, `BRK-B`, `SAP.DE`, `^GSPC`, `BTC-USD`), optional `benchmark` (an index to compare against, default `^GSPC`, or `none`), `range` (the period the chart opens on: `1mo`, `3mo`, `6mo`, `1y` (default), `2y`, `5y`), and `news_count` (headlines per symbol, 0–8, default 4). Reads at least a year of daily prices per symbol and the benchmark from Yahoo Finance's chart API and the headlines from its search API, all at once. Returns JSON with each symbol's quote and day's move, 52-week and day ranges, returns over 1 week to 1 year and year to date, indicators (50- and 200-day averages, 14-day RSI, annualized volatility, the past year's maximum drawdown, distance from the 52-week high, beta and 6-month performance against the benchmark), the closes for the chart (thinned to 300 points), and a `rating`: six factors (long-term trend, momentum, performance against the benchmark, RSI, distance from the high, volatility) each score −2 to +2 with a sentence saying why, and their sum makes the call (`buy` at +3 or more, `sell` at −3 or less, else `hold`, with a lean at ±2), with a confidence, a summary, and what would change the view. Headlines several symbols share are listed once. A symbol that can't be found is listed under `unavailable`; it is an error only if none is found, and failing news never fails the call. The rating reads price history only, so the description asks the model to give its own call afterwards, weighing the headlines, and to say it is not financial advice. The chat interfaces draw the JSON as a card with a chart ([chat/README.md](chat/README.md)). Unless `STOCKS=off`. |
 | `ask_user` | Asks the user clarifying questions when a request is ambiguous and the answer would change what the agent does. Takes `questions` (1–4 objects, each with a `question`, an optional short `header`, up to 8 `options` with a `label` and optional `description`, given as 2 or more or left out for an open question, and `multi_select` to let several options be chosen). An "Other" option is dropped, since the user can always answer in their own words. The run then ends as `completed` with `stop_reason: "ask_user"` and the questions as its `final_text`; the tool result holds them as JSON, which the chat interfaces draw as a form (radio buttons, or checkboxes with `multi_select`, plus a free-form answer). The answer is the prompt of the next run, started with `parent_id`. Unless `ASK_USER=off`. |
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
+| personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Run in the sandbox like `run_python`, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
 `writes` in `GET /v1/tools` marks Gmail and Calendar tools whose names say they send, create, change, or delete something, so clients can ask before switching them on.
@@ -479,9 +482,82 @@ rebuilds the tool set at once: the next run sees the change, runs already going 
 started with. A value set in the environment always wins; the API reports it as `"source": "env"`
 and refuses to change it.
 
+## Personal tools in Python
+
+Tools can be added without touching the Rust code: point `TOOLS_DIR` at a directory and put one
+folder per tool in it. The folder's name is the tool's name (lowercase letters, digits, and
+underscores, at most 64 characters, and not the name of a built-in tool or group). Each folder
+holds a manifest and a script:
+
+```
+~/.cedar/tools/              # TOOLS_DIR
+├── csv_summary/
+│   ├── tool.json
+│   └── tool.py
+└── word_count/
+    ├── tool.json
+    └── tool.py
+```
+
+`tool.json` is what the model is told about the tool:
+
+```json
+{
+  "description": "Count the lines, words, and characters of a text file in the workspace.",
+  "input_schema": {
+    "type": "object",
+    "properties": { "path": { "type": "string", "description": "The file, relative to /workspace." } },
+    "required": ["path"]
+  }
+}
+```
+
+`description` is required. `input_schema` is a JSON Schema for an object and defaults to one with
+no properties. `entry` names the script to run when it isn't `tool.py` (a file name in the
+folder), and `timeout_secs` replaces `TOOL_TIMEOUT_SECS` for this tool (at most 600). A `name`,
+if given, must match the folder.
+
+The script gets the call's input as JSON on stdin and runs with `/workspace` as the working
+directory (and on the import path, like `run_python`). Whatever it prints is the tool result, and
+the workspace files it created or modified are listed after it, the way `bash` and `run_python`
+report theirs. A non-zero exit status makes the call a tool error carrying the script's stderr
+(or stdout when stderr is empty), which the model sees with `is_error: true` and can recover from:
+
+```python
+#!/usr/bin/env python3
+import json, sys
+
+args = json.load(sys.stdin)
+try:
+    text = open(args["path"], encoding="utf-8", errors="replace").read()
+except OSError as e:
+    sys.exit(str(e))
+print(json.dumps({"lines": text.count("\n"), "words": len(text.split()), "characters": len(text)}))
+```
+
+[examples/tools](examples/tools) holds this tool and `csv_summary`; `TOOLS_DIR=examples/tools`
+tries them out.
+
+The directory is mounted read-only at `/opt/cedar/tools` in every sandbox, so a personal tool
+runs exactly where the agent's own code runs: as the sandbox user, offline unless
+`SANDBOX_NETWORK` says otherwise, under the run's memory, CPU, and time limits, and unable to
+change the tools themselves. It can use the standard library and whatever the sandbox image
+ships (matplotlib, pypdf, openpyxl, python-docx, python-pptx, pillow); for anything else, add the
+package to `sandbox/Dockerfile` and rebuild the image, or set `SANDBOX_NETWORK=bridge` and have
+the script `pip install` it (installs land in the workspace and persist for continuations). Since
+`TOOLS_DIR` is bind-mounted by Docker, it must be a path the Docker daemon can see; with a remote
+daemon, that is a path on the daemon's host. A relative path is resolved against the directory
+cedar starts in.
+
+The manifests are read when the tool set is built: at startup, and again whenever a credential is
+saved or removed through the admin API. A folder whose manifest or script can't be used is logged
+with the reason (`personal tool left out`) and skipped, so one broken tool doesn't stop the rest.
+The tools form the `custom` group of `GET /v1/tools` ("Personal tools" in the chat's settings),
+which a run's `tools` can switch on or off like any other, by the group or by single names.
+
 ## Adding a tool
 
-A tool is a name, a description, a JSON schema for its input, and an async function. Implement the `Tool` trait in `src/tools/` and add it to `ToolSet::standard`.
+For a tool in Python that runs in the sandbox, see [Personal tools in Python](#personal-tools-in-python); no build is needed. A built-in tool is a name, a description, a JSON schema for its input, and an async function. Implement the `Tool` trait in `src/tools/` and add it to `ToolSet::standard`.
 
 ```rust
 struct Now;

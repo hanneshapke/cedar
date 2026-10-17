@@ -204,7 +204,8 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "ask_user",
             "browser",
             "gmail",
-            "calendar"
+            "calendar",
+            "custom"
         ]
     );
 
@@ -219,6 +220,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
         group(&catalog, "gmail")["reason"],
         "Turned off on the server (GMAIL=off)"
     );
+    assert_eq!(group(&catalog, "custom")["reason"], "No TOOLS_DIR is set");
     let fetch = group(&catalog, "web_fetch");
     assert_eq!(fetch["available"], true);
     assert_eq!(fetch["tools"][0]["name"], "fetch_url");
