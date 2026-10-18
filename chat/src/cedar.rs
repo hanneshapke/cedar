@@ -148,6 +148,13 @@ impl CedarClient {
         admin(self.json(self.http.get(self.url("/admin/models"))).await)
     }
 
+    /// The models a server lists, before registering one. `query` is cedar's `{base_url,
+    /// api_key?, id?}`, passed through as it is.
+    pub async fn server_models(&self, query: &Value) -> Result<Value, AppError> {
+        let req = self.http.post(self.url("/admin/server-models")).json(query);
+        admin(self.json(req).await)
+    }
+
     /// Register a model or change one. `spec` is cedar's `{base_url, model, label?, api_key?,
     /// reasoning_levels?, default_reasoning?, is_default?}`, passed through as it is.
     pub async fn set_model(&self, id: &str, spec: &Value) -> Result<Value, AppError> {

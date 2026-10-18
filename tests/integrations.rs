@@ -276,6 +276,11 @@ async fn admin_routes_need_an_admin_key() {
         ),
         (Method::DELETE, "/v1/admin/models/m", None),
         (
+            Method::POST,
+            "/v1/admin/server-models",
+            Some(json!({ "base_url": "http://x" })),
+        ),
+        (
             Method::PUT,
             "/v1/admin/integrations/brave",
             Some(json!({ "api_key": "k" })),
@@ -887,6 +892,69 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         )
         .await;
     assert_eq!(code, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn an_admin_lists_a_servers_models_before_registering_one() {
+    let (server_url, _) = start_model_server(Some("llm-key"), "hi").await;
+    let app = app_with_real_llm(&admin_env(&[])).await;
+    let list = |body: Value| {
+        let app = &app;
+        async move {
+            app.json(
+                Method::POST,
+                "/v1/admin/server-models",
+                Some(KEY_B),
+                Some(body),
+            )
+            .await
+        }
+    };
+
+    // The server wants a key; nothing listening; a malformed address.
+    let (code, body) = list(json!({ "base_url": server_url })).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("401"),
+        "{body}"
+    );
+    let (code, body) = list(json!({ "base_url": "http://127.0.0.1:1" })).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("could not reach"),
+        "{body}"
+    );
+    let (code, _) = list(json!({ "base_url": "not a url" })).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // With the key, the names come back with the address as it would be stored. Nothing is saved.
+    let (code, body) = list(json!({ "base_url": server_url, "api_key": "llm-key" })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({ "base_url": format!("{server_url}/v1"), "models": ["m-1"] })
+    );
+    assert_eq!(
+        app.get("/v1/admin/models", KEY_B).await.1,
+        json!({ "models": [] })
+    );
+
+    // A registered model's saved key is used when none is typed.
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "api_key": "llm-key" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let (code, body) = list(json!({ "base_url": server_url, "id": "gpu" })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["models"], json!(["m-1"]));
+    let (code, _) = list(json!({ "base_url": server_url, "id": "other" })).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

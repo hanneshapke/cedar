@@ -398,12 +398,14 @@ in cedar's environment are shown as "Managed by environment" and can't be change
 The **Models** list in that section shows every model cedar has registered: its label, the model
 name and the server it is on, whether an API key is saved, its reasoning levels, and which one is
 the default. **Add a model**, in the heading of the list, asks for an id (filled in from the label), a label, the server address
-(`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), the model name the server
-registered, an API key if the server needs one, the reasoning levels it takes as `reasoning_effort`
+(`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), an API key if the server
+needs one, and the model: **List models** asks the server which models it serves (with the key
+typed, else the entry's saved one) and the model is picked from that list, never typed. Changing
+the address or key empties the list until it is listed again. Then come the reasoning levels it takes as `reasoning_effort`
 (comma-separated, like `none, low, high, max`), the level to use when a message picks none,
 whether it accepts images (see [Attachments](#attachments)), and whether it is the
 default for new chats. cedar checks the address by listing the server's models
-before saving; the names it listed are offered in the edit form, with a warning on the entry if
+again before saving; the edit form starts with the names it listed last time, with a warning on the entry if
 the model name is not one of them. **Edit**, **Make default** and **Remove** change an entry; a removed model's
 conversations fail at their next message until another model is picked. The first model
 registered is the default, and a fresh cedar has none: the message box says so until an admin adds
@@ -457,6 +459,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |
 | `GET /api/integrations/models` | Admin: cedar's registered models with their servers (`GET /v1/admin/models`), relayed |
+| `POST /api/integrations/server-models` | Admin: the models a server lists (cedar's `POST /v1/admin/server-models`, body `{"base_url", "api_key"?, "id"?}`), relayed, for the model picker in the form |
 | `PUT` / `DELETE /api/integrations/models/{id}` | Admin: register or change a model (the body is cedar's `{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "is_default"?}`, passed through as it is) or remove it |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
