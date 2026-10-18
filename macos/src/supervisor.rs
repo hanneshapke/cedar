@@ -203,8 +203,8 @@ impl Runner {
 
         tokio::select! {
             _ = self.stop.cancelled() => {
-                terminate(&mut chat).await;
-                terminate(&mut cedar).await;
+                // Both at once, so a quit waits for one grace period at most, not two.
+                tokio::join!(terminate(&mut chat), terminate(&mut cedar));
                 Ok(())
             }
             status = cedar.wait() => {

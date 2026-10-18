@@ -196,7 +196,6 @@ pub struct Config {
     pub bind_addr: SocketAddr,
 
     pub default_system_prompt: String,
-    pub max_tokens: u32,
     pub max_turns_cap: u32,
 
     pub max_concurrent_runs: usize,
@@ -392,6 +391,12 @@ impl Config {
                 );
             }
         }
+        if get("MAX_TOKENS").is_some() {
+            tracing::warn!(
+                setting = "MAX_TOKENS",
+                "ignored: each model has its own reply limit, max_tokens on PUT /v1/admin/models/{{id}} or Max tokens per reply in the chat UI's Settings → Server (16384 unless set)"
+            );
+        }
 
         let cfg = Config {
             brave_api_key: get("BRAVE_API_KEY").map(|k| k.trim().to_string()),
@@ -437,7 +442,6 @@ impl Config {
 
             default_system_prompt: get("SYSTEM_PROMPT")
                 .unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.into()),
-            max_tokens: parse("MAX_TOKENS", get("MAX_TOKENS"), 4096)?,
             max_turns_cap: parse("MAX_TURNS_CAP", get("MAX_TURNS_CAP"), 25)?,
 
             max_concurrent_runs: parse("MAX_CONCURRENT_RUNS", get("MAX_CONCURRENT_RUNS"), 4)?,
@@ -940,8 +944,8 @@ mod tests {
 
     #[test]
     fn invalid_number_is_reported() {
-        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAX_TOKENS", "lots")]))
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MAX_TURNS_CAP", "lots")]))
             .unwrap_err();
-        assert!(err.to_string().contains("MAX_TOKENS"));
+        assert!(err.to_string().contains("MAX_TURNS_CAP"));
     }
 }

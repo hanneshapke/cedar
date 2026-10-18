@@ -1,105 +1,219 @@
-/* Tools, model and integrations settings and the composer's Tools button (settings.js), shared by
-   both UIs. Like schedule.css it only relies on --accent and --muted, which both define, and on
-   translucent greys for edges, so it reads in the light and dark themes alike. Buttons reuse each
-   UI's .copy-btn and .primary. */
+/* The Settings dialog (settings-shell.js and the pages settings.js and notify.js draw into it) and
+   the composer's Tools button, shared by every UI. It draws with the variables each UI defines
+   (--paper, --desk, --sheet, --ink, --ink-2, --muted, --faint, --line, --line-soft, --wash,
+   --accent, --on-ink, --error, --warn, --sans, --serif, --mono, --shadow-doc), so the dialog
+   takes each UI's colours and faces. Buttons reuse each UI's .primary. */
 
-.cedar-set-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(128, 128, 128, .25); }
-.cedar-set-section[hidden] { display: none; }
-.cedar-set-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
-.cedar-set-heading > span { flex: 1; }
-.cedar-set-note { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
-.cedar-set-error { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: rgba(200, 60, 40, .1); color: #b63d2b; font-size: 13px; }
-@media (prefers-color-scheme: dark) { .cedar-set-error { color: #f09080; } }
+/* -- the dialog shell ------------------------------------------------------------------------ */
 
-/* tool groups */
-.cedar-set-tools { display: flex; flex-direction: column; gap: 6px; }
-.cedar-set-tool { padding: 8px 12px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; background: rgba(128, 128, 128, .04); }
-.cedar-set-tool.unavailable { opacity: .65; }
+.settings-dialog {
+  width: min(940px, calc(100vw - 32px));
+  max-width: none;
+  height: min(640px, calc(100dvh - 32px));
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: var(--shadow-doc, 0 2px 4px rgba(40, 30, 10, .06), 0 14px 40px rgba(40, 30, 10, .10));
+}
+.settings-dialog[open] { display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+
+.settings-nav { display: flex; flex-direction: column; gap: 14px; min-height: 0; padding: 18px 12px 14px; background: var(--desk); border-right: 1px solid var(--line); }
+.settings-nav h3 { margin: 0; padding: 4px 10px 0; font: 600 16px var(--sans); color: var(--ink); }
+.settings-nav-list { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; }
+.settings-nav-item { display: flex; flex-direction: column; gap: 1px; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px; background: none; text-align: left; color: var(--ink-2); font: inherit; cursor: pointer; }
+.settings-nav-item:hover { background: var(--wash); }
+.settings-nav-item[aria-current="page"] { background: var(--line-soft); color: var(--ink); }
+.settings-nav-item[aria-current="page"] .settings-nav-name { font-weight: 500; }
+.settings-nav-name { font-size: 13.5px; }
+.settings-nav-value { font-size: 12px; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.settings-nav-value.error { color: var(--error, #a3352b); }
+.settings-nav-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
+.settings-nav-foot .settings-nav-item { flex-direction: row; align-items: center; gap: 8px; font-size: 13.5px; }
+.settings-nav-foot .settings-nav-item svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; color: var(--muted); }
+.settings-nav-foot .settings-nav-name { flex: 1; }
+.settings-nav-tag { font: 11px var(--mono); color: var(--muted); letter-spacing: .02em; }
+.settings-nav-tag.on { color: var(--accent); }
+.settings-nav-note { margin: 6px 0 0; padding: 0 10px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+.settings-main { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; min-width: 0; }
+.settings-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 26px 32px 16px; border-bottom: 1px solid var(--line); }
+.settings-page-head > div:first-child { flex: 1; min-width: 0; }
+.settings-page-title { font: 400 24px/1.2 var(--serif); letter-spacing: -.005em; color: var(--ink); }
+.settings-page-desc { margin-top: 4px; font-size: 13.5px; color: var(--muted); }
+.settings-page-acts { display: flex; align-items: center; gap: 6px; flex: none; }
+.settings-page-acts:empty { display: none; }
+.settings-page-head .icon-btn, .settings-page-head .ghost.icon { flex: none; }
+.settings-page-body { min-height: 0; overflow-y: auto; padding: 20px 32px; }
+.settings-page { display: flex; flex-direction: column; gap: 22px; }
+.settings-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 32px; border-top: 1px solid var(--line); background: var(--paper); }
+.settings-foot .primary:disabled { opacity: .4; cursor: default; }
+.cedar-set-status { font-size: 12.5px; color: var(--muted); }
+.cedar-set-status.warn { color: var(--warn, #8a6a1f); }
+.cedar-set-status.error { color: var(--error, #a3352b); }
+
+/* shared small parts */
+.settings-eyebrow { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+.settings-ghost { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.settings-ghost:hover { background: var(--wash); }
+.settings-ghost:disabled { opacity: .5; cursor: default; }
+.settings-link { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }
+.settings-link:hover { color: var(--ink); }
+.settings-input, .cedar-set-field input, .cedar-set-field textarea, .cedar-set-field select,
+.cedar-set-unlock input, .cedar-set-inline input, .cedar-set-endpoint > select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  outline: none;
+}
+.cedar-set-field :focus, .cedar-set-unlock input:focus, .cedar-set-inline input:focus, .settings-input:focus { border-color: var(--accent); }
+.cedar-set-note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.cedar-set-error { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--error-wash, rgba(200, 60, 40, .1)); color: var(--error, #b63d2b); font-size: 13px; }
+.cedar-set-warn, .cedar-set-warn-text { color: #b0662a; }
+@media (prefers-color-scheme: dark) { .cedar-set-warn, .cedar-set-warn-text { color: #e2a66a; } }
+.cedar-set-badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 11.5px; line-height: 1.6; color: var(--muted); white-space: nowrap; }
+.cedar-set-badge.ok { color: var(--accent); border-color: var(--accent); }
 .cedar-set-check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13.5px; }
 .cedar-set-check input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
 .cedar-set-check > span { display: flex; flex-direction: column; min-width: 0; }
 .cedar-set-check small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.cedar-set-check.small { align-items: center; gap: 8px; font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.cedar-set-check.small { align-items: center; gap: 8px; font-size: 12.5px; font-family: var(--mono); }
 .cedar-set-check.small input { margin: 0; }
 .cedar-set-check.plain { font-family: inherit; }
-.cedar-set-single { margin: 6px 0 0 26px; font-size: 12.5px; }
-.cedar-set-single summary { cursor: pointer; color: var(--muted); }
-.cedar-set-single-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.cedar-set-warn { display: inline-block; margin-left: 26px; font-size: 11.5px; color: #b0662a; }
-.cedar-set-check .cedar-set-warn { margin-left: 4px; font-family: inherit; }
-@media (prefers-color-scheme: dark) { .cedar-set-warn { color: #e2a66a; } }
+.cedar-set-check .cedar-set-warn { margin-left: 4px; font-family: var(--sans); font-size: 11.5px; }
 
-/* model fields */
-.cedar-set-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
-.cedar-set-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; color: var(--muted); }
-.cedar-set-field:has(textarea) { grid-column: 1 / -1; }
+/* -- the Interface page ---------------------------------------------------------------------- */
+
+.settings-page .ui-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* -- the Tools page -------------------------------------------------------------------------- */
+
+.cedar-set-tools { display: flex; flex-direction: column; }
+.cedar-set-always { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); }
+.cedar-set-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.cedar-set-row.unavailable { opacity: .6; }
+.cedar-set-row-main { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.cedar-set-row-name { font-weight: 500; font-size: 13.5px; white-space: nowrap; }
+.cedar-set-row-sub { font: 12px var(--mono); color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-set-row-sub .settings-link { font: inherit; }
+.cedar-set-row-side { font-size: 12.5px; color: var(--muted); white-space: nowrap; text-align: right; }
+.cedar-set-row-side.warn { color: #b0662a; }
+@media (prefers-color-scheme: dark) { .cedar-set-row-side.warn { color: #e2a66a; } }
+.cedar-set-switch { position: relative; flex: none; width: 30px; height: 18px; padding: 0; border: 0; border-radius: 9px; background: var(--line); cursor: pointer; transition: background .15s; }
+.cedar-set-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--sheet); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s; }
+.cedar-set-switch[aria-checked="true"] { background: var(--ink); }
+.cedar-set-switch[aria-checked="true"]::after { left: 14px; }
+.cedar-set-switch[aria-checked="mixed"] { background: var(--accent); }
+.cedar-set-switch[aria-checked="mixed"]::after { left: 8px; }
+.cedar-set-switch:disabled { cursor: default; }
+.cedar-set-single-list { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px 44px; }
+.cedar-set-single-list[hidden] { display: none; }
+
+/* -- the Model & prompt page ----------------------------------------------------------------- */
+
+.cedar-set-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cedar-set-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12.5px; color: var(--muted); }
 .cedar-set-field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 500; }
-.cedar-set-field input, .cedar-set-field textarea, .cedar-set-field select,
-.cedar-set-unlock input, .cedar-set-inline input {
+.cedar-set-field-notes { display: flex; flex-direction: column; gap: 4px; margin-top: -10px; }
+.cedar-set-field-note { font-size: 12.5px; color: var(--muted); }
+.cedar-set-prompt-block { display: flex; flex-direction: column; gap: 10px; }
+.cedar-set-prompt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cedar-set-prompt-head > span { display: flex; align-items: baseline; gap: 10px; }
+.cedar-set-prompt-acts { display: flex; gap: 6px; }
+.cedar-set-prompt, .cedar-set-prompt-edit {
   width: 100%;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid rgba(128, 128, 128, .4);
-  border-radius: 8px;
-  background: rgba(128, 128, 128, .07);
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-  outline: none;
+  margin: 0;
+  padding: 26px 32px 30px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-doc, 0 2px 4px rgba(40, 30, 10, .06), 0 14px 40px rgba(40, 30, 10, .10));
+  font: 400 17px/1.55 var(--serif);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.cedar-set-field textarea { resize: vertical; min-height: 80px; line-height: 1.45; }
-.cedar-set-field :focus, .cedar-set-unlock input:focus, .cedar-set-inline input:focus { border-color: var(--accent); }
-.cedar-set-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-.cedar-set-status { font-size: 12.5px; color: var(--muted); }
-.cedar-set-actions .primary:disabled { opacity: .5; cursor: default; }
+.cedar-set-prompt:empty::before { content: "cedar's default system prompt (cedar could not be asked for its text)"; color: var(--faint); }
+.cedar-set-prompt-edit { display: block; min-height: 220px; resize: none; outline: none; }
+.cedar-set-prompt-edit:focus { border-color: var(--accent); }
 
-.cedar-set-field-extra { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; }
-.cedar-set-field-extra [hidden] { display: none; }
-.cedar-set-field-note { font-size: 12px; color: var(--muted); }
+/* -- the Server page ------------------------------------------------------------------------- */
 
-/* integrations */
-.cedar-set-help ul { margin: -4px 0 10px; padding-left: 20px; font-size: 13px; color: var(--muted); }
+.cedar-set-unlock-card { display: flex; flex-direction: column; gap: 12px; max-width: 420px; margin: 8px auto; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.cedar-set-unlock { display: flex; gap: 8px; align-items: center; }
+.cedar-set-help { display: flex; flex-direction: column; gap: 8px; }
+.cedar-set-help ul { margin: 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
 .cedar-set-help li { margin: 2px 0; }
-.cedar-set-help code { font-size: 12px; }
-.cedar-set-warn-text { color: #b0662a; }
-@media (prefers-color-scheme: dark) { .cedar-set-warn-text { color: #e2a66a; } }
+.cedar-set-help code { font-size: 12px; font-family: var(--mono); }
+.cedar-set-block { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+.cedar-set-block:first-child { padding-top: 0; border-top: 0; }
+.cedar-set-block-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cedar-set-models { display: flex; flex-direction: column; gap: 8px; }
+.cedar-set-integration { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.cedar-set-integration-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 240px; min-width: 0; font-size: 13.5px; }
+.cedar-set-integration-main small { color: var(--muted); font-size: 12.5px; }
+.cedar-set-integration-main code { font-size: 11.5px; font-family: var(--mono); overflow-wrap: anywhere; }
+.cedar-set-hint { margin-top: 4px; }
+.cedar-set-integration-side { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cedar-set-integration .copy-btn { border: 1px solid var(--line); background: var(--sheet); color: var(--ink); font-weight: 500; }
+.cedar-set-integration .copy-btn:hover { background: var(--wash); }
 /* More specific than the .cedar-set-inline rule below, which would otherwise center the children. */
 .cedar-set-inline.cedar-set-endpoint { flex: 1 1 100%; flex-direction: column; align-items: stretch; margin-top: 4px; }
 .cedar-set-inline.cedar-set-endpoint > input { flex: none; }
 .cedar-set-endpoint > .primary, .cedar-set-endpoint > .copy-btn { align-self: flex-start; }
 .cedar-set-endpoint > input:disabled { opacity: .6; }
-/* A checkbox row inside an inline form keeps its box small; the text-field rule below must not grow or restyle it. */
+.cedar-set-endpoint > select[hidden] { display: none; }
+/* A checkbox row inside an inline form keeps its box small; the text-field rule must not grow or restyle it. */
 .cedar-set-inline .cedar-set-check { gap: 10px; }
 .cedar-set-inline .cedar-set-check input { flex: none; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 0; background: none; }
-.cedar-set-unlock, .cedar-set-inline { display: flex; gap: 8px; align-items: center; }
-.cedar-set-inline { margin-top: 8px; flex-wrap: wrap; }
+.cedar-set-inline { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .cedar-set-inline[hidden] { display: none; }
 .cedar-set-inline input { flex: 1 1 200px; }
-.cedar-set-integration { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; }
-.cedar-set-integration-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 240px; min-width: 0; font-size: 13.5px; }
-.cedar-set-integration-main small { color: var(--muted); font-size: 12.5px; }
-.cedar-set-integration-main code { font-size: 11.5px; overflow-wrap: anywhere; }
-.cedar-set-hint { margin-top: 4px; }
-.cedar-set-integration-side { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.cedar-set-badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; border: 1px solid rgba(128, 128, 128, .35); font-size: 11.5px; line-height: 1.6; color: var(--muted); white-space: nowrap; }
-.cedar-set-badge.ok { color: var(--accent); border-color: var(--accent); }
+/* A labelled field inside the form stacks its label over its input; the basis above would be its height. */
+.cedar-set-inline .cedar-set-field input { flex: none; }
 
-/* the model registry */
-.cedar-set-models { margin-bottom: 12px; }
-.cedar-set-subheading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 6px; font-size: 13.5px; }
-.cedar-set-models > form.cedar-set-endpoint { margin-bottom: 10px; }
-.cedar-set-endpoint > select { width: 100%; padding: 8px 10px; border: 1px solid rgba(128, 128, 128, .4); border-radius: 8px; background: rgba(128, 128, 128, .07); color: inherit; font: inherit; font-size: 14px; }
-.cedar-set-endpoint > select[hidden] { display: none; }
+/* -- the composer's Tools button and its menu ---------------------------------------------- */
 
-/* the composer's Tools button and its menu */
 .cedar-set-chip { position: relative; flex: none; }
 .cedar-set-chip.custom::after { content: ""; position: absolute; top: 3px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .cedar-set-menu { width: min(480px, calc(100vw - 32px)); max-height: min(86vh, 760px); overflow-y: auto; }
 .cedar-set-menu-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .cedar-set-menu-head h3 { flex: 1; margin: 0; font-size: 16px; }
+.cedar-set-menu .cedar-set-note { margin-bottom: 10px; }
+.cedar-set-menu .cedar-set-tools { gap: 6px; }
+.cedar-set-tool { padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.cedar-set-tool.unavailable { opacity: .65; }
+.cedar-set-tool > .cedar-set-warn { display: inline-block; margin-left: 26px; font-size: 11.5px; }
+.cedar-set-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.cedar-set-actions .primary:disabled { opacity: .5; cursor: default; }
 
-@media (max-width: 640px) {
+/* -- narrow ---------------------------------------------------------------------------------- */
+
+@media (max-width: 760px) {
+  .settings-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
+  .settings-dialog[open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings-nav { flex-direction: row; align-items: center; gap: 2px; overflow-x: auto; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings-nav h3 { padding: 0 8px 0 0; font-size: 14px; }
+  .settings-nav-list { flex-direction: row; overflow: visible; }
+  .settings-nav-item { width: auto; white-space: nowrap; }
+  .settings-nav-value { display: none; }
+  .settings-nav-foot { margin: 0; padding: 0; border: 0; }
+  .settings-nav-note { display: none; }
+  .settings-page-head { padding: 16px 16px 12px; }
+  .settings-page-body { padding: 16px; }
+  .settings-foot { padding: 10px 16px; }
+  .settings-page .ui-choice { grid-template-columns: 1fr; }
   .cedar-set-fields { grid-template-columns: 1fr; }
+  .cedar-set-prompt, .cedar-set-prompt-edit { padding: 18px 20px 22px; }
+  .cedar-set-single-list { margin-left: 0; }
   .cedar-set-menu { width: calc(100vw - 16px); }
 }
-.cedar-set-check-wide { grid-column: 1 / -1; }

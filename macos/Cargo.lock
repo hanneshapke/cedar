@@ -298,6 +298,7 @@ dependencies = [
  "hex",
  "libc",
  "mac-notification-sys",
+ "objc2",
  "open",
  "rand 0.8.8",
  "reqwest 0.12.28",

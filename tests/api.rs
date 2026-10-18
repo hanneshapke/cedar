@@ -1631,9 +1631,9 @@ async fn the_registered_models_are_listed_to_any_key() {
         body,
         json!({ "models": [
             { "id": TEST_MODEL, "label": TEST_MODEL, "model": TEST_MODEL, "is_default": true,
-              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "price": null },
+              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "max_tokens": 16384, "price": null },
             { "id": "small", "label": "small", "model": "small-model", "is_default": false,
-              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "price": null },
+              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "max_tokens": 16384, "price": null },
         ] })
     );
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;

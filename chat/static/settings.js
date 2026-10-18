@@ -1,14 +1,16 @@
 'use strict';
 
-// Settings that change what the agent can do, shared by both UIs (/v1 and /v2). Three pieces:
+// Settings that change what the agent can do, shared by every UI. Three pieces, the first two
+// pages of the Settings dialog that settings-shell.js frames:
 //
-//   - The "Tools & model" section of the Settings dialog: which of cedar's tool groups new
-//     conversations get, the default model, turn limit and system prompt (GET/PUT /api/settings).
-//   - The "Model server & API keys" section, for admins only (CHAT_ADMIN_TOKEN): the models cedar
-//     has registered (each with its server, API key and reasoning levels), its Brave Search key
-//     and its Google account. The admin token is kept for this browser session and sent as
-//     X-Admin-Token. A change to the models reloads cedarModels (models.js) and dispatches
-//     `cedar-models-changed` on `document`, so the apps refill their pickers.
+//   - The "Tools" and "Model & prompt" pages: which of cedar's tool groups new conversations
+//     get, the default model, turn limit and system prompt (GET/PUT /api/settings). Both edit one
+//     draft and save it through the dialog's footer.
+//   - The "Server" page, for admins only (CHAT_ADMIN_TOKEN): the models cedar has registered
+//     (each with its server, API key and reasoning levels), its Brave Search key and its Google
+//     account. The admin token is kept for this browser session and sent as X-Admin-Token. A
+//     change to the models reloads cedarModels (models.js) and dispatches `cedar-models-changed`
+//     on `document`, so the apps refill their pickers.
 //   - A "Tools" button next to the model pickers that changes the tools of one conversation
 //     (PUT /api/conversations/{id}/tools). In a new chat the choice is applied when it is created.
 //
@@ -23,6 +25,9 @@
 
 const cedarSettings = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
+  // A model's reply limit when it is registered without one, and the highest cedar takes.
+  const DEFAULT_MAX_TOKENS = 16384;
+  const MAX_MAX_TOKENS = 1000000;
   const ALL = '*';
 
   let deps = null;
@@ -31,7 +36,6 @@ const cedarSettings = (() => {
   let pending = undefined;  // tools chosen in a new chat before it exists (undefined: none)
   let chip = null;
   let menu = null;
-  let prefsSection = null;
   let integrationsSection = null;
 
   // -- helpers -----------------------------------------------------------------------------------
@@ -48,12 +52,6 @@ const cedarSettings = (() => {
     b.type = 'button';
     b.addEventListener('click', onClick);
     return b;
-  }
-
-  function heading(text, ...extra) {
-    const h = el('div', 'cedar-set-heading');
-    h.append(el('span', '', text), ...extra);
-    return h;
   }
 
   function note(text, className = 'cedar-set-note') {
@@ -134,9 +132,9 @@ const cedarSettings = (() => {
   }
 
   /** Ask before switching on tools that send or change things. */
-  function confirmWrites(names) {
+  async function confirmWrites(names) {
     if (!names.length) return true;
-    return confirm(`These tools can change things, not just read them:\n\n${names.join('\n')}\n\nLet the agent use them?`);
+    return cedarConfirm(`These tools can change things, not just read them:\n\n${names.join('\n')}\n\nLet the agent use them?`, { ok: 'Allow' });
   }
 
   /** Checkboxes for every group (and the single tools of Gmail and Calendar); calls onChange(state). */
@@ -158,8 +156,8 @@ const cedarSettings = (() => {
       text.append(el('small', '', sub));
       label.append(box, text);
       row.append(label);
-      box.addEventListener('change', () => {
-        if (box.checked && !confirmWrites(writesIn(g))) { box.checked = false; return; }
+      box.addEventListener('change', async () => {
+        if (box.checked && !(await confirmWrites(writesIn(g)))) { box.checked = false; return; }
         state.set(g.id, box.checked ? 'all' : 'none');
         onChange(state);
       });
@@ -177,8 +175,8 @@ const cedarSettings = (() => {
           b.checked = v === 'all' || (v instanceof Set && v.has(t.name));
           l.append(b, el('span', '', t.name));
           if (t.writes) l.append(el('span', 'cedar-set-warn', 'changes things'));
-          b.addEventListener('change', () => {
-            if (b.checked && t.writes && !confirmWrites([t.name])) { b.checked = false; return; }
+          b.addEventListener('change', async () => {
+            if (b.checked && t.writes && !(await confirmWrites([t.name]))) { b.checked = false; return; }
             const cur = state.get(g.id);
             const set = cur === 'all' ? new Set(g.tools.map((x) => x.name)) : cur instanceof Set ? new Set(cur) : new Set();
             if (b.checked) set.add(t.name); else set.delete(t.name);
@@ -197,113 +195,276 @@ const cedarSettings = (() => {
     return list;
   }
 
-  // -- Settings: tools & model -------------------------------------------------------------------
+  // -- Settings: the Tools page and the Model & prompt page --------------------------------------
+  //
+  // Both pages edit one draft of /api/settings and save it with the same PUT, so saving from
+  // either page saves both. The draft is reset every time the dialog opens (each page's render
+  // runs then); `loading` shares the one fetch between the two renders.
 
-  async function renderPrefs() {
-    if (!prefsSection) return;
-    prefsSection.replaceChildren(heading('Tools & model'), note('Loading…'));
-    try {
-      [catalog, prefs] = await Promise.all([loadCatalog(true), deps.api('GET', '/settings')]);
-    } catch (e) {
-      prefsSection.replaceChildren(heading('Tools & model'), note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
+  const shell = () => (typeof cedarSettingsShell === 'undefined' ? null : cedarSettingsShell);
+
+  let draft = null;        // { tools, model, system, max_turns, plan }, what the pages have edited
+  let toolState = null;    // decode(draft.tools), the Tools page's working copy
+  let editingPrompt = false;
+  let loading = null;      // the fetch shared by the two pages while the dialog opens
+  let toolsSection = null;
+  let modelSection = null;
+
+  async function loadPrefs() {
+    if (!loading) {
+      loading = Promise.all([loadCatalog(true), deps.api('GET', '/settings')]).then(([cat, p]) => {
+        catalog = cat;
+        prefs = p;
+        draft = { tools: p.tools, model: p.model, system: p.system, max_turns: p.max_turns, plan: p.plan || 'auto' };
+        toolState = decode(p.tools);
+        editingPrompt = !isDefaultPrompt();
+      });
+      loading.finally(() => { setTimeout(() => { loading = null; }, 0); });
+    }
+    return loading;
+  }
+
+  const defaultSystem = () => prefs?.defaults?.system ?? '';
+  const isDefaultPrompt = () => (draft?.system ?? defaultSystem()).trim() === defaultSystem().trim();
+
+  /** How many groups the Tools page has changed from the saved defaults. */
+  function toolChanges() {
+    const saved = decode(prefs.tools);
+    let n = 0;
+    for (const [id, v] of toolState) {
+      const s = saved.get(id);
+      const same = v === s || (v instanceof Set && s instanceof Set && v.size === s.size && [...v].every((t) => s.has(t)));
+      if (!same) n++;
+    }
+    return n;
+  }
+
+  async function renderTools(section) {
+    toolsSection = section;
+    section.replaceChildren(note('Loading…'));
+    try { await loadPrefs(); } catch (e) {
+      section.replaceChildren(note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
       return;
     }
-    // cedar's own defaults (null if cedar couldn't be asked), to show what an unset field means.
-    const defaults = prefs.defaults || null;
-    const draft = { ...prefs, tools: prefs.tools };
-    let state = decode(prefs.tools);
-    const save = button('Save defaults', submit, 'primary');
-    save.disabled = true;
-    const status = el('span', 'cedar-set-status');
-    const dirty = () => { save.disabled = false; status.textContent = ''; };
+    const list = el('div', 'cedar-set-tools');
+    const always = el('div', 'cedar-set-always');
+    always.append(el('span', 'settings-eyebrow', 'Always on'), el('span', '', 'bash, files, Python, documents, PDF, charts'));
+    list.append(always);
+    const changed = () => {
+      draft.tools = encode(toolState);
+      shell()?.setDirty('tools', toolChanges());
+    };
+    for (const g of groups()) list.append(toolRow(g, changed));
+    section.replaceChildren(list);
+  }
 
-    const picker = toolPicker(state, (s) => { state = s; draft.tools = encode(s); dirty(); }, { detailed: true });
+  /** One switch row of the Tools page. */
+  function toolRow(g, onChange) {
+    const row = el('div', `cedar-set-row${g.available ? '' : ' unavailable'}`);
+    const sw = el('button', 'cedar-set-switch');
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-label', g.label);
+    const main = el('div', 'cedar-set-row-main');
+    const sub = el('span', 'cedar-set-row-sub');
+    const side = el('span', 'cedar-set-row-side');
+    const single = (g.id === 'gmail' || g.id === 'calendar') && g.tools?.length;
+    let singles = null;
+    const syncSwitch = () => {
+      const v = toolState.get(g.id);
+      sw.setAttribute('aria-checked', v === 'all' ? 'true' : v === 'none' ? 'false' : 'mixed');
+      if (singles) {
+        for (const box of singles.querySelectorAll('input')) box.checked = v === 'all' || (v instanceof Set && v.has(box.value));
+      }
+    };
+    sw.addEventListener('click', async () => {
+      const on = toolState.get(g.id) === 'none';
+      if (on && !(await confirmWrites(writesIn(g)))) return;
+      toolState.set(g.id, on ? 'all' : 'none');
+      syncSwitch();
+      onChange();
+    });
+    main.append(el('span', 'cedar-set-row-name', g.label));
+    if (!g.available) {
+      sub.textContent = '';
+      side.textContent = g.reason || 'Not offered by this server';
+    } else if (single) {
+      sub.append(`${g.tools.length} tools · `);
+      const choose = el('button', 'settings-link', 'choose single tools');
+      choose.type = 'button';
+      choose.setAttribute('aria-expanded', 'false');
+      sub.append(choose);
+      singles = el('div', 'cedar-set-single-list');
+      singles.hidden = !(toolState.get(g.id) instanceof Set);
+      choose.setAttribute('aria-expanded', String(!singles.hidden));
+      choose.addEventListener('click', () => { singles.hidden = !singles.hidden; choose.setAttribute('aria-expanded', String(!singles.hidden)); });
+      for (const t of g.tools) {
+        const l = el('label', 'cedar-set-check small');
+        const b = el('input');
+        b.type = 'checkbox';
+        b.value = t.name;
+        l.append(b, el('span', '', t.name));
+        if (t.writes) l.append(el('span', 'cedar-set-warn', 'changes things'));
+        b.addEventListener('change', async () => {
+          if (b.checked && t.writes && !(await confirmWrites([t.name]))) { b.checked = false; return; }
+          const cur = toolState.get(g.id);
+          const set = cur === 'all' ? new Set(g.tools.map((x) => x.name)) : cur instanceof Set ? new Set(cur) : new Set();
+          if (b.checked) set.add(t.name); else set.delete(t.name);
+          toolState.set(g.id, set.size === 0 ? 'none' : set.size === g.tools.length ? 'all' : set);
+          syncSwitch();
+          onChange();
+        });
+        singles.append(l);
+      }
+    } else {
+      sub.textContent = g.tools?.length ? g.tools.map((t) => t.name).join(', ') : 'Tools appear once cedar connects';
+    }
+    if (g.available && g.tools?.some((t) => t.writes)) {
+      side.textContent = 'Can change things';
+      side.classList.add('warn');
+    }
+    main.append(sub);
+    row.append(sw, main, side);
+    syncSwitch();
+    if (!singles) return row;
+    const wrap = el('div');
+    wrap.append(row, singles);
+    return wrap;
+  }
+
+  async function renderModel(section) {
+    modelSection = section;
+    section.replaceChildren(note('Loading…'));
+    try { await loadPrefs(); } catch (e) {
+      section.replaceChildren(note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
+      return;
+    }
+    const defaults = prefs.defaults || null;
+    const dirty = () => shell()?.setDirty('model', true);
+    const parts = [];
 
     const fields = el('div', 'cedar-set-fields');
-    let modelSelect = null;
     if (cedarModels.all().length) {
-      modelSelect = el('select');
-      cedarModels.fillSelect(modelSelect, { blank: "cedar's default", selected: prefs.model || '' });
-      modelSelect.hidden = false;
-      modelSelect.addEventListener('change', dirty);
-      const modelField = field('Default model', modelSelect);
-      modelField.append(el('small', 'cedar-set-field-note', 'The picker by the message box changes it for one conversation, with the reasoning level next to it.'));
-      fields.append(modelField);
+      const modelSelect = el('select');
+      const def = cedarModels.byId(cedarModels.defaultId());
+      modelSelect.append(new Option(def ? `cedar's default (${modelLabel(def)})` : "cedar's default", ''));
+      for (const m of cedarModels.all()) modelSelect.append(new Option(modelLabel(m), m.id));
+      modelSelect.value = cedarModels.byId(draft.model) ? draft.model : '';
+      modelSelect.addEventListener('change', () => { draft.model = modelSelect.value || null; dirty(); });
+      fields.append(field('Default model', modelSelect));
     } else if (cedarModels.loaded()) {
-      fields.append(note('No model is registered yet: an admin adds one under Model server & API keys below.', 'cedar-set-error'));
+      parts.push(note('No model is registered yet: an admin adds one on the Server page.', 'cedar-set-error'));
     }
     const turns = el('input');
     turns.type = 'number';
     turns.min = '1';
     turns.max = '1000';
     turns.placeholder = defaults ? `Server limit (${defaults.max_turns_cap})` : 'Server limit';
-    turns.value = prefs.max_turns ?? '';
-    turns.addEventListener('input', dirty);
+    turns.value = draft.max_turns ?? '';
+    turns.addEventListener('input', () => { draft.max_turns = turns.value ? Number(turns.value) : null; dirty(); });
     fields.append(field('Max turns per message', turns));
     const plan = el('select');
-    for (const [value, label] of [['auto', 'For longer requests'], ['on', 'Always'], ['off', 'Never']]) {
-      const o = el('option', '', label);
-      o.value = value;
-      plan.append(o);
-    }
-    plan.value = prefs.plan || 'auto';
-    plan.addEventListener('change', dirty);
-    const planField = field('Plan before starting', plan);
-    planField.append(el('small', 'cedar-set-field-note', 'Cedar proposes its steps first and waits until you start it; you can edit them.'));
-    fields.append(planField);
-    // Without a saved prompt the field shows cedar's default text; it is only saved when changed.
-    const defaultSystem = defaults?.system ?? '';
-    const system = el('textarea');
-    system.rows = 6;
-    system.placeholder = defaults ? '' : "cedar's default system prompt (cedar could not be asked for its text)";
-    system.value = prefs.system ?? defaultSystem;
-    const isDefault = () => system.value.trim() === defaultSystem.trim();
+    for (const [value, label] of [['auto', 'For longer requests'], ['on', 'Always'], ['off', 'Never']]) plan.append(new Option(label, value));
+    plan.value = draft.plan || 'auto';
+    plan.addEventListener('change', () => { draft.plan = plan.value; dirty(); });
+    fields.append(field('Plan before starting', plan));
+    parts.push(fields);
+    const notes = el('div', 'cedar-set-field-notes');
+    notes.append(el('div', 'cedar-set-field-note', 'Plan before starting: Cedar proposes its steps first and waits until you start it; you can edit them.'));
+    parts.push(notes);
+
+    // The system prompt: read as a document, edited as one. Without a saved prompt it shows
+    // cedar's default text, which is saved as "unset" so it keeps following cedar's SYSTEM_PROMPT.
+    const block = el('div', 'cedar-set-prompt-block');
+    const head = el('div', 'cedar-set-prompt-head');
+    const headLeft = el('span');
     const tag = el('span', 'cedar-set-badge', "cedar's default");
-    const reset = button('Use the default', () => { system.value = defaultSystem; syncSystem(); dirty(); });
-    const syncSystem = () => {
-      tag.hidden = !isDefault();
-      reset.hidden = isDefault();
-    };
-    system.addEventListener('input', () => { syncSystem(); dirty(); });
-    syncSystem();
-    const extra = el('span', 'cedar-set-field-extra');
-    extra.append(tag, reset);
-    const systemField = field('System prompt', system, extra);
-    systemField.append(el('small', 'cedar-set-field-note', 'cedar adds a short note after it saying which tools this conversation has and what the sandbox can reach.'));
-    fields.append(systemField);
-
-    async function submit() {
-      save.disabled = true;
-      status.textContent = 'Saving…';
-      const body = {
-        tools: draft.tools,
-        model: modelSelect ? modelSelect.value || null : prefs.model,
-        // The default text is saved as "unset", so the prompt keeps following cedar's SYSTEM_PROMPT.
-        system: isDefault() || !system.value.trim() ? null : system.value.trim(),
-        max_turns: turns.value ? Number(turns.value) : null,
-        plan: plan.value,
-      };
-      try {
-        prefs = { ...(await deps.api('PUT', '/settings', body)), defaults };
-        if (prefs.system === null) { system.value = defaultSystem; syncSystem(); }
-        status.textContent = 'Saved';
-        updateChip();
-      } catch (e) {
-        status.textContent = '';
-        save.disabled = false;
-        deps.toast(e.message);
+    headLeft.append(el('span', 'settings-eyebrow', 'System prompt'), tag);
+    const acts = el('div', 'cedar-set-prompt-acts');
+    head.append(headLeft, acts);
+    const reading = el('div', 'cedar-set-prompt');
+    const editor = el('textarea', 'cedar-set-prompt-edit');
+    editor.setAttribute('aria-label', 'System prompt');
+    editor.placeholder = defaults ? '' : "cedar's default system prompt (cedar could not be asked for its text)";
+    const text = () => draft.system ?? defaultSystem();
+    const sync = () => {
+      tag.hidden = !isDefaultPrompt();
+      reading.textContent = text();
+      editor.value = text();
+      reading.hidden = editingPrompt;
+      editor.hidden = !editingPrompt;
+      acts.textContent = '';
+      if (editingPrompt) {
+        if (!isDefaultPrompt()) acts.append(button('Use the default', () => { draft.system = null; editingPrompt = false; sync(); dirty(); }, 'settings-ghost'));
+        acts.append(button('Done', () => { editingPrompt = false; sync(); }, 'settings-ghost'));
+      } else {
+        acts.append(button('Edit', () => { editingPrompt = true; sync(); editor.focus(); }, 'settings-ghost'));
       }
-    }
+    };
+    editor.addEventListener('input', () => {
+      draft.system = editor.value;
+      tag.hidden = !isDefaultPrompt();
+      dirty();
+    });
+    sync();
+    block.append(head, reading, editor, el('div', 'cedar-set-field-note', 'cedar adds a short note after it saying which tools this conversation has and what the sandbox can reach.'));
+    parts.push(block);
+    section.replaceChildren(...parts);
+  }
 
-    const actions = el('div', 'cedar-set-actions');
-    actions.append(status, save);
-    prefsSection.replaceChildren(
-      heading('Tools & model'),
-      note('Defaults for every conversation. The Tools button by the message box changes them for one conversation.'),
-      picker,
-      fields,
-      actions,
-    );
+  const modelLabel = (m) => {
+    const name = m.label || m.model || m.id;
+    return m.default_reasoning ? `${name} · ${m.default_reasoning}` : name;
+  };
+
+  /** PUT the draft; both pages save through this. Resolves when saved, rejects after a toast. */
+  async function submit() {
+    if (!draft) return;
+    const system = (draft.system ?? '').trim();
+    const body = {
+      tools: draft.tools,
+      model: draft.model || null,
+      system: isDefaultPrompt() || !system ? null : system,
+      max_turns: draft.max_turns ?? null,
+      plan: draft.plan || 'auto',
+    };
+    try {
+      const defaults = prefs.defaults;
+      prefs = { ...(await deps.api('PUT', '/settings', body)), defaults };
+      draft = { tools: prefs.tools, model: prefs.model, system: prefs.system, max_turns: prefs.max_turns, plan: prefs.plan || 'auto' };
+      toolState = decode(prefs.tools);
+      editingPrompt = !isDefaultPrompt();
+      updateChip();
+      const s = shell();
+      s?.setDirty('tools', 0);
+      s?.setDirty('model', 0);
+      if (toolsSection) renderTools(toolsSection);
+      if (modelSection) renderModel(modelSection);
+      s?.refresh('tools');
+      s?.refresh('model');
+    } catch (e) {
+      deps.toast(e.message);
+      throw e;
+    }
+  }
+
+  function toolsSummary() {
+    if (!prefs || !catalog) return null;
+    if (prefs.tools === null || prefs.tools === undefined) return 'Everything';
+    const state = decode(prefs.tools);
+    const on = [...state.values()].filter((v) => v !== 'none').length;
+    return `${on} of ${state.size} groups on`;
+  }
+
+  function modelSummary() {
+    if (!prefs) return null;
+    if (cedarModels.loaded() && !cedarModels.all().length) return { text: 'No model registered', kind: 'error' };
+    const m = cedarModels.byId(prefs.model) || cedarModels.byId(cedarModels.defaultId());
+    const parts = [];
+    if (m) parts.push(m.label || m.model || m.id);
+    if (m?.default_reasoning) parts.push(m.default_reasoning);
+    parts.push(prefs.system ? 'custom prompt' : 'default prompt');
+    return parts.join(' · ');
   }
 
   function field(label, input, extra) {
@@ -317,39 +478,60 @@ const cedarSettings = (() => {
 
   // -- Settings: integrations (admin) ------------------------------------------------------------
 
-  async function renderIntegrations() {
-    if (!integrationsSection) return;
+  const unlocked = () => Boolean(adminToken() || memoryAdmin);
+
+  async function renderIntegrations(section = integrationsSection) {
+    if (!section) return;
+    integrationsSection = section;
     const cfg = deps.config();
-    integrationsSection.hidden = false;
+    shell()?.refresh('server');
     if (!cfg.admin_enabled) {
       try { await loadCatalog(); } catch { /* the help is shown without the list */ }
-      integrationsSection.replaceChildren(heading('Model server & API keys'), setupHelp());
+      const card = el('div', 'cedar-set-unlock-card');
+      card.append(setupHelp());
+      section.replaceChildren(card);
       return;
     }
-    const lock = button('Lock', () => { setAdminToken(''); renderIntegrations(); });
-    if (!(adminToken() || memoryAdmin)) {
-      integrationsSection.replaceChildren(heading('Model server & API keys'), unlockForm());
+    if (!unlocked()) {
+      section.replaceChildren(unlockForm());
       return;
     }
-    integrationsSection.replaceChildren(heading('Model server & API keys', lock), note('Loading…'));
+    section.replaceChildren(note('Loading…'));
     let status;
     try {
       status = await adminApi('GET', '/integrations');
     } catch (e) {
       if (e.status === 403) {
         setAdminToken('');
-        integrationsSection.replaceChildren(heading('Model server & API keys'), unlockForm(e.message));
+        shell()?.refresh('server');
+        section.replaceChildren(unlockForm(e.message));
       } else {
-        integrationsSection.replaceChildren(heading('Model server & API keys', lock), note(e.message, 'cedar-set-error'));
+        section.replaceChildren(note(e.message, 'cedar-set-error'));
       }
       return;
     }
-    const parts = [heading('Model server & API keys', lock)];
+    const parts = [];
     if (!status.storage) {
       parts.push(note('cedar has no CEDAR_SECRET_KEY, so API keys can\'t be saved here: models whose server needs none can still be registered; the Brave key and the Google account can only be set in cedar\'s environment.'));
     }
-    parts.push(await modelsBlock(status), braveRow(status), googleRow(status));
-    integrationsSection.replaceChildren(...parts);
+    const block = (title, ...children) => {
+      const b = el('div', 'cedar-set-block');
+      const head = el('div', 'cedar-set-block-head');
+      head.append(el('span', 'settings-eyebrow', title));
+      b.append(head, ...children);
+      return b;
+    };
+    const models = await modelsBlock(status);
+    const modelsBlockEl = block('Models', models.wrap);
+    modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
+    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Google account', googleRow(status)));
+    section.replaceChildren(...parts);
+  }
+
+  /** The page head's Lock button, when the admin token is in. */
+  function serverActions() {
+    if (!deps?.config()?.admin_enabled || !unlocked()) return null;
+    return [button('Lock', () => { setAdminToken(''); renderIntegrations(); shell()?.refresh('server'); }, 'settings-ghost')];
   }
 
   /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
@@ -398,7 +580,7 @@ const cedarSettings = (() => {
       renderIntegrations();
       refreshTools();
     });
-    const wrap = el('div');
+    const wrap = el('div', 'cedar-set-unlock-card');
     wrap.append(note('The models, API keys and the Google account are for admins. Enter the admin token (CHAT_ADMIN_TOKEN) to manage them.'));
     if (cedarModels.loaded() && !cedarModels.all().length) {
       wrap.append(note('No model is registered yet, so messages can\'t be sent until an admin adds one here.', 'cedar-set-error'));
@@ -435,19 +617,16 @@ const cedarSettings = (() => {
    */
   async function modelsBlock(status) {
     const wrap = el('div', 'cedar-set-models');
-    const head = el('div', 'cedar-set-subheading');
-    head.append(el('strong', '', 'Models'));
-    wrap.append(head);
     let entries;
     try {
       ({ models: entries } = await adminApi('GET', '/integrations/models'));
     } catch (e) {
       wrap.append(note(`Could not list the models: ${e.message}`, 'cedar-set-error'));
-      return wrap;
+      return { wrap, add: el('span') };
     }
     entries = entries || [];
-    // The button sits in the heading, so it is in view however long the list is. The form it
-    // opens goes right under the heading, above the first entry.
+    // The button sits in the block's heading, so it is in view however long the list is. The form
+    // it opens goes right under the intro, above the first entry.
     const intro = entries.length
       ? note('Each model is served by its own OpenAI-compatible server. New chats use the default; the picker by the message box chooses another, and the reasoning level next to it. Add a model for another server, or another model on the same one.')
       : note('No model is registered yet, so messages can\'t be sent. Add the server that runs your model: for a local vLLM, http://localhost:8000/v1 and the name it registered (curl localhost:8000/v1/models).', 'cedar-set-error');
@@ -457,11 +636,10 @@ const cedarSettings = (() => {
       const form = modelForm(null, status, () => { add.hidden = false; form.remove(); });
       intro.after(form);
       form.querySelector('input').focus();
-    }, entries.length ? 'copy-btn' : 'primary');
+    }, entries.length ? 'settings-ghost' : 'primary');
     add.setAttribute('aria-label', 'Add a model');
-    head.append(add);
     for (const entry of entries) wrap.append(modelRow(entry, status));
-    return wrap;
+    return { wrap, add };
   }
 
   function modelRow(entry, status) {
@@ -472,6 +650,7 @@ const cedarSettings = (() => {
     if (entry.api_key_set) side.append(badge('API key set'));
     if (entry.multimodal) side.append(badge('Images'));
     side.append(badge(levels.length ? `Reasoning: ${levels.join(', ')}${entry.default_reasoning ? ` (default ${entry.default_reasoning})` : ''}` : 'No reasoning levels'));
+    if (entry.max_tokens) side.append(badge(`Max ${entry.max_tokens.toLocaleString()} tokens`));
     // What the server listed when the entry was checked is offered in the edit form; the row only
     // says when the model name is not one of them.
     if (Array.isArray(entry.listed_models) && !entry.listed_models.includes(entry.model)) {
@@ -496,7 +675,7 @@ const cedarSettings = (() => {
       }));
     }
     side.append(button('Remove', async () => {
-      if (!confirm(`Remove the model ${entry.label || entry.id}? Conversations using it fail at their next message until another model is picked.`)) return;
+      if (!(await cedarConfirm(`Remove the model ${entry.label || entry.id}? Conversations using it fail at their next message until another model is picked.`, { ok: 'Remove' }))) return;
       try {
         await adminApi('DELETE', `/integrations/models/${encodeURIComponent(entry.id)}`);
         await modelsChanged();
@@ -561,6 +740,14 @@ const cedarSettings = (() => {
     };
     levels.addEventListener('input', fillDefault);
     fillDefault();
+    const maxTokens = input('Max tokens per reply', String(entry?.max_tokens ?? DEFAULT_MAX_TOKENS), 'Max tokens per reply', 'number');
+    maxTokens.min = '1';
+    maxTokens.max = String(MAX_MAX_TOKENS);
+    maxTokens.step = '1';
+    const maxTokensField = el('label', 'cedar-set-field');
+    const maxTokensHead = el('span', 'cedar-set-field-head');
+    maxTokensHead.append(el('span', '', 'Max tokens per reply'));
+    maxTokensField.append(maxTokensHead, maxTokens, el('small', 'cedar-set-field-note', 'The most one reply may take, a reasoning model\'s thinking included. A reply that reaches it is cut off.'));
     const multimodalLabel = el('label', 'cedar-set-check plain');
     const multimodalBox = el('input');
     multimodalBox.type = 'checkbox';
@@ -580,7 +767,7 @@ const cedarSettings = (() => {
     if (listed) form.append(listed);
     form.append(key);
     if (entry?.api_key_set && canSaveKey) form.append(clearKey);
-    form.append(levels, defaultLevel, multimodalLabel, makeDefault);
+    form.append(levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
     form.append(el('small', 'cedar-set-field-note', 'cedar checks the address by listing the server\'s models before saving. DeepSeek V4 on vLLM takes the levels none, low, high, xhigh and max as reasoning_effort; OpenAI-style servers take none, minimal, low, medium and high.'));
     form.append(saveBtn, button('Cancel', onDone));
     form.addEventListener('submit', async (e) => {
@@ -588,6 +775,12 @@ const cedarSettings = (() => {
       if (!id.value.trim()) { deps.toast('Give the model an id'); id.focus(); return; }
       if (!address.value.trim()) { deps.toast('Enter the server address'); address.focus(); return; }
       if (!model.value.trim()) { deps.toast('Enter the model name'); model.focus(); return; }
+      const limit = Number(maxTokens.value);
+      if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MAX_TOKENS) {
+        deps.toast(`Max tokens per reply must be a whole number from 1 to ${MAX_MAX_TOKENS.toLocaleString()}`);
+        maxTokens.focus();
+        return;
+      }
       const body = {
         base_url: address.value.trim(),
         model: model.value.trim(),
@@ -595,6 +788,7 @@ const cedarSettings = (() => {
         reasoning_levels: parseLevels(),
         default_reasoning: defaultLevel.value,
         multimodal: multimodalBox.checked,
+        max_tokens: limit,
         is_default: defaultBox.checked,
       };
       if (key.value.trim()) body.api_key = key.value.trim();
@@ -655,7 +849,7 @@ const cedarSettings = (() => {
     side.append(button(b.configured ? 'Replace' : 'Add key', () => { edit.hidden = false; input.focus(); }));
     if (b.configured) {
       side.append(button('Remove', async () => {
-        if (!confirm('Remove the Brave Search key? Web search stops working for new messages.')) return;
+        if (!(await cedarConfirm('Remove the Brave Search key? Web search stops working for new messages.', { ok: 'Remove' }))) return;
         try {
           await adminApi('DELETE', '/integrations/brave');
           renderIntegrations();
@@ -685,7 +879,7 @@ const cedarSettings = (() => {
     if (!status.storage) return row;
     if (g.configured) {
       side.append(button('Disconnect', async () => {
-        if (!confirm('Disconnect the Google account? Its tools stop working for new messages.')) return;
+        if (!(await cedarConfirm('Disconnect the Google account? Its tools stop working for new messages.', { ok: 'Disconnect' }))) return;
         try {
           await adminApi('DELETE', '/integrations/google');
           renderIntegrations();
@@ -709,7 +903,10 @@ const cedarSettings = (() => {
 
   async function refreshTools() {
     try { await loadCatalog(true); } catch { /* the next render retries */ }
-    if (prefsSection && document.getElementById('settings-dialog')?.open) renderPrefs();
+    if (!document.getElementById('settings-dialog')?.open) return;
+    if (toolsSection) renderTools(toolsSection);
+    if (modelSection) renderModel(modelSection);
+    shell()?.refresh();
   }
 
   // -- the composer's Tools button ---------------------------------------------------------------
@@ -800,15 +997,33 @@ const cedarSettings = (() => {
     if (!outcome) return;
     history.replaceState(null, '', location.pathname + location.hash);
     deps.toast(outcome === 'connected' ? 'Google account connected' : `Google: ${params.get('message') || 'not connected'}`);
-    document.getElementById('settings-btn')?.click();
+    const btn = document.getElementById('settings-btn');
+    if (btn) { btn.dataset.page = 'server'; btn.click(); }
   }
 
   function bind() {
-    prefsSection = document.getElementById('prefs-section');
     integrationsSection = document.getElementById('integrations-section');
-    const open = document.getElementById('settings-btn');
-    // ui-pref.js opens the dialog on this click; the sections are (re)loaded each time it opens.
-    open?.addEventListener('click', () => { renderPrefs(); renderIntegrations(); });
+    // The pages of the Settings dialog; settings-shell.js opens it and calls render each time.
+    const s = shell();
+    if (s) {
+      s.register({
+        id: 'tools', label: 'Tools', title: 'Tools',
+        description: 'What every new conversation may use. The Tools button by the message box changes it for one conversation.',
+        render: renderTools, summary: toolsSummary, save: submit, footer: true,
+      });
+      s.register({
+        id: 'model', label: 'Model & prompt', title: 'Model & prompt',
+        description: 'Defaults for every new conversation. The picker by the message box changes the model for one.',
+        render: renderModel, summary: modelSummary, save: submit, footer: true,
+      });
+      s.register({
+        id: 'server', label: 'Server', title: 'Server',
+        description: 'Models, API keys and the Google account on the cedar server.',
+        render: renderIntegrations, summary: () => null,
+        tag: () => (deps?.config()?.admin_enabled && unlocked() ? 'UNLOCKED' : 'ADMIN'),
+        actions: serverActions, footer: false,
+      });
+    }
     if (deps.anchor) {
       chip = button('Tools', openMenu, 'copy-btn cedar-set-chip');
       chip.setAttribute('aria-label', 'Tools for this conversation');

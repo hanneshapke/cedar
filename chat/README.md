@@ -106,8 +106,8 @@ Both interfaces have all of these, except where noted:
 - [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
-  runs on its own every day, on weekdays, or weekly at a local time, with every run's result kept
-  under Settings
+  runs on its own every day, on weekdays, or weekly at a local time, listed in the sidebar with
+  every run's result
 - [Notifications](#notifications): a response that finishes while you are in another conversation,
   another tab, or away is marked unread in the conversation list and counted in the page title and
   on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
@@ -133,8 +133,9 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `schedule.js` and `schedule.css` for scheduled agents, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
 push, and
-`models.js` and `models.css` for the send button's model menu, `settings.js` and `settings.css` for the tools,
-model, and integrations settings, which both interfaces share, `vendor/leaflet/` for the map
+`models.js` and `models.css` for the send button's model menu, `settings-shell.js` for the Settings
+dialog's frame (its left nav, one page at a time, and the Save footer), `settings.js` and `settings.css` for the
+Tools, Model & prompt and Server pages, which every interface shares, `vendor/leaflet/` for the map
 library, and
 `index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
@@ -250,8 +251,9 @@ A run the user stopped is not announced. Responses from before this feature coun
 ### Out of the app
 
 Settings → **Notifications** sets up the ways to be told when you are not looking at the page at
-all. Set up as many as you like; each has its credentials, a **Set up** badge once it can send, and
-**Save and send a test**. The server sends a message a few seconds after cedar says the run ended,
+all, as one list of methods: pick one as the default and its setup unfolds (a **Set up** link opens
+another's without picking it); each has its credentials, a **Set up** badge once it can send, and
+**Send a test**, which saves first. The server sends a message a few seconds after cedar says the run ended,
 unless the response was looked at in the meantime (a page that watched it end marks it seen first).
 
 - **Mac notification**: a notification in Notification Center from [Cedar for macOS](../macos/README.md),
@@ -307,10 +309,10 @@ Once a conversation has a finished response, the **Schedule** button (the clock 
 
 Every run lives in a conversation of its own, named after the schedule and the time it was due,
 with the full tool trace and files panel. These conversations stay out of the conversation list;
-**Settings → Scheduled agents** lists each schedule with its next and last run and, under **Runs**,
-every run with its status and result, an **Open** button that shows it as a conversation, and the
-prompt that was used. There you can also **Pause** and **Resume** a schedule, **Run now**, **Edit**
-the prompt and timing, and **Delete** it. Deleting a schedule deletes its runs' conversations and
+**Scheduled agents** in the conversations sidebar lists each schedule with its next run; clicking
+one opens its detail with every run's status and result, an **Open** button that shows a run as a
+conversation, and the prompt that was used. There you can also **Pause** and **Resume** a schedule,
+**Run now**, **Edit** the prompt and timing, and **Delete** it. Deleting a schedule deletes its runs' conversations and
 their cedar runs too.
 
 If the chat server was down when a run was due, the run starts once at the next start, and the
@@ -321,11 +323,12 @@ skips the slots missed while it was paused. At most 100 schedules can exist.
 
 ## Tools and settings
 
-**Settings → Tools & model** sets the defaults for every conversation: which of cedar's tool
-groups the agent gets (web search, reading web pages, weather, maps, the browser, Gmail and
-Calendar, the last two down to single tools), and the default model (one of those cedar has
-[registered](#models); unset means cedar's own default), turn limit, and system prompt. The system prompt field shows cedar's own default text until you change it, and "Use the
-default" puts it back; the default text is saved as "unset", so it keeps following cedar's
+**Settings → Tools** sets which of cedar's tool groups every new conversation gets (web search,
+reading web pages, weather, maps, the browser, Gmail and Calendar, the last two down to single
+tools), and **Settings → Model & prompt** the default model (one of those cedar has
+[registered](#models); unset means cedar's own default), turn limit, and system prompt. The
+system prompt reads as a document showing cedar's own default text until you press **Edit**, and
+"Use the default" puts it back; the default text is saved as "unset", so it keeps following cedar's
 `SYSTEM_PROMPT`. The groups come from cedar's `GET /v1/tools`, so a group cedar doesn't offer is shown
 greyed out with the reason (no Brave key, `BROWSER=off`, no Google account). Tools that send or
 change things (sending mail, editing events) ask before they are switched on. The sandbox tools
@@ -369,10 +372,10 @@ and the error is relayed.
 
 ### Integrations
 
-Settings → **Model server & API keys** is where the models and the API keys go. Without
+Settings → **Server** is where the models and the API keys go. Without
 `CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
-the section is unlocked with that token for the browser session and manages cedar's
-[models](#models), its Brave Search key (checked with one search before it is saved, then shown
+the page is unlocked with that token for the browser session and manages cedar's
+[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (checked with one search before it is saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's
@@ -395,7 +398,7 @@ the model name is not one of them. **Edit**, **Make default** and **Remove** cha
 conversations fail at their next message until another model is picked. The first model
 registered is the default, and a fresh cedar has none: the message box says so until an admin adds
 one. Saving an API key needs cedar's `CEDAR_SECRET_KEY`; a server without one can be registered
-without it. The send button's menu, the default model in Tools & model, and the schedule dialog
+without it. The send button's menu, the default model in Model & prompt, and the schedule dialog
 all follow the list.
 
 ## API

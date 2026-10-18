@@ -1066,7 +1066,7 @@ function applyEvent(view, event) {
 
 /** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
 const CUT_OFF =
-  "The reply was cut off at the model's output limit (MAX_TOKENS). A model that thinks before answering can use all of it before writing any text. Ask whoever runs the server to raise it.";
+  "The reply was cut off at the model's output limit. A model that thinks before answering can use all of it before writing any text. An admin can raise it under Settings → Server, as the model's Max tokens per reply.";
 
 function finishTurn(view, event) {
   if (view.done) return;
@@ -1536,7 +1536,7 @@ async function stopActive() {
 }
 
 async function deleteConversation(c) {
-  if (!confirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`)) return;
+  if (!(await cedarConfirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`, { ok: 'Delete' }))) return;
   try { await api('DELETE', `/conversations/${c.id}`); } catch (e) { toast(e.message); return; }
   state.conversations = state.conversations.filter((x) => x.id !== c.id);
   if (state.current?.id === c.id) location.hash = '#/';
@@ -1642,6 +1642,7 @@ async function init() {
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
+  cedarSchedule.start();
   await loadConversations();
   route();
   cedarNotify.start();
