@@ -24,6 +24,11 @@ loopback.
 
 If vLLM runs on another machine, skip step 2 and register its address instead of the local one in step 5.
 
+To try the stack without installing anything, `scripts/cedar-stack.sh` builds it and runs vLLM,
+cedar, and cedar-chat in a tmux session from the checkout, with settings in `.env` (see
+`scripts/cedar-stack.sh --help`). Nothing restarts that session after a crash or a reboot, so for
+a server that should stay up, follow the steps below.
+
 ## 1. Prepare the Spark
 
 The Spark is an ARM64 (aarch64) machine running DGX OS. Everything here builds natively on it.
@@ -387,9 +392,9 @@ To stop serving: `sudo tailscale serve --https=443 off`.
 they do on loopback. The access token is still required: anyone on your tailnet can reach the
 page. To limit that, restrict the Spark with [tailnet ACLs](https://tailscale.com/kb/1018/acls).
 
-For development, `scripts/dev-up.sh` does steps 3 and 4 for you whenever Tailscale is logged in:
-it serves the port from `CHAT_BIND_ADDR`, passes the address to `cedar-chat` as
-`CHAT_PUBLIC_URL`, prints it, and turns serving off again on `--down`. Set `TAILSCALE_SERVE=off`
+If you run the stack with `scripts/cedar-stack.sh` instead of systemd, it does steps 3 and 4 for
+you whenever Tailscale is logged in: it serves the port from `CHAT_BIND_ADDR`, passes the address
+to `cedar-chat` as `CHAT_PUBLIC_URL`, prints it, and turns serving off again on `--down`. Set `TAILSCALE_SERVE=off`
 in `.env` to skip it, `TAILSCALE_SERVE=on` to fail when it can't serve, or `TAILSCALE_HTTPS_PORT`
 to use another tailnet port than 443. If it fails with "access denied", let your user manage
 Tailscale once with `sudo tailscale set --operator=$USER`.

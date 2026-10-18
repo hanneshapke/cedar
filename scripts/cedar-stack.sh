@@ -3,15 +3,19 @@
 # Tailscale is installed and logged in, the chat UI is also served over HTTPS on the tailnet
 # (`tailscale serve`), which is what the iOS app needs.
 #
-#   scripts/dev-up.sh            build, start everything, attach
-#   scripts/dev-up.sh --no-build skip cargo and docker builds
-#   scripts/dev-up.sh --restart  kill the existing session first
-#   scripts/dev-up.sh --no-vllm  don't start, check or wait for vLLM, and don't detect LLM_MODEL
-#                                from it (cedar starts at once; set LLM_MODEL in .env if you need it)
-#   scripts/dev-up.sh --down     kill the session and stop tailscale serve; vLLM keeps running
-#   scripts/dev-up.sh --down --with-vllm
-#                                also stop vLLM (docker compose down)
-#   scripts/dev-up.sh --down-all same as --down --with-vllm
+# This runs the stack on one machine you are logged in to. Nothing restarts it after a crash or a
+# reboot; for a long-running server use the systemd setup in DEPLOYMENT.md.
+#
+#   scripts/cedar-stack.sh            build, start everything, attach
+#   scripts/cedar-stack.sh --no-build skip cargo and docker builds
+#   scripts/cedar-stack.sh --restart  kill the existing session first
+#   scripts/cedar-stack.sh --no-vllm  don't start, check or wait for vLLM, and don't detect
+#                                     LLM_MODEL from it (cedar starts at once; set LLM_MODEL in
+#                                     .env if you need it)
+#   scripts/cedar-stack.sh --down     kill the session and stop tailscale serve; vLLM keeps running
+#   scripts/cedar-stack.sh --down --with-vllm
+#                                     also stop vLLM (docker compose down)
+#   scripts/cedar-stack.sh --down-all same as --down --with-vllm
 #
 # Settings come from .env in the repo root (created on first run with fresh keys). Besides
 # cedar's and cedar-chat's own variables it reads:
@@ -24,12 +28,12 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ENV_FILE="$ROOT/.env"
-SELF="$ROOT/scripts/dev-up.sh"
+SELF="$ROOT/scripts/cedar-stack.sh"
 
 die() { echo "error: $*" >&2; exit 1; }
 
 load_env() {
-    [[ -f $ENV_FILE ]] || die "$ENV_FILE not found; run scripts/dev-up.sh first"
+    [[ -f $ENV_FILE ]] || die "$ENV_FILE not found; run scripts/cedar-stack.sh first"
     set -a
     # shellcheck disable=SC1090
     . "$ENV_FILE"
@@ -118,7 +122,7 @@ create_env() {
     key=$(openssl rand -hex 24)
     token=$(openssl rand -hex 24)
     cat >"$ENV_FILE" <<EOF
-# Local settings for scripts/dev-up.sh (gitignored). See .env.example and chat/README.md.
+# Local settings for scripts/cedar-stack.sh (gitignored). See .env.example and chat/README.md.
 
 # cedar
 CEDAR_API_KEYS=$key
@@ -221,7 +225,7 @@ main() {
             --down) stop=1 ;;
             --with-vllm) with_vllm=1 ;;
             --down-all) stop=1; with_vllm=1 ;;
-            -h|--help) sed -n '2,22p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+            -h|--help) sed -n '2,/^[^#]/p' "$SELF" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
             *) die "unknown option: $arg" ;;
         esac
     done

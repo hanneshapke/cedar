@@ -40,7 +40,7 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 1. Start cedar and cedar-chat (see the [top-level README](../README.md) and
    [chat/README.md](../chat/README.md)), set `CHAT_ACCESS_TOKEN`, and serve the chat over HTTPS.
    The app only connects over HTTPS (iOS App Transport Security, with no exception). The
-   simplest way is Tailscale: `scripts/dev-up.sh` runs `tailscale serve` for you, and
+   simplest way is Tailscale: `scripts/cedar-stack.sh` runs `tailscale serve` for you, and
    [DEPLOYMENT.md](../DEPLOYMENT.md#over-https-with-tailscale-the-ios-app) shows the steps for a
    systemd install. The server URL is then `https://<machine>.<tailnet>.ts.net`.
 2. Open `iOS/Cedar.xcodeproj` in Xcode, choose the **Cedar** scheme, and run it. To run on a
