@@ -1,15 +1,16 @@
 # Deploying cedar and the chat UI on a DGX Spark
 
 This guide sets up the whole stack on one NVIDIA DGX Spark and shows how to open the chat UI from
-your laptop.
+your laptop, and over HTTPS from your phone with Tailscale (the iOS app needs HTTPS).
 
 For running cedar and the chat on a Mac instead, with a model server elsewhere, see the
 [macOS app](macos/README.md): one DMG, no systemd.
 
 ```
-laptop browser ──SSH tunnel──▶ cedar-chat :3000 ──▶ cedar :8080 ──▶ vLLM :8000 (DeepSeek V4)
-                                                       │
-                                                       └──▶ one Docker container per run (the agent's tools)
+laptop browser ──SSH tunnel───────────┐
+iOS app / any device ──Tailscale HTTPS┴─▶ cedar-chat :3000 ──▶ cedar :8080 ──▶ vLLM :8000 (DeepSeek V4)
+                                                                     │
+                                                                     └──▶ one Docker container per run (the agent's tools)
 ```
 
 | Service | What it is | Listens on | Started by |
@@ -318,7 +319,7 @@ after it:
 sudo systemctl edit cedar      # add:  [Unit]  After=vllm.service  Wants=vllm.service
 ```
 
-## 7. Open the UI from your laptop
+## 7. Open the UI from your laptop and phone
 
 `cedar-chat` listens on the Spark's loopback only. The safest way in is an SSH tunnel. Run this on
 your laptop:
@@ -339,6 +340,59 @@ To skip the tunnel, bind to the network instead: set `CHAT_BIND_ADDR=0.0.0.0:300
   `proxy_buffering off` or live replies will stall, because the UI streams them.
 
 Leave `cedar` on `127.0.0.1:8080`. Only `cedar-chat` talks to it.
+
+### Over HTTPS with Tailscale (the iOS app)
+
+The iOS app only connects to servers it can reach over HTTPS. The simplest way to give
+`cedar-chat` a trusted certificate without exposing it to the internet is
+[Tailscale](https://tailscale.com): `tailscale serve` terminates TLS with a Let's Encrypt
+certificate for the Spark's tailnet name and proxies to `cedar-chat` on loopback. Only devices on
+your tailnet can reach it, and `CHAT_BIND_ADDR` stays `127.0.0.1:3000`.
+
+1. Install Tailscale on the Spark and log in (it needs version 1.52 or newer for `--bg`):
+
+   ```sh
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up
+   ```
+
+2. In the [admin console's DNS page](https://login.tailscale.com/admin/dns), turn on **MagicDNS**
+   and **HTTPS Certificates**. Without them `tailscale serve` can't get a certificate (it prints
+   a link to the setting and waits).
+
+3. Serve `cedar-chat` on the tailnet. `--bg` makes the setting persistent: it survives reboots and
+   Tailscale restarts, so this is a one-time step.
+
+   ```sh
+   sudo tailscale serve --bg --https=443 http://127.0.0.1:3000
+   tailscale serve status        # prints https://<spark>.<tailnet>.ts.net
+   ```
+
+4. Tell `cedar-chat` its public address, so links it sends (push notifications, webhooks,
+   "Connect Google") point at it, and restart it:
+
+   ```sh
+   URL=https://$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')
+   echo "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env
+   sudo systemctl restart cedar-chat
+   ```
+
+5. Install Tailscale on the iPhone and log in to the same tailnet. In the cedar app's Settings,
+   enter `https://<spark>.<tailnet>.ts.net` (no port) and the chat access token, then tap
+   **Test Connection**. The same URL works in any browser on the tailnet.
+
+To stop serving: `sudo tailscale serve --https=443 off`.
+
+`tailscale serve` passes streamed replies through without buffering, so live replies work as
+they do on loopback. The access token is still required: anyone on your tailnet can reach the
+page. To limit that, restrict the Spark with [tailnet ACLs](https://tailscale.com/kb/1018/acls).
+
+For development, `scripts/dev-up.sh` does steps 3 and 4 for you whenever Tailscale is logged in:
+it serves the port from `CHAT_BIND_ADDR`, passes the address to `cedar-chat` as
+`CHAT_PUBLIC_URL`, prints it, and turns serving off again on `--down`. Set `TAILSCALE_SERVE=off`
+in `.env` to skip it, `TAILSCALE_SERVE=on` to fail when it can't serve, or `TAILSCALE_HTTPS_PORT`
+to use another tailnet port than 443. If it fails with "access denied", let your user manage
+Tailscale once with `sudo tailscale set --operator=$USER`.
 
 ## Day-to-day
 
@@ -386,4 +440,6 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 | `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`) or the `cedar-sandbox` image is missing. The log says which. |
 | Chat page shows a 502 error | `cedar-chat` can't reach cedar, or `CEDAR_API_KEY` in `chat.env` doesn't match `CEDAR_API_KEYS` in `cedar.env`. |
 | Chat page asks for a token and rejects it | Use the value of `CHAT_ACCESS_TOKEN` from `/etc/cedar/chat.env`, not the cedar key. |
+| iOS app can't connect | It needs HTTPS: use the `https://<spark>.<tailnet>.ts.net` address from step 7, not `http://…:3000`, and check that the phone is logged in to Tailscale (`tailscale serve status` on the Spark shows what is served). |
+| `tailscale serve` waits or says HTTPS is not enabled | Turn on MagicDNS and HTTPS Certificates in the Tailscale admin console (step 7). |
 | The whole machine slows down or freezes during a run | Memory. See the memory note in step 1: lower `MAX_CONCURRENT_RUNS`, or use a smaller model or quant. |
