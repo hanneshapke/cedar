@@ -245,6 +245,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations", get(get_integrations))
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
         .route("/integrations/models", get(get_models))
+        .route("/integrations/server-models", post(list_server_models))
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/connect", post(connect_google))
@@ -1243,6 +1244,16 @@ async fn put_brave_key(
 async fn get_models(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     Ok(Json(state.cedar.models_admin().await?))
+}
+
+/// The models a server lists (`{base_url, api_key?, id?}`, cedar's body, passed through), so the
+/// form offers names it serves.
+async fn list_server_models(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    if !body.is_object() {
+        return Err(AppError::BadRequest("the body must be a JSON object".into()));
+    }
+    Ok(Json(state.cedar.server_models(&body).await?))
 }
 
 /// Register a model or change one. The body is cedar's (`{base_url, model, label?, api_key?,

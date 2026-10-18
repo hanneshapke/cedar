@@ -707,14 +707,6 @@ const cedarSettings = (() => {
     label.addEventListener('input', () => { if (!idTouched) id.value = slug(label.value); });
     // The whole address, protocol and path included; cedar adds /v1 if the path is left off.
     const address = input('Server address, like http://10.0.0.5:8000/v1', entry?.base_url || '', 'Server address');
-    const model = input('Model name on the server, like deepseek-ai/DeepSeek-V4-Flash', entry?.model || '', 'Model name');
-    let listed = null;
-    if (entry?.listed_models?.length) {
-      listed = el('datalist');
-      listed.id = `cedar-set-listed-${entry.id}`;
-      for (const m of entry.listed_models) listed.append(new Option(m, m));
-      model.setAttribute('list', listed.id);
-    }
     const canSaveKey = Boolean(status.storage);
     const key = input(
       !canSaveKey ? 'API key (needs CEDAR_SECRET_KEY on cedar)' : entry?.api_key_set ? 'API key (leave empty to keep it)' : 'API key, if the server needs one',
@@ -726,6 +718,62 @@ const cedarSettings = (() => {
     const clearBox = el('input');
     clearBox.type = 'checkbox';
     clearKey.append(clearBox, el('span', '', 'Remove the saved API key'));
+    // The model name is picked from what the server lists: "List models" asks it (with the key
+    // typed above, else the entry's saved one), and the picker offers those names only. An entry
+    // being edited starts with what its server listed when it was last checked.
+    const model = el('select');
+    model.setAttribute('aria-label', 'Model name');
+    const listBtn = button('List models', () => listServerModels());
+    const modelRow = el('div', 'cedar-set-server-models');
+    modelRow.append(model, listBtn);
+    const fillModels = (names, selected) => {
+      model.textContent = '';
+      if (!names) {
+        model.append(new Option('Enter the address, then list its models', ''));
+        model.disabled = true;
+        return;
+      }
+      model.disabled = false;
+      const options = [...names];
+      if (selected && !options.includes(selected)) options.unshift(selected);
+      model.append(new Option(options.length ? 'Choose a model' : 'The server lists no models', ''));
+      for (const m of options) model.append(new Option(m === selected && !names.includes(m) ? `${m} (not listed by the server)` : m, m));
+      model.value = selected && options.includes(selected) ? selected : options.length === 1 ? options[0] : '';
+    };
+    fillModels(entry ? entry.listed_models || [entry.model] : null, entry?.model || '');
+    // A new entry without a label or id yet takes its id from the chosen name.
+    model.addEventListener('change', () => { if (!idTouched && !label.value.trim()) id.value = slug(model.value.split('/').pop()); });
+    // A changed address or key may serve other models: list again before saving.
+    const stale = () => { if (!model.disabled) fillModels(null); };
+    address.addEventListener('input', stale);
+    key.addEventListener('input', stale);
+    clearBox.addEventListener('change', stale);
+    // Enter in the address or key lists the models rather than saving the form.
+    for (const i of [address, key]) {
+      i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); listServerModels(); } });
+    }
+    async function listServerModels() {
+      if (!address.value.trim()) { deps.toast('Enter the server address'); address.focus(); return; }
+      const body = { base_url: address.value.trim() };
+      if (key.value.trim()) body.api_key = key.value.trim();
+      else if (entry && !clearBox.checked) body.id = entry.id;
+      const previous = model.value || entry?.model || '';
+      listBtn.disabled = true;
+      listBtn.textContent = 'Listing…';
+      try {
+        const found = await adminApi('POST', '/integrations/server-models', body);
+        fillModels(found.models || [], found.models?.includes(previous) ? previous : '');
+        model.dispatchEvent(new Event('change'));
+        if (!found.models?.length) deps.toast('The server lists no models');
+        model.focus();
+      } catch (err) {
+        fillModels(null);
+        deps.toast(err.message);
+      } finally {
+        listBtn.disabled = false;
+        listBtn.textContent = 'List models';
+      }
+    }
     const levels = input('Reasoning levels the model takes, like none, low, high, max (empty: none)', (entry?.reasoning_levels || []).join(', '), 'Reasoning levels');
     const defaultLevel = el('select');
     defaultLevel.setAttribute('aria-label', 'Default reasoning level');
@@ -763,18 +811,18 @@ const cedarSettings = (() => {
     defaultBox.disabled = Boolean(entry?.is_default);
     makeDefault.append(defaultBox, el('span', '', 'Use as the default model for new chats'));
     const saveBtn = button(entry ? 'Check and save' : 'Check and add', () => form.requestSubmit(), 'primary');
-    form.append(id, label, address, model);
-    if (listed) form.append(listed);
-    form.append(key);
+    form.append(id, label, address, key);
     if (entry?.api_key_set && canSaveKey) form.append(clearKey);
+    form.append(modelRow);
     form.append(levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
-    form.append(el('small', 'cedar-set-field-note', 'cedar checks the address by listing the server\'s models before saving. DeepSeek V4 on vLLM takes the levels none, low, high, xhigh and max as reasoning_effort; OpenAI-style servers take none, minimal, low, medium and high.'));
+    form.append(el('small', 'cedar-set-field-note', 'cedar checks the address again by listing the server\'s models before saving. DeepSeek V4 on vLLM takes the levels none, low, high, xhigh and max as reasoning_effort; OpenAI-style servers take none, minimal, low, medium and high.'));
     form.append(saveBtn, button('Cancel', onDone));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!id.value.trim()) { deps.toast('Give the model an id'); id.focus(); return; }
       if (!address.value.trim()) { deps.toast('Enter the server address'); address.focus(); return; }
-      if (!model.value.trim()) { deps.toast('Enter the model name'); model.focus(); return; }
+      if (model.disabled) { deps.toast('List the server\'s models, then choose one'); listBtn.focus(); return; }
+      if (!model.value) { deps.toast('Choose a model'); model.focus(); return; }
       const limit = Number(maxTokens.value);
       if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MAX_TOKENS) {
         deps.toast(`Max tokens per reply must be a whole number from 1 to ${MAX_MAX_TOKENS.toLocaleString()}`);
@@ -783,8 +831,8 @@ const cedarSettings = (() => {
       }
       const body = {
         base_url: address.value.trim(),
-        model: model.value.trim(),
-        label: label.value.trim() || model.value.trim(),
+        model: model.value,
+        label: label.value.trim() || model.value,
         reasoning_levels: parseLevels(),
         default_reasoning: defaultLevel.value,
         multimodal: multimodalBox.checked,

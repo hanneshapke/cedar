@@ -172,6 +172,11 @@
 .cedar-set-endpoint > .primary, .cedar-set-endpoint > .copy-btn { align-self: flex-start; }
 .cedar-set-endpoint > input:disabled { opacity: .6; }
 .cedar-set-endpoint > select[hidden] { display: none; }
+.cedar-set-server-models { display: flex; gap: 8px; align-items: center; }
+.cedar-set-server-models select { flex: 1 1 auto; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 13.5px; outline: none; }
+.cedar-set-server-models select:focus { border-color: var(--accent); }
+.cedar-set-server-models select:disabled { opacity: .6; }
+.cedar-set-server-models > button { flex: none; }
 /* A checkbox row inside an inline form keeps its box small; the text-field rule must not grow or restyle it. */
 .cedar-set-inline .cedar-set-check { gap: 10px; }
 .cedar-set-inline .cedar-set-check input { flex: none; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 0; background: none; }

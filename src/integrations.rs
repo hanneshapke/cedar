@@ -89,6 +89,18 @@ pub struct ModelSpec {
     pub price: Option<Option<Price>>,
 }
 
+/// What an admin sends to see which models a server lists before registering one
+/// (`POST /v1/admin/server-models`).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServerModelsQuery {
+    pub base_url: String,
+    /// The key to list with. Absent or empty: the saved key of the registered model `id`, if any.
+    pub api_key: Option<String>,
+    /// A registered model whose saved key is used when no `api_key` is given.
+    pub id: Option<String>,
+}
+
 /// Tells an explicit `null` (`Some(None)`) apart from an absent field (`None`, via `default`).
 fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
@@ -423,6 +435,29 @@ impl Integrations {
             "model registered"
         );
         Ok(self.model_status(&saved).await?)
+    }
+
+    /// The models the server at `base_url` lists, so an admin picks a name it serves. Nothing is
+    /// saved. Returns `{base_url, models}` with the address as it would be stored and the names
+    /// sorted.
+    pub async fn server_models(&self, query: ServerModelsQuery) -> Result<Value, AppError> {
+        let url = normalize_llm_url(&query.base_url).map_err(AppError::BadRequest)?;
+        let key = match query.api_key.as_deref().map(str::trim) {
+            Some(k) if k.len() > MAX_SECRET_LEN || k.chars().any(char::is_control) => {
+                return Err(AppError::BadRequest("api_key is malformed".into()))
+            }
+            Some(k) if !k.is_empty() => Some(k.to_string()),
+            _ => match query.id.as_deref().map(str::trim) {
+                Some(id) if !id.is_empty() => self.model_api_key(id).await,
+                _ => None,
+            },
+        };
+        let mut models = list_models(&url, key.as_deref(), REQUEST_TIMEOUT)
+            .await
+            .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;
+        models.sort();
+        models.dedup();
+        Ok(json!({ "base_url": url, "models": models }))
     }
 
     /// Forget a registered model and its key. Runs using it fail at their next model call.
