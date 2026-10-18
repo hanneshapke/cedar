@@ -205,7 +205,7 @@ struct ChatClient: Sendable {
     }
 
     private func send(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await Self.transport { try await session.data(for: request) }
+        let (data, response) = try await Self.transport(baseURL) { try await session.data(for: request) }
         guard let http = response as? HTTPURLResponse else { throw ChatError.badResponse("not HTTP") }
         guard (200..<300).contains(http.statusCode) else { throw Self.error(status: http.statusCode, body: data) }
         return data
@@ -233,7 +233,7 @@ struct ChatClient: Sendable {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let (bytes, response) = try await Self.transport { try await session.bytes(for: finalRequest) }
+                    let (bytes, response) = try await Self.transport(baseURL) { try await session.bytes(for: finalRequest) }
                     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                         var body = Data()
                         for try await byte in bytes { body.append(byte) }
@@ -259,12 +259,28 @@ struct ChatClient: Sendable {
     }
 
     /// Maps transport failures (but not cancellation) to `ChatError.unreachable`.
-    private static func transport<T>(_ body: () async throws -> T) async throws -> T {
+    private static func transport<T>(_ baseURL: URL, _ body: () async throws -> T) async throws -> T {
         do {
             return try await body()
         } catch let error as URLError where error.code != .cancelled {
-            throw ChatError.unreachable(error.localizedDescription)
+            throw unreachable(error, baseURL: baseURL)
         }
+    }
+
+    /// A TLS failure on an https URL with an explicit port usually means the port serves plain
+    /// HTTP (cedar-chat itself on :3000), not the `tailscale serve` address, so say so.
+    static func unreachable(_ error: URLError, baseURL: URL) -> ChatError {
+        let tlsCodes: Set<URLError.Code> = [
+            .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+            .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot,
+        ]
+        guard tlsCodes.contains(error.code), baseURL.scheme == "https",
+              let port = baseURL.port, port != 443 else {
+            return .unreachable(error.localizedDescription)
+        }
+        return .unreachable(
+            "\(error.localizedDescription) Port \(port) may serve plain HTTP. Use the HTTPS address "
+                + "from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port).")
     }
 
     static func error(status: Int, body: Data) -> ChatError {
