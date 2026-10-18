@@ -19,8 +19,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - The agent's images (charts, pictures it saved or drew) shown under the reply, with sharing
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
 - Plans to agree to and tool calls to allow or deny, when the server asks (`TOOL_APPROVALS`)
-- Maps, recipes, routes and stock comparisons are drawn by the web UI, so those show as a
-  line with an **Open on the web** link
+- Maps, recipes, routes and stock comparisons as native cards: Apple Maps with numbered pins
+  and route lines (tap for full screen), a recipe checklist with steps to tick off, and stock
+  charts with ratings, returns and news
 - Follow-ups continue the conversation; a stop button cancels the running response
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
@@ -132,8 +133,8 @@ is kept as an artifact for a week and opens in Xcode.
 
 - Events arrive per model turn and per tool call, not per token, so text appears a turn at a
   time.
-- Maps, recipes, routes, stock comparisons and document cards open on the web rather than
-  being drawn in the app.
+- Document cards open on the web rather than being drawn in the app, as does a map, recipe,
+  route or stock card whose result the app can't read.
 - Attachments (images and PDFs with a message), scheduled agents and the server's settings are
   managed in the web UI.
 - iOS suspends network connections in the background. When you return to the app, running

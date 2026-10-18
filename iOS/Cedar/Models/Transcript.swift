@@ -25,11 +25,12 @@ struct ToolCall: Identifiable, Hashable, Sendable {
     var isError = false
     var durationMs: Int?
     var sources: [Source] = []
+    /// The card the app draws for a finished card tool, parsed once when its result arrives.
+    var card: Card?
 
     var isFinished: Bool { output != nil }
 
-    /// Tools whose result the web UI shows as a card (map, recipe, route, stocks). The app shows
-    /// a line and a link to the web for those.
+    /// Tools whose result is drawn as a card (map, recipe, route, stocks), here and in the web UI.
     static let cardTools: Set<String> = ["show_map", "show_recipe", "plan_trip", "compare_stocks"]
 
     var isCard: Bool { Self.cardTools.contains(name) }
@@ -264,6 +265,9 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
             call.output = data["output"]?.stringValue ?? ""
             call.isError = data["is_error"]?.boolValue ?? false
             call.durationMs = data["duration_ms"]?.intValue
+            if call.isCard, !call.isError, let output = call.output {
+                call.card = Card.parse(name: call.name, output: output)
+            }
             if case .array(let sources)? = data["sources"] {
                 call.sources = sources.compactMap { s in
                     guard let n = s["n"]?.intValue, let url = s["url"]?.stringValue else { return nil }

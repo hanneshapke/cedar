@@ -53,6 +53,17 @@ enum JSONValue: Codable, Hashable, Sendable {
         return nil
     }
 
+    /// A finite number; NaN and infinities never come from JSON, but a model's text can say anything.
+    var doubleValue: Double? {
+        if case .number(let n) = self, n.isFinite { return n }
+        return nil
+    }
+
+    var arrayValue: [JSONValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+
     var boolValue: Bool? {
         if case .bool(let b) = self { return b }
         return nil

@@ -28,6 +28,9 @@ struct TurnView: View {
                     }
                 case .tool(let call):
                     ToolCallView(call: call, webURL: webURL)
+                    if let card = call.card {
+                        CardView(card: card)
+                    }
                 }
             }
             if turn.items.isEmpty, let final = turn.turn.finalText, !final.isEmpty {
@@ -306,8 +309,8 @@ struct QuestionsView: View {
     }
 }
 
-/// A collapsible tool call: a one-line summary, and the input and output when expanded. A
-/// card tool (map, recipe, route, stocks) offers the web UI, which draws it.
+/// A collapsible tool call: a one-line summary, and the input and output when expanded. The
+/// card a card tool draws comes after it; when its result can't be drawn, this offers the web UI.
 struct ToolCallView: View {
     let call: ToolCall
     var webURL: URL?
@@ -345,7 +348,7 @@ struct ToolCallView: View {
             if expanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
-                    if call.isCard, call.isFinished, !call.isError, let webURL {
+                    if call.isCard, call.isFinished, !call.isError, call.card == nil, let webURL {
                         Link(destination: webURL) {
                             Label("Open the \(cardKind) on the web", systemImage: "safari")
                                 .font(.subheadline)

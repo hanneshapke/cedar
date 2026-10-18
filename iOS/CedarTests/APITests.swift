@@ -68,6 +68,19 @@ final class APITests: XCTestCase {
         XCTAssertEqual(ChatClient.error(status: 401, body: Data()), .unauthorized)
     }
 
+    func testTLSErrorOnExplicitPortHintsAtTailscaleServe() {
+        let tls = URLError(.secureConnectionFailed)
+        guard case .unreachable(let detail) = ChatClient.unreachable(tls, baseURL: URL(string: "https://spark.ts.net:3000")!) else {
+            return XCTFail("expected .unreachable")
+        }
+        XCTAssertTrue(detail.contains("Port 3000 may serve plain HTTP"))
+        XCTAssertEqual(ChatClient.unreachable(tls, baseURL: URL(string: "https://spark.ts.net")!),
+                       .unreachable(tls.localizedDescription))
+        let offline = URLError(.notConnectedToInternet)
+        XCTAssertEqual(ChatClient.unreachable(offline, baseURL: URL(string: "https://spark.ts.net:3000")!),
+                       .unreachable(offline.localizedDescription))
+    }
+
     func testWebURLAndFileRequests() throws {
         let client = ChatClient(baseURL: URL(string: "http://chat.local:3000/")!, accessToken: "tok")
         XCTAssertEqual(client.webURL(conversationId: "c1").absoluteString, "http://chat.local:3000/#/c/c1")
