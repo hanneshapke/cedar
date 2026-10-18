@@ -61,6 +61,8 @@
   button:disabled { opacity: 0.5; cursor: default; }
   .presets button { font-size: 12px; padding: 4px 10px; }
   .error { color: var(--bad); }
+  .qr { margin-top: 12px; width: 220px; padding: 0; border-radius: 8px; overflow: hidden; line-height: 0; }
+  .qr svg { width: 220px; height: 220px; }
   .hidden { display: none; }
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
@@ -148,6 +150,11 @@
   <div class="row hidden" id="share-actions">
     <button id="copy-share-url">Copy address</button>
     <button id="share-copy-token">Copy access token</button>
+    <button id="share-qr-toggle">Show QR code</button>
+  </div>
+  <div id="share-qr" class="hidden">
+    <div id="share-qr-code" class="qr"></div>
+    <p class="muted">In the iOS app’s Settings, tap <b>Scan QR Code</b> and point the camera here. The code holds the access token, so hide it again when you are done.</p>
   </div>
   <div class="row">
     <button class="hidden" id="share-retry">Try again</button>

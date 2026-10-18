@@ -72,6 +72,17 @@ pub fn copy_share_url(state: State<'_, AppState>) -> Result<(), String> {
     crate::tray::copy_to_clipboard(&url).map_err(fail)
 }
 
+/// The QR code the iOS app scans to connect, as SVG markup. It holds the access token, so the
+/// page shows it only when asked.
+#[tauri::command]
+pub fn share_qr(state: State<'_, AppState>) -> Result<String, String> {
+    let url = state
+        .share_url()
+        .ok_or("the chat is not shared on the tailnet")?;
+    let link = crate::connect::link(&url, &state.config().secrets.chat_access_token);
+    crate::connect::qr_svg(&link).map_err(fail)
+}
+
 #[tauri::command]
 pub fn open_chat(app: AppHandle) -> Result<(), String> {
     crate::window::show_chat(&app).map_err(fail)

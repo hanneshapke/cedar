@@ -5,6 +5,7 @@
 mod app;
 mod commands;
 mod config;
+mod connect;
 mod docker;
 mod models;
 mod notify;
@@ -57,6 +58,7 @@ fn main() {
             commands::copy_token,
             commands::set_share,
             commands::copy_share_url,
+            commands::share_qr,
         ])
         .build(tauri::generate_context!())
         .expect("Cedar could not start")

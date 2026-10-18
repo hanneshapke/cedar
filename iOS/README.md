@@ -26,6 +26,7 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered
 - Markdown rendering: headings, lists, quotes, tables, and code blocks with a copy button
+- Connecting by scanning the QR code the Cedar Mac app shows
 - iPhone and iPad layouts, light and dark mode
 
 ## Requirements
@@ -47,7 +48,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 2. Open `iOS/Cedar.xcodeproj` in Xcode, choose the **Cedar** scheme, and run it. To run on a
    device, pick your team under *Signing & Capabilities*.
 3. On first launch, enter the server URL and the access token in Settings and tap
-   **Test Connection**. The models cedar has registered appear in the picker once it answers.
+   **Test Connection**. With the Cedar Mac app, tap **Scan QR Code** instead and scan the code
+   under *iPhone & iPad → Show QR code*: it fills in both and tests the connection (it asks for
+   the camera once). The models cedar has registered appear in the picker once it answers.
 
 The access token is stored in the Keychain. Everything else is stored in `UserDefaults`.
 
@@ -88,9 +91,9 @@ into `production` for distribution builds.
 | `Cedar/App` | The app entry point, the root split view, `AppModel` (settings, the conversation list, the inbox count, the live notices, open chats) and `PushRegistrar` (APNs) |
 | `Cedar/Models` | The `/api` types, the event-to-transcript reducer (text, reasoning, plans, approvals, tool calls, questions, images), and a Markdown block parser |
 | `Cedar/Networking` | `ChatClient` for `/api`, and the Server-Sent Events parser |
-| `Cedar/Storage` | Settings and Keychain access |
-| `Cedar/Features` | SwiftUI screens: conversation list, chat (turns, questions, approvals, images), and settings |
-| `CedarTests` | Unit tests for the API types, the reducer, the SSE parser, and Markdown |
+| `Cedar/Storage` | Settings, Keychain access, and the Mac app's connection code (`cedar://connect?server=…&token=…`) |
+| `Cedar/Features` | SwiftUI screens: conversation list, chat (turns, questions, approvals, images), and settings (with the QR scanner) |
+| `CedarTests` | Unit tests for the API types, the reducer, the SSE parser, Markdown, and the connection code |
 | `Config/Cedar.entitlements` | Push notifications |
 
 ## How it talks to the server

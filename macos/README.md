@@ -66,8 +66,13 @@ servers stay on loopback.
    `CHAT_PUBLIC_URL` (for the links in notifications and *Connect Google*). A response still
    running when it restarts is stopped.
 4. Install Tailscale on the iPhone and log in to the same tailnet. In the Cedar app's Settings,
-   enter the address shown on the setup page (*Copy address*) and the access token
-   (*Copy access token*), then tap **Test Connection**.
+   tap **Scan QR Code** and point the camera at the code the setup page shows after *Show QR
+   code*; the app fills in the address and token and tests the connection. Tap **Save**. Or type
+   them in: *Copy address* and *Copy access token* put them on the clipboard.
+
+The QR code holds `cedar://connect?server=<address>&token=<access token>` (made in
+`src/connect.rs`; the iOS app reads it in `ConnectionCode.swift`). It is drawn only when asked
+and hidden again with *Hide QR code*, since anyone who scans it can use your Cedar.
 
 The setting is saved, so sharing comes back on every time Cedar starts. Cedar turns the serve
 off when it quits, and turns it off for good when you untick the checkbox. The phone can reach

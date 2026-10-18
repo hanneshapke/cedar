@@ -111,13 +111,14 @@ function render(s) {
   if (document.activeElement !== shareToggle && !shareBusy) shareToggle.checked = s.tailscale_share;
   $('share-detail').textContent = '';
   $('share-actions').classList.toggle('hidden', sh.state !== 'on');
+  if (sh.state !== 'on') hideQr();
   $('share-retry').classList.toggle('hidden', sh.state !== 'failed');
   if (sh.state === 'starting') {
     dot($('share-dot'), 'busy');
     $('share-text').textContent = 'Setting up tailscale serve…';
   } else if (sh.state === 'on') {
     dot($('share-dot'), 'ok');
-    $('share-text').textContent = 'In the iOS app’s Settings, enter ' + sh.detail + ' and the access token. It works while this Mac is awake and Cedar is running.';
+    $('share-text').textContent = 'In the iOS app’s Settings, scan the QR code, or enter ' + sh.detail + ' and the access token. It works while this Mac is awake and Cedar is running.';
   } else if (sh.state === 'failed') {
     dot($('share-dot'), 'bad');
     $('share-text').textContent = 'Not shared yet. Fix the cause, then try again.';
@@ -218,6 +219,25 @@ async function setShare(enabled) {
     refresh();
   }
 }
+function hideQr() {
+  $('share-qr').classList.add('hidden');
+  $('share-qr-code').innerHTML = '';
+  $('share-qr-toggle').textContent = 'Show QR code';
+}
+$('share-qr-toggle').addEventListener('click', async () => {
+  if (!$('share-qr').classList.contains('hidden')) {
+    hideQr();
+    return;
+  }
+  try {
+    // SVG markup the app drew itself from the address and token.
+    $('share-qr-code').innerHTML = await invoke('share_qr');
+    $('share-qr').classList.remove('hidden');
+    $('share-qr-toggle').textContent = 'Hide QR code';
+  } catch (e) {
+    $('share-error').textContent = String(e);
+  }
+});
 $('copy-share-url').addEventListener('click', () => invoke('copy_share_url').catch((e) => alert(e)));
 $('share-copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
 
