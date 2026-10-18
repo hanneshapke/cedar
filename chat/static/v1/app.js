@@ -344,7 +344,7 @@ function toggleSidebar(open) {
 }
 
 async function deleteConversation(c) {
-  if (!confirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`)) return;
+  if (!(await cedarConfirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`, { ok: 'Delete' }))) return;
   try {
     await api('DELETE', `/conversations/${c.id}`);
   } catch (e) {

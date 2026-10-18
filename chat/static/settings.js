@@ -132,9 +132,9 @@ const cedarSettings = (() => {
   }
 
   /** Ask before switching on tools that send or change things. */
-  function confirmWrites(names) {
+  async function confirmWrites(names) {
     if (!names.length) return true;
-    return confirm(`These tools can change things, not just read them:\n\n${names.join('\n')}\n\nLet the agent use them?`);
+    return cedarConfirm(`These tools can change things, not just read them:\n\n${names.join('\n')}\n\nLet the agent use them?`, { ok: 'Allow' });
   }
 
   /** Checkboxes for every group (and the single tools of Gmail and Calendar); calls onChange(state). */
@@ -156,8 +156,8 @@ const cedarSettings = (() => {
       text.append(el('small', '', sub));
       label.append(box, text);
       row.append(label);
-      box.addEventListener('change', () => {
-        if (box.checked && !confirmWrites(writesIn(g))) { box.checked = false; return; }
+      box.addEventListener('change', async () => {
+        if (box.checked && !(await confirmWrites(writesIn(g)))) { box.checked = false; return; }
         state.set(g.id, box.checked ? 'all' : 'none');
         onChange(state);
       });
@@ -175,8 +175,8 @@ const cedarSettings = (() => {
           b.checked = v === 'all' || (v instanceof Set && v.has(t.name));
           l.append(b, el('span', '', t.name));
           if (t.writes) l.append(el('span', 'cedar-set-warn', 'changes things'));
-          b.addEventListener('change', () => {
-            if (b.checked && t.writes && !confirmWrites([t.name])) { b.checked = false; return; }
+          b.addEventListener('change', async () => {
+            if (b.checked && t.writes && !(await confirmWrites([t.name]))) { b.checked = false; return; }
             const cur = state.get(g.id);
             const set = cur === 'all' ? new Set(g.tools.map((x) => x.name)) : cur instanceof Set ? new Set(cur) : new Set();
             if (b.checked) set.add(t.name); else set.delete(t.name);
@@ -277,9 +277,9 @@ const cedarSettings = (() => {
         for (const box of singles.querySelectorAll('input')) box.checked = v === 'all' || (v instanceof Set && v.has(box.value));
       }
     };
-    sw.addEventListener('click', () => {
+    sw.addEventListener('click', async () => {
       const on = toolState.get(g.id) === 'none';
-      if (on && !confirmWrites(writesIn(g))) return;
+      if (on && !(await confirmWrites(writesIn(g)))) return;
       toolState.set(g.id, on ? 'all' : 'none');
       syncSwitch();
       onChange();
@@ -305,8 +305,8 @@ const cedarSettings = (() => {
         b.value = t.name;
         l.append(b, el('span', '', t.name));
         if (t.writes) l.append(el('span', 'cedar-set-warn', 'changes things'));
-        b.addEventListener('change', () => {
-          if (b.checked && t.writes && !confirmWrites([t.name])) { b.checked = false; return; }
+        b.addEventListener('change', async () => {
+          if (b.checked && t.writes && !(await confirmWrites([t.name]))) { b.checked = false; return; }
           const cur = toolState.get(g.id);
           const set = cur === 'all' ? new Set(g.tools.map((x) => x.name)) : cur instanceof Set ? new Set(cur) : new Set();
           if (b.checked) set.add(t.name); else set.delete(t.name);
@@ -675,7 +675,7 @@ const cedarSettings = (() => {
       }));
     }
     side.append(button('Remove', async () => {
-      if (!confirm(`Remove the model ${entry.label || entry.id}? Conversations using it fail at their next message until another model is picked.`)) return;
+      if (!(await cedarConfirm(`Remove the model ${entry.label || entry.id}? Conversations using it fail at their next message until another model is picked.`, { ok: 'Remove' }))) return;
       try {
         await adminApi('DELETE', `/integrations/models/${encodeURIComponent(entry.id)}`);
         await modelsChanged();
@@ -849,7 +849,7 @@ const cedarSettings = (() => {
     side.append(button(b.configured ? 'Replace' : 'Add key', () => { edit.hidden = false; input.focus(); }));
     if (b.configured) {
       side.append(button('Remove', async () => {
-        if (!confirm('Remove the Brave Search key? Web search stops working for new messages.')) return;
+        if (!(await cedarConfirm('Remove the Brave Search key? Web search stops working for new messages.', { ok: 'Remove' }))) return;
         try {
           await adminApi('DELETE', '/integrations/brave');
           renderIntegrations();
@@ -879,7 +879,7 @@ const cedarSettings = (() => {
     if (!status.storage) return row;
     if (g.configured) {
       side.append(button('Disconnect', async () => {
-        if (!confirm('Disconnect the Google account? Its tools stop working for new messages.')) return;
+        if (!(await cedarConfirm('Disconnect the Google account? Its tools stop working for new messages.', { ok: 'Disconnect' }))) return;
         try {
           await adminApi('DELETE', '/integrations/google');
           renderIntegrations();

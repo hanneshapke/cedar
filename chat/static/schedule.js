@@ -473,7 +473,7 @@ const cedarSchedule = (() => {
   }
 
   async function remove(s) {
-    if (!confirm(`Delete “${s.title}” and the results of all its runs? This cannot be undone.`)) return;
+    if (!(await cedarConfirm(`Delete “${s.title}” and the results of all its runs? This cannot be undone.`, { ok: 'Delete' }))) return;
     try {
       await deps.api('DELETE', `/schedules/${s.id}`);
       if (form?.dialog.open) form.dialog.close();

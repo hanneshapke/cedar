@@ -1536,7 +1536,7 @@ async function stopActive() {
 }
 
 async function deleteConversation(c) {
-  if (!confirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`)) return;
+  if (!(await cedarConfirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`, { ok: 'Delete' }))) return;
   try { await api('DELETE', `/conversations/${c.id}`); } catch (e) { toast(e.message); return; }
   state.conversations = state.conversations.filter((x) => x.id !== c.id);
   if (state.current?.id === c.id) location.hash = '#/';
