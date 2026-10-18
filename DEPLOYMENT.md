@@ -35,7 +35,8 @@ The Spark is an ARM64 (aarch64) machine running DGX OS. Everything here builds n
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential git curl jq openssl
+# pkg-config and libssl-dev: cedar-chat's Web Push encryption links OpenSSL
+sudo apt install -y build-essential pkg-config libssl-dev git curl jq openssl
 
 # Rust (cedar needs a recent stable toolchain)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
