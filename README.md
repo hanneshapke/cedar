@@ -51,7 +51,7 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 curl -N -H "Authorization: Bearer $KEY" localhost:8080/v1/runs/<id>/events
 ```
 
-The chat UI does the same under Settings → Model server & API keys (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database and Docker (including the sandbox image) are usable, and how many models are registered. See `.env.example` for every setting.
+The chat UI does the same under Settings → Server (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database and Docker (including the sandbox image) are usable, and how many models are registered. See `.env.example` for every setting.
 
 ## API
 
@@ -546,7 +546,7 @@ may change.
 ### Models
 
 The models runs can use live in a registry that admins manage through `PUT /v1/admin/models/{id}`,
-which is what the chat UI's Settings → Model server & API keys does. There is no environment
+which is what the chat UI's Settings → Server does. There is no environment
 setting for the model server: a fresh cedar has no model, says so at startup and in `/readyz`
 (`models: 0`), and refuses runs with `409` until one is registered. Each entry has:
 
@@ -579,7 +579,7 @@ the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_UR
 ### Integrations
 
 Instead of putting `BRAVE_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the environment, an admin can set
-them up through the API, which is what the chat UI's Settings → Model server & API keys does, next
+them up through the API, which is what the chat UI's Settings → Server does, next
 to the models:
 
 1. Set `CEDAR_SECRET_KEY` (`openssl rand -hex 32`). Credentials saved through the API (a model

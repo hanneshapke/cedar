@@ -35,6 +35,12 @@
   --warn: #8a6a1f;
   --warn-wash: #fdf8ee;
   --warn-line: #e9d9b8;
+  /* and the ones the Settings dialog (settings.css) draws with */
+  --paper: var(--bg);
+  --desk: var(--sidebar);
+  --line-soft: #eeeae2;
+  --slot-line: #cfcabf;
+  --shadow-doc: var(--shadow);
   color-scheme: light;
 }
 
@@ -61,6 +67,8 @@
     --warn: #e2c27a;
     --warn-wash: #332b1b;
     --warn-line: #5a4a24;
+    --line-soft: #353431;
+    --slot-line: #4a4740;
     color-scheme: dark;
   }
 }
@@ -258,14 +266,11 @@ dialog p code { padding: 1px 5px; border-radius: 5px; background: var(--code-bg)
 .tool-body .label.with-action .copy-btn { text-transform: none; letter-spacing: normal; font-weight: 500; }
 
 /* settings */
-.settings-dialog { width: min(440px, calc(100vw - 32px)); padding: 18px 20px 16px; }
 .ui-choice { display: flex; flex-direction: column; gap: 8px; }
-.ui-choice .section-label { padding: 6px 0 0; }
 .ui-option { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); text-align: left; }
 .ui-option:hover { background: var(--hover); }
 .ui-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .ui-option span { font-size: 13px; color: var(--muted); }
-.settings-note { margin: 12px 0 0; font-size: 12.5px; }
 .primary { padding: 8px 16px; border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 500; }
 .primary:hover { background: var(--accent-hover); }
 

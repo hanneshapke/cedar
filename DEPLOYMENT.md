@@ -159,7 +159,7 @@ sudo useradd --system --create-home --home-dir /var/lib/cedar \
 
 CEDAR_KEY=$(openssl rand -hex 24)     # chat -> cedar
 CHAT_TOKEN=$(openssl rand -hex 24)    # browser -> chat
-ADMIN_TOKEN=$(openssl rand -hex 24)   # unlocks Settings -> Model server & API keys in the browser
+ADMIN_TOKEN=$(openssl rand -hex 24)   # unlocks Settings -> Server in the browser
 SECRET_KEY=$(openssl rand -hex 32)    # encrypts the API keys saved there; keep it with your secrets
 MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')   # or type the name yourself
 echo "model: ${MODEL:?vLLM is not reachable; set MODEL to the name it serves}"
@@ -197,7 +197,7 @@ echo "Admin token (unlocks the model settings in the browser): $ADMIN_TOKEN"
 ```
 
 Keep the printed tokens. The chat page asks for the access token on first load; the admin token
-unlocks Settings → Model server & API keys, where the vLLM server is registered (step 5 does it
+unlocks Settings → Server, where the vLLM server is registered (step 5 does it
 with curl first). The full list of settings is in
 the [README](README.md#configuration) and [chat/README.md](chat/README.md#configuration).
 
@@ -248,7 +248,7 @@ curl -N http://127.0.0.1:8080/v1/runs/$RUN/events -H "Authorization: Bearer $CED
 `/readyz` returns 200 only if the database and Docker (including the `cedar-sandbox` image) are
 available. It does not check vLLM, but it says how many models are registered (`"models": 1`
 after the `PUT`). The registration is kept in cedar's database, so it survives restarts; the chat
-UI shows and edits it under Settings → Model server & API keys. The event stream should show
+UI shows and edits it under Settings → Server. The event stream should show
 `tool.call`, `tool.result`, `assistant.text`, and finally `run.completed`. If it ends in
 `run.failed`, see [Troubleshooting](#troubleshooting).
 
@@ -369,7 +369,7 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 
 | Symptom | Likely cause and fix |
 | --- | --- |
-| Message refused: "no model is registered" | Nobody has registered the vLLM server yet: the `PUT` in step 5, or Settings → Model server & API keys → Add a model in the browser (with the admin token from step 4). |
+| Message refused: "no model is registered" | Nobody has registered the vLLM server yet: the `PUT` in step 5, or Settings → Server → Add a model in the browser (with the admin token from step 4). |
 | Run fails: `LLM API error 404` / "model not found" | The model name in the registered entry doesn't match the name vLLM registered. Compare with `curl localhost:8000/v1/models` and edit the entry (Settings shows what the server listed). |
 | Run fails immediately with `sending API request` | cedar can't reach vLLM. Check it is running and that the entry's address includes `/v1`. |
 | Runs finish instantly with tool calls printed as text | vLLM was started without `--enable-auto-tool-choice --tool-call-parser deepseek_v4`. Redo the check in step 2. |

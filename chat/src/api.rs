@@ -80,6 +80,7 @@ const STOCK_VIEW_CSS: &str = include_str!("../static/stock-view.css");
 /// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
 const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
+const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
@@ -261,6 +262,7 @@ pub fn router(state: AppState) -> Router {
         .route("/stock-view.css", get(|| async { asset(CSS, STOCK_VIEW_CSS) }))
         .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
+        .route("/settings-shell.js", get(|| async { asset(JS, SETTINGS_SHELL_JS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))

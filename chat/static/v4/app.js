@@ -1579,6 +1579,7 @@ async function init() {
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
+  cedarSchedule.start();
   await loadConversations();
   route();
   cedarNotify.start();

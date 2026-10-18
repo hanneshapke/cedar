@@ -1,15 +1,17 @@
 'use strict';
 
-// Scheduled agents, shared by both UIs (/v1 and /v2). Two pieces:
+// Scheduled agents, shared by every UI. Three pieces:
 //
 //   - "Schedule this agent": a dialog that has cedar compact the open conversation into one
 //     prompt, lets the user edit it and pick a local time and frequency, and creates the schedule
-//     (or, from Settings, edits an existing one).
-//   - The "Scheduled agents" section of the Settings dialog: every schedule with its next and
-//     last run, pause/resume, run now, edit and delete, and a run history with each run's result.
+//     (or edits an existing one).
+//   - The "Scheduled agents" list in the conversations sidebar: every schedule with its next run,
+//     drawn into each `[data-schedules]` mount the page has (GET /api/schedules).
+//   - A schedule's detail, in the same dialog: its timing, prompt, pause/resume, run now, edit and
+//     delete, and a run history with each run's result.
 //
 // Each app hands over its own helpers through cedarSchedule.init(), so this file knows nothing
-// about the app's internals:
+// about the app's internals, and calls cedarSchedule.start() once the access token is known:
 //
 //   api(method, path, body) -> Promise<json>   the app's /api client (sends the access token)
 //   toast(message)                             a short notice
@@ -26,10 +28,9 @@ const cedarSchedule = (() => {
 
   let deps = null;
   let form = null;      // the schedule dialog and its parts, built on first use
-  let editing = null;   // { conversation } when creating, { schedule } when editing
-  let section = null;   // the Settings section
-  let settings = null;  // the Settings dialog
-  let view = null;      // 'list' | { detail: id }
+  let editing = null;   // { conversation } creating, { schedule, returnTo } editing, { detail: id } viewing
+  let schedules = [];   // GET /schedules, as last loaded
+  let started = false;
   let refreshTimer = null;
   let request = 0;      // bumped on every (re)render so a slow fetch can't draw into a newer view
 
@@ -99,7 +100,7 @@ const cedarSchedule = (() => {
   }
 
   function openConversation(id) {
-    if (settings?.open) settings.close();
+    if (form?.dialog.open) form.dialog.close();
     location.hash = `#/c/${id}`;
   }
 
@@ -174,15 +175,19 @@ const cedarSchedule = (() => {
     frequency.addEventListener('change', () => { weekdayField.hidden = frequency.value !== 'weekly'; });
     f.addEventListener('submit', (e) => { e.preventDefault(); submitForm(); });
 
-    dialog.append(head, review, f);
-    dialog.addEventListener('close', () => { editing = null; });
+    // Stage 3: a schedule's detail.
+    const detail = el('div', 'cedar-sched-detail');
+
+    dialog.append(head, review, f, detail);
+    dialog.addEventListener('close', () => { editing = null; stopRefresh(); });
     document.body.append(dialog);
-    return { dialog, title, review, reviewText, retry, form: f, titleInput, prompt, promptHelp, frequency, weekday, weekdayField, time, zone, model, modelField, reasoning, reasoningField, notify, notifyField, error, submit };
+    return { dialog, title, review, reviewText, retry, form: f, titleInput, prompt, promptHelp, frequency, weekday, weekdayField, time, zone, model, modelField, reasoning, reasoningField, notify, notifyField, error, submit, detail };
   }
 
   function showStage(stage) {
     form.review.hidden = stage !== 'review';
     form.form.hidden = stage !== 'form';
+    form.detail.hidden = stage !== 'detail';
   }
 
   function fillModels(selected, level) {
@@ -235,11 +240,12 @@ const cedarSchedule = (() => {
     compactNow();
   }
 
-  /** Edit an existing schedule from Settings. */
-  function openEdit(schedule) {
+  /** Edit an existing schedule; with `returnTo: 'detail'` the dialog goes back to its detail after. */
+  function openEdit(schedule, { returnTo } = {}) {
     if (!deps) return;
     form ??= buildForm();
-    editing = { schedule };
+    stopRefresh();
+    editing = { schedule, returnTo };
     form.title.textContent = 'Edit scheduled agent';
     form.submit.textContent = 'Save';
     form.promptHelp.hidden = true;
@@ -291,6 +297,7 @@ const cedarSchedule = (() => {
     form.submit.disabled = true;
     try {
       let schedule;
+      const back = editing.returnTo === 'detail' && editing.schedule;
       if (editing.schedule) {
         schedule = await deps.api('PATCH', `/schedules/${editing.schedule.id}`, body);
         deps.toast(`Saved · next run ${when(schedule.next_run_at)}`);
@@ -299,8 +306,9 @@ const cedarSchedule = (() => {
         schedule = await deps.api('POST', '/schedules', body);
         deps.toast(`Scheduled · next run ${when(schedule.next_run_at)}`);
       }
-      form.dialog.close();
-      if (settings?.open) render();
+      loadSide();
+      if (back) openDetail(schedule.id);
+      else form.dialog.close();
     } catch (e) {
       form.error.textContent = e.message || 'Could not save the schedule.';
       form.error.hidden = false;
@@ -309,98 +317,107 @@ const cedarSchedule = (() => {
     }
   }
 
-  // -- the Settings section ----------------------------------------------------------------------
+  // -- the sidebar list ----------------------------------------------------------------------
 
   function stopRefresh() {
     clearTimeout(refreshTimer);
     refreshTimer = null;
   }
 
-  /** Draw the current view (the list, or one schedule's runs) into the Settings section. */
-  async function render() {
-    if (!section) return;
+  /** "Mon 07:00" for a weekly schedule, "07:00" otherwise, for the sidebar. */
+  function nextShort(s) {
+    if (!s.enabled) return 'paused';
+    if (!s.next_run_at) return '';
+    const d = new Date(s.next_run_at);
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    if (s.frequency === 'daily') return time;
+    return `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+  }
+
+  const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>';
+
+  /** Draw the schedules into every sidebar mount (`[data-schedules]`); hidden when there are none. */
+  function renderSide() {
+    for (const mount of document.querySelectorAll('[data-schedules]')) {
+      mount.hidden = !schedules.length;
+      const count = mount.querySelector('.cedar-sched-count');
+      if (count) count.textContent = String(schedules.length);
+      const list = mount.querySelector('.cedar-sched-links');
+      if (!list) continue;
+      list.textContent = '';
+      for (const s of schedules) {
+        const link = el('button', `cedar-sched-link${s.enabled ? '' : ' paused'}`);
+        link.type = 'button';
+        link.title = [s.title, describe(s)].join(' · ');
+        const name = el('span', 'cedar-sched-link-name');
+        name.insertAdjacentHTML('beforeend', CLOCK);
+        name.append(el('span', 'cedar-sched-link-title', s.title));
+        link.append(name, el('span', 'cedar-sched-link-when', nextShort(s)));
+        link.addEventListener('click', () => openDetail(s.id));
+        list.append(link);
+      }
+    }
+  }
+
+  /** Fetch the schedules and redraw the sidebar. */
+  async function loadSide() {
+    if (!deps) return;
+    try { ({ schedules } = await deps.api('GET', '/schedules')); } catch { return; }
+    schedules ||= [];
+    renderSide();
+  }
+
+  // -- a schedule's detail, in the schedule dialog ----------------------------------------------
+
+  /** Open one schedule: its timing, prompt, actions and runs. */
+  async function openDetail(id) {
+    if (!deps) return;
+    form ??= buildForm();
+    editing = { detail: id };
     stopRefresh();
-    const id = ++request;
+    form.title.textContent = schedules.find((s) => s.id === id)?.title || 'Scheduled agent';
+    form.detail.replaceChildren(el('div', 'cedar-sched-review-text', 'Loading…'));
+    showStage('detail');
+    if (!form.dialog.open) form.dialog.showModal();
+    await renderDetail(id);
+  }
+
+  async function renderDetail(id) {
+    const req = ++request;
+    let data;
     try {
-      if (view && view.detail) {
-        const detail = await deps.api('GET', `/schedules/${view.detail}`);
-        if (id !== request) return;
-        renderDetail(detail);
-      } else {
-        const { schedules } = await deps.api('GET', '/schedules');
-        if (id !== request) return;
-        renderList(schedules);
-      }
+      data = await deps.api('GET', `/schedules/${id}`);
     } catch (e) {
-      if (id !== request) return;
-      section.replaceChildren(heading('Scheduled agents'), el('div', 'empty-list', e.message || 'Could not load the schedules.'));
+      if (req !== request || editing?.detail !== id) return;
+      form.detail.replaceChildren(el('div', 'cedar-sched-error', e.message || 'Could not load the schedule.'));
+      return;
     }
-  }
-
-  function heading(text, back) {
-    const h = el('div', 'cedar-sched-heading');
-    if (back) h.append(button('← All schedules', () => { view = 'list'; render(); }));
-    h.append(el('span', '', text));
-    return h;
-  }
-
-  function renderList(schedules) {
-    const box = el('div', 'cedar-sched-list');
-    if (!schedules.length) {
-      box.append(el('div', 'empty-list', 'No scheduled agents yet. Finish a chat and press Schedule to run it on its own.'));
-    }
-    for (const s of schedules) {
-      const item = el('div', `cedar-sched-item${s.enabled ? '' : ' paused'}`);
-      const main = el('div', 'cedar-sched-item-main');
-      const name = el('strong', '', s.title);
-      main.append(name, el('div', 'cedar-sched-sub', [describe(s), notifyText(s)].filter(Boolean).join(' · ')));
-      const next = el('div', 'cedar-sched-sub');
-      if (!s.enabled) next.append(el('span', 'cedar-sched-chip muted', 'paused'));
-      else next.textContent = `Next run ${when(s.next_run_at)}`;
-      main.append(next);
-      if (s.last_run) {
-        const last = el('div', 'cedar-sched-sub');
-        last.append('Last run ', when(s.last_run.started_at), ' ', chip(s.last_run));
-        main.append(last);
-      }
-      const actions = el('div', 'cedar-sched-item-actions');
-      actions.append(
-        button('Runs', () => { view = { detail: s.id }; render(); }),
-        button('Run now', (e) => runNow(s, e.currentTarget)),
-        button(s.enabled ? 'Pause' : 'Resume', () => setEnabled(s, !s.enabled)),
-        button('Edit', () => openEdit(s)),
-        button('Delete', () => remove(s)),
-      );
-      item.append(main, actions);
-      box.append(item);
-    }
-    section.replaceChildren(heading('Scheduled agents'), box);
-  }
-
-  function renderDetail({ schedule: s, runs }) {
-    const box = el('div', 'cedar-sched-detail');
+    if (req !== request || editing?.detail !== id) return;
+    const { schedule: s, runs } = data;
+    form.title.textContent = s.title;
     const main = el('div', 'cedar-sched-item-main');
-    main.append(el('strong', '', s.title), el('div', 'cedar-sched-sub', [describe(s), notifyText(s)].filter(Boolean).join(' · ')));
+    main.append(el('div', 'cedar-sched-sub', [describe(s), notifyText(s)].filter(Boolean).join(' · ')));
     main.append(el('div', 'cedar-sched-sub', s.enabled ? `Next run ${when(s.next_run_at)}` : 'Paused'));
     const promptBox = el('details', 'cedar-sched-prompt');
     promptBox.append(el('summary', '', 'Prompt'), el('pre', '', s.prompt));
     const actions = el('div', 'cedar-sched-item-actions');
+    if (s.source_conversation_id) actions.append(button('Open', () => openConversation(s.source_conversation_id)));
     actions.append(
       button('Run now', (e) => runNow(s, e.currentTarget)),
       button(s.enabled ? 'Pause' : 'Resume', () => setEnabled(s, !s.enabled)),
-      button('Edit', () => openEdit(s)),
+      button('Edit', () => openEdit(s, { returnTo: 'detail' })),
       button('Delete', () => remove(s)),
     );
-    box.append(main, promptBox, actions, el('div', 'cedar-sched-runs-label', `${runs.length} run${runs.length === 1 ? '' : 's'}`));
-    if (!runs.length) box.append(el('div', 'empty-list', 'No runs yet.'));
+    const parts = [main, promptBox, actions, el('div', 'cedar-sched-runs-label', `${runs.length} run${runs.length === 1 ? '' : 's'}`)];
+    if (!runs.length) parts.push(el('div', 'empty-list', 'No runs yet.'));
     let live = false;
     for (const run of runs) {
       const [, cls] = runState(run);
       live ||= cls === 'live';
-      box.append(runRow(run));
+      parts.push(runRow(run));
     }
-    section.replaceChildren(heading(s.title, true), box);
-    if (live && settings?.open) refreshTimer = setTimeout(render, REFRESH_MS);
+    form.detail.replaceChildren(...parts);
+    if (live && form.dialog.open) refreshTimer = setTimeout(() => { if (editing?.detail === id) renderDetail(id); }, REFRESH_MS);
   }
 
   function runRow(run) {
@@ -437,8 +454,8 @@ const cedarSchedule = (() => {
     try {
       await deps.api('POST', `/schedules/${s.id}/run`);
       deps.toast(`Started “${s.title}”`);
-      view = { detail: s.id };
-      render();
+      loadSide();
+      if (editing?.detail === s.id) renderDetail(s.id);
     } catch (e) {
       deps.toast(e.message);
       if (btn) btn.disabled = false;
@@ -448,7 +465,8 @@ const cedarSchedule = (() => {
   async function setEnabled(s, enabled) {
     try {
       await deps.api('PATCH', `/schedules/${s.id}`, { enabled });
-      render();
+      loadSide();
+      if (editing?.detail === s.id) renderDetail(s.id);
     } catch (e) {
       deps.toast(e.message);
     }
@@ -458,29 +476,30 @@ const cedarSchedule = (() => {
     if (!confirm(`Delete “${s.title}” and the results of all its runs? This cannot be undone.`)) return;
     try {
       await deps.api('DELETE', `/schedules/${s.id}`);
-      view = 'list';
-      render();
+      if (form?.dialog.open) form.dialog.close();
+      loadSide();
     } catch (e) {
       deps.toast(e.message);
     }
   }
 
-  function bindSettings() {
-    section = document.getElementById('schedules-section');
-    settings = document.getElementById('settings-dialog');
-    const open = document.getElementById('settings-btn');
-    if (!section || !settings || !open) return;
-    // ui-pref.js opens the dialog on this click; the list is (re)loaded each time it opens.
-    open.addEventListener('click', () => { view = 'list'; render(); });
-    settings.addEventListener('close', stopRefresh);
+  function bind() {
     window.addEventListener('hashchange', () => { if (form?.dialog.open) form.dialog.close(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && started) loadSide(); });
   }
 
   function init(helpers) {
     deps = helpers;
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindSettings);
-    else bindSettings();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+    else bind();
   }
 
-  return { init, openCreate, openEdit, describe };
+  /** Load the sidebar list; once, after the access token is known. */
+  function start() {
+    if (started || !deps) return;
+    started = true;
+    loadSide();
+  }
+
+  return { init, start, openCreate, openEdit, openDetail, describe };
 })();

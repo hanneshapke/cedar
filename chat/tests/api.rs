@@ -839,7 +839,12 @@ async fn both_uis_are_served() {
             assert!(page.contains("id=\"inbox-btn\""), "{uri} has the inbox button");
             assert!(page.contains("id=\"notify-section\""), "{uri} has the Notifications settings");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
-            assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in Settings");
+            assert!(page.contains("<script src=\"/settings-shell.js\">"), "{uri} loads the Settings dialog's frame");
+            assert!(
+                page.find("/ui-pref.js") < page.find("/settings-shell.js") && page.find("/settings-shell.js") < page.find("/settings.js"),
+                "{uri} loads the Settings frame after the UI choice and before the pages that register with it"
+            );
+            assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in the sidebar");
             assert!(page.contains("id=\"schedule-btn\""), "{uri} has a Schedule button");
         }
         let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
@@ -878,6 +883,9 @@ async fn both_uis_are_served() {
         ("/models.css", "text/css; charset=utf-8", ".cedar-send-menu"),
         ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),
         ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
+        ("/settings-shell.js", "text/javascript; charset=utf-8", "cedarSettingsShell"),
+        ("/settings.js", "text/javascript; charset=utf-8", "cedarSettings"),
+        ("/settings.css", "text/css; charset=utf-8", ".settings-dialog"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
         ("/attach.css", "text/css; charset=utf-8", ".cedar-attach"),
         ("/notify.js", "text/javascript; charset=utf-8", "cedarNotify"),

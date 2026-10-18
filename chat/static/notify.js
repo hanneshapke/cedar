@@ -1,6 +1,6 @@
 'use strict';
 
-// Being told when a response finishes, shared by both UIs (/v1 and /v2). Four pieces:
+// Being told when a response finishes, shared by every UI. Four pieces:
 //
 //   - An inbox: the bell button in the header counts the responses that finished (or failed)
 //     while nobody was looking, scheduled runs included, and opens a list of them; the count is
@@ -11,12 +11,12 @@
 //   - "Seen": the app says when the open conversation has been looked at (it was opened, its
 //     response finished while the tab was visible), this module adds the tab becoming visible
 //     again, and the server clears the marks.
-//   - The Notifications section of Settings: the ways to be told out of the app (a notification
-//     from the Cedar app for macOS, browser push through the service worker at /sw.js, a phone
-//     push through Pushover, an email), each set up
-//     with its credentials and a test send, the default method for conversations, and which
-//     responses are worth it (GET/PUT /api/notifications). schedule.js asks cedarNotify for the
-//     set-up methods to offer in a scheduled agent's own picker.
+//   - The Notifications page of Settings (framed by settings-shell.js): the ways to be told out
+//     of the app (a notification from the Cedar app for macOS, browser push through the service
+//     worker at /sw.js, a phone push through Pushover, an email) as one list of methods, the
+//     chosen one unfolding its credentials and a test send, and which responses are worth it
+//     (GET/PUT /api/notifications). schedule.js asks cedarNotify for the set-up methods to offer
+//     in a scheduled agent's own picker.
 //
 // The app hands over its helpers through cedarNotify.init():
 //
@@ -40,10 +40,6 @@ const cedarNotify = (() => {
     ['email', 'Email', 'A mail through an SMTP server of yours.'],
   ];
   const METHOD_LABELS = Object.fromEntries(METHODS.map(([id, label]) => [id, label]));
-  const SCOPES = [
-    ['attention', 'Only what needs you: failures, questions and scheduled runs'],
-    ['all', 'Every response that ends while you are not watching it'],
-  ];
 
   let deps = null;
   let inbox = { items: [], unread: 0 };
@@ -154,7 +150,8 @@ const cedarNotify = (() => {
     awayLine = el('span', '', 'While you are away: only in the app.');
     const change = button('Change in Settings', () => {
       dialog.close();
-      document.getElementById('settings-btn')?.click();
+      const btn = document.getElementById('settings-btn');
+      if (btn) { btn.dataset.page = 'notify'; btn.click(); }
     });
     foot.append(awayLine, change);
     dialog.append(head, listEl, foot);
@@ -230,12 +227,6 @@ const cedarNotify = (() => {
   }
 
   // -- Settings: how to be told out of the app ---------------------------------------------------
-
-  function heading(text) {
-    const h = el('div', 'cedar-set-heading');
-    h.append(el('span', '', text));
-    return h;
-  }
 
   const note = (text, className = 'cedar-set-note') => el('p', className, text);
 
@@ -339,108 +330,171 @@ const cedarNotify = (() => {
     return options;
   }
 
-  async function renderSettings() {
+  let draft = null;        // { default_method, scope, pushover: {}, email: {}, contact? }
+  let openMethod = null;   // which method's setup panel is unfolded
+  let local = null;        // this browser's push subscription, if any
+
+  const shell = () => (typeof cedarSettingsShell === 'undefined' ? null : cedarSettingsShell);
+
+  /** The nav's second line: "Phone push via Pushover · what needs me". */
+  function summary() {
+    if (!status) return null;
+    const m = status.default_method || 'none';
+    return `${m === 'none' ? 'Only in the app' : METHOD_LABELS[m] || m} · ${status.scope === 'all' ? 'every response' : 'what needs me'}`;
+  }
+
+  /** The footer's warning while the chosen default isn't set up. */
+  function guard() {
+    const m = draft?.default_method || 'none';
+    const ok = m === 'none' || (status?.configured || []).includes(m);
+    shell()?.setStatus('notify', ok ? '' : `${METHOD_LABELS[m] || m} isn't set up yet`, 'warn');
+  }
+
+  async function renderSettings(sectionEl = section) {
+    if (sectionEl) section = sectionEl;
     if (!section) return;
-    section.replaceChildren(heading('Notifications'), note('Loading…'));
-    let local = null;
+    section.replaceChildren(note('Loading…'));
     try {
       [status, local] = await Promise.all([deps.api('GET', '/notifications'), localSubscription()]);
     } catch (e) {
-      section.replaceChildren(heading('Notifications'), note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
+      section.replaceChildren(note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
       return;
     }
     updateAwayLine();
-    const draft = { default_method: status.default_method, scope: status.scope, pushover: {}, email: {} };
-    const save = button('Save', () => submit(), 'primary');
-    const state = el('span', 'cedar-set-status');
-    const dirty = () => { state.textContent = ''; };
+    // A re-render after a test or a Forget keeps what was picked but not yet saved.
+    const kept = draft && shell()?.current() === 'notify' ? draft : null;
+    draft = { default_method: kept?.default_method ?? status.default_method, scope: kept?.scope ?? status.scope, pushover: {}, email: {} };
     const configured = new Set(status.configured || []);
+    const dirty = () => shell()?.setDirty('notify', true);
+    const row = (label) => {
+      const r = el('div', 'cedar-notify-row');
+      r.append(el('div', 'settings-eyebrow', label));
+      return r;
+    };
 
-    // One card per method, each set up on its own; a method that is set up can be picked as the
-    // default here or by a scheduled agent.
-    const cards = el('div', 'cedar-notify-methods');
+    // Tell me by: one radio per method; the chosen one (or one being set up) unfolds its setup.
+    const tell = row('Tell me by');
+    const group = el('div', 'cedar-notify-methods');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', 'Tell me by');
+    const panels = new Map();
+    const radios = new Map();
+    const syncOpen = () => {
+      for (const [id, panel] of panels) panel.hidden = openMethod !== id;
+      for (const [id, radio] of radios) radio.setAttribute('aria-checked', String(draft.default_method === id));
+    };
     for (const [id, label, sub] of METHODS) {
-      if (id === 'none') continue;
       // The Mac app's method only where there is one; browser push not in the app's web view.
       if (id === 'desktop' && !inMacApp && !status.desktop?.configured) continue;
       if (id === 'browser' && inMacApp) continue;
-      const card = el('div', 'cedar-notify-card');
-      const head = el('div', 'cedar-notify-card-head');
-      const text = el('span');
-      text.append(el('strong', '', label), el('small', '', sub));
-      head.append(text, badge(configured.has(id) ? 'Set up' : 'Not set up', configured.has(id) ? 'ok' : ''));
-      card.append(head);
-      const block = el('div', 'cedar-notify-block');
-      if (id === 'desktop') block.append(...desktopBlock());
-      if (id === 'browser') block.append(...browserBlock(local));
-      if (id === 'pushover') block.append(...pushoverBlock());
-      if (id === 'email') block.append(...emailBlock());
-      card.append(block);
-      cards.append(card);
+      const item = el('div', 'cedar-notify-method');
+      const head = el('div', 'cedar-notify-method-head');
+      const radio = el('button', 'cedar-notify-radio');
+      radio.type = 'button';
+      radio.setAttribute('role', 'radio');
+      radio.setAttribute('aria-label', label);
+      radios.set(id, radio);
+      const text = el('span', 'cedar-notify-method-text');
+      text.append(el('span', 'cedar-notify-method-label', label), el('span', 'cedar-notify-method-sub', sub));
+      const side = el('span', 'cedar-notify-method-side');
+      if (id === 'none') side.append(badge('Always on'));
+      else if (configured.has(id)) side.append(badge('Set up', 'ok'));
+      else {
+        side.append(badge('Not set up'));
+        const setUp = el('button', 'settings-link', 'Set up');
+        setUp.type = 'button';
+        setUp.addEventListener('click', () => { openMethod = openMethod === id ? null : id; syncOpen(); });
+        side.append(setUp);
+      }
+      head.append(radio, text, side);
+      item.append(head);
+      const pick = () => {
+        draft.default_method = id;
+        openMethod = id === 'none' ? null : id;
+        syncOpen();
+        guard();
+        dirty();
+      };
+      radio.addEventListener('click', pick);
+      text.addEventListener('click', pick);
+      if (id !== 'none') {
+        const panel = el('div', 'cedar-notify-setup');
+        if (id === 'desktop') panel.append(...desktopBlock());
+        if (id === 'browser') panel.append(...browserBlock(local));
+        if (id === 'pushover') panel.append(...pushoverBlock());
+        if (id === 'email') panel.append(...emailBlock());
+        panels.set(id, panel);
+        item.append(panel);
+      }
+      group.append(item);
     }
-
-    const picker = el('select');
-    picker.setAttribute('aria-label', 'Default method');
-    for (const { value, label } of methodOptions(false)) picker.append(new Option(label, value, false, status.default_method === value));
-    if (!configured.has(status.default_method) && status.default_method !== 'none') {
-      picker.append(new Option(`${METHOD_LABELS[status.default_method]} (no longer set up)`, status.default_method, false, true));
+    if (!radios.has(draft.default_method)) {
+      // Picked once, no longer offered (the Mac app went away): shown so it can be changed.
+      const m = draft.default_method;
+      const item = el('div', 'cedar-notify-method');
+      const head = el('div', 'cedar-notify-method-head');
+      const radio = el('button', 'cedar-notify-radio');
+      radio.type = 'button';
+      radio.setAttribute('role', 'radio');
+      radios.set(m, radio);
+      const text = el('span', 'cedar-notify-method-text');
+      text.append(el('span', 'cedar-notify-method-label', METHOD_LABELS[m] || m), el('span', 'cedar-notify-method-sub', 'No longer set up.'));
+      head.append(radio, text, badge('Not set up'));
+      item.append(head);
+      group.append(item);
     }
-    picker.addEventListener('change', () => { draft.default_method = picker.value; dirty(); });
-    const pickerField = field('Default method', picker);
-    pickerField.append(el('small', 'cedar-set-field-note', 'For responses in conversations, and for scheduled agents that don\'t pick a method of their own.'));
+    syncOpen();
+    tell.append(group);
 
-    const scope = el('select');
-    scope.setAttribute('aria-label', 'Which responses');
-    for (const [id, label] of SCOPES) scope.append(new Option(label, id, false, status.scope === id));
-    scope.addEventListener('change', () => { draft.scope = scope.value; dirty(); });
-    const scopeField = field('Send it for', scope);
-    const choices = el('div', 'cedar-set-fields cedar-notify-choices');
-    choices.append(pickerField, scopeField);
+    // For: which responses are worth it.
+    const scopeRow = row('For');
+    const scopeWrap = el('div', 'cedar-notify-scope');
+    const seg = el('div', 'cedar-notify-seg');
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'Which responses');
+    const scopeNote = el('div', 'cedar-set-note');
+    const SCOPE_NOTES = {
+      attention: 'Failures, questions and scheduled runs. Scheduled agents can pick their own method.',
+      all: 'Every response that ends while you are not watching it.',
+    };
+    const segs = [];
+    const syncScope = () => {
+      for (const b of segs) b.setAttribute('aria-checked', String(b.dataset.scope === draft.scope));
+      scopeNote.textContent = SCOPE_NOTES[draft.scope] || SCOPE_NOTES.attention;
+    };
+    for (const [id, label] of [['attention', 'What needs me'], ['all', 'Every response']]) {
+      const b = el('button', 'cedar-notify-seg-item', label);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.dataset.scope = id;
+      b.addEventListener('click', () => { draft.scope = id; syncScope(); dirty(); });
+      segs.push(b);
+      seg.append(b);
+    }
+    syncScope();
+    scopeWrap.append(seg, scopeNote);
+    scopeRow.append(scopeWrap);
 
-    const last = el('p', 'cedar-notify-last');
+    // Last sent.
+    const lastRow = row('Last sent');
+    lastRow.classList.add('last');
+    const last = el('div', 'cedar-notify-last');
     if (status.last_delivery) {
       const d = status.last_delivery;
       last.classList.toggle('err', !d.ok);
-      last.textContent = `Last ${d.test ? 'test ' : ''}${METHOD_LABELS[d.method] || d.method} ${when(d.at)}: ${d.ok ? 'sent' : 'failed'} · ${d.detail}`;
+      last.append(el('span', 'cedar-notify-when', when(d.at)));
+      last.append(` · ${d.test ? 'test · ' : ''}${METHOD_LABELS[d.method] || d.method} · ${d.ok ? 'sent' : 'failed'}${d.detail ? ` · ${d.detail}` : ''}`);
     } else {
       last.textContent = 'Nothing has been sent yet.';
     }
+    lastRow.append(last);
 
-    const actions = el('div', 'cedar-set-actions');
-    actions.append(state, save);
-    section.replaceChildren(
-      heading('Notifications'),
-      note('How to tell you when a response finishes while you are away: in another conversation, another tab, or not here at all. Set up any of these; the inbox and the marks in the list are always on.'),
-      cards,
-      choices,
-      last,
-      actions,
-    );
+    section.replaceChildren(tell, scopeRow, lastRow);
+    guard();
 
-    /** PUT the draft; `extra` goes along (a test's or a clear's fields). Resolves to the new status. */
-    async function submit(extra = {}) {
-      save.disabled = true;
-      state.textContent = 'Saving…';
-      const body = { default_method: draft.default_method, scope: draft.scope, ...extra };
-      if (Object.keys(draft.pushover).length) body.pushover = draft.pushover;
-      if (Object.keys(draft.email).length) body.email = draft.email;
-      try {
-        status = await deps.api('PUT', '/notifications', body);
-        state.textContent = 'Saved';
-        updateAwayLine();
-        return status;
-      } catch (e) {
-        state.textContent = '';
-        deps.toast(e.message);
-        throw e;
-      } finally {
-        save.disabled = false;
-      }
-    }
-
-    /** Save, then send a test by `method`; the outcome lands in the last-delivery line. */
+    /** Save, then send a test by `method`; the outcome lands in the last-sent line. */
     function testButton(method) {
-      const b = button('Save and send a test', async () => {
+      const b = button('Send a test', async () => {
         b.disabled = true;
         try {
           await submit();
@@ -452,66 +506,63 @@ const cedarNotify = (() => {
           b.disabled = false;
           renderSettings();
         }
-      });
+      }, 'settings-ghost');
       return b;
+    }
+
+    /** The help sentence left, the buttons right. */
+    function helpRow(text, ...buttons) {
+      const r = el('div', 'cedar-notify-help');
+      r.append(el('span', '', text), ...buttons);
+      return r;
     }
 
     function desktopBlock() {
       const d = status.desktop || {};
-      const line = el('div', 'cedar-notify-row');
-      if (d.listening) {
-        line.append(el('span', '', 'The Cedar app is running and will show them.'), testButton('desktop'));
-      } else if (d.configured) {
-        line.append(el('span', '', `The Cedar app last connected ${when(d.connected_at)}; it isn't running now, so nothing would show.`));
-      } else {
-        line.append(el('span', '', 'Waiting for the Cedar app to connect.'));
-      }
-      return [line, note('If nothing appears, allow notifications for Cedar in System Settings → Notifications.')];
+      if (d.listening) return [helpRow('The Cedar app is running and will show them. If nothing appears, allow notifications for Cedar in System Settings → Notifications.', testButton('desktop'))];
+      if (d.configured) return [helpRow(`The Cedar app last connected ${when(d.connected_at)}; it isn't running now, so nothing would show.`)];
+      return [helpRow('Waiting for the Cedar app to connect.')];
     }
 
     function browserBlock(local) {
       const parts = [];
-      const line = el('div', 'cedar-notify-row');
-      if (!pushSupported()) {
-        line.append(el('span', '', 'This browser cannot take push notifications here: it needs https, or localhost.'));
-      } else if (local) {
-        line.append(el('span', '', 'On in this browser.'), button('Turn off here', async () => {
-          try { await turnOffPush(); deps.toast('Push notifications are off in this browser'); } catch (e) { deps.toast(e.message); }
-          renderSettings();
-        }));
-      } else {
-        line.append(el('span', '', 'Not on in this browser yet.'), button('Turn on in this browser', async () => {
-          try { await turnOnPush(); deps.toast('Push notifications are on in this browser'); } catch (e) { deps.toast(e.message); }
-          renderSettings();
-        }, 'primary'));
-      }
-      parts.push(line);
       const subs = status.browser?.subscriptions || [];
       if (subs.length) {
         const list = el('div', 'cedar-notify-subs');
         for (const s of subs) {
-          const row = el('div', 'cedar-notify-sub');
-          row.append(el('span', '', `${agentName(s.user_agent)} · since ${when(s.created_at)}${s.last_used_at ? ` · last sent ${when(s.last_used_at)}` : ''}`));
-          row.append(button('Remove', async () => {
+          const r = el('div', 'cedar-notify-sub');
+          r.append(el('span', '', `${agentName(s.user_agent)} · since ${when(s.created_at)}${s.last_used_at ? ` · last sent ${when(s.last_used_at)}` : ''}`));
+          r.append(button('Remove', async () => {
             try { status = await deps.api('DELETE', `/notifications/push/subscriptions/${s.id}`); } catch (e) { deps.toast(e.message); }
             renderSettings();
-          }));
-          list.append(row);
+          }, 'settings-ghost'));
+          list.append(r);
         }
         parts.push(list);
       }
+      const fields = el('div', 'cedar-set-fields');
       const contact = input('email', status.browser?.contact, 'you@example.com', 'Contact for the push services');
       contact.addEventListener('input', () => { draft.contact = contact.value; dirty(); });
-      const fields = el('div', 'cedar-set-fields');
-      const f = field('Contact for the push services (optional)', contact);
-      f.append(el('small', 'cedar-set-field-note', 'Sent with every push as the address to reach the operator of this server; some push services want one.'));
-      fields.append(f);
+      fields.append(field('Contact for the push services (optional)', contact));
       parts.push(fields);
-      if (subs.length) {
-        const row = el('div', 'cedar-notify-row');
-        row.append(testButton('browser'));
-        parts.push(row);
+      const buttons = [];
+      if (!pushSupported()) {
+        parts.push(helpRow('This browser cannot take push notifications here: it needs https, or localhost.'));
+        return parts;
       }
+      if (local) {
+        buttons.push(button('Turn off here', async () => {
+          try { await turnOffPush(); deps.toast('Push notifications are off in this browser'); } catch (e) { deps.toast(e.message); }
+          renderSettings();
+        }, 'settings-ghost'));
+      } else {
+        buttons.push(button('Turn on in this browser', async () => {
+          try { await turnOnPush(); deps.toast('Push notifications are on in this browser'); } catch (e) { deps.toast(e.message); }
+          renderSettings();
+        }, 'settings-ghost'));
+      }
+      if (subs.length) buttons.push(testButton('browser'));
+      parts.push(helpRow(`${local ? 'On in this browser.' : 'Not on in this browser yet.'} The contact goes with every push as the address to reach the operator of this server; some push services want one.`, ...buttons));
       return parts;
     }
 
@@ -523,16 +574,14 @@ const cedarNotify = (() => {
       const user = input('password', '', p.user_set ? `Saved (…${p.user_last4}); type to replace` : 'Your user key', 'Pushover user key');
       user.addEventListener('input', () => { draft.pushover.user = user.value; dirty(); });
       fields.append(field('Application token', token), field('User key', user));
-      const help = note('Make an application at pushover.net/apps to get its token; your user key is on the pushover.net front page. Both stay on this server.');
-      const row = el('div', 'cedar-notify-row');
-      row.append(testButton('pushover'));
+      const buttons = [testButton('pushover')];
       if (p.token_set || p.user_set) {
-        row.append(button('Forget the saved keys', async () => {
+        buttons.push(button('Forget the saved keys', async () => {
           try { await submit({ pushover: { token: '', user: '' }, default_method: draft.default_method === 'pushover' ? 'none' : draft.default_method }); } catch { /* reported */ }
           renderSettings();
-        }));
+        }, 'settings-ghost'));
       }
-      return [fields, help, row];
+      return [fields, helpRow('Make an application at pushover.net/apps for its token; your user key is on the pushover.net front page. Both stay on this server.', ...buttons)];
     }
 
     function emailBlock() {
@@ -559,16 +608,43 @@ const cedarNotify = (() => {
       const to = input('email', e.to, 'you@example.com', 'Recipient');
       to.addEventListener('input', () => { draft.email.to = to.value; dirty(); });
       fields.append(field('SMTP server', host), field('Connection', security), field('Port', port), field('User name', username), field('Password', password), field('From', from), field('To', to));
-      const row = el('div', 'cedar-notify-row');
-      row.append(testButton('email'));
+      const buttons = [testButton('email')];
       if (e.password_set) {
-        row.append(button('Forget the saved password', async () => {
+        buttons.push(button('Forget the saved password', async () => {
           try { await submit({ email: { password: '' } }); } catch { /* reported */ }
           renderSettings();
-        }));
+        }, 'settings-ghost'));
       }
-      return [fields, note('The password stays on this server. A Gmail account takes an app password with STARTTLS on smtp.gmail.com.'), row];
+      return [fields, helpRow('The password stays on this server. A Gmail account takes an app password with STARTTLS on smtp.gmail.com.', ...buttons)];
     }
+  }
+
+  /** PUT the draft; `extra` goes along (a test's or a clear's fields). Resolves to the new status. */
+  async function submit(extra = {}) {
+    if (!draft) return status;
+    const body = { default_method: draft.default_method, scope: draft.scope, ...extra };
+    if (draft.contact !== undefined) body.contact = draft.contact;
+    if (Object.keys(draft.pushover).length) body.pushover = draft.pushover;
+    if (Object.keys(draft.email).length) body.email = draft.email;
+    try {
+      status = await deps.api('PUT', '/notifications', body);
+      draft = { default_method: status.default_method, scope: status.scope, pushover: {}, email: {} };
+      updateAwayLine();
+      const s = shell();
+      s?.setDirty('notify', 0);
+      s?.refresh('notify');
+      guard();
+      return status;
+    } catch (e) {
+      deps.toast(e.message);
+      throw e;
+    }
+  }
+
+  /** The footer's Save: save, then redraw with what the server kept. */
+  async function save() {
+    await submit();
+    await renderSettings();
   }
 
   async function follow() {
@@ -604,8 +680,14 @@ const cedarNotify = (() => {
   function init(d) {
     deps = d;
     section = document.getElementById('notify-section');
-    // ui-pref.js opens the Settings dialog on this click; the section is (re)loaded each time.
-    document.getElementById('settings-btn')?.addEventListener('click', renderSettings);
+    // settings-shell.js opens the Settings dialog and calls render each time it opens; what was
+    // picked but not saved is dropped when it closes.
+    document.getElementById('settings-dialog')?.addEventListener('close', () => { draft = null; openMethod = null; });
+    shell()?.register({
+      id: 'notify', label: 'Notifications', title: 'Notifications',
+      description: 'When a response finishes while you are away. The inbox and the marks in the list are always on.',
+      render: renderSettings, summary, save, footer: true,
+    });
     deps.button.classList.add('cedar-inbox-btn');
     countEl = el('span', 'cedar-inbox-count');
     countEl.hidden = true;
