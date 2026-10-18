@@ -32,3 +32,8 @@ cedar-chat.db-*
 
 # Python bytecode from the sandbox and browser scripts
 __pycache__/
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate

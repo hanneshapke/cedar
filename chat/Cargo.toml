@@ -13,10 +13,11 @@ chrono-tz = "0.10"
 futures-util = "0.3"
 # Email over SMTP (Settings -> Notifications), with rustls like reqwest.
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls-tls", "hostname"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# http2: APNs (iPhone push) only speaks HTTP/2.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "http2"] }
 # Web Push: VAPID signatures and payload encryption; the request itself goes through reqwest.
 web-push = { version = "0.10", default-features = false }
-# Generates the VAPID key pair (web-push only reads one).
+# Generates the VAPID key pair (web-push only reads one) and signs the APNs provider token.
 jwt-simple = { version = "0.11", default-features = false }
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

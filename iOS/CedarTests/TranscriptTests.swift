@@ -1,0 +1,135 @@
+import XCTest
+@testable import Cedar
+
+final class TranscriptTests: XCTestCase {
+    private func turn(_ id: String = "t1", status: TurnStatus = .queued) -> Turn {
+        Turn(id: id, conversationId: "c1", runId: "r1", prompt: "hi", status: status)
+    }
+
+    private func event(_ seq: Int, _ type: String, _ data: JSONValue) -> RunEvent {
+        RunEvent(seq: seq, type: type, data: data)
+    }
+
+    func testAppliesEventsInOrderAndIgnoresReplays() {
+        var transcript = TurnTranscript(turn: turn())
+        let events: [(String, JSONValue)] = [
+            ("run.started", .object([:])),
+            ("assistant.reasoning", .object(["text": .string("Let me think."), "duration_ms": .number(1500), "done": .bool(true)])),
+            ("tool.call", .object(["id": .string("t1"), "name": .string("bash"), "input": .object(["command": .string("ls")])])),
+            ("tool.result", .object(["id": .string("t1"), "output": .string("a.txt"), "is_error": .bool(false), "duration_ms": .number(12)])),
+            ("usage", .object(["input_tokens": .number(100), "output_tokens": .number(7), "cost_usd": .number(0.001)])),
+            ("assistant.text", .object(["text": .string("Done.")])),
+            ("run.completed", .object(["final_text": .string("Done."), "stop_reason": .string("end_turn")])),
+        ]
+        for (offset, (type, data)) in events.enumerated() {
+            transcript.apply(event(offset + 1, type, data))
+        }
+        // A replayed event is ignored.
+        transcript.apply(event(5, "usage", .object(["input_tokens": .number(100)])))
+
+        XCTAssertEqual(transcript.turn.status, .completed)
+        XCTAssertEqual(transcript.usage.inputTokens, 100)
+        XCTAssertEqual(transcript.usage.outputTokens, 7)
+        XCTAssertEqual(transcript.usage.costUSD ?? 0, 0.001, accuracy: 1e-9)
+        XCTAssertEqual(transcript.items.count, 3)
+        guard case .reasoning(_, let text, let ms) = transcript.items[0] else { return XCTFail("expected reasoning") }
+        XCTAssertEqual(text, "Let me think.")
+        XCTAssertEqual(ms, 1500)
+        guard case .tool(let call) = transcript.items[1] else { return XCTFail("expected a tool call") }
+        XCTAssertEqual(call.summary, "ls")
+        XCTAssertEqual(call.output, "a.txt")
+        XCTAssertEqual(call.durationMs, 12)
+        XCTAssertEqual(transcript.answer, "Done.")
+        XCTAssertTrue(transcript.images.isEmpty)
+        XCTAssertNil(transcript.questions)
+    }
+
+    func testAskUserStopsTheRunWithQuestions() throws {
+        var transcript = TurnTranscript(turn: turn())
+        let output = """
+        {"questions":[{"question":"Which city?","header":"City","multi_select":false,"options":[{"label":"Berlin","description":"the capital"},{"label":"Munich"}]},
+                      {"question":"Anything else?","multi_select":true,"options":[]}],"note":"Pick one."}
+        """
+        transcript.apply(event(1, "tool.call", .object(["id": .string("q"), "name": .string("ask_user"), "input": .object([:])])))
+        transcript.apply(event(2, "tool.result", .object(["id": .string("q"), "output": .string(output), "is_error": .bool(false)])))
+        transcript.apply(event(3, "run.completed", .object(["final_text": .string("Which city?"), "stop_reason": .string("ask_user")])))
+        XCTAssertTrue(transcript.turn.needsAnswer)
+        let questions = try XCTUnwrap(transcript.questions)
+        XCTAssertEqual(questions.questions.count, 2)
+        XCTAssertEqual(questions.questions[0].header, "City")
+        XCTAssertEqual(questions.questions[0].options.map(\.label), ["Berlin", "Munich"])
+        XCTAssertEqual(questions.questions[0].options[0].description, "the capital")
+        XCTAssertTrue(questions.questions[1].multiSelect)
+        XCTAssertEqual(questions.note, "Pick one.")
+
+        // The answer reads as the web UI composes it.
+        let text = ClarifyAnswer.text(for: questions, answers: [.init(chosen: ["Berlin"], own: "or nearby"), .init()])
+        XCTAssertEqual(text, "1. Which city?\nBerlin, Other: or nearby\n\n2. Anything else?\nNo preference")
+        let one = Questions(questions: [questions.questions[1]], note: nil)
+        XCTAssertEqual(ClarifyAnswer.text(for: one, answers: [.init(chosen: [], own: "no")]), "Anything else?\nno")
+        XCTAssertNil(Questions.parse("{\"questions\":[]}"))
+        XCTAssertNil(Questions.parse("not json"))
+    }
+
+    func testPlansAndApprovalsWait() throws {
+        var transcript = TurnTranscript(turn: turn())
+        transcript.apply(event(1, "run.started", .object([:])))
+        transcript.apply(event(2, "plan", .object([
+            "steps": .array([.object(["id": .string("1"), "title": .string("Look")]), .object(["id": .string("2"), "title": .string("Leap")])]),
+            "editable": .bool(true), "awaiting": .bool(true),
+        ])))
+        XCTAssertEqual(transcript.awaitingPlan?.steps.map(\.title), ["Look", "Leap"])
+        transcript.apply(event(3, "plan.updated", .object(["steps": .array([.string("Look")]), "by": .string("user")])))
+        XCTAssertNil(transcript.awaitingPlan)
+        guard case .plan(_, let plan) = transcript.items[0] else { return XCTFail("expected a plan") }
+        XCTAssertEqual(plan.steps.map(\.title), ["Look"])
+        XCTAssertEqual(plan.by, "user")
+
+        transcript.apply(event(4, "approval.required", .object([
+            "id": .string("abc123"), "call_id": .string("t9"), "tool": .string("bash"),
+            "input": .object(["command": .string("rm -rf build")]), "rule": .string("deletes"),
+            "reason": .string("deletes files"), "scope": .null,
+        ])))
+        let pending = try XCTUnwrap(transcript.pendingApproval)
+        XCTAssertEqual(pending.id, "abc123")
+        XCTAssertEqual(pending.tool, "bash")
+        XCTAssertEqual(pending.rule, "deletes")
+        XCTAssertEqual(pending.alwaysLabel, "Always")
+        transcript.apply(event(5, "approval.resolved", .object(["id": .string("abc123"), "decision": .string("deny"), "by": .string("user")])))
+        XCTAssertNil(transcript.pendingApproval)
+        guard case .approval(let decided) = transcript.items[1] else { return XCTFail("expected an approval") }
+        XCTAssertEqual(decided.decision, "deny")
+    }
+
+    func testImagesComeFromFileToolsAndChangedFiles() {
+        var transcript = TurnTranscript(turn: turn())
+        let calls: [(String, JSONValue, String)] = [
+            ("write_file", .object(["path": .string("/workspace/out/chart.png")]), "ok"),
+            ("generate_chart", .object(["path": .string("./plot.svg")]), "ok"),
+            ("write_file", .object(["path": .string("notes.md")]), "ok"),
+            ("bash", .object(["command": .string("python draw.py")]), "drew\n[files created or modified]\n- a.png\n- data.csv\n- ../escape.png\n- b.jpeg\nnot a file"),
+            ("write_file", .object(["path": .string("out/chart.png")]), "ok"),
+        ]
+        for (offset, (name, input, output)) in calls.enumerated() {
+            let id = "c\(offset)"
+            transcript.apply(event(offset * 2 + 1, "tool.call", .object(["id": .string(id), "name": .string(name), "input": input])))
+            transcript.apply(event(offset * 2 + 2, "tool.result", .object(["id": .string(id), "output": .string(output), "is_error": .bool(false)])))
+        }
+        XCTAssertEqual(transcript.images, ["out/chart.png", "plot.svg", "a.png", "b.jpeg"])
+        XCTAssertNil(WorkspaceImages.workspacePath("/etc/passwd"))
+        XCTAssertNil(WorkspaceImages.workspacePath("a//b.png"))
+        XCTAssertFalse(WorkspaceImages.isImage("photo"))
+    }
+
+    func testCardTitles() {
+        var call = ToolCall(id: "1", name: "compare_stocks", input: .object(["symbols": .array([.string("AAPL"), .string("MSFT")])]))
+        XCTAssertEqual(call.summary, "AAPL, MSFT")
+        XCTAssertTrue(call.isCard)
+        call.output = #"{"symbols":[{"symbol":"AAPL"}],"news":[]}"#
+        XCTAssertEqual(call.summary, "AAPL")
+        let trip = ToolCall(id: "2", name: "plan_trip", input: .object(["from": .string("Home"), "to": .string("Work")]))
+        XCTAssertEqual(trip.summary, "Home → Work")
+        let map = ToolCall(id: "3", name: "show_map", input: .object([:]), output: #"{"title":"Cafés","markers":[]}"#)
+        XCTAssertEqual(map.summary, "Cafés")
+    }
+}

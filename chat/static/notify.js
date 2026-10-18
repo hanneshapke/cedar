@@ -36,6 +36,7 @@ const cedarNotify = (() => {
     ['none', 'Only in the app', 'The inbox, the marks in the conversation list and the count in the title.'],
     ['desktop', 'Mac notification', 'A notification in Notification Center from the Cedar app on this Mac, its window open or not.'],
     ['browser', 'Browser push', 'A notification from this browser even when the tab is closed. Needs https, or localhost.'],
+    ['ios', 'iPhone push', 'A notification from the Cedar iOS app, through Apple\'s push service.'],
     ['pushover', 'Phone push via Pushover', 'A push to your phone through pushover.net and its app.'],
     ['email', 'Email', 'A mail through an SMTP server of yours.'],
   ];
@@ -330,7 +331,7 @@ const cedarNotify = (() => {
     return options;
   }
 
-  let draft = null;        // { default_method, scope, pushover: {}, email: {}, contact? }
+  let draft = null;        // { default_method, scope, pushover: {}, email: {}, ios: {}, contact? }
   let openMethod = null;   // which method's setup panel is unfolded
   let local = null;        // this browser's push subscription, if any
 
@@ -363,7 +364,7 @@ const cedarNotify = (() => {
     updateAwayLine();
     // A re-render after a test or a Forget keeps what was picked but not yet saved.
     const kept = draft && shell()?.current() === 'notify' ? draft : null;
-    draft = { default_method: kept?.default_method ?? status.default_method, scope: kept?.scope ?? status.scope, pushover: {}, email: {} };
+    draft = { default_method: kept?.default_method ?? status.default_method, scope: kept?.scope ?? status.scope, pushover: {}, email: {}, ios: {} };
     const configured = new Set(status.configured || []);
     const dirty = () => shell()?.setDirty('notify', true);
     const row = (label) => {
@@ -421,6 +422,7 @@ const cedarNotify = (() => {
         const panel = el('div', 'cedar-notify-setup');
         if (id === 'desktop') panel.append(...desktopBlock());
         if (id === 'browser') panel.append(...browserBlock(local));
+        if (id === 'ios') panel.append(...iosBlock());
         if (id === 'pushover') panel.append(...pushoverBlock());
         if (id === 'email') panel.append(...emailBlock());
         panels.set(id, panel);
@@ -566,6 +568,61 @@ const cedarNotify = (() => {
       return parts;
     }
 
+    function iosBlock() {
+      const a = status.ios || {};
+      const parts = [];
+      const devices = a.devices || [];
+      if (devices.length) {
+        const list = el('div', 'cedar-notify-subs');
+        for (const d of devices) {
+          const row = el('div', 'cedar-notify-sub');
+          row.append(el('span', '', `${d.name || 'iPhone'} · since ${when(d.created_at)}${d.last_used_at ? ` · last sent ${when(d.last_used_at)}` : ''}`));
+          row.append(button('Remove', async () => {
+            try { status = await deps.api('DELETE', `/notifications/apns/devices/${d.id}`); } catch (e) { deps.toast(e.message); }
+            renderSettings();
+          }, 'settings-ghost'));
+          list.append(row);
+        }
+        parts.push(list);
+      }
+      const fields = el('div', 'cedar-set-fields');
+      const team = input('text', a.team_id, 'ABCDE12345', 'Apple team id');
+      team.addEventListener('input', () => { draft.ios.team_id = team.value; dirty(); });
+      const keyId = input('text', a.key_id, 'ABC123DEFG', 'APNs key id');
+      keyId.addEventListener('input', () => { draft.ios.key_id = keyId.value; dirty(); });
+      const topic = input('text', a.topic, 'dev.cedar.Cedar', 'Bundle id');
+      topic.addEventListener('input', () => { draft.ios.topic = topic.value; dirty(); });
+      const env = el('select');
+      env.setAttribute('aria-label', 'APNs environment');
+      env.append(new Option('Production (App Store, TestFlight)', 'production', false, a.environment !== 'sandbox'));
+      env.append(new Option('Sandbox (installed from Xcode)', 'sandbox', false, a.environment === 'sandbox'));
+      env.addEventListener('change', () => { draft.ios.environment = env.value; dirty(); });
+      const key = el('textarea');
+      key.rows = 4;
+      key.placeholder = a.key_set ? 'Saved; paste to replace' : '-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----';
+      key.setAttribute('aria-label', 'APNs key (.p8 file)');
+      key.spellcheck = false;
+      key.addEventListener('input', () => { draft.ios.private_key = key.value; dirty(); });
+      fields.append(field('Team id', team), field('Key id', keyId), field('Bundle id', topic), field('Environment', env));
+      const keyField = field('APNs key (the .p8 file\'s contents)', key);
+      keyField.style.gridColumn = '1 / -1';
+      fields.append(keyField);
+      parts.push(fields);
+      const buttons = [];
+      if (devices.length) buttons.push(testButton('ios'));
+      if (a.key_set) {
+        buttons.push(button('Forget the saved key', async () => {
+          try { await submit({ ios: { team_id: '', key_id: '', private_key: '' }, default_method: draft.default_method === 'ios' ? 'none' : draft.default_method }); } catch { /* reported */ }
+          renderSettings();
+        }, 'settings-ghost'));
+      }
+      const registered = devices.length
+        ? `${devices.length} ${devices.length === 1 ? 'iPhone has' : 'iPhones have'} registered.`
+        : 'No iPhone has registered yet: open the Cedar app, point it at this server, and allow notifications.';
+      parts.push(helpRow(`${registered} In the Apple developer account, under Certificates, Identifiers & Profiles → Keys, make a key with Apple Push Notifications service (APNs) on, download its .p8 file once, and note the key id; the team id is under Membership. The key stays on this server.`, ...buttons));
+      return parts;
+    }
+
     function pushoverBlock() {
       const p = status.pushover || {};
       const fields = el('div', 'cedar-set-fields');
@@ -626,9 +683,10 @@ const cedarNotify = (() => {
     if (draft.contact !== undefined) body.contact = draft.contact;
     if (Object.keys(draft.pushover).length) body.pushover = draft.pushover;
     if (Object.keys(draft.email).length) body.email = draft.email;
+    if (Object.keys(draft.ios).length) body.ios = draft.ios;
     try {
       status = await deps.api('PUT', '/notifications', body);
-      draft = { default_method: status.default_method, scope: status.scope, pushover: {}, email: {} };
+      draft = { default_method: status.default_method, scope: status.scope, pushover: {}, email: {}, ios: {} };
       updateAwayLine();
       const s = shell();
       s?.setDirty('notify', 0);

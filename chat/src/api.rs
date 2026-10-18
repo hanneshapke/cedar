@@ -1,7 +1,7 @@
 //! The HTTP API and the embedded web UI.
 
 use crate::cedar::{self, Attachment, CedarClient, RunOptions};
-use crate::channels::{self, Method, Scope, Security};
+use crate::channels::{self, ApnsEnvironment, Method, Reach, Scope, Security};
 use crate::config::Config;
 use crate::error::AppError;
 use crate::prompt::{self, Exchange};
@@ -192,6 +192,8 @@ pub struct AppState {
     pub desktop: broadcast::Sender<Value>,
     /// For Pushover and the push services (`channels`).
     pub http: reqwest::Client,
+    /// The APNs connection and its provider token (`channels`).
+    pub apns: Arc<channels::Apns>,
     /// Cancelled when the server begins to shut down. Ends the event streams, which would
     /// otherwise hold the graceful shutdown open for as long as a client stays connected.
     pub shutdown: CancellationToken,
@@ -205,7 +207,8 @@ impl AppState {
         let (notices, _) = broadcast::channel(notify::NOTICE_BUFFER);
         let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, shutdown: CancellationToken::new() })
+        let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns, shutdown: CancellationToken::new() })
     }
 }
 
@@ -225,6 +228,8 @@ pub fn router(state: AppState) -> Router {
         .route("/notifications/push/subscriptions", post(subscribe_push).delete(unsubscribe_push))
         .route("/notifications/push/subscriptions/{id}", axum::routing::delete(delete_push_subscription))
         .route("/notifications/desktop/events", get(desktop_events))
+        .route("/notifications/apns/devices", post(register_apns_device).delete(unregister_apns_device))
+        .route("/notifications/apns/devices/{id}", axum::routing::delete(delete_apns_device))
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
@@ -553,13 +558,20 @@ fn relay_stream(rx: broadcast::Receiver<Value>, shutdown: CancellationToken) -> 
 
 // -- notifications out of the app (channels) ------------------------------------------------
 
-/// The settings as the page sees them (no secrets), with the subscribed browsers.
+/// The settings as the page sees them (no secrets), with the subscribed browsers and the
+/// registered iPhones.
 async fn notification_status(state: &AppState) -> Result<Value, AppError> {
     let settings = state.store.notification_settings().await?;
     let subscriptions = state.store.push_subscriptions().await?;
-    let mut status = settings.status(&subscriptions);
+    let devices = state.store.apns_devices().await?;
+    let mut status = settings.status(&subscriptions, &devices);
     status["desktop"]["listening"] = json!(state.desktop.receiver_count() > 0);
     Ok(status)
+}
+
+/// How many browsers and iPhones a push could reach right now.
+async fn reach(state: &AppState) -> Result<Reach, AppError> {
+    Ok(Reach { browsers: state.store.push_subscriptions().await?.len(), iphones: state.store.apns_devices().await?.len() })
 }
 
 /// The page subscribes a browser with the server's public key, so the keys are made here.
@@ -577,9 +589,25 @@ struct NotificationsBody {
     scope: Option<String>,
     pushover: Option<PushoverBody>,
     email: Option<EmailBody>,
+    ios: Option<ApnsBody>,
     /// The contact the push services may write to about this server (an email address).
     contact: Option<String>,
 }
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct ApnsBody {
+    team_id: Option<String>,
+    key_id: Option<String>,
+    /// The `.p8` file's contents.
+    private_key: Option<String>,
+    topic: Option<String>,
+    environment: Option<String>,
+}
+
+/// A `.p8` file is a few hundred characters; this leaves room for one pasted with its
+/// surroundings.
+const MAX_KEY_CHARS: usize = 4096;
 
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -614,7 +642,7 @@ fn short(what: &str, value: String) -> Result<String, AppError> {
 async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson<NotificationsBody>) -> Result<Json<Value>, AppError> {
     let mut settings = state.store.notification_settings().await?;
     if let Some(m) = &body.default_method {
-        settings.default_method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("default_method must be none, desktop, browser, pushover or email, not {m:?}")))?;
+        settings.default_method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("default_method must be none, {}, not {m:?}", Method::NAMES)))?;
     }
     if let Some(s) = &body.scope {
         settings.scope = Scope::parse(s).ok_or_else(|| AppError::BadRequest(format!("scope must be attention or all, not {s:?}")))?;
@@ -658,6 +686,31 @@ async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson
             settings.email.to = to;
         }
     }
+    if let Some(a) = body.ios {
+        if let Some(team_id) = a.team_id {
+            settings.apns.team_id = short("the team id", team_id)?;
+        }
+        if let Some(key_id) = a.key_id {
+            settings.apns.key_id = short("the key id", key_id)?;
+        }
+        if let Some(key) = a.private_key {
+            let key = key.trim().to_string();
+            if key.chars().count() > MAX_KEY_CHARS {
+                return Err(AppError::BadRequest(format!("the APNs key is longer than {MAX_KEY_CHARS} characters")));
+            }
+            if !key.is_empty() && !key.contains("-----BEGIN PRIVATE KEY-----") {
+                return Err(AppError::BadRequest("the APNs key must be the contents of the .p8 file, starting with -----BEGIN PRIVATE KEY-----".into()));
+            }
+            settings.apns.private_key = key;
+        }
+        if let Some(topic) = a.topic {
+            let topic = short("the bundle id", topic)?;
+            settings.apns.topic = if topic.is_empty() { channels::DEFAULT_APNS_TOPIC.into() } else { topic };
+        }
+        if let Some(environment) = &a.environment {
+            settings.apns.environment = ApnsEnvironment::parse(environment).ok_or_else(|| AppError::BadRequest(format!("environment must be production or sandbox, not {environment:?}")))?;
+        }
+    }
     if let Some(contact) = body.contact {
         let contact = short("the contact", contact)?;
         match settings.vapid.as_mut() {
@@ -672,8 +725,7 @@ async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson
         }
     }
     // The default method must be able to send, so a half-filled form can't silence everything.
-    let subscriptions = state.store.push_subscriptions().await?.len();
-    settings.check(settings.default_method, subscriptions).map_err(|why| AppError::BadRequest(format!("the default method can't send: {why}")))?;
+    settings.check(settings.default_method, reach(&state).await?).map_err(|why| AppError::BadRequest(format!("the default method can't send: {why}")))?;
     state.store.set_notification_settings(&settings).await?;
     notification_status(&state).await.map(Json)
 }
@@ -697,6 +749,7 @@ async fn test_notification(State(state): State<AppState>, ApiJson(body): ApiJson
         body: "This is how Cedar will tell you when a response finishes while you are away.".into(),
         url: format!("{}/", state.cfg.public_url),
         tag: "test".into(),
+        conversation_id: None,
     };
     let outcome = channels::send(&state, &settings, method, &message).await;
     channels::record(&state.store, method, true, &outcome).await?;
@@ -755,6 +808,49 @@ async fn delete_push_subscription(State(state): State<AppState>, Path(id): Path<
     let id = parse_id(&id, "subscription not found")?;
     if !state.store.delete_push_subscription(id).await? {
         return Err(AppError::NotFound("subscription not found"));
+    }
+    notification_status(&state).await.map(Json)
+}
+
+/// What the iOS app sends once APNs has given it a device token.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApnsDeviceBody {
+    /// The token as hex, the way the app reads it from `deviceToken`.
+    token: String,
+    /// The device's name, for Settings.
+    name: Option<String>,
+}
+
+/// The iOS app registered for push: keep its device token.
+async fn register_apns_device(State(state): State<AppState>, ApiJson(body): ApiJson<ApnsDeviceBody>) -> Result<Json<Value>, AppError> {
+    let token = body.token.trim().to_ascii_lowercase();
+    if token.len() < 32 || token.len() > 256 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(AppError::BadRequest("the device token must be the hex APNs gave the app".into()));
+    }
+    let name = body.name.map(|n| short("the device name", n)).transpose()?.filter(|n| !n.is_empty());
+    let device = state.store.add_apns_device(&token, name.as_deref()).await?;
+    let mut status = notification_status(&state).await?;
+    status["device_id"] = json!(device.id);
+    Ok(Json(status))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnregisterApnsBody {
+    token: String,
+}
+
+/// The app turned push off, or left for another server: forget its token.
+async fn unregister_apns_device(State(state): State<AppState>, ApiJson(body): ApiJson<UnregisterApnsBody>) -> Result<Json<Value>, AppError> {
+    state.store.delete_apns_device_by_token(&body.token.trim().to_ascii_lowercase()).await?;
+    notification_status(&state).await.map(Json)
+}
+
+async fn delete_apns_device(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    let id = parse_id(&id, "device not found")?;
+    if !state.store.delete_apns_device(id).await? {
+        return Err(AppError::NotFound("device not found"));
     }
     notification_status(&state).await.map(Json)
 }
@@ -1267,7 +1363,7 @@ struct ScheduleBody {
     #[serde(default, deserialize_with = "nullable")]
     tools: Option<Option<Vec<String>>>,
     /// How a finished run is announced out of the app: a method set up under Settings →
-    /// Notifications (`browser`, `pushover`, `email`), `none`, or `null` for the default method
+    /// Notifications (`browser`, `pushover`, `email`, `ios`), `none`, or `null` for the default method
     /// there (the default when creating).
     #[serde(default, deserialize_with = "nullable")]
     notify: Option<Option<String>>,
@@ -1280,11 +1376,10 @@ async fn clean_notify(state: &AppState, notify: Option<String>) -> Result<Option
     if raw.is_empty() || raw == "default" {
         return Ok(None);
     }
-    let method = Method::parse(&raw).ok_or_else(|| AppError::BadRequest(format!("notify must be none, desktop, browser, pushover, email or null, not {raw:?}")))?;
+    let method = Method::parse(&raw).ok_or_else(|| AppError::BadRequest(format!("notify must be none, {} or null, not {raw:?}", Method::NAMES)))?;
     if method != Method::None {
         let settings = state.store.notification_settings().await?;
-        let subscriptions = state.store.push_subscriptions().await?.len();
-        settings.check(method, subscriptions).map_err(|why| AppError::BadRequest(format!("notify: {why}; set it up under Settings → Notifications first")))?;
+        settings.check(method, reach(state).await?).map_err(|why| AppError::BadRequest(format!("notify: {why}; set it up under Settings → Notifications first")))?;
     }
     Ok(Some(method.as_str().to_string()))
 }

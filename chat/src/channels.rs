@@ -1,7 +1,8 @@
 //! Telling the user out of the app when a response finishes: a phone push through Pushover, a
-//! browser push through Web Push (a service worker shows it, tab open or not), an email over
-//! SMTP, or a notification from the Cedar app for macOS, which follows
-//! `GET /api/notifications/desktop/events` and shows what comes on it in Notification Center. Each method is set up with its credentials in Settings → Notifications, as many as
+//! browser push through Web Push (a service worker shows it, tab open or not), a push to the
+//! iOS app through APNs (Apple's push service), an email over SMTP, or a notification from the
+//! Cedar app for macOS, which follows `GET /api/notifications/desktop/events` and shows what
+//! comes on it in Notification Center. Each method is set up with its credentials in Settings → Notifications, as many as
 //! wanted; a default method covers conversations, and a scheduled agent can pick its own. The
 //! settings live in this service's database (see [`NotificationSettings`]) and the secrets are
 //! never sent back to the page.
@@ -13,16 +14,18 @@
 
 use crate::api::AppState;
 use crate::error::AppError;
-use crate::store::{PushSubscription, Store};
+use crate::store::{ApnsDevice, PushSubscription, Store};
 use chrono::{DateTime, Utc};
-use jwt_simple::algorithms::{ECDSAP256PublicKeyLike, ES256KeyPair};
+use jwt_simple::algorithms::{ECDSAP256KeyPairLike, ECDSAP256PublicKeyLike, ES256KeyPair};
+use jwt_simple::claims::Claims;
 use lettre::message::{header::ContentType, Mailbox};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::client::{Tls, TlsParameters};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message as Email, Tokio1Executor};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 use web_push::{ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPushMessageBuilder};
 
@@ -35,6 +38,11 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(20);
 const PUSH_TTL: u32 = 24 * 3600;
 /// How many messages the Cedar app may fall behind on its stream before it misses some.
 pub const DESKTOP_BUFFER: usize = 16;
+pub const APNS_URL: &str = "https://api.push.apple.com";
+pub const APNS_SANDBOX_URL: &str = "https://api.sandbox.push.apple.com";
+/// How long one signed APNs provider token is reused. Apple takes a token for an hour and
+/// asks that it isn't refreshed more often than every 20 minutes.
+const APNS_TOKEN_LIFETIME: Duration = Duration::from_secs(50 * 60);
 
 /// Which channel carries the message. `None` keeps notifications in the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -47,6 +55,8 @@ pub enum Method {
     Email,
     /// The Cedar app for macOS (see [`DESKTOP_BUFFER`]).
     Desktop,
+    /// The iOS app, through APNs.
+    Ios,
 }
 
 impl Method {
@@ -57,6 +67,7 @@ impl Method {
             "pushover" => Method::Pushover,
             "email" => Method::Email,
             "desktop" => Method::Desktop,
+            "ios" => Method::Ios,
             _ => return None,
         })
     }
@@ -68,8 +79,12 @@ impl Method {
             Method::Pushover => "pushover",
             Method::Email => "email",
             Method::Desktop => "desktop",
+            Method::Ios => "ios",
         }
     }
+
+    /// For error messages: every name but `none`.
+    pub const NAMES: &'static str = "desktop, browser, pushover, email or ios";
 }
 
 /// Which finished responses go out: the ones that need the user (a failure, a question, a
@@ -153,6 +168,75 @@ impl EmailSettings {
     }
 }
 
+/// Which APNs to send through: `production` for an App Store or TestFlight build of the iOS
+/// app, `sandbox` for one Xcode installed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ApnsEnvironment {
+    #[default]
+    Production,
+    Sandbox,
+}
+
+impl ApnsEnvironment {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "production" => ApnsEnvironment::Production,
+            "sandbox" => ApnsEnvironment::Sandbox,
+            _ => return None,
+        })
+    }
+
+    pub fn url(self) -> &'static str {
+        match self {
+            ApnsEnvironment::Production => APNS_URL,
+            ApnsEnvironment::Sandbox => APNS_SANDBOX_URL,
+        }
+    }
+}
+
+/// The APNs credentials: an "APNs Auth Key" from the Apple developer account (a `.p8` file
+/// and its key id), the team id, and the app's bundle id as the topic.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ApnsSettings {
+    pub team_id: String,
+    pub key_id: String,
+    /// The `.p8` file's contents (a PKCS#8 PEM).
+    pub private_key: String,
+    pub topic: String,
+    pub environment: ApnsEnvironment,
+}
+
+/// The iOS app's bundle id, as `iOS/Cedar.xcodeproj` sets it.
+pub const DEFAULT_APNS_TOPIC: &str = "dev.cedar.Cedar";
+
+impl Default for ApnsSettings {
+    fn default() -> Self {
+        ApnsSettings {
+            team_id: String::new(),
+            key_id: String::new(),
+            private_key: String::new(),
+            topic: DEFAULT_APNS_TOPIC.into(),
+            environment: ApnsEnvironment::Production,
+        }
+    }
+}
+
+impl ApnsSettings {
+    pub fn configured(&self) -> bool {
+        !self.team_id.is_empty() && !self.key_id.is_empty() && !self.private_key.is_empty() && !self.topic.is_empty()
+    }
+
+    /// Tells one set of credentials from another, so a cached provider token is dropped when
+    /// they change.
+    fn fingerprint(&self) -> String {
+        use sha2::Digest;
+        let digest = sha2::Sha256::digest(format!("{}\n{}\n{}", self.team_id, self.key_id, self.private_key).as_bytes());
+        format!("{digest:x}")
+    }
+}
+
 /// The VAPID key pair that identifies this server to the push services, made on first use,
 /// and the contact the services may write to about it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -183,6 +267,7 @@ pub struct NotificationSettings {
     pub scope: Scope,
     pub pushover: PushoverSettings,
     pub email: EmailSettings,
+    pub apns: ApnsSettings,
     pub vapid: Option<Vapid>,
     /// When the Cedar app for macOS last opened its stream; set once it has, which is what makes
     /// `desktop` a method that can be picked (whether the app is listening right now is only
@@ -191,20 +276,28 @@ pub struct NotificationSettings {
     pub last_delivery: Option<LastDelivery>,
 }
 
+/// How many browsers and iPhones can be reached: what the methods that push need.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Reach {
+    pub browsers: usize,
+    pub iphones: usize,
+}
+
 impl NotificationSettings {
     /// The methods that can send right now, in the order the pickers show them.
-    pub fn configured(&self, subscriptions: usize) -> Vec<Method> {
-        [Method::Desktop, Method::Browser, Method::Pushover, Method::Email]
+    pub fn configured(&self, reach: Reach) -> Vec<Method> {
+        [Method::Desktop, Method::Browser, Method::Ios, Method::Pushover, Method::Email]
             .into_iter()
-            .filter(|m| self.check(*m, subscriptions).is_ok())
+            .filter(|m| self.check(*m, reach).is_ok())
             .collect()
     }
 
     /// What the page sees: everything but the secrets, which are only reported as set.
-    pub fn status(&self, subscriptions: &[PushSubscription]) -> Value {
+    pub fn status(&self, subscriptions: &[PushSubscription], devices: &[ApnsDevice]) -> Value {
+        let reach = Reach { browsers: subscriptions.len(), iphones: devices.len() };
         json!({
             "default_method": self.default_method,
-            "configured": self.configured(subscriptions.len()),
+            "configured": self.configured(reach),
             "scope": self.scope,
             "pushover": {
                 "configured": self.pushover.configured(),
@@ -231,12 +324,21 @@ impl NotificationSettings {
                 "configured": self.desktop_connected_at.is_some(),
                 "connected_at": self.desktop_connected_at,
             },
+            "ios": {
+                "configured": self.apns.configured(),
+                "team_id": self.apns.team_id,
+                "key_id": self.apns.key_id,
+                "key_set": !self.apns.private_key.is_empty(),
+                "topic": self.apns.topic,
+                "environment": self.apns.environment,
+                "devices": devices,
+            },
             "last_delivery": self.last_delivery,
         })
     }
 
     /// Whether `method` has what it needs to send; the message says what is missing.
-    pub fn check(&self, method: Method, subscriptions: usize) -> Result<(), String> {
+    pub fn check(&self, method: Method, reach: Reach) -> Result<(), String> {
         match method {
             Method::None => Ok(()),
             Method::Pushover if !self.pushover.configured() => {
@@ -245,11 +347,17 @@ impl NotificationSettings {
             Method::Email if !self.email.configured() => {
                 Err("email needs the SMTP server, a sender and a recipient".into())
             }
-            Method::Browser if subscriptions == 0 => {
+            Method::Browser if reach.browsers == 0 => {
                 Err("no browser has turned on push notifications yet".into())
             }
             Method::Desktop if self.desktop_connected_at.is_none() => {
                 Err("the Cedar app for macOS has not connected yet".into())
+            }
+            Method::Ios if !self.apns.configured() => {
+                Err("iPhone push needs the team id, the key id, the APNs key and the app's bundle id".into())
+            }
+            Method::Ios if reach.iphones == 0 => {
+                Err("no iPhone has registered for push yet; open the Cedar app and allow notifications".into())
             }
             _ => Ok(()),
         }
@@ -269,6 +377,8 @@ pub struct Message {
     pub url: String,
     /// Collapses repeats of the same thing (the turn's id).
     pub tag: String,
+    /// The conversation to open, for a client that navigates by id rather than URL.
+    pub conversation_id: Option<Uuid>,
 }
 
 /// A base64url (no padding) string, as push services and the browser use.
@@ -300,6 +410,7 @@ pub async fn send(state: &AppState, settings: &NotificationSettings, method: Met
         Method::Email => send_email(&settings.email, message).await,
         Method::Browser => send_web_push(state, settings, message).await,
         Method::Desktop => send_desktop(state, message),
+        Method::Ios => send_apns(state, &settings.apns, message).await,
     }
 }
 
@@ -311,6 +422,156 @@ fn send_desktop(state: &AppState, message: &Message) -> Result<String, String> {
         Ok(_) => Ok("handed to the Cedar app".into()),
         Err(_) => Err("the Cedar app for macOS is not listening; is it running?".into()),
     }
+}
+
+/// The connection to APNs: an HTTP/2 client, and the provider token (a signed JWT) that is
+/// reused for [`APNS_TOKEN_LIFETIME`]. One per service, in `AppState`.
+pub struct Apns {
+    client: reqwest::Client,
+    /// `CHAT_APNS_URL`, when set: where to send instead of Apple.
+    base_url: Option<String>,
+    token: Mutex<Option<ProviderToken>>,
+}
+
+struct ProviderToken {
+    fingerprint: String,
+    made_at: Instant,
+    jwt: String,
+}
+
+impl Apns {
+    pub fn new(base_url: Option<String>) -> reqwest::Result<Self> {
+        // Apple only speaks HTTP/2, over TLS. A plain-http override (a mock in tests) is spoken
+        // to as the server likes.
+        let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(10));
+        if base_url.as_deref().is_none_or(|u| u.starts_with("https://")) {
+            builder = builder.http2_prior_knowledge();
+        }
+        Ok(Apns { client: builder.build()?, base_url, token: Mutex::new(None) })
+    }
+
+    fn url_for(&self, settings: &ApnsSettings, device_token: &str) -> String {
+        let base = self.base_url.as_deref().unwrap_or_else(|| settings.environment.url());
+        format!("{base}/3/device/{device_token}")
+    }
+
+    /// The provider token for `settings`: the cached one while it is fresh and for the same
+    /// key, else a newly signed one. `fresh` forces a new one (after Apple said it expired).
+    fn provider_token(&self, settings: &ApnsSettings, fresh: bool) -> Result<String, String> {
+        let fingerprint = settings.fingerprint();
+        let mut cached = self.token.lock().unwrap_or_else(|e| e.into_inner());
+        if !fresh {
+            if let Some(t) = cached.as_ref() {
+                if t.fingerprint == fingerprint && t.made_at.elapsed() < APNS_TOKEN_LIFETIME {
+                    return Ok(t.jwt.clone());
+                }
+            }
+        }
+        let key = ES256KeyPair::from_pem(&settings.private_key)
+            .map_err(|_| "the APNs key is not a usable .p8 file (a PKCS#8 PEM with an EC P-256 key)".to_string())?
+            .with_key_id(&settings.key_id);
+        // Apple wants exactly `iss` (the team) and `iat`; the rest of the standard claims stay out.
+        let mut claims = Claims::create(jwt_simple::prelude::Duration::from_hours(1)).with_issuer(&settings.team_id);
+        claims.expires_at = None;
+        claims.invalid_before = None;
+        let jwt = key.sign(claims).map_err(|e| format!("could not sign the APNs token: {e}"))?;
+        *cached = Some(ProviderToken { fingerprint, made_at: Instant::now(), jwt: jwt.clone() });
+        Ok(jwt)
+    }
+}
+
+/// One push per registered iPhone; a device Apple no longer knows is dropped. Succeeds if any
+/// iPhone took it.
+async fn send_apns(state: &AppState, settings: &ApnsSettings, message: &Message) -> Result<String, String> {
+    if !settings.configured() {
+        return Err("iPhone push needs the team id, the key id, the APNs key and the app's bundle id".into());
+    }
+    let devices = state.store.apns_devices().await.map_err(|e| e.to_string())?;
+    if devices.is_empty() {
+        return Err("no iPhone has registered for push yet; open the Cedar app and allow notifications".into());
+    }
+    let payload = json!({
+        "aps": {
+            "alert": { "title": message.title, "body": message.body },
+            "sound": "default",
+            "thread-id": message.conversation_id.map(|id| id.to_string()).unwrap_or_else(|| message.tag.clone()),
+        },
+        "url": message.url,
+        "conversation_id": message.conversation_id,
+        "tag": message.tag,
+    })
+    .to_string();
+    let mut delivered = 0;
+    let mut dropped = 0;
+    let mut errors = Vec::new();
+    for device in &devices {
+        let mut outcome = apns_one(state, settings, device, &payload, false).await;
+        if matches!(&outcome, Err((false, e)) if e.contains("ExpiredProviderToken")) {
+            outcome = apns_one(state, settings, device, &payload, true).await;
+        }
+        match outcome {
+            Ok(()) => {
+                delivered += 1;
+                let _ = state.store.touch_apns_device(device.id).await;
+            }
+            Err((gone, error)) => {
+                if gone {
+                    dropped += 1;
+                    let _ = state.store.delete_apns_device(device.id).await;
+                } else {
+                    errors.push(error);
+                }
+            }
+        }
+    }
+    if delivered > 0 {
+        let mut detail = format!("sent to {delivered} iPhone{}", if delivered == 1 { "" } else { "s" });
+        if dropped > 0 {
+            detail.push_str(&format!(", {dropped} no longer registered"));
+        }
+        if !errors.is_empty() {
+            detail.push_str(&format!("; failed: {}", errors.join("; ")));
+        }
+        Ok(detail)
+    } else if !errors.is_empty() {
+        Err(errors.join("; "))
+    } else {
+        Err("every registered iPhone has gone; open the Cedar app again to register it".into())
+    }
+}
+
+/// `Err((gone, message))`: `gone` when Apple says the device token is dead.
+async fn apns_one(state: &AppState, settings: &ApnsSettings, device: &ApnsDevice, payload: &str, fresh_token: bool) -> Result<(), (bool, String)> {
+    let token = state.apns.provider_token(settings, fresh_token).map_err(|e| (false, e))?;
+    let resp = state
+        .apns
+        .client
+        .post(state.apns.url_for(settings, &device.token))
+        .timeout(SEND_TIMEOUT)
+        .header("authorization", format!("bearer {token}"))
+        .header("apns-topic", &settings.topic)
+        .header("apns-push-type", "alert")
+        .header("apns-priority", "10")
+        .header("apns-collapse-id", message_tag(payload))
+        .header("content-type", "application/json")
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|e| (false, format!("could not reach APNs: {}", e.without_url())))?;
+    let status = resp.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body: Value = resp.json().await.unwrap_or(Value::Null);
+    let reason = body["reason"].as_str().unwrap_or("").to_string();
+    let gone = status.as_u16() == 410 || matches!(reason.as_str(), "BadDeviceToken" | "DeviceTokenNotForTopic" | "Unregistered");
+    let detail = if reason.is_empty() { format!("APNs answered {status}") } else { format!("APNs answered {status}: {reason}") };
+    Err((gone, detail))
+}
+
+/// The collapse id, read back from the payload so the two stay the same.
+fn message_tag(payload: &str) -> String {
+    serde_json::from_str::<Value>(payload).ok().and_then(|v| v["tag"].as_str().map(str::to_string)).unwrap_or_default()
 }
 
 async fn send_pushover(state: &AppState, pushover: &PushoverSettings, message: &Message) -> Result<String, String> {
@@ -516,6 +777,7 @@ pub fn message_for(state: &AppState, turn: &crate::store::Turn, title: Option<&s
         body,
         url: format!("{}/#/c/{}", state.cfg.public_url, turn.conversation_id),
         tag: turn.id.to_string(),
+        conversation_id: Some(turn.conversation_id),
     }
 }
 
@@ -584,7 +846,7 @@ mod tests {
 
     #[test]
     fn methods_scopes_and_security_round_trip() {
-        for m in [Method::None, Method::Browser, Method::Pushover, Method::Email, Method::Desktop] {
+        for m in [Method::None, Method::Browser, Method::Pushover, Method::Email, Method::Desktop, Method::Ios] {
             assert_eq!(Method::parse(m.as_str()), Some(m));
         }
         assert_eq!(Method::parse("carrier pigeon"), None);
@@ -597,6 +859,9 @@ mod tests {
         // Settings saved when the field was still `method` still read.
         let old: NotificationSettings = serde_json::from_str("{\"method\":\"email\"}").unwrap();
         assert_eq!(old.default_method, Method::Email);
+        // Settings saved before iPhone push existed read with its defaults.
+        assert_eq!(old.apns.topic, DEFAULT_APNS_TOPIC);
+        assert_eq!(ApnsEnvironment::parse("sandbox").map(ApnsEnvironment::url), Some(APNS_SANDBOX_URL));
     }
 
     #[test]
@@ -606,24 +871,57 @@ mod tests {
             pushover: PushoverSettings { token: "app-token-secret".into(), user: "user-key-abcd".into() },
             email: EmailSettings { host: "smtp.example".into(), password: "hunter2".into(), from: "a@x".into(), to: "b@x".into(), ..Default::default() },
             vapid: Some(Vapid { private_key: "PRIVATE".into(), public_key: "PUBLIC".into(), contact: "me@x".into() }),
+            apns: ApnsSettings { team_id: "TEAM42".into(), key_id: "KEY42".into(), private_key: "-----BEGIN PRIVATE KEY-----\nP8SECRET\n".into(), ..Default::default() },
             ..Default::default()
         };
-        let status = settings.status(&[]).to_string();
-        for secret in ["app-token-secret", "user-key-abcd", "hunter2", "PRIVATE"] {
+        let status = settings.status(&[], &[]).to_string();
+        for secret in ["app-token-secret", "user-key-abcd", "hunter2", "PRIVATE", "P8SECRET"] {
             assert!(!status.contains(secret), "{secret} leaked: {status}");
         }
         assert!(status.contains("\"user_last4\":\"abcd\""));
         assert!(status.contains("\"password_set\":true"));
         assert!(status.contains("\"public_key\":\"PUBLIC\""));
+        assert!(status.contains("\"key_set\":true") && status.contains("\"team_id\":\"TEAM42\""), "{status}");
         assert!(status.contains("\"configured\":[\"pushover\",\"email\"]"), "{status}");
-        assert_eq!(settings.configured(2), [Method::Browser, Method::Pushover, Method::Email]);
-        assert!(settings.check(Method::Desktop, 0).unwrap_err().contains("Cedar app"));
+        let both = Reach { browsers: 2, iphones: 1 };
+        assert_eq!(settings.configured(both), [Method::Browser, Method::Ios, Method::Pushover, Method::Email]);
+        let none = Reach::default();
+        assert!(settings.check(Method::Desktop, none).unwrap_err().contains("Cedar app"));
         let with_app = NotificationSettings { desktop_connected_at: Some(Utc::now()), ..settings.clone() };
-        assert_eq!(with_app.configured(0), [Method::Desktop, Method::Pushover, Method::Email]);
-        assert!(settings.check(Method::Pushover, 0).is_ok());
-        assert!(settings.check(Method::Browser, 0).unwrap_err().contains("no browser"));
-        assert!(settings.check(Method::Browser, 1).is_ok());
-        assert!(NotificationSettings::default().check(Method::Email, 0).unwrap_err().contains("SMTP"));
+        assert_eq!(with_app.configured(none), [Method::Desktop, Method::Pushover, Method::Email]);
+        assert!(settings.check(Method::Pushover, none).is_ok());
+        assert!(settings.check(Method::Browser, none).unwrap_err().contains("no browser"));
+        assert!(settings.check(Method::Browser, Reach { browsers: 1, iphones: 0 }).is_ok());
+        assert!(settings.check(Method::Ios, none).unwrap_err().contains("no iPhone"));
+        assert!(settings.check(Method::Ios, both).is_ok());
+        assert!(NotificationSettings::default().check(Method::Ios, both).unwrap_err().contains("team id"));
+        assert!(NotificationSettings::default().check(Method::Email, none).unwrap_err().contains("SMTP"));
+    }
+
+    #[test]
+    fn provider_tokens_are_signed_and_reused() {
+        let apns = Apns::new(Some("http://127.0.0.1:1".into())).unwrap();
+        let key = ES256KeyPair::generate();
+        let settings = ApnsSettings { team_id: "TEAM42".into(), key_id: "KEY42".into(), private_key: key.to_pem().unwrap(), ..Default::default() };
+        let token = apns.provider_token(&settings, false).unwrap();
+        let parts: Vec<&str> = token.split('.').collect();
+        assert_eq!(parts.len(), 3);
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let header: Value = serde_json::from_slice(&b64.decode(parts[0]).unwrap()).unwrap();
+        assert_eq!((header["alg"].as_str(), header["kid"].as_str()), (Some("ES256"), Some("KEY42")));
+        let claims: Value = serde_json::from_slice(&b64.decode(parts[1]).unwrap()).unwrap();
+        assert_eq!(claims["iss"], "TEAM42");
+        assert!(claims["iat"].is_number() && claims.get("exp").is_none(), "{claims}");
+        assert_eq!(apns.provider_token(&settings, false).unwrap(), token, "reused while fresh");
+        assert_ne!(apns.provider_token(&settings, true).unwrap(), token, "a fresh one on demand");
+        let other = ApnsSettings { key_id: "KEY43".into(), ..settings.clone() };
+        assert_ne!(apns.provider_token(&other, false).unwrap(), token, "a new one for a new key");
+        assert_eq!(apns.url_for(&settings, "abc"), "http://127.0.0.1:1/3/device/abc");
+        let apple = Apns::new(None).unwrap();
+        assert_eq!(apple.url_for(&other, "abc"), "https://api.push.apple.com/3/device/abc");
+        let bad = ApnsSettings { private_key: "nope".into(), ..settings };
+        assert!(apple.provider_token(&bad, false).unwrap_err().contains(".p8"));
     }
 
     #[test]

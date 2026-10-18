@@ -1,0 +1,75 @@
+name: iOS
+
+# Builds the iOS app and runs its unit tests on a macOS runner, for every change to `iOS/` (a
+# push to main or a pull request) and on request. macOS minutes cost ten times Linux ones, so
+# the Rust-only changes CI covers don't start it.
+#
+# Two builds: the app for the iPhone simulator, which the tests run against, and an unsigned
+# build for a device, which checks what only the device SDK sees (the push entitlement, say).
+# No signing, no TestFlight: distribution needs the team's certificates, as release.yml has
+# for the Mac app.
+on:
+  push:
+    branches: [main]
+    paths: ["iOS/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["iOS/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: iOS
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show the toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available | grep -E "iPhone 1[5-9]" || true
+
+      - name: Build and test on the simulator
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Cedar.xcodeproj \
+            -scheme Cedar \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -resultBundlePath build/Cedar.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Build for a device, unsigned
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Cedar.xcodeproj \
+            -scheme Cedar \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | xcbeautify --renderer github-actions
+
+      - name: Keep the test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cedar.xcresult
+          path: iOS/build/Cedar.xcresult
+          retention-days: 7
+          if-no-files-found: ignore

@@ -357,6 +357,14 @@ for what it does, where it keeps its files, and how releases are built.
 | --- | --- |
 | ![The dark theme, with the write_file tool call expanded to show its input and output](docs/screenshots/conversation-dark.png) | <img src="docs/screenshots/mobile.png" alt="The mobile layout showing a code block with a copy button and token usage" width="260"> |
 
+## iOS app
+
+`iOS/` holds a native SwiftUI app for iPhone and iPad. It is a thin client for cedar-chat's API, so
+the phone and the browser share the same conversations, unread marks, settings and notifications:
+live tool calls, the agent's images, its clarifying questions and approval prompts, and push
+notifications through APNs when a response ends while you are away. Open `iOS/Cedar.xcodeproj`
+in Xcode 16 or newer. See [iOS/README.md](iOS/README.md).
+
 ## Configuration
 
 Settings come from environment variables. The important ones:

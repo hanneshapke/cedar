@@ -112,8 +112,8 @@ Both interfaces have all of these, except where noted:
   another tab, or away is marked unread in the conversation list and counted in the page title and
   on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
   marked "Needs answer". Out of the app, by the method you pick in Settings: a Mac notification
-  from [Cedar for macOS](../macos/README.md), a browser push (tab open or not), a phone push
-  through Pushover, or an email
+  from [Cedar for macOS](../macos/README.md), a browser push (tab open or not), a push to the
+  Cedar iOS app, a phone push through Pushover, or an email
 
 ## Running it
 
@@ -194,6 +194,7 @@ cedar asks Yahoo Finance (see the top-level README). Set `STOCKS=off` on cedar t
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
+| `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -270,6 +271,15 @@ unless the response was looked at in the meantime (a page that watched it end ma
   of the [deployment guide](../DEPLOYMENT.md) and behind a TLS proxy. A push that arrives while a
   Cedar tab is in front is left to that tab. An optional contact address goes with each push, as
   some push services ask for one.
+- **iPhone push**: a notification from the [Cedar iOS app](../iOS/README.md), through Apple's
+  push service (APNs). Needs an APNs key from your Apple developer account (Certificates,
+  Identifiers & Profiles → Keys: make a key with *Apple Push Notifications service* on, download
+  its `.p8` file, note the key id), your team id (under Membership), the app's bundle id
+  (`dev.cedar.Cedar` unless you changed it in Xcode), and whether the app was installed from Xcode
+  (**Sandbox**) or the App Store or TestFlight (**Production**). Every iPhone that opens the app
+  against this server and allows notifications registers itself and is listed, and can be removed;
+  one Apple reports gone is dropped. A tap on the notification opens the conversation in the app.
+  `CHAT_APNS_URL` points the pushes somewhere else (a mock in tests).
 - **Phone push via Pushover**: a push to the [Pushover](https://pushover.net) app on your phone.
   Needs an application token (make an application at pushover.net/apps) and your user key.
 - **Email**: a mail through an SMTP server: host, port (left empty, the connection's usual one),
@@ -423,17 +433,20 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
-| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, desktop: {configured, connected_at, listening}, last_delivery}`. Never the secrets. Makes the push keys on first read |
-| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"desktop"\|"browser"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser, the Mac app never connected) |
+| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, desktop: {configured, connected_at, listening}, ios: {configured, team_id, key_id, key_set, topic, environment, devices: [{id, name, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
+| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"desktop"\|"browser"\|"ios"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "ios": {"team_id"?, "key_id"?, "private_key"? (the `.p8` file's contents), "topic"?, "environment"?: "production"\|"sandbox"}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser, no registered iPhone, the Mac app never connected) |
 | `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
 | `GET /api/notifications/desktop/events` | For Cedar for macOS: SSE, a `notification` event `{type, title, body, url, tag}` for every message sent by the `desktop` method. Connecting sets the method up |
 | `POST /api/notifications/push/subscriptions` | A browser's `PushSubscription` (as `JSON.stringify` gives it). Returns the settings plus `subscription_id` |
 | `DELETE /api/notifications/push/subscriptions` | `{"endpoint"}`: the browser turned push off |
 | `DELETE /api/notifications/push/subscriptions/{id}` | Remove a subscribed browser |
+| `POST /api/notifications/apns/devices` | The iOS app registered for push: `{"token": "<the device token, hex>", "name"?}`. Returns the settings plus `device_id`; the same token again renames the device |
+| `DELETE /api/notifications/apns/devices` | `{"token"}`: the app turned push off, or left for another server |
+| `DELETE /api/notifications/apns/devices/{id}` | Remove a registered iPhone |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |
-| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`desktop`, `browser`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
+| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`desktop`, `browser`, `ios`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
 | `GET /api/schedules/{id}` | `{schedule, runs}`, newest run first, each with its `turn` (refreshed while unfinished) or an `error` if the run could not be started |
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
