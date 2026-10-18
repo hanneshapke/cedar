@@ -7,6 +7,7 @@ const $ = (id) => document.getElementById(id);
 
 let lastStatus = null;
 let formTouched = false;
+let shareBusy = false;
 
 function dot(el, cls) {
   el.className = 'dot' + (cls ? ' ' + cls : '');
@@ -104,6 +105,31 @@ function render(s) {
       ? 'Not running.'
       : 'Waiting for a model server to be chosen above.';
   }
+  // Sharing with the iOS app
+  const sh = s.share;
+  const shareToggle = $('share-toggle');
+  if (document.activeElement !== shareToggle && !shareBusy) shareToggle.checked = s.tailscale_share;
+  $('share-detail').textContent = '';
+  $('share-actions').classList.toggle('hidden', sh.state !== 'on');
+  $('share-retry').classList.toggle('hidden', sh.state !== 'failed');
+  if (sh.state === 'starting') {
+    dot($('share-dot'), 'busy');
+    $('share-text').textContent = 'Setting up tailscale serve…';
+  } else if (sh.state === 'on') {
+    dot($('share-dot'), 'ok');
+    $('share-text').textContent = 'In the iOS app’s Settings, enter ' + sh.detail + ' and the access token. It works while this Mac is awake and Cedar is running.';
+  } else if (sh.state === 'failed') {
+    dot($('share-dot'), 'bad');
+    $('share-text').textContent = 'Not shared yet. Fix the cause, then try again.';
+    $('share-detail').textContent = sh.detail;
+  } else if (s.tailscale_share) {
+    dot($('share-dot'), 'warn');
+    $('share-text').textContent = 'Turns on once Cedar is running.';
+  } else {
+    dot($('share-dot'), '');
+    $('share-text').textContent = 'Off. Only this Mac can reach the chat.';
+  }
+
   $('open-chat').disabled = !running;
   $('open-browser').disabled = !running;
 }
@@ -173,6 +199,27 @@ $('save').addEventListener('click', async () => {
     $('model-error').textContent = String(e);
   }
 });
+
+$('share-toggle').addEventListener('change', async (ev) => {
+  await setShare(ev.target.checked);
+});
+$('share-retry').addEventListener('click', () => setShare(true));
+
+async function setShare(enabled) {
+  $('share-error').textContent = '';
+  shareBusy = true;
+  try {
+    await invoke('set_share', { enabled });
+  } catch (e) {
+    // The checkbox follows the saved setting again on the refresh below.
+    $('share-error').textContent = String(e);
+  } finally {
+    shareBusy = false;
+    refresh();
+  }
+}
+$('copy-share-url').addEventListener('click', () => invoke('copy_share_url').catch((e) => alert(e)));
+$('share-copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
 
 $('open-chat').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
 $('open-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));

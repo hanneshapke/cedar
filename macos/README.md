@@ -38,13 +38,52 @@ Cedar.app (menu bar) ──┬── cedar-chat :13000 ──▶ cedar :18080 �
 
 *Open in Browser* opens the same chat in your default browser; it asks for an access token once,
 which *Copy Access Token* puts on the clipboard. Only the Mac itself can reach the servers: both
-listen on 127.0.0.1.
+listen on 127.0.0.1. To use the chat from the iOS app, share it over Tailscale (below).
 
 To change the model server later, choose *Model Server & Setup…* from the menu; the new choice
 is registered with the running cedar, so nothing restarts. The chat's own Settings page can add
 further models to the registry and manages the Brave Search key and the Google account: cedar
 runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
 admin token, so Settings works without typing anything.
+
+## Using it from an iPhone or iPad
+
+The [iOS app](../iOS/README.md) connects over HTTPS only, so the setup page's **iPhone & iPad**
+section (*iPhone & iPad Access…* in the menu) can serve the chat on your
+[Tailscale](https://tailscale.com) network. Tick *Share with the iOS app over Tailscale* and
+the app runs `tailscale serve --bg --https=443 http://127.0.0.1:<chat_port>`. Tailscale gets a
+Let's Encrypt certificate for the Mac's tailnet name and proxies
+`https://<mac>.<tailnet>.ts.net` to the chat. Only devices on your tailnet can reach it, and both
+servers stay on loopback.
+
+1. Install Tailscale on the Mac (from [tailscale.com](https://tailscale.com/download/mac) or the
+   Mac App Store) and log in. The app finds the CLI that Tailscale's *Install CLI* puts in
+   `/usr/local/bin`, Homebrew's, or the binary inside `/Applications/Tailscale.app`.
+2. In the [admin console's DNS page](https://login.tailscale.com/admin/dns), turn on **MagicDNS**
+   and **HTTPS Certificates**. Without them, the setup page explains what is missing and does not
+   start sharing.
+3. Tick the checkbox. Cedar restarts once, so the chat is started with the tailnet address as
+   `CHAT_PUBLIC_URL` (for the links in notifications and *Connect Google*). A response still
+   running when it restarts is stopped.
+4. Install Tailscale on the iPhone and log in to the same tailnet. In the Cedar app's Settings,
+   enter the address shown on the setup page (*Copy address*) and the access token
+   (*Copy access token*), then tap **Test Connection**.
+
+The setting is saved, so sharing comes back on every time Cedar starts. Cedar turns the serve
+off when it quits, and turns it off for good when you untick the checkbox. The phone can reach
+the chat only while the Mac is awake and Cedar is running. Anyone on your tailnet can open the
+page, so the access token is still what protects it;
+[tailnet ACLs](https://tailscale.com/kb/1018/acls) can narrow who gets through. To use another
+tailnet port than 443 (when this Mac already serves something there), set
+`tailscale_https_port` in `config.json`.
+
+With the address set as `CHAT_PUBLIC_URL`, *Connect Google* sends Google back to
+`https://<mac>.<tailnet>.ts.net/api/oauth/google/callback`. Add that redirect URI to your Google
+OAuth client before you connect, or set your own `CHAT_PUBLIC_URL` in `chat_env`, which wins.
+
+For push notifications on the phone, set up **iPhone push** in the chat's Settings →
+Notifications (see [iOS/README.md](../iOS/README.md#push-notifications)) and choose it as the
+default method; the app chooses *Mac notification* on its first start.
 
 ## Where things are
 
@@ -68,6 +107,8 @@ admin token, so Settings works without typing anything.
   "sandbox_image": "",
   "browser_image": "",
   "browser": false,
+  "tailscale_share": false,
+  "tailscale_https_port": 443,
   "cedar_env": { "SANDBOX_NETWORK": "bridge", "RUN_TIMEOUT_SECS": "1800" },
   "chat_env": {},
   "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…", "chat_admin_token": "…" }
@@ -161,4 +202,7 @@ One-time setup:
 | Runs finish instantly with tool calls printed as text | The model or server doesn't do tool calling. Pick a model that does; for vLLM see the [deployment guide](../DEPLOYMENT.md#2-make-sure-vllm-is-ready-for-cedar). |
 | "port … is already in use" | Something else listens on 18080 or 13000. Change `cedar_port` or `chat_port` in `config.json`, then *Restart Services*. |
 | No notification when a response finishes | Settings → Notifications in the chat should list *Mac notification* as set up and the default (the app sets that up on its first start, unless another method was already chosen). Then allow notifications for Cedar in System Settings → Notifications. A response you looked at within a few seconds of it ending isn't announced. |
+| iPhone & iPad: "Tailscale is not installed" | Install it from tailscale.com or the Mac App Store. Running it from the menu bar is not enough if the CLI is somewhere else: choose *Install CLI* in Tailscale's settings to put `tailscale` in `/usr/local/bin`. |
+| iPhone & iPad: "HTTPS is not enabled" or "no tailnet name" | Turn on HTTPS Certificates and MagicDNS in the Tailscale admin console's DNS page, then click *Try again*. |
+| The iOS app can't connect | Use the `https://…ts.net` address from the setup page, without a port; check that the phone is logged in to the same tailnet, that the Mac is awake, and that `tailscale serve status` on the Mac lists the chat port. The first connection can take a few seconds while Tailscale gets the certificate. |
 | Cedar stopped with an error | *Open Logs Folder*; `cedar.log` says why. After three quick crashes the app stops retrying until *Restart Services*. |

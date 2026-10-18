@@ -58,6 +58,20 @@ pub fn set_browser(app: AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Shares the chat with the iOS app over Tailscale, or stops sharing it.
+#[tauri::command]
+pub async fn set_share(app: AppHandle, enabled: bool) -> Result<(), String> {
+    app::set_share(app, enabled).await.map_err(fail)
+}
+
+#[tauri::command]
+pub fn copy_share_url(state: State<'_, AppState>) -> Result<(), String> {
+    let url = state
+        .share_url()
+        .ok_or("the chat is not shared on the tailnet")?;
+    crate::tray::copy_to_clipboard(&url).map_err(fail)
+}
+
 #[tauri::command]
 pub fn open_chat(app: AppHandle) -> Result<(), String> {
     crate::window::show_chat(&app).map_err(fail)

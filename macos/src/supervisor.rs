@@ -64,8 +64,9 @@ impl Supervisor {
 
     /// Starts both servers, stopping a running pair first, and returns once they answer or with
     /// the reason they didn't. Supervision goes on in the background: a crash is restarted with
-    /// backoff until it looks like a loop.
-    pub async fn start(&self, cfg: Config, docker: DockerCli) -> Result<()> {
+    /// backoff until it looks like a loop. `public_url` is the chat's address for other devices
+    /// (its tailnet address while it is shared), for the links it sends.
+    pub async fn start(&self, cfg: Config, docker: DockerCli, public_url: Option<String>) -> Result<()> {
         let mut current = self.current.lock().await;
         if let Some(h) = current.take() {
             h.stop.cancel();
@@ -78,6 +79,7 @@ impl Supervisor {
             paths: self.paths.clone(),
             cfg,
             docker,
+            public_url,
             state: self.state.clone(),
             stop: stop.clone(),
         };
@@ -103,6 +105,7 @@ struct Runner {
     paths: Paths,
     cfg: Config,
     docker: DockerCli,
+    public_url: Option<String>,
     state: Arc<Mutex<ServiceState>>,
     stop: CancellationToken,
 }
@@ -281,6 +284,11 @@ impl Runner {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
+        // Links in notifications and "Connect Google" point here; a CHAT_PUBLIC_URL of the user's
+        // own in `chat_env` still wins.
+        if let Some(url) = &self.public_url {
+            env.push(("CHAT_PUBLIC_URL".to_string(), url.clone()));
+        }
         env.extend(cfg.chat_env.iter().map(|(k, v)| (k.clone(), v.clone())));
         env
     }
