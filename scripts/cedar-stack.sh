@@ -238,6 +238,10 @@ main() {
     for cmd in cargo docker tmux curl jq openssl; do
         command -v "$cmd" >/dev/null || die "$cmd is not installed"
     done
+    # cedar-chat's Web Push encryption links OpenSSL; catch missing headers before a long build.
+    if (( build )) && [[ $(uname -s) == Linux ]] && ! pkg-config --exists openssl 2>/dev/null; then
+        die "OpenSSL headers not found (needed to build cedar-chat); install them: sudo apt install pkg-config libssl-dev"
+    fi
     [[ -f $ENV_FILE ]] || create_env
     load_env
 
