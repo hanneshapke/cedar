@@ -7,6 +7,7 @@ use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
+use crate::images;
 use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::RunManager;
@@ -171,6 +172,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
         .route("/admin/server-models", post(list_server_models))
+        .route("/admin/settings", get(get_settings).put(put_settings))
         .route(
             "/admin/models/{id}",
             axum::routing::put(put_model).delete(delete_model),
@@ -410,6 +412,8 @@ async fn create_run(
             model.id
         )));
     }
+    let max_side = images::max_side(&state.store).await?;
+    let attachments = images::downscale_all(attachments, max_side).await;
 
     let system = match req.system.filter(|s| !s.trim().is_empty()) {
         None => parent
@@ -524,10 +528,10 @@ async fn list_models(State(state): State<AppState>) -> Json<serde_json::Value> {
 }
 
 /// What a run gets when it doesn't say: for clients that show the defaults.
-async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
+async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = &state.cfg;
     let default = state.integrations.default_entry();
-    Json(json!({
+    Ok(Json(json!({
         "model": default.as_ref().map(|m| m.model.clone()),
         "model_id": default.as_ref().map(|m| m.id.clone()),
         "system": cfg.default_system_prompt,
@@ -539,8 +543,9 @@ async fn defaults(State(state): State<AppState>) -> Json<serde_json::Value> {
             "max_bytes": MAX_ATTACHMENT_BYTES,
             "max_total_bytes": MAX_ATTACHMENTS_TOTAL_BYTES,
             "media_types": ALLOWED_ATTACHMENT_TYPES,
+            "max_image_side": images::max_side(&state.store).await?,
         },
-    }))
+    })))
 }
 
 fn require_admin(admin: Admin) -> Result<(), AppError> {
@@ -559,6 +564,46 @@ async fn get_integrations(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
     Ok(Json(state.integrations.status().await?))
+}
+
+/// The server-wide settings an admin can change (`GET`/`PUT /v1/admin/settings`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SettingsBody {
+    /// The longer side, in pixels, attached images are downscaled to; `null` for the default.
+    max_image_side: Option<u32>,
+}
+
+async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> {
+    Ok(json!({
+        "max_image_side": images::saved_max_side(&state.store).await?,
+        "defaults": {
+            "max_image_side": images::DEFAULT_MAX_SIDE,
+            "min_max_image_side": images::MIN_MAX_SIDE,
+            "max_max_image_side": images::MAX_MAX_SIDE,
+        },
+    }))
+}
+
+async fn get_settings(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(settings_json(&state).await?))
+}
+
+async fn put_settings(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<SettingsBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    if let Some(side) = body.max_image_side {
+        images::check_max_side(side).map_err(AppError::BadRequest)?;
+    }
+    images::set_max_side(&state.store, body.max_image_side).await?;
+    Ok(Json(settings_json(&state).await?))
 }
 
 #[derive(Deserialize)]

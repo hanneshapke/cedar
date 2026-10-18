@@ -926,6 +926,43 @@ impl Store {
         Ok(removed)
     }
 
+    // -- server-wide settings ----------------------------------------------------------------
+
+    /// The setting saved under `key`, if any.
+    pub async fn setting(&self, key: &str) -> Result<Option<Value>> {
+        let value: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        value
+            .map(|v| serde_json::from_str(&v))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    /// Save `value` under `key`, or remove the setting (back to the default) with `None`.
+    pub async fn set_setting(&self, key: &str, value: Option<&Value>) -> Result<()> {
+        match value {
+            Some(v) => {
+                sqlx::query(
+                    "INSERT INTO settings (key, value) VALUES (?, ?) \
+                     ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                )
+                .bind(key)
+                .bind(serde_json::to_string(v)?)
+                .execute(&self.pool)
+                .await?;
+            }
+            None => {
+                sqlx::query("DELETE FROM settings WHERE key = ?")
+                    .bind(key)
+                    .execute(&self.pool)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
     /// Whether anything is saved under `name` in the secrets table (without decrypting it).
     pub async fn has_secret(&self, name: &str) -> Result<bool> {
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM secrets WHERE name = ?")

@@ -13,6 +13,7 @@ pub mod compact;
 pub mod config;
 pub mod error;
 pub mod events;
+pub mod images;
 pub mod integrations;
 pub mod llm;
 pub mod manager;

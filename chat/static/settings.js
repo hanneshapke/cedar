@@ -524,7 +524,7 @@ const cedarSettings = (() => {
     const models = await modelsBlock(status);
     const modelsBlockEl = block('Models', models.wrap);
     modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
-    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Google account', googleRow(status)));
+    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Google account', googleRow(status)), block('Attachments', await imageSizeRow()));
     section.replaceChildren(...parts);
   }
 
@@ -906,6 +906,47 @@ const cedarSettings = (() => {
       }));
     }
     main.append(edit);
+    return row;
+  }
+
+  /** cedar's max image size: attached images with a longer side are scaled down to it. */
+  async function imageSizeRow() {
+    const { row, main, side } = integrationRow('Max image size', 'Attached images with a longer side than this are scaled down before they reach the model, to save prompt space. One setting for every conversation.');
+    let settings;
+    try {
+      settings = await adminApi('GET', '/integrations/settings');
+    } catch (err) {
+      side.append(badge('Unavailable'));
+      main.append(el('small', '', err.message));
+      return row;
+    }
+    const d = settings.defaults || {};
+    const form = el('form', 'cedar-set-inline');
+    const input = el('input');
+    input.type = 'number';
+    input.min = String(d.min_max_image_side ?? 256);
+    input.max = String(d.max_max_image_side ?? 8192);
+    input.step = '1';
+    input.placeholder = `${d.max_image_side ?? 1568} (default)`;
+    input.value = settings.max_image_side ?? '';
+    input.setAttribute('aria-label', 'Max image size in pixels');
+    const saveBtn = button('Save', () => form.requestSubmit(), 'primary');
+    form.append(input, el('span', '', 'px'), saveBtn);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!input.reportValidity()) return;
+      saveBtn.disabled = true;
+      try {
+        const saved = await adminApi('PUT', '/integrations/settings', { max_image_side: input.value ? Number(input.value) : null });
+        deps.toast(`Images are now scaled down to ${saved.max_image_side ?? d.max_image_side ?? 1568} px`);
+        renderIntegrations();
+      } catch (err) {
+        saveBtn.disabled = false;
+        deps.toast(err.message);
+      }
+    });
+    side.append(badge(settings.max_image_side ? `${settings.max_image_side} px` : 'Default', 'ok'));
+    main.append(form);
     return row;
   }
 
