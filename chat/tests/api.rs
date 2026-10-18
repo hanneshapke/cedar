@@ -407,6 +407,24 @@ impl Harness {
                 .delete(|State(s): State<Shared>, Path(id): Path<String>| async move { delete_integration(s, &format!("model:{id}")).await }),
             )
             .route(
+                "/v1/admin/settings",
+                get(|State(s): State<Shared>| async move {
+                    if let Some(refused) = admin(&s, "get_settings", Value::Null).await {
+                        return refused;
+                    }
+                    Json(json!({ "max_image_side": null, "defaults": { "max_image_side": 1568 } })).into_response()
+                })
+                .put(|State(s): State<Shared>, Json(body): Json<Value>| async move {
+                    if let Some(refused) = admin(&s, "put_settings", body.clone()).await {
+                        return refused;
+                    }
+                    if body["max_image_side"] == 1 {
+                        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "max_image_side must be between 256 and 8192");
+                    }
+                    Json(json!({ "max_image_side": body["max_image_side"], "defaults": { "max_image_side": 1568 } })).into_response()
+                }),
+            )
+            .route(
                 "/v1/admin/server-models",
                 post(|State(s): State<Shared>, Json(body): Json<Value>| async move {
                     if let Some(refused) = admin(&s, "server_models", body.clone()).await {
@@ -1508,9 +1526,21 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", None, Some(json!({ "base_url": "http://x", "model": "m" }))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+    // cedar's server-wide settings (the max image size) go through as they are.
+    let (status, got) = admin_call(&h, Method::GET, "/api/integrations/settings", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["defaults"]["max_image_side"], 1568);
+    let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/settings", Some("admin"), Some(json!({ "max_image_side": 1024 }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["max_image_side"], 1024);
+    let (status, err) = admin_call(&h, Method::PUT, "/api/integrations/settings", Some("admin"), Some(json!({ "max_image_side": 1 }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("between 256 and 8192"));
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/settings", None, Some(json!({ "max_image_side": 1024 }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu"]);
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings"]);
     assert_eq!(calls[6].1, query, "the body goes through as it is");
     assert_eq!(calls[8].1, spec, "the body goes through as it is");
 

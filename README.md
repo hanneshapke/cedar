@@ -74,8 +74,9 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
+| `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, today `{"max_image_side"}`: the longer side, in pixels, attached images are downscaled to (256–8192; `null` for the default, 1568). Returns `{max_image_side, defaults}`. See [Attachments](#attachments). |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
 | `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
@@ -127,6 +128,14 @@ A run's prompt can come with PDFs, for any model, and with images, for a model r
 `application/pdf`; `data` is the file's bytes in standard base64 (no `data:` prefix). At most 10
 files per run, 20 MiB each and 32 MiB together (decoded); the request body itself may be up to
 48 MiB. Anything else is a `400` that names the file.
+
+A high-resolution photo would fill the model's prompt, so an image whose longer side is over the
+server-wide `max_image_side` (1568 pixels unless an admin sets it with `PUT /v1/admin/settings`,
+or in the chat UI under Settings → Server) is scaled down when the run is created. Its camera
+orientation is applied, and it is re-encoded as JPEG (PNG when it has transparency) and renamed to
+match, e.g. `photo.png` becomes `photo.jpg`. The smaller image is what the run stores, the
+workspace holds and the model sees. Images that already fit, and ones that can't be decoded, are
+kept as sent.
 
 When the run starts, every file is saved in the workspace under `attachments/` (its name made
 safe for a path, with `-2`, `-3`, ... added to repeated names), so the agent can work on it with

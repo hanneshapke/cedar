@@ -223,7 +223,8 @@ pub const ALLOWED_ATTACHMENT_TYPES: [&str; 5] = [
     "application/pdf",
 ];
 
-/// A file sent with a run's prompt, base64 as received. It is saved in the workspace when the run
+/// A file sent with a run's prompt, base64 as received (an image over the `max_image_side`
+/// setting downscaled first, see [`crate::images`]). It is saved in the workspace when the run
 /// starts, and an image is shown to the model in the opening user message (see
 /// [`crate::attachments`]); cedar does not check that the model can read it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -247,6 +247,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/models", get(get_models))
         .route("/integrations/server-models", post(list_server_models))
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
+        .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/connect", post(connect_google))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
@@ -1270,6 +1271,22 @@ async fn put_model(
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
     }
     Ok(Json(state.cedar.set_model(&id, &body).await?))
+}
+
+/// cedar's server-wide settings (`{max_image_side, defaults}`): the longer side attached images
+/// are downscaled to.
+async fn get_server_settings(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.server_settings().await?))
+}
+
+/// Change cedar's server-wide settings; the body (`{max_image_side}`) goes through as it is.
+async fn put_server_settings(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    if !body.is_object() {
+        return Err(AppError::BadRequest("the body must be a JSON object".into()));
+    }
+    Ok(Json(state.cedar.set_server_settings(&body).await?))
 }
 
 async fn delete_model(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {

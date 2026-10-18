@@ -292,6 +292,12 @@ async fn admin_routes_need_an_admin_key() {
             Some(json!({ "redirect_uri": "http://x/cb" })),
         ),
         (Method::DELETE, "/v1/admin/integrations/google", None),
+        (Method::GET, "/v1/admin/settings", None),
+        (
+            Method::PUT,
+            "/v1/admin/settings",
+            Some(json!({ "max_image_side": 1024 })),
+        ),
     ] {
         let (status, body) = app.json(method, uri, Some(KEY_A), body).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{uri}: {body}");
@@ -610,6 +616,60 @@ async fn defaults_are_reported_to_any_key() {
     assert_eq!(body["model"], TEST_MODEL);
     assert_eq!(body["model_id"], TEST_MODEL);
     assert_eq!(body["max_turns_cap"], 10);
+}
+
+#[tokio::test]
+async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let app = TestApp::with_env(vec![Step::Repeat(text("a photo"))], &admin_env(&[])).await;
+    let (status, settings) = app.get("/v1/admin/settings", KEY_B).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        settings,
+        json!({
+            "max_image_side": null,
+            "defaults": { "max_image_side": 1568, "min_max_image_side": 256, "max_max_image_side": 8192 },
+        })
+    );
+    let put = |side: Value| app.json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(json!({ "max_image_side": side })));
+    let (status, body) = put(json!(100)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = put(json!(512)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["max_image_side"], 512);
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["attachments"]["max_image_side"], 512);
+
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(2000, 1000, image::Rgb([9, 99, 199])))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    let photo = json!({ "name": "photo.png", "media_type": "image/png", "data": b64.encode(&png) });
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "what is this?", "attachments": [photo] }))
+        .await;
+    let id = run["id"].as_str().unwrap().to_string();
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    // The model sees, and the workspace holds, the smaller image, renamed for its new format.
+    let block = &app.llm.requests()[0]["messages"][0]["content"][0];
+    assert_eq!(block["title"], "photo.jpg");
+    assert_eq!(block["source"]["media_type"], "image/jpeg");
+    let small = b64.decode(block["source"]["data"].as_str().unwrap()).unwrap();
+    let img = image::load_from_memory(&small).unwrap();
+    assert_eq!((img.width(), img.height()), (512, 256));
+    {
+        let created = app.factory.created.lock().unwrap();
+        let files = created[0].1.files.lock().unwrap();
+        assert_eq!(files.get("attachments/photo.jpg"), Some(&small));
+        assert!(!files.contains_key("attachments/photo.png"));
+    }
+
+    // `null` goes back to the default.
+    let (_, body) = put(Value::Null).await;
+    assert_eq!(body["max_image_side"], Value::Null);
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["attachments"]["max_image_side"], 1568);
 }
 
 #[derive(Default)]

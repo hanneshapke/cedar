@@ -162,6 +162,17 @@ impl CedarClient {
         admin(self.json(req).await)
     }
 
+    /// cedar's server-wide settings: `{max_image_side, defaults}`.
+    pub async fn server_settings(&self) -> Result<Value, AppError> {
+        admin(self.json(self.http.get(self.url("/admin/settings"))).await)
+    }
+
+    /// Change cedar's server-wide settings. `body` is cedar's `{max_image_side}`, passed through.
+    pub async fn set_server_settings(&self, body: &Value) -> Result<Value, AppError> {
+        let req = self.http.put(self.url("/admin/settings")).json(body);
+        admin(self.json(req).await)
+    }
+
     pub async fn remove_model(&self, id: &str) -> Result<(), AppError> {
         let req = self.http.delete(self.url(&format!("/admin/models/{id}"))).timeout(REQUEST_TIMEOUT);
         admin(self.send(req).await.map(drop))
