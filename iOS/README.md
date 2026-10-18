@@ -32,15 +32,17 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 
 - Xcode 16 or newer (the project uses folder-synchronized groups)
 - iOS 17 or newer
-- A cedar-chat server the device can reach (its `CHAT_BIND_ADDR` must not be loopback for a
-  phone), and its `CHAT_ACCESS_TOKEN` if one is set
+- A cedar-chat server the device can reach over HTTPS (for example through `tailscale serve`),
+  and its `CHAT_ACCESS_TOKEN` if one is set
 
 ## Running it
 
 1. Start cedar and cedar-chat (see the [top-level README](../README.md) and
-   [chat/README.md](../chat/README.md)). To reach the chat server from a phone, bind it to an
-   address the phone can reach, for example `CHAT_BIND_ADDR=0.0.0.0:3000`, and set
-   `CHAT_ACCESS_TOKEN`. In the simulator, `http://127.0.0.1:3000` works as is.
+   [chat/README.md](../chat/README.md)), set `CHAT_ACCESS_TOKEN`, and serve the chat over HTTPS.
+   The app only connects over HTTPS (iOS App Transport Security, with no exception). The
+   simplest way is Tailscale: `scripts/cedar-stack.sh` runs `tailscale serve` for you, and
+   [DEPLOYMENT.md](../DEPLOYMENT.md#over-https-with-tailscale-the-ios-app) shows the steps for a
+   systemd install. The server URL is then `https://<machine>.<tailnet>.ts.net`.
 2. Open `iOS/Cedar.xcodeproj` in Xcode, choose the **Cedar** scheme, and run it. To run on a
    device, pick your team under *Signing & Capabilities*.
 3. On first launch, enter the server URL and the access token in Settings and tap
@@ -48,10 +50,10 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 
 The access token is stored in the Keychain. Everything else is stored in `UserDefaults`.
 
-cedar-chat speaks plain HTTP unless you put it behind TLS, so the app allows cleartext
-connections (`NSAllowsArbitraryLoads` in `Config/Info.plist`). If your server is only reachable
-over HTTPS, you can remove that exception. Anyone with the access token can run the agent, so do
-not expose cedar-chat on a public network without TLS.
+cedar-chat itself speaks plain HTTP, so put it behind something that terminates TLS with a
+certificate the phone trusts: `tailscale serve`, or a reverse proxy such as Caddy with a Let's
+Encrypt certificate. Anyone with the access token can run the agent, so keep the token secret
+even on a private tailnet.
 
 ## Push notifications
 
@@ -88,7 +90,6 @@ into `production` for distribution builds.
 | `Cedar/Storage` | Settings and Keychain access |
 | `Cedar/Features` | SwiftUI screens: conversation list, chat (turns, questions, approvals, images), and settings |
 | `CedarTests` | Unit tests for the API types, the reducer, the SSE parser, and Markdown |
-| `Config/Info.plist` | App Transport Security settings, merged with the generated Info.plist |
 | `Config/Cedar.entitlements` | Push notifications |
 
 ## How it talks to the server

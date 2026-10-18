@@ -19,7 +19,6 @@
 /* Begin PBXFileReference section */
 		CE0000000000000000000011 /* Cedar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cedar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CE0000000000000000000012 /* CedarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CedarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		CE0000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CE0000000000000000000015 /* Cedar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Cedar.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -76,7 +75,6 @@
 		CE0000000000000000000014 /* Config */ = {
 			isa = PBXGroup;
 			children = (
-				CE0000000000000000000013 /* Info.plist */,
 				CE0000000000000000000015 /* Cedar.entitlements */,
 			);
 			path = Config;
@@ -320,7 +318,6 @@
 				DEVELOPMENT_TEAM = 6CFTUZ6T4D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = cedar;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "cedar connects to your agent server on the local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -352,7 +349,6 @@
 				DEVELOPMENT_TEAM = 6CFTUZ6T4D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = cedar;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "cedar connects to your agent server on the local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

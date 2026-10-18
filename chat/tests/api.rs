@@ -406,6 +406,18 @@ impl Harness {
                 })
                 .delete(|State(s): State<Shared>, Path(id): Path<String>| async move { delete_integration(s, &format!("model:{id}")).await }),
             )
+            .route(
+                "/v1/admin/server-models",
+                post(|State(s): State<Shared>, Json(body): Json<Value>| async move {
+                    if let Some(refused) = admin(&s, "server_models", body.clone()).await {
+                        return refused;
+                    }
+                    if body["base_url"] == "http://127.0.0.1:1" {
+                        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "could not reach the model server");
+                    }
+                    Json(json!({ "base_url": body["base_url"], "models": ["m-1", "m-2"] })).into_response()
+                }),
+            )
             .route("/v1/admin/integrations", get(integrations))
             .route(
                 "/v1/admin/integrations/brave",
@@ -1473,6 +1485,15 @@ async fn integrations_need_the_admin_token() {
     let (status, listed) = admin_call(&h, Method::GET, "/api/integrations/models", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK, "{listed}");
     assert_eq!(listed["models"][0]["id"], "model-a");
+    let query = json!({ "base_url": "http://gpu:8000", "api_key": "k" });
+    let (status, found) = admin_call(&h, Method::POST, "/api/integrations/server-models", Some("admin"), Some(query.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert_eq!(found["models"], json!(["m-1", "m-2"]));
+    let (status, err) = admin_call(&h, Method::POST, "/api/integrations/server-models", Some("admin"), Some(json!({ "base_url": "http://127.0.0.1:1" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("could not reach"));
+    let (status, _) = admin_call(&h, Method::POST, "/api/integrations/server-models", None, Some(query.clone())).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     let spec = json!({ "base_url": "http://gpu:8000", "api_key": "k", "model": "m-1", "label": "GPU", "reasoning_levels": ["none", "high"], "is_default": true });
     let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", Some("admin"), Some(spec.clone())).await;
     assert_eq!(status, StatusCode::OK, "{saved}");
@@ -1489,8 +1510,9 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "get_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu"]);
-    assert_eq!(calls[6].1, spec, "the body goes through as it is");
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu"]);
+    assert_eq!(calls[6].1, query, "the body goes through as it is");
+    assert_eq!(calls[8].1, spec, "the body goes through as it is");
 
     let (status, connect) = admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK);

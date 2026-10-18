@@ -7,7 +7,7 @@ use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
-use crate::integrations::{Integrations, ModelSpec};
+use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::RunManager;
 use crate::models::{
@@ -170,6 +170,7 @@ pub fn router(state: AppState) -> Router {
         .route("/defaults", get(defaults))
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
+        .route("/admin/server-models", post(list_server_models))
         .route(
             "/admin/models/{id}",
             axum::routing::put(put_model).delete(delete_model),
@@ -591,6 +592,15 @@ async fn get_models(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
     Ok(Json(state.integrations.models_status().await?))
+}
+
+async fn list_server_models(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(query): ApiJson<ServerModelsQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(state.integrations.server_models(query).await?))
 }
 
 async fn put_model(

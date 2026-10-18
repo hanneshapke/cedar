@@ -1,30 +1,39 @@
 #!/usr/bin/env bash
-# Build cedar and cedar-chat, then run vLLM, cedar, and the chat UI in one tmux session.
+# Build cedar and cedar-chat, then run vLLM, cedar, and the chat UI in one tmux session. If
+# Tailscale is installed and logged in, the chat UI is also served over HTTPS on the tailnet
+# (`tailscale serve`), which is what the iOS app needs.
 #
-#   scripts/dev-up.sh            build, start everything, attach
-#   scripts/dev-up.sh --no-build skip cargo and docker builds
-#   scripts/dev-up.sh --restart  kill the existing session first
-#   scripts/dev-up.sh --no-vllm  don't start, check or wait for vLLM, and don't detect LLM_MODEL
-#                                from it (cedar starts at once; set LLM_MODEL in .env if you need it)
-#   scripts/dev-up.sh --down     kill the session; vLLM keeps running
-#   scripts/dev-up.sh --down --with-vllm
-#                                also stop vLLM (docker compose down)
-#   scripts/dev-up.sh --down-all same as --down --with-vllm
+# This runs the stack on one machine you are logged in to. Nothing restarts it after a crash or a
+# reboot; for a long-running server use the systemd setup in DEPLOYMENT.md.
+#
+#   scripts/cedar-stack.sh            build, start everything, attach
+#   scripts/cedar-stack.sh --no-build skip cargo and docker builds
+#   scripts/cedar-stack.sh --restart  kill the existing session first
+#   scripts/cedar-stack.sh --no-vllm  don't start, check or wait for vLLM, and don't detect
+#                                     LLM_MODEL from it (cedar starts at once; set LLM_MODEL in
+#                                     .env if you need it)
+#   scripts/cedar-stack.sh --down     kill the session and stop tailscale serve; vLLM keeps running
+#   scripts/cedar-stack.sh --down --with-vllm
+#                                     also stop vLLM (docker compose down)
+#   scripts/cedar-stack.sh --down-all same as --down --with-vllm
 #
 # Settings come from .env in the repo root (created on first run with fresh keys). Besides
 # cedar's and cedar-chat's own variables it reads:
 #   VLLM_COMPOSE_FILE  compose file that runs vLLM; if set, the script starts it and shows its logs
 #   TMUX_SESSION       session name (default: cedar)
+#   TAILSCALE_SERVE    auto (default: serve if tailscale is logged in), on (fail if it can't), off
+#   TAILSCALE_HTTPS_PORT
+#                      the tailnet HTTPS port to serve the chat UI on (default: 443)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ENV_FILE="$ROOT/.env"
-SELF="$ROOT/scripts/dev-up.sh"
+SELF="$ROOT/scripts/cedar-stack.sh"
 
 die() { echo "error: $*" >&2; exit 1; }
 
 load_env() {
-    [[ -f $ENV_FILE ]] || die "$ENV_FILE not found; run scripts/dev-up.sh first"
+    [[ -f $ENV_FILE ]] || die "$ENV_FILE not found; run scripts/cedar-stack.sh first"
     set -a
     # shellcheck disable=SC1090
     . "$ENV_FILE"
@@ -34,6 +43,69 @@ load_env() {
     LLM_BASE_URL=${LLM_BASE_URL:-http://localhost:8000/v1}
     CHAT_BIND_ADDR=${CHAT_BIND_ADDR:-127.0.0.1:3000}
     TMUX_SESSION=${TMUX_SESSION:-cedar}
+    TAILSCALE_SERVE=${TAILSCALE_SERVE:-auto}
+    TAILSCALE_HTTPS_PORT=${TAILSCALE_HTTPS_PORT:-443}
+    case $TAILSCALE_SERVE in
+        auto|on|off) ;;
+        *) die "TAILSCALE_SERVE must be auto, on, or off (got '$TAILSCALE_SERVE')" ;;
+    esac
+}
+
+# --- tailscale serve -----------------------------------------------------------------------
+
+# tailscale_ready: true if tailscale is installed and this machine is logged in to a tailnet.
+tailscale_ready() {
+    command -v tailscale >/dev/null &&
+        [[ $(tailscale status --json 2>/dev/null | jq -r '.BackendState // empty') == Running ]]
+}
+
+# tailscale_url: the HTTPS address `tailscale serve` gives the chat UI on the tailnet.
+tailscale_url() {
+    local name
+    name=$(tailscale status --json | jq -r '.Self.DNSName // empty')
+    name=${name%.}
+    [[ -n $name ]] || return 1
+    if [[ $TAILSCALE_HTTPS_PORT == 443 ]]; then
+        echo "https://$name"
+    else
+        echo "https://$name:$TAILSCALE_HTTPS_PORT"
+    fi
+}
+
+# serve_start: proxy https://<machine>.<tailnet>.ts.net to cedar-chat. Prints the URL on success;
+# prints nothing when Tailscale is off or unavailable in auto mode.
+serve_start() {
+    [[ $TAILSCALE_SERVE == off ]] && return 0
+    if ! tailscale_ready; then
+        [[ $TAILSCALE_SERVE == on ]] && die "TAILSCALE_SERVE=on, but tailscale is not installed or not logged in (run: sudo tailscale up)"
+        return 0
+    fi
+    # tailscale serve can only proxy to this machine. A wildcard bind is reachable on loopback.
+    local host=${CHAT_BIND_ADDR%:*} port=${CHAT_BIND_ADDR##*:}
+    case $host in 0.0.0.0|'[::]'|'') host=127.0.0.1 ;; esac
+    echo "==> tailscale serve --bg --https=$TAILSCALE_HTTPS_PORT http://$host:$port" >&2
+    if ! tailscale serve --bg --https="$TAILSCALE_HTTPS_PORT" "http://$host:$port" >&2; then
+        cat >&2 <<EOF
+tailscale serve failed. Common causes:
+  - your user may not manage tailscale:  sudo tailscale set --operator=\$USER
+  - HTTPS certificates are off for the tailnet: enable MagicDNS and HTTPS Certificates
+    at https://login.tailscale.com/admin/dns
+  - tailscale is older than 1.52 (the --bg flag is newer): update it
+EOF
+        [[ $TAILSCALE_SERVE == on ]] && exit 1
+        echo "Continuing without HTTPS on the tailnet." >&2
+        return 0
+    fi
+    tailscale_url || true
+}
+
+# serve_stop: turn off what serve_start set up (only that HTTPS port).
+serve_stop() {
+    [[ $TAILSCALE_SERVE == off ]] && return 0
+    tailscale_ready || return 0
+    if tailscale serve --https="$TAILSCALE_HTTPS_PORT" off >/dev/null 2>&1; then
+        echo "Stopped tailscale serve on HTTPS port $TAILSCALE_HTTPS_PORT."
+    fi
 }
 
 # wait_for <url> <what>: poll until the URL answers with a 2xx.
@@ -50,7 +122,7 @@ create_env() {
     key=$(openssl rand -hex 24)
     token=$(openssl rand -hex 24)
     cat >"$ENV_FILE" <<EOF
-# Local settings for scripts/dev-up.sh (gitignored). See .env.example and chat/README.md.
+# Local settings for scripts/cedar-stack.sh (gitignored). See .env.example and chat/README.md.
 
 # cedar
 CEDAR_API_KEYS=$key
@@ -68,9 +140,13 @@ SANDBOX_NETWORK=bridge
 # BRAVE_API_KEY=
 
 # cedar-chat (its CEDAR_API_KEY is the first of CEDAR_API_KEYS)
-# Set this to your Tailscale IP (e.g. 100.x.y.z:3000) to open the UI from other devices.
+# Keep it on loopback: when Tailscale is logged in, the script serves it to your tailnet over HTTPS
+# (https://<machine>.<tailnet>.ts.net), which the iOS app and other devices use.
 CHAT_BIND_ADDR=127.0.0.1:3000
 CHAT_ACCESS_TOKEN=$token
+# auto: serve over Tailscale if it is logged in; on: fail if it can't; off: never.
+TAILSCALE_SERVE=auto
+# TAILSCALE_HTTPS_PORT=443
 
 # vLLM: the compose file that runs it. Leave empty if you start vLLM yourself.
 VLLM_COMPOSE_FILE=
@@ -113,6 +189,7 @@ pane_chat() {
     wait_for "$CEDAR_URL/healthz" cedar
     cd "$ROOT"
     echo "chat UI: http://$CHAT_BIND_ADDR"
+    [[ -n ${CHAT_PUBLIC_URL:-} ]] && echo "public URL: $CHAT_PUBLIC_URL"
     exec "$ROOT/target/release/cedar-chat"
 }
 
@@ -125,6 +202,7 @@ down() {
     else
         echo "tmux session '$TMUX_SESSION' is not running."
     fi
+    serve_stop
     if (( ! $1 )); then
         echo "vLLM keeps running (use --down --with-vllm to stop it)."
     elif [[ -n ${VLLM_COMPOSE_FILE:-} ]]; then
@@ -147,7 +225,7 @@ main() {
             --down) stop=1 ;;
             --with-vllm) with_vllm=1 ;;
             --down-all) stop=1; with_vllm=1 ;;
-            -h|--help) sed -n '2,17p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+            -h|--help) sed -n '2,/^[^#]/p' "$SELF" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
             *) die "unknown option: $arg" ;;
         esac
     done
@@ -163,11 +241,15 @@ main() {
     [[ -f $ENV_FILE ]] || create_env
     load_env
 
+    local ts_url
+    ts_url=$(serve_start)
+
     if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
         if (( restart )); then
             tmux kill-session -t "$TMUX_SESSION"
         else
             echo "tmux session '$TMUX_SESSION' is already running (use --restart to replace it)."
+            [[ -n $ts_url ]] && echo "Chat UI on your tailnet: $ts_url"
             [[ -t 1 && -z ${TMUX:-} ]] && exec tmux attach -t "$TMUX_SESSION"
             exit 0
         fi
@@ -186,8 +268,11 @@ main() {
     fi
 
     # One pane per process (no vLLM pane with --no-vllm). Each drops to a shell when its process
-    # exits, so errors stay readable. The panes are fresh processes: NO_VLLM tells them the flag.
+    # exits, so errors stay readable. The panes are fresh processes: NO_VLLM tells them the flag,
+    # and CHAT_PUBLIC_URL the tailnet address (a value in .env wins, since the pane loads it after).
     local hold='; echo; echo "[exited with status $?]"; exec bash'
+    local pane_env="NO_VLLM=$no_vllm"
+    [[ -n $ts_url && -z ${CHAT_PUBLIC_URL:-} ]] && pane_env+=" CHAT_PUBLIC_URL=$ts_url"
     local -a titles=(cedar cedar-chat) cmds=(_cedar _chat)
     if (( ! no_vllm )); then
         titles=(vllm "${titles[@]}")
@@ -196,9 +281,9 @@ main() {
     local i
     for i in "${!cmds[@]}"; do
         if (( i == 0 )); then
-            tmux new-session -d -s "$TMUX_SESSION" -n stack -c "$ROOT" "NO_VLLM=$no_vllm $SELF ${cmds[i]} $hold"
+            tmux new-session -d -s "$TMUX_SESSION" -n stack -c "$ROOT" "$pane_env $SELF ${cmds[i]} $hold"
         else
-            tmux split-window -v -t "$TMUX_SESSION:stack" -c "$ROOT" "NO_VLLM=$no_vllm $SELF ${cmds[i]} $hold"
+            tmux split-window -v -t "$TMUX_SESSION:stack" -c "$ROOT" "$pane_env $SELF ${cmds[i]} $hold"
         fi
     done
     tmux select-layout -t "$TMUX_SESSION:stack" even-vertical
@@ -208,6 +293,7 @@ main() {
     done
 
     echo "Started tmux session '$TMUX_SESSION'. Chat UI: http://$CHAT_BIND_ADDR"
+    [[ -n $ts_url ]] && echo "On your tailnet (iOS app, other devices): $ts_url"
     if [[ -t 1 && -z ${TMUX:-} ]]; then
         exec tmux attach -t "$TMUX_SESSION"
     elif [[ -n ${TMUX:-} ]]; then
