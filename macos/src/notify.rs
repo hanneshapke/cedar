@@ -1,5 +1,5 @@
-//! Notification Center: cedar-chat's `desktop` notification method. While the servers run, the
-//! app follows `GET /api/notifications/desktop/events` on the chat and shows each message there;
+//! Notification Center (on Windows, toasts): cedar-chat's `desktop` notification method. While
+//! the servers run, the app follows `GET /api/notifications/desktop/events` on the chat and shows each message there;
 //! a click opens the conversation it is about. Which responses are worth a message (the scope,
 //! a scheduled agent's own method, not if it was looked at meanwhile) is cedar-chat's decision.
 
@@ -161,7 +161,8 @@ fn uuid_like(s: &str) -> bool {
 }
 
 /// Post the message to Notification Center. Waiting for a click blocks, so each waits on a
-/// thread of its own, which ends when the notification is clicked or dismissed.
+/// thread of its own, which ends when the notification is clicked or dismissed. On Windows the
+/// toast calls back on a click instead, so its thread ends once the toast is up.
 fn show(app: &AppHandle, message: Message) {
     let conversation = conversation_of(&message.url);
     let app = app.clone();
@@ -189,9 +190,47 @@ fn show(app: &AppHandle, message: Message) {
                 Err(e) => eprintln!("showing a notification: {e}"),
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
+        {
+            use tauri_winrt_notification::Toast;
+            let opened = app.clone();
+            let shown = Toast::new(&toast_app_id(&app))
+                .title(&message.title)
+                .text1(&message.body)
+                .on_activated(move |_| {
+                    let app = opened.clone();
+                    let conversation = conversation.clone();
+                    let _ = opened.run_on_main_thread(move || {
+                        if let Err(e) = window::show_conversation(&app, conversation.as_deref()) {
+                            eprintln!("opening the conversation: {e:#}");
+                        }
+                    });
+                    Ok(())
+                })
+                .show();
+            if let Err(e) = shown {
+                eprintln!("showing a notification: {e}");
+            }
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
         let _ = (app, message, conversation);
     });
+}
+
+/// The AppUserModelID a toast is sent as. The installer gives Cedar's Start menu shortcut the
+/// bundle identifier as its id, which is what makes Windows show the toast as Cedar's; a build
+/// run from `target/` has no shortcut, so it borrows PowerShell's, as tauri-plugin-notification
+/// does.
+#[cfg(windows)]
+fn toast_app_id(app: &AppHandle) -> String {
+    let from_target = std::env::current_exe()
+        .map(|exe| exe.ancestors().any(|a| a.file_name() == Some("target".as_ref())))
+        .unwrap_or(false);
+    if from_target {
+        tauri_winrt_notification::Toast::POWERSHELL_APP_ID.to_string()
+    } else {
+        app.config().identifier.clone()
+    }
 }
 
 #[cfg(test)]

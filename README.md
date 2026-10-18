@@ -338,12 +338,13 @@ workspace files. See [chat/README.md](chat/README.md) for configuration.
 
 To run vLLM, cedar, and the chat UI together on an NVIDIA DGX Spark, with systemd services and access from your laptop, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-### macOS app
+### Desktop app (macOS and Windows)
 
-`macos/` builds **Cedar.app**, a menu bar app that bundles both servers in one DMG. It needs
-Docker Desktop (or OrbStack, Colima) for the sandboxes and asks for the address of a model server
-(Ollama or LM Studio on the Mac, or a vLLM elsewhere), pulls the sandbox image from GHCR, and
-shows the chat in its window. Download it from the
+`macos/` builds **Cedar**, a menu bar app that bundles both servers: one DMG per Mac architecture,
+and an installer for Windows x64, where it sits in the notification area. It needs Docker Desktop
+(or OrbStack, Colima, Rancher Desktop) for the sandboxes and asks for the address of a model
+server (Ollama or LM Studio on the same computer, or a vLLM elsewhere), pulls the sandbox image
+from GHCR, and shows the chat in its window. Download it from the
 [releases](https://github.com/hanneshapke/cedar/releases); see [macos/README.md](macos/README.md)
 for what it does, where it keeps its files, and how releases are built.
 
@@ -409,7 +410,7 @@ Settings come from environment variables. The important ones:
 | `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |
 | `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time` |
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
-| `DOCKER_BIN` | `docker` (the Docker CLI, as a name on `PATH` or an absolute path; the macOS app sets it) |
+| `DOCKER_BIN` | `docker` (the Docker CLI, as a name on `PATH` or an absolute path; the desktop app sets it) |
 | `CEDAR_EXIT_ON_STDIN_EOF` | `off` (set `1` to shut down when stdin reaches end-of-file: a launcher holding a pipe to cedar then takes it down with itself) |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |

@@ -38,3 +38,30 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked
+
+  windows:
+    # The servers and the desktop app (macos/, which also builds for Windows) on Windows, so a
+    # Unix-only change shows up here rather than in the release.
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      # See the windows job in release.yml: cedar-chat's vendored OpenSSL needs a Windows Perl.
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            macos -> target
+      - run: cargo test --workspace --locked
+      - name: Test the app
+        working-directory: macos
+        run: |
+          # The bundler insists the sidecars exist, even for a test build.
+          foreach ($bin in 'cedar', 'cedar-chat') { New-Item -Force "binaries/$bin-x86_64-pc-windows-msvc.exe" | Out-Null }
+          cargo test --locked

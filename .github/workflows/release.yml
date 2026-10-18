@@ -5,7 +5,10 @@
 #               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
 #   3. dmg      cedar and cedar-chat for Apple Silicon and Intel, wrapped in Cedar.app, signed,
 #               notarized, and packed into a DMG (one per architecture)
-#   4. release  tag v<version> at the merge commit and publish a GitHub Release with the DMGs
+#   4. windows  the same app for Windows x64 as an NSIS installer (Cedar-<version>-windows-x64-setup.exe),
+#               signed when the Windows certificate secrets are set
+#   5. release  tag v<version> at the merge commit and publish a GitHub Release with the DMGs and
+#               the installer
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the
@@ -18,6 +21,9 @@
 #   APPLE_ID                    the Apple ID that owns the certificate
 #   APPLE_PASSWORD              an app-specific password for it (appleid.apple.com)
 #   APPLE_TEAM_ID               the ten-character team id
+# Optional, for the windows job (without them the installer is unsigned and SmartScreen warns):
+#   WINDOWS_CERTIFICATE           an Authenticode code-signing certificate as a base64 .pfx
+#   WINDOWS_CERTIFICATE_PASSWORD  its password
 # GHCR uses the workflow's own GITHUB_TOKEN. See macos/README.md for the one-time steps.
 
 name: Release
@@ -283,8 +289,96 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
 
+  windows:
+    needs: verify
+    runs-on: windows-2025
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TARGET: x86_64-pc-windows-msvc
+      # cedar-chat builds OpenSSL from source on Windows (see chat/Cargo.toml). Its Configure
+      # needs a Windows Perl; Git for Windows' MSYS perl, also on PATH, produces broken makefiles.
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-pc-windows-msvc
+          workspaces: |
+            . -> target
+            macos -> target
+
+      - name: Build cedar and cedar-chat
+        run: cargo build --release --locked -p cedar -p cedar-chat --target $env:TARGET
+
+      - name: Put them where the bundler expects sidecars
+        run: |
+          foreach ($bin in 'cedar', 'cedar-chat') {
+            Copy-Item "target/$env:TARGET/release/$bin.exe" "macos/binaries/$bin-$env:TARGET.exe"
+          }
+          Get-ChildItem macos/binaries
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install the Tauri CLI
+        run: cargo binstall -y --locked tauri-cli --version '^2'
+
+      - name: Import the code-signing certificate
+        id: sign
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $config = Join-Path $env:RUNNER_TEMP 'sign.json'
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Output "::warning::WINDOWS_CERTIFICATE is not set; the Windows installer is unsigned and SmartScreen will warn on it"
+            '{}' | Set-Content $config
+            "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          # The bundler signs cedar.exe, cedar-chat.exe, the app, and the installer with signtool,
+          # finding the certificate in the store by its thumbprint.
+          @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint } } } |
+            ConvertTo-Json -Depth 4 | Set-Content $config
+          "signed=true" >> $env:GITHUB_OUTPUT
+
+      - name: Build Cedar and pack the installer
+        working-directory: macos
+        run: cargo tauri build --ci --target $env:TARGET --bundles nsis --config (Join-Path $env:RUNNER_TEMP 'sign.json')
+
+      - name: Name the installer
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          $built = Get-ChildItem "macos/target/$env:TARGET/release/bundle/nsis/*-setup.exe"
+          if ($built.Count -ne 1) { throw "expected one installer, found: $($built.Name -join ', ')" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Move-Item $built.FullName "dist/Cedar-$env:VERSION-windows-x64-setup.exe"
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/*.exe
+          if-no-files-found: error
+
   release:
-    needs: [verify, manifests, dmg]
+    needs: [verify, manifests, dmg, windows]
     if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     steps:
@@ -298,9 +392,14 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: dist
+
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.dmg | tee checksums.txt
+        run: sha256sum *.dmg *.exe | tee checksums.txt
 
       - name: Tag and publish the release
         env:
@@ -308,18 +407,28 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
           SHA: ${{ needs.verify.outputs.sha }}
           REPO: ghcr.io/${{ needs.verify.outputs.image_owner }}
+          WINDOWS_SIGNED: ${{ needs.windows.outputs.signed }}
         run: |
           set -eu
+          smartscreen=
+          if [ "$WINDOWS_SIGNED" != true ]; then
+            smartscreen="The Windows installer is not code-signed yet, so SmartScreen warns before it runs: choose *More info* → *Run anyway*."
+          fi
           cat > notes.md <<EOF
-          ## Cedar $VERSION for macOS
+          ## Cedar $VERSION for macOS and Windows
 
-          Download the DMG for your Mac, drag Cedar to Applications, and open it. The first launch
-          needs Docker Desktop (or OrbStack, Colima) running and asks for your model server.
+          **Mac:** download the DMG for your Mac, drag Cedar to Applications, and open it. The first
+          launch needs Docker Desktop (or OrbStack, Colima) running and asks for your model server.
 
-          | Mac | File |
+          **Windows 10 or 11 (x64):** run the installer; it installs for your user only, without
+          administrator rights. Cedar then sits in the notification area. It needs Docker Desktop
+          (or Rancher Desktop) running with the WSL 2 backend. $smartscreen
+
+          | Computer | File |
           | --- | --- |
-          | Apple Silicon | \`Cedar-$VERSION-apple-silicon.dmg\` |
-          | Intel | \`Cedar-$VERSION-intel.dmg\` |
+          | Mac, Apple Silicon | \`Cedar-$VERSION-apple-silicon.dmg\` |
+          | Mac, Intel | \`Cedar-$VERSION-intel.dmg\` |
+          | Windows x64 | \`Cedar-$VERSION-windows-x64-setup.exe\` |
 
           Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
           EOF
@@ -328,4 +437,4 @@ jobs:
             --title "Cedar $VERSION" \
             --notes "$(cat notes.md)" \
             --generate-notes \
-            dist/*.dmg dist/checksums.txt
+            dist/*.dmg dist/*.exe dist/checksums.txt

@@ -4,7 +4,7 @@ name = "cedar-app"
 # this version picks the sandbox images the app pulls (ghcr.io/hanneshapke/cedar-sandbox:<version>).
 version = "0.1.0"
 edition = "2021"
-description = "Cedar for macOS: a menu-bar app that runs the cedar agent server and its chat UI"
+description = "Cedar for macOS and Windows: a menu-bar (tray) app that runs the cedar agent server and its chat UI"
 license = "Apache-2.0"
 
 # Not a workspace member (see ../Cargo.toml): Tauri needs system libraries the servers don't.
@@ -17,7 +17,6 @@ tauri-build = { version = "2", features = [] }
 anyhow = "1"
 futures-util = "0.3"
 hex = "0.4"
-libc = "0.2"
 open = "5"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
@@ -28,11 +27,19 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "ti
 tokio-util = "0.7"
 url = "2"
 
+[target.'cfg(unix)'.dependencies]
+# SIGTERM for a server being stopped (see `supervisor::terminate`).
+libc = "0.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # Notification Center, with the click that opens the conversation (see src/notify.rs).
 mac-notification-sys = "0.6"
 # Lets those banners show while Cedar is the frontmost app (see `present_while_frontmost`).
 objc2 = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+# Windows toasts, with the click that opens the conversation (see src/notify.rs).
+tauri-winrt-notification = "0.8"
 
 [profile.release]
 strip = true

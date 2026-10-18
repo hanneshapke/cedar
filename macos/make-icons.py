@@ -4,6 +4,8 @@ are the source of truth:
 
     cedar-app-icon.svg   -> app-icon.png (1024 px, with the margin a macOS icon carries itself),
                             icons/32x32.png, icons/128x128.png, icons/128x128@2x.png, icons/icon.icns
+                         -> icons/icon.ico (full bleed, as Windows icons are drawn), tray-icon-color.png
+                            (64 px, full bleed: the Windows notification area, which may be light or dark)
     cedar-mark-mono.svg  -> tray-icon.png (44 px, black on transparency: a menu bar template image)
 
 Those SVGs are nothing but <rect> elements with rounded corners, so they are drawn here exactly
@@ -78,8 +80,17 @@ app.save(
     sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)],
 )
 
+# Windows: the shape without the macOS margin, in the sizes Explorer and the taskbar ask for.
+full = render(units, rects, 256)
+full.save(
+    HERE / "icons" / "icon.ico",
+    format="ICO",
+    sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+)
+full.resize((64, 64), Image.LANCZOS).save(HERE / "tray-icon-color.png")
+
 # Menu bar: the mono mark in black; macOS tints a template image to the menu bar's colour.
 units, rects = read_svg("cedar-mark-mono.svg")
 render(units, rects, 44, color=(0, 0, 0, 255)).save(HERE / "tray-icon.png")
 
-print("wrote app-icon.png, icons/, tray-icon.png from", ASSETS)
+print("wrote app-icon.png, icons/, tray-icon.png, tray-icon-color.png from", ASSETS)

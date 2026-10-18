@@ -1,5 +1,7 @@
 //! Where the app keeps its files. Tauri derives both directories from the bundle identifier:
-//! `~/Library/Application Support/io.github.hanneshapke.cedar/` and `~/Library/Logs/io.github.hanneshapke.cedar/`.
+//! `~/Library/Application Support/io.github.hanneshapke.cedar/` and `~/Library/Logs/io.github.hanneshapke.cedar/`
+//! on macOS, `%APPDATA%\io.github.hanneshapke.cedar\` and `%LOCALAPPDATA%\io.github.hanneshapke.cedar\logs\`
+//! on Windows.
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;

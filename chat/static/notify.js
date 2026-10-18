@@ -12,8 +12,8 @@
 //     response finished while the tab was visible), this module adds the tab becoming visible
 //     again, and the server clears the marks.
 //   - The Notifications page of Settings (framed by settings-shell.js): the ways to be told out
-//     of the app (a notification from the Cedar app for macOS, browser push through the service
-//     worker at /sw.js, a phone push through Pushover, an email) as one list of methods, the
+//     of the app (a notification from the Cedar app for macOS or Windows, browser push through
+//     the service worker at /sw.js, a phone push through Pushover, an email) as one list of methods, the
 //     chosen one unfolding its credentials and a test send, and which responses are worth it
 //     (GET/PUT /api/notifications). schedule.js asks cedarNotify for the set-up methods to offer
 //     in a scheduled agent's own picker.
@@ -34,7 +34,7 @@
 const cedarNotify = (() => {
   const METHODS = [
     ['none', 'Only in the app', 'The inbox, the marks in the conversation list and the count in the title.'],
-    ['desktop', 'Mac notification', 'A notification in Notification Center from the Cedar app on this Mac, its window open or not.'],
+    ['desktop', 'Desktop notification', 'A notification from the Cedar app on this computer (Notification Center on a Mac, a toast on Windows), its window open or not.'],
     ['browser', 'Browser push', 'A notification from this browser even when the tab is closed. Needs https, or localhost.'],
     ['ios', 'iPhone push', 'A notification from the Cedar iOS app, through Apple\'s push service.'],
     ['pushover', 'Phone push via Pushover', 'A push to your phone through pushover.net and its app.'],
@@ -54,8 +54,9 @@ const cedarNotify = (() => {
   let status = null;    // GET /api/notifications, as last loaded
   let started = false;
   const announced = new Set(); // turn ids already told about, so a reconnect doesn't repeat them
-  // Inside the Cedar app for macOS (its window sets this): its web view can't take browser push.
-  const inMacApp = window.__CEDAR_MAC_APP__ === true;
+  // Inside the Cedar app for macOS or Windows (its window sets this): its web view can't take
+  // browser push.
+  const inApp = window.__CEDAR_DESKTOP_APP__ === true;
 
   // -- helpers -----------------------------------------------------------------------------------
 
@@ -385,9 +386,9 @@ const cedarNotify = (() => {
       for (const [id, radio] of radios) radio.setAttribute('aria-checked', String(draft.default_method === id));
     };
     for (const [id, label, sub] of METHODS) {
-      // The Mac app's method only where there is one; browser push not in the app's web view.
-      if (id === 'desktop' && !inMacApp && !status.desktop?.configured) continue;
-      if (id === 'browser' && inMacApp) continue;
+      // The app's method only where there is one; browser push not in the app's web view.
+      if (id === 'desktop' && !inApp && !status.desktop?.configured) continue;
+      if (id === 'browser' && inApp) continue;
       const item = el('div', 'cedar-notify-method');
       const head = el('div', 'cedar-notify-method-head');
       const radio = el('button', 'cedar-notify-radio');
@@ -431,7 +432,7 @@ const cedarNotify = (() => {
       group.append(item);
     }
     if (!radios.has(draft.default_method)) {
-      // Picked once, no longer offered (the Mac app went away): shown so it can be changed.
+      // Picked once, no longer offered (the app went away): shown so it can be changed.
       const m = draft.default_method;
       const item = el('div', 'cedar-notify-method');
       const head = el('div', 'cedar-notify-method-head');
@@ -521,7 +522,8 @@ const cedarNotify = (() => {
 
     function desktopBlock() {
       const d = status.desktop || {};
-      if (d.listening) return [helpRow('The Cedar app is running and will show them. If nothing appears, allow notifications for Cedar in System Settings → Notifications.', testButton('desktop'))];
+      const where = /Windows/.test(navigator.userAgent) ? 'Settings → System → Notifications' : 'System Settings → Notifications';
+      if (d.listening) return [helpRow(`The Cedar app is running and will show them. If nothing appears, allow notifications for Cedar in ${where}.`, testButton('desktop'))];
       if (d.configured) return [helpRow(`The Cedar app last connected ${when(d.connected_at)}; it isn't running now, so nothing would show.`)];
       return [helpRow('Waiting for the Cedar app to connect.')];
     }

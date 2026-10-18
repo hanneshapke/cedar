@@ -1,6 +1,8 @@
 //! Finding and driving the `docker` CLI from an app that Finder started without the user's PATH.
 //! Docker Desktop, OrbStack, Colima (via Homebrew), and Rancher Desktop all provide the CLI; the
-//! app only needs the daemon running and the images present, cedar does the rest.
+//! app only needs the daemon running and the images present, cedar does the rest. On Windows the
+//! app does get the user's PATH, and Docker Desktop or Rancher Desktop (both on WSL 2) provide
+//! `docker.exe`.
 
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::{Path, PathBuf};
@@ -10,8 +12,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 /// A docker CLI and the `PATH` to run it with. The CLI itself execs credential helpers
-/// (`docker-credential-desktop`, `docker-credential-osxkeychain`) from `PATH`, even for a public
-/// pull, so the directories those live in have to be on it.
+/// (`docker-credential-desktop`, `docker-credential-osxkeychain`, `docker-credential-wincred`)
+/// from `PATH`, even for a public pull, so the directories those live in have to be on it.
 #[derive(Clone, Debug)]
 pub struct DockerCli {
     pub bin: PathBuf,
@@ -19,6 +21,7 @@ pub struct DockerCli {
 }
 
 /// Directories the CLI is usually installed in, in the order to try.
+#[cfg(not(windows))]
 fn candidate_dirs() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let mut dirs = vec![
@@ -34,6 +37,27 @@ fn candidate_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Directories the CLI is usually installed in, in the order to try: Docker Desktop's, then
+/// Rancher Desktop's (a per-user install by default).
+#[cfg(windows)]
+fn candidate_dirs() -> Vec<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).map(PathBuf::from);
+    let mut dirs = Vec::new();
+    if let Some(pf) = var("ProgramFiles") {
+        dirs.push(pf.join(r"Docker\Docker\resources\bin"));
+        dirs.push(pf.join(r"Rancher Desktop\resources\resources\win32\bin"));
+    }
+    if let Some(local) = var("LOCALAPPDATA") {
+        dirs.push(local.join(r"Programs\Rancher Desktop\resources\resources\win32\bin"));
+    }
+    dirs
+}
+
+/// The CLI's file name: `docker`, or `docker.exe` on Windows.
+fn cli_name() -> String {
+    format!("docker{}", std::env::consts::EXE_SUFFIX)
+}
+
 /// The first `docker` found in the usual places, then on this process's own `PATH`.
 pub fn find() -> Option<DockerCli> {
     let mut dirs = candidate_dirs();
@@ -41,7 +65,7 @@ pub fn find() -> Option<DockerCli> {
         dirs.extend(std::env::split_paths(&path));
     }
     dirs.iter()
-        .map(|d| d.join("docker"))
+        .map(|d| d.join(cli_name()))
         .find(|p| is_executable(p))
         .map(|bin| DockerCli {
             path_env: path_env(Some(&bin)),
@@ -63,15 +87,21 @@ fn is_executable(p: &Path) -> bool {
     }
 }
 
-/// A `PATH` with the CLI's own directory first, then the usual places, then the system default.
+/// A `PATH` with the CLI's own directory first, then the usual places, then the system default
+/// (on Windows, the `PATH` the app was started with, which already is the user's).
 pub fn path_env(bin: Option<&Path>) -> String {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(dir) = bin.and_then(Path::parent) {
         dirs.push(dir.to_path_buf());
     }
     dirs.extend(candidate_dirs());
+    #[cfg(not(windows))]
     for d in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
         dirs.push(PathBuf::from(d));
+    }
+    #[cfg(windows)]
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
     }
     let mut seen = Vec::new();
     for d in dirs {
@@ -87,7 +117,8 @@ pub fn path_env(bin: Option<&Path>) -> String {
 impl DockerCli {
     fn command(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(&self.bin);
-        cmd.args(args)
+        crate::supervisor::no_console(&mut cmd)
+            .args(args)
             .env("PATH", &self.path_env)
             .stdin(Stdio::null())
             .kill_on_drop(true);
@@ -187,6 +218,7 @@ impl DockerCli {
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
     #[test]
     fn path_env_puts_the_cli_first_and_dedups() {
         let p = path_env(Some(Path::new("/opt/homebrew/bin/docker")));
@@ -194,5 +226,18 @@ mod tests {
         assert_eq!(dirs[0], "/opt/homebrew/bin");
         assert_eq!(dirs.iter().filter(|d| **d == "/opt/homebrew/bin").count(), 1);
         assert!(dirs.contains(&"/usr/bin"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_env_puts_the_cli_first_and_keeps_the_system_path() {
+        let cli = Path::new(r"C:\Program Files\Docker\Docker\resources\bin\docker.exe");
+        let p = path_env(Some(cli));
+        let dirs: Vec<PathBuf> = std::env::split_paths(&p).collect();
+        assert_eq!(dirs[0], cli.parent().unwrap());
+        assert_eq!(dirs.iter().filter(|d| d.as_path() == cli.parent().unwrap()).count(), 1);
+        for d in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+            assert!(dirs.contains(&d), "{} was dropped from PATH", d.display());
+        }
     }
 }

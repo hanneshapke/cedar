@@ -1,6 +1,8 @@
-# Cedar for macOS
+# Cedar for macOS and Windows
 
-A menu bar app that runs cedar and cedar-chat on a Mac from a single DMG. It bundles both server
+A menu bar app that runs cedar and cedar-chat on a Mac from a single DMG. The same app builds
+for Windows, where it is an installer and an icon in the notification area; see
+[Windows](#windows) for what differs there. It bundles both server
 binaries, starts them as child processes, pulls the sandbox image, and shows the chat UI in its
 window. Two things stay outside the app:
 
@@ -46,6 +48,50 @@ further models to the registry and manages the Brave Search key and the Google a
 runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
 admin token, so Settings works without typing anything.
 
+## Windows
+
+The Windows build is the same app: the same setup window, chat, menu, and `config.json`. What
+differs:
+
+- **Installing.** Run `Cedar-<version>-windows-x64-setup.exe` from the
+  [releases page](https://github.com/hanneshapke/cedar/releases). It installs for the current
+  user only (`%LOCALAPPDATA%\Cedar`), so no administrator rights are needed, and adds Cedar to
+  the Start menu. It also installs Microsoft's WebView2 runtime if Windows doesn't have it yet
+  (Windows 11 does). If the release notes say the installer is unsigned, SmartScreen warns before
+  it runs: *More info* → *Run anyway*.
+- **Docker.** Docker Desktop, or Rancher Desktop with the dockerd (moby) engine, with the WSL 2
+  backend, so the containers are the same Linux images the Mac pulls. The app finds `docker.exe`
+  in their install folders or on `PATH`.
+- **The menu** is the Cedar icon in the notification area (you may need to drag it out of the
+  overflow ˄). While the window is open Cedar has a taskbar button; closing the window keeps it
+  running in the notification area, and *Quit Cedar* stops everything.
+- **Notifications** are Windows toasts; clicking one opens the conversation. If none appear,
+  allow them for Cedar in Settings → System → Notifications.
+- **Stopping the servers.** Windows has no SIGTERM, so the app stops cedar and cedar-chat by
+  closing the stdin pipe they hold (`CEDAR_EXIT_ON_STDIN_EOF`), which starts the same graceful
+  shutdown, and kills them if they're still running after the grace period.
+
+| What | Where |
+| --- | --- |
+| Settings, including the generated keys | `%APPDATA%\io.github.hanneshapke.cedar\config.json` |
+| cedar's and cedar-chat's databases | `%APPDATA%\io.github.hanneshapke.cedar\cedar.db` and `cedar-chat.db` |
+| Logs | `%LOCALAPPDATA%\io.github.hanneshapke.cedar\logs\` (*Open Logs Folder* in the menu) |
+
+To build it on Windows (with the Visual Studio C++ build tools and
+[Strawberry Perl](https://strawberryperl.com), which cedar-chat's bundled OpenSSL needs to build),
+in PowerShell:
+
+```powershell
+# From the repository root.
+$T = "x86_64-pc-windows-msvc"
+cargo build --release -p cedar -p cedar-chat --target $T
+foreach ($b in "cedar", "cedar-chat") { Copy-Item "target/$T/release/$b.exe" "macos/binaries/$b-$T.exe" }
+
+cargo install tauri-cli --version '^2' --locked     # once
+cd macos
+cargo tauri build --target $T --bundles nsis        # target/$T/release/bundle/nsis/Cedar_<version>_x64-setup.exe
+```
+
 ## Where things are
 
 | What | Where |
@@ -87,7 +133,8 @@ up (`PUT /v1/admin/models/default`).
 
 ## How it is built
 
-`macos/` is a [Tauri 2](https://v2.tauri.app) crate written in Rust only; the setup page is the
+`macos/` is a [Tauri 2](https://v2.tauri.app) crate written in Rust only (it also builds for
+Windows, see [above](#windows)); the setup page is the
 static HTML in `ui/`, and the chat page is whatever cedar-chat serves. It is not a member of the
 workspace (Tauri needs GTK and WebKit on Linux, which the servers don't), so build it from this
 directory. The `cedar` and `cedar-chat` binaries are bundled as sidecars: the bundler expects
@@ -110,10 +157,10 @@ Without the Apple secrets below the bundler signs ad hoc and skips notarization,
 for your own Mac: open the app once with right-click → Open. `cargo tauri dev` runs the app
 against the sidecars in `binaries/` without bundling.
 
-The icons in `icons/`, `app-icon.png`, and `tray-icon.png` are rendered by `make-icons.py` (needs
-Pillow) from the brand assets in `docs/assets/`: `cedar-app-icon.svg` with the margin a macOS icon
-carries itself, and `cedar-mark-mono.svg` as a black-on-transparent template image for the menu
-bar. Rerun it after the assets change. `Info.plist`
+The icons in `icons/`, `app-icon.png`, `tray-icon.png`, and `tray-icon-color.png` are rendered by
+`make-icons.py` (needs Pillow) from the brand assets in `docs/assets/`: `cedar-app-icon.svg` with
+the margin a macOS icon carries itself (and without it for Windows' `icon.ico` and coloured tray
+icon), and `cedar-mark-mono.svg` as a black-on-transparent template image for the menu bar. Rerun it after the assets change. `Info.plist`
 is merged into the bundle's: it declares the app a menu bar app and allows the loopback HTTP the
 window uses.
 
@@ -127,8 +174,8 @@ pull request from a branch named `release/<version>` is merged into `main`:
 2. Open a pull request from `release/<version>` to `main` and merge it.
 3. The workflow checks the versions match the branch and the tag is free, runs the tests, builds
    and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>` and `cedar-browser:<version>` for
-   amd64 and arm64 (and `:latest`), builds the two DMGs, and creates the GitHub Release `v<version>`
-   with them and a `checksums.txt`.
+   amd64 and arm64 (and `:latest`), builds the two DMGs and the Windows installer, and creates the
+   GitHub Release `v<version>` with them and a `checksums.txt`.
 
 *Run workflow* in the Actions tab builds everything for a version from the current commit as
 artifacts, without a tag or release, to try the pipeline. The images are pushed under that
@@ -142,6 +189,12 @@ One-time setup:
   (TEAMID)`, as `security find-identity -v -p codesigning` prints it), `APPLE_ID`,
   `APPLE_PASSWORD` (an app-specific password from appleid.apple.com), and `APPLE_TEAM_ID`. The
   dmg job fails up front if any is missing.
+- **Windows signing (optional).** `WINDOWS_CERTIFICATE` (an Authenticode code-signing certificate
+  exported as .pfx and base64-encoded: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))`)
+  and `WINDOWS_CERTIFICATE_PASSWORD`. Without them the windows job warns and ships an unsigned
+  installer, and the release notes tell users how to get past SmartScreen. A certificate on a
+  hardware token or in a cloud HSM (Azure Trusted Signing, say) can't be exported as a .pfx; that
+  needs a `bundle.windows.signCommand` instead.
 - **Package visibility.** The first push creates each GHCR package as private, linked to this
   repository. Make `cedar-sandbox` and `cedar-browser` public once (the package's settings →
   Danger Zone → Change visibility), or users' pulls fail with "denied".
@@ -153,12 +206,12 @@ One-time setup:
 
 | Symptom | What to check |
 | --- | --- |
-| "No docker command was found" | Docker Desktop, OrbStack, Colima, or Rancher Desktop isn't installed, or its CLI isn't in `/usr/local/bin`, `/opt/homebrew/bin`, `~/.orbstack/bin`, `~/.rd/bin`, or `/Applications/Docker.app/Contents/Resources/bin`. |
+| "No docker command was found" | Docker Desktop, OrbStack, Colima, or Rancher Desktop isn't installed, or its CLI isn't in `/usr/local/bin`, `/opt/homebrew/bin`, `~/.orbstack/bin`, `~/.rd/bin`, or `/Applications/Docker.app/Contents/Resources/bin`. On Windows: not in Docker Desktop's or Rancher Desktop's install folder, nor on `PATH`. |
 | "Docker is installed but not answering" | The daemon isn't running yet. Start it and click *Check again*. |
 | The image download fails with "denied" | The GHCR package is private or this version's images haven't been published yet (see above). You can also build the image yourself and set `sandbox_image` in `config.json`. |
-| *List models* fails | The address needs the API path (usually `/v1`). Ollama: `http://127.0.0.1:11434/v1`, LM Studio: `http://127.0.0.1:1234/v1`. A remote server must be reachable from this Mac. |
+| *List models* fails | The address needs the API path (usually `/v1`). Ollama: `http://127.0.0.1:11434/v1`, LM Studio: `http://127.0.0.1:1234/v1`. A remote server must be reachable from this computer. |
 | "Cedar could not register …" | cedar checks the model server itself before keeping the entry, so the server must be running when you save and when the app starts. Start it and click *Save* again; a model registered earlier keeps working meanwhile. |
 | Runs finish instantly with tool calls printed as text | The model or server doesn't do tool calling. Pick a model that does; for vLLM see the [deployment guide](../DEPLOYMENT.md#2-make-sure-vllm-is-ready-for-cedar). |
 | "port … is already in use" | Something else listens on 18080 or 13000. Change `cedar_port` or `chat_port` in `config.json`, then *Restart Services*. |
-| No notification when a response finishes | Settings → Notifications in the chat should list *Mac notification* as set up and the default (the app sets that up on its first start, unless another method was already chosen). Then allow notifications for Cedar in System Settings → Notifications. A response you looked at within a few seconds of it ending isn't announced. |
+| No notification when a response finishes | Settings → Notifications in the chat should list *Desktop notification* as set up and the default (the app sets that up on its first start, unless another method was already chosen). Then allow notifications for Cedar in System Settings → Notifications (on Windows, Settings → System → Notifications). A response you looked at within a few seconds of it ending isn't announced. |
 | Cedar stopped with an error | *Open Logs Folder*; `cedar.log` says why. After three quick crashes the app stops retrying until *Restart Services*. |

@@ -1,6 +1,10 @@
-//! Cedar for macOS: a menu bar app that runs the cedar agent server and its chat UI from the
-//! binaries bundled next to it, with Docker Desktop (or OrbStack, Colima, Rancher Desktop) for
-//! the sandboxes and a model server of the user's choosing. See README.md in this directory.
+//! Cedar for macOS and Windows: a menu bar (notification area) app that runs the cedar agent
+//! server and its chat UI from the binaries bundled next to it, with Docker Desktop (or OrbStack,
+//! Colima, Rancher Desktop) for the sandboxes and a model server of the user's choosing. See
+//! README.md in this directory.
+
+// A GUI program on Windows: without this a release build opens a console window next to it.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
 mod commands;
@@ -22,7 +26,8 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             // A menu bar app until its window is shown: window::present switches to a regular
-            // app (Dock icon, Command-Tab) and closing the window switches back.
+            // app (Dock icon, Command-Tab) and closing the window switches back. On Windows the
+            // window simply has a taskbar button while it is shown.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -58,7 +63,7 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Cedar could not start")
         .run(|app, event| match event {
-            // Closing the window hides it; the app goes back to being a menu bar item.
+            // Closing the window hides it; the app goes back to being a menu bar (tray) item.
             tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },

@@ -33,6 +33,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 
+# Windows has no system OpenSSL for web-push's payload encryption (`ece`) to link against, so it
+# is built from source and linked in statically there (needs Perl, which the CI runners have).
+[target.'cfg(windows)'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
