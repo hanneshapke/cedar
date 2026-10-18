@@ -159,7 +159,7 @@ sudo useradd --system --create-home --home-dir /var/lib/cedar \
 
 CEDAR_KEY=$(openssl rand -hex 24)     # chat -> cedar
 CHAT_TOKEN=$(openssl rand -hex 24)    # browser -> chat
-ADMIN_TOKEN=$(openssl rand -hex 24)   # unlocks Settings -> Model server & API keys in the browser
+ADMIN_TOKEN=$(openssl rand -hex 24)   # unlocks Settings -> Server in the browser
 SECRET_KEY=$(openssl rand -hex 32)    # encrypts the API keys saved there; keep it with your secrets
 MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')   # or type the name yourself
 echo "model: ${MODEL:?vLLM is not reachable; set MODEL to the name it serves}"
@@ -197,7 +197,7 @@ echo "Admin token (unlocks the model settings in the browser): $ADMIN_TOKEN"
 ```
 
 Keep the printed tokens. The chat page asks for the access token on first load; the admin token
-unlocks Settings → Model server & API keys, where the vLLM server is registered (step 5 does it
+unlocks Settings → Server, where the vLLM server is registered (step 5 does it
 with curl first). The full list of settings is in
 the [README](README.md#configuration) and [chat/README.md](chat/README.md#configuration).
 
@@ -206,7 +206,6 @@ Settings worth knowing on this hardware:
 | Setting | Why |
 | --- | --- |
 | `RUN_TIMEOUT_SECS` | A whole run, across all its model turns, must finish within this (default 600). A local model is slower than a hosted one, so give it room. |
-| `MAX_TOKENS` | Cap on one model reply (default 4096). A model that reasons before it answers spends this on its thinking too, so a reply can end before any text; chat then says it was cut off at the limit. Raise it if you see that. cedar waits for the full reply and gives up on a single request after **300 seconds** (fixed in `src/llm.rs`). If your Spark generates slowly enough that 4096 tokens takes longer than that, lower `MAX_TOKENS`. |
 | `MAX_CONCURRENT_RUNS` | How many agents run at once; the rest queue. |
 | `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox container. |
 | `WEB_FETCH` | `on` by default. `off` removes `fetch_url` and `download_file`, for a host that should make no outbound requests on the agent's behalf. |
@@ -248,9 +247,17 @@ curl -N http://127.0.0.1:8080/v1/runs/$RUN/events -H "Authorization: Bearer $CED
 `/readyz` returns 200 only if the database and Docker (including the `cedar-sandbox` image) are
 available. It does not check vLLM, but it says how many models are registered (`"models": 1`
 after the `PUT`). The registration is kept in cedar's database, so it survives restarts; the chat
-UI shows and edits it under Settings → Model server & API keys. The event stream should show
+UI shows and edits it under Settings → Server. The event stream should show
 `tool.call`, `tool.result`, `assistant.text`, and finally `run.completed`. If it ends in
 `run.failed`, see [Troubleshooting](#troubleshooting).
+
+**Reply length.** Each model caps one reply at its `max_tokens`, 16384 unless set (add
+`"max_tokens": 8192` to the `PUT` above, or change **Max tokens per reply** under Settings →
+Server). A model that reasons before it answers spends this on its thinking too, so a reply can
+end before any text; chat then says it was cut off at the limit. Raise it if you see that. cedar
+waits for the full reply and gives up on a single request after **300 seconds** (fixed in
+`src/llm.rs`). If your Spark generates slowly enough that the limit takes longer than that, lower
+it. The old `MAX_TOKENS` setting is ignored, with a warning in the log.
 
 Stop cedar with Ctrl-C and move on to systemd.
 
@@ -369,13 +376,13 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 
 | Symptom | Likely cause and fix |
 | --- | --- |
-| Message refused: "no model is registered" | Nobody has registered the vLLM server yet: the `PUT` in step 5, or Settings → Model server & API keys → Add a model in the browser (with the admin token from step 4). |
+| Message refused: "no model is registered" | Nobody has registered the vLLM server yet: the `PUT` in step 5, or Settings → Server → Add a model in the browser (with the admin token from step 4). |
 | Run fails: `LLM API error 404` / "model not found" | The model name in the registered entry doesn't match the name vLLM registered. Compare with `curl localhost:8000/v1/models` and edit the entry (Settings shows what the server listed). |
 | Run fails immediately with `sending API request` | cedar can't reach vLLM. Check it is running and that the entry's address includes `/v1`. |
 | Runs finish instantly with tool calls printed as text | vLLM was started without `--enable-auto-tool-choice --tool-call-parser deepseek_v4`. Redo the check in step 2. |
-| Run fails: `run exceeded the Ns time limit` | The whole run took longer than `RUN_TIMEOUT_SECS`. Raise it, or lower `MAX_TOKENS` so each model turn is shorter. |
+| Run fails: `run exceeded the Ns time limit` | The whole run took longer than `RUN_TIMEOUT_SECS`. Raise it, or lower the model's **Max tokens per reply** so each model turn is shorter. |
 | Run fails: `run did not finish within N turns` | The task needed more model turns than allowed. Raise `max_turns` in the request (capped by `MAX_TURNS_CAP`, 25 by default) or give the agent a smaller task. |
-| Run fails: `sending API request` after a long wait | A single model reply took longer than the 300 s request limit (see `MAX_TOKENS` above), and cedar retried it. Lower `MAX_TOKENS`. |
+| Run fails: `sending API request` after a long wait | A single model reply took longer than the 300 s request limit (see "Reply length" above), and cedar retried it. Lower the model's **Max tokens per reply**. |
 | `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`) or the `cedar-sandbox` image is missing. The log says which. |
 | Chat page shows a 502 error | `cedar-chat` can't reach cedar, or `CEDAR_API_KEY` in `chat.env` doesn't match `CEDAR_API_KEYS` in `cedar.env`. |
 | Chat page asks for a token and rejects it | Use the value of `CHAT_ACCESS_TOKEN` from `/etc/cedar/chat.env`, not the cedar key. |

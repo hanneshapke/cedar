@@ -7,7 +7,7 @@ use crate::browser::BrowserSession;
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmRouter, MessageRequest};
-use crate::models::{event, Run, Usage};
+use crate::models::{event, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
@@ -29,7 +29,6 @@ pub struct AgentEnv {
     /// started with.
     pub tools: Arc<ArcSwap<ToolSet>>,
     pub store: Store,
-    pub max_tokens: u32,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
     /// The sandbox's Docker network mode, for the note on what the sandbox can reach and for
@@ -151,7 +150,8 @@ pub async fn run_agent(
     for turn in 1..=run.max_turns {
         let req = MessageRequest {
             model: &run.model,
-            max_tokens: env.max_tokens,
+            // Looked up each turn, so an admin's change applies to the next call.
+            max_tokens: max_tokens(env, run),
             reasoning_effort: run.reasoning.as_deref(),
             system: &system,
             tools: &tool_defs,
@@ -312,6 +312,16 @@ pub fn with_attachments(opening: Value, blocks: Vec<Value>) -> Value {
     Value::Array(parts)
 }
 
+/// The most tokens one reply of the run's model may take: the registered entry's limit, or the
+/// default when the entry is gone.
+fn max_tokens(env: &AgentEnv, run: &Run) -> u32 {
+    env.integrations
+        .models()
+        .iter()
+        .find(|m| m.id == run.model_id)
+        .map_or(DEFAULT_MAX_TOKENS, |m| m.max_tokens)
+}
+
 /// The `usage` event for one model call, with what it cost when the model has a price.
 fn usage_event(env: &AgentEnv, run: &Run, turn: u32, usage: Usage) -> Value {
     let mut data = json!({ "turn": turn, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens });
@@ -345,7 +355,7 @@ async fn make_plan(
     let messages = plan::messages(history, &run.prompt);
     let req = MessageRequest {
         model: &run.model,
-        max_tokens: env.max_tokens,
+        max_tokens: max_tokens(env, run),
         reasoning_effort: run.reasoning.as_deref(),
         system: &system,
         tools: &[],

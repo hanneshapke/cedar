@@ -77,6 +77,11 @@ fn main() {
             tauri::RunEvent::ExitRequested { .. } => {}
             // Whatever ends the app, take the servers down with it.
             tauri::RunEvent::Exit => {
+                // Stopping can take a while (cedar lets active runs record their state), and the
+                // main thread is blocked meanwhile; don't leave a frozen window up for it.
+                for win in app.webview_windows().values() {
+                    let _ = win.hide();
+                }
                 let state = app.state::<AppState>();
                 tauri::async_runtime::block_on(state.supervisor.stop());
             }

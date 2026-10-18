@@ -110,7 +110,6 @@ impl AppState {
             waits: Arc::default(),
             tools: integrations.tools(),
             store: store.clone(),
-            max_tokens: cfg.max_tokens,
             tool_timeout: cfg.tool_timeout,
             tool_output_max_bytes: cfg.tool_output_max_bytes,
             integrations: integrations.clone(),
@@ -232,6 +231,8 @@ struct ResolvedModel {
     reasoning: Option<String>,
     /// Whether the entry takes images (and is shown attached PDFs' first pages).
     multimodal: bool,
+    /// The most tokens one reply of the entry may take.
+    max_tokens: u32,
 }
 
 /// The model a request gets: the registered entry it named (by id, or by model name when only
@@ -307,6 +308,7 @@ fn resolve_model(
         name: entry.model.clone(),
         reasoning: reasoning.map(String::from),
         multimodal: entry.multimodal,
+        max_tokens: entry.max_tokens,
     })
 }
 
@@ -886,7 +888,6 @@ async fn compact_conversation(
     Extension(owner): Extension<Owner>,
     ApiJson(req): ApiJson<CompactRequest>,
 ) -> Result<Json<CompactResponse>, AppError> {
-    let cfg = &state.cfg;
     let (messages, run) = match (req.run_id, req.transcript) {
         (Some(id), None) => {
             let run = owned_run(&state, &owner, &id.to_string()).await?;
@@ -930,7 +931,7 @@ async fn compact_conversation(
     let llm = state.llm.client_for(&model.id).ok_or_else(|| {
         AppError::Conflict(format!("model {:?} is no longer registered", model.id))
     })?;
-    let done = compact::compact(llm.as_ref(), &model.name, cfg.max_tokens, &messages)
+    let done = compact::compact(llm.as_ref(), &model.name, model.max_tokens, &messages)
         .await
         .map_err(|e| AppError::BadGateway(format!("could not compact the conversation: {e:#}")))?;
     Ok(Json(CompactResponse {

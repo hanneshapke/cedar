@@ -36,10 +36,14 @@ async fn main() -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await.with_context(|| format!("binding {bind_addr}"))?;
     tracing::info!("open http://{bind_addr}");
+    let streams = state.shutdown.clone();
     axum::serve(listener, api::router(state))
-        .with_graceful_shutdown(async {
+        .with_graceful_shutdown(async move {
             shutdown_signal().await;
             tracing::info!("shutting down");
+            // End the event streams first: the shutdown waits for every connection to close, and
+            // theirs never would.
+            streams.cancel();
         })
         .await?;
 

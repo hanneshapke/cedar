@@ -768,6 +768,8 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
             "gpu",
             json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["low"], "default_reasoning": "high" }),
         ),
+        ("gpu", json!({ "base_url": server_url, "model": "m-1", "max_tokens": 0 })),
+        ("gpu", json!({ "base_url": server_url, "model": "m-1", "max_tokens": 2_000_000 })),
     ] {
         let (code, resp) = put_model(&app, id, body.clone()).await;
         assert_eq!(code, StatusCode::BAD_REQUEST, "{body} -> {resp}");
@@ -791,6 +793,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(body["reasoning_levels"], json!(["none", "high"]));
     assert_eq!(body["default_reasoning"], Value::Null);
     assert_eq!(body["multimodal"], true);
+    assert_eq!(body["max_tokens"], 16384, "a new entry gets the default reply limit");
     assert_eq!(body["listed_models"], json!(["m-1"]));
     let (_, _, raw) = app
         .call(Method::GET, "/v1/admin/models", Some(KEY_B), None)
@@ -800,7 +803,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         app.get("/v1/models", KEY_A).await.1["models"][0],
         json!({ "id": "gpu", "label": "GPU box", "model": "m-1", "is_default": true,
                 "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true,
-                "price": null })
+                "max_tokens": 16384, "price": null })
     );
 
     // The next run talks to the server, with its key and the level asked for.
@@ -816,6 +819,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(headers["authorization"], "Bearer llm-key");
     assert_eq!(body["model"], "m-1");
     assert_eq!(body["reasoning_effort"], "high");
+    assert_eq!(body["max_tokens"], 16384);
 
     // Changing the entry without api_key keeps the saved key; absent levels stay too.
     let (code, body) = put_model(
@@ -832,11 +836,20 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     let (code, body) = put_model(
         &app,
         "gpu",
-        json!({ "base_url": server_url, "model": "m-1", "multimodal": false }),
+        json!({ "base_url": server_url, "model": "m-1", "multimodal": false, "max_tokens": 2048 }),
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["multimodal"], false);
+    assert_eq!(body["max_tokens"], 2048);
+    let (code, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1" })).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["max_tokens"], 2048, "absent keeps the saved limit");
+    // The next model call takes the entry's new limit.
+    let run = app.create_run_with(KEY_A, json!({ "prompt": "again" })).await;
+    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let (_, body) = server.completions.lock().unwrap().last().unwrap().clone();
+    assert_eq!(body["max_tokens"], 2048);
     // An empty api_key removes it (and the server then refuses the check).
     let (code, body) = put_model(
         &app,

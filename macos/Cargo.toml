@@ -31,6 +31,8 @@ url = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Notification Center, with the click that opens the conversation (see src/notify.rs).
 mac-notification-sys = "0.6"
+# Lets those banners show while Cedar is the frontmost app (see `present_while_frontmost`).
+objc2 = "0.6"
 
 [profile.release]
 strip = true

@@ -51,7 +51,7 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 curl -N -H "Authorization: Bearer $KEY" localhost:8080/v1/runs/<id>/events
 ```
 
-The chat UI does the same under Settings → Model server & API keys (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database and Docker (including the sandbox image) are usable, and how many models are registered. See `.env.example` for every setting.
+The chat UI does the same under Settings → Server (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database and Docker (including the sandbox image) are usable, and how many models are registered. See `.env.example` for every setting.
 
 ## API
 
@@ -73,10 +73,10 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
-| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, is_default, price}]}` (see [Models](#models)). |
+| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
-| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
+| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key is set and a Google account connected, and where from. Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
@@ -377,7 +377,6 @@ Settings come from environment variables. The important ones:
 | `BIND_ADDR` | `127.0.0.1:8080` |
 | `DATABASE_URL` | `sqlite://cedar.db` |
 | `MAX_TURNS_CAP` | 25 |
-| `MAX_TOKENS` | 4096 (cap on one model reply, including a reasoning model's thinking; a reply that hits it ends with `stop_reason` `max_tokens`) |
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
@@ -554,7 +553,7 @@ may change.
 ### Models
 
 The models runs can use live in a registry that admins manage through `PUT /v1/admin/models/{id}`,
-which is what the chat UI's Settings → Model server & API keys does. There is no environment
+which is what the chat UI's Settings → Server does. There is no environment
 setting for the model server: a fresh cedar has no model, says so at startup and in `/readyz`
 (`models: 0`), and refuses runs with `409` until one is registered. Each entry has:
 
@@ -566,6 +565,9 @@ setting for the model server: a fresh cedar has no model, says so at startup and
 - `multimodal`: whether the model takes images with a prompt (see [Attachments](#attachments));
   it is also shown the first pages of attached PDFs. A run with images on a model without it is
   refused with `400`; PDFs are fine for any model. Off unless set;
+- `max_tokens`: the most tokens one reply may take, a reasoning model's thinking included (1 to
+  1000000, 16384 unless set). A reply that reaches it ends with `stop_reason` `max_tokens`. It
+  replaces the old server-wide `MAX_TOKENS` setting, which is now ignored with a warning;
 - `reasoning_levels`: the values the model accepts as `reasoning_effort`, in the order to offer
   them, and an optional `default_reasoning` among them. A run's `reasoning` must be one of the
   levels; without one the default level is sent, and without that nothing is. DeepSeek V4 on vLLM
@@ -587,7 +589,7 @@ the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_UR
 ### Integrations
 
 Instead of putting `BRAVE_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the environment, an admin can set
-them up through the API, which is what the chat UI's Settings → Model server & API keys does, next
+them up through the API, which is what the chat UI's Settings → Server does, next
 to the models:
 
 1. Set `CEDAR_SECRET_KEY` (`openssl rand -hex 32`). Credentials saved through the API (a model

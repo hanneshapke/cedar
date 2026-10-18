@@ -35,6 +35,7 @@ pub fn start(app: AppHandle) {
         if let Err(e) = mac_notification_sys::set_application(&id) {
             eprintln!("notifications as {id}: {e}");
         }
+        present_while_frontmost();
     }
     tauri::async_runtime::spawn(async move {
         let http = reqwest::Client::new();
@@ -57,6 +58,46 @@ pub fn start(app: AppHandle) {
             tokio::time::sleep(Duration::from_secs(1 << failures.min(5))).await;
         }
     });
+}
+
+/// macOS hides a notification's banner while the app that sent it is frontmost, unless the
+/// center's delegate says otherwise, and mac-notification-sys's delegate doesn't. Cedar is
+/// frontmost whenever its window has focus, e.g. when "Send a test" is clicked in the settings,
+/// so the delegate's class is given `userNotificationCenter:shouldPresentNotification:` → YES.
+#[cfg(target_os = "macos")]
+fn present_while_frontmost() {
+    use objc2::encode::Encode;
+    use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
+    use std::ffi::CString;
+
+    extern "C-unwind" fn should_present(
+        _: &AnyObject,
+        _: Sel,
+        _: &AnyObject,
+        _: &AnyObject,
+    ) -> Bool {
+        Bool::YES
+    }
+
+    let Some(class) = AnyClass::get(c"NotificationCenterDelegate") else {
+        eprintln!("notifications: mac-notification-sys's delegate class is missing");
+        return;
+    };
+    let sel = Sel::register(c"userNotificationCenter:shouldPresentNotification:");
+    let types = CString::new(format!("{}@:@@", Bool::ENCODING)).expect("no NUL in an encoding");
+    // SAFETY: the function matches the selector's signature and `types` describes it. If the
+    // class already has the method (a later crate version), nothing is added.
+    unsafe {
+        let imp: Imp = std::mem::transmute(
+            should_present as extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &AnyObject) -> Bool,
+        );
+        objc2::ffi::class_addMethod(
+            class as *const AnyClass as *mut AnyClass,
+            sel,
+            imp,
+            types.as_ptr(),
+        );
+    }
 }
 
 /// One connection: show every message until the stream ends.
@@ -170,6 +211,16 @@ mod tests {
                 url: "http://x/#/c/1".into()
             }
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn banners_show_while_cedar_is_frontmost() {
+        use objc2::runtime::{AnyClass, Sel};
+        present_while_frontmost();
+        let class = AnyClass::get(c"NotificationCenterDelegate").unwrap();
+        let sel = Sel::register(c"userNotificationCenter:shouldPresentNotification:");
+        assert!(class.instance_method(sel).is_some());
     }
 
     #[test]

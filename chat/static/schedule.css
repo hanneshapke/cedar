@@ -1,6 +1,7 @@
-/* Scheduled agents (schedule.js), shared by both UIs. Like map-view.css it only relies on
-   --accent and --muted, which both define, and on translucent greys for edges, so it reads in the
-   light and dark themes alike. Buttons reuse each UI's .copy-btn and .primary. */
+/* Scheduled agents (schedule.js), shared by every UI: the schedule dialog with its form and a
+   schedule's detail, and the list in the conversations sidebar. It draws with the variables each
+   UI defines (--ink-2, --muted, --wash, --mono) and translucent greys for edges, so it reads in
+   the light and dark themes alike. Buttons reuse each UI's .copy-btn and .primary. */
 
 /* -- the schedule dialog --------------------------------------------------------------------- */
 
@@ -35,20 +36,28 @@
 @media (prefers-color-scheme: dark) { .cedar-sched-error { color: #f09080; } }
 .cedar-sched-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
-/* -- the Settings section -------------------------------------------------------------------- */
+/* -- the sidebar list ------------------------------------------------------------------------ */
 
-/* The list needs more room than the interface choice; both UIs size .settings-dialog to 440px. */
-.settings-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(92vh, 960px); overflow-y: auto; }
+.cedar-sched-side { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.cedar-sched-side[hidden] { display: none; }
+.cedar-sched-side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
+.cedar-sched-side-head > :first-child { padding: 0; }
+.cedar-sched-count { font: 11.5px var(--mono); color: var(--muted); }
+.cedar-sched-links { display: flex; flex-direction: column; gap: 1px; }
+.cedar-sched-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 5px 10px; border: 0; border-radius: 7px; background: none; color: var(--ink-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.cedar-sched-link:hover { background: var(--wash); }
+.cedar-sched-link.paused { opacity: .7; }
+.cedar-sched-link-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cedar-sched-link-name svg { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; color: var(--muted); }
+.cedar-sched-link-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-sched-link-when { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.cedar-sched-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(128, 128, 128, .25); }
-.cedar-sched-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
-.cedar-sched-heading > span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.cedar-sched-list, .cedar-sched-detail { display: flex; flex-direction: column; gap: 8px; }
-.cedar-sched-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 12px; padding: 10px 12px; border: 1px solid rgba(128, 128, 128, .3); border-radius: 10px; background: rgba(128, 128, 128, .05); }
-.cedar-sched-item.paused { opacity: .7; }
-.cedar-sched-item-main { flex: 1 1 220px; min-width: 0; font-size: 13.5px; }
-.cedar-sched-detail > .cedar-sched-item-main { flex: none; }
-.cedar-sched-item-main strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* -- a schedule's detail, in the dialog ------------------------------------------------------ */
+
+.cedar-sched-detail { display: flex; flex-direction: column; gap: 8px; }
+.cedar-sched-detail[hidden] { display: none; }
+.cedar-sched-review-text { color: var(--muted); font-size: 13.5px; }
+.cedar-sched-item-main { min-width: 0; font-size: 13.5px; }
 .cedar-sched-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
 .cedar-sched-item-actions { display: flex; flex-wrap: wrap; gap: 2px; }
 .cedar-sched-item-actions .copy-btn { padding: 4px 8px; }
@@ -77,5 +86,5 @@
 
 @media (max-width: 640px) {
   .cedar-sched-row { grid-template-columns: 1fr 1fr; }
-  .cedar-sched-dialog, .settings-dialog { width: calc(100vw - 16px); }
+  .cedar-sched-dialog { width: calc(100vw - 16px); }
 }

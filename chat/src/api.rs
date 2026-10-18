@@ -13,6 +13,7 @@ use chrono::Utc;
 use futures_util::Stream;
 use std::convert::Infallible;
 use tokio::sync::broadcast;
+use tokio_util::sync::CancellationToken;
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query, Request, State};
 use axum::http::header::{self, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE};
@@ -57,6 +58,8 @@ const ADMIN_HEADER: &str = "x-admin-token";
 /// `/` only redirects to the UI the browser has chosen (see `ui-pref.js`).
 const LOADER_HTML: &str = include_str!("../static/index.html");
 const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
+/// `cedarConfirm`, asking in the page because the macOS app's webview has no `confirm()`; every UI loads it.
+const CONFIRM_JS: &str = include_str!("../static/confirm.js");
 /// Shows the images the agent produces in the response; both UIs load it, before the viewer.
 const IMAGE_VIEW_JS: &str = include_str!("../static/image-view.js");
 const IMAGE_VIEW_CSS: &str = include_str!("../static/image-view.css");
@@ -80,6 +83,7 @@ const STOCK_VIEW_CSS: &str = include_str!("../static/stock-view.css");
 /// The Tools, Model and Integrations sections of Settings and the composer's tools menu; both UIs load it.
 const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
+const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
@@ -190,6 +194,9 @@ pub struct AppState {
     pub http: reqwest::Client,
     /// The APNs connection and its provider token (`channels`).
     pub apns: Arc<channels::Apns>,
+    /// Cancelled when the server begins to shut down. Ends the event streams, which would
+    /// otherwise hold the graceful shutdown open for as long as a client stays connected.
+    pub shutdown: CancellationToken,
 }
 
 impl AppState {
@@ -201,7 +208,7 @@ impl AppState {
         let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns })
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns, shutdown: CancellationToken::new() })
     }
 }
 
@@ -251,6 +258,7 @@ pub fn router(state: AppState) -> Router {
     let pages = Router::new()
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
         .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
+        .route("/confirm.js", get(|| async { asset(JS, CONFIRM_JS) }))
         .route("/image-view.js", get(|| async { asset(JS, IMAGE_VIEW_JS) }))
         .route("/image-view.css", get(|| async { asset(CSS, IMAGE_VIEW_CSS) }))
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
@@ -266,6 +274,7 @@ pub fn router(state: AppState) -> Router {
         .route("/stock-view.css", get(|| async { asset(CSS, STOCK_VIEW_CSS) }))
         .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
+        .route("/settings-shell.js", get(|| async { asset(JS, SETTINGS_SHELL_JS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))
@@ -501,7 +510,7 @@ async fn inbox(State(state): State<AppState>) -> Result<Json<Inbox>, AppError> {
 /// Server-Sent Events for the page: a `turn.finished` event for every response that ends, as
 /// cedar tells this service. It has no replay; the page reads `/api/inbox` when it connects.
 async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-    relay(state.notices.subscribe())
+    relay(state.notices.subscribe(), state.shutdown.clone())
 }
 
 /// Server-Sent Events for the Cedar app for macOS: a `notification` event for every message
@@ -516,27 +525,35 @@ async fn desktop_events(State(state): State<AppState>) -> Result<Sse<impl Stream
     }
     settings.desktop_connected_at = Some(Utc::now());
     state.store.set_notification_settings(&settings).await?;
-    Ok(relay(rx))
+    Ok(relay(rx, state.shutdown.clone()))
 }
 
-/// A broadcast channel of JSON, as Server-Sent Events named by each value's `type`.
-fn relay(rx: broadcast::Receiver<Value>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+/// A broadcast channel of JSON, as Server-Sent Events named by each value's `type`, until
+/// `shutdown` is cancelled.
+fn relay(rx: broadcast::Receiver<Value>, shutdown: CancellationToken) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    Sse::new(relay_stream(rx, shutdown)).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+}
+
+fn relay_stream(rx: broadcast::Receiver<Value>, shutdown: CancellationToken) -> impl Stream<Item = Result<SseEvent, Infallible>> {
+    futures_util::stream::unfold((rx, shutdown), |(mut rx, shutdown)| async move {
         loop {
-            match rx.recv().await {
+            let received = tokio::select! {
+                _ = shutdown.cancelled() => return None,
+                received = rx.recv() => received,
+            };
+            match received {
                 Ok(notice) => {
                     let event = SseEvent::default()
                         .event(notice["type"].as_str().unwrap_or("notice"))
                         .data(notice.to_string());
-                    return Some((Ok(event), rx));
+                    return Some((Ok(event), (rx, shutdown)));
                 }
                 // Behind: some were missed (the page re-reads the inbox on the next notice); keep going.
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
         }
-    });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+    })
 }
 
 // -- notifications out of the app (channels) ------------------------------------------------
@@ -1229,8 +1246,8 @@ async fn get_models(State(state): State<AppState>, headers: HeaderMap) -> Result
 }
 
 /// Register a model or change one. The body is cedar's (`{base_url, model, label?, api_key?,
-/// reasoning_levels?, default_reasoning?, is_default?}`) and goes through as it is; cedar
-/// checks it and the server it names.
+/// reasoning_levels?, default_reasoning?, multimodal?, max_tokens?, is_default?, price?}`) and
+/// goes through as it is; cedar checks it and the server it names.
 async fn put_model(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1659,4 +1676,24 @@ async fn decide_approval(
 #[serde(deny_unknown_fields)]
 struct ApprovalBody {
     decision: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::StreamExt;
+
+    /// An open event stream held the graceful shutdown up until the launcher's SIGKILL.
+    #[tokio::test]
+    async fn event_streams_end_when_the_server_shuts_down() {
+        let (tx, rx) = broadcast::channel(4);
+        let shutdown = CancellationToken::new();
+        let mut stream = Box::pin(relay_stream(rx, shutdown.clone()));
+        tx.send(json!({"type": "turn.finished"})).unwrap();
+        assert!(stream.next().await.is_some());
+        shutdown.cancel();
+        let end = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await;
+        assert!(matches!(end, Ok(None)), "the stream kept going after shutdown");
+        drop(tx);
+    }
 }
