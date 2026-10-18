@@ -1,5 +1,5 @@
 //! Shared state and the launch sequence: find Docker, pull the images, start the servers,
-//! register the model, show the chat. Everything the setup page shows comes from
+//! share the chat on the tailnet if asked, register the model, show the chat. Everything the setup page shows comes from
 //! [`AppState::status`].
 
 use crate::config::{Config, VERSION};
@@ -7,6 +7,7 @@ use crate::docker::{self, DockerCli};
 use crate::models;
 use crate::paths::Paths;
 use crate::supervisor::{ServiceState, Supervisor};
+use crate::tailscale;
 use crate::window;
 use anyhow::Result;
 use serde::Serialize;
@@ -44,6 +45,17 @@ pub enum ModelStatus {
     Failed(String),
 }
 
+/// Whether the chat is served on the tailnet for the iOS app (see tailscale.rs).
+#[derive(Serialize, Clone, Debug)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum ShareStatus {
+    Off,
+    Starting,
+    /// The chat's HTTPS address on the tailnet.
+    On(String),
+    Failed(String),
+}
+
 pub struct AppState {
     pub paths: Paths,
     config: Mutex<Config>,
@@ -51,6 +63,11 @@ pub struct AppState {
     docker_cli: Mutex<Option<DockerCli>>,
     images: Mutex<ImagesStatus>,
     model: Mutex<ModelStatus>,
+    share: Mutex<ShareStatus>,
+    /// The tailnet port `tailscale serve` was set up on by this app, to turn off again.
+    served_port: Mutex<Option<u16>>,
+    /// The `CHAT_PUBLIC_URL` the running chat was started with.
+    started_public_url: Mutex<Option<String>>,
     pub supervisor: Supervisor,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
@@ -66,6 +83,9 @@ pub struct Status {
     pub images: ImagesStatus,
     pub services: ServiceState,
     pub model: ModelStatus,
+    pub share: ShareStatus,
+    /// Sharing is turned on (it is served once the servers run and Tailscale is ready).
+    pub tailscale_share: bool,
     pub configured: bool,
     pub llm_base_url: String,
     pub llm_model: String,
@@ -88,6 +108,9 @@ impl AppState {
             docker_cli: Mutex::new(None),
             images: Mutex::new(ImagesStatus::Waiting),
             model: Mutex::new(ModelStatus::Unset),
+            share: Mutex::new(ShareStatus::Off),
+            served_port: Mutex::new(None),
+            started_public_url: Mutex::new(None),
             bootstrap: tokio::sync::Mutex::new(()),
             setup_url: Mutex::new(None),
         }
@@ -125,6 +148,65 @@ impl AppState {
         *self.model.lock().unwrap() = s;
     }
 
+    fn set_share(&self, s: ShareStatus) {
+        *self.share.lock().unwrap() = s;
+    }
+
+    /// The chat's tailnet address while it is served there.
+    pub fn share_url(&self) -> Option<String> {
+        match &*self.share.lock().unwrap() {
+            ShareStatus::On(url) => Some(url.clone()),
+            _ => None,
+        }
+    }
+
+    /// The address to start the chat with when sharing is on, or `None` (with the reason on the
+    /// page) when it is off or Tailscale isn't ready. Sharing that was turned off is undone here.
+    async fn prepare_share(&self, cfg: &Config) -> Option<String> {
+        if !cfg.tailscale_share {
+            self.stop_share().await;
+            return None;
+        }
+        self.set_share(ShareStatus::Starting);
+        let found = match tailscale::find() {
+            Some(cli) => cli.url(cfg.tailscale_https_port).await,
+            None => Err(anyhow::anyhow!(tailscale::MISSING)),
+        };
+        match found {
+            Ok(url) => Some(url),
+            Err(e) => {
+                self.set_share(ShareStatus::Failed(format!("{e:#}")));
+                None
+            }
+        }
+    }
+
+    /// `tailscale serve` for the running chat.
+    async fn serve_share(&self, cfg: &Config, url: String) {
+        let Some(cli) = tailscale::find() else {
+            self.set_share(ShareStatus::Failed(tailscale::MISSING.into()));
+            return;
+        };
+        match cli.serve(cfg.tailscale_https_port, cfg.chat_port).await {
+            Ok(()) => {
+                *self.served_port.lock().unwrap() = Some(cfg.tailscale_https_port);
+                self.set_share(ShareStatus::On(url));
+            }
+            Err(e) => self.set_share(ShareStatus::Failed(format!("{e:#}"))),
+        }
+    }
+
+    /// Turns off what [`Self::serve_share`] set up, if anything. Also run when the app quits.
+    pub async fn stop_share(&self) {
+        let port = self.served_port.lock().unwrap().take();
+        if let (Some(port), Some(cli)) = (port, tailscale::find()) {
+            if let Err(e) = cli.unserve(port).await {
+                eprintln!("turning off tailscale serve: {e:#}");
+            }
+        }
+        self.set_share(ShareStatus::Off);
+    }
+
     pub fn status(&self) -> Status {
         let cfg = self.config();
         Status {
@@ -133,6 +215,8 @@ impl AppState {
             images: self.images.lock().unwrap().clone(),
             services: self.supervisor.state(),
             model: self.model.lock().unwrap().clone(),
+            share: self.share.lock().unwrap().clone(),
+            tailscale_share: cfg.tailscale_share,
             configured: cfg.configured(),
             llm_base_url: cfg.llm_base_url.clone(),
             llm_model: cfg.llm_model.clone(),
@@ -227,13 +311,19 @@ pub async fn bootstrap(app: AppHandle) {
     }
     state.set_images(ImagesStatus::Ready);
 
-    // 3. The servers, once the model server is known.
+    // 3. The servers, once the model server is known. When the chat is shared on the tailnet,
+    //    it is told that address first, then served there once it is up.
     if !cfg.configured() {
         return;
     }
-    if let Err(e) = state.supervisor.start(cfg, cli).await {
+    let public_url = state.prepare_share(&cfg).await;
+    *state.started_public_url.lock().unwrap() = public_url.clone();
+    if let Err(e) = state.supervisor.start(cfg.clone(), cli, public_url.clone()).await {
         eprintln!("starting the services: {e:#}");
         return;
+    }
+    if let Some(url) = public_url {
+        state.serve_share(&cfg, url).await;
     }
 
     // 4. The model, into cedar's registry. A failure here (the model server is down, say) leaves
@@ -259,6 +349,35 @@ pub async fn apply_model_server(app: AppHandle) {
             eprintln!("showing the chat: {e:#}");
         }
     }
+}
+
+/// Turns sharing on the tailnet on or off. The chat learns its address only when it starts, so
+/// this restarts the servers, unless they already run with the address sharing gives them.
+/// Turning it on with Tailscale not ready fails here, with nothing changed.
+pub async fn set_share(app: AppHandle, enabled: bool) -> Result<()> {
+    let state = app.state::<AppState>();
+    let cfg = state.config();
+    let url = if enabled {
+        let cli = tailscale::find().ok_or_else(|| anyhow::anyhow!(tailscale::MISSING))?;
+        Some(cli.url(cfg.tailscale_https_port).await?)
+    } else {
+        None
+    };
+    let cfg = state.update_config(|c| c.tailscale_share = enabled)?;
+    let running = state.supervisor.state() == ServiceState::Running;
+    let same_address = *state.started_public_url.lock().unwrap() == url;
+    if running && same_address {
+        match url {
+            Some(url) => state.serve_share(&cfg, url).await,
+            None => state.stop_share().await,
+        }
+    } else {
+        if !enabled {
+            state.stop_share().await;
+        }
+        tauri::async_runtime::spawn(restart(app.clone()));
+    }
+    Ok(())
 }
 
 /// Stops the servers and runs the launch sequence again.

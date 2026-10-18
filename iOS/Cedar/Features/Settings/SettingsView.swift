@@ -7,6 +7,9 @@ struct SettingsView: View {
     @State private var check: CheckState = .idle
     @State private var models: [ModelInfo] = []
     @State private var pushStatus: String?
+    @State private var scanning = false
+    /// Set by a scan, so the connection is tested once the scanner is gone.
+    @State private var scanned = false
 
     enum CheckState: Equatable {
         case idle, checking, ok
@@ -25,10 +28,15 @@ struct SettingsView: View {
                     SecureField("Access token (if the server has one)", text: $draft.accessToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Button {
+                        scanning = true
+                    } label: {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                    }
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("The cedar-chat server's URL (where you open the web UI) and its CHAT_ACCESS_TOKEN, if it is set. The token is stored in the Keychain; cedar's own key stays on the server.")
+                    Text("The cedar-chat server's URL (where you open the web UI) and its CHAT_ACCESS_TOKEN, if it is set. Running Cedar on a Mac? Turn on iPhone & iPad sharing in the Mac app and scan the QR code it shows. The token is stored in the Keychain; cedar's own key stays on the server.")
                 }
 
                 Section {
@@ -108,6 +116,18 @@ struct SettingsView: View {
                         dismiss()
                     }
                     .disabled(!draft.isConfigured)
+                }
+            }
+            .sheet(isPresented: $scanning, onDismiss: {
+                if scanned {
+                    scanned = false
+                    Task { await testConnection() }
+                }
+            }) {
+                ScanCodeView { code in
+                    draft.serverURL = code.serverURL
+                    draft.accessToken = code.accessToken
+                    scanned = true
                 }
             }
             .onAppear {

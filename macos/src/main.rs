@@ -5,11 +5,13 @@
 mod app;
 mod commands;
 mod config;
+mod connect;
 mod docker;
 mod models;
 mod notify;
 mod paths;
 mod supervisor;
+mod tailscale;
 mod tray;
 mod window;
 
@@ -54,6 +56,9 @@ fn main() {
             commands::open_in_browser,
             commands::open_logs,
             commands::copy_token,
+            commands::set_share,
+            commands::copy_share_url,
+            commands::share_qr,
         ])
         .build(tauri::generate_context!())
         .expect("Cedar could not start")
@@ -83,7 +88,10 @@ fn main() {
                     let _ = win.hide();
                 }
                 let state = app.state::<AppState>();
-                tauri::async_runtime::block_on(state.supervisor.stop());
+                tauri::async_runtime::block_on(async {
+                    state.supervisor.stop().await;
+                    state.stop_share().await;
+                });
             }
             _ => {}
         });

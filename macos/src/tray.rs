@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager};
 const OPEN: &str = "open";
 const BROWSER: &str = "browser";
 const COPY_TOKEN: &str = "copy_token";
+const IPHONE: &str = "iphone";
 const SETUP: &str = "setup";
 const RESTART: &str = "restart";
 const LOGS: &str = "logs";
@@ -21,6 +22,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &item(OPEN, "Open Cedar")?,
             &item(BROWSER, "Open in Browser")?,
             &item(COPY_TOKEN, "Copy Access Token")?,
+            &item(IPHONE, "iPhone & iPad Access…")?,
             &PredefinedMenuItem::separator(app)?,
             &item(SETUP, "Model Server & Setup…")?,
             &item(RESTART, "Restart Services")?,
@@ -47,7 +49,7 @@ fn handle(app: &AppHandle, id: &str) {
         OPEN => crate::window::show(app),
         BROWSER => open::that(state.config().chat_url()).map_err(Into::into),
         COPY_TOKEN => copy_to_clipboard(&state.config().secrets.chat_access_token),
-        SETUP => crate::window::show_setup(app),
+        SETUP | IPHONE => crate::window::show_setup(app),
         LOGS => open::that(&state.paths.logs).map_err(Into::into),
         RESTART => {
             tauri::async_runtime::spawn(app::restart(app.clone()));

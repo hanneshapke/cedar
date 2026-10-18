@@ -61,6 +61,8 @@
   button:disabled { opacity: 0.5; cursor: default; }
   .presets button { font-size: 12px; padding: 4px 10px; }
   .error { color: var(--bad); }
+  .qr { margin-top: 12px; width: 220px; padding: 0; border-radius: 8px; overflow: hidden; line-height: 0; }
+  .qr svg { width: 220px; height: 220px; }
   .hidden { display: none; }
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
@@ -133,6 +135,31 @@
     <button id="open-logs">Open logs</button>
   </div>
   <p class="muted" style="margin-top:10px">Opening the chat in a browser asks for the access token once; copy it from here. Settings live in <code id="config-path"></code>.</p>
+</section>
+
+<section id="share">
+  <h2><span class="dot" id="share-dot"></span>iPhone &amp; iPad</h2>
+  <p class="muted">The Cedar iOS app connects over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on this Mac and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
+  <div class="row">
+    <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
+      <input type="checkbox" id="share-toggle"> Share with the iOS app over Tailscale
+    </label>
+  </div>
+  <p id="share-text" class="muted"></p>
+  <p class="detail" id="share-detail"></p>
+  <div class="row hidden" id="share-actions">
+    <button id="copy-share-url">Copy address</button>
+    <button id="share-copy-token">Copy access token</button>
+    <button id="share-qr-toggle">Show QR code</button>
+  </div>
+  <div id="share-qr" class="hidden">
+    <div id="share-qr-code" class="qr"></div>
+    <p class="muted">In the iOS app’s Settings, tap <b>Scan QR Code</b> and point the camera here. The code holds the access token, so hide it again when you are done.</p>
+  </div>
+  <div class="row">
+    <button class="hidden" id="share-retry">Try again</button>
+  </div>
+  <p id="share-error" class="error"></p>
 </section>
 
 <footer>Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.</footer>
