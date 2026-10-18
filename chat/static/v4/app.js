@@ -1063,7 +1063,7 @@ function applyEvent(view, event) {
 
 /** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
 const CUT_OFF =
-  "The reply was cut off at the model's output limit (MAX_TOKENS). A model that thinks before answering can use all of it before writing any text. Ask whoever runs the server to raise it.";
+  "The reply was cut off at the model's output limit. A model that thinks before answering can use all of it before writing any text. An admin can raise it under Settings → Server, as the model's Max tokens per reply.";
 
 function finishTurn(view, event) {
   if (view.done) return;

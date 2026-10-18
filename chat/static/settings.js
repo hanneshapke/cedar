@@ -25,6 +25,9 @@
 
 const cedarSettings = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
+  // A model's reply limit when it is registered without one, and the highest cedar takes.
+  const DEFAULT_MAX_TOKENS = 16384;
+  const MAX_MAX_TOKENS = 1000000;
   const ALL = '*';
 
   let deps = null;
@@ -647,6 +650,7 @@ const cedarSettings = (() => {
     if (entry.api_key_set) side.append(badge('API key set'));
     if (entry.multimodal) side.append(badge('Images'));
     side.append(badge(levels.length ? `Reasoning: ${levels.join(', ')}${entry.default_reasoning ? ` (default ${entry.default_reasoning})` : ''}` : 'No reasoning levels'));
+    if (entry.max_tokens) side.append(badge(`Max ${entry.max_tokens.toLocaleString()} tokens`));
     // What the server listed when the entry was checked is offered in the edit form; the row only
     // says when the model name is not one of them.
     if (Array.isArray(entry.listed_models) && !entry.listed_models.includes(entry.model)) {
@@ -736,6 +740,14 @@ const cedarSettings = (() => {
     };
     levels.addEventListener('input', fillDefault);
     fillDefault();
+    const maxTokens = input('Max tokens per reply', String(entry?.max_tokens ?? DEFAULT_MAX_TOKENS), 'Max tokens per reply', 'number');
+    maxTokens.min = '1';
+    maxTokens.max = String(MAX_MAX_TOKENS);
+    maxTokens.step = '1';
+    const maxTokensField = el('label', 'cedar-set-field');
+    const maxTokensHead = el('span', 'cedar-set-field-head');
+    maxTokensHead.append(el('span', '', 'Max tokens per reply'));
+    maxTokensField.append(maxTokensHead, maxTokens, el('small', 'cedar-set-field-note', 'The most one reply may take, a reasoning model\'s thinking included. A reply that reaches it is cut off.'));
     const multimodalLabel = el('label', 'cedar-set-check plain');
     const multimodalBox = el('input');
     multimodalBox.type = 'checkbox';
@@ -755,7 +767,7 @@ const cedarSettings = (() => {
     if (listed) form.append(listed);
     form.append(key);
     if (entry?.api_key_set && canSaveKey) form.append(clearKey);
-    form.append(levels, defaultLevel, multimodalLabel, makeDefault);
+    form.append(levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
     form.append(el('small', 'cedar-set-field-note', 'cedar checks the address by listing the server\'s models before saving. DeepSeek V4 on vLLM takes the levels none, low, high, xhigh and max as reasoning_effort; OpenAI-style servers take none, minimal, low, medium and high.'));
     form.append(saveBtn, button('Cancel', onDone));
     form.addEventListener('submit', async (e) => {
@@ -763,6 +775,12 @@ const cedarSettings = (() => {
       if (!id.value.trim()) { deps.toast('Give the model an id'); id.focus(); return; }
       if (!address.value.trim()) { deps.toast('Enter the server address'); address.focus(); return; }
       if (!model.value.trim()) { deps.toast('Enter the model name'); model.focus(); return; }
+      const limit = Number(maxTokens.value);
+      if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MAX_TOKENS) {
+        deps.toast(`Max tokens per reply must be a whole number from 1 to ${MAX_MAX_TOKENS.toLocaleString()}`);
+        maxTokens.focus();
+        return;
+      }
       const body = {
         base_url: address.value.trim(),
         model: model.value.trim(),
@@ -770,6 +788,7 @@ const cedarSettings = (() => {
         reasoning_levels: parseLevels(),
         default_reasoning: defaultLevel.value,
         multimodal: multimodalBox.checked,
+        max_tokens: limit,
         is_default: defaultBox.checked,
       };
       if (key.value.trim()) body.api_key = key.value.trim();

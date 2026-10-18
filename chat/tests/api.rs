@@ -274,8 +274,8 @@ async fn download_file(State(s): State<Shared>, Path((id, path)): Path<(Uuid, St
 /// What the fake cedar has registered: `model-a` (the default, with reasoning levels) and `model-b`.
 fn registry() -> Vec<Value> {
     vec![
-        json!({ "id": "model-a", "label": "Model A", "model": "org/model-a", "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true, "is_default": true }),
-        json!({ "id": "model-b", "label": "Model B", "model": "org/model-b", "reasoning_levels": [], "default_reasoning": null, "multimodal": false, "is_default": false }),
+        json!({ "id": "model-a", "label": "Model A", "model": "org/model-a", "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true, "max_tokens": 16384, "is_default": true }),
+        json!({ "id": "model-b", "label": "Model B", "model": "org/model-b", "reasoning_levels": [], "default_reasoning": null, "multimodal": false, "max_tokens": 16384, "is_default": false }),
     ]
 }
 

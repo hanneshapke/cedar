@@ -178,6 +178,8 @@
 .cedar-set-inline { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .cedar-set-inline[hidden] { display: none; }
 .cedar-set-inline input { flex: 1 1 200px; }
+/* A labelled field inside the form stacks its label over its input; the basis above would be its height. */
+.cedar-set-inline .cedar-set-field input { flex: none; }
 
 /* -- the composer's Tools button and its menu ---------------------------------------------- */
 

@@ -1135,8 +1135,8 @@ async fn get_models(State(state): State<AppState>, headers: HeaderMap) -> Result
 }
 
 /// Register a model or change one. The body is cedar's (`{base_url, model, label?, api_key?,
-/// reasoning_levels?, default_reasoning?, is_default?}`) and goes through as it is; cedar
-/// checks it and the server it names.
+/// reasoning_levels?, default_reasoning?, multimodal?, max_tokens?, is_default?, price?}`) and
+/// goes through as it is; cedar checks it and the server it names.
 async fn put_model(
     State(state): State<AppState>,
     headers: HeaderMap,

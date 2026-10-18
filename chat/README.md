@@ -375,7 +375,7 @@ and the error is relayed.
 Settings → **Server** is where the models and the API keys go. Without
 `CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
 the page is unlocked with that token for the browser session and manages cedar's
-[models](#models), its Brave Search key (checked with one search before it is saved, then shown
+[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (checked with one search before it is saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's

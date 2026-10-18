@@ -160,6 +160,9 @@ pub struct ModelEntry {
     /// Accepts images with a prompt, and is shown attached PDFs' first pages as images (see
     /// [`crate::attachments`]). Without it, a run with images is refused; PDFs are fine.
     pub multimodal: bool,
+    /// The most tokens one reply may take, a reasoning model's thinking included. A reply that
+    /// reaches it ends with `stop_reason` `max_tokens`.
+    pub max_tokens: u32,
     /// The entry a run gets when it names no model. Exactly one entry has it while any exist.
     pub is_default: bool,
     /// What its tokens cost; `None` when no one said.
@@ -182,11 +185,17 @@ impl ModelEntry {
             "reasoning_levels": self.reasoning_levels,
             "default_reasoning": self.default_reasoning,
             "multimodal": self.multimodal,
+            "max_tokens": self.max_tokens,
             "is_default": self.is_default,
             "price": self.price,
         })
     }
 }
+
+/// The reply limit a model gets when it is registered without one.
+pub const DEFAULT_MAX_TOKENS: u32 = 16384;
+/// The highest reply limit a model may be given.
+pub const MAX_MAX_TOKENS: u32 = 1_000_000;
 
 /// A model's price in US dollars per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

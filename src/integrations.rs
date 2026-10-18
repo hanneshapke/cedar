@@ -78,6 +78,9 @@ pub struct ModelSpec {
     /// The model accepts images with a prompt. Absent keeps the saved value (`false`
     /// for a new entry).
     pub multimodal: Option<bool>,
+    /// The most tokens one reply may take, a reasoning model's thinking included (1 to
+    /// 1000000). Absent keeps the saved value (16384 for a new entry).
+    pub max_tokens: Option<u32>,
     /// Make this the model runs get when they name none. Absent keeps it as it is.
     pub is_default: Option<bool>,
     /// What its tokens cost, for the cost shown with a run's usage. Absent keeps the saved price;
@@ -267,6 +270,7 @@ impl Integrations {
                 base_url,
                 default_reasoning: None,
                 multimodal: false,
+                max_tokens: crate::models::DEFAULT_MAX_TOKENS,
                 is_default: true,
                 price: None,
                 position: 0,
@@ -339,6 +343,17 @@ impl Integrations {
         let multimodal = spec
             .multimodal
             .unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.multimodal));
+        let max_tokens = spec.max_tokens.unwrap_or_else(|| {
+            existing
+                .as_ref()
+                .map_or(crate::models::DEFAULT_MAX_TOKENS, |e| e.max_tokens)
+        });
+        if !(1..=crate::models::MAX_MAX_TOKENS).contains(&max_tokens) {
+            return Err(AppError::BadRequest(format!(
+                "max_tokens must be between 1 and {}",
+                crate::models::MAX_MAX_TOKENS
+            )));
+        }
         let price = match spec.price {
             Some(Some(p)) => {
                 let ok = |v: f64| v.is_finite() && (0.0..=100_000.0).contains(&v);
@@ -379,6 +394,7 @@ impl Integrations {
             reasoning_levels,
             default_reasoning,
             multimodal,
+            max_tokens,
             is_default,
             price,
             position: existing.as_ref().map_or(0, |e| e.position),
