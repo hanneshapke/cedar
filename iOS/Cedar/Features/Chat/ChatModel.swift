@@ -1,5 +1,7 @@
 import Foundation
 import Observation
+import PhotosUI
+import UniformTypeIdentifiers
 
 /// One conversation's turns, kept up to date from the server's event streams.
 @MainActor
@@ -11,9 +13,15 @@ final class ChatModel {
     private(set) var turns: [TurnTranscript] = []
     /// The message being sent, shown until the server accepts it.
     private(set) var pendingPrompt: String?
+    /// The files that went with it.
+    private(set) var pendingAttachments: [AttachmentInfo] = []
     private(set) var isLoading = false
     var errorMessage: String?
     var draft = ""
+    /// Files picked to go with the next message.
+    private(set) var attachments: [OutgoingAttachment] = []
+    /// Picked files still being read.
+    private(set) var isAddingAttachments = false
 
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private var followers: [String: Task<Void, Never>] = [:]
@@ -25,7 +33,19 @@ final class ChatModel {
 
     var client: ChatClient? { app?.client }
     var isActive: Bool { pendingPrompt != nil || turns.contains { $0.isActive } }
-    var canSend: Bool { !isActive && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var canSend: Bool {
+        !isActive && !isAddingAttachments && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Whether the model new messages go to takes images: the one picked in Settings, or the
+    /// server's default. PDFs go with any model.
+    var acceptsImages: Bool {
+        guard let app else { return false }
+        let model = app.settings.model.isEmpty
+            ? app.models.first(where: \.isDefault)
+            : app.models.first(where: { $0.id == app.settings.model })
+        return model?.multimodal ?? false
+    }
 
     /// The questions the last turn asked, until a later turn answers them.
     var openQuestions: Questions? {
@@ -151,28 +171,98 @@ final class ChatModel {
         change(&turns[index])
     }
 
+    // MARK: Attachments
+
+    /// Reads one picked file: its name, type and bytes, or nil when there's nothing to read.
+    private typealias FileReader = () async throws -> (name: String, type: UTType?, data: Data)?
+
+    /// Adds photos picked from the library.
+    func addPhotos(_ items: [PhotosPickerItem]) async {
+        await addFiles(items.enumerated().map { index, item -> FileReader in
+            {
+                guard let data = try await item.loadTransferable(type: Data.self) else { return nil }
+                let type = item.supportedContentTypes.first { $0.conforms(to: .image) } ?? .image
+                let ext = type.preferredFilenameExtension ?? "jpg"
+                return (items.count == 1 ? "photo.\(ext)" : "photo-\(index + 1).\(ext)", type, data)
+            }
+        })
+    }
+
+    /// Adds files picked in the Files app.
+    func addFiles(at urls: [URL]) async {
+        await addFiles(urls.map { url -> FileReader in
+            {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let data = try Data(contentsOf: url)
+                return (url.lastPathComponent, UTType(filenameExtension: url.pathExtension), data)
+            }
+        })
+    }
+
+    /// Reads each file and adds the ones that fit, reporting the first that doesn't.
+    private func addFiles(_ readers: [FileReader]) async {
+        isAddingAttachments = true
+        defer { isAddingAttachments = false }
+        var problems: [String] = []
+        for read in readers {
+            do {
+                guard let picked = try await read() else {
+                    problems.append("A picked file could not be read")
+                    continue
+                }
+                let (name, type, data) = picked
+                // Re-encoding a photo takes a moment; keep it off the main thread.
+                let file = await Task.detached { OutgoingAttachment.make(name: name, type: type, data: data) }.value
+                guard let file else {
+                    problems.append("\(name): only PNG, JPEG, GIF, WebP and PDF files can be attached")
+                    continue
+                }
+                if let problem = OutgoingAttachment.problem(adding: file, to: attachments, imagesAllowed: acceptsImages) {
+                    problems.append(problem)
+                    continue
+                }
+                attachments.append(file)
+            } catch {
+                problems.append(error.localizedDescription)
+            }
+        }
+        if let problem = problems.first { errorMessage = problem }
+    }
+
+    func removeAttachment(_ file: OutgoingAttachment) {
+        attachments.removeAll { $0.id == file.id }
+    }
+
     // MARK: Sending
 
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
+        let files = attachments
         draft = ""
-        if !(await send(text: text)) {
+        attachments = []
+        if !(await send(text: text, attachments: files)) {
             draft = text
+            attachments = files
         }
     }
 
-    /// Sends `text` as the next message. Returns whether the server took it.
+    /// Sends `text`, with `attachments`, as the next message. Returns whether the server took it.
     @discardableResult
-    func send(text: String) async -> Bool {
+    func send(text: String, attachments: [OutgoingAttachment] = []) async -> Bool {
         guard let app, !isActive else { return false }
         guard let client = app.client else {
             errorMessage = ChatError.notConfigured.errorDescription
             return false
         }
         pendingPrompt = text
+        pendingAttachments = attachments.map(\.info)
         errorMessage = nil
-        defer { pendingPrompt = nil }
+        defer {
+            pendingPrompt = nil
+            pendingAttachments = []
+        }
         let settings = app.settings
         do {
             let id: String
@@ -186,7 +276,10 @@ final class ChatModel {
             let turn = try await client.send(conversationId: id, .init(
                 content: text,
                 model: settings.model.isEmpty ? nil : settings.model,
-                reasoning: settings.reasoning.isEmpty ? nil : settings.reasoning
+                reasoning: settings.reasoning.isEmpty ? nil : settings.reasoning,
+                attachments: attachments.isEmpty ? nil : attachments.map {
+                    .init(name: $0.name, mediaType: $0.mediaType, data: $0.data.base64EncodedString())
+                }
             ))
             turns.append(TurnTranscript(turn: turn))
             follow(turnId: turn.id)

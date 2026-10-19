@@ -23,6 +23,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   and route lines (tap for full screen), a recipe checklist with steps to tick off, and stock
   charts with ratings, returns and news
 - Follow-ups continue the conversation; a stop button cancels the running response
+- Attach PDFs (any model) and photos or images (models registered as multimodal) to a
+  message from the paperclip: the photo library or Files. Photos in a type cedar doesn't take,
+  such as HEIC, are sent as JPEG; the limits are the server's (10 files, 20 MB each, 32 MB in all)
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered
