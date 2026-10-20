@@ -19,9 +19,10 @@ Cedar.app (menu bar) ──┬── cedar-chat :13000 ──▶ cedar :18080 �
 
 ## Installing
 
-1. Download `Cedar-<version>-apple-silicon.dmg` or `Cedar-<version>-intel.dmg` from the
+1. Download `Cedar-<version>-apple-silicon.dmg` from the
    [releases page](https://github.com/hanneshapke/cedar/releases), open it, and drag Cedar to
-   Applications. The app is signed and notarized, so it opens without warnings.
+   Applications. Releases are built for Apple Silicon only; on an Intel Mac, build it yourself
+   (see below). The app is signed and notarized, so it opens without warnings.
 2. Start Docker Desktop (or OrbStack, Colima).
 3. Open Cedar. A tree appears in the menu bar and the setup window opens:
    - **Docker**: found and running, or what to do.
@@ -173,8 +174,8 @@ pull request from a branch named `release/<version>` is merged into `main`:
 2. Open a pull request from `release/<version>` to `main` and merge it.
 3. The workflow checks the versions match the branch and the tag is free, runs the tests, builds
    and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>` and `cedar-browser:<version>` for
-   amd64 and arm64 (and `:latest`), builds the two DMGs, and creates the GitHub Release `v<version>`
-   with them and a `checksums.txt`.
+   amd64 and arm64 (and `:latest`), builds the Apple Silicon DMG, and creates the GitHub Release
+   `v<version>` with it and a `checksums.txt`.
 
 *Run workflow* in the Actions tab builds everything for a version from the current commit as
 artifacts, without a tag or release, to try the pipeline. The images are pushed under that

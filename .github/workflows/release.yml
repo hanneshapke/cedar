@@ -3,8 +3,8 @@
 #   1. verify   the branch's version matches both Cargo.toml versions, the tag is free, tests pass
 #   2. images   the sandbox and browser images, built natively for amd64 and arm64 and pushed to
 #               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
-#   3. dmg      cedar and cedar-chat for Apple Silicon and Intel, wrapped in Cedar.app, signed,
-#               notarized, and packed into a DMG (one per architecture)
+#   3. dmg      cedar and cedar-chat for Apple Silicon, wrapped in Cedar.app, signed, notarized,
+#               and packed into a DMG (no Intel build: openssl-sys can't cross-compile to x86_64)
 #   4. release  tag v<version> at the merge commit and publish a GitHub Release with the DMGs
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
@@ -202,10 +202,6 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             arch: apple-silicon
-          - target: x86_64-apple-darwin
-            arch: intel
-    # An Apple Silicon runner; the Intel build is a cross-compile (cedar has no native dependencies
-    # that care, and Apple's toolchain links both).
     runs-on: macos-15
     env:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -313,13 +309,9 @@ jobs:
           cat > notes.md <<EOF
           ## Cedar $VERSION for macOS
 
-          Download the DMG for your Mac, drag Cedar to Applications, and open it. The first launch
-          needs Docker Desktop (or OrbStack, Colima) running and asks for your model server.
-
-          | Mac | File |
-          | --- | --- |
-          | Apple Silicon | \`Cedar-$VERSION-apple-silicon.dmg\` |
-          | Intel | \`Cedar-$VERSION-intel.dmg\` |
+          Download \`Cedar-$VERSION-apple-silicon.dmg\`, drag Cedar to Applications, and open it. It
+          runs on Apple Silicon Macs only. The first launch needs Docker Desktop (or OrbStack, Colima)
+          running and asks for your model server.
 
           Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
           EOF
