@@ -30,8 +30,8 @@ struct ToolCall: Identifiable, Hashable, Sendable {
 
     var isFinished: Bool { output != nil }
 
-    /// Tools whose result is drawn as a card (map, recipe, route, stocks), here and in the web UI.
-    static let cardTools: Set<String> = ["show_map", "show_recipe", "plan_trip", "compare_stocks"]
+    /// Tools whose result is drawn as a card (map, recipe, route, stocks, products), here and in the web UI.
+    static let cardTools: Set<String> = ["show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products"]
 
     var isCard: Bool { Self.cardTools.contains(name) }
 
@@ -49,7 +49,7 @@ struct ToolCall: Identifiable, Hashable, Sendable {
             return input["url"]?.stringValue ?? ""
         case "web_search":
             return input["query"]?.stringValue ?? ""
-        case "show_map", "show_recipe", "plan_trip", "compare_stocks":
+        case "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products":
             return cardTitle ?? ""
         default:
             return input.prettyPrinted.replacingOccurrences(of: "\n", with: " ")

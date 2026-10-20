@@ -1,0 +1,807 @@
+/* The product card for the search_products tool (see product-view.js), shared by every UI. Like
+   the recipe and stock cards it relies only on --accent and --muted from the page and uses
+   translucent greys for edges, so it reads in the light and dark themes alike. The verdicts use
+   status colors that always come with a word. */
+
+.cedar-products {
+  --pr-line: rgba(128, 128, 128, .28);
+  --pr-soft: rgba(128, 128, 128, .07);
+  --pr-muted: var(--muted, #6f6d66);
+  --pr-accent: var(--accent, #c96442);
+  --pr-surface: #fff;
+  --pr-star: #e8a317;
+  --pr-ok: #1f8a3b;
+  --pr-sale: #c03232;
+  --pr-excellent: #0f9d58;
+  --pr-good: #3f9a3f;
+  --pr-mixed: #e39b12;
+  --pr-poor: #d03b3b;
+  --pr-few: #8a8782;
+  --pr-none: #8a8782;
+  container-type: inline-size;
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .04);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cedar-products {
+    --pr-surface: #1c1c1b;
+    --pr-star: #f0b429;
+    --pr-ok: #4fc46b;
+    --pr-sale: #ef7676;
+    --pr-good: #5cbf5c;
+    --pr-mixed: #f0b429;
+    --pr-poor: #ef7676;
+  }
+}
+
+.cedar-products button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cedar-products :focus-visible {
+  outline: 2px solid var(--pr-accent);
+  outline-offset: 2px;
+}
+
+.cedar-products svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- header ---- */
+
+.cedar-products-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px 10px;
+}
+
+.cedar-products-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--pr-accent) 14%, transparent);
+  color: var(--pr-accent);
+}
+
+.cedar-products-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cedar-products-title {
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.cedar-products-title::first-letter {
+  text-transform: uppercase;
+}
+
+.cedar-products-sub {
+  font-size: 12px;
+  color: var(--pr-muted);
+}
+
+/* ---- photos: a box that keeps its shape while the picture loads, and a placeholder when none ---- */
+
+.cedar-products-photo {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--pr-surface);
+}
+
+.cedar-products-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity .35s ease;
+}
+
+.cedar-products-photo.loaded img {
+  opacity: 1;
+}
+
+.cedar-products-photo.empty {
+  display: grid;
+  place-items: center;
+  color: var(--pr-muted);
+  background: var(--pr-soft);
+}
+
+.cedar-products-photo.empty svg {
+  width: 28px;
+  height: 28px;
+  opacity: .6;
+}
+
+.cedar-products-photo.ph-tile {
+  aspect-ratio: 1;
+  width: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.cedar-products-photo.ph-main {
+  aspect-ratio: 1;
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.cedar-products-photo.ph-thumb {
+  width: 48px;
+  height: 48px;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.cedar-products-photo.ph-mini {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+/* ---- stars ---- */
+
+.cedar-products-stars {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  height: 16px;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.cedar-products-stars .base,
+.cedar-products-stars .fill {
+  display: block;
+  white-space: nowrap;
+}
+
+.cedar-products-stars .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+}
+
+.cedar-products-stars svg {
+  width: 16px;
+  height: 16px;
+  stroke: var(--pr-star);
+  stroke-width: 1.4;
+}
+
+.cedar-products-stars .fill svg {
+  fill: var(--pr-star);
+}
+
+.cedar-products-stars.small {
+  height: 12px;
+}
+
+.cedar-products-stars.small svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- verdict pills ---- */
+
+.cedar-products-verdict {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--pr-v, var(--pr-few));
+}
+
+.cedar-products-verdict.small {
+  padding: 1px 7px;
+  font-size: 10.5px;
+}
+
+.cedar-products-verdict.excellent { --pr-v: var(--pr-excellent); }
+.cedar-products-verdict.good { --pr-v: var(--pr-good); }
+.cedar-products-verdict.mixed { --pr-v: var(--pr-mixed); }
+.cedar-products-verdict.poor { --pr-v: var(--pr-poor); }
+.cedar-products-verdict.few,
+.cedar-products-verdict.none {
+  color: var(--pr-muted);
+  background: var(--pr-soft);
+  box-shadow: 0 0 0 1px var(--pr-line) inset;
+}
+
+/* ---- badges for the picks ---- */
+
+.cedar-products .badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cedar-products .badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--pr-accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cedar-products .cat {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--pr-line);
+  border-radius: 999px;
+  color: var(--pr-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* ---- prices ---- */
+
+.cedar-products-price {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-products-price .now {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cedar-products-price.big .now {
+  font-size: 24px;
+}
+
+.cedar-products-price .was {
+  color: var(--pr-muted);
+  font-size: 12px;
+}
+
+.cedar-products-price.big .was {
+  font-size: 14px;
+}
+
+.cedar-products-price .save {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pr-sale) 14%, transparent);
+  color: var(--pr-sale);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ---- the option tiles ---- */
+
+.cedar-products-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  padding: 0 14px 12px;
+}
+
+.cedar-products-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--pr-line);
+  border-radius: 10px;
+  background: var(--pr-soft);
+  text-align: left;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+
+.cedar-products-tile:hover {
+  border-color: rgba(128, 128, 128, .5);
+}
+
+.cedar-products-tile[aria-selected="true"] {
+  border-color: var(--pr-accent);
+  background: color-mix(in srgb, var(--pr-accent) 7%, transparent);
+  box-shadow: 0 0 0 1px var(--pr-accent) inset;
+}
+
+.cedar-products-tile .badges {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+}
+
+.cedar-products-tile .name {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  font-weight: 600;
+  line-height: 1.3;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.cedar-products-tile .brand {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--pr-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cedar-products-tile .rating {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11.5px;
+}
+
+.cedar-products-tile .rating .avg {
+  font-weight: 650;
+}
+
+.cedar-products-tile .rating .n {
+  color: var(--pr-muted);
+}
+
+.cedar-products-tile .cedar-products-verdict {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ---- the selected product ---- */
+
+.cedar-products-detail {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--pr-line);
+}
+
+.cedar-products-back {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin: 10px 0 4px;
+  padding: 3px 10px 3px 6px;
+  border: 1px solid var(--pr-line);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+}
+
+.cedar-products-back svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cedar-products-detail .grid {
+  display: grid;
+  gap: 16px;
+  padding-top: 12px;
+}
+
+@container (min-width: 640px) {
+  .cedar-products-detail .grid {
+    grid-template-columns: minmax(200px, 2fr) 3fr;
+  }
+}
+
+.cedar-products-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cedar-products-gallery .main {
+  border: 1px solid var(--pr-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cedar-products-gallery .thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cedar-products-gallery .thumb {
+  padding: 0;
+  border: 1px solid var(--pr-line);
+  border-radius: 8px;
+  background: transparent;
+  overflow: hidden;
+}
+
+.cedar-products-gallery .thumb[aria-pressed="true"] {
+  border-color: var(--pr-accent);
+  box-shadow: 0 0 0 1px var(--pr-accent) inset;
+}
+
+.cedar-products-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cedar-products-info .name {
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.cedar-products-info .sub {
+  margin-top: -4px;
+  font-size: 12.5px;
+  color: var(--pr-muted);
+}
+
+.cedar-products-avail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cedar-products-avail .chip {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 9px;
+  border: 1px solid var(--pr-line);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.cedar-products-avail .chip.ok {
+  color: var(--pr-ok);
+  border-color: color-mix(in srgb, var(--pr-ok) 40%, transparent);
+}
+
+.cedar-products-avail .chip.no {
+  color: var(--pr-muted);
+}
+
+.cedar-products-avail .chip svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.6;
+}
+
+.cedar-products-link {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  align-self: flex-start;
+  padding: 6px 14px;
+  border: 1px solid var(--pr-accent);
+  border-radius: 999px;
+  background: var(--pr-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.cedar-products-link:hover {
+  filter: brightness(1.06);
+}
+
+.cedar-products-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cedar-products-label {
+  margin: 6px 0 4px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--pr-muted);
+}
+
+/* ---- the reviews ---- */
+
+.cedar-products-reviews {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--pr-line);
+  border-radius: 10px;
+  background: var(--pr-soft);
+}
+
+.cedar-products-reviews .cedar-products-label {
+  margin-top: 0;
+}
+
+.cedar-products-reviews .head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cedar-products-reviews .head .avg {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-products-reviews .head .n {
+  color: var(--pr-muted);
+}
+
+.cedar-products-reviews .bar {
+  margin-top: 10px;
+}
+
+.cedar-products-reviews .legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11.5px;
+}
+
+.cedar-products-reviews .legend .k {
+  color: var(--pr-muted);
+}
+
+.cedar-products-reviews .track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, .22);
+  overflow: hidden;
+}
+
+.cedar-products-reviews .fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--pr-v, var(--pr-few));
+  transition: width .6s ease;
+}
+
+.cedar-products-reviews .fill.excellent { --pr-v: var(--pr-excellent); }
+.cedar-products-reviews .fill.good { --pr-v: var(--pr-good); }
+.cedar-products-reviews .fill.mixed { --pr-v: var(--pr-mixed); }
+.cedar-products-reviews .fill.poor { --pr-v: var(--pr-poor); }
+.cedar-products-reviews .fill.few { --pr-v: var(--pr-few); }
+
+.cedar-products-reviews .tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, .6);
+}
+
+.cedar-products-reviews .verdict-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.cedar-products-reviews .conf {
+  font-size: 12px;
+  color: var(--pr-muted);
+}
+
+.cedar-products-reviews .summary {
+  margin: 6px 0 0;
+}
+
+/* ---- description, features, specs ---- */
+
+.cedar-products-desc {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cedar-products-features ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.cedar-products-features li + li {
+  margin-top: 2px;
+}
+
+.cedar-products-specs dl {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 1fr;
+  gap: 3px 12px;
+  margin: 0;
+}
+
+.cedar-products-specs dt {
+  color: var(--pr-muted);
+}
+
+.cedar-products-specs dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- comparable options: a strip of small tiles that scrolls sideways when it must ---- */
+
+.cedar-products-comparable {
+  margin-top: 14px;
+}
+
+.cedar-products-comparable .strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.cedar-products-comparable .mini {
+  display: flex;
+  flex: 1 0 220px;
+  gap: 10px;
+  align-items: center;
+  max-width: 320px;
+  padding: 8px;
+  border: 1px solid var(--pr-line);
+  border-radius: 10px;
+  background: var(--pr-soft);
+  text-align: left;
+  transition: border-color .15s;
+}
+
+.cedar-products-comparable .mini:hover {
+  border-color: var(--pr-accent);
+}
+
+.cedar-products-comparable .mini .body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cedar-products-comparable .mini .name {
+  display: -webkit-box;
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 12.5px;
+  line-height: 1.3;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.cedar-products-comparable .mini .price {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-products-comparable .mini .price .was {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--pr-muted);
+}
+
+.cedar-products-comparable .mini .rating {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--pr-muted);
+}
+
+.cedar-products-comparable .mini .cedar-products-verdict {
+  align-self: flex-start;
+}
+
+.cedar-products-comparable .mini .diff {
+  flex: none;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--pr-muted);
+}
+
+.cedar-products-comparable .mini .diff.less {
+  color: var(--pr-ok);
+}
+
+.cedar-products-comparable .mini .diff.more {
+  color: var(--pr-sale);
+}
+
+/* ---- footer ---- */
+
+.cedar-products-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--pr-line);
+  font-size: 11px;
+  color: var(--pr-muted);
+}
+
+.cedar-products-foot .when {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ---- the reveal: tiles arrive one after another ---- */
+
+.cedar-products.reveal .cedar-products-tile {
+  opacity: 0;
+}
+
+.cedar-products.play .cedar-products-tile {
+  animation: cedar-products-in .4s cubic-bezier(.2, .7, .3, 1) both;
+  animation-delay: calc(var(--i) * 90ms + 100ms);
+}
+
+@keyframes cedar-products-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@container (max-width: 420px) {
+  .cedar-products-options {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cedar-products-price.big .now {
+    font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cedar-products.reveal .cedar-products-tile {
+    opacity: 1;
+  }
+
+  .cedar-products.play .cedar-products-tile {
+    animation: none;
+  }
+
+  .cedar-products-photo img,
+  .cedar-products-reviews .fill {
+    transition: none;
+  }
+}

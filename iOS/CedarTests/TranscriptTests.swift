@@ -131,5 +131,8 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(trip.summary, "Home → Work")
         let map = ToolCall(id: "3", name: "show_map", input: .object([:]), output: #"{"title":"Cafés","markers":[]}"#)
         XCTAssertEqual(map.summary, "Cafés")
+        let shop = ToolCall(id: "4", name: "search_products", input: .object(["query": .string("headphones")]))
+        XCTAssertTrue(shop.isCard)
+        XCTAssertEqual(shop.summary, "headphones")
     }
 }

@@ -201,12 +201,19 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "recipes",
             "transit",
             "stocks",
+            "products",
             "ask_user",
             "browser",
             "gmail",
             "calendar",
             "custom"
         ]
+    );
+    let products = group(&catalog, "products");
+    assert_eq!(products["available"], false);
+    assert_eq!(
+        products["reason"],
+        "Needs a Best Buy API key (BESTBUY_API_KEY)"
     );
 
     let search = group(&catalog, "web_search");

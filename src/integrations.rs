@@ -518,6 +518,14 @@ impl Integrations {
             ("recipes", off("RECIPES")),
             ("transit", off("TRANSIT")),
             ("stocks", off("STOCKS")),
+            (
+                "products",
+                if cfg.products {
+                    "Needs a Best Buy API key (BESTBUY_API_KEY)".to_string()
+                } else {
+                    off("PRODUCTS")
+                },
+            ),
             ("ask_user", off("ASK_USER")),
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),
