@@ -348,7 +348,8 @@ struct ToolCallView: View {
             if expanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
-                    if call.isCard, call.isFinished, !call.isError, call.card == nil, let webURL {
+                    // A chart that can't be drawn is still shown as the picture it saved.
+                    if call.isCard, call.name != "generate_chart", call.isFinished, !call.isError, call.card == nil, let webURL {
                         Link(destination: webURL) {
                             Label("Open the \(cardKind) on the web", systemImage: "safari")
                                 .font(.subheadline)
@@ -413,6 +414,7 @@ struct ToolCallView: View {
         case "plan_trip": return "route"
         case "compare_stocks": return "comparison"
         case "search_products": return "products"
+        case "generate_chart": return "chart"
         default: return "result"
         }
     }

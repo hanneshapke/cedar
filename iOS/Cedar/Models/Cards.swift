@@ -1,8 +1,9 @@
 import Foundation
 
 /// A tool result the app draws as a card: `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`,
-/// `search_products`. Parsed with the same rules as the web UI's views (chat/static/map-view.js,
-/// recipe-view.js, transit-view.js, stock-view.js, product-view.js). Everything in a result came from the model or the network, so
+/// `search_products`, and the data of a `generate_chart` call. Parsed with the same rules as the web UI's
+/// views (chat/static/map-view.js, recipe-view.js, transit-view.js, stock-view.js, product-view.js,
+/// chart-view.js). Everything in a result came from the model or the network, so
 /// text is clipped, numbers and coordinates are checked, and links are only kept if they are https.
 enum Card: Hashable, Sendable {
     case map(MapCard)
@@ -10,12 +11,14 @@ enum Card: Hashable, Sendable {
     case trip(TripCard)
     case stocks(StocksCard)
     case products(ProductsCard)
+    case chart(ChartCard)
 
     /// The card for a finished call, or `nil` when it isn't a card tool or its result isn't usable.
-    static func parse(name: String, output: String) -> Card? {
-        guard ToolCall.cardTools.contains(name),
-              let value = try? JSONDecoder().decode(JSONValue.self, from: Data(output.utf8))
-        else { return nil }
+    /// A chart is drawn from the call's `input`; its output only says where the picture was saved.
+    static func parse(name: String, output: String, input: JSONValue = .null) -> Card? {
+        guard ToolCall.cardTools.contains(name) else { return nil }
+        if name == "generate_chart" { return ChartCard.parse(input).map(Card.chart) }
+        guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(output.utf8)) else { return nil }
         switch name {
         case "show_map": return MapCard.parse(value).map(Card.map)
         case "show_recipe": return RecipeCard.parse(value).map(Card.recipe)
@@ -814,5 +817,163 @@ struct ProductsCard: Hashable, Sendable {
             sources: Array((p["sources"]?.arrayValue ?? []).compactMap { CardParse.amount($0, max: 1000).map { Int($0) } }.prefix(6)),
             comparable: (p["comparable"]?.arrayValue ?? []).compactMap { sku($0) }
         )
+    }
+}
+
+// MARK: - generate_chart
+
+/// A `generate_chart` call's input: `{"path", "kind", "labels"?, "series": [{"name"?, "values"}],
+/// "title"?, "x_label"?, "y_label"?, "stacked"?, "bins"?, "log_scale"?}`. Long series are thinned to
+/// what a card can show; the saved picture has every point.
+struct ChartCard: Hashable, Sendable {
+    enum Kind: String, Sendable {
+        case line, bar, barh, area, scatter, pie, histogram
+
+        var name: String {
+            switch self {
+            case .line: return "Line chart"
+            case .bar, .barh: return "Bar chart"
+            case .area: return "Area chart"
+            case .scatter: return "Scatter plot"
+            case .pie: return "Pie chart"
+            case .histogram: return "Histogram"
+            }
+        }
+    }
+
+    /// An x-axis category or value.
+    enum Label: Hashable, Sendable {
+        case text(String)
+        case number(Double)
+
+        var text: String {
+            switch self {
+            case .text(let s): return s
+            case .number(let n): return ChartCard.format(n)
+            }
+        }
+
+        var number: Double? {
+            if case .number(let n) = self { return n }
+            return nil
+        }
+    }
+
+    struct Series: Hashable, Sendable {
+        let name: String
+        /// Whether the model named it, rather than it being "Series 2".
+        let named: Bool
+        /// One per label; `nil` is a gap. For a histogram, the raw samples.
+        let values: [Double?]
+    }
+
+    let kind: Kind
+    let path: String?
+    let title: String?
+    let xLabel: String?
+    let yLabel: String?
+    let labels: [Label]
+    let series: [Series]
+    let stacked: Bool
+    let bins: Int?
+    let log: Bool
+    let thinned: Bool
+
+    static let maxSeries = 20
+    static let maxValues = 100_000
+    /// The categorical palette's size; later series are drawn in grey.
+    static let slots = 8
+
+    /// Whether the x values are numbers (a scatter, or a line or area over numbers).
+    var numericX: Bool {
+        kind == .scatter || ((kind == .line || kind == .area) && labels.allSatisfy { $0.number != nil })
+    }
+
+    static func parse(_ value: JSONValue) -> ChartCard? {
+        guard let kind = value["kind"]?.stringValue.flatMap(Kind.init(rawValue:)),
+              let rawSeries = value["series"]?.arrayValue, !rawSeries.isEmpty
+        else { return nil }
+        var series: [Series] = []
+        for (i, s) in rawSeries.prefix(maxSeries).enumerated() {
+            guard let raw = s["values"]?.arrayValue, !raw.isEmpty else { return nil }
+            var values: [Double?] = []
+            for v in raw.prefix(maxValues) {
+                if case .null = v { values.append(nil); continue }
+                guard let n = v.doubleValue else { return nil }
+                values.append(n)
+            }
+            let name = CardParse.text(s["name"], max: 80)
+            series.append(Series(name: name ?? "Series \(i + 1)", named: name != nil, values: values))
+        }
+        var labels: [Label] = []
+        if kind != .histogram {
+            guard let raw = value["labels"]?.arrayValue, !raw.isEmpty else { return nil }
+            for l in raw.prefix(maxValues) {
+                if let n = l.doubleValue { labels.append(.number(n)) } else if let s = l.stringValue { labels.append(.text(String(s.prefix(120)))) } else { return nil }
+            }
+            guard series.allSatisfy({ $0.values.count == labels.count }) else { return nil }
+            if kind == .scatter, !labels.allSatisfy({ $0.number != nil }) { return nil }
+        }
+        if kind == .pie {
+            guard series.count == 1, series[0].values.allSatisfy({ ($0 ?? -1) >= 0 }),
+                  series[0].values.contains(where: { ($0 ?? 0) > 0 }) else { return nil }
+        }
+
+        var thinned = false
+        if kind != .histogram, kind != .pie {
+            let limit: Int
+            switch kind {
+            case .bar: limit = 300
+            case .barh: limit = 60
+            case .scatter: limit = 2000
+            default: limit = 800
+            }
+            if labels.count > limit {
+                thinned = true
+                let step = Double(labels.count) / Double(limit)
+                var keep = (0..<limit).map { Int(Double($0) * step) }
+                if keep.last != labels.count - 1 { keep.append(labels.count - 1) }
+                labels = keep.map { labels[$0] }
+                series = series.map { s in Series(name: s.name, named: s.named, values: keep.map { s.values[$0] }) }
+            }
+        }
+        let bins = value["bins"]?.doubleValue.flatMap { (1...500).contains($0) ? Int($0) : nil }
+        return ChartCard(
+            kind: kind,
+            path: CardParse.text(value["path"], max: 300),
+            title: CardParse.text(value["title"]),
+            xLabel: CardParse.text(value["x_label"], max: 120),
+            yLabel: CardParse.text(value["y_label"], max: 120),
+            labels: labels,
+            series: series,
+            stacked: value["stacked"]?.boolValue == true && [.bar, .barh, .area, .histogram].contains(kind),
+            bins: bins,
+            log: value["log_scale"]?.boolValue == true && kind != .pie && kind != .histogram,
+            thinned: thinned
+        )
+    }
+
+    /// Histogram bins over every series' samples: the edges, and the counts per series.
+    var histogram: (edges: [Double], counts: [[Int]])? {
+        let samples = series.map { $0.values.compactMap { $0 } }
+        let all = samples.flatMap { $0 }
+        guard var lo = all.min(), var hi = all.max() else { return nil }
+        if lo == hi { lo -= 0.5; hi += 0.5 }
+        let n = bins ?? max(5, min(40, Int((log2(Double(all.count)) + 1).rounded(.up))))
+        let width = (hi - lo) / Double(n)
+        let edges = (0...n).map { lo + Double($0) * width }
+        let counts = samples.map { values in
+            var c = [Int](repeating: 0, count: n)
+            for v in values { c[min(n - 1, Int((v - lo) / width))] += 1 }
+            return c
+        }
+        return (edges, counts)
+    }
+
+    /// A number as it reads in a tooltip or table.
+    static func format(_ v: Double) -> String {
+        let a = abs(v)
+        let digits = a >= 1000 ? 0 : a >= 100 ? 1 : a >= 1 ? 2 : a == 0 ? 0 : 4
+        return v.formatted(.number.precision(.fractionLength(0...digits)))
     }
 }

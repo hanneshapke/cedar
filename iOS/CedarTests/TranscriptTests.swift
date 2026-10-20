@@ -135,4 +135,16 @@ final class TranscriptTests: XCTestCase {
         XCTAssertTrue(shop.isCard)
         XCTAssertEqual(shop.summary, "headphones")
     }
+
+    func testAChartDrawnAsACardIsNotShownAgainAsAPicture() {
+        var transcript = TurnTranscript(turn: turn())
+        let input: JSONValue = .object(["path": .string("chart.png"), "kind": .string("bar"),
+                                        "labels": .array([.string("a")]), "series": .array([.object(["values": .array([.number(1)])])])])
+        transcript.apply(event(1, "tool.call", .object(["id": .string("c1"), "name": .string("generate_chart"), "input": input])))
+        transcript.apply(event(2, "tool.result", .object(["id": .string("c1"), "output": .string("wrote chart.png"), "is_error": .bool(false)])))
+        guard case .tool(let call)? = transcript.items.last else { return XCTFail("expected a tool call") }
+        guard case .chart? = call.card else { return XCTFail("expected a chart card") }
+        XCTAssertEqual(call.summary, "chart.png")
+        XCTAssertEqual(transcript.images, [])
+    }
 }

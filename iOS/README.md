@@ -19,6 +19,8 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - The agent's images (charts, pictures it saved or drew) shown under the reply, with sharing
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
 - Plans to agree to and tool calls to allow or deny, when the server asks (`TOOL_APPROVALS`)
+- Charts from `generate_chart` as native Swift Charts cards, drawn from the call's data: a legend
+  that hides and shows series, touch to read the values, and the data as a table
 - Maps, recipes, routes, stock comparisons and product searches as native cards: Apple Maps
   with numbered pins and route lines (tap for full screen), a recipe checklist with steps to
   tick off, stock charts with ratings, returns and news, and product tiles with photos, prices,

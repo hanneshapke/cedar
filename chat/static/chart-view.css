@@ -1,0 +1,379 @@
+/* The chart card for the generate_chart tool (see chart-view.js), shared by every UI. Like the
+   stock card it relies only on --accent and --muted from the page and uses translucent greys for
+   edges. The series take the categorical palette in a fixed order, the same eight hues as the
+   stock card, stepped for light and dark; a ninth series and later, and a pie's "Other", are a
+   neutral grey. Text never wears a series color: values and labels stay in the text colors. */
+
+.cedar-chart {
+  --ch-line: rgba(128, 128, 128, .26);
+  --ch-grid: rgba(128, 128, 128, .16);
+  --ch-soft: rgba(128, 128, 128, .07);
+  --ch-muted: var(--muted, #6f6d66);
+  --ch-accent: var(--accent, #c96442);
+  --ch-surface: #fcfcfb;
+  --ch-s1: #2a78d6;
+  --ch-s2: #eb6834;
+  --ch-s3: #1baf7a;
+  --ch-s4: #eda100;
+  --ch-s5: #e87ba4;
+  --ch-s6: #008300;
+  --ch-s7: #6250d6;
+  --ch-s8: #e34948;
+  --ch-so: #a3a19a;
+  container-type: inline-size;
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .04);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cedar-chart {
+    --ch-surface: #1a1a19;
+    --ch-s1: #3987e5;
+    --ch-s2: #d95926;
+    --ch-s3: #199e70;
+    --ch-s4: #c98500;
+    --ch-s5: #d55181;
+    --ch-s6: #008300;
+    --ch-s7: #9085e9;
+    --ch-s8: #e66767;
+    --ch-so: #6f6d66;
+  }
+}
+
+.cedar-chart .s1 { --ch-k: var(--ch-s1); }
+.cedar-chart .s2 { --ch-k: var(--ch-s2); }
+.cedar-chart .s3 { --ch-k: var(--ch-s3); }
+.cedar-chart .s4 { --ch-k: var(--ch-s4); }
+.cedar-chart .s5 { --ch-k: var(--ch-s5); }
+.cedar-chart .s6 { --ch-k: var(--ch-s6); }
+.cedar-chart .s7 { --ch-k: var(--ch-s7); }
+.cedar-chart .s8 { --ch-k: var(--ch-s8); }
+.cedar-chart .so { --ch-k: var(--ch-so); }
+
+.cedar-chart button {
+  font: inherit;
+  color: inherit;
+}
+
+.cedar-chart :focus-visible {
+  outline: 2px solid var(--ch-accent);
+  outline-offset: 2px;
+}
+
+/* A series key: a rounded square for fills, a short stroke for lines and points. */
+.cedar-chart .key {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--ch-k, var(--ch-s1));
+}
+
+.cedar-chart .key.line {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ---- header ---- */
+
+.cedar-chart-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px 4px;
+}
+
+.cedar-chart-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ch-accent) 14%, transparent);
+  color: var(--ch-accent);
+}
+
+.cedar-chart-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cedar-chart-head .titles { min-width: 0; }
+
+.cedar-chart-title {
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.cedar-chart-sub {
+  font-size: 12px;
+  color: var(--ch-muted);
+}
+
+/* ---- legend ---- */
+
+.cedar-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  padding: 6px 10px 0;
+}
+
+.cedar-chart-legend .item {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 28px;
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.cedar-chart-legend .item:hover:not(:disabled) { background: var(--ch-soft); }
+.cedar-chart-legend .item:disabled { cursor: default; }
+.cedar-chart-legend .item[aria-pressed="false"] { color: var(--ch-muted); }
+.cedar-chart-legend .item[aria-pressed="false"] .name { text-decoration: line-through; }
+.cedar-chart-legend .item[aria-pressed="false"] .key { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ch-k); }
+
+/* ---- plot ---- */
+
+.cedar-chart-plot {
+  position: relative;
+  padding: 6px 8px 4px;
+}
+
+.cedar-chart-svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-chart-svg:focus { outline: none; }
+.cedar-chart-svg:focus-visible { outline: 2px solid var(--ch-accent); outline-offset: 2px; border-radius: 6px; }
+
+.cedar-chart-svg .grid line { stroke: var(--ch-grid); stroke-width: 1; }
+.cedar-chart-svg .grid line.zero,
+.cedar-chart-svg .grid line.base { stroke: var(--ch-line); stroke-width: 1.2; }
+.cedar-chart-svg text { fill: var(--ch-muted); font-size: 11.5px; }
+.cedar-chart-svg .axis-title { font-size: 12px; font-weight: 600; }
+.cedar-chart-svg .end-label { fill: currentColor; font-size: 12px; font-weight: 600; }
+
+.cedar-chart-svg .band { fill: var(--ch-soft); }
+.cedar-chart-svg .bar { fill: var(--ch-k); }
+.cedar-chart-svg .bar.seg { stroke: var(--ch-surface); stroke-width: 1.5; paint-order: stroke; }
+.cedar-chart-svg .line {
+  fill: none;
+  stroke: var(--ch-k);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cedar-chart-svg .area { fill: var(--ch-k); fill-opacity: .14; stroke: none; }
+.cedar-chart-svg .area.stacked { fill-opacity: .7; }
+.cedar-chart-svg .pt { fill: var(--ch-k); stroke: var(--ch-surface); stroke-width: 1.5; fill-opacity: .85; }
+.cedar-chart-svg .pt.small { fill-opacity: 1; }
+.cedar-chart-svg .cross { stroke: var(--ch-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.cedar-chart-svg .dot { fill: var(--ch-k); stroke: var(--ch-surface); stroke-width: 2.5; pointer-events: none; }
+.cedar-chart-svg .hit { fill: transparent; cursor: crosshair; touch-action: pan-y; }
+
+/* First drawing: lines draw in, bars and points rise, slices fade in. */
+.cedar-chart-svg.enter .line.draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: cedar-chart-draw .9s cubic-bezier(.3, .7, .3, 1) forwards;
+}
+.cedar-chart-svg.enter .bar,
+.cedar-chart-svg.enter .pt,
+.cedar-chart-svg.enter .area,
+.cedar-chart-svg.enter .slice {
+  animation: cedar-chart-in .55s ease-out both;
+}
+
+@keyframes cedar-chart-draw { to { stroke-dashoffset: 0; } }
+@keyframes cedar-chart-in { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cedar-chart-svg.enter .line.draw { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .cedar-chart-svg.enter .bar,
+  .cedar-chart-svg.enter .pt,
+  .cedar-chart-svg.enter .area,
+  .cedar-chart-svg.enter .slice { animation: none; }
+}
+
+/* ---- tooltip ---- */
+
+.cedar-chart-tip {
+  position: absolute;
+  z-index: 2;
+  min-width: 120px;
+  max-width: 260px;
+  padding: 7px 10px;
+  border: 1px solid var(--ch-line);
+  border-radius: 8px;
+  background: var(--ch-surface);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .12);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.cedar-chart-tip .when {
+  margin-bottom: 3px;
+  color: var(--ch-muted);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cedar-chart-tip .row {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.cedar-chart-tip .row .who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cedar-chart-tip .row strong { font-variant-numeric: tabular-nums; }
+.cedar-chart-tip .row.total { margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--ch-grid); }
+
+/* ---- pie ---- */
+
+.cedar-chart-pie {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 4px 6px 6px;
+}
+
+.cedar-chart-pie.stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.cedar-chart-pie.stack .cedar-chart-svg { align-self: center; }
+
+.cedar-chart-svg .slice {
+  fill: var(--ch-k);
+  stroke: var(--ch-surface);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition: opacity .15s;
+  cursor: pointer;
+}
+
+.cedar-chart-svg .slice.dim { opacity: .3; }
+.cedar-chart-svg .pie-total { fill: currentColor; font-size: 22px; font-weight: 700; }
+.cedar-chart-svg .pie-sub { font-size: 11px; }
+
+.cedar-chart-slices {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cedar-chart-slices li {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-chart-slices li + li { border-top: 1px solid var(--ch-grid); }
+.cedar-chart-slices li.on { background: var(--ch-soft); }
+.cedar-chart-slices .swatch { width: 10px; height: 10px; border-radius: 3px; background: var(--ch-k); }
+.cedar-chart-slices .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cedar-chart-slices .val { color: var(--ch-muted); }
+.cedar-chart-slices .pct { min-width: 46px; font-weight: 650; text-align: right; }
+
+/* ---- footer: the data table, and where the picture was saved ---- */
+
+.cedar-chart-foot {
+  padding: 2px 14px 10px;
+  font-size: 12px;
+  color: var(--ch-muted);
+}
+
+.cedar-chart-data summary {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 2px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.cedar-chart-data summary::-webkit-details-marker { display: none; }
+.cedar-chart-data summary .label { display: inline-flex; gap: 4px; align-items: center; font-weight: 600; }
+.cedar-chart-data summary .label::before { content: '▸'; font-size: 10px; transition: transform .15s; }
+.cedar-chart-data[open] summary .label::before { transform: rotate(90deg); }
+.cedar-chart-data summary:hover .label { color: var(--fg, currentColor); }
+.cedar-chart-data summary .saved { margin-left: auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }
+
+.cedar-chart-data .scroll {
+  max-height: 280px;
+  margin-top: 6px;
+  overflow: auto;
+  border: 1px solid var(--ch-grid);
+  border-radius: 8px;
+}
+
+.cedar-chart-data table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--fg, inherit);
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-chart-data th,
+.cedar-chart-data td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--ch-grid);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cedar-chart-data th:first-child { text-align: left; font-weight: 500; }
+.cedar-chart-data thead th {
+  position: sticky;
+  top: 0;
+  background: var(--ch-surface);
+  color: var(--ch-muted);
+  font-weight: 600;
+}
+
+.cedar-chart-data tbody tr:last-child > * { border-bottom: 0; }
+.cedar-chart-data .note { margin: 6px 0 0; }
+
+@container (max-width: 420px) {
+  .cedar-chart-head { padding: 10px 12px 2px; }
+  .cedar-chart-plot { padding: 4px 4px 2px; }
+  .cedar-chart-foot { padding: 2px 12px 10px; }
+}

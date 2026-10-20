@@ -365,6 +365,8 @@ const WIDGETS = {
   plan_trip: { lib: () => cedarTransit, waiting: 'finding routes…', count: (s) => `${s.options.length} way${s.options.length === 1 ? '' : 's'} to go` },
   compare_stocks: { lib: () => cedarStocks, waiting: 'reading prices and news…', count: (s) => (s.stocks.length === 1 ? '1 stock' : `${s.stocks.length} stocks compared`) },
   search_products: { lib: () => cedarProducts, waiting: 'searching the store…', count: (s) => `${s.options.length} option${s.options.length === 1 ? '' : 's'}` },
+  // Drawn from the call's data rather than its output, which only says where the picture went.
+  generate_chart: { lib: () => cedarChart, waiting: 'drawing…', count: () => 'saved' },
 };
 
 const subjectOf = (tool) => (TOOLS[tool.name]?.subject(tool.input || {}) || '').trim();
@@ -546,9 +548,11 @@ function fillDocument(tool, card, done) {
 
 function fillWidget(tool, card, done) {
   const w = WIDGETS[tool.name];
-  const spec = done ? w.lib().parse(tool.output) : null;
+  const spec = done ? w.lib().parse(tool.output, tool.input) : null;
   const iconName = TOOLS[tool.name].icon;
   if (!done) { card.append(cardHead(iconName, toolHtml(tool, false), { meta: spinnerMeta(w.waiting) })); return; }
+  // A file the widget can't draw is still a saved file.
+  if (!spec && FILE_TOOLS.has(tool.name)) { fillFile(tool, card, done); return; }
   if (!spec) {
     // Not a usable result: fall back to the raw output, folded like a trace.
     card.classList.add('trace');
@@ -561,7 +565,15 @@ function fillWidget(tool, card, done) {
   }
   const key = `${tool.name}El`;
   tool[key] ??= w.lib().element(spec);
-  card.append(cardHead(iconName, toolHtml(tool, true), { meta: t('span', '', `${w.count(spec)} · ${fmtMs(tool.duration_ms)}`) }));
+  // A widget that saved a file (a chart) keeps the file's View and Download buttons.
+  const actions = [];
+  const rel = FILE_TOOLS.has(tool.name) && workspacePath(String(tool.input?.path || ''));
+  if (rel) {
+    const view = cedarViewer.viewButton(rel);
+    if (view) actions.push(view);
+    actions.push(downloadLink(rel));
+  }
+  card.append(cardHead(iconName, toolHtml(tool, true), { meta: t('span', '', `${w.count(spec)} · ${fmtMs(tool.duration_ms)}`), actions }));
   const body = h('div', 'card-body');
   body.append(tool[key]);
   card.append(body);
@@ -977,7 +989,8 @@ function applyEvent(view, event) {
           view.stepsEl = null;
         }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
-        if (!tool.is_error) {
+        // A chart drawn as a card isn't shown again.
+        if (!tool.is_error && !(tool.name === 'generate_chart' && cedarChart.parse(tool.output, tool.input))) {
           for (const path of cedarImages.produced(tool.name, tool.input, tool.output)) {
             if (!view.images.includes(path)) view.images.push(path);
           }

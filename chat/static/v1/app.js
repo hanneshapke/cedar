@@ -795,13 +795,16 @@ function toolResult(view, d) {
   }
   details.querySelector('.tool-body').append(label, out);
   // A map is the point of show_map, a recipe card of show_recipe, the stock card of
-  // compare_stocks, and the product card of search_products, so each sits under the call
-  // instead of inside the collapsed details.
-  const card = { show_map: cedarMap, show_recipe: cedarRecipe, compare_stocks: cedarStocks, search_products: cedarProducts }[details.dataset.tool];
+  // compare_stocks, the product card of search_products, and the chart card of generate_chart
+  // (drawn from the call's data), so each sits under the call instead of inside the collapsed
+  // details.
+  const card = { show_map: cedarMap, show_recipe: cedarRecipe, compare_stocks: cedarStocks, search_products: cedarProducts, generate_chart: cedarChart }[details.dataset.tool];
+  let carded = false;
   if (card && !d.is_error) {
-    const spec = card.parse(text);
+    const spec = card.parse(text, details.cedarInput);
     if (spec) {
       details.after(card.element(spec));
+      carded = true;
       scrollToBottom(false);
     }
   }
@@ -823,9 +826,9 @@ function toolResult(view, d) {
       scrollToBottom(false);
     }
   }
-  // The images a call produced (a chart, a picture it saved, or one a command or script wrote) are
-  // shown with the reply, once each: see finishTurn.
-  if (!d.is_error) {
+  // The images a call produced (a picture it saved, or one a command or script wrote) are shown
+  // with the reply, once each: see finishTurn. A chart drawn as a card isn't shown again.
+  if (!d.is_error && !carded) {
     for (const path of cedarImages.produced(details.dataset.tool, details.cedarInput, text)) {
       if (!view.images.includes(path)) view.images.push(path);
     }
