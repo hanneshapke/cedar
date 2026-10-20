@@ -9,7 +9,8 @@
 <x-dc>
 <helmet>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}
+<style>.code .hl-c{color:#a39a8c}.code .hl-s{color:#b8d4a3}.code .hl-k{color:#e8a98c}.code .hl-p{color:#e6c27a}.code .hl-n{color:#d9aed0}.code .hl-f{color:#8fc4d6}.code .hl-o{color:#c3b8e0}.code .hl-v{color:#e6c27a}
+body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}
 .hero h1{font-size:52px}
 @media (max-width:960px){.hero,.how{grid-template-columns:minmax(0,1fr)!important;gap:28px!important}.cards4{grid-template-columns:repeat(2,minmax(0,1fr))!important}.cards3{grid-template-columns:minmax(0,1fr)!important}}
 @media (max-width:640px){.wrap{padding:16px 16px 24px!important;gap:24px!important}.top{flex-direction:column;align-items:flex-start!important}.top nav{flex-wrap:wrap;gap:10px 16px!important}.hero h1{font-size:36px}.hero p{font-size:16px!important}.cards4{grid-template-columns:minmax(0,1fr)!important}.foot{flex-direction:column;align-items:flex-start!important}.cmp table{min-width:0!important}.cmp thead{display:none}.cmp tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:4px 0}.cmp tbody th{grid-column:1/-1;padding-bottom:0!important}.cmp td{padding:6px 16px 10px!important}.cmp td::before{content:attr(data-label);display:block;font-weight:600;color:#2a2622}.cmp td[data-label=cedar]::before{color:#3a5f4b}}</style>
@@ -55,28 +56,28 @@
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Quick start</h2>
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere"><span style="color:#8a8275"># 0. any OpenAI-compatible model server</span>
-vllm serve deepseek-ai/DeepSeek-V4-Flash \
-  --trust-remote-code --tokenizer-mode deepseek_v4 \
-  --enable-auto-tool-choice --tool-call-parser deepseek_v4
+      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># 0. any OpenAI-compatible model server</span>
+<span class="hl-f">vllm</span> serve deepseek-ai/DeepSeek-V4-Flash \
+  <span class="hl-o">--trust-remote-code</span> <span class="hl-o">--tokenizer-mode</span> deepseek_v4 \
+  <span class="hl-o">--enable-auto-tool-choice</span> <span class="hl-o">--tool-call-parser</span> deepseek_v4
 
-<span style="color:#8a8275"># 1. the sandbox image, then the server</span>
-docker build -t cedar-sandbox sandbox/
-export CEDAR_API_KEYS=$(openssl rand -hex 24) \
-  CEDAR_ADMIN_KEYS=$CEDAR_API_KEYS
-cargo run --release
+<span class="hl-c"># 1. the sandbox image, then the server</span>
+<span class="hl-f">docker</span> build <span class="hl-o">-t</span> cedar-sandbox sandbox/
+<span class="hl-f">export</span> CEDAR_API_KEYS=<span class="hl-v">$(openssl</span> rand <span class="hl-o">-hex</span> 24) \
+  CEDAR_ADMIN_KEYS=<span class="hl-v">$CEDAR_API_KEYS</span>
+<span class="hl-f">cargo</span> run <span class="hl-o">--release</span>
 
-<span style="color:#8a8275"># 2. register the model, start a run, follow it live</span>
-curl -s -X PUT -H "Authorization: Bearer $KEY" \
-  -H 'content-type: application/json' \
-  -d '{"base_url": "http://localhost:8000/v1",
-       "model": "deepseek-ai/DeepSeek-V4-Flash"}' \
+<span class="hl-c"># 2. register the model, start a run, follow it live</span>
+<span class="hl-f">curl</span> <span class="hl-o">-s</span> <span class="hl-o">-X</span> PUT <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
+  <span class="hl-o">-H</span> <span class="hl-s">'content-type: application/json'</span> \
+  <span class="hl-o">-d</span> '{<span class="hl-s">"base_url"</span>: <span class="hl-s">"http://localhost:8000/v1"</span>,
+       <span class="hl-s">"model"</span>: <span class="hl-s">"deepseek-ai/DeepSeek-V4-Flash"</span>}' \
   localhost:8080/v1/admin/models/deepseek
-curl -s -H "Authorization: Bearer $KEY" \
-  -H 'content-type: application/json' \
-  -d '{"prompt": "write hello.py, run it"}' \
+<span class="hl-f">curl</span> <span class="hl-o">-s</span> <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
+  <span class="hl-o">-H</span> <span class="hl-s">'content-type: application/json'</span> \
+  <span class="hl-o">-d</span> <span class="hl-s">'{"prompt": "write hello.py, run it"}'</span> \
   localhost:8080/v1/runs
-curl -N -H "Authorization: Bearer $KEY" \
+<span class="hl-f">curl</span> <span class="hl-o">-N</span> <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
   localhost:8080/v1/runs/&lt;id&gt;/events</pre>
     </div>
   </section>
@@ -131,38 +132,38 @@ curl -N -H "Authorization: Bearer $KEY" \
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none"><span style="color:#8a8275"># tools/air_quality/tool.json</span>
+      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># tools/air_quality/tool.json</span>
 {
-  "description": "Current air quality for a city.",
-  "version": "1.0.0",
-  "author": "You",
-  "license": "Apache-2.0",
-  "input_schema": {
-    "type": "object",
-    "properties": { "city": { "type": "string" } },
-    "required": ["city"]
+  <span class="hl-p">"description"</span>: <span class="hl-s">"Current air quality for a city."</span>,
+  <span class="hl-p">"version"</span>: <span class="hl-s">"1.0.0"</span>,
+  <span class="hl-p">"author"</span>: <span class="hl-s">"You"</span>,
+  <span class="hl-p">"license"</span>: <span class="hl-s">"Apache-2.0"</span>,
+  <span class="hl-p">"input_schema"</span>: {
+    <span class="hl-p">"type"</span>: <span class="hl-s">"object"</span>,
+    <span class="hl-p">"properties"</span>: { <span class="hl-p">"city"</span>: { <span class="hl-p">"type"</span>: <span class="hl-s">"string"</span> } },
+    <span class="hl-p">"required"</span>: [<span class="hl-s">"city"</span>]
   },
-  "network": ["api.openaq.org"],
-  "secrets": ["OPENAQ_API_KEY"],
-  "pip": ["requests>=2.31"]
+  <span class="hl-p">"network"</span>: [<span class="hl-s">"api.openaq.org"</span>],
+  <span class="hl-p">"secrets"</span>: [<span class="hl-s">"OPENAQ_API_KEY"</span>],
+  <span class="hl-p">"pip"</span>: [<span class="hl-s">"requests&gt;=2.31"</span>]
 }</pre>
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none"><span style="color:#8a8275"># tools/air_quality/tool.py</span>
-import json, os, sys
-import requests
+      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># tools/air_quality/tool.py</span>
+<span class="hl-k">import</span> json, os, sys
+<span class="hl-k">import</span> requests
 
-args = json.load(sys.stdin)
-r = requests.get(
-    "https://api.openaq.org/v3/locations",
-    params={"city": args["city"], "limit": 1},
-    headers={"X-API-Key": os.environ["OPENAQ_API_KEY"]},
-    timeout=20,
+args = json.<span class="hl-f">load</span>(sys.stdin)
+r = requests.<span class="hl-f">get</span>(
+    <span class="hl-s">"https://api.openaq.org/v3/locations"</span>,
+    params={<span class="hl-s">"city"</span>: args[<span class="hl-s">"city"</span>], <span class="hl-s">"limit"</span>: <span class="hl-n">1</span>},
+    headers={<span class="hl-s">"X-API-Key"</span>: os.environ[<span class="hl-s">"OPENAQ_API_KEY"</span>]},
+    timeout=<span class="hl-n">20</span>,
 )
-if not r.ok:
-    sys.exit(f"OpenAQ said {r.status_code}")  <span style="color:#8a8275"># the model sees it</span>
-print(json.dumps(r.json()["results"][:1]))
+<span class="hl-k">if</span> <span class="hl-k">not</span> r.ok:
+    sys.<span class="hl-f">exit</span>(<span class="hl-s">f"OpenAQ said {r.status_code}"</span>)  <span class="hl-c"># the model sees it</span>
+<span class="hl-f">print</span>(json.<span class="hl-f">dumps</span>(r.<span class="hl-f">json</span>()[<span class="hl-s">"results"</span>][:<span class="hl-n">1</span>]))
 
-<span style="color:#8a8275"># share it</span>
-python3 registry/build_index.py --check</pre>
+<span class="hl-c"># share it</span>
+<span class="hl-f">python3</span> registry/build_index.py <span class="hl-o">--check</span></pre>
     </div>
   </section>
 
