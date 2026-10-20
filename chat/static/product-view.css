@@ -748,6 +748,145 @@
   color: var(--pr-sale);
 }
 
+/* ---- the model's recommendation, and a note when it couldn't weigh the options ---- */
+
+.cedar-products-summary {
+  margin: 0 14px 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--pr-accent);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--pr-accent) 8%, transparent);
+}
+
+.cedar-products-summary .cedar-products-label {
+  margin-top: 0;
+}
+
+.cedar-products-summary p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.cedar-products-note {
+  margin: 0 14px 12px;
+  font-size: 12px;
+  color: var(--pr-muted);
+}
+
+/* ---- a price that isn't there, or that comes from text rather than a store page ---- */
+
+.cedar-products-price .none {
+  color: var(--pr-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.cedar-products-price.big .none {
+  font-size: 15px;
+}
+
+.cedar-products-price .now.unchecked {
+  text-decoration: underline dotted var(--pr-muted);
+  text-underline-offset: 3px;
+}
+
+/* ---- why it fits, pros and cons, sources ---- */
+
+.cedar-products-why p {
+  margin: 0 0 4px;
+}
+
+.cedar-products-why .for {
+  color: var(--pr-muted);
+  font-size: 13px;
+}
+
+.cedar-products-why .for strong {
+  color: inherit;
+  font-weight: 650;
+}
+
+.cedar-products-proscons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 4px 16px;
+}
+
+.cedar-products-proscons ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cedar-products-proscons li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.cedar-products-proscons li + li {
+  margin-top: 2px;
+}
+
+.cedar-products-proscons .pros li::before,
+.cedar-products-proscons .cons li::before {
+  position: absolute;
+  left: 2px;
+  font-weight: 700;
+}
+
+.cedar-products-proscons .pros li::before {
+  content: "+";
+  color: var(--pr-ok);
+}
+
+.cedar-products-proscons .cons li::before {
+  content: "\2212";
+  color: var(--pr-sale);
+}
+
+.cedar-products-sources ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.cedar-products-sources li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.cedar-products-sources li + li {
+  margin-top: 3px;
+}
+
+.cedar-products-sources .n {
+  flex: none;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--pr-soft);
+  color: var(--pr-muted);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-products-sources a {
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cedar-products-sources .host {
+  flex: none;
+  color: var(--pr-muted);
+  font-size: 11.5px;
+}
+
 /* ---- footer ---- */
 
 .cedar-products-foot {

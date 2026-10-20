@@ -51,6 +51,7 @@ async fn bash_runs_the_command_as_given_and_lists_the_files_it_changed() {
         browser: None,
         timeout: Duration::from_secs(5),
         max_output: 1000,
+        model: None,
     };
 
     let msg = Bash

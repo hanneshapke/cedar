@@ -16,7 +16,7 @@ use crate::mcp::http_client;
 use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
-use crate::tools::{BraveSearch, Overrides, SearchProducts, ToolSet};
+use crate::tools::{BestBuy, BraveSearch, Overrides, ToolSet};
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
 use base64::Engine;
@@ -522,7 +522,7 @@ impl Integrations {
             (
                 "products",
                 if cfg.products {
-                    "Needs a Best Buy API key".to_string()
+                    "Needs a Brave Search or Best Buy API key".to_string()
                 } else {
                     off("PRODUCTS")
                 },
@@ -652,7 +652,8 @@ impl Integrations {
     }
 
     /// Check a Best Buy key with one small search, then save it and rebuild the tools, which
-    /// turns `search_products` on unless `PRODUCTS=off`.
+    /// adds Best Buy's catalog to `search_products` (and turns it on without a Brave key) unless
+    /// `PRODUCTS=off`.
     pub async fn set_bestbuy_key(&self, key: &str) -> Result<(), AppError> {
         let secrets = self.writable(self.cfg.bestbuy_api_key.is_some())?;
         let key = key.trim();
@@ -661,7 +662,7 @@ impl Integrations {
                 "api_key is missing or malformed".into(),
             ));
         }
-        SearchProducts::new(key.to_string(), self.cfg.products_api_url.clone())?
+        BestBuy::new(key.to_string(), self.cfg.products_api_url.clone())?
             .check_key(REQUEST_TIMEOUT)
             .await
             .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;

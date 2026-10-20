@@ -134,54 +134,78 @@ final class CardsTests: XCTestCase {
 
     func testProducts() throws {
         let output = #"""
-        {"query":"noise cancelling headphones","store":"Best Buy","currency":"usd","total":2,
-         "as_of":"2026-10-20T09:12:00Z","sort":"price_low",
+        {"query":"trail running shoes","store":"the web","currency":"usd","total":2,
+         "considered":{"pages":3,"products":5},"as_of":"2026-10-20T09:12:00Z","method":"model",
+         "summary":" Get the Trail Runner 5. ","note":"",
          "options":[
-           {"sku":101,"name":" Sony WH-1000XM5 ","brand":"Sony","price":329.99,"regular_price":399.99,"savings_pct":17.5,
-            "url":"https://www.bestbuy.com/site/101.p",
-            "images":["https://img.example/101.jpg","http://img.example/plain.jpg","https://img.example/101.jpg","https://img.example/101-side.jpg"],
-            "features":["30-hour battery",""],"specs":[{"name":"Weight","value":"250 g"},{"name":"Color"}],
-            "category":"Over-Ear Headphones","availability":{"online":true,"in_store":false,"free_shipping":true},
-            "reviews":{"average":4.7,"count":2345,"adjusted":4.7,"verdict":"excellent","confidence":"high","summary":"Well reviewed."},
-            "comparable":[101,"202",999,303]},
-           {"sku":"202","name":"Bose QC Ultra","price":299,"regular_price":299,"savings_pct":0,
-            "reviews":{"average":null,"count":0,"verdict":"nonsense"},"comparable":[]},
-           {"sku":303,"name":"No price"}
+           {"sku":"P1","name":" Trail Runner 5 ","brand":"Hoka","price":129.95,"currency":"USD","price_checked":true,
+            "regular_price":159.95,"savings_pct":18.8,"url":"https://shop.example/tr5","store":"shop.example",
+            "images":["https://img.example/tr5.jpg","http://img.example/plain.jpg","https://img.example/tr5.jpg"],
+            "features":["Vibram sole",""],"specs":[{"name":"Drop","value":"5 mm"},{"name":"Weight"}],
+            "availability":{"online":true},
+            "reviews":{"average":4.6,"count":1204,"adjusted":4.6,"verdict":"excellent","confidence":"high","summary":"Well reviewed."},
+            "badges":["Top pick","Best rated"],"why":"Grippy and roomy.","pros":["grip","",  "comfort"],"cons":["warm"],
+            "best_for":"muddy trails","sources":[2,1,99],"comparable":["P2","P1","P9"]},
+           {"sku":"P2","name":"Cloud 5","price":139.95,"currency":"eur","price_checked":false,"url":"https://reviews.example/a",
+            "images":[],"reviews":{"average":null,"count":0,"verdict":"none"},"badges":[],"comparable":[]},
+           {"sku":"P3","name":"Peregrine 14","price":null,"url":"https://brand.example/p",
+            "reviews":{"verdict":"nonsense"},"comparable":[]},
+           {"name":"No sku"}
          ],
-         "others":[{"sku":303,"name":"JBL Tune","price":69.99,"image":"https://img.example/303.jpg",
-                    "reviews":{"average":5,"count":3,"adjusted":4.2,"verdict":"few","confidence":"low"}},
-                   {"sku":101,"name":"Duplicate","price":1}],
-         "picks":{"best_rated":101,"best_value":"101","most_popular":303},
-         "disclaimer":"Prices can change."}
+         "others":[],
+         "picks":{"top_pick":"P1","best_value":"P3"},
+         "sources":[{"n":1,"title":"The best trail shoes","url":"https://reviews.example/a","host":"reviews.example"},
+                    {"n":2,"title":"Trail Runner 5","url":"http://shop.example/tr5","host":"shop.example"},
+                    {"n":3,"title":""}],
+         "disclaimer":"Check the store."}
         """#
         guard case .products(let card)? = Card.parse(name: "search_products", output: output) else { return XCTFail("expected products") }
         XCTAssertEqual(card.currency, "USD")
         XCTAssertEqual(card.total, 3, "at least the products the card holds")
-        XCTAssertEqual(card.sort, "cheapest first")
-        XCTAssertEqual(card.options.map(\.id), ["101", "202"], "an option needs a price")
-        XCTAssertEqual(card.others.map(\.id), ["303"], "an option already shown isn't repeated")
-        let sony = card.options[0]
-        XCTAssertEqual(sony.name, "Sony WH-1000XM5")
-        XCTAssertEqual(sony.images.map(\.absoluteString), ["https://img.example/101.jpg", "https://img.example/101-side.jpg"],
-                       "https only, without repeats")
-        XCTAssertEqual(sony.regularPrice, 399.99)
-        XCTAssertEqual(sony.savingsPct, 17.5)
-        XCTAssertEqual(sony.features, ["30-hour battery"])
-        XCTAssertEqual(sony.specs, [.init(name: "Weight", value: "250 g")])
-        XCTAssertTrue(sony.online && sony.freeShipping && !sony.inStore)
-        XCTAssertEqual(sony.reviews.verdict, .excellent)
-        XCTAssertEqual(sony.reviews.average, 4.7)
-        XCTAssertEqual(sony.comparable, ["202", "303"], "itself and unknown skus are dropped")
-        let bose = card.options[1]
-        XCTAssertNil(bose.regularPrice, "no sale, no regular price")
-        XCTAssertNil(bose.savingsPct)
-        XCTAssertNil(bose.reviews.average)
-        XCTAssertEqual(bose.reviews.verdict, .unreviewed, "an unknown verdict falls back on the count")
-        XCTAssertEqual(card.others[0].images.count, 1)
-        XCTAssertEqual(card.others[0].reviews.verdict, .few)
-        XCTAssertEqual(card.badges, ["101": ["Best rated", "Best value"]], "picks only mark shown options")
-        XCTAssertEqual(card.product("303")?.name, "JBL Tune")
-        XCTAssertNil(Card.parse(name: "search_products", output: #"{"options":[{"sku":1,"name":"x"}]}"#))
+        XCTAssertEqual(card.pages, 3)
+        XCTAssertEqual(card.productsFound, 5)
+        XCTAssertEqual(card.summary, "Get the Trail Runner 5.")
+        XCTAssertNil(card.note)
+        XCTAssertEqual(card.options.map(\.id), ["P1", "P2", "P3"], "an option needs a sku and a name, not a price")
+
+        let first = card.options[0]
+        XCTAssertEqual(first.name, "Trail Runner 5")
+        XCTAssertEqual(first.images.map(\.absoluteString), ["https://img.example/tr5.jpg"], "https only, without repeats")
+        XCTAssertEqual(first.price, 129.95)
+        XCTAssertTrue(first.priceChecked)
+        XCTAssertEqual(first.regularPrice, 159.95)
+        XCTAssertEqual(first.store, "shop.example")
+        XCTAssertEqual(first.online, true)
+        XCTAssertNil(first.inStore, "a store that doesn't say isn't taken to say no")
+        XCTAssertEqual(first.features, ["Vibram sole"])
+        XCTAssertEqual(first.specs, [.init(name: "Drop", value: "5 mm")])
+        XCTAssertEqual(first.why, "Grippy and roomy.")
+        XCTAssertEqual(first.pros, ["grip", "comfort"])
+        XCTAssertEqual(first.bestFor, "muddy trails")
+        XCTAssertEqual(first.sources, [2, 1, 99])
+        XCTAssertEqual(first.comparable, ["P2"], "itself and unknown skus are dropped")
+        XCTAssertEqual(card.badges["P1"], ["Top pick", "Best rated"], "an option's own badges win over the picks")
+
+        let cloud = card.options[1]
+        XCTAssertFalse(cloud.priceChecked)
+        XCTAssertEqual(cloud.currency, "EUR")
+        XCTAssertEqual(card.currency(of: cloud), "EUR")
+        XCTAssertEqual(cloud.reviews.verdict, .unreviewed)
+        XCTAssertEqual(card.badges["P2"], [], "an empty list of badges is kept")
+
+        let peregrine = card.options[2]
+        XCTAssertNil(peregrine.price)
+        XCTAssertNil(peregrine.regularPrice)
+        XCTAssertNil(peregrine.online)
+        XCTAssertEqual(card.currency(of: peregrine), "USD")
+        XCTAssertEqual(peregrine.reviews.verdict, .unreviewed, "an unknown verdict falls back on the count")
+        XCTAssertEqual(card.badges["P3"], ["Best value"], "without badges of its own, the picks give them")
+
+        XCTAssertEqual(card.sources[1]?.url?.absoluteString, "https://reviews.example/a")
+        XCTAssertNil(card.sources[2]?.url, "only https links")
+        XCTAssertEqual(card.sources[2]?.title, "Trail Runner 5")
+        XCTAssertNil(card.sources[3], "a source needs a title")
+        XCTAssertNil(Card.parse(name: "search_products", output: #"{"options":[{"name":"x"}]}"#))
         XCTAssertNil(Card.parse(name: "search_products", output: #"{"options":[]}"#))
     }
 

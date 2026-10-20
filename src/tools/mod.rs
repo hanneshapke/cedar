@@ -8,6 +8,7 @@
 
 mod ask_user;
 mod bash;
+mod bestbuy;
 mod browser;
 mod calendar;
 mod changes;
@@ -22,6 +23,7 @@ mod map;
 mod mcp;
 mod open_meteo;
 mod pdf;
+mod product_page;
 mod products;
 mod python;
 mod recipe;
@@ -32,6 +34,7 @@ mod web_search;
 
 pub use ask_user::{as_text as question_text, AskUser, NAME as ASK_USER};
 pub use bash::Bash;
+pub use bestbuy::BestBuy;
 pub use browser::BrowserTool;
 pub use chart::GenerateChart;
 pub use custom::PythonTool;
@@ -52,7 +55,9 @@ pub use web_search::BraveSearch;
 use crate::browser::BrowserSession;
 use crate::config::Config;
 use crate::config::GoogleOAuthConfig as GoogleCredentials;
+use crate::llm::{LlmClient, MessageRequest};
 use crate::mcp::GoogleOAuth;
+use crate::models::Usage;
 use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -70,6 +75,66 @@ pub struct ToolContext {
     pub timeout: Duration,
     /// Cap on returned output, per stream.
     pub max_output: usize,
+    /// The run's model, for a tool that reasons over what it found (`search_products`). `None`
+    /// when the model isn't registered any more, or outside a run.
+    pub model: Option<Arc<ToolModel>>,
+}
+
+/// The run's model as a tool may use it: one tool-free request at a time, with the tokens it
+/// takes added up until the agent records them with the turn.
+pub struct ToolModel {
+    pub client: Arc<dyn LlmClient>,
+    pub model: String,
+    pub max_tokens: u32,
+    pub reasoning: Option<String>,
+    usage: std::sync::Mutex<Usage>,
+}
+
+impl ToolModel {
+    pub fn new(
+        client: Arc<dyn LlmClient>,
+        model: String,
+        max_tokens: u32,
+        reasoning: Option<String>,
+    ) -> Self {
+        Self {
+            client,
+            model,
+            max_tokens,
+            reasoning,
+            usage: std::sync::Mutex::new(Usage::default()),
+        }
+    }
+
+    /// Ask the model `prompt` under `system`, without tools, and return the text of its reply.
+    pub async fn complete(&self, system: &str, prompt: &str) -> Result<String> {
+        let messages = [json!({ "role": "user", "content": prompt })];
+        let req = MessageRequest {
+            model: &self.model,
+            max_tokens: self.max_tokens,
+            reasoning_effort: self.reasoning.as_deref(),
+            system,
+            tools: &[],
+            messages: &messages,
+        };
+        let resp = self.client.create_message(&req).await?;
+        {
+            let mut used = self.usage.lock().unwrap();
+            used.input_tokens += resp.usage.input_tokens;
+            used.output_tokens += resp.usage.output_tokens;
+        }
+        Ok(resp
+            .content
+            .iter()
+            .filter(|b| b["type"] == "text")
+            .filter_map(|b| b["text"].as_str())
+            .collect())
+    }
+
+    /// The tokens used since the last call, which are then reset.
+    pub fn take_usage(&self) -> Usage {
+        std::mem::take(&mut *self.usage.lock().unwrap())
+    }
 }
 
 /// A tool is a name, a description, a JSON schema for its input, and a function.
@@ -125,8 +190,8 @@ impl ToolSet {
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
-    /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `search_products` if a Best Buy
-    /// API key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
+    /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
+    /// Best Buy key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
     /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
     /// personal Python tools in `TOOLS_DIR`, if set.
@@ -139,11 +204,11 @@ impl ToolSet {
     /// other.
     pub fn build(cfg: &Config, overrides: &Overrides) -> Result<Self> {
         let mut set = Self::standard();
-        if let Some(key) = cfg
+        let brave_key = cfg
             .brave_api_key
             .as_ref()
-            .or(overrides.brave_api_key.as_ref())
-        {
+            .or(overrides.brave_api_key.as_ref());
+        if let Some(key) = brave_key {
             set.tools.push(Box::new(BraveSearch::new(
                 key.clone(),
                 cfg.brave_base_url.clone(),
@@ -187,11 +252,17 @@ impl ToolSet {
             .bestbuy_api_key
             .as_ref()
             .or(overrides.bestbuy_api_key.as_ref());
-        if let Some(key) = bestbuy_key.filter(|_| cfg.products) {
-            set.tools.push(Box::new(SearchProducts::new(
-                key.clone(),
-                cfg.products_api_url.clone(),
-            )?));
+        if cfg.products && (brave_key.is_some() || bestbuy_key.is_some()) {
+            // Searches the web with Brave, and Best Buy's catalog too when it has a key.
+            let brave = brave_key
+                .map(|k| BraveSearch::new(k.clone(), cfg.brave_base_url.clone()))
+                .transpose()?;
+            let bestbuy = bestbuy_key
+                .map(|k| BestBuy::new(k.clone(), cfg.products_api_url.clone()))
+                .transpose()?;
+            let web = Arc::new(WebClient::new(cfg.web_fetch_allow_private)?);
+            set.tools
+                .push(Box::new(SearchProducts::new(brave, bestbuy, web)));
         }
         if cfg.ask_user {
             set.tools.push(Box::new(AskUser));
@@ -498,10 +569,10 @@ impl<'a> ToolView<'a> {
         }
         if self.get("search_products").is_some() {
             note.push_str(
-                " When the user wants to buy, compare, or choose a product, use search_products; \
-                 it shows the options with photos, prices, ratings, and comparable alternatives, \
-                 which you then weigh in a short recommendation. Do not search the web for \
-                 products or scrape shops.",
+                " When the user wants to buy, compare, or choose a product of any kind, use \
+                 search_products: it searches reviews and shops, weighs them, and shows the best \
+                 options with photos, prices, ratings, and alternatives. Use it instead of \
+                 searching the web for products yourself.",
             );
         }
         if self.get(ASK_USER).is_some() {
@@ -752,8 +823,8 @@ mod tests {
         assert!(note.contains("![caption](path.png)"), "{note}");
         assert!(!note.contains("browser tool"));
         assert!(
-            !note.contains("search_products"),
-            "no Best Buy key, no shopping note"
+            note.contains("use search_products"),
+            "a Brave key is enough to shop: {note}"
         );
         let shopping =
             ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BESTBUY_API_KEY", "k")]))
@@ -819,6 +890,7 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
+                "search_products",
                 "ask_user"
             ])
         );
