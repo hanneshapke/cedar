@@ -19,9 +19,10 @@ Cedar.app (menu bar) ──┬── cedar-chat :13000 ──▶ cedar :18080 �
 
 ## Installing
 
-1. Download `Cedar-<version>-apple-silicon.dmg` or `Cedar-<version>-intel.dmg` from the
+1. Download `Cedar-<version>-apple-silicon.dmg` from the
    [releases page](https://github.com/hanneshapke/cedar/releases), open it, and drag Cedar to
-   Applications. The app is signed and notarized, so it opens without warnings.
+   Applications. Releases are built for Apple Silicon only; on an Intel Mac, build it yourself
+   (see below). The app is signed and notarized, so it opens without warnings.
 2. Start Docker Desktop (or OrbStack, Colima).
 3. Open Cedar. A tree appears in the menu bar and the setup window opens:
    - **Docker**: found and running, or what to do.
@@ -173,8 +174,8 @@ pull request from a branch named `release/<version>` is merged into `main`:
 2. Open a pull request from `release/<version>` to `main` and merge it.
 3. The workflow checks the versions match the branch and the tag is free, runs the tests, builds
    and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>` and `cedar-browser:<version>` for
-   amd64 and arm64 (and `:latest`), builds the two DMGs, and creates the GitHub Release `v<version>`
-   with them and a `checksums.txt`.
+   amd64 and arm64 (and `:latest`), builds the Apple Silicon DMG, and creates the GitHub Release
+   `v<version>` with it and a `checksums.txt`.
 
 *Run workflow* in the Actions tab builds everything for a version from the current commit as
 artifacts, without a tag or release, to try the pipeline. The images are pushed under that
@@ -185,9 +186,10 @@ One-time setup:
 - **Apple secrets.** In the repository's Actions secrets: `APPLE_CERTIFICATE` (a Developer ID
   Application certificate exported as .p12 and base64-encoded: `base64 -i cert.p12 | pbcopy`),
   `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` (`Developer ID Application: Name
-  (TEAMID)`, as `security find-identity -v -p codesigning` prints it), `APPLE_ID`,
-  `APPLE_PASSWORD` (an app-specific password from appleid.apple.com), and `APPLE_TEAM_ID`. The
-  dmg job fails up front if any is missing.
+  (TEAMID)`, as `security find-identity -v -p codesigning` prints it), and for notarization the
+  App Store Connect API key the iOS TestFlight upload uses: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and
+  `ASC_KEY_P8` (see [the iOS README](../iOS/README.md#testflight)). The dmg job fails up front if
+  any is missing.
 - **Package visibility.** The first push creates each GHCR package as private, linked to this
   repository. Make `cedar-sandbox` and `cedar-browser` public once (the package's settings →
   Danger Zone → Change visibility), or users' pulls fail with "denied".

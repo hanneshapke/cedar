@@ -136,6 +136,28 @@ app for the iPhone 16 simulator and runs the unit tests against it, then builds 
 unsigned, which checks the entitlements and the device SDK. When a run fails, the `.xcresult`
 is kept as an artifact for a week and opens in Xcode.
 
+### TestFlight
+
+`.github/workflows/testflight.yml` (Actions → TestFlight → Run workflow) archives the app signed
+for distribution and uploads it to App Store Connect, where it shows up under TestFlight once
+processed. It needs these repository secrets:
+
+| Secret | What it is |
+| --- | --- |
+| `IOS_DIST_CERT_P12`, `IOS_DIST_CERT_PASSWORD` | An Apple Distribution certificate exported as .p12, base64-encoded, and its password |
+| `IOS_PROFILE` | An App Store provisioning profile for `dev.cedar.Cedar` named `Cedar App Store`, base64-encoded |
+| `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` | An App Store Connect API key (App Manager role) that uploads the build |
+| `KEYCHAIN_PASSWORD` | Any random string, for the runner's temporary keychain |
+
+The app record for `dev.cedar.Cedar` must exist in App Store Connect before the first upload.
+
+- **Build number.** The workflow sets `CURRENT_PROJECT_VERSION` to the run number, so every
+  upload is higher than the last. Change `MARKETING_VERSION` in the project for a new version.
+- **Export compliance.** The app declares `ITSAppUsesNonExemptEncryption = NO` (it only uses
+  HTTPS), so builds don't wait on the encryption question.
+- **Push.** TestFlight builds use the production APNs environment, so set the server's iPhone
+  push setting to **Production** (see [Push notifications](#push-notifications)).
+
 ## Limitations
 
 - Events arrive per model turn and per tool call, not per token, so text appears a turn at a
