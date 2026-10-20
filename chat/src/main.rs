@@ -84,7 +84,6 @@ async fn shutdown_signal() {
 }
 
 async fn stdin_closed() {
-    use tokio::io::AsyncReadExt;
     let on = matches!(
         std::env::var("CEDAR_EXIT_ON_STDIN_EOF").as_deref().map(str::trim),
         Ok("1") | Ok("on") | Ok("true") | Ok("yes")
@@ -92,12 +91,21 @@ async fn stdin_closed() {
     if !on {
         return std::future::pending().await;
     }
-    let mut stdin = tokio::io::stdin();
-    let mut buf = [0u8; 256];
-    loop {
-        match stdin.read(&mut buf).await {
-            Ok(0) | Err(_) => return,
-            Ok(_) => {}
+    // A plain thread, not `tokio::io::stdin`: tokio reads stdin on its blocking pool, and dropping
+    // the runtime waits for that read, which only ends when the launcher closes the pipe. The
+    // launcher keeps it open until the process exits, so every SIGTERM ended in its SIGKILL.
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut stdin = std::io::stdin();
+        let mut buf = [0u8; 256];
+        loop {
+            match stdin.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
         }
-    }
+        let _ = tx.send(());
+    });
+    let _ = rx.await;
 }
