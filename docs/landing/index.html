@@ -9,11 +9,14 @@
 <x-dc>
 <helmet>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}</style>
+<style>body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}
+.hero h1{font-size:52px}
+@media (max-width:960px){.hero,.how{grid-template-columns:minmax(0,1fr)!important;gap:28px!important}.cards4{grid-template-columns:repeat(2,minmax(0,1fr))!important}.cards3{grid-template-columns:minmax(0,1fr)!important}}
+@media (max-width:640px){.wrap{padding:16px 16px 24px!important;gap:24px!important}.top{flex-direction:column;align-items:flex-start!important}.top nav{flex-wrap:wrap;gap:10px 16px!important}.hero h1{font-size:36px}.hero p{font-size:16px!important}.cards4{grid-template-columns:minmax(0,1fr)!important}.foot{flex-direction:column;align-items:flex-start!important}.cmp table{min-width:0!important}.cmp thead{display:none}.cmp tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:4px 0}.cmp tbody th{grid-column:1/-1;padding-bottom:0!important}.cmp td{padding:6px 16px 10px!important}.cmp td::before{content:attr(data-label);display:block;font-weight:600;color:#2a2622}.cmp td[data-label=cedar]::before{color:#3a5f4b}}</style>
 </helmet>
-<div style="min-height:100vh;display:flex;flex-direction:column;max-width:1200px;margin:0 auto;padding:20px 32px 28px;box-sizing:border-box;gap:28px">
+<div class="wrap" style="min-height:100vh;display:flex;flex-direction:column;max-width:1200px;margin:0 auto;padding:20px 32px 28px;box-sizing:border-box;gap:28px">
 
-  <header style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+  <header class="top" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
     <a href="#" style="display:flex;align-items:center;gap:10px;color:#2a2622"><img src="../assets/cedar-mark.svg" width="28" height="28" alt="cedar"><span style="font-weight:600;font-size:22px;letter-spacing:-.02em">cedar</span></a>
     <nav style="display:flex;gap:22px;font-size:14px;align-items:center">
       <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#apps">Apps</a><a href="#safety">Safety</a><a href="#openclaw">vs. OpenClaw</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
@@ -21,10 +24,10 @@
     </nav>
   </header>
 
-  <section style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:40px;align-items:center">
+  <section class="hero" style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:40px;align-items:center">
     <div style="display:flex;flex-direction:column;gap:18px">
       <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#3a5f4b">Rust · Apache 2.0 · self-hosted</span>
-      <h1 style="margin:0;font-size:52px;line-height:1.05;letter-spacing:-.03em;font-weight:600;text-wrap:pretty">Run LLM agents on your own hardware, each one in its own box.</h1>
+      <h1 style="margin:0;line-height:1.05;letter-spacing:-.03em;font-weight:600;text-wrap:pretty">Run LLM agents on your own hardware, each one in its own box.</h1>
       <p style="margin:0;font-size:18px;line-height:1.5;color:#5a534a;max-width:520px;text-wrap:pretty">cedar is a small backend that runs agent loops against the models you register: DeepSeek V4 on a local vLLM, Ollama or LM Studio on a Mac, or any other OpenAI-compatible server. Submit a task, follow it live over SSE, and let every tool call run inside a throwaway Docker container. Talk to it from the browser, a Mac menu bar app, or your iPhone.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
         <a href="https://github.com/hanneshapke/cedar" style="background:#3a5f4b;color:#f3ede3;padding:12px 20px;border-radius:9px;font-weight:500;font-size:15px" style-hover="background:#2e4c3c;color:#f3ede3">View on GitHub</a>
@@ -39,7 +42,7 @@
     </div>
   </section>
 
-  <section id="how" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start">
+  <section id="how" class="how" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start">
     <div style="display:flex;flex-direction:column;gap:12px">
       <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">How a run works</h2>
       <ol style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px;font-size:15px;line-height:1.45;color:#2a2622">
@@ -78,7 +81,7 @@ curl -N -H "Authorization: Bearer $KEY" \
     </div>
   </section>
 
-  <section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px">
+  <section class="cards4" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px">
     <div id="tools" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
       <h3 style="margin:0;font-size:15px;font-weight:600">Tools, in and out of the box</h3>
       <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Inside the sandbox: <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">bash</code>, files, Python, PDFs, charts, and reading Word, Excel, and PowerPoint. On the host, each behind a switch: web search and fetch, weather, maps, recipes, trip planning, stock comparisons, a headless browser, Gmail and Calendar.</p>
@@ -103,7 +106,7 @@ curl -N -H "Authorization: Bearer $KEY" \
 
   <section id="apps" style="display:flex;flex-direction:column;gap:12px">
     <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Apps that talk to it</h2>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
+    <div class="cards3" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
       <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
         <h3 style="margin:0;font-size:15px;font-weight:600">cedar-chat, in the browser</h3>
         <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Conversations with live tool calls, a files panel, and maps, recipes, routes, and stock charts drawn as cards. Attach PDFs and photos. Turn a conversation into a scheduled agent that runs daily or weekly, and get told when a response ends: browser push, Pushover, email, or your iPhone.</p>
@@ -125,7 +128,7 @@ curl -N -H "Authorization: Bearer $KEY" \
   <section id="openclaw" style="display:flex;flex-direction:column;gap:12px">
     <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">cedar and OpenClaw</h2>
     <p style="margin:0;font-size:15px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty">Both are open-source agents you run yourself. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> is a personal assistant that lives in your chat apps and acts on your computer. cedar is a run service: every task gets its own disposable sandbox, behind an API that your own clients, and ours, call.</p>
-    <div style="overflow-x:auto;background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px">
+    <div class="cmp" style="overflow-x:auto;background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px">
       <table style="width:100%;min-width:640px;border-collapse:collapse;font-size:13.5px;line-height:1.45;text-align:left">
         <thead>
           <tr style="border-bottom:1px solid #e8e0d1">
@@ -137,33 +140,33 @@ curl -N -H "Authorization: Bearer $KEY" \
         <tbody style="color:#5a534a;vertical-align:top">
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Where tools run</th>
-            <td style="padding:10px 16px">In a fresh Docker container per run: non-root, capabilities dropped, no network unless you turn it on. Never on the host.</td>
-            <td style="padding:10px 16px">On the host for the main session, unless you configure sandboxing.</td>
+            <td data-label="cedar" style="padding:10px 16px">In a fresh Docker container per run: non-root, capabilities dropped, no network unless you turn it on. Never on the host.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">On the host for the main session, unless you configure sandboxing.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">How you reach it</th>
-            <td style="padding:10px 16px">An HTTP API with live SSE events and webhooks, plus a web chat, a Mac app, and an iOS app.</td>
-            <td style="padding:10px 16px">The messaging apps you already use (WhatsApp, Telegram, Slack, Discord, iMessage, and many more), plus a CLI and companion apps.</td>
+            <td data-label="cedar" style="padding:10px 16px">An HTTP API with live SSE events and webhooks, plus a web chat, a Mac app, and an iOS app.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">The messaging apps you already use (WhatsApp, Telegram, Slack, Discord, iMessage, and many more), plus a CLI and companion apps.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Models</th>
-            <td style="padding:10px 16px">Any OpenAI-compatible server, registered per model. Built for local inference: vLLM, Ollama, LM Studio.</td>
-            <td style="padding:10px 16px">Hosted and local providers, swappable as plugins.</td>
+            <td data-label="cedar" style="padding:10px 16px">Any OpenAI-compatible server, registered per model. Built for local inference: vLLM, Ollama, LM Studio.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Hosted and local providers, swappable as plugins.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Guardrails</th>
-            <td style="padding:10px 16px">Plans to agree to, and approvals for mail, downloads, installs, deletes, and network calls. Every run, message, and event is kept in SQLite.</td>
-            <td style="padding:10px 16px">Inbound messages are treated as untrusted; unknown senders in DMs have to be paired first.</td>
+            <td data-label="cedar" style="padding:10px 16px">Plans to agree to, and approvals for mail, downloads, installs, deletes, and network calls. Every run, message, and event is kept in SQLite.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Inbound messages are treated as untrusted; unknown senders in DMs have to be paired first.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Extending it</th>
-            <td style="padding:10px 16px">A Rust trait, or a Python script with a JSON manifest that runs in the sandbox.</td>
-            <td style="padding:10px 16px">Skills and plugins, with a community registry in ClawHub.</td>
+            <td data-label="cedar" style="padding:10px 16px">A Rust trait, or a Python script with a JSON manifest that runs in the sandbox.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Skills and plugins, with a community registry in ClawHub.</td>
           </tr>
           <tr>
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Stack</th>
-            <td style="padding:10px 16px">Rust, SQLite, Docker. Apache 2.0.</td>
-            <td style="padding:10px 16px">Node.js and TypeScript. MIT.</td>
+            <td data-label="cedar" style="padding:10px 16px">Rust, SQLite, Docker. Apache 2.0.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Node.js and TypeScript. MIT.</td>
           </tr>
         </tbody>
       </table>
@@ -172,7 +175,7 @@ curl -N -H "Authorization: Bearer $KEY" \
     <span style="font-size:12px;color:#8a8275">OpenClaw details from its README, October 2026. Corrections welcome.</span>
   </section>
 
-  <footer style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8a8275;flex-wrap:wrap;gap:8px">
+  <footer class="foot" style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8a8275;flex-wrap:wrap;gap:8px">
     <span>Apache 2.0 · built by <a href="https://github.com/hanneshapke">@hanneshapke</a> and contributors</span>
     <span style="display:flex;gap:18px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar/issues">Good first issues</a><a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md">cedar-chat</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#personal-tools-in-python">Personal tools</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#adding-a-tool">Adding a tool</a></span>
   </footer>
