@@ -1,14 +1,15 @@
 import Foundation
 
-/// A tool result the app draws as a card: `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`.
-/// Parsed with the same rules as the web UI's views (chat/static/map-view.js, recipe-view.js,
-/// transit-view.js, stock-view.js). Everything in a result came from the model or the network, so
+/// A tool result the app draws as a card: `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`,
+/// `search_products`. Parsed with the same rules as the web UI's views (chat/static/map-view.js,
+/// recipe-view.js, transit-view.js, stock-view.js, product-view.js). Everything in a result came from the model or the network, so
 /// text is clipped, numbers and coordinates are checked, and links are only kept if they are https.
 enum Card: Hashable, Sendable {
     case map(MapCard)
     case recipe(RecipeCard)
     case trip(TripCard)
     case stocks(StocksCard)
+    case products(ProductsCard)
 
     /// The card for a finished call, or `nil` when it isn't a card tool or its result isn't usable.
     static func parse(name: String, output: String) -> Card? {
@@ -20,6 +21,7 @@ enum Card: Hashable, Sendable {
         case "show_recipe": return RecipeCard.parse(value).map(Card.recipe)
         case "plan_trip": return TripCard.parse(value).map(Card.trip)
         case "compare_stocks": return StocksCard.parse(value).map(Card.stocks)
+        case "search_products": return ProductsCard.parse(value).map(Card.products)
         default: return nil
         }
     }
@@ -566,4 +568,179 @@ struct StocksCard: Hashable, Sendable {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+}
+
+// MARK: - search_products
+
+/// `{"query", "store", "currency", "total", "as_of", "sort", "options": [{"sku", "name", "brand"?,
+/// "model"?, "color"?, "condition"?, "price", "regular_price"?, "savings_pct"?, "url"?, "images",
+/// "description"?, "features", "specs": [{"name", "value"}], "category"?, "availability": {"online",
+/// "in_store", "free_shipping"}, "reviews": {"average", "count", "adjusted", "verdict",
+/// "confidence", "summary"}, "comparable": [sku]}], "others": [{... "image"?}], "picks":
+/// {"best_rated"?, "best_value"?, "most_popular"?}, "disclaimer"}`
+struct ProductsCard: Hashable, Sendable {
+    /// What a product's reviews amount to, as cedar reads them.
+    enum Verdict: String, Hashable, Sendable {
+        case excellent, good, mixed, poor, few
+        /// No reviews yet; named so it can't be mistaken for `Optional.none`.
+        case unreviewed = "none"
+
+        var label: String {
+            switch self {
+            case .excellent: return "Excellent"
+            case .good: return "Good"
+            case .mixed: return "Mixed"
+            case .poor: return "Poor"
+            case .few: return "Few reviews"
+            case .unreviewed: return "No reviews"
+            }
+        }
+    }
+
+    struct Reviews: Hashable, Sendable {
+        /// 0...5
+        let average: Double?
+        let count: Int
+        /// The average shrunk toward a typical rating by how few reviews there are, 0...5.
+        let adjusted: Double?
+        let verdict: Verdict
+        /// low, medium, or high
+        let confidence: String
+        let summary: String?
+
+        static func parse(_ r: JSONValue?) -> Reviews {
+            let count = Int(CardParse.amount(r?["count"], max: 1e9) ?? 0)
+            let fallback: Verdict = count > 0 ? .few : .unreviewed
+            let verdict = r?["verdict"]?.stringValue.flatMap(Verdict.init(rawValue:)) ?? fallback
+            let confidence = r?["confidence"]?.stringValue ?? ""
+            return Reviews(
+                average: count > 0 ? CardParse.amount(r?["average"], max: 5) : nil, count: count,
+                adjusted: count > 0 ? CardParse.amount(r?["adjusted"], max: 5) : nil, verdict: verdict,
+                confidence: ["low", "medium", "high"].contains(confidence) ? confidence : "low",
+                summary: CardParse.text(r?["summary"], max: 600)
+            )
+        }
+    }
+
+    struct Spec: Hashable, Sendable {
+        let name: String
+        let value: String
+    }
+
+    struct Product: Hashable, Sendable, Identifiable {
+        /// The store's sku.
+        let id: String
+        let name: String
+        let brand: String?
+        let model: String?
+        let color: String?
+        let condition: String?
+        let price: Double
+        /// Only when it is above `price`.
+        let regularPrice: Double?
+        let savingsPct: Double?
+        let url: URL?
+        /// https only, the main photo first. Every `others` product has at most one.
+        let images: [URL]
+        let description: String?
+        let features: [String]
+        let specs: [Spec]
+        let category: String?
+        let online: Bool
+        let inStore: Bool
+        let freeShipping: Bool
+        let reviews: Reviews
+        /// Skus of other products in the card.
+        var comparable: [String]
+    }
+
+    static let maxOptions = 8
+
+    let query: String
+    let store: String
+    let currency: String
+    let total: Int
+    let asOf: Date?
+    /// How the options are ordered, in words.
+    let sort: String?
+    let options: [Product]
+    /// The rest of the search, which comparable options may point at.
+    let others: [Product]
+    /// The picks each option has: "Best rated", "Best value", "Most popular".
+    let badges: [String: [String]]
+    let disclaimer: String?
+
+    func product(_ sku: String) -> Product? {
+        options.first { $0.id == sku } ?? others.first { $0.id == sku }
+    }
+
+    private static let sorts = ["best_selling": "best selling first", "rating": "highest rated first",
+                                "price_low": "cheapest first", "price_high": "priciest first"]
+    private static let picks = [("best_rated", "Best rated"), ("best_value", "Best value"), ("most_popular", "Most popular")]
+
+    /// A sku given as a number or a string.
+    static func sku(_ value: JSONValue?) -> String? {
+        if let n = value?.doubleValue, n >= 0, n < 1e15 { return String(Int64(n.rounded())) }
+        return CardParse.text(value, max: 40)
+    }
+
+    static func parse(_ value: JSONValue) -> ProductsCard? {
+        guard let raw = value["options"]?.arrayValue else { return nil }
+        var options = raw.prefix(maxOptions).compactMap(parseProduct)
+        guard !options.isEmpty else { return nil }
+        let shown = Set(options.map(\.id))
+        var seen = shown
+        let others = (value["others"]?.arrayValue ?? []).prefix(40).compactMap(parseProduct).filter { seen.insert($0.id).inserted }
+        let known = seen
+        for i in options.indices {
+            let own = options[i].id
+            options[i].comparable = Array(options[i].comparable.filter { $0 != own && known.contains($0) }.prefix(4))
+        }
+        var badges: [String: [String]] = [:]
+        for (key, label) in picks {
+            if let pick = sku(value["picks"]?[key]), shown.contains(pick) { badges[pick, default: []].append(label) }
+        }
+        return ProductsCard(
+            query: CardParse.text(value["query"], max: 160) ?? "Products",
+            store: CardParse.text(value["store"], max: 60) ?? "the store",
+            currency: CardParse.text(value["currency"], max: 3).map { $0.uppercased() } ?? "USD",
+            total: max(options.count + others.count, Int(CardParse.amount(value["total"], max: 1e9) ?? 0)),
+            asOf: CardParse.time(value["as_of"]),
+            sort: value["sort"]?.stringValue.flatMap { sorts[$0] },
+            options: options, others: Array(others), badges: badges,
+            disclaimer: CardParse.text(value["disclaimer"], max: 600)
+        )
+    }
+
+    private static func parseProduct(_ p: JSONValue) -> Product? {
+        guard let id = sku(p["sku"]), let name = CardParse.text(p["name"]),
+              let price = CardParse.amount(p["price"]) else { return nil }
+        let rawImages = p["images"]?.arrayValue ?? [p["image"] ?? .null]
+        var images: [URL] = []
+        for url in rawImages.compactMap(CardParse.https) where !images.contains(url) && images.count < 6 {
+            images.append(url)
+        }
+        let regular = CardParse.amount(p["regular_price"]).flatMap { $0 > price ? $0 : nil }
+        let availability = p["availability"]
+        return Product(
+            id: id, name: name,
+            brand: CardParse.text(p["brand"], max: 80), model: CardParse.text(p["model"], max: 80),
+            color: CardParse.text(p["color"], max: 60), condition: CardParse.text(p["condition"], max: 40),
+            price: price, regularPrice: regular,
+            savingsPct: regular == nil ? nil : CardParse.amount(p["savings_pct"], max: 100),
+            url: CardParse.https(p["url"]), images: images,
+            description: CardParse.text(p["description"], max: 600),
+            features: Array((p["features"]?.arrayValue ?? []).compactMap { CardParse.text($0) }.prefix(6)),
+            specs: Array((p["specs"]?.arrayValue ?? []).compactMap { s -> Spec? in
+                guard let name = CardParse.text(s["name"], max: 80), let value = CardParse.text(s["value"]) else { return nil }
+                return Spec(name: name, value: value)
+            }.prefix(8)),
+            category: CardParse.text(p["category"], max: 80),
+            online: availability?["online"]?.boolValue == true,
+            inStore: availability?["in_store"]?.boolValue == true,
+            freeShipping: availability?["free_shipping"]?.boolValue == true,
+            reviews: Reviews.parse(p["reviews"]),
+            comparable: (p["comparable"]?.arrayValue ?? []).compactMap { sku($0) }
+        )
+    }
 }

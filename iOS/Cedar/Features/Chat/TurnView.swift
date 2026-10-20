@@ -399,6 +399,7 @@ struct ToolCallView: View {
         case "show_recipe": return "fork.knife"
         case "plan_trip": return "tram"
         case "compare_stocks": return "chart.line.uptrend.xyaxis"
+        case "search_products": return "bag"
         case "ask_user": return "questionmark.bubble"
         case "browser": return "safari"
         default: return "wrench.and.screwdriver"
@@ -411,6 +412,7 @@ struct ToolCallView: View {
         case "show_recipe": return "recipe"
         case "plan_trip": return "route"
         case "compare_stocks": return "comparison"
+        case "search_products": return "products"
         default: return "result"
         }
     }

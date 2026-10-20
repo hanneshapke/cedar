@@ -132,6 +132,59 @@ final class CardsTests: XCTestCase {
         XCTAssertEqual(StockFormat.money(230.5, "USD"), "$" + 230.5.formatted(.number.precision(.fractionLength(2))))
     }
 
+    func testProducts() throws {
+        let output = #"""
+        {"query":"noise cancelling headphones","store":"Best Buy","currency":"usd","total":2,
+         "as_of":"2026-10-20T09:12:00Z","sort":"price_low",
+         "options":[
+           {"sku":101,"name":" Sony WH-1000XM5 ","brand":"Sony","price":329.99,"regular_price":399.99,"savings_pct":17.5,
+            "url":"https://www.bestbuy.com/site/101.p",
+            "images":["https://img.example/101.jpg","http://img.example/plain.jpg","https://img.example/101.jpg","https://img.example/101-side.jpg"],
+            "features":["30-hour battery",""],"specs":[{"name":"Weight","value":"250 g"},{"name":"Color"}],
+            "category":"Over-Ear Headphones","availability":{"online":true,"in_store":false,"free_shipping":true},
+            "reviews":{"average":4.7,"count":2345,"adjusted":4.7,"verdict":"excellent","confidence":"high","summary":"Well reviewed."},
+            "comparable":[101,"202",999,303]},
+           {"sku":"202","name":"Bose QC Ultra","price":299,"regular_price":299,"savings_pct":0,
+            "reviews":{"average":null,"count":0,"verdict":"nonsense"},"comparable":[]},
+           {"sku":303,"name":"No price"}
+         ],
+         "others":[{"sku":303,"name":"JBL Tune","price":69.99,"image":"https://img.example/303.jpg",
+                    "reviews":{"average":5,"count":3,"adjusted":4.2,"verdict":"few","confidence":"low"}},
+                   {"sku":101,"name":"Duplicate","price":1}],
+         "picks":{"best_rated":101,"best_value":"101","most_popular":303},
+         "disclaimer":"Prices can change."}
+        """#
+        guard case .products(let card)? = Card.parse(name: "search_products", output: output) else { return XCTFail("expected products") }
+        XCTAssertEqual(card.currency, "USD")
+        XCTAssertEqual(card.total, 3, "at least the products the card holds")
+        XCTAssertEqual(card.sort, "cheapest first")
+        XCTAssertEqual(card.options.map(\.id), ["101", "202"], "an option needs a price")
+        XCTAssertEqual(card.others.map(\.id), ["303"], "an option already shown isn't repeated")
+        let sony = card.options[0]
+        XCTAssertEqual(sony.name, "Sony WH-1000XM5")
+        XCTAssertEqual(sony.images.map(\.absoluteString), ["https://img.example/101.jpg", "https://img.example/101-side.jpg"],
+                       "https only, without repeats")
+        XCTAssertEqual(sony.regularPrice, 399.99)
+        XCTAssertEqual(sony.savingsPct, 17.5)
+        XCTAssertEqual(sony.features, ["30-hour battery"])
+        XCTAssertEqual(sony.specs, [.init(name: "Weight", value: "250 g")])
+        XCTAssertTrue(sony.online && sony.freeShipping && !sony.inStore)
+        XCTAssertEqual(sony.reviews.verdict, .excellent)
+        XCTAssertEqual(sony.reviews.average, 4.7)
+        XCTAssertEqual(sony.comparable, ["202", "303"], "itself and unknown skus are dropped")
+        let bose = card.options[1]
+        XCTAssertNil(bose.regularPrice, "no sale, no regular price")
+        XCTAssertNil(bose.savingsPct)
+        XCTAssertNil(bose.reviews.average)
+        XCTAssertEqual(bose.reviews.verdict, .unreviewed, "an unknown verdict falls back on the count")
+        XCTAssertEqual(card.others[0].images.count, 1)
+        XCTAssertEqual(card.others[0].reviews.verdict, .few)
+        XCTAssertEqual(card.badges, ["101": ["Best rated", "Best value"]], "picks only mark shown options")
+        XCTAssertEqual(card.product("303")?.name, "JBL Tune")
+        XCTAssertNil(Card.parse(name: "search_products", output: #"{"options":[{"sku":1,"name":"x"}]}"#))
+        XCTAssertNil(Card.parse(name: "search_products", output: #"{"options":[]}"#))
+    }
+
     func testCardIsParsedWhenTheResultArrives() throws {
         var transcript = TurnTranscript(turn: Turn(id: "t1", conversationId: "c1", runId: "r1", prompt: "map", status: .running))
         transcript.apply(RunEvent(seq: 1, type: "tool.call", data: .object(["id": .string("m"), "name": .string("show_map"), "input": .object([:])])))

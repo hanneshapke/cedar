@@ -19,9 +19,10 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - The agent's images (charts, pictures it saved or drew) shown under the reply, with sharing
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
 - Plans to agree to and tool calls to allow or deny, when the server asks (`TOOL_APPROVALS`)
-- Maps, recipes, routes and stock comparisons as native cards: Apple Maps with numbered pins
-  and route lines (tap for full screen), a recipe checklist with steps to tick off, and stock
-  charts with ratings, returns and news
+- Maps, recipes, routes, stock comparisons and product searches as native cards: Apple Maps
+  with numbered pins and route lines (tap for full screen), a recipe checklist with steps to
+  tick off, stock charts with ratings, returns and news, and product tiles with photos, prices,
+  the reading of their reviews and comparable options to step through
 - Follow-ups continue the conversation; a stop button cancels the running response
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
