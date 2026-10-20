@@ -313,6 +313,9 @@ const cedarChart = (() => {
     }
 
     const root = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, class: `cedar-chart-svg${animate ? ' enter' : ''}` });
+    // A CSS width too: WebKit (Safari, the macOS app) ignores the width attribute under the
+    // stylesheet's `height: auto` and shrinks the plot to a speck.
+    root.style.width = `${width}px`;
     root.setAttribute('role', 'img');
     root.setAttribute('aria-label', `${spec.title || KIND_NAMES[kind]}: ${data.map((s) => s.name).join(', ')}. Hover or use the arrow keys for values; the data is also in the table below.`);
     root.setAttribute('tabindex', '0');
@@ -689,6 +692,7 @@ const cedarChart = (() => {
 
     const box = el('div', `cedar-chart-pie${stack ? ' stack' : ''}`);
     const root = svg('svg', { viewBox: `0 0 ${size} ${size}`, width: size, height: size, class: `cedar-chart-svg${animate ? ' enter' : ''}` });
+    root.style.width = `${size}px`; // as in drawPlot, for WebKit
     root.setAttribute('role', 'img');
     root.setAttribute('aria-label', `${spec.title || 'Pie chart'}: ${slices.map((s) => `${s.name} ${((s.value / total) * 100).toFixed(1)}%`).join(', ')}`);
     root.setAttribute('tabindex', '0');
