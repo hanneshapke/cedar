@@ -9,28 +9,32 @@
 <x-dc>
 <helmet>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}</style>
+<style>body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}
+.hero h1{font-size:52px}
+@media (max-width:960px){.hero,.how{grid-template-columns:minmax(0,1fr)!important;gap:28px!important}.cards4{grid-template-columns:repeat(2,minmax(0,1fr))!important}.cards3{grid-template-columns:minmax(0,1fr)!important}}
+@media (max-width:640px){.wrap{padding:16px 16px 24px!important;gap:24px!important}.top{flex-direction:column;align-items:flex-start!important}.top nav{flex-wrap:wrap;gap:10px 16px!important}.hero h1{font-size:36px}.hero p{font-size:16px!important}.cards4{grid-template-columns:minmax(0,1fr)!important}.foot{flex-direction:column;align-items:flex-start!important}.cmp table{min-width:0!important}.cmp thead{display:none}.cmp tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:4px 0}.cmp tbody th{grid-column:1/-1;padding-bottom:0!important}.cmp td{padding:6px 16px 10px!important}.cmp td::before{content:attr(data-label);display:block;font-weight:600;color:#2a2622}.cmp td[data-label=cedar]::before{color:#3a5f4b}}</style>
 </helmet>
-<div style="min-height:100vh;display:flex;flex-direction:column;max-width:1200px;margin:0 auto;padding:20px 32px 28px;box-sizing:border-box;gap:28px">
+<div class="wrap" style="min-height:100vh;display:flex;flex-direction:column;max-width:1200px;margin:0 auto;padding:20px 32px 28px;box-sizing:border-box;gap:28px">
 
-  <header style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+  <header class="top" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
     <a href="#" style="display:flex;align-items:center;gap:10px;color:#2a2622"><img src="../assets/cedar-mark.svg" width="28" height="28" alt="cedar"><span style="font-weight:600;font-size:22px;letter-spacing:-.02em">cedar</span></a>
     <nav style="display:flex;gap:22px;font-size:14px;align-items:center">
-      <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#api">API</a><a href="#safety">Safety</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
+      <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#apps">Apps</a><a href="#safety">Safety</a><a href="#openclaw">vs. OpenClaw</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
       <a href="https://github.com/hanneshapke/cedar" style="display:inline-flex;align-items:center;gap:8px;background:#2a2622;color:#f3ede3;padding:8px 14px;border-radius:8px;font-weight:500" style-hover="background:#3a5f4b;color:#f3ede3">★ Star on GitHub</a>
     </nav>
   </header>
 
-  <section style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:40px;align-items:center">
+  <section class="hero" style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:40px;align-items:center">
     <div style="display:flex;flex-direction:column;gap:18px">
       <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#3a5f4b">Rust · Apache 2.0 · self-hosted</span>
-      <h1 style="margin:0;font-size:52px;line-height:1.05;letter-spacing:-.03em;font-weight:600;text-wrap:pretty">Run LLM agents on your own hardware, each one in its own box.</h1>
-      <p style="margin:0;font-size:18px;line-height:1.5;color:#5a534a;max-width:520px;text-wrap:pretty">cedar is a small backend that runs agent loops against any OpenAI-compatible server (built for DeepSeek V4 on local vLLM). Submit a task, follow it live over SSE, and let every tool call run inside a throwaway Docker container.</p>
+      <h1 style="margin:0;line-height:1.05;letter-spacing:-.03em;font-weight:600;text-wrap:pretty">Run LLM agents on your own hardware, each one in its own box.</h1>
+      <p style="margin:0;font-size:18px;line-height:1.5;color:#5a534a;max-width:520px;text-wrap:pretty">cedar is a small backend that runs agent loops against the models you register: DeepSeek V4 on a local vLLM, Ollama or LM Studio on a Mac, or any other OpenAI-compatible server. Submit a task, follow it live over SSE, and let every tool call run inside a throwaway Docker container. Talk to it from the browser, a Mac menu bar app, or your iPhone.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
         <a href="https://github.com/hanneshapke/cedar" style="background:#3a5f4b;color:#f3ede3;padding:12px 20px;border-radius:9px;font-weight:500;font-size:15px" style-hover="background:#2e4c3c;color:#f3ede3">View on GitHub</a>
-        <a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="padding:12px 20px;border-radius:9px;font-weight:500;font-size:15px;border:1.5px solid #cfc6b6;color:#2a2622" style-hover="border-color:#3a5f4b;color:#3a5f4b">Read the docs</a>
-        <span style="font-size:13px;color:#8a8275">Contributions welcome. Issues and PRs open.</span>
+        <a href="https://github.com/hanneshapke/cedar/releases" style="padding:12px 20px;border-radius:9px;font-weight:500;font-size:15px;border:1.5px solid #cfc6b6;color:#2a2622" style-hover="border-color:#3a5f4b;color:#3a5f4b">Download for Mac</a>
+        <a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="font-weight:500;font-size:15px">Read the docs →</a>
       </div>
+      <span style="font-size:13px;color:#8a8275">Contributions welcome. Issues and PRs open.</span>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <img src="../screenshots/conversation-light.png" alt="cedar-chat: the agent writes a test file, runs pytest in its sandbox, and summarizes the result" style="width:100%;height:auto;border-radius:12px;border:1px solid #e2dacb;box-shadow:0 12px 32px rgba(42,38,34,.10)">
@@ -38,31 +42,38 @@
     </div>
   </section>
 
-  <section id="how" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start">
+  <section id="how" class="how" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start">
     <div style="display:flex;flex-direction:column;gap:12px">
       <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">How a run works</h2>
       <ol style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px;font-size:15px;line-height:1.45;color:#2a2622">
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">1</span><span><code style="font-family:'JetBrains Mono',monospace;font-size:13.5px;background:#ebe3d4;padding:1px 5px;border-radius:4px">POST /v1/runs</code> queues the task and answers <code style="font-family:'JetBrains Mono',monospace;font-size:13.5px">202</code> right away.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">2</span><span>When a slot frees up, cedar spins up a fresh sandbox container for the run.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">3</span><span>The model gets the conversation and tool definitions. Text is collected; tool calls run in the sandbox and results go back, errors included so it can recover.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">4</span><span>Loop until the model stops asking for tools, hits <code style="font-family:'JetBrains Mono',monospace;font-size:13.5px">max_turns</code>, or runs out of time.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">5</span><span>The sandbox is destroyed. The run ends <em>completed</em>, <em>failed</em>, or <em>cancelled</em>, with everything logged to SQLite.</span></li>
+        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">1</span><span><code style="font-family:'JetBrains Mono',monospace;font-size:13.5px;background:#ebe3d4;padding:1px 5px;border-radius:4px">POST /v1/runs</code> queues the task, with any PDFs or images attached, and answers <code style="font-family:'JetBrains Mono',monospace;font-size:13.5px">202</code> right away.</span></li>
+        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">2</span><span>When a slot frees up, cedar spins up a fresh sandbox container for the run. If you asked for a plan, the model breaks the task into steps first, and an interactive run waits for you to agree to them.</span></li>
+        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">3</span><span>The model gets the conversation and the tools you chose. Tool calls run in the sandbox and results go back, errors included so it can recover. Risky calls (sending mail, installs, deletes) can wait for your approval.</span></li>
+        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">4</span><span>Loop until the model is done, asks you a question, hits <code style="font-family:'JetBrains Mono',monospace;font-size:13.5px">max_turns</code>, or runs out of time.</span></li>
+        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">5</span><span>The sandbox is destroyed. The run ends <em>completed</em>, <em>failed</em>, or <em>cancelled</em>, with everything logged to SQLite, and a webhook tells you it's over. Its workspace stays for a follow-up.</span></li>
       </ol>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Quick start</h2>
       <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere"><span style="color:#8a8275"># 0. any OpenAI-compatible model server</span>
 vllm serve deepseek-ai/DeepSeek-V4-Flash \
-  --enable-auto-tool-choice \
-  --tool-call-parser deepseek_v4
+  --trust-remote-code --tokenizer-mode deepseek_v4 \
+  --enable-auto-tool-choice --tool-call-parser deepseek_v4
 
 <span style="color:#8a8275"># 1. the sandbox image, then the server</span>
 docker build -t cedar-sandbox sandbox/
-export CEDAR_API_KEYS=$(openssl rand -hex 24)
+export CEDAR_API_KEYS=$(openssl rand -hex 24) \
+  CEDAR_ADMIN_KEYS=$CEDAR_API_KEYS
 cargo run --release
 
-<span style="color:#8a8275"># 2. start a run, then follow it live</span>
+<span style="color:#8a8275"># 2. register the model, start a run, follow it live</span>
+curl -s -X PUT -H "Authorization: Bearer $KEY" \
+  -H 'content-type: application/json' \
+  -d '{"base_url": "http://localhost:8000/v1",
+       "model": "deepseek-ai/DeepSeek-V4-Flash"}' \
+  localhost:8080/v1/admin/models/deepseek
 curl -s -H "Authorization: Bearer $KEY" \
+  -H 'content-type: application/json' \
   -d '{"prompt": "write hello.py, run it"}' \
   localhost:8080/v1/runs
 curl -N -H "Authorization: Bearer $KEY" \
@@ -70,32 +81,103 @@ curl -N -H "Authorization: Bearer $KEY" \
     </div>
   </section>
 
-  <section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px">
+  <section class="cards4" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px">
     <div id="tools" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
       <h3 style="margin:0;font-size:15px;font-weight:600">Tools, in and out of the box</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Inside the sandbox: <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">bash</code>, files, Python, PDF, charts, document reading. Host-side when you turn them on: web search and fetch, weather, maps, a headless browser, Gmail and Calendar.</p>
-      <p style="margin:0;font-size:13.5px;color:#5a534a">Adding one is a Rust trait and a line in <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">ToolSet</code>.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Inside the sandbox: <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">bash</code>, files, Python, PDFs, charts, and reading Word, Excel, and PowerPoint. On the host, each behind a switch: web search and fetch, weather, maps, recipes, trip planning, stock comparisons, a headless browser, Gmail and Calendar.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Add your own as a Rust trait, or drop a Python script in <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">TOOLS_DIR</code>: no rebuild, and it runs in the sandbox too.</p>
     </div>
     <div id="api" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
       <h3 style="margin:0;font-size:15px;font-weight:600">A small HTTP API</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Start, list, cancel, and delete runs. Read the stored conversation, stream events with replay and resume, download workspace files, continue a finished run, or compact one into a single prompt.</p>
-      <p style="margin:0;font-size:13.5px;color:#5a534a">Bearer keys, per-key limits, plain JSON errors.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Start, list, cancel, and delete runs. Pick the model, reasoning level, and tools per run. Stream events with replay and resume, answer plans and approvals, download workspace files, continue a finished run, or compact one into a single prompt.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Signed webhooks or one event stream when runs end. Bearer keys, per-key limits, plain JSON errors.</p>
     </div>
     <div id="safety" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
       <h3 style="margin:0;font-size:15px;font-weight:600">Isolation is the design</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">One container per run, non-root, all capabilities dropped, memory and CPU limits, networking off by default. The host filesystem is never touched. Secrets stay out of the sandbox and out of the logs.</p>
-      <p style="margin:0;font-size:13.5px;color:#5a534a">Workspaces persist for continuations, then expire.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">One container per run, non-root, all capabilities dropped, memory and CPU limits, networking off by default. The host filesystem is never touched. Model keys and saved credentials stay out of the sandbox, encrypted at rest, and out of the logs.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Workspaces persist for continuations, then expire.</p>
     </div>
     <div style="background:#3a5f4b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;color:#f3ede3">
       <h3 style="margin:0;font-size:15px;font-weight:600">Runs well on a DGX Spark</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#dfe8e2">vLLM, cedar, and the chat UI together on one NVIDIA DGX Spark, as systemd services you can reach from your laptop. The guide walks through it.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#dfe8e2">vLLM, cedar, and the chat UI together on one NVIDIA DGX Spark, as systemd services you reach from your laptop, and over Tailscale HTTPS from your phone. The guide walks through it.</p>
       <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="margin-top:auto;font-size:13.5px;font-weight:500;color:#f3ede3" style-hover="color:#e0a98f">Read DEPLOYMENT.md →</a>
     </div>
   </section>
 
-  <footer style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8a8275;flex-wrap:wrap;gap:8px">
+  <section id="apps" style="display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Apps that talk to it</h2>
+    <div class="cards3" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
+      <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
+        <h3 style="margin:0;font-size:15px;font-weight:600">cedar-chat, in the browser</h3>
+        <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Conversations with live tool calls, a files panel, and maps, recipes, routes, and stock charts drawn as cards. Attach PDFs and photos. Turn a conversation into a scheduled agent that runs daily or weekly, and get told when a response ends: browser push, Pushover, email, or your iPhone.</p>
+        <a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md" style="margin-top:auto;font-size:13.5px;font-weight:500">chat/README.md →</a>
+      </div>
+      <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
+        <h3 style="margin:0;font-size:15px;font-weight:600">Cedar for Mac</h3>
+        <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">A signed menu bar app that bundles both servers in one DMG. Bring Docker (or OrbStack, Colima) and a model server, Ollama or LM Studio on the Mac or a vLLM elsewhere, pick a model from the list it reports, and chat. One checkbox shares it with your iPhone over Tailscale, paired by QR code.</p>
+        <a href="https://github.com/hanneshapke/cedar/releases" style="margin-top:auto;font-size:13.5px;font-weight:500">Download from releases →</a>
+      </div>
+      <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
+        <h3 style="margin:0;font-size:15px;font-weight:600">Cedar for iPhone and iPad</h3>
+        <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">A native SwiftUI client for the same conversations: streaming replies, native cards with Apple Maps, clarifying questions as a form, plans and tool calls to approve, and push notifications through APNs when a run ends while you are away. HTTPS only.</p>
+        <a href="https://github.com/hanneshapke/cedar/blob/main/iOS/README.md" style="margin-top:auto;font-size:13.5px;font-weight:500">iOS/README.md →</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="openclaw" style="display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">cedar and OpenClaw</h2>
+    <p style="margin:0;font-size:15px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty">Both are open-source agents you run yourself. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> is a personal assistant that lives in your chat apps and acts on your computer. cedar is a run service: every task gets its own disposable sandbox, behind an API that your own clients, and ours, call.</p>
+    <div class="cmp" style="overflow-x:auto;background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px">
+      <table style="width:100%;min-width:640px;border-collapse:collapse;font-size:13.5px;line-height:1.45;text-align:left">
+        <thead>
+          <tr style="border-bottom:1px solid #e8e0d1">
+            <th style="padding:12px 16px;font-weight:500;color:#8a8275;width:18%"></th>
+            <th style="padding:12px 16px;font-weight:600;color:#3a5f4b;width:41%">cedar</th>
+            <th style="padding:12px 16px;font-weight:600;width:41%">OpenClaw</th>
+          </tr>
+        </thead>
+        <tbody style="color:#5a534a;vertical-align:top">
+          <tr style="border-bottom:1px solid #e8e0d1">
+            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Where tools run</th>
+            <td data-label="cedar" style="padding:10px 16px">In a fresh Docker container per run: non-root, capabilities dropped, no network unless you turn it on. Never on the host.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">On the host for the main session, unless you configure sandboxing.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e0d1">
+            <th style="padding:10px 16px;font-weight:500;color:#2a2622">How you reach it</th>
+            <td data-label="cedar" style="padding:10px 16px">An HTTP API with live SSE events and webhooks, plus a web chat, a Mac app, and an iOS app.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">The messaging apps you already use (WhatsApp, Telegram, Slack, Discord, iMessage, and many more), plus a CLI and companion apps.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e0d1">
+            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Models</th>
+            <td data-label="cedar" style="padding:10px 16px">Any OpenAI-compatible server, registered per model. Built for local inference: vLLM, Ollama, LM Studio.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Hosted and local providers, swappable as plugins.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e0d1">
+            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Guardrails</th>
+            <td data-label="cedar" style="padding:10px 16px">Plans to agree to, and approvals for mail, downloads, installs, deletes, and network calls. Every run, message, and event is kept in SQLite.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Inbound messages are treated as untrusted; unknown senders in DMs have to be paired first.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e0d1">
+            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Extending it</th>
+            <td data-label="cedar" style="padding:10px 16px">A Rust trait, or a Python script with a JSON manifest that runs in the sandbox.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Skills and plugins, with a community registry in ClawHub.</td>
+          </tr>
+          <tr>
+            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Stack</th>
+            <td data-label="cedar" style="padding:10px 16px">Rust, SQLite, Docker. Apache 2.0.</td>
+            <td data-label="OpenClaw" style="padding:10px 16px">Node.js and TypeScript. MIT.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty"><strong style="font-weight:600;color:#2a2622">Pick cedar</strong> when the agent should never touch the machine it runs on, when you want to build on it over HTTP, or when the model runs on your own GPU. <strong style="font-weight:600;color:#2a2622">Pick OpenClaw</strong> when you want one assistant across all your chat apps that can act on your own computer.</p>
+    <span style="font-size:12px;color:#8a8275">OpenClaw details from its README, October 2026. Corrections welcome.</span>
+  </section>
+
+  <footer class="foot" style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8a8275;flex-wrap:wrap;gap:8px">
     <span>Apache 2.0 · built by <a href="https://github.com/hanneshapke">@hanneshapke</a> and contributors</span>
-    <span style="display:flex;gap:18px"><a href="https://github.com/hanneshapke/cedar/issues">Good first issues</a><a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md">cedar-chat</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#adding-a-tool">Adding a tool</a></span>
+    <span style="display:flex;gap:18px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar/issues">Good first issues</a><a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md">cedar-chat</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#personal-tools-in-python">Personal tools</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#adding-a-tool">Adding a tool</a></span>
   </footer>
 </div>
 </x-dc>
