@@ -444,6 +444,24 @@ impl Harness {
             .route("/v1/admin/integrations/google", axum::routing::delete(|State(s): State<Shared>| delete_integration(s, "google")))
             .route("/v1/admin/integrations/google/authorize", post(authorize))
             .route("/v1/admin/integrations/google/callback", post(callback))
+            .route(
+                "/v1/admin/marketplace/{name}/install",
+                post(|State(s): State<Shared>, Path(name): Path<String>, Json(body): Json<Value>| async move {
+                    if let Some(refused) = admin(&s, &format!("install_{name}"), body.clone()).await {
+                        return refused;
+                    }
+                    Json(json!({ "name": name, "source": "marketplace" })).into_response()
+                }),
+            )
+            .route(
+                "/v1/admin/tools/{name}/secrets/{secret}",
+                axum::routing::put(|State(s): State<Shared>, Path((name, secret)): Path<(String, String)>, Json(body): Json<Value>| async move {
+                    if let Some(refused) = admin(&s, &format!("secret_{name}_{secret}"), body.clone()).await {
+                        return refused;
+                    }
+                    Json(json!({ "tools": [] })).into_response()
+                }),
+            )
             // Not cedar, but on the same port: the services the chat's notifications go to.
             .route("/pushover", post(pushover))
             .route("/push/{name}", post(push_service))
@@ -2289,4 +2307,70 @@ async fn plans_and_approvals_are_answered_through_the_turn() {
     assert!(body["error"]["message"].as_str().unwrap().contains("not waiting"), "{body}");
     let (status, _) = h.json(Method::POST, "/api/turns/00000000-0000-0000-0000-000000000000/plan", Some(json!({ "steps": [] }))).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn community_tools_pass_through_to_cedar_with_checked_names() {
+    let h = Harness::new(&[
+        ("CHAT_ACCESS_TOKEN", "access"),
+        ("CHAT_ADMIN_TOKEN", "admin"),
+    ])
+    .await;
+    let accept =
+        json!({ "accept": { "network": [], "secrets": [], "pip": [], "health_data": false } });
+    let (status, _) = admin_call(
+        &h,
+        Method::POST,
+        "/api/integrations/marketplace/glucose/install",
+        None,
+        Some(accept.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = admin_call(
+        &h,
+        Method::POST,
+        "/api/integrations/marketplace/glucose/install",
+        Some("admin"),
+        Some(accept.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["source"], "marketplace");
+
+    // Names that cedar's URLs couldn't take never reach it.
+    for bad in ["Glucose", "a..b", "x%2F..%2Fy"] {
+        let uri = format!("/api/integrations/marketplace/{bad}/install");
+        let (status, _) =
+            admin_call(&h, Method::POST, &uri, Some("admin"), Some(accept.clone())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    let (status, _) = admin_call(
+        &h,
+        Method::PUT,
+        "/api/integrations/tools/glucose/secrets/TOKEN",
+        Some("admin"),
+        Some(json!({ "value": "v" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = admin_call(
+        &h,
+        Method::PUT,
+        "/api/integrations/tools/glucose/secrets/token",
+        Some("admin"),
+        Some(json!({ "value": "v" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let calls: Vec<String> = h
+        .cedar
+        .admin_calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(r, _)| r.clone())
+        .collect();
+    assert_eq!(calls, ["install_glucose", "secret_glucose_TOKEN"]);
+    assert_eq!(h.cedar.admin_calls.lock().unwrap()[0].1, accept);
 }

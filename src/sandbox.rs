@@ -98,6 +98,16 @@ pub trait Sandbox: Send + Sync {
         -> Result<ExecOutput>;
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent>;
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
+    /// Run one call of a personal tool in a container of its own (see [`ToolRun`]). Exit code
+    /// 124 means it timed out.
+    async fn run_tool(
+        &self,
+        _call: &ToolRun<'_>,
+        _timeout: Duration,
+        _max_output: usize,
+    ) -> Result<ExecOutput> {
+        bail!("personal tools need the Docker sandbox")
+    }
     /// Stop and remove the execution environment, keeping the workspace for a later continuation.
     /// Best effort and idempotent: failures are logged, not returned.
     async fn destroy(&self);
@@ -129,6 +139,47 @@ pub trait SandboxFactory: Send + Sync {
     ) -> Result<Option<FileContent>>;
     /// Is the backing runtime reachable and usable? (for `/readyz`)
     async fn health(&self) -> Result<()>;
+    /// Install a personal tool's `pip` requirements into its own environment (see
+    /// [`tool_env_volume`]), with the network personal tools get. Returns pip's output.
+    async fn setup_tool(&self, _name: &str, _requirements: &[String]) -> Result<String> {
+        bail!("installing a tool's packages needs the Docker sandbox")
+    }
+    /// Delete a personal tool's environment. Succeeds if it doesn't exist.
+    async fn remove_tool_env(&self, _name: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// One call of a personal tool. It runs in a fresh container that sees the run's workspace, the
+/// tool's own folder (read-only, at [`TOOL_MOUNT`]) and the tool's own environment (at
+/// [`TOOL_ENV_MOUNT`], where its packages are installed), and nothing of any other tool.
+pub struct ToolRun<'a> {
+    pub name: &'a str,
+    /// The tool's folder on the host.
+    pub dir: &'a std::path::Path,
+    /// The script, a file name in that folder.
+    pub entry: &'a str,
+    /// Handed to the script on stdin.
+    pub input: &'a [u8],
+    /// Environment variables for the script: the secrets its manifest declares.
+    pub env: &'a [(String, String)],
+    /// The manifest declares hosts it reaches, so the call gets `tools_network` instead of none.
+    pub network: bool,
+}
+
+/// Where a personal tool's folder is mounted in its container.
+pub const TOOL_MOUNT: &str = "/opt/cedar/tool";
+/// Where a personal tool's environment (its home, and its `pip install --user` packages) is.
+pub const TOOL_ENV_MOUNT: &str = "/opt/cedar/env";
+const TOOL_LABEL: &str = "cedar.tool";
+const TOOL_ENV_PREFIX: &str = "cedar-tool-env-";
+/// How long a tool's packages may take to install.
+const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The volume that holds a personal tool's environment. It outlives runs, so packages installed
+/// once are there for every later call, and it is shared by no other tool.
+pub fn tool_env_volume(name: &str) -> String {
+    format!("{TOOL_ENV_PREFIX}{name}")
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -186,15 +237,8 @@ pub fn run_args(cfg: &SandboxConfig, run_id: Uuid, workspace_id: Uuid) -> Vec<St
     .iter()
     .map(|s| s.to_string())
     .collect();
-    if let Some(dir) = &cfg.tools_dir {
-        // Personal tools, read-only: a run may run them, not change them (see `tools::custom`).
-        args.push("-v".into());
-        args.push(format!(
-            "{}:{}:ro",
-            dir.display(),
-            crate::tools::custom::MOUNT
-        ));
-    }
+    // Personal tools are not mounted here: each call runs in a container of its own that sees
+    // only that tool (see `tool_run_args`), so the agent and other tools can't read its files.
     args.extend([cfg.image.clone(), "sleep".into(), "infinity".into()]);
     args
 }
@@ -311,6 +355,147 @@ pub fn exec_args(container: &str, timeout_secs: u64, command: &str) -> Vec<Strin
     .collect()
 }
 
+/// The restrictions every sandbox container runs under, as `docker run` arguments.
+fn locked_down(cfg: &SandboxConfig, network: &str, pids: &str) -> Vec<String> {
+    [
+        "--network",
+        network,
+        "--memory",
+        &cfg.memory,
+        "--memory-swap",
+        &cfg.memory,
+        "--cpus",
+        &cfg.cpus,
+        "--pids-limit",
+        pids,
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--user",
+        "1000:1000",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// The environment a personal tool's container gets: its own home and package directory. Secret
+/// names follow as `-e NAME` only, so their values come from the `docker` process's environment
+/// and never appear in its arguments (which other users of the host can see).
+fn tool_env_args(env_names: &[&str]) -> Vec<String> {
+    let mut args: Vec<String> = [
+        format!("HOME={TOOL_ENV_MOUNT}"),
+        format!("PYTHONUSERBASE={TOOL_ENV_MOUNT}/.local"),
+        format!("PATH={TOOL_ENV_MOUNT}/.local/bin:/usr/local/bin:/usr/bin:/bin"),
+        "PIP_DISABLE_PIP_VERSION_CHECK=1".into(),
+    ]
+    .into_iter()
+    .flat_map(|e| ["-e".to_string(), e])
+    .collect();
+    for name in env_names {
+        args.push("-e".into());
+        args.push(name.to_string());
+    }
+    args
+}
+
+/// The network a personal tool's call gets: `tools_network` if its manifest declares hosts,
+/// else none.
+fn tool_network(cfg: &SandboxConfig, wants: bool) -> &str {
+    if wants {
+        &cfg.tools_network
+    } else {
+        "none"
+    }
+}
+
+/// Arguments for the `docker run` of one personal tool call (see [`ToolRun`]): the run's
+/// workspace, the tool's folder read-only, the tool's environment, the declared secrets by name,
+/// and the script under an in-container `timeout`, reading its input from stdin.
+pub fn tool_run_args(
+    cfg: &SandboxConfig,
+    run_id: Uuid,
+    workspace_id: Uuid,
+    container: &str,
+    call: &ToolRun<'_>,
+    timeout_secs: u64,
+) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "run",
+        "--rm",
+        "-i",
+        "--init",
+        "--name",
+        container,
+        // So `cleanup_orphans` removes a call left behind by a crash, like the run's sandbox.
+        "--label",
+        &format!("{LABEL}={run_id}"),
+        "--label",
+        &format!("{TOOL_LABEL}={}", call.name),
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    args.extend(locked_down(cfg, tool_network(cfg, call.network), "128"));
+    args.extend([
+        "-w".to_string(),
+        "/workspace".into(),
+        "-v".into(),
+        format!("{}:/workspace", volume_name(workspace_id)),
+        "-v".into(),
+        format!("{}:{TOOL_MOUNT}:ro", call.dir.display()),
+        "-v".into(),
+        format!("{}:{TOOL_ENV_MOUNT}", tool_env_volume(call.name)),
+    ]);
+    let names: Vec<&str> = call.env.iter().map(|(k, _)| k.as_str()).collect();
+    args.extend(tool_env_args(&names));
+    args.extend([
+        cfg.image.clone(),
+        "timeout".into(),
+        "-k".into(),
+        "2".into(),
+        timeout_secs.to_string(),
+        "python3".into(),
+        "--".into(),
+        format!("{TOOL_MOUNT}/{}", call.entry),
+    ]);
+    args
+}
+
+/// Arguments for installing a tool's requirements into its environment, as the agent's user.
+/// Requirements were checked when the manifest was read (no options, URLs or paths).
+pub fn tool_setup_args(cfg: &SandboxConfig, name: &str, requirements: &[String]) -> Vec<String> {
+    let mut args: Vec<String> = ["run", "--rm", "--label", &format!("{TOOL_LABEL}={name}")]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    args.extend(locked_down(cfg, &cfg.tools_network, "128"));
+    args.extend([
+        "-v".to_string(),
+        format!("{}:{TOOL_ENV_MOUNT}", tool_env_volume(name)),
+        "-w".into(),
+        TOOL_ENV_MOUNT.into(),
+    ]);
+    args.extend(tool_env_args(&[]));
+    args.extend(
+        [
+            &cfg.image,
+            "python3",
+            "-m",
+            "pip",
+            "install",
+            "--user",
+            "--no-warn-script-location",
+            "--",
+        ]
+        .iter()
+        .map(|s| s.to_string()),
+    );
+    args.extend(requirements.iter().cloned());
+    args
+}
+
 pub(crate) async fn docker_output(
     bin: &str,
     args: &[String],
@@ -377,6 +562,9 @@ async fn read_capped<R: AsyncRead + Unpin>(
 pub struct DockerSandbox {
     docker: String,
     container: String,
+    cfg: SandboxConfig,
+    run_id: Uuid,
+    workspace_id: Uuid,
 }
 
 #[async_trait]
@@ -492,6 +680,77 @@ impl Sandbox for DockerSandbox {
         Ok(())
     }
 
+    async fn run_tool(
+        &self,
+        call: &ToolRun<'_>,
+        timeout: Duration,
+        max_output: usize,
+    ) -> Result<ExecOutput> {
+        ensure_tool_env(&self.docker, &self.cfg, call.name).await?;
+        let container = format!("cedar-tool-{}", Uuid::new_v4());
+        let args = tool_run_args(
+            &self.cfg,
+            self.run_id,
+            self.workspace_id,
+            &container,
+            call,
+            timeout.as_secs().max(1),
+        );
+        let mut cmd = Command::new(&self.docker);
+        cmd.args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        // Passed by name in the arguments; docker takes the values from its own environment.
+        for (k, v) in call.env {
+            cmd.env(k, v);
+        }
+        let mut child = cmd
+            .spawn()
+            .with_context(|| format!("failed to run `{}`", self.docker))?;
+        let mut stdin = child.stdin.take().expect("stdin is piped");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        let input = call.input;
+        let write = async move {
+            // A script that never reads its input closes the pipe early; that is not an error.
+            let _ = stdin.write_all(input).await;
+            drop(stdin);
+        };
+        // Starting a container takes a moment on top of the script's own limit.
+        let finished = tokio::time::timeout(timeout + EXEC_BACKSTOP + DOCKER_CALL_TIMEOUT, async {
+            tokio::join!(
+                write,
+                read_capped(stdout, max_output),
+                read_capped(stderr, max_output),
+                child.wait()
+            )
+        })
+        .await;
+        match finished {
+            Ok(((), out, err, status)) => {
+                let (stdout, stdout_total) = out?;
+                let (stderr, stderr_total) = err?;
+                Ok(ExecOutput {
+                    stdout,
+                    stderr,
+                    stdout_total,
+                    stderr_total,
+                    exit_code: status?.code(),
+                })
+            }
+            Err(_) => {
+                drop(child);
+                let rm = vec!["rm".to_string(), "-f".into(), container.clone()];
+                if let Err(e) = docker_checked(&self.docker, &rm, DOCKER_CALL_TIMEOUT).await {
+                    tracing::warn!(error = %e, %container, "removing a stuck tool container failed");
+                }
+                bail!("{} did not finish after its timeout", call.name)
+            }
+        }
+    }
+
     async fn destroy(&self) {
         // Only the container: the workspace volume outlives the run so it can be continued.
         let args = vec!["rm".to_string(), "-f".into(), self.container.clone()];
@@ -572,6 +831,9 @@ impl SandboxFactory for DockerSandboxFactory {
         let sandbox = DockerSandbox {
             docker: self.docker.clone(),
             container: container_name(run_id),
+            cfg: self.cfg.clone(),
+            run_id,
+            workspace_id,
         };
         let started: Result<()> = async {
             // Creating a volume that already exists is a no-op, which is what a continuation wants.
@@ -705,6 +967,72 @@ impl SandboxFactory for DockerSandboxFactory {
             })?;
         Ok(())
     }
+
+    async fn setup_tool(&self, name: &str, requirements: &[String]) -> Result<String> {
+        if requirements.is_empty() {
+            return Ok(String::new());
+        }
+        ensure_tool_env(&self.docker, &self.cfg, name).await?;
+        let args = tool_setup_args(&self.cfg, name, requirements);
+        let out = docker_output(&self.docker, &args, SETUP_TIMEOUT).await?;
+        let text = |b: &[u8]| String::from_utf8_lossy(b).trim().to_string();
+        if !out.status.success() {
+            bail!("pip install failed ({}): {}", out.status, text(&out.stderr));
+        }
+        Ok(text(&out.stdout))
+    }
+
+    async fn remove_tool_env(&self, name: &str) -> Result<()> {
+        let args = ["volume", "rm", "-f", &tool_env_volume(name)].map(String::from);
+        docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
+        Ok(())
+    }
+}
+
+/// Create a personal tool's environment volume if it doesn't exist yet, owned by the agent's user
+/// (a new volume is root's, unless the image already has the directory).
+async fn ensure_tool_env(docker: &str, cfg: &SandboxConfig, name: &str) -> Result<()> {
+    let volume = tool_env_volume(name);
+    let inspect = ["volume", "inspect", "--format", "{{.Name}}", &volume].map(String::from);
+    if docker_output(docker, &inspect, DOCKER_CALL_TIMEOUT)
+        .await?
+        .status
+        .success()
+    {
+        return Ok(());
+    }
+    let create = [
+        "volume",
+        "create",
+        "--label",
+        &format!("{TOOL_LABEL}={name}"),
+        &volume,
+    ]
+    .map(String::from);
+    docker_checked(docker, &create, DOCKER_CALL_TIMEOUT).await?;
+    let chown = [
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--user",
+        "0:0",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "CHOWN",
+        "-v",
+        &format!("{volume}:{TOOL_ENV_MOUNT}"),
+        &cfg.image,
+        "chown",
+        "1000:1000",
+        TOOL_ENV_MOUNT,
+    ]
+    .map(String::from);
+    docker_checked(docker, &chown, DOCKER_CREATE_TIMEOUT)
+        .await
+        .context("preparing the tool's environment")?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -719,6 +1047,7 @@ mod tests {
             memory: "256m".into(),
             cpus: "2".into(),
             tools_dir: None,
+            tools_network: "bridge".into(),
         }
     }
 
@@ -743,15 +1072,79 @@ mod tests {
         assert!(!joined.contains("LLM_API_KEY"));
         assert!(!joined.contains("/opt/cedar/tools"));
 
+        // Personal tools are never mounted into the run's sandbox, only into their own calls.
         let with_tools = SandboxConfig {
             tools_dir: Some("/home/me/.cedar/tools".into()),
             ..cfg()
         };
         let args = run_args(&with_tools, id, ws);
-        assert!(args
-            .join(" ")
-            .contains("-v /home/me/.cedar/tools:/opt/cedar/tools:ro"));
+        assert!(!args.join(" ").contains("/home/me/.cedar/tools"));
         assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
+    }
+
+    #[test]
+    fn a_tool_call_sees_only_its_own_folder_environment_and_secrets() {
+        let (run, ws) = (Uuid::nil(), Uuid::max());
+        let env = vec![("TANDEM_PASSWORD".to_string(), "hunter2".to_string())];
+        let call = ToolRun {
+            name: "tandem_glucose",
+            dir: std::path::Path::new("/home/me/tools/tandem_glucose"),
+            entry: "tool.py",
+            input: b"{}",
+            env: &env,
+            network: false,
+        };
+        let args = tool_run_args(&cfg(), run, ws, "cedar-tool-x", &call, 30);
+        let joined = args.join(" ");
+        assert!(
+            joined.contains("--network none"),
+            "no hosts declared: {joined}"
+        );
+        assert!(joined.contains("--cap-drop ALL"));
+        assert!(joined.contains("--user 1000:1000"));
+        assert!(joined.contains(&format!("--label cedar.run={run}")));
+        assert!(joined.contains(&format!("-v cedar-ws-{ws}:/workspace ")));
+        assert!(joined.contains("-v /home/me/tools/tandem_glucose:/opt/cedar/tool:ro"));
+        assert!(joined.contains("-v cedar-tool-env-tandem_glucose:/opt/cedar/env"));
+        assert!(joined.contains("-e PYTHONUSERBASE=/opt/cedar/env/.local"));
+        // The secret goes by name; its value is in docker's environment, not its arguments.
+        assert!(joined.contains("-e TANDEM_PASSWORD "));
+        assert!(!joined.contains("hunter2"));
+        assert!(
+            !joined.contains("/home/me/tools "),
+            "not the whole tools directory"
+        );
+        assert_eq!(
+            &args[args.len() - 8..],
+            [
+                "img:1",
+                "timeout",
+                "-k",
+                "2",
+                "30",
+                "python3",
+                "--",
+                "/opt/cedar/tool/tool.py"
+            ]
+        );
+
+        let networked = ToolRun {
+            network: true,
+            ..call
+        };
+        let joined = tool_run_args(&cfg(), run, ws, "c", &networked, 30).join(" ");
+        assert!(joined.contains("--network bridge"), "{joined}");
+    }
+
+    #[test]
+    fn tool_setup_installs_into_the_tools_own_environment() {
+        let args = tool_setup_args(&cfg(), "t", &["tconnectsync>=3.0".to_string()]);
+        let joined = args.join(" ");
+        assert!(joined.contains("--network bridge"));
+        assert!(joined.contains("-v cedar-tool-env-t:/opt/cedar/env"));
+        assert!(joined.ends_with(
+            "img:1 python3 -m pip install --user --no-warn-script-location -- tconnectsync>=3.0"
+        ));
     }
 
     #[test]

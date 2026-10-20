@@ -11,6 +11,7 @@ use crate::images;
 use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::RunManager;
+use crate::marketplace::{InstallRequest, Marketplace};
 use crate::models::{
     Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
@@ -68,6 +69,8 @@ pub struct AppState {
     pub integrations: Arc<Integrations>,
     /// Delivers runs' `callback_url` notifications; `main` starts its loop.
     pub webhooks: Arc<Webhooks>,
+    /// The community tool registry, for admins to install tools from.
+    pub marketplace: Arc<Marketplace>,
 }
 
 impl AppState {
@@ -132,6 +135,10 @@ impl AppState {
             cfg.webhook_allow_private,
             cfg.webhook_retry,
         )?);
+        let marketplace = Arc::new(Marketplace::new(
+            cfg.tools_registry_url.clone(),
+            cfg.sandbox.tools_dir.clone(),
+        )?);
         Ok(Self {
             cfg,
             store,
@@ -143,6 +150,7 @@ impl AppState {
             llm,
             integrations,
             webhooks,
+            marketplace,
         })
     }
 }
@@ -194,6 +202,18 @@ pub fn router(state: AppState) -> Router {
             post(authorize_google),
         )
         .route("/admin/integrations/google/callback", post(google_callback))
+        .route("/admin/tools", get(get_personal_tools))
+        .route("/admin/tools/{name}/setup", post(setup_personal_tool))
+        .route(
+            "/admin/tools/{name}/secrets/{secret}",
+            axum::routing::put(put_tool_secret).delete(delete_tool_secret),
+        )
+        .route("/admin/marketplace", get(browse_marketplace))
+        .route(
+            "/admin/marketplace/{name}",
+            axum::routing::delete(uninstall_tool),
+        )
+        .route("/admin/marketplace/{name}/install", post(install_tool))
         .route_layer(middleware::from_fn_with_state(
             state.auth.clone(),
             auth::require_auth,
@@ -624,6 +644,114 @@ async fn put_brave_key(
     require_admin(admin)?;
     state.integrations.set_brave_key(&body.api_key).await?;
     Ok(Json(state.integrations.status().await?))
+}
+
+/// Every personal tool in `TOOLS_DIR`: where it comes from, what it asks for, and which of its
+/// secrets are saved.
+async fn get_personal_tools(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(state.integrations.personal_tools().await?))
+}
+
+/// Install a personal tool's `pip` packages into its environment (again).
+async fn setup_personal_tool(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(
+        Marketplace::setup(&state.integrations, state.sandboxes.as_ref(), &name).await?,
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolSecretBody {
+    value: String,
+}
+
+/// Save a secret a personal tool declares (`{"value"}`); its calls get it as an environment
+/// variable.
+async fn put_tool_secret(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path((name, secret)): Path<(String, String)>,
+    ApiJson(body): ApiJson<ToolSecretBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    state
+        .integrations
+        .set_tool_secret(&name, &secret, &body.value)
+        .await?;
+    Ok(Json(state.integrations.personal_tools().await?))
+}
+
+async fn delete_tool_secret(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path((name, secret)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state
+        .integrations
+        .remove_tool_secret(&name, &secret)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct BrowseQuery {
+    #[serde(default)]
+    refresh: bool,
+}
+
+/// The community registry's tools, with what is installed here.
+async fn browse_marketplace(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    axum::extract::Query(q): axum::extract::Query<BrowseQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(
+        state
+            .marketplace
+            .browse(&state.integrations, q.refresh)
+            .await?,
+    ))
+}
+
+/// Install or update a community tool. The body (`{"accept": {network, secrets, pip,
+/// health_data}}`) must repeat the permissions the release asks for.
+async fn install_tool(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path(name): Path<String>,
+    ApiJson(body): ApiJson<InstallRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(
+        state
+            .marketplace
+            .install(&state.integrations, state.sandboxes.as_ref(), &name, body)
+            .await?,
+    ))
+}
+
+async fn uninstall_tool(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path(name): Path<String>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state
+        .marketplace
+        .uninstall(&state.integrations, state.sandboxes.as_ref(), &name)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn delete_brave_key(

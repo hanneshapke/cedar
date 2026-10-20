@@ -34,6 +34,8 @@ pub struct CedarClient {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Starting a run with attachments sends up to tens of MB that cedar decodes before answering.
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+/// Installing a community tool includes `pip install` of its packages.
+const INSTALL_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// A file sent with a message, as cedar's `POST /v1/runs` takes it: standard base64, no prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,6 +209,69 @@ impl CedarClient {
 
     pub async fn remove_google(&self) -> Result<(), AppError> {
         let req = self.http.delete(self.url("/admin/integrations/google")).timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
+    }
+
+    // -- admin: personal and community tools ---------------------------------------------------
+
+    /// Every personal tool in cedar's `TOOLS_DIR`, with its permissions and saved secrets.
+    pub async fn personal_tools(&self) -> Result<Value, AppError> {
+        admin(self.json(self.http.get(self.url("/admin/tools"))).await)
+    }
+
+    /// Save a secret a personal tool declares. `tool` and `secret` were checked by the caller.
+    pub async fn set_tool_secret(
+        &self,
+        tool: &str,
+        secret: &str,
+        value: &str,
+    ) -> Result<Value, AppError> {
+        let req = self
+            .http
+            .put(self.url(&format!("/admin/tools/{tool}/secrets/{secret}")))
+            .json(&json!({ "value": value }));
+        admin(self.json(req).await)
+    }
+
+    pub async fn remove_tool_secret(&self, tool: &str, secret: &str) -> Result<(), AppError> {
+        let req = self
+            .http
+            .delete(self.url(&format!("/admin/tools/{tool}/secrets/{secret}")))
+            .timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
+    }
+
+    /// Install a tool's packages again.
+    pub async fn setup_tool(&self, tool: &str) -> Result<Value, AppError> {
+        let req = self
+            .http
+            .post(self.url(&format!("/admin/tools/{tool}/setup")));
+        admin(self.json_within(req, INSTALL_TIMEOUT).await)
+    }
+
+    /// The community registry's tools, with what is installed.
+    pub async fn marketplace(&self, refresh: bool) -> Result<Value, AppError> {
+        let req = self
+            .http
+            .get(self.url("/admin/marketplace"))
+            .query(&[("refresh", refresh)]);
+        admin(self.json(req).await)
+    }
+
+    /// Install or update a community tool; `body` is cedar's `{accept: {...}}`, passed through.
+    pub async fn install_tool(&self, tool: &str, body: &Value) -> Result<Value, AppError> {
+        let req = self
+            .http
+            .post(self.url(&format!("/admin/marketplace/{tool}/install")))
+            .json(body);
+        admin(self.json_within(req, INSTALL_TIMEOUT).await)
+    }
+
+    pub async fn uninstall_tool(&self, tool: &str) -> Result<(), AppError> {
+        let req = self
+            .http
+            .delete(self.url(&format!("/admin/marketplace/{tool}")))
+            .timeout(REQUEST_TIMEOUT);
         admin(self.send(req).await.map(drop))
     }
 

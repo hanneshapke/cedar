@@ -1,9 +1,10 @@
 //! Which tool calls wait for the user's OK before they run, in runs whose client answers
 //! (`interactive`). The rules are a heuristic on the tool and its input: sending email, saving
 //! files from the web, installing packages, deleting files, and, when the sandbox has a network,
-//! running code that can reach it. `TOOL_APPROVALS` picks the rules; `off` turns the gate off.
+//! running code that can reach it, and every call of a community tool installed from the
+//! marketplace. `TOOL_APPROVALS` picks the rules; `off` turns the gate off.
 
-use crate::tools::{group_of, writes};
+use crate::tools::{group_of, writes, PythonTool};
 use anyhow::{bail, Result};
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -21,15 +22,19 @@ pub enum Rule {
     Deletes,
     /// Any `bash` or `run_python` call while the sandbox has a network.
     Network,
+    /// A community tool installed from the marketplace. "Always" covers that release only, so an
+    /// update asks again.
+    Community,
 }
 
 impl Rule {
-    pub const ALL: [Rule; 5] = [
+    pub const ALL: [Rule; 6] = [
         Rule::Email,
         Rule::Downloads,
         Rule::Installs,
         Rule::Deletes,
         Rule::Network,
+        Rule::Community,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -39,6 +44,7 @@ impl Rule {
             Rule::Installs => "installs",
             Rule::Deletes => "deletes",
             Rule::Network => "network",
+            Rule::Community => "community",
         }
     }
 
@@ -201,6 +207,41 @@ pub fn check(rules: &Rules, name: &str, input: &Value, sandbox_network: &str) ->
 }
 
 /// `gmail_send_message` -> "Send message".
+/// Whether a call of the personal tool `tool` needs the user's OK under `rules`: every call of
+/// one installed from the marketplace does, until the user always allows that release.
+pub fn check_personal(rules: &Rules, tool: &PythonTool) -> Option<Gate> {
+    use crate::tools::Tool;
+    let installed = tool.installed()?;
+    if !rules.has(Rule::Community) {
+        return None;
+    }
+    let name = tool.name();
+    let mut reason = format!(
+        "Run {name} {}, a community tool from the marketplace that this server's operator didn't write",
+        installed.version
+    );
+    if !tool.network().is_empty() {
+        reason.push_str(&format!(
+            ", with internet access to {}",
+            tool.network().join(", ")
+        ));
+    }
+    if !tool.secrets().is_empty() {
+        let names: Vec<&str> = tool.secrets().iter().map(|s| s.name.as_str()).collect();
+        reason.push_str(&format!(", using the saved {}", names.join(", ")));
+    }
+    if tool.health_data() {
+        reason.push_str(", on your health data");
+    }
+    reason.push('.');
+    Some(Gate {
+        rule: Rule::Community,
+        reason,
+        scope: Some(format!("{name} {}", installed.version)),
+        grants: vec![format!("{name}@{}", installed.digest)],
+    })
+}
+
 fn humanize(name: &str) -> String {
     let words: Vec<&str> = name.split('_').skip(1).collect();
     let mut s = words.join(" ");
@@ -434,5 +475,46 @@ mod tests {
         )
         .is_none());
         assert!(check(&off, "bash", &json!({ "command": "rm x" }), "none").is_none());
+    }
+
+    #[test]
+    fn a_community_tool_asks_for_each_release_and_a_local_one_never() {
+        let dir = std::env::temp_dir().join(format!("cedar-approve-{}", uuid::Uuid::new_v4()));
+        let write = |rel: &str, text: &str| {
+            let p = dir.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        };
+        let manifest = r#"{"description": "d", "network": ["api.example.com"],
+                           "secrets": ["KEY"], "health_data": true}"#;
+        write("community/tool.json", manifest);
+        write("community/tool.py", "");
+        write(
+            "community/.cedar-install.json",
+            r#"{"version": "2.0.0", "registry": "r", "digest": "d1", "files": {}, "installed_at": 1}"#,
+        );
+        write("local/tool.json", manifest);
+        write("local/tool.py", "");
+        let load = |name: &str| {
+            crate::tools::custom::load_folder(&dir.join(name), name)
+                .unwrap()
+                .unwrap()
+        };
+
+        let gate = check_personal(&all(), &load("community")).expect("community tools ask");
+        assert_eq!(gate.rule, Rule::Community);
+        assert_eq!(
+            gate.grants,
+            ["community@d1"],
+            "always covers this release only"
+        );
+        assert_eq!(gate.scope.as_deref(), Some("community 2.0.0"));
+        assert!(gate.reason.contains("api.example.com"), "{}", gate.reason);
+        assert!(gate.reason.contains("KEY"), "{}", gate.reason);
+        assert!(gate.reason.contains("health data"), "{}", gate.reason);
+        assert!(check_personal(&all(), &load("local")).is_none());
+        let rules = Rules::parse("email").unwrap();
+        assert!(check_personal(&rules, &load("community")).is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

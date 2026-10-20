@@ -240,6 +240,7 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 | `installs` | `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`, when the sandbox has a network; "always" is per package |
 | `deletes` | `rm`, `rmdir`, `shred`, `unlink` and `find -delete` in `bash`; asked every time |
 | `network` | any other `bash` or `run_python` call when the sandbox has a network (`SANDBOX_NETWORK` isn't `none`) |
+| `community` | every call of a [community tool](#community-tools); "Always" covers that release only |
 
 ## Being told when a run ends
 
@@ -393,7 +394,7 @@ Settings come from environment variables. The important ones:
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
 | `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first; see [Plans and approvals](#plans-and-approvals)) |
-| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `downloads`, `installs`, `deletes`, `network`) |
+| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `downloads`, `installs`, `deletes`, `network`, `community`) |
 | `APPROVAL_TIMEOUT_SECS` | 300 (how long an interactive run waits for its plan to be agreed or a call to be approved) |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
 | `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
@@ -428,7 +429,9 @@ Settings come from environment variables. The important ones:
 | `CEDAR_EXIT_ON_STDIN_EOF` | `off` (set `1` to shut down when stdin reaches end-of-file: a launcher holding a pipe to cedar then takes it down with itself) |
 | `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
-| `TOOLS_DIR` | empty (a directory of [personal tools in Python](#personal-tools-in-python), mounted read-only into every sandbox) |
+| `TOOLS_DIR` | empty (a directory of [personal tools in Python](#personal-tools-in-python); each call runs in a container that sees only its own tool) |
+| `TOOLS_NETWORK` | `bridge` (the Docker network for calls of personal tools that declare `network` hosts; tools that declare none get no network) |
+| `TOOLS_REGISTRY_URL` | empty (the index of a [community tool registry](#community-tools) admins can install from) |
 | `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
 | `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the browser needs internet access, so `none` is refused) |
 | `BROWSER_MEMORY` / `BROWSER_CPUS` | `1g` / `1` |
@@ -455,7 +458,7 @@ Settings come from environment variables. The important ones:
 | `search_products` | Finds products to buy in any category, from any shop, and recommends the best. Takes `query` (what the user wants, e.g. `trail running shoes for wide feet`), optional `needs` (what matters to them: use, fit, style, must-haves), `min_price`, `max_price`, and `count` (options to recommend, 1–6, default 4). It runs two Brave web searches, one for reviews and roundups and one for shops, and, with a Best Buy key, searches Best Buy's catalog too. It reads up to eight of the pages it found (shops first, then reviews; through the same public-addresses-only client as `fetch_url`) for the schema.org product data shops embed: name, brand, photos, price and currency, stock, the customer rating with its review count, and a few reviews, falling back on Open Graph product tags; a review article is kept as text. Then the run's own model gets that evidence in one tool-free request and picks the best options for the request, each with why it fits, pros and cons, who it suits, the sources behind it, and the other options it compares with. The reply is held to the evidence: links and photos only come from the pages and search results, a price shown as checked comes from a store page (a price only review text states is kept, marked unchecked; one no source states is dropped), and a rating only counts with its review count. Each rating is also read on its own: the `adjusted` rating shrinks the average toward 4.0 as if fifteen typical reviews were added, with a `verdict` and a `confidence`. The tokens the tool's request takes are added to the run's, as a `usage` event with `purpose: "tool"`. If the model can't be asked or its reply can't be used, the products found are ranked by their adjusted ratings instead (`method: "ratings"`, with a `note`). Returns JSON with the `summary`, the `options` (`badges`, `price`, `price_checked`, `store`, `images`, `reviews`, `why`, `pros`, `cons`, `best_for`, `sources`, `comparable`, ...), the cited `sources`, and how many pages and products were `considered`. A search that finds nothing is an error. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Offered when a Brave Search key or a Best Buy key is set (in the environment or saved by an admin; see [Integrations](#integrations)), unless `PRODUCTS=off`. |
 | `ask_user` | Asks the user clarifying questions when a request is ambiguous and the answer would change what the agent does. Takes `questions` (1–4 objects, each with a `question`, an optional short `header`, up to 8 `options` with a `label` and optional `description`, given as 2 or more or left out for an open question, and `multi_select` to let several options be chosen). An "Other" option is dropped, since the user can always answer in their own words. The run then ends as `completed` with `stop_reason: "ask_user"` and the questions as its `final_text`; the tool result holds them as JSON, which the chat interfaces draw as a form (radio buttons, or checkboxes with `multi_select`, plus a free-form answer). The answer is the prompt of the next run, started with `parent_id`. Unless `ASK_USER=off`. |
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
-| personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Run in the sandbox like `run_python`, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
+| personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Each call runs in a container of its own that sees the workspace and only that tool, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
 `writes` in `GET /v1/tools` marks Gmail and Calendar tools whose names say they send, create, change, or delete something, so clients can ask before switching them on.
@@ -663,8 +666,19 @@ no properties. `entry` names the script to run when it isn't `tool.py` (a file n
 folder), and `timeout_secs` replaces `TOOL_TIMEOUT_SECS` for this tool (at most 600). A `name`,
 if given, must match the folder.
 
+A manifest also says what the tool needs, which cedar enforces and shows to admins (and which
+[community tools](#community-tools) must declare):
+
+| Field | Meaning |
+| --- | --- |
+| `version`, `author`, `homepage`, `license` | Shown in the settings; `version` names a release |
+| `network` | The hosts the tool reaches (`api.example.com`, or `*.example.com`). With any, its calls get `TOOLS_NETWORK` (`bridge` by default); without, no network at all |
+| `secrets` | The environment variables it reads credentials from: names (`"API_TOKEN"`) or `{"name", "description"?, "optional"?}`. Admins save them in the settings (encrypted, see [Integrations](#integrations)); a call gets only its own tool's declared, saved ones. `PATH`, `HOME`, `PYTHON*`, `PIP_*`, `LD_*`, `CEDAR_*` and similar are reserved |
+| `pip` | Plain requirements (`"requests>=2"`; no options, URLs or paths), installed into the tool's own environment when it is installed from the marketplace, or with `POST /v1/admin/tools/{name}/setup` |
+| `health_data` | It reads or returns personal health data. Runs that have such a tool get health rules in their system prompt (informational only, safety first, never dosing or device-setting advice, see the care team), and installing one asks for consent |
+
 The script gets the call's input as JSON on stdin and runs with `/workspace` as the working
-directory (and on the import path, like `run_python`). Whatever it prints is the tool result, and
+directory. Whatever it prints is the tool result, and
 the workspace files it created or modified are listed after it, the way `bash` and `run_python`
 report theirs. A non-zero exit status makes the call a tool error carrying the script's stderr
 (or stdout when stderr is empty), which the model sees with `is_error: true` and can recover from:
@@ -682,28 +696,78 @@ print(json.dumps({"lines": text.count("\n"), "words": len(text.split()), "charac
 ```
 
 [examples/tools](examples/tools) holds this tool and `csv_summary`; `TOOLS_DIR=examples/tools`
-tries them out. It also holds `tandem_glucose`, which downloads glucose and insulin data from a
-Tandem pump account, compares the last day with the week before, and suggests what to try today.
-It reads its credentials from a `.env` in its own folder (see its `.env.example`; `.env` files
-are git-ignored), and needs `SANDBOX_NETWORK=bridge` to reach Tandem and to `pip install`
-tconnectsync on its first run.
+tries them out. [registry/tools/tandem_glucose](registry/tools/tandem_glucose) is a fuller one:
+it downloads glucose and insulin data from a Tandem pump account, compares the last day with the
+week before, and suggests what to try today. It declares its Tandem hosts, its credentials
+(`TANDEM_EMAIL`, `TANDEM_PASSWORD`, ...), its packages and `health_data`; copy the folder into
+`TOOLS_DIR` or install it from the [marketplace](#community-tools), then save its secrets in the
+settings (a `.env` in its own folder works too, see its `.env.example`).
 
-The directory is mounted read-only at `/opt/cedar/tools` in every sandbox, so a personal tool
-runs exactly where the agent's own code runs: as the sandbox user, offline unless
-`SANDBOX_NETWORK` says otherwise, under the run's memory, CPU, and time limits, and unable to
-change the tools themselves. It can use the standard library and whatever the sandbox image
-ships (matplotlib, pypdf, openpyxl, python-docx, python-pptx, pillow); for anything else, add the
-package to `sandbox/Dockerfile` and rebuild the image, or set `SANDBOX_NETWORK=bridge` and have
-the script `pip install` it (installs land in the workspace and persist for continuations). Since
-`TOOLS_DIR` is bind-mounted by Docker, it must be a path the Docker daemon can see; with a remote
-daemon, that is a path on the daemon's host. A relative path is resolved against the directory
-cedar starts in.
+Each call of a personal tool runs in a container of its own, not in the run's sandbox: it sees
+the run's workspace (at `/workspace`), its own folder read-only at `/opt/cedar/tool`, and its own
+environment at `/opt/cedar/env` (its home, where its `pip` packages live; a Docker volume named
+`cedar-tool-env-<name>` that outlives runs). It does not see the other tools' folders, secrets or
+packages, and neither does the agent: `TOOLS_DIR` is not mounted into the run's sandbox at all.
+The container runs as the sandbox user, under the sandbox's memory and CPU limits and the call's
+timeout, with no network unless the manifest declares hosts, and gets only its declared, saved
+secrets (passed by name, so their values never show in a process list). Besides its packages, a
+tool can use the standard library and whatever the sandbox image ships (matplotlib, pypdf,
+openpyxl, python-docx, python-pptx, pillow). Since the tool folders are bind-mounted by Docker,
+`TOOLS_DIR` must be a path the Docker daemon can see; with a remote daemon, that is a path on the
+daemon's host. A relative path is resolved against the directory cedar starts in.
 
 The manifests are read when the tool set is built: at startup, and again whenever a credential is
-saved or removed through the admin API. A folder whose manifest or script can't be used is logged
+saved or removed through the admin API or a tool is installed or uninstalled. A folder whose manifest or script can't be used is logged
 with the reason (`personal tool left out`) and skipped, so one broken tool doesn't stop the rest.
 The tools form the `custom` group of `GET /v1/tools` ("Personal tools" in the chat's settings),
 which a run's `tools` can switch on or off like any other, by the group or by single names.
+
+## Community tools
+
+People can share personal tools through a registry: [registry/](registry/README.md) in this
+repository is one, with its rules in [registry/CONTRIBUTING.md](registry/CONTRIBUTING.md). Its
+tools are not officially supported. Point cedar at a registry's index to let admins install from
+it, into `TOOLS_DIR`:
+
+```sh
+TOOLS_DIR=$HOME/.cedar/tools
+TOOLS_REGISTRY_URL=https://raw.githubusercontent.com/<owner>/cedar/main/registry/index.json
+```
+
+Admins browse it in the chat's settings (Integrations → Community tools) or with the API below.
+Installing a tool:
+
+1. fetches the index again and finds the tool's current release;
+2. requires the admin to accept exactly the permissions it asks for (`network`, `secrets`, `pip`,
+   `health_data`), and refuses if the release asks for anything else;
+3. downloads its files and refuses any whose SHA-256 differs from the index's;
+4. checks its `tool.json` as cedar checks any manifest, and that it matches its listing;
+5. installs its `pip` packages into the tool's own environment (with `TOOLS_NETWORK`);
+6. puts the folder in place in one step, with a `.cedar-install.json` receipt that marks it as a
+   community tool, and rebuilds the tools.
+
+A tool written locally is never replaced: a release whose name a local or built-in tool takes
+can't be installed. Installing over a community tool updates it; its saved secrets are kept.
+Uninstalling removes its folder, its environment volume and its saved secrets.
+
+Community tools run like any personal tool, in containers of their own. On top of that, in
+[interactive runs](#plans-and-approvals) every call waits for the user's OK (rule `community`):
+"Always" allows that release only, so an update asks again. Every run with one is told that their
+results are information, not instructions, and runs with a `health_data` tool get the health
+rules described above.
+
+| Route | What it does |
+| --- | --- |
+| `GET /v1/admin/tools` | Admin: every personal tool with its `source` (`local` or `marketplace`), `version`, permissions, and which `secrets` are `saved` (never their values) |
+| `PUT` / `DELETE /v1/admin/tools/{name}/secrets/{secret}` | Admin: save (`{"value"}`) or remove a secret the tool declares. Needs `CEDAR_SECRET_KEY` |
+| `POST /v1/admin/tools/{name}/setup` | Admin: install the tool's `pip` packages into its environment again |
+| `GET /v1/admin/marketplace` | Admin: the registry's tools with `installed` (`{version, update_available}`) and any name `conflict`; `?refresh=true` skips the five-minute cache. `409` without `TOOLS_REGISTRY_URL` |
+| `POST /v1/admin/marketplace/{name}/install` | Admin: install or update (`{"accept": {"network", "secrets", "pip", "health_data"}}`, exactly the release's permissions). Returns the tool as `GET /v1/admin/tools` shows it. `409` for a name clash or other permissions, `502` for a release that doesn't check out |
+| `DELETE /v1/admin/marketplace/{name}` | Admin: uninstall a community tool |
+
+The declared `network` hosts are shown and approved but not yet enforced host by host: a tool
+that declares any gets the whole `TOOLS_NETWORK`. Reviews of the registry read the code for that
+reason, and a stricter `TOOLS_NETWORK` (a Docker network whose egress you filter) narrows it.
 
 ## Adding a tool
 
@@ -751,6 +815,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
 - Turning networking on for the sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
+- [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
 ## Operations
@@ -767,6 +832,7 @@ cargo test                        # unit + integration tests; no Docker or netwo
 cargo clippy --all-targets -- -D warnings
 cargo test --test docker -- --ignored   # sandbox tests; need Docker and the cedar-sandbox image
 cargo test --test docker_browser -- --ignored   # browser tests; need Docker and the cedar-browser image
+python3 registry/build_index.py --check  # the community tool registry's rules and index
 ```
 
 The integration tests drive the real router with a scripted LLM, a fake sandbox, and a fake browser (`tests/common/mod.rs`), and the LLM client against a local mock of a chat-completions server.

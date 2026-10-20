@@ -525,6 +525,10 @@ const cedarSettings = (() => {
     const modelsBlockEl = block('Models', models.wrap);
     modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
     parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('Google account', googleRow(status)), block('Attachments', await imageSizeRow()));
+    const tools = await personalToolsBlock();
+    if (tools) parts.push(block('Personal tools', tools));
+    const market = await marketplaceBlock();
+    if (market) parts.push(block('Community tools', market));
     section.replaceChildren(...parts);
   }
 
@@ -938,6 +942,173 @@ const cedarSettings = (() => {
     }
     main.append(edit);
     return row;
+  }
+
+  // -- personal and community tools -----------------------------------------------------------------
+
+  /** What a tool asks for, as short badges: hosts, secrets, packages, health data. */
+  function permissionBadges(p = {}) {
+    const out = [];
+    if (p.health_data) out.push(badge('Health data', 'warn'));
+    out.push(badge(p.network?.length ? `Internet: ${p.network.join(', ')}` : 'No internet'));
+    if (p.secrets?.length) out.push(badge(`${p.secrets.length} secret${p.secrets.length > 1 ? 's' : ''}`));
+    if (p.pip?.length) out.push(badge(`${p.pip.length} package${p.pip.length > 1 ? 's' : ''}`));
+    return out;
+  }
+
+  /** The tools in cedar's TOOLS_DIR, each with its secrets to fill in. `null` without TOOLS_DIR. */
+  async function personalToolsBlock() {
+    let info;
+    try { info = await adminApi('GET', '/integrations/tools'); } catch (e) { return note(e.message, 'cedar-set-error'); }
+    if (!info.tools_dir) return null;
+    const wrap = el('div', 'cedar-set-help');
+    if (!info.tools.length) {
+      wrap.append(note('No personal tools yet. Put one in cedar\'s TOOLS_DIR, or install one from Community tools below.'));
+      return wrap;
+    }
+    wrap.append(note('Each call runs in a container of its own that sees only that tool\'s folder and the conversation\'s workspace, with the secrets saved here and internet access only if the tool declares the hosts it reaches.'));
+    for (const t of info.tools) wrap.append(personalToolRow(t, info.storage));
+    return wrap;
+  }
+
+  function personalToolRow(t, storage) {
+    const title = t.version ? `${t.name} ${t.version}` : t.name;
+    const { row, main, side } = integrationRow(title, t.description);
+    side.append(badge(t.source === 'marketplace' ? 'Community' : 'Local', t.source === 'marketplace' ? '' : 'ok'));
+    side.append(...permissionBadges({ network: t.network, secrets: t.secrets.map((x) => x.name), pip: t.pip, health_data: t.health_data }));
+    if (t.author) main.append(el('small', '', `By ${t.author}`));
+    if (t.health_data) main.append(note('Unofficial and informational, not a medical device. The model is told never to recommend doses or device settings.', 'cedar-set-warn-text cedar-set-note'));
+    for (const secret of t.secrets) main.append(toolSecretRow(t.name, secret, storage));
+    if (t.pip.length) {
+      side.append(button('Reinstall packages', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        b.textContent = 'Installing…';
+        try {
+          await adminApi('POST', `/integrations/tools/${t.name}/setup`);
+          deps.toast(`${t.name}'s packages are installed`);
+        } catch (err) { deps.toast(err.message); }
+        b.disabled = false;
+        b.textContent = 'Reinstall packages';
+      }));
+    }
+    if (t.source === 'marketplace') {
+      side.append(button('Uninstall', async () => {
+        if (!(await cedarConfirm(`Uninstall ${t.name}? Its files, its packages and its saved secrets are removed.`, { ok: 'Uninstall' }))) return;
+        try {
+          await adminApi('DELETE', `/integrations/marketplace/${t.name}`);
+          deps.toast(`${t.name} uninstalled`);
+          renderIntegrations();
+          refreshTools();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    }
+    return row;
+  }
+
+  /** One secret a tool declares: saved or not, with a form to set it. Values are never shown. */
+  function toolSecretRow(tool, secret, storage) {
+    const line = el('div', 'cedar-set-inline');
+    const label = el('small', '', `${secret.name}${secret.optional ? ' (optional)' : ''}${secret.description ? ` — ${secret.description}` : ''}`);
+    line.append(label, badge(secret.saved ? 'Saved' : 'Not set', secret.saved ? 'ok' : ''));
+    if (!storage) return line;
+    const input = el('input');
+    input.type = 'password';
+    input.autocomplete = 'off';
+    input.placeholder = secret.name;
+    input.setAttribute('aria-label', `${tool} ${secret.name}`);
+    input.hidden = true;
+    const save = button('Save', async () => {
+      if (!input.value) return;
+      try {
+        await adminApi('PUT', `/integrations/tools/${tool}/secrets/${secret.name}`, { value: input.value });
+        deps.toast(`${secret.name} saved for ${tool}`);
+        renderIntegrations();
+      } catch (err) { deps.toast(err.message); }
+    }, 'primary');
+    save.hidden = true;
+    const edit = button(secret.saved ? 'Replace' : 'Set', () => { input.hidden = false; save.hidden = false; edit.hidden = true; input.focus(); });
+    line.append(input, save, edit);
+    if (secret.saved) {
+      line.append(button('Remove', async () => {
+        try {
+          await adminApi('DELETE', `/integrations/tools/${tool}/secrets/${secret.name}`);
+          renderIntegrations();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    }
+    return line;
+  }
+
+  /** The community registry's tools, to install or update. `null` when cedar has no registry. */
+  async function marketplaceBlock(refresh = false) {
+    let market;
+    try {
+      market = await adminApi('GET', `/integrations/marketplace${refresh ? '?refresh=true' : ''}`);
+    } catch (e) {
+      if (e.status === 409) return null;  // no TOOLS_REGISTRY_URL on cedar
+      return note(e.message, 'cedar-set-error');
+    }
+    const wrap = el('div', 'cedar-set-help');
+    wrap.append(note('Tools other people wrote and share. They are not officially supported: read what each one asks for before installing it. In conversations, every call of a community tool waits for your OK until you allow that version always.'));
+    if (!market.installable) wrap.append(note('cedar has no TOOLS_DIR, so tools can\'t be installed.', 'cedar-set-error'));
+    if (!market.tools.length) wrap.append(note('The registry lists no tools.'));
+    for (const l of market.tools) wrap.append(listingRow(l, market.installable));
+    wrap.append(button('Check for updates', async () => {
+      const fresh = await marketplaceBlock(true);
+      if (fresh) wrap.replaceWith(fresh);
+    }));
+    return wrap;
+  }
+
+  function listingRow(l, installable) {
+    const { row, main, side } = integrationRow(`${l.name} ${l.version}`, l.summary);
+    const by = [l.author && `By ${l.author}`, l.category, l.license].filter(Boolean).join(' · ');
+    if (by) main.append(el('small', '', by));
+    side.append(...permissionBadges(l.permissions));
+    if (l.reviewed) side.append(badge('Reviewed', 'ok'));
+    if (l.conflict) {
+      main.append(note(`Can't be installed: ${l.conflict}.`, 'cedar-set-note'));
+      return row;
+    }
+    if (l.installed && !l.installed.update_available) {
+      side.append(badge(`Installed ${l.installed.version}`, 'ok'));
+      return row;
+    }
+    if (!installable) return row;
+    const label = l.installed ? `Update from ${l.installed.version}` : 'Install';
+    side.append(button(label, async (e) => {
+      if (!(await cedarConfirm(installQuestion(l), { ok: l.installed ? 'Update' : 'Install' }))) return;
+      const b = e.currentTarget;
+      b.disabled = true;
+      b.textContent = 'Installing…';
+      try {
+        await adminApi('POST', `/integrations/marketplace/${l.name}/install`, { accept: l.permissions });
+        deps.toast(`${l.name} ${l.version} installed`);
+        renderIntegrations();
+        refreshTools();
+      } catch (err) {
+        deps.toast(err.message);
+        b.disabled = false;
+        b.textContent = label;
+      }
+    }, 'primary'));
+    return row;
+  }
+
+  /** What installing a tool lets it do, spelled out for the confirmation. */
+  function installQuestion(l) {
+    const p = l.permissions || {};
+    const lines = [`Install ${l.name} ${l.version}${l.author ? ` by ${l.author}` : ''}?`, '', 'It is a community tool, not officially supported. It will be able to:'];
+    lines.push(p.network?.length ? `• reach ${p.network.join(', ')}` : '• work without internet access');
+    if (p.secrets?.length) lines.push(`• read the secrets you save for it: ${p.secrets.join(', ')}`);
+    if (p.pip?.length) lines.push(`• install ${p.pip.join(', ')} into its own environment`);
+    lines.push('• read and write files in a conversation\'s workspace when it is called');
+    if (p.health_data) {
+      lines.push('', 'It handles personal health data. It is informational, not a medical device: never change medication or device settings based on it without your care team.');
+    }
+    if (!l.reviewed) lines.push('', 'No maintainer has reviewed this release.');
+    return lines.join('\n');
   }
 
   /** cedar's max image size: attached images with a longer side are scaled down to it. */

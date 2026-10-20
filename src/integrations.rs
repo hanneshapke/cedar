@@ -5,6 +5,8 @@
 //! model clients, so the next run (or the next model call of one already going) sees the change
 //! without a restart. Runs already going keep the tools they started with.
 //!
+//! Personal tools get their secrets here too, one per variable their manifest declares.
+//!
 //! The environment wins for the Brave and Best Buy keys and the Google account: a credential set there is
 //! reported as such and can't be changed here. Models are only ever registered here.
 
@@ -16,7 +18,8 @@ use crate::mcp::http_client;
 use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
-use crate::tools::{BestBuy, BraveSearch, Overrides, ToolSet};
+use crate::tools::custom::SavedSecrets;
+use crate::tools::{BestBuy, BraveSearch, Overrides, Tool, ToolSet};
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
 use base64::Engine;
@@ -25,7 +28,7 @@ use chacha20poly1305::aead::OsRng;
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -173,10 +176,135 @@ impl Integrations {
                     }
                 }
             }
+            overrides.tool_secrets = self.saved_tool_secrets(secrets).await?;
         }
         let tools = ToolSet::build(&self.cfg, &overrides)?;
         self.tools.store(Arc::new(tools));
         Ok(())
+    }
+
+    /// Every secret saved for a personal tool, decrypted. One that can't be read is logged and
+    /// left out.
+    async fn saved_tool_secrets(&self, secrets: &SecretStore) -> Result<SavedSecrets> {
+        let mut out = SavedSecrets::new();
+        for key in secrets
+            .names_with_prefix(secrets::TOOL_SECRET_PREFIX)
+            .await?
+        {
+            let Some((tool, name)) = key[secrets::TOOL_SECRET_PREFIX.len()..].split_once(':')
+            else {
+                continue;
+            };
+            match secrets.get(&key).await {
+                Ok(Some(value)) => {
+                    out.entry(tool.to_string())
+                        .or_default()
+                        .insert(name.to_string(), value);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(tool, secret = name, error = %format!("{e:#}"), "ignoring a saved tool secret")
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// The names of the secrets saved for `tool`.
+    async fn saved_tool_secret_names(&self, tool: &str) -> Result<HashSet<String>> {
+        let Some(secrets) = &self.secrets else {
+            return Ok(HashSet::new());
+        };
+        let prefix = secrets::tool_secret(tool, "");
+        Ok(secrets
+            .names_with_prefix(&prefix)
+            .await?
+            .into_iter()
+            .map(|k| k[prefix.len()..].to_string())
+            .collect())
+    }
+
+    /// Every personal tool, for admins: where it comes from, what it asks for, which of its
+    /// secrets are saved (never their values).
+    pub async fn personal_tools(&self) -> Result<Value> {
+        let set = self.tools.load_full();
+        let mut tools = Vec::new();
+        for tool in set.personal() {
+            let saved = self.saved_tool_secret_names(tool.name()).await?;
+            tools.push(tool.info(&saved));
+        }
+        Ok(json!({
+            "tools_dir": self.cfg.sandbox.tools_dir.is_some(),
+            "storage": self.secrets.is_some(),
+            "network": self.cfg.sandbox.tools_network,
+            "tools": tools,
+        }))
+    }
+
+    /// Save a secret a personal tool declares, then rebuild the tools so its calls get it.
+    pub async fn set_tool_secret(
+        &self,
+        tool: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<(), AppError> {
+        let secrets = self.writable(false)?;
+        let set = self.tools.load_full();
+        let declared = set
+            .personal()
+            .into_iter()
+            .find(|t| t.name() == tool)
+            .ok_or(AppError::NotFound("no such personal tool"))?
+            .secrets()
+            .iter()
+            .any(|s| s.name == name);
+        if !declared {
+            return Err(AppError::BadRequest(format!(
+                "{tool} does not declare a secret named {name:?}"
+            )));
+        }
+        if value.is_empty() || value.len() > MAX_SECRET_LEN || value.chars().any(char::is_control) {
+            return Err(AppError::BadRequest("value is missing or malformed".into()));
+        }
+        let _guard = self.changing.lock().await;
+        secrets
+            .put(
+                &secrets::tool_secret(tool, name),
+                value,
+                &json!({ "last4": secrets::last4(value) }),
+            )
+            .await?;
+        self.reload().await?;
+        tracing::info!(tool, secret = name, "tool secret saved");
+        Ok(())
+    }
+
+    pub async fn remove_tool_secret(&self, tool: &str, name: &str) -> Result<(), AppError> {
+        let secrets = self.writable(false)?;
+        let _guard = self.changing.lock().await;
+        if !secrets.delete(&secrets::tool_secret(tool, name)).await? {
+            return Err(AppError::NotFound("no such secret is saved"));
+        }
+        self.reload().await?;
+        Ok(())
+    }
+
+    /// Forget every secret saved for `tool` (when it is uninstalled). Doesn't rebuild the tools.
+    pub async fn forget_tool_secrets(&self, tool: &str) -> Result<()> {
+        if let Some(secrets) = &self.secrets {
+            for key in secrets
+                .names_with_prefix(&secrets::tool_secret(tool, ""))
+                .await?
+            {
+                secrets.delete(&key).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Hold this while changing `TOOLS_DIR`, so a rebuild doesn't read a half-made change.
+    pub async fn lock_changes(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.changing.lock().await
     }
 
     /// Let this server drive the model clients: `router` is what the agent and compaction call.

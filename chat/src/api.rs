@@ -255,6 +255,12 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/connect", post(connect_google))
+        .route("/integrations/tools", get(get_personal_tools))
+        .route("/integrations/tools/{name}/setup", post(setup_tool))
+        .route("/integrations/tools/{name}/secrets/{secret}", put(put_tool_secret).delete(delete_tool_secret))
+        .route("/integrations/marketplace", get(get_marketplace))
+        .route("/integrations/marketplace/{name}", axum::routing::delete(uninstall_tool))
+        .route("/integrations/marketplace/{name}/install", post(install_tool))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
         // Public: the page needs it to know whether to ask for a token.
         .route("/config", get(client_config))
@@ -1320,6 +1326,73 @@ async fn put_bestbuy_key(
 async fn delete_bestbuy_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_bestbuy_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Tool and secret names go into cedar's URLs, so only the characters cedar allows pass.
+fn path_name(value: &str, upper: bool) -> Result<&str, AppError> {
+    let ok = !value.is_empty()
+        && value.len() <= 64
+        && value.bytes().all(|c| c.is_ascii_digit() || c == b'_' || if upper { c.is_ascii_uppercase() } else { c.is_ascii_lowercase() });
+    if ok { Ok(value) } else { Err(AppError::BadRequest(format!("{value:?} is not a tool or secret name"))) }
+}
+
+async fn get_personal_tools(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.personal_tools().await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolSecretBody {
+    value: String,
+}
+
+async fn put_tool_secret(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((name, secret)): Path<(String, String)>,
+    ApiJson(body): ApiJson<ToolSecretBody>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.set_tool_secret(path_name(&name, false)?, path_name(&secret, true)?, &body.value).await?))
+}
+
+async fn delete_tool_secret(State(state): State<AppState>, headers: HeaderMap, Path((name, secret)): Path<(String, String)>) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_tool_secret(path_name(&name, false)?, path_name(&secret, true)?).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn setup_tool(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.setup_tool(path_name(&name, false)?).await?))
+}
+
+#[derive(Deserialize)]
+struct MarketplaceQuery {
+    #[serde(default)]
+    refresh: bool,
+}
+
+async fn get_marketplace(State(state): State<AppState>, headers: HeaderMap, Query(q): Query<MarketplaceQuery>) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.marketplace(q.refresh).await?))
+}
+
+/// Install or update a community tool. The body is cedar's (`{accept: {network, secrets, pip,
+/// health_data}}`) and goes through as it is; cedar checks it against the release.
+async fn install_tool(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    if !body.is_object() {
+        return Err(AppError::BadRequest("the body must be a JSON object".into()));
+    }
+    Ok(Json(state.cedar.install_tool(path_name(&name, false)?, &body).await?))
+}
+
+async fn uninstall_tool(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.uninstall_tool(path_name(&name, false)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
