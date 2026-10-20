@@ -1,5 +1,5 @@
 use super::open_meteo::coordinates;
-use super::{truncate_output, Tool, ToolContext};
+use super::{truncate_output, Tool, ToolContext, ToolModel};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use reqwest::StatusCode;
@@ -7,13 +7,15 @@ use serde_json::{json, Map, Value};
 use std::time::Duration;
 
 const MAX_TEXT_CHARS: usize = 200;
+/// Longest preferences note passed to the model, and longest reason kept from its answer.
+const MAX_NOTE_CHARS: usize = 500;
 /// Transit itineraries kept from the planner's answer.
 const MAX_ITINERARIES: usize = 3;
 /// Points kept per drawn line after simplification; enough for a city-scale route.
 const MAX_PATH_POINTS: usize = 250;
 /// Simplification tolerance in degrees (about 10 m).
 const PATH_TOLERANCE: f64 = 0.0001;
-/// A walk this short is the obvious answer.
+/// A walk this short is the obvious answer (for the rules used when the model can't choose).
 const SHORT_WALK_MIN: i64 = 20;
 /// Minutes added to a drive for parking and walking from the car, when comparing it to transit.
 const PARKING_MIN: i64 = 5;
@@ -35,7 +37,8 @@ const ATTRIBUTION: &str = "Transit: Transitous (transitous.org, MOTIS). Roads: O
 /// Transit itineraries and walking come from a MOTIS trip planner (by default the public
 /// Transitous instance), which also geocodes addresses and stops; driving comes from an OSRM
 /// router. Both run in the cedar process. The rideshare fare is an estimate from the driving
-/// distance and time. The result is JSON: `{"from", "to", "options": [...], "recommendation",
+/// distance and time. The run's model weighs the options against what the user said matters and
+/// picks one (see [`choose`]); if it can't, fixed rules do (see [`recommend`]). The result is JSON: `{"from", "to", "options": [...], "recommendation",
 /// "unavailable"?, "time_zone"?, ...}`; each option's `path` (and each transit leg's) is an encoded polyline
 /// (precision 5) for the map.
 pub struct PlanTrip {
@@ -177,8 +180,11 @@ impl Tool for PlanTrip {
          take the train\", or \"how do I get to ...\". Give `from` and `to` as an address, stop, or \
          place name, or as latitude and longitude. Returns each option's duration, departure and \
          arrival times, transfers and route names for transit, driving distance, and an estimated \
-         rideshare fare range; the chat shows the routes on a map with the options. Driving times \
-         assume no traffic, and rideshare fares are rough US-rate estimates, so say so."
+         rideshare fare range, and which option to take and why; the chat shows the routes on a \
+         map with the options. Pass `preferences` with anything the user said matters for this \
+         trip (cost, fewest transfers, less walking, luggage, accessibility, being on time), so \
+         the recommendation weighs it. Driving times assume no traffic, and rideshare fares are \
+         rough US-rate estimates, so say so."
     }
 
     fn schema(&self) -> Value {
@@ -203,6 +209,8 @@ impl Tool for PlanTrip {
                                    "description": "Arrive by this time instead, in the same format. Give at most one of depart_at and arrive_by." },
                     "has_car": { "type": "boolean",
                                  "description": "Whether the user has a car to drive. Defaults to true; when false, driving is still compared but a rideshare is recommended instead." },
+                    "preferences": { "type": "string",
+                                     "description": "What the user said matters for this trip, in their words, e.g. \"cheapest\", \"as few transfers as possible\", \"I have a big suitcase\", \"step-free\", or \"must be there by 9\"." },
                     "title": { "type": "string", "description": "A short caption for the trip." }
                 },
                 "required": ["from", "to"] })
@@ -251,7 +259,26 @@ impl Tool for PlanTrip {
                 .collect();
             bail!("no way to make this trip was found: {}", reasons.join("; "));
         }
-        let recommendation = recommend(&options, request.has_car);
+        let recommendation = match &ctx.model {
+            // With a single option there is nothing to weigh.
+            Some(model) if options.len() > 1 => {
+                let trip = Trip {
+                    from: &from,
+                    to: &to,
+                    when: &request.when,
+                    has_car: request.has_car,
+                    preferences: request.preferences.as_deref(),
+                };
+                match choose(model, &trip, &options, &unavailable).await {
+                    Ok(choice) => choice,
+                    Err(e) => {
+                        tracing::warn!(error = %format!("{e:#}"), "the model could not choose a trip option; using the rules");
+                        recommend(&options, request.has_car)
+                    }
+                }
+            }
+            _ => recommend(&options, request.has_car),
+        };
         Ok(trip_json(
             request.title,
             &request.when,
@@ -309,6 +336,8 @@ struct TripRequest<'a> {
     to: End<'a>,
     when: When,
     has_car: bool,
+    /// What the user said matters for this trip.
+    preferences: Option<String>,
 }
 
 fn clip(s: &str) -> String {
@@ -348,12 +377,18 @@ fn parse_input(input: &Value) -> Result<TripRequest<'_>> {
         Value::Bool(b) => *b,
         _ => bail!("has_car must be true or false"),
     };
+    let preferences = input["preferences"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(MAX_NOTE_CHARS).collect());
     Ok(TripRequest {
         title: text(&input["title"]),
         from,
         to,
         when,
         has_car,
+        preferences,
     })
 }
 
@@ -596,7 +631,113 @@ fn rideshare_fare(km: f64, min: i64) -> (i64, i64) {
     (fare.round() as i64, (fare * RIDE_SURGE).round() as i64)
 }
 
-/// Which option to take, as its index in `options` and the reason.
+/// What [`choose`] tells the model about the trip besides the options.
+struct Trip<'a> {
+    from: &'a Point,
+    to: &'a Point,
+    when: &'a When,
+    has_car: bool,
+    preferences: Option<&'a str>,
+}
+
+const CHOOSE_SYSTEM: &str = "You help someone decide how to make a trip. You get the options \
+a trip planner found (public transit itineraries, a walk, a drive, and a rideshare), indexed from \
+0, and what the traveller said matters to them. Pick the one option they should take.
+
+Weigh, in this order unless the traveller says otherwise: getting there on time and in reasonable \
+time; effort and hassle (transfers, long walks to and between stops, parking); and cost (walking \
+is free and transit is cheap; driving costs fuel and parking; rideshare fares are given). Driving \
+and rideshare times assume no traffic, so in a city at rush hour they are optimistic. A walk of \
+up to about 20 minutes usually beats waiting for a vehicle. Whatever the traveller said matters \
+(price, fewer transfers, luggage, accessibility, a deadline) outweighs these defaults. Never pick \
+the drive when the traveller has no car.
+
+Reply with only a JSON object, no other text: {\"option\": <index>, \"reason\": \"<one or two \
+plain sentences to the traveller, citing the minutes, transfers, or cost that decided it and how \
+it compares to the runner-up>\"}";
+
+/// The model's pick among `options`, in the shape [`recommend`] returns. Fails if the model's
+/// answer isn't a valid choice.
+async fn choose(
+    model: &ToolModel,
+    request: &Trip<'_>,
+    options: &[Value],
+    unavailable: &[Value],
+) -> Result<Value> {
+    let brief: Vec<Value> = options
+        .iter()
+        .enumerate()
+        .map(|(i, o)| {
+            let mut o = without_paths(o);
+            o["index"] = json!(i);
+            o
+        })
+        .collect();
+    let mut trip = json!({
+        "from": request.from.label,
+        "to": request.to.label,
+        "traveller_has_car": request.has_car,
+        "options": brief,
+    });
+    match request.when {
+        When::Now => trip["leaving"] = json!("now"),
+        When::Depart(t) => trip["depart_at"] = json!(t),
+        When::Arrive(t) => trip["arrive_by"] = json!(t),
+    }
+    if let Some(p) = request.preferences {
+        trip["traveller_preferences"] = json!(p);
+    }
+    if !unavailable.is_empty() {
+        trip["unavailable"] = json!(unavailable);
+    }
+    let reply = model.complete(CHOOSE_SYSTEM, &trip.to_string()).await?;
+    parse_choice(&reply, options, request.has_car)
+}
+
+/// An option with its drawn paths (and its legs') left out: the model doesn't need them.
+fn without_paths(option: &Value) -> Value {
+    let mut o = option.clone();
+    if let Some(map) = o.as_object_mut() {
+        map.remove("path");
+    }
+    if let Some(legs) = o["legs"].as_array_mut() {
+        for leg in legs.iter_mut().filter_map(Value::as_object_mut) {
+            leg.remove("path");
+        }
+    }
+    o
+}
+
+/// The recommendation in the model's `reply`: the JSON object in it, naming an option that exists
+/// (and isn't the drive when the user has no car) with a reason.
+fn parse_choice(reply: &str, options: &[Value], has_car: bool) -> Result<Value> {
+    let (Some(start), Some(end)) = (reply.find('{'), reply.rfind('}')) else {
+        bail!("no JSON object in the model's answer: {}", clip(reply));
+    };
+    let choice: Value = serde_json::from_str(reply.get(start..=end).unwrap_or_default())
+        .with_context(|| format!("parsing the model's answer: {}", clip(reply)))?;
+    let i = choice["option"]
+        .as_u64()
+        .map(|i| i as usize)
+        .filter(|i| *i < options.len())
+        .ok_or_else(|| anyhow!("the model chose no valid option: {choice}"))?;
+    let mode = &options[i]["mode"];
+    if mode == "drive" && !has_car {
+        bail!("the model chose to drive, but the user has no car");
+    }
+    let reason: String = choice["reason"]
+        .as_str()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .ok_or_else(|| anyhow!("the model gave no reason: {choice}"))?
+        .chars()
+        .take(MAX_NOTE_CHARS)
+        .collect();
+    Ok(json!({ "mode": mode, "option": i, "reason": reason }))
+}
+
+/// Which option to take by fixed rules, as its index in `options` and the reason. Used when the
+/// model can't choose.
 fn recommend(options: &[Value], has_car: bool) -> Value {
     let find = |mode: &str| {
         options
@@ -886,14 +1027,17 @@ mod tests {
         );
         assert_eq!(r.when, When::Now);
         assert!(r.has_car);
+        assert_eq!(r.preferences, None);
 
         let input = json!({
             "from": { "location": "Work", "label": "Office" },
             "to": { "location": "Zoo", "latitude": 1.0, "longitude": 2.0 },
             "arrive_by": "2026-10-18T09:00:00+02:00",
             "has_car": false,
+            "preferences": "  cheapest please ",
         });
         let r = parse_input(&input).unwrap();
+        assert_eq!(r.preferences.as_deref(), Some("cheapest please"));
         assert_eq!(
             r.from,
             End::Name {
@@ -1005,6 +1149,48 @@ mod tests {
             min,
             json!({ "cost": { "low": 15, "high": 22, "currency": "USD" } }),
         )
+    }
+
+    #[test]
+    fn the_models_choice_is_checked() {
+        let opts = [
+            option("transit", 30, json!({ "transfers": 0, "path": "abc" })),
+            option("drive", 20, json!({})),
+            ride(25),
+        ];
+        let c = parse_choice(
+            "Here you go:\n```json\n{\"option\": 0, \"reason\": \" The U5 is direct. \"}\n```",
+            &opts,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            c,
+            json!({ "mode": "transit", "option": 0, "reason": "The U5 is direct." })
+        );
+        assert_eq!(
+            parse_choice(r#"{"option": 1, "reason": "Fastest."}"#, &opts, true).unwrap()["mode"],
+            "drive"
+        );
+        let err = |reply: &str, has_car: bool| {
+            format!("{:#}", parse_choice(reply, &opts, has_car).unwrap_err())
+        };
+        assert!(err("Take the train.", true).contains("no JSON object"));
+        assert!(err(r#"{"option": 3, "reason": "x"}"#, true).contains("no valid option"));
+        assert!(err(r#"{"option": "0", "reason": "x"}"#, true).contains("no valid option"));
+        assert!(err(r#"{"option": 0}"#, true).contains("no reason"));
+        assert!(err(r#"{"option": 1, "reason": "Fastest."}"#, false).contains("no car"));
+        assert!(err("{not json}", true).contains("parsing"));
+    }
+
+    #[test]
+    fn the_model_is_not_sent_paths() {
+        let o = json!({ "mode": "transit", "path": "abc",
+                        "legs": [{ "mode": "walk", "path": "def" }, { "mode": "bus", "route": "M41" }] });
+        assert_eq!(
+            without_paths(&o),
+            json!({ "mode": "transit", "legs": [{ "mode": "walk" }, { "mode": "bus", "route": "M41" }] })
+        );
     }
 
     #[test]

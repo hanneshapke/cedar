@@ -223,7 +223,7 @@ pub async fn run_agent(
                     let result =
                         execute_tool_call(env, run, &tools, &ctx, &mut sources, events, cancel, block)
                             .await?;
-                    // A tool that asked the model something (search_products) counts toward the turn.
+                    // A tool that asked the model something (search_products, plan_trip) counts toward the turn.
                     if let Some(model) = &ctx.model {
                         let used = model.take_usage();
                         if used != Usage::default() {
