@@ -86,11 +86,13 @@ async fn start(mock: Mock) -> (String, Arc<Mock>) {
     (url, mock)
 }
 
-/// The `plan_trip` result the model got back, after one call with `input`.
-async fn plan_trip(input: Value, url: &str) -> Value {
+/// The `plan_trip` result the model got back after one call with `input`, and the request the
+/// tool made to choose an option, if it made one. `choice` answers that request.
+async fn plan_trip_choosing(input: Value, url: &str, choice: Step) -> (Value, Option<Value>) {
     let app = TestApp::with_env(
         vec![
             Step::Reply(tool_use("t1", "plan_trip", input)),
+            choice,
             Step::Reply(text("done")),
         ],
         &[("TRANSIT_BASE_URL", url), ("DRIVING_BASE_URL", url)],
@@ -99,12 +101,20 @@ async fn plan_trip(input: Value, url: &str) -> Value {
     let created = app.create_run(KEY_A, "how do I get there?").await;
     let id = created["id"].as_str().unwrap().to_string();
     app.wait_status(KEY_A, &id, "completed").await;
-    app.llm.requests()[1]["messages"]
-        .as_array()
-        .unwrap()
-        .last()
-        .unwrap()["content"][0]
-        .clone()
+    let requests = app.llm.requests();
+    let (choosing, last) = match requests.len() {
+        3 => (Some(requests[1].clone()), &requests[2]),
+        _ => (None, &requests[1]),
+    };
+    let result = last["messages"].as_array().unwrap().last().unwrap()["content"][0].clone();
+    (result, choosing)
+}
+
+/// The `plan_trip` result when the model's choice can't be used, so the rules decide.
+async fn plan_trip(input: Value, url: &str) -> Value {
+    plan_trip_choosing(input, url, Step::Error("model unavailable"))
+        .await
+        .0
 }
 
 #[tokio::test]
@@ -202,11 +212,82 @@ async fn without_the_planner_the_car_is_recommended_and_transit_is_explained() {
 #[tokio::test]
 async fn a_place_that_is_not_found_is_an_error() {
     let (url, _mock) = start(Mock::default()).await;
-    let result = plan_trip(json!({ "from": "Atlantis", "to": "Alexanderplatz" }), &url).await;
+    // No option is chosen, so the model's next reply ends the run.
+    let (result, choosing) = plan_trip_choosing(
+        json!({ "from": "Atlantis", "to": "Alexanderplatz" }),
+        &url,
+        Step::Reply(text("done")),
+    )
+    .await;
+    assert!(choosing.is_none());
     assert_eq!(result["is_error"], true, "{result}");
     let message = result["content"].as_str().unwrap();
     assert!(
         message.contains("from: no place found for \"Atlantis\""),
         "{message}"
+    );
+}
+
+#[tokio::test]
+async fn the_model_weighs_the_options_and_the_preferences() {
+    let (url, _mock) = start(Mock::default()).await;
+    let (result, choosing) = plan_trip_choosing(
+        json!({
+            "from": { "latitude": 52.525, "longitude": 13.369, "label": "Hauptbahnhof" },
+            "to": "Alexanderplatz",
+            "depart_at": "2026-10-18T08:30:00+02:00",
+            "preferences": "I have two big suitcases"
+        }),
+        &url,
+        Step::Reply(text(
+            "{\"option\": 2, \"reason\": \"With two big suitcases a rideshare to the door beats the U5 and its stairs.\"}",
+        )),
+    )
+    .await;
+    assert!(result.get("is_error").is_none(), "{result}");
+    let trip: Value = serde_json::from_str(result["content"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        trip["recommendation"],
+        json!({ "mode": "rideshare", "option": 2,
+                "reason": "With two big suitcases a rideshare to the door beats the U5 and its stairs." })
+    );
+
+    let choosing = choosing.expect("the tool asked the model");
+    assert_eq!(choosing["tools"], json!([]));
+    assert!(choosing["system"]
+        .as_str()
+        .unwrap()
+        .contains("Reply with only a JSON object"));
+    let asked: Value =
+        serde_json::from_str(choosing["messages"][0]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(asked["traveller_preferences"], "I have two big suitcases");
+    assert_eq!(asked["traveller_has_car"], true);
+    assert_eq!(asked["depart_at"], "2026-10-18T08:30:00+02:00");
+    assert_eq!(asked["to"], "Alexanderplatz, Berlin");
+    assert_eq!(asked["options"][1]["index"], 1);
+    assert_eq!(asked["options"][1]["mode"], "drive");
+    assert!(asked["options"][1].get("path").is_none(), "{asked}");
+    assert_eq!(asked["options"][0]["legs"][1]["route"], "U5");
+}
+
+#[tokio::test]
+async fn an_unusable_choice_falls_back_to_the_rules() {
+    let (url, _mock) = start(Mock::default()).await;
+    // The model picks the drive, but the user has no car.
+    let (result, _) = plan_trip_choosing(
+        json!({ "from": "Alexanderplatz", "to": { "latitude": 52.525, "longitude": 13.369 },
+                "has_car": false }),
+        &url,
+        Step::Reply(text("{\"option\": 1, \"reason\": \"Driving is fastest.\"}")),
+    )
+    .await;
+    let trip: Value = serde_json::from_str(result["content"].as_str().unwrap()).unwrap();
+    assert_eq!(trip["recommendation"]["mode"], "transit");
+    assert!(
+        trip["recommendation"]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Public transit takes 23 min"),
+        "{trip}"
     );
 }

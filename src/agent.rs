@@ -12,7 +12,7 @@ use crate::plan;
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
-use crate::tools::{question_text, ToolContext, ToolSet, ToolView, ASK_USER};
+use crate::tools::{question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER};
 use crate::waits::{Answer, Waits};
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
@@ -84,6 +84,14 @@ pub async fn run_agent(
         browser,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
+        model: env.llm.client_for(&run.model_id).map(|client| {
+            Arc::new(ToolModel::new(
+                client,
+                run.model.clone(),
+                max_tokens(env, run),
+                run.reasoning.clone(),
+            ))
+        }),
     };
     let tool_set = env.tools.load_full();
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
@@ -219,6 +227,14 @@ pub async fn run_agent(
                         asked.extend(result["content"].as_str().and_then(question_text));
                     }
                     results.push(result);
+                }
+                // Tokens the tools spent asking the model something (e.g. `plan_trip` choosing).
+                let tool_usage = ctx.model.as_ref().map(|m| m.take_usage()).unwrap_or_default();
+                if tool_usage != Usage::default() {
+                    env.store.record_turn(run.id, turn, tool_usage).await?;
+                    let mut usage = usage_event(env, run, turn, tool_usage);
+                    usage["purpose"] = json!("tool");
+                    events.emit(event::USAGE, usage).await?;
                 }
                 push_message(env, run, &mut messages, "user", Value::Array(results)).await?;
                 // The model asked the user something: stop here, and the answer starts the next run.

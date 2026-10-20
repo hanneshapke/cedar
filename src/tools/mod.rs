@@ -52,13 +52,15 @@ pub use web_search::BraveSearch;
 use crate::browser::BrowserSession;
 use crate::config::Config;
 use crate::config::GoogleOAuthConfig as GoogleCredentials;
+use crate::llm::{LlmClient, MessageRequest};
 use crate::mcp::GoogleOAuth;
+use crate::models::Usage;
 use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Everything a tool needs to do its work for one run.
@@ -70,6 +72,65 @@ pub struct ToolContext {
     pub timeout: Duration,
     /// Cap on returned output, per stream.
     pub max_output: usize,
+    /// The run's model, for a tool that asks it to make a judgement call. `None` when the run's
+    /// model is no longer registered (and in tests that don't need it).
+    pub model: Option<Arc<ToolModel>>,
+}
+
+/// The run's model as a tool sees it: one tool-free request at a time, with the tokens used
+/// counted so the agent can add them to the run's.
+pub struct ToolModel {
+    client: Arc<dyn LlmClient>,
+    model: String,
+    max_tokens: u32,
+    reasoning_effort: Option<String>,
+    usage: Mutex<Usage>,
+}
+
+impl ToolModel {
+    pub fn new(
+        client: Arc<dyn LlmClient>,
+        model: String,
+        max_tokens: u32,
+        reasoning_effort: Option<String>,
+    ) -> Self {
+        Self {
+            client,
+            model,
+            max_tokens,
+            reasoning_effort,
+            usage: Mutex::new(Usage::default()),
+        }
+    }
+
+    /// The text of the model's reply to `messages` under `system`, without tools.
+    pub async fn ask(&self, system: &str, messages: &[Value]) -> Result<String> {
+        let req = MessageRequest {
+            model: &self.model,
+            max_tokens: self.max_tokens,
+            reasoning_effort: self.reasoning_effort.as_deref(),
+            system,
+            tools: &[],
+            messages,
+        };
+        let resp = self.client.create_message(&req).await?;
+        {
+            let mut usage = self.usage.lock().unwrap();
+            usage.input_tokens += resp.usage.input_tokens;
+            usage.output_tokens += resp.usage.output_tokens;
+        }
+        Ok(resp
+            .content
+            .iter()
+            .filter(|b| b["type"] == "text")
+            .filter_map(|b| b["text"].as_str())
+            .collect())
+    }
+
+    /// The tokens used since the last call, resetting the count.
+    pub fn take_usage(&self) -> Usage {
+        std::mem::take(&mut *self.usage.lock().unwrap())
+    }
 }
 
 /// A tool is a name, a description, a JSON schema for its input, and a function.
