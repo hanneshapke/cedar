@@ -19,7 +19,7 @@
   <header class="top" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
     <a href="#" style="display:flex;align-items:center;gap:10px;color:#2a2622"><img src="../assets/cedar-mark.svg" width="28" height="28" alt="cedar"><span style="font-weight:600;font-size:22px;letter-spacing:-.02em">cedar</span></a>
     <nav style="display:flex;gap:22px;font-size:14px;align-items:center">
-      <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#apps">Apps</a><a href="#safety">Safety</a><a href="#openclaw">vs. OpenClaw</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
+      <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#share">Share a tool</a><a href="#apps">Apps</a><a href="#safety">Safety</a><a href="#openclaw">vs. OpenClaw</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
       <a href="https://github.com/hanneshapke/cedar" style="display:inline-flex;align-items:center;gap:8px;background:#2a2622;color:#f3ede3;padding:8px 14px;border-radius:8px;font-weight:500" style-hover="background:#3a5f4b;color:#f3ede3">★ Star on GitHub</a>
     </nav>
   </header>
@@ -85,7 +85,7 @@ curl -N -H "Authorization: Bearer $KEY" \
     <div id="tools" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
       <h3 style="margin:0;font-size:15px;font-weight:600">Tools, in and out of the box</h3>
       <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Inside the sandbox: <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">bash</code>, files, Python, PDFs, charts, and reading Word, Excel, and PowerPoint. On the host, each behind a switch: web search and fetch, weather, maps, recipes, trip planning, stock comparisons, a headless browser, Gmail and Calendar.</p>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Add your own as a Rust trait, or drop a Python script in <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">TOOLS_DIR</code>: no rebuild, and it runs in the sandbox too.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Add your own as a Rust trait, or drop a Python script in <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">TOOLS_DIR</code>: no rebuild, and each call runs in a container of its own. Then <a href="#share">share it</a> with everyone.</p>
     </div>
     <div id="api" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
       <h3 style="margin:0;font-size:15px;font-weight:600">A small HTTP API</h3>
@@ -101,6 +101,68 @@ curl -N -H "Authorization: Bearer $KEY" \
       <h3 style="margin:0;font-size:15px;font-weight:600">Runs well on a DGX Spark</h3>
       <p style="margin:0;font-size:13.5px;line-height:1.5;color:#dfe8e2">vLLM, cedar, and the chat UI together on one NVIDIA DGX Spark, as systemd services you reach from your laptop, and over Tailscale HTTPS from your phone. The guide walks through it.</p>
       <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="margin-top:auto;font-size:13.5px;font-weight:500;color:#f3ede3" style-hover="color:#e0a98f">Read DEPLOYMENT.md →</a>
+    </div>
+  </section>
+
+  <section id="share" class="how" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Write a tool in Python, share it on GitHub</h2>
+      <p style="margin:0;font-size:18px;line-height:1.5;color:#2a2622;text-wrap:pretty">A tool is a folder: a <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">tool.json</code> that tells the model what it does, and a Python script that reads JSON on stdin and prints its answer. No Rust, no rebuild.</p>
+      <p style="margin:0;font-size:15px;line-height:1.5;color:#5a534a;text-wrap:pretty">The manifest also says what the tool needs: the hosts it reaches, the secrets it reads, the packages it installs, and whether it handles health data. cedar holds it to that. Every call runs in a container of its own that sees only that tool, gets the network only if it declared hosts, and gets only its own secrets, saved encrypted in the settings, never in a file.</p>
+      <div class="cards3" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+        <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px">
+          <span style="font-family:'JetBrains Mono',monospace;color:#b5553a;font-size:13px">1 · write</span>
+          <p style="margin:0;font-size:13.5px;line-height:1.45;color:#5a534a">Put the folder in your <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">TOOLS_DIR</code> and try it in a conversation right away.</p>
+        </div>
+        <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px">
+          <span style="font-family:'JetBrains Mono',monospace;color:#b5553a;font-size:13px">2 · share</span>
+          <p style="margin:0;font-size:13.5px;line-height:1.45;color:#5a534a">Open a pull request that adds it to <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">registry/</code> in the cedar repo. CI checks the rules, a maintainer reads the code.</p>
+        </div>
+        <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px">
+          <span style="font-family:'JetBrains Mono',monospace;color:#b5553a;font-size:13px">3 · install</span>
+          <p style="margin:0;font-size:13.5px;line-height:1.45;color:#5a534a">Anyone's cedar lists it under Community tools. One click shows what it asks for, installs it, and checks every file's hash.</p>
+        </div>
+      </div>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a;text-wrap:pretty">Community tools are not officially supported, so each call waits for your OK until you allow that version. Health tools come with built-in rules: informational only, safety first, and never a dose or a device setting. The first one in the registry reads a Tandem insulin pump and CGM and compares your last day with the week before.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <a href="https://github.com/hanneshapke/cedar/blob/main/registry/CONTRIBUTING.md" style="background:#3a5f4b;color:#f3ede3;padding:10px 18px;border-radius:9px;font-weight:500;font-size:14.5px" style-hover="background:#2e4c3c;color:#f3ede3">Share a tool</a>
+        <a href="https://github.com/hanneshapke/cedar/tree/main/registry/tools" style="padding:10px 18px;border-radius:9px;font-weight:500;font-size:14.5px;border:1.5px solid #cfc6b6;color:#2a2622" style-hover="border-color:#3a5f4b;color:#3a5f4b">Browse the registry</a>
+        <a href="https://github.com/hanneshapke/cedar/blob/main/README.md#community-tools" style="font-weight:500;font-size:14.5px">How installs work →</a>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none"><span style="color:#8a8275"># tools/air_quality/tool.json</span>
+{
+  "description": "Current air quality for a city.",
+  "version": "1.0.0",
+  "author": "You",
+  "license": "Apache-2.0",
+  "input_schema": {
+    "type": "object",
+    "properties": { "city": { "type": "string" } },
+    "required": ["city"]
+  },
+  "network": ["api.openaq.org"],
+  "secrets": ["OPENAQ_API_KEY"],
+  "pip": ["requests>=2.31"]
+}</pre>
+      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none"><span style="color:#8a8275"># tools/air_quality/tool.py</span>
+import json, os, sys
+import requests
+
+args = json.load(sys.stdin)
+r = requests.get(
+    "https://api.openaq.org/v3/locations",
+    params={"city": args["city"], "limit": 1},
+    headers={"X-API-Key": os.environ["OPENAQ_API_KEY"]},
+    timeout=20,
+)
+if not r.ok:
+    sys.exit(f"OpenAQ said {r.status_code}")  <span style="color:#8a8275"># the model sees it</span>
+print(json.dumps(r.json()["results"][:1]))
+
+<span style="color:#8a8275"># share it</span>
+python3 registry/build_index.py --check</pre>
     </div>
   </section>
 
@@ -155,12 +217,12 @@ curl -N -H "Authorization: Bearer $KEY" \
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Guardrails</th>
-            <td data-label="cedar" style="padding:10px 16px">Plans to agree to, and approvals for mail, downloads, installs, deletes, and network calls. Every run, message, and event is kept in SQLite.</td>
+            <td data-label="cedar" style="padding:10px 16px">Plans to agree to, and approvals for mail, downloads, installs, deletes, network calls, and community tools. Every run, message, and event is kept in SQLite.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">Inbound messages are treated as untrusted; unknown senders in DMs have to be paired first.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Extending it</th>
-            <td data-label="cedar" style="padding:10px 16px">A Rust trait, or a Python script with a JSON manifest that runs in the sandbox.</td>
+            <td data-label="cedar" style="padding:10px 16px">A Rust trait, or a Python script with a JSON manifest that runs in a container of its own. Share it through the community registry on GitHub, where every file is hash-pinned and reviewed.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">Skills and plugins, with a community registry in ClawHub.</td>
           </tr>
           <tr>
@@ -177,7 +239,7 @@ curl -N -H "Authorization: Bearer $KEY" \
 
   <footer class="foot" style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8a8275;flex-wrap:wrap;gap:8px">
     <span>Apache 2.0 · built by <a href="https://github.com/hanneshapke">@hanneshapke</a> and contributors</span>
-    <span style="display:flex;gap:18px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar/issues">Good first issues</a><a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md">cedar-chat</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#personal-tools-in-python">Personal tools</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#adding-a-tool">Adding a tool</a></span>
+    <span style="display:flex;gap:18px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar/issues">Good first issues</a><a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md">cedar-chat</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#personal-tools-in-python">Personal tools</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#adding-a-tool">Adding a tool</a><a href="https://github.com/hanneshapke/cedar/blob/main/registry/CONTRIBUTING.md">Share a tool</a></span>
   </footer>
 </div>
 </x-dc>
