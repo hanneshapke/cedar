@@ -44,7 +44,11 @@ Both interfaces have all of these, except where noted:
   the nearest point of a scatter, a slice of a pie; arrow keys move it too), and the data as a table
   folded under it. Very long series are thinned on the card; the saved file has every point. Cedar
   style puts it on the stage with the file's View and Download buttons, Claude style under the tool
-  call (`chart-view.js` and `chart-view.css`). If the data can't be drawn, the picture is shown
+  call (`chart-view.js` and `chart-view.css`). If the data can't be drawn, the picture is shown.
+  Any other tool can show charts the same way by printing `[chart] {spec}` lines (the spec is
+  `generate_chart`'s input without a path): they are drawn under the call, and in Cedar style on
+  its card with the rest of its output folded under them (see
+  [Personal tools in Python](../README.md#personal-tools-in-python)); `tandem_glucose` does this
 - The images the agent produces are shown in the response, once each, after its reply: a chart
   from `generate_chart` that wasn't drawn as a card, a picture `write_file` or `download_file` saved, or one a `bash` command
   or `run_python` script created (from the files the call lists). A file that was rewritten

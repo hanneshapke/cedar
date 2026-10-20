@@ -178,6 +178,10 @@
 .cedar-chart-svg .end-label { fill: currentColor; font-size: 12px; font-weight: 600; }
 
 .cedar-chart-svg .band { fill: var(--ch-soft); }
+/* A target band is neutral, so it never reads as one of the series. */
+.cedar-chart-svg .target rect { fill: currentColor; fill-opacity: .06; }
+.cedar-chart-svg .target line { stroke: var(--ch-muted); stroke-opacity: .7; stroke-width: 1; stroke-dasharray: 4 3; }
+.cedar-chart-svg .target text { font-size: 11px; font-weight: 600; }
 .cedar-chart-svg .bar { fill: var(--ch-k); }
 .cedar-chart-svg .bar.seg { stroke: var(--ch-surface); stroke-width: 1.5; paint-order: stroke; }
 .cedar-chart-svg .line {
@@ -376,4 +380,30 @@
   .cedar-chart-head { padding: 10px 12px 2px; }
   .cedar-chart-plot { padding: 4px 4px 2px; }
   .cedar-chart-foot { padding: 2px 12px 10px; }
+}
+
+/* ---- a tool's charts, and the rest of its output folded under them ---- */
+
+.cedar-chart-report {
+  margin: 4px 0 12px;
+  font-size: 12.5px;
+}
+
+.cedar-chart-report summary {
+  cursor: pointer;
+  color: var(--muted, #6f6d66);
+  font-weight: 600;
+}
+
+.cedar-chart-report pre {
+  max-height: 360px;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid rgba(128, 128, 128, .2);
+  border-radius: 8px;
+  background: rgba(128, 128, 128, .05);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }

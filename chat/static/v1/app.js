@@ -808,6 +808,16 @@ function toolResult(view, d) {
       scrollToBottom(false);
     }
   }
+  // Any other tool may print charts (`[chart] {spec}` lines): they are drawn under the call, and
+  // its output keeps the rest.
+  if (!card && !d.is_error) {
+    const found = cedarChart.fromOutput(text);
+    if (found.charts.length) {
+      out.textContent = found.text || '(no other output)';
+      details.after(...found.charts.map((spec) => cedarChart.element(spec)));
+      scrollToBottom(false);
+    }
+  }
   // The same goes for a plan_trip result, drawn as the trip's routes and options.
   if (details.dataset.tool === 'plan_trip' && !d.is_error) {
     const spec = cedarTransit.parse(text);

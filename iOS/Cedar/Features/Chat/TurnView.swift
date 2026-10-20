@@ -31,6 +31,9 @@ struct TurnView: View {
                     if let card = call.card {
                         CardView(card: card)
                     }
+                    ForEach(Array(call.charts.enumerated()), id: \.offset) { _, chart in
+                        ChartCardView(card: chart)
+                    }
                 }
             }
             if turn.items.isEmpty, let final = turn.turn.finalText, !final.isEmpty {
@@ -357,8 +360,10 @@ struct ToolCallView: View {
                     }
                     CodeBox(label: "Input", text: inputText)
                     if let output = call.output {
+                        // Charts the tool printed are drawn under it, so they're left out here.
+                        let text = call.charts.isEmpty ? output : ChartCard.inOutput(output).text
                         CodeBox(label: call.isError ? "Error" : "Output",
-                                text: output.isEmpty ? "(no output)" : output,
+                                text: text.isEmpty ? "(no output)" : text,
                                 isError: call.isError)
                     }
                     if !call.sources.isEmpty {

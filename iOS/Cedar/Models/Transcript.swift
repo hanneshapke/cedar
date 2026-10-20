@@ -27,6 +27,8 @@ struct ToolCall: Identifiable, Hashable, Sendable {
     var sources: [Source] = []
     /// The card the app draws for a finished card tool, parsed once when its result arrives.
     var card: Card?
+    /// Charts any other tool printed (`[chart] {spec}` lines), drawn after it.
+    var charts: [ChartCard] = []
 
     var isFinished: Bool { output != nil }
 
@@ -268,6 +270,8 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
             call.durationMs = data["duration_ms"]?.intValue
             if call.isCard, !call.isError, let output = call.output {
                 call.card = Card.parse(name: call.name, output: output, input: call.input)
+            } else if !call.isError, let output = call.output {
+                call.charts = ChartCard.inOutput(output).charts
             }
             if case .array(let sources)? = data["sources"] {
                 call.sources = sources.compactMap { s in

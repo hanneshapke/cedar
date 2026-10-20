@@ -877,7 +877,15 @@ struct ChartCard: Hashable, Sendable {
     let stacked: Bool
     let bins: Int?
     let log: Bool
+    /// A shaded range on the value axis, such as a target range.
+    let band: Band?
     let thinned: Bool
+
+    struct Band: Hashable, Sendable {
+        let from: Double
+        let to: Double
+        let label: String?
+    }
 
     static let maxSeries = 20
     static let maxValues = 100_000
@@ -938,6 +946,10 @@ struct ChartCard: Hashable, Sendable {
             }
         }
         let bins = value["bins"]?.doubleValue.flatMap { (1...500).contains($0) ? Int($0) : nil }
+        var band: Band?
+        if kind != .pie, let a = value["band"]?["from"]?.doubleValue, let b = value["band"]?["to"]?.doubleValue, a != b {
+            band = Band(from: min(a, b), to: max(a, b), label: CardParse.text(value["band"]?["label"], max: 40))
+        }
         return ChartCard(
             kind: kind,
             path: CardParse.text(value["path"], max: 300),
@@ -949,8 +961,33 @@ struct ChartCard: Hashable, Sendable {
             stacked: value["stacked"]?.boolValue == true && [.bar, .barh, .area, .histogram].contains(kind),
             bins: bins,
             log: value["log_scale"]?.boolValue == true && kind != .pie && kind != .histogram,
+            band: band,
             thinned: thinned
         )
+    }
+
+    static let maxOutputCharts = 6
+
+    /// The charts a tool printed as `[chart] {spec}` lines (generate_chart's input, without a path),
+    /// and its output without them; the same rule as the web UI's `cedarChart.fromOutput`.
+    static func inOutput(_ output: String) -> (charts: [ChartCard], text: String) {
+        guard output.contains("[chart] ") else { return ([], output) }
+        var charts: [ChartCard] = []
+        var kept: [Substring] = []
+        for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            if charts.count < maxOutputCharts, line.hasPrefix("[chart] {"),
+               let value = try? JSONDecoder().decode(JSONValue.self, from: Data(line.dropFirst("[chart] ".count).utf8)),
+               case .object(var fields) = value {
+                fields["path"] = nil
+                if let chart = ChartCard.parse(.object(fields)) {
+                    charts.append(chart)
+                    continue
+                }
+            }
+            kept.append(line)
+        }
+        guard !charts.isEmpty else { return ([], output) }
+        return (charts, kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Histogram bins over every series' samples: the edges, and the counts per series.

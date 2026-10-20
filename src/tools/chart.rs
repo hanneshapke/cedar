@@ -55,7 +55,15 @@ impl Tool for GenerateChart {
                     "stacked": { "type": "boolean", "description": "Stack the series (bar, barh, area)." },
                     "bins": { "type": "integer", "minimum": 1, "maximum": 500,
                               "description": "Histogram bin count (default automatic)." },
-                    "log_scale": { "type": "boolean", "description": "Logarithmic value axis." }
+                    "log_scale": { "type": "boolean", "description": "Logarithmic value axis." },
+                    "band": { "type": "object",
+                              "properties": {
+                                  "from": { "type": "number" },
+                                  "to": { "type": "number" },
+                                  "label": { "type": "string", "description": "e.g. \"Target\"." }
+                              },
+                              "required": ["from", "to"],
+                              "description": "A shaded range on the value axis, such as a target range (not for pie)." }
                 },
                 "required": ["path", "kind", "series"] })
     }
@@ -207,6 +215,37 @@ fn parse_spec(input: &Value) -> Result<Value> {
             _ => bail!("{key} must be true or false"),
         }
     }
+    match &input["band"] {
+        Value::Null => {}
+        Value::Object(b) if kind != "pie" => {
+            let (Some(from), Some(to)) = (
+                b.get("from").and_then(Value::as_f64),
+                b.get("to").and_then(Value::as_f64),
+            ) else {
+                bail!("band needs numbers from and to");
+            };
+            if from == to {
+                bail!("band from and to must differ");
+            }
+            let mut band = Map::new();
+            band.insert("from".into(), from.min(to).into());
+            band.insert("to".into(), from.max(to).into());
+            if let Some(l) = b
+                .get("label")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+            {
+                band.insert(
+                    "label".into(),
+                    l.chars().take(40).collect::<String>().into(),
+                );
+            }
+            spec.insert("band".into(), Value::Object(band));
+        }
+        Value::Object(_) => bail!("pie charts take no band"),
+        _ => bail!("band must be an object with from and to"),
+    }
     match &input["bins"] {
         Value::Null => {}
         v => match v.as_u64().filter(|b| (1..=500).contains(b)) {
@@ -288,6 +327,23 @@ mod tests {
         assert_eq!(
             err(with("bins", json!(0))),
             "bins must be an integer from 1 to 500"
+        );
+
+        assert_eq!(
+            parse_spec(&with(
+                "band",
+                json!({ "from": 180, "to": 70, "label": " Target " })
+            ))
+            .unwrap()["band"],
+            json!({ "from": 70.0, "to": 180.0, "label": "Target" })
+        );
+        assert_eq!(
+            err(with("band", json!({ "from": 1 }))),
+            "band needs numbers from and to"
+        );
+        assert_eq!(
+            err(with("band", json!({ "from": 1, "to": 1 }))),
+            "band from and to must differ"
         );
 
         let scatter = with("kind", json!("scatter"));

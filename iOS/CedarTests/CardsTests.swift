@@ -266,5 +266,23 @@ final class CardsTests: XCTestCase {
         XCTAssertEqual(thin.labels.last, .number(4999), "the last point is kept")
         XCTAssertNil(Card.parse(name: "generate_chart", output: "", input: .null))
     }
+
+    func testChartsAToolPrinted() {
+        let output = """
+        Report line
+        [chart] {"kind":"line","title":"Glucose","labels":["10:00","10:15"],"series":[{"values":[120,null]}],"band":{"from":180,"to":70,"label":"Target"},"path":"x.png"}
+        [chart] {"kind":"donut"}
+        [chart] not json
+        The end
+        """
+        let found = ChartCard.inOutput(output)
+        XCTAssertEqual(found.charts.count, 1)
+        XCTAssertEqual(found.charts[0].title, "Glucose")
+        XCTAssertNil(found.charts[0].path, "a printed chart saves no file")
+        XCTAssertEqual(found.charts[0].band, ChartCard.Band(from: 70, to: 180, label: "Target"))
+        XCTAssertEqual(found.text, "Report line\n[chart] {\"kind\":\"donut\"}\n[chart] not json\nThe end",
+                       "lines that aren't drawable charts stay in the text")
+        XCTAssertTrue(ChartCard.inOutput("no charts here").charts.isEmpty)
+    }
 }
 

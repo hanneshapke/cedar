@@ -452,6 +452,8 @@ function cardKind(tool) {
   if (isDocument(tool) && tool.is_error !== true) return 'doc';
   if (WIDGETS[tool.name] && tool.is_error !== true) return 'widget';
   if (FILE_TOOLS.has(tool.name) && tool.is_error !== true) return 'file';
+  // A tool that printed charts (`[chart] {spec}` lines, see chart-view.js) gets them drawn.
+  if (tool.output !== undefined && !tool.is_error && cedarChart.fromOutput(tool.output).charts.length) return 'charts';
   return 'trace';
 }
 
@@ -533,7 +535,21 @@ function fillCard(tool) {
   if (kind === 'doc') return fillDocument(tool, card, done);
   if (kind === 'widget') return fillWidget(tool, card, done);
   if (kind === 'file') return fillFile(tool, card, done);
+  if (kind === 'charts') return fillCharts(tool, card);
   return fillTrace(tool, card, done);
+}
+
+/** A tool that printed charts: the charts, and the rest of its output folded under them. */
+function fillCharts(tool, card) {
+  const { charts, text } = cedarChart.fromOutput(tool.output);
+  card.classList.add('widget'); // laid out like the other widget cards
+  tool.chartEls ??= charts.map((spec) => cedarChart.element(spec));
+  tool.reportEl ??= cedarChart.report(text);
+  const meta = t('span', '', `${charts.length} chart${charts.length === 1 ? '' : 's'} · ${fmtMs(tool.duration_ms)}`);
+  card.append(cardHead(TOOLS[tool.name]?.icon || 'chart', toolHtml(tool, true), { meta }));
+  const body = h('div', 'card-body');
+  body.append(...tool.chartEls, tool.reportEl);
+  card.append(body);
 }
 
 function fillDocument(tool, card, done) {

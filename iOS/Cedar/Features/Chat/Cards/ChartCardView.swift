@@ -185,6 +185,27 @@ struct ChartCardView: View {
 
     private var cartesian: some View {
         Chart {
+            // The band's edges, which also keep it inside the value axis; its fill is the background.
+            if let band = card.band, !(card.log && band.from <= 0) {
+                ForEach([band.from, band.to], id: \.self) { edge in
+                    if card.kind == .barh {
+                        RuleMark(x: .value("Band", edge))
+                            .foregroundStyle(Color.secondary.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    } else {
+                        RuleMark(y: .value("Band", edge))
+                            .foregroundStyle(Color.secondary.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                            .annotation(position: .top, alignment: .trailing, spacing: 2) {
+                                if edge == band.to, let label = band.label {
+                                    Text("\(label) \(ChartCard.format(band.from))–\(ChartCard.format(band.to))")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                    }
+                }
+            }
             ForEach(visible) { p in
                 marks(p)
             }
@@ -213,6 +234,7 @@ struct ChartCardView: View {
         }
         .chartForegroundStyleScale(domain: names, range: card.series.indices.map(ChartPalette.color))
         .chartLegend(.hidden)
+        .chartBackground { proxy in bandFill(proxy) }
         .modifier(ValueAxis(log: card.log, horizontal: card.kind == .barh))
         .modifier(AxisTitles(x: card.xLabel, y: card.yLabel))
         .frame(height: card.kind == .barh ? CGFloat(max(160, min(600, categories.count * (grouped ? 14 * (card.series.count - hidden.count) + 10 : 28) + 40))) : 220)
@@ -289,6 +311,28 @@ struct ChartCardView: View {
                 .foregroundStyle(by: .value("Series", key))
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.monotone)
+        }
+    }
+
+    /// The band's shading, between its edges across the plot.
+    @ViewBuilder private func bandFill(_ proxy: ChartProxy) -> some View {
+        GeometryReader { geo in
+            if let band = card.band, let anchor = proxy.plotFrame {
+                let frame = geo[anchor]
+                if card.kind == .barh {
+                    if let a = proxy.position(forX: band.from), let b = proxy.position(forX: band.to) {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.06))
+                            .frame(width: abs(b - a), height: frame.height)
+                            .position(x: frame.minX + (a + b) / 2, y: frame.midY)
+                    }
+                } else if let a = proxy.position(forY: band.from), let b = proxy.position(forY: band.to) {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.06))
+                        .frame(width: frame.width, height: abs(b - a))
+                        .position(x: frame.midX, y: frame.minY + (a + b) / 2)
+                }
+            }
         }
     }
 

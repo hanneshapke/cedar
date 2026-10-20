@@ -4,6 +4,8 @@
 Downloads CGM readings, boluses, and basal deliveries from Tandem Source (t:connect) with
 tconnectsync, compares the last hours with the days before, and suggests what to try today.
 The analysis follows the Diabetes Concierge backend (stats, advisor, and daily summary rules).
+The report ends with `[chart] {...}` lines, which the cedar chat draws as charts (the same spec
+as the generate_chart tool's input).
 
 Credentials come from the secrets an admin saved for this tool in cedar (they arrive as
 environment variables), or else from a `.env` file next to this script (copy `.env.example`).
@@ -35,6 +37,11 @@ BLOCKS = [("overnight", 0, 6), ("morning", 6, 12), ("afternoon", 12, 18), ("even
 WHEN = {"overnight": "overnight (midnight to 6 am)", "morning": "in the morning",
         "afternoon": "in the afternoon", "evening": "in the evening"}
 CGM_TYPES = {"LidCgmDataGxb": "Dexcom G6", "LidCgmDataG7": "Dexcom G7", "LidCgmDataFsl2": "FreeStyle Libre 2"}
+# A sensor reports readings past its range as "HIGH" or "LOW" (status 1 and 2, value 0). They are
+# kept, just past each end of the range, so the worst lows and highs still count.
+SENSOR_RANGE = {"Dexcom G6": (40, 400), "Dexcom G7": (40, 400), "FreeStyle Libre 2": (40, 500)}
+STATUS_HIGH, STATUS_LOW = 1, 2
+SLOT_MINUTES = 15  # the chart's resolution
 
 
 # --- setup -----------------------------------------------------------------------------------
@@ -95,18 +102,27 @@ def cgm_time(event, tz):
 
 
 def parse_events(events, tz):
-    """Turn tconnectsync events into (readings, boluses, basal, sensor names), sorted by time."""
+    """Turn tconnectsync events into (readings, boluses, basal, sensor names, flagged), sorted by
+    time; `flagged` maps the time of each out-of-range reading to "LOW" or "HIGH"."""
     by_type = {}
     for e in events:
         by_type.setdefault(type(e).__name__, []).append(e)
 
-    readings, sensors = {}, set()
+    readings, sensors, flagged = {}, set(), {}
     for name, label in CGM_TYPES.items():
+        floor, ceiling = SENSOR_RANGE[label]
         for e in by_type.get(name, []):
-            # Status 0 is a real reading; 1 and 2 are HIGH/LOW markers with value 0.
-            if getattr(e, "glucoseValueStatusRaw", 0) != 0 or not e.currentGlucoseDisplayValue:
+            status = getattr(e, "glucoseValueStatusRaw", 0)
+            t = cgm_time(e, tz)
+            if status == STATUS_LOW:
+                value, flagged[t] = floor - 1, "LOW"
+            elif status == STATUS_HIGH:
+                value, flagged[t] = ceiling + 1, "HIGH"
+            elif status == 0 and e.currentGlucoseDisplayValue:
+                value = int(e.currentGlucoseDisplayValue)
+            else:
                 continue
-            readings[cgm_time(e, tz)] = int(e.currentGlucoseDisplayValue)
+            readings[t] = value
             sensors.add(label)
 
     msg1 = {e.bolusId: e for e in by_type.get("LidBolusRequestedMsg1", [])}
@@ -135,7 +151,7 @@ def parse_events(events, tz):
         basal[t] = {"t": t, "rate": e.commandedRate / 1000.0, "source": source or ""}
 
     return (sorted(readings.items()), [boluses[k] for k in sorted(boluses, key=lambda k: k[0])],
-            [basal[t] for t in sorted(basal)], sorted(sensors))
+            [basal[t] for t in sorted(basal)], sorted(sensors), flagged)
 
 
 def download(days, tz):
@@ -259,7 +275,7 @@ def dawn_rise(readings, tz):
     return statistics.median(morning) - statistics.median(early)
 
 
-def analyze(readings, boluses, basal, now, hours, baseline_days, tz, low, high):
+def analyze(readings, boluses, basal, flagged, now, hours, baseline_days, tz, low, high):
     recent_start = now - timedelta(hours=hours)
     base_start = recent_start - timedelta(days=baseline_days)
     recent = [(t, v) for t, v in readings if recent_start <= t <= now]
@@ -288,6 +304,8 @@ def analyze(readings, boluses, basal, now, hours, baseline_days, tz, low, high):
         "base_boluses": [b for b in marked if b["t"] < recent_start],
         "dawn_rise": dawn_rise(base + recent, tz),
         "last": recent[-1] if recent else (readings[-1] if readings else None),
+        "sensor_low": sum(1 for t, _ in recent if flagged.get(t) == "LOW"),
+        "sensor_high": sum(1 for t, _ in recent if flagged.get(t) == "HIGH"),
         "trend": trend,
     }
 
@@ -390,6 +408,9 @@ def report(pump, sensors, a, suggestions, tz, low, high, unit):
             lines.append("Note: the newest data is over an hour old; the t:connect app may not have uploaded yet.")
     lines.append(f"Readings: {r['n']} in the last {h} h, {b['n']} in the {d} days before "
                  f"(about {a['base_days_of_data']:.1f} days of CGM data)")
+    if a["sensor_low"] or a["sensor_high"]:
+        lines.append(f"In the last {h} h the sensor read LOW (below its range) {a['sensor_low']} times and "
+                     f"HIGH (above it) {a['sensor_high']} times; they count as just past the range.")
     if not r["n"]:
         lines.append("No CGM readings in the recent window, so there is nothing to analyze.")
 
@@ -438,6 +459,68 @@ def report(pump, sensors, a, suggestions, tz, low, high, unit):
     return "\n".join(lines)
 
 
+def charts(readings, a, tz, low, high, unit):
+    """`[chart]` lines for the cedar chat: the recent window in 15-minute steps against the
+    baseline's average at the same time of day, inside the target range; and time in range by
+    time of day. Each is the generate_chart tool's input, without a path."""
+    if not a["recent"]["n"]:
+        return []
+    mmol = unit == "mmol"
+    conv = lambda v: None if v is None else (round(v * MMOL_PER_MGDL, 1) if mmol else round(v))  # noqa: E731
+    h, d = a["hours"], a["baseline_days"]
+    step = timedelta(minutes=SLOT_MINUTES)
+    start = a["now"] - timedelta(hours=h)
+    base_start = start - timedelta(days=d)
+    # Slots on the quarter hour (12:00, 12:15, ...), from the one the window starts in.
+    grid = start.replace(minute=start.minute - start.minute % SLOT_MINUTES, second=0, microsecond=0)
+    count = int((a["now"] - grid) / step) + 1
+
+    def slot_of_day(t):
+        local = t.astimezone(tz)
+        return (local.hour * 60 + local.minute) // SLOT_MINUTES
+
+    typical = {}
+    for t, v in readings:
+        if base_start <= t < start:
+            typical.setdefault(slot_of_day(t), []).append(v)
+    slots = {}
+    for t, v in readings:
+        if start <= t <= a["now"]:
+            slots.setdefault(int((t - grid) / step), []).append(v)
+
+    labels, recent, usual = [], [], []
+    for k in range(count):
+        t = grid + k * step
+        labels.append(t.astimezone(tz).strftime("%H:%M" if h <= 24 else "%a %H:%M"))
+        recent.append(conv(statistics.fmean(slots[k])) if k in slots else None)
+        same = typical.get(slot_of_day(t))
+        usual.append(conv(statistics.fmean(same)) if same else None)
+    # Nothing after the newest reading: the line stops there rather than running on as a gap.
+    while recent and recent[-1] is None:
+        labels.pop(), recent.pop(), usual.pop()
+
+    series = [{"name": f"Last {h} h", "values": recent}]
+    if any(v is not None for v in usual):
+        series.append({"name": f"{d}-day average", "values": usual})
+    unit_label = "mmol/L" if mmol else "mg/dL"
+    out = [{
+        "kind": "line", "title": f"Glucose: last {h} h vs. your {d}-day average",
+        "labels": labels, "series": series, "y_label": unit_label,
+        "band": {"from": conv(low), "to": conv(high), "label": "Target"},
+    }]
+
+    names = [name for name, _, _ in BLOCKS]
+    tir = lambda blocks: [round(blocks[n]["tir"]) if blocks[n]["n"] else None for n in names]  # noqa: E731
+    by_time = [{"name": f"Last {h} h", "values": tir(a["recent_blocks"])}]
+    if a["base"]["n"]:
+        by_time.append({"name": f"{d}-day average", "values": tir(a["base_blocks"])})
+    out.append({
+        "kind": "bar", "title": f"Time in range ({conv(low)}–{conv(high)} {unit_label}) by time of day",
+        "labels": [n.capitalize() for n in names], "series": by_time, "y_label": "% of the time in range",
+    })
+    return ["[chart] " + json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]
+
+
 def export(readings, boluses, basal, tz):
     out = Path("tandem")
     out.mkdir(exist_ok=True)
@@ -456,18 +539,40 @@ def export(readings, boluses, basal, tz):
         w.writerows((iso(b["t"]), b["rate"], b["source"]) for b in basal)
 
 
+def whole(value, default, lo, hi):
+    """An integer input in [lo, hi]; missing, null, or not a number gives the default."""
+    try:
+        return max(lo, min(hi, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def target(name, default):
+    """A target-range end in mg/dL from the environment. Blank means the default, and a value
+    under 30 is taken as mmol/L (so 3.9 and 10 work as well as 70 and 180)."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        sys.exit(f"{name} must be a number in mg/dL (or mmol/L), not {raw!r}")
+    return round(v / MMOL_PER_MGDL) if v < 30 else round(v)
+
+
 def main():
     args = json.load(sys.stdin) or {}
-    hours = max(6, min(72, int(args.get("hours", 24))))
-    baseline_days = max(1, min(14, int(args.get("baseline_days", 7))))
+    hours = whole(args.get("hours"), 24, 6, 72)
+    baseline_days = whole(args.get("baseline_days"), 7, 1, 14)
 
     load_env(HERE / ".env")
     if not os.environ.get("TANDEM_EMAIL") or not os.environ.get("TANDEM_PASSWORD"):
         sys.exit("no Tandem credentials: save TANDEM_EMAIL and TANDEM_PASSWORD in this tool's "
                  f"settings in cedar, or put them in {HERE.name}/.env (see .env.example)")
-    unit = os.environ.get("GLUCOSE_UNIT", "mgdl").strip().lower()
-    low = int(os.environ.get("TARGET_LOW", 70))
-    high = int(os.environ.get("TARGET_HIGH", 180))
+    unit = "mmol" if os.environ.get("GLUCOSE_UNIT", "").strip().lower().startswith("mmol") else "mgdl"
+    low, high = target("TARGET_LOW", 70), target("TARGET_HIGH", 180)
+    if not 40 <= low < high <= 400:
+        sys.exit(f"the target range {low}-{high} mg/dL doesn't look right; check TARGET_LOW and TARGET_HIGH")
 
     ensure_deps()
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -478,14 +583,17 @@ def main():
 
     # A day of slack on each side: pump days are local, and the windows are rolling.
     days = baseline_days + hours // 24 + 2
-    pump, (readings, boluses, basal, sensors) = download(days, tz)
+    pump, (readings, boluses, basal, sensors, flagged) = download(days, tz)
     if not readings and not boluses:
         sys.exit("Tandem returned no CGM or bolus data for this period; has the t:connect app uploaded recently?")
 
     now = datetime.now(timezone.utc)
-    a = analyze(readings, boluses, basal, now, hours, baseline_days, tz, low, high)
+    a = analyze(readings, boluses, basal, flagged, now, hours, baseline_days, tz, low, high)
     suggestions = recommend(a, tz, low, high, formatter(unit == "mmol"))
     print(report(pump, sensors, a, suggestions, tz, low, high, unit))
+    lines = charts(readings, a, tz, low, high, unit)
+    if lines:
+        print("\n" + "\n".join(lines))
     if args.get("export"):
         export(readings, boluses, basal, tz)
 

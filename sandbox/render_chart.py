@@ -8,7 +8,8 @@ The spec (checked by cedar before it gets here) looks like:
 
     {"path": "out/sales.png", "kind": "bar", "labels": ["Q1", "Q2"],
      "series": [{"name": "2025", "values": [1, 2]}], "title": "...", "x_label": "...",
-     "y_label": "...", "stacked": false, "bins": 20, "log_scale": false}
+     "y_label": "...", "stacked": false, "bins": 20, "log_scale": false,
+     "band": {"from": 70, "to": 180, "label": "Target"}}
 
 `kind` is one of line, bar, barh, area, scatter, pie, histogram. The output format follows the
 extension of `path` (.png, .svg, or .pdf). On success one JSON line, {"bytes": N}, is printed to
@@ -82,6 +83,13 @@ def legend_wanted(spec):
     return len(spec["series"]) > 1 or any("name" in s for s in spec["series"])
 
 
+def category_ticks(ax, positions, labels, horizontal=False, most=14):
+    """Label the categories, every n-th one when there are too many to read."""
+    step = max(1, math.ceil(len(positions) / most))
+    keep = list(range(0, len(positions), step))
+    (ax.set_yticks if horizontal else ax.set_xticks)([positions[i] for i in keep], [str(labels[i]) for i in keep])
+
+
 def color(i):
     return PALETTE[i] if i < len(PALETTE) else OTHER
 
@@ -143,7 +151,7 @@ def draw(ax, spec):
                     ax.plot(x, ys, label=name, color=color(i), marker="o" if len(x) <= 30 else None,
                             markersize=4.5, markeredgecolor="white", markeredgewidth=1)
         if not numeric:
-            ax.set_xticks(x, [str(l) for l in labels])
+            category_ticks(ax, x, labels)
     else:  # bar, barh
         n = len(series)
         positions = list(range(len(labels)))
@@ -167,13 +175,26 @@ def draw(ax, spec):
                 # A thin white edge leaves a gap between neighbouring bars of a group.
                 bar([p + offset for p in positions], values_of(s), width, label=name, color=color(i),
                     edgecolor="white", linewidth=1.5 if n > 1 else 0)
-        ticks = [str(l) for l in labels]
+        category_ticks(ax, positions, labels, horizontal, most=40 if horizontal else 14)
         if horizontal:
-            ax.set_yticks(positions, ticks)
             ax.invert_yaxis()  # first label on top, as in a table
-        else:
-            ax.set_xticks(positions, ticks)
 
+    band = spec.get("band")
+    if band:
+        # A neutral shaded range (a target range) behind the data, with dashed edges.
+        span = ax.axvspan if kind == "barh" else ax.axhspan
+        line = ax.axvline if kind == "barh" else ax.axhline
+        span(band["from"], band["to"], color=INK, alpha=0.05, linewidth=0, zorder=0)
+        for edge in (band["from"], band["to"]):
+            line(edge, color=MUTED, alpha=0.7, linewidth=0.9, linestyle=(0, (4, 3)), zorder=0.5)
+        if band.get("label"):
+            text = f'{band["label"]} {band["from"]:g}–{band["to"]:g}'
+            if kind == "barh":
+                ax.text(band["to"], 1, text, transform=ax.get_xaxis_transform(), ha="right", va="top",
+                        fontsize=9, color=MUTED, fontweight="bold")
+            else:
+                ax.text(1, band["to"], text, transform=ax.get_yaxis_transform(), ha="right", va="top",
+                        fontsize=9, color=MUTED, fontweight="bold")
     if spec.get("log_scale"):
         (ax.set_xscale if kind == "barh" else ax.set_yscale)("log")
     ax.grid(True, axis="x" if kind == "barh" else "y")

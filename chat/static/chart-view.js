@@ -94,6 +94,15 @@ const cedarChart = (() => {
       }
     }
     const bins = num(input.bins);
+    // A shaded range on the value axis, such as a target range.
+    let band = null;
+    if (input.band && typeof input.band === 'object' && kind !== 'pie') {
+      const from = num(input.band.from);
+      const to = num(input.band.to);
+      if (from !== null && to !== null && from !== to) {
+        band = { from: Math.min(from, to), to: Math.max(from, to), label: str(input.band.label, 40) };
+      }
+    }
     return {
       kind,
       path: str(input.path, 300),
@@ -105,6 +114,7 @@ const cedarChart = (() => {
       stacked: input.stacked === true && ['bar', 'barh', 'area', 'histogram'].includes(kind),
       bins: bins && bins >= 1 ? Math.min(500, Math.round(bins)) : null,
       log: input.log_scale === true && kind !== 'pie' && kind !== 'histogram',
+      band,
       thinned,
     };
   }
@@ -258,6 +268,8 @@ const cedarChart = (() => {
       for (const s of data) for (const v of s.values) if (v !== null && (!spec.log || v > 0)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
     }
     if (!Number.isFinite(lo)) { lo = spec.log ? 1 : 0; hi = spec.log ? 10 : 1; }
+    const target = spec.band && !(spec.log && spec.band.from <= 0) ? spec.band : null;
+    if (target) { lo = Math.min(lo, target.from); hi = Math.max(hi, target.to); }
 
     const narrow = width < 440;
     const height = horizontal ? Math.max(180, Math.min(900, n * (data.length > 1 && !stacked ? 14 * data.length + 10 : 30) + 50)) : narrow ? 240 : 290;
@@ -376,6 +388,28 @@ const cedarChart = (() => {
       grid.append(t);
     }
     root.append(grid);
+
+    // The shaded band (a target range), behind the marks, with its label inside its top edge.
+    if (target) {
+      const a = v(target.from);
+      const b = v(target.to);
+      const g = svg('g', { class: 'target' });
+      if (horizontal) {
+        g.append(svg('rect', { x: Math.min(a, b), y: pad.top, width: Math.abs(b - a), height: plotH }));
+        g.append(svg('line', { x1: a, x2: a, y1: pad.top, y2: pad.top + plotH }), svg('line', { x1: b, x2: b, y1: pad.top, y2: pad.top + plotH }));
+      } else {
+        g.append(svg('rect', { x: pad.left, y: Math.min(a, b), width: plotW, height: Math.abs(b - a) }));
+        g.append(svg('line', { x1: pad.left, x2: pad.left + plotW, y1: a, y2: a }), svg('line', { x1: pad.left, x2: pad.left + plotW, y1: b, y2: b }));
+      }
+      if (target.label) {
+        const t = horizontal
+          ? svg('text', { x: Math.max(a, b) - 6, y: pad.top + 12, 'text-anchor': 'end' })
+          : svg('text', { x: pad.left + plotW - 6, y: Math.min(a, b) + 13, 'text-anchor': 'end' });
+        t.textContent = `${target.label} ${compact(target.from)}–${compact(target.to)}`;
+        g.append(t);
+      }
+      root.append(g);
+    }
 
     const band = svg('rect', { class: 'band' });
     band.style.display = 'none';
@@ -843,5 +877,43 @@ const cedarChart = (() => {
     return card;
   }
 
-  return { parse, element };
+  // -- charts in a tool's output --------------------------------------------------------------
+
+  const CHART_LINE = /^\[chart\] (\{.*\})\s*$/;
+  const MAX_OUTPUT_CHARTS = 6;
+  const seen = new Map();
+
+  /**
+   * The charts a tool printed as `[chart] {spec}` lines (the spec is generate_chart's input, without
+   * a path), and its output without them: `{charts: [spec], text}`. Any tool can draw this way; a
+   * line that isn't a drawable spec is left in the text.
+   */
+  function fromOutput(output) {
+    const key = String(output ?? '');
+    if (seen.has(key)) return seen.get(key);
+    const charts = [];
+    const kept = [];
+    for (const line of key.split('\n')) {
+      const m = charts.length < MAX_OUTPUT_CHARTS && line.startsWith('[chart] ') ? CHART_LINE.exec(line) : null;
+      let spec = null;
+      if (m) {
+        try { spec = parse('', { ...JSON.parse(m[1]), path: undefined }); } catch { spec = null; }
+      }
+      if (spec) charts.push(spec); else kept.push(line);
+    }
+    const found = { charts, text: charts.length ? kept.join('\n').trim() : key };
+    if (seen.size > 50) seen.delete(seen.keys().next().value);
+    seen.set(key, found);
+    return found;
+  }
+
+  /** The rest of a tool's output, folded under its charts. */
+  function report(text, label = 'Full report') {
+    const box = el('details', 'cedar-chart-report');
+    box.append(el('summary', '', label));
+    box.append(el('pre', '', text || '(no other output)'));
+    return box;
+  }
+
+  return { parse, element, fromOutput, report };
 })();

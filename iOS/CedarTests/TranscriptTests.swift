@@ -147,4 +147,14 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(call.summary, "chart.png")
         XCTAssertEqual(transcript.images, [])
     }
+
+    func testChartsAnyToolPrintsAreDrawn() {
+        var transcript = TurnTranscript(turn: turn())
+        let output = "Glucose report\n[chart] {\"kind\":\"bar\",\"labels\":[\"a\"],\"series\":[{\"values\":[1]}]}"
+        transcript.apply(event(1, "tool.call", .object(["id": .string("g1"), "name": .string("tandem_glucose"), "input": .object([:])])))
+        transcript.apply(event(2, "tool.result", .object(["id": .string("g1"), "output": .string(output), "is_error": .bool(false)])))
+        guard case .tool(let call)? = transcript.items.last else { return XCTFail("expected a tool call") }
+        XCTAssertNil(call.card)
+        XCTAssertEqual(call.charts.count, 1)
+    }
 }
