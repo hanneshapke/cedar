@@ -1,0 +1,43 @@
+cedar
+Copyright 2026 Hannes Hapke
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles the third-party components listed below. Each remains
+under its own license, a copy of which is included alongside it.
+
+--------------------------------------------------------------------------------
+
+Leaflet 1.9.4
+https://leafletjs.com
+Copyright (c) 2010-2023, Volodymyr Agafonkin
+Copyright (c) 2010-2011, CloudMade
+Licensed under the BSD 2-Clause License.
+Files:   chat/static/vendor/leaflet/
+License: chat/static/vendor/leaflet/LICENSE
+
+--------------------------------------------------------------------------------
+
+The following fonts are licensed under the SIL Open Font License, Version 1.1.
+Files: chat/static/fonts/
+
+Figtree
+Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)
+License: chat/static/fonts/OFL-figtree.txt
+
+Instrument Sans
+Copyright 2022 The Instrument Sans Project Authors (https://github.com/Instrument/instrument-sans)
+License: chat/static/fonts/OFL-instrumentsans.txt
+
+Instrument Serif
+Copyright 2022 The Instrument Serif Project Authors (https://github.com/Instrument/instrument-serif)
+License: chat/static/fonts/OFL-instrumentserif.txt
+
+JetBrains Mono
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+License: chat/static/fonts/OFL-jetbrainsmono.txt
+
+Lora
+Copyright 2011 The Lora Project Authors (https://github.com/cyrealtype/Lora-Cyrillic),
+with Reserved Font Name "Lora".
+License: chat/static/fonts/OFL-lora.txt
