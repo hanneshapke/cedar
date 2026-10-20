@@ -126,7 +126,7 @@ impl ToolSet {
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
     /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `search_products` if a Best Buy
-    /// API key is configured (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
+    /// API key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
     /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
     /// personal Python tools in `TOOLS_DIR`, if set.
@@ -183,7 +183,11 @@ impl ToolSet {
                 cfg.stocks_news_url.clone(),
             )?));
         }
-        if let Some(key) = cfg.bestbuy_api_key.as_ref().filter(|_| cfg.products) {
+        let bestbuy_key = cfg
+            .bestbuy_api_key
+            .as_ref()
+            .or(overrides.bestbuy_api_key.as_ref());
+        if let Some(key) = bestbuy_key.filter(|_| cfg.products) {
             set.tools.push(Box::new(SearchProducts::new(
                 key.clone(),
                 cfg.products_api_url.clone(),
@@ -348,6 +352,7 @@ impl ToolSet {
 #[derive(Default, Clone)]
 pub struct Overrides {
     pub brave_api_key: Option<String>,
+    pub bestbuy_api_key: Option<String>,
     pub google_refresh_token: Option<String>,
 }
 

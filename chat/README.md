@@ -113,7 +113,7 @@ Both interfaces have all of these, except where noted:
   of the registered models with the levels each declares; an optional access token
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
-  [the models](#models) cedar can use, its Brave Search key and its Google account
+  [the models](#models) cedar can use, its Brave Search and Best Buy keys and its Google account
 - [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
@@ -200,8 +200,8 @@ so Best Buy sees the viewer's IP address and which photos were shown, but not th
 that fails to load leaves a placeholder. The View at Best Buy button is a link that opens in a new
 tab without a referrer. Everything else is set as text, so nothing in the tool's result runs in
 the page. The chat server makes no requests for products; cedar asks Best Buy's API with its own
-key (see the top-level README). Remove `BESTBUY_API_KEY` or set `PRODUCTS=off` on cedar to remove
-the tool.
+key (see the top-level README). Remove the Best Buy key (Settings → Server, or `BESTBUY_API_KEY`) or set `PRODUCTS=off` on
+cedar to remove the tool.
 
 ## Configuration
 
@@ -407,7 +407,7 @@ and the error is relayed.
 Settings → **Server** is where the models and the API keys go. Without
 `CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
 the page is unlocked with that token for the browser session and manages cedar's
-[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (checked with one search before it is saved, then shown
+[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key and its Best Buy key, which turns on product search (each checked with one search before it is saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's
@@ -485,6 +485,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT` / `DELETE /api/integrations/models/{id}` | Admin: register or change a model (the body is cedar's `{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "is_default"?}`, passed through as it is) or remove it |
 | `GET` / `PUT /api/integrations/settings` | Admin: cedar's server-wide settings (`GET` / `PUT /v1/admin/settings`, body `{"max_image_side"}`), relayed; the Server page's "Max image size" |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
+| `PUT` / `DELETE /api/integrations/bestbuy` | Admin: save (`{"api_key"}`) or remove cedar's Best Buy key |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |
 | `GET /api/oauth/google/callback` | Where Google sends the browser back. Needs no token: the single-use `state` cedar issued for the admin's "Connect Google" is the check. Redirects to `/?integrations=connected` or `/?integrations=error&message=…` |

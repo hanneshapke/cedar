@@ -248,6 +248,7 @@ pub fn router(state: AppState) -> Router {
         .route("/models", get(list_models))
         .route("/integrations", get(get_integrations))
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
+        .route("/integrations/bestbuy", put(put_bestbuy_key).delete(delete_bestbuy_key))
         .route("/integrations/models", get(get_models))
         .route("/integrations/server-models", post(list_server_models))
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
@@ -1304,6 +1305,21 @@ async fn delete_model(State(state): State<AppState>, headers: HeaderMap, Path(id
 async fn delete_brave_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_brave_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn put_bestbuy_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.set_bestbuy_key(&body.api_key).await?))
+}
+
+async fn delete_bestbuy_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_bestbuy_key().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

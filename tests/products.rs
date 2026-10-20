@@ -412,10 +412,7 @@ async fn the_tool_is_only_offered_with_a_key() {
         .clone();
     assert_eq!(group["label"], "Shopping");
     assert_eq!(group["available"], false);
-    assert_eq!(
-        group["reason"],
-        "Needs a Best Buy API key (BESTBUY_API_KEY)"
-    );
+    assert_eq!(group["reason"], "Needs a Best Buy API key");
     assert_eq!(group["tools"], json!([]));
 
     let app = TestApp::with_env(vec![Step::Repeat(text("ok"))], &[("BESTBUY_API_KEY", "k")]).await;

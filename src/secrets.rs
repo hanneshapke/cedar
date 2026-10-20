@@ -10,6 +10,7 @@ use serde_json::Value;
 use sqlx::Row;
 
 pub const BRAVE_API_KEY: &str = "brave_api_key";
+pub const BESTBUY_API_KEY: &str = "bestbuy_api_key";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
 /// The single model server address, key and model name saved by versions before the model
 /// registry. Read once to migrate them into the registry's `default` entry, then removed.

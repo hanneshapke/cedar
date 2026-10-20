@@ -118,6 +118,36 @@ impl SearchProducts {
         })
     }
 
+    /// Check a key with one tiny search, before it is saved. Being rate limited counts as
+    /// accepted: Best Buy only says so to a key it knows.
+    pub async fn check_key(&self, timeout: Duration) -> Result<()> {
+        let resp = self
+            .http
+            .get(format!("{}(search=tv)", self.base_url))
+            .header("Accept", "application/json")
+            .query(&[
+                ("apiKey", self.api_key.as_str()),
+                ("format", "json"),
+                ("show", "sku"),
+                ("pageSize", "1"),
+            ])
+            .timeout(timeout)
+            .send()
+            .await
+            .context("sending a test search to Best Buy")?;
+        let status = resp.status();
+        match status {
+            s if s.is_success() || s == StatusCode::TOO_MANY_REQUESTS => Ok(()),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                bail!("{STORE} rejected the API key ({status})")
+            }
+            _ => {
+                let text = resp.text().await.unwrap_or_default();
+                bail!("{STORE} error {status}: {}", error_message(&text))
+            }
+        }
+    }
+
     async fn send(&self, req: &Request, timeout: Duration) -> Result<reqwest::Response> {
         let sort = SORTS
             .iter()

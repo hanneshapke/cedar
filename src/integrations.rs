@@ -1,11 +1,11 @@
 //! Integrations an admin can set up through the API instead of the environment: the model
-//! registry (the models runs can use, each with its server and API key), a Brave Search key and
-//! a Google account ("Connect Google"). Credentials are kept encrypted (see [`crate::secrets`]).
+//! registry (the models runs can use, each with its server and API key), a Brave Search key, a
+//! Best Buy key and a Google account ("Connect Google"). Credentials are kept encrypted (see [`crate::secrets`]).
 //! Saving or removing a key rebuilds the tool set, and a change to the registry rebuilds the
 //! model clients, so the next run (or the next model call of one already going) sees the change
 //! without a restart. Runs already going keep the tools they started with.
 //!
-//! The environment wins for the Brave key and the Google account: a credential set there is
+//! The environment wins for the Brave and Best Buy keys and the Google account: a credential set there is
 //! reported as such and can't be changed here. Models are only ever registered here.
 
 use crate::api::MAX_MODEL_LEN;
@@ -16,7 +16,7 @@ use crate::mcp::http_client;
 use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
-use crate::tools::{BraveSearch, Overrides, ToolSet};
+use crate::tools::{BraveSearch, Overrides, SearchProducts, ToolSet};
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
 use base64::Engine;
@@ -160,6 +160,7 @@ impl Integrations {
         if let Some(secrets) = &self.secrets {
             for (name, slot) in [
                 (secrets::BRAVE_API_KEY, &mut overrides.brave_api_key),
+                (secrets::BESTBUY_API_KEY, &mut overrides.bestbuy_api_key),
                 (
                     secrets::GOOGLE_REFRESH_TOKEN,
                     &mut overrides.google_refresh_token,
@@ -521,7 +522,7 @@ impl Integrations {
             (
                 "products",
                 if cfg.products {
-                    "Needs a Best Buy API key (BESTBUY_API_KEY)".to_string()
+                    "Needs a Best Buy API key".to_string()
                 } else {
                     off("PRODUCTS")
                 },
@@ -555,6 +556,17 @@ impl Integrations {
             (None, Some(m)) => json!({ "configured": true, "source": "ui", "last4": m["last4"] }),
             (None, None) => json!({ "configured": false, "source": null }),
         };
+        let mut bestbuy = match (
+            &self.cfg.bestbuy_api_key,
+            meta(secrets::BESTBUY_API_KEY).await?,
+        ) {
+            (Some(key), _) => {
+                json!({ "configured": true, "source": "env", "last4": secrets::last4(key) })
+            }
+            (None, Some(m)) => json!({ "configured": true, "source": "ui", "last4": m["last4"] }),
+            (None, None) => json!({ "configured": false, "source": null }),
+        };
+        bestbuy["enabled"] = json!(self.cfg.products);
         let google = match &self.cfg.google_oauth {
             None => json!({ "enabled": false, "configured": false, "source": null }),
             Some(oauth) => {
@@ -577,6 +589,7 @@ impl Integrations {
             "storage": self.secrets.is_some(),
             "models": self.models.load().len(),
             "brave": brave,
+            "bestbuy": bestbuy,
             "google": google,
         }))
     }
@@ -635,6 +648,44 @@ impl Integrations {
         }
         self.reload().await?;
         tracing::info!("Brave Search key removed");
+        Ok(())
+    }
+
+    /// Check a Best Buy key with one small search, then save it and rebuild the tools, which
+    /// turns `search_products` on unless `PRODUCTS=off`.
+    pub async fn set_bestbuy_key(&self, key: &str) -> Result<(), AppError> {
+        let secrets = self.writable(self.cfg.bestbuy_api_key.is_some())?;
+        let key = key.trim();
+        if key.is_empty() || key.len() > MAX_SECRET_LEN || key.chars().any(char::is_control) {
+            return Err(AppError::BadRequest(
+                "api_key is missing or malformed".into(),
+            ));
+        }
+        SearchProducts::new(key.to_string(), self.cfg.products_api_url.clone())?
+            .check_key(REQUEST_TIMEOUT)
+            .await
+            .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;
+        let _guard = self.changing.lock().await;
+        secrets
+            .put(
+                secrets::BESTBUY_API_KEY,
+                key,
+                &json!({ "last4": secrets::last4(key) }),
+            )
+            .await?;
+        self.reload().await?;
+        tracing::info!("Best Buy key saved; search_products is on");
+        Ok(())
+    }
+
+    pub async fn remove_bestbuy_key(&self) -> Result<(), AppError> {
+        let secrets = self.writable(self.cfg.bestbuy_api_key.is_some())?;
+        let _guard = self.changing.lock().await;
+        if !secrets.delete(secrets::BESTBUY_API_KEY).await? {
+            return Err(AppError::NotFound("no Best Buy key is saved"));
+        }
+        self.reload().await?;
+        tracing::info!("Best Buy key removed");
         Ok(())
     }
 

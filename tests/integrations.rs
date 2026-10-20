@@ -211,10 +211,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
     );
     let products = group(&catalog, "products");
     assert_eq!(products["available"], false);
-    assert_eq!(
-        products["reason"],
-        "Needs a Best Buy API key (BESTBUY_API_KEY)"
-    );
+    assert_eq!(products["reason"], "Needs a Best Buy API key");
 
     let search = group(&catalog, "web_search");
     assert_eq!(search["available"], false);
@@ -293,6 +290,12 @@ async fn admin_routes_need_an_admin_key() {
             Some(json!({ "api_key": "k" })),
         ),
         (Method::DELETE, "/v1/admin/integrations/brave", None),
+        (
+            Method::PUT,
+            "/v1/admin/integrations/bestbuy",
+            Some(json!({ "api_key": "k" })),
+        ),
+        (Method::DELETE, "/v1/admin/integrations/bestbuy", None),
         (
             Method::POST,
             "/v1/admin/integrations/google/authorize",
@@ -443,6 +446,169 @@ async fn keys_from_the_environment_or_without_storage_cannot_be_changed() {
         .as_str()
         .unwrap()
         .contains("CEDAR_SECRET_KEY"));
+}
+
+// -- admin: Best Buy --------------------------------------------------------------------------
+
+/// A Best Buy Products API mock that accepts one key, as its `apiKey` query parameter.
+async fn start_bestbuy(valid_key: &'static str) -> String {
+    async fn products(
+        State(valid): State<&'static str>,
+        axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+    ) -> impl IntoResponse {
+        if params.get("apiKey").map(String::as_str) == Some(valid) {
+            (StatusCode::OK, Json(json!({ "total": 0, "products": [] })))
+        } else {
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": { "message": "The provided API Key is invalid." } })),
+            )
+        }
+    }
+    // The search filter follows `/products` in parentheses, so no route matches it.
+    let app = Router::new().fallback(products).with_state(valid_key);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/products", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
+}
+
+#[tokio::test]
+async fn a_best_buy_key_saved_by_an_admin_turns_product_search_on_without_a_restart() {
+    let api = start_bestbuy("good-bestbuy-key-4321").await;
+    let api: &'static str = Box::leak(api.into_boxed_str());
+    let store = Store::connect_memory().await.unwrap();
+    let app = TestApp::build(
+        store.clone(),
+        ScriptedLlm::new(vec![Step::Repeat(text("ok"))]),
+        FakeFactory::new(),
+        &admin_env(&[("PRODUCTS_API_URL", api)]),
+    )
+    .await;
+
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(
+        status["bestbuy"],
+        json!({ "configured": false, "source": null, "enabled": true })
+    );
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
+    assert_eq!(group(&catalog, "products")["available"], false);
+
+    // A key Best Buy rejects is not saved.
+    let (code, body) = app
+        .json(
+            Method::PUT,
+            "/v1/admin/integrations/bestbuy",
+            Some(KEY_B),
+            Some(json!({ "api_key": "wrong" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Best Buy rejected the API key"),
+        "{body}"
+    );
+
+    let (code, body) = app
+        .json(
+            Method::PUT,
+            "/v1/admin/integrations/bestbuy",
+            Some(KEY_B),
+            Some(json!({ "api_key": " good-bestbuy-key-4321 " })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["bestbuy"],
+        json!({ "configured": true, "source": "ui", "last4": "4321", "enabled": true })
+    );
+    let (_, _, raw) = app
+        .call(Method::GET, "/v1/admin/integrations", Some(KEY_B), None)
+        .await;
+    assert!(!raw.contains("good-bestbuy-key"));
+
+    let run = app.create_run(KEY_A, "which headphones?").await;
+    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
+    let request = &app.llm.requests()[0];
+    assert!(tool_names(request).contains(&"search_products".to_string()));
+    assert!(request["system"]
+        .as_str()
+        .unwrap()
+        .contains("use search_products"));
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
+    assert_eq!(group(&catalog, "products")["available"], true);
+
+    // A restarted server picks the saved key up again.
+    let restarted = TestApp::build(
+        store,
+        ScriptedLlm::new(vec![]),
+        FakeFactory::new(),
+        &admin_env(&[("PRODUCTS_API_URL", api)]),
+    )
+    .await;
+    let (_, catalog) = restarted.get("/v1/tools", KEY_A).await;
+    assert_eq!(group(&catalog, "products")["available"], true);
+
+    let (code, _) = app
+        .json(
+            Method::DELETE,
+            "/v1/admin/integrations/bestbuy",
+            Some(KEY_B),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::NO_CONTENT);
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
+    assert_eq!(group(&catalog, "products")["available"], false);
+    let (code, _) = app
+        .json(
+            Method::DELETE,
+            "/v1/admin/integrations/bestbuy",
+            Some(KEY_B),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_best_buy_key_from_the_environment_or_with_products_off_is_reported() {
+    let app = TestApp::with_env(
+        vec![],
+        &admin_env(&[("BESTBUY_API_KEY", "env-bestbuy-2222")]),
+    )
+    .await;
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(
+        status["bestbuy"],
+        json!({ "configured": true, "source": "env", "last4": "2222", "enabled": true })
+    );
+    let (code, body) = app
+        .json(
+            Method::PUT,
+            "/v1/admin/integrations/bestbuy",
+            Some(KEY_B),
+            Some(json!({ "api_key": "x" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("environment"));
+
+    let app = TestApp::with_env(vec![], &admin_env(&[("PRODUCTS", "off")])).await;
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["bestbuy"]["enabled"], false);
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
+    assert_eq!(
+        group(&catalog, "products")["reason"],
+        "Turned off on the server (PRODUCTS=off)"
+    );
 }
 
 // -- admin: Google ----------------------------------------------------------------------------
