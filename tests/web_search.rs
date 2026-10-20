@@ -131,6 +131,7 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "show_recipe",
             "plan_trip",
             "compare_stocks",
+            "search_products",
             "ask_user"
         ]
     );

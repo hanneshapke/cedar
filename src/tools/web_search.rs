@@ -57,6 +57,41 @@ impl BraveSearch {
         }
     }
 
+    /// The `web.results` of a search for `query`, as Brave sends them, for tools that read more
+    /// than the snippets (`search_products`). A rate-limited search is retried once.
+    pub(crate) async fn results(
+        &self,
+        query: &str,
+        count: u64,
+        timeout: Duration,
+    ) -> Result<Vec<Value>> {
+        let search = Search {
+            query,
+            count: count.clamp(1, MAX_COUNT),
+            freshness: None,
+        };
+        let mut resp = self.send(&search, timeout).await?;
+        if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+            tokio::time::sleep(RATE_LIMIT_PAUSE).await;
+            resp = self.send(&search, timeout).await?;
+        }
+        let status = resp.status();
+        let text = resp.text().await.context("reading Brave Search response")?;
+        match status {
+            s if s.is_success() => {}
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                bail!("Brave Search rejected the API key ({status})")
+            }
+            StatusCode::TOO_MANY_REQUESTS => bail!("Brave Search is rate limited"),
+            _ => bail!("Brave Search error {status}: {}", error_message(&text)),
+        }
+        let body: Value = serde_json::from_str(&text).context("parsing Brave Search response")?;
+        Ok(body["web"]["results"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default())
+    }
+
     async fn send(&self, search: &Search<'_>, timeout: Duration) -> Result<reqwest::Response> {
         let mut params = vec![
             ("q", search.query.to_string()),
@@ -190,7 +225,7 @@ fn format_results(body: &Value, count: usize) -> String {
 }
 
 /// Brave marks matched terms with `<strong>` and HTML-escapes the rest; turn that into plain text.
-fn clean(s: &str) -> String {
+pub(crate) fn clean(s: &str) -> String {
     let mut text = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {

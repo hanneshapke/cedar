@@ -12,7 +12,7 @@ use crate::plan;
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
-use crate::tools::{question_text, ToolContext, ToolSet, ToolView, ASK_USER};
+use crate::tools::{question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER};
 use crate::waits::{Answer, Waits};
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
@@ -84,6 +84,14 @@ pub async fn run_agent(
         browser,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
+        model: env.llm.client_for(&run.model_id).map(|client| {
+            Arc::new(ToolModel::new(
+                client,
+                run.model.clone(),
+                max_tokens(env, run),
+                run.reasoning.clone(),
+            ))
+        }),
     };
     let tool_set = env.tools.load_full();
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
@@ -215,6 +223,17 @@ pub async fn run_agent(
                     let result =
                         execute_tool_call(env, run, &tools, &ctx, &mut sources, events, cancel, block)
                             .await?;
+                    // A tool that asked the model something (search_products) counts toward the turn.
+                    if let Some(model) = &ctx.model {
+                        let used = model.take_usage();
+                        if used != Usage::default() {
+                            env.store.record_turn(run.id, turn, used).await?;
+                            let mut data = usage_event(env, run, turn, used);
+                            data["purpose"] = json!("tool");
+                            data["tool"] = block["name"].clone();
+                            events.emit(event::USAGE, data).await?;
+                        }
+                    }
                     if block["name"] == ASK_USER && result["is_error"] != true {
                         asked.extend(result["content"].as_str().and_then(question_text));
                     }

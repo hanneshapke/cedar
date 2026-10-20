@@ -182,6 +182,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(put_brave_key).delete(delete_brave_key),
         )
         .route(
+            "/admin/integrations/bestbuy",
+            axum::routing::put(put_bestbuy_key).delete(delete_bestbuy_key),
+        )
+        .route(
             "/admin/integrations/google",
             axum::routing::delete(delete_google),
         )
@@ -628,6 +632,26 @@ async fn delete_brave_key(
 ) -> Result<StatusCode, AppError> {
     require_admin(admin)?;
     state.integrations.remove_brave_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Save a Best Buy key (`{"api_key"}`, the same body as the Brave key's) once one search works.
+async fn put_bestbuy_key(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    state.integrations.set_bestbuy_key(&body.api_key).await?;
+    Ok(Json(state.integrations.status().await?))
+}
+
+async fn delete_bestbuy_key(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state.integrations.remove_bestbuy_key().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

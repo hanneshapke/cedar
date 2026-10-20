@@ -67,7 +67,7 @@ impl WebClient {
 
     /// GET `url`, reading at most `max_bytes` of the body. Non-2xx statuses are errors. With
     /// `partial` false, a body the server declares too large isn't read at all.
-    async fn get(
+    pub(crate) async fn get(
         &self,
         url: &str,
         max_bytes: usize,
@@ -120,12 +120,12 @@ impl WebClient {
     }
 }
 
-struct Fetched {
+pub(crate) struct Fetched {
     /// After redirects.
-    final_url: String,
+    pub(crate) final_url: String,
     /// Lowercased `Content-Type` header, parameters included; empty if absent.
-    content_type: String,
-    body: Vec<u8>,
+    pub(crate) content_type: String,
+    pub(crate) body: Vec<u8>,
     /// The body was longer than the limit (and, without `partial`, `body` is empty if the server
     /// said so up front).
     truncated: bool,
@@ -398,7 +398,7 @@ pub(super) fn html_to_text(html: &[u8]) -> Result<String> {
 }
 
 /// The text of the first `<title>` element, with whitespace collapsed and common entities decoded.
-fn html_title(html: &str) -> Option<String> {
+pub(super) fn html_title(html: &str) -> Option<String> {
     let lower = html.to_ascii_lowercase();
     let open = lower.find("<title")?;
     let start = open + lower[open..].find('>')? + 1;

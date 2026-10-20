@@ -183,6 +183,16 @@ impl CedarClient {
         admin(self.send(req).await.map(drop))
     }
 
+    pub async fn set_bestbuy_key(&self, api_key: &str) -> Result<Value, AppError> {
+        let req = self.http.put(self.url("/admin/integrations/bestbuy")).json(&json!({ "api_key": api_key }));
+        admin(self.json(req).await)
+    }
+
+    pub async fn remove_bestbuy_key(&self) -> Result<(), AppError> {
+        let req = self.http.delete(self.url("/admin/integrations/bestbuy")).timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
+    }
+
     /// The Google sign-in URL for "Connect Google"; Google sends the browser back to `redirect_uri`.
     pub async fn google_authorize(&self, redirect_uri: &str) -> Result<String, AppError> {
         let req = self.http.post(self.url("/admin/integrations/google/authorize")).json(&json!({ "redirect_uri": redirect_uri }));

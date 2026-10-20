@@ -7,7 +7,7 @@
 //     get, the default model, turn limit and system prompt (GET/PUT /api/settings). Both edit one
 //     draft and save it through the dialog's footer.
 //   - The "Server" page, for admins only (CHAT_ADMIN_TOKEN): the models cedar has registered
-//     (each with its server, API key and reasoning levels), its Brave Search key and its Google
+//     (each with its server, API key and reasoning levels), its Brave Search and Best Buy keys and its Google
 //     account. The admin token is kept for this browser session and sent as X-Admin-Token. A
 //     change to the models reloads cedarModels (models.js) and dispatches `cedar-models-changed`
 //     on `document`, so the apps refill their pickers.
@@ -512,7 +512,7 @@ const cedarSettings = (() => {
     }
     const parts = [];
     if (!status.storage) {
-      parts.push(note('cedar has no CEDAR_SECRET_KEY, so API keys can\'t be saved here: models whose server needs none can still be registered; the Brave key and the Google account can only be set in cedar\'s environment.'));
+      parts.push(note('cedar has no CEDAR_SECRET_KEY, so API keys can\'t be saved here: models whose server needs none can still be registered; the Brave and Best Buy keys and the Google account can only be set in cedar\'s environment.'));
     }
     const block = (title, ...children) => {
       const b = el('div', 'cedar-set-block');
@@ -524,7 +524,7 @@ const cedarSettings = (() => {
     const models = await modelsBlock(status);
     const modelsBlockEl = block('Models', models.wrap);
     modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
-    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Google account', googleRow(status)), block('Attachments', await imageSizeRow()));
+    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('Google account', googleRow(status)), block('Attachments', await imageSizeRow()));
     section.replaceChildren(...parts);
   }
 
@@ -548,7 +548,7 @@ const cedarSettings = (() => {
     item('CEDAR_SECRET_KEY', 'on cedar (openssl rand -hex 32): encrypts the API keys saved here');
     item('CEDAR_ADMIN_KEYS', "on cedar: include cedar-chat's CEDAR_API_KEY");
     wrap.append(list);
-    wrap.append(note('Models are only registered through cedar\'s admin API (PUT /v1/admin/models/{id}) or here. BRAVE_API_KEY and the GOOGLE_* variables can also go in cedar\'s environment (see .env.example); everything else, like the sandbox and limits, is only set there.'));
+    wrap.append(note('Models are only registered through cedar\'s admin API (PUT /v1/admin/models/{id}) or here. BRAVE_API_KEY, BESTBUY_API_KEY and the GOOGLE_* variables can also go in cedar\'s environment (see .env.example); everything else, like the sandbox and limits, is only set there.'));
     if (cedarModels.loaded() && !cedarModels.all().length) {
       wrap.append(note('No model is registered yet, so messages can\'t be sent.', 'cedar-set-error'));
     }
@@ -859,23 +859,54 @@ const cedarSettings = (() => {
   }
 
   function braveRow(status) {
-    const b = status.brave || {};
-    const { row, main, side } = integrationRow('Brave Search', 'Turns on web_search. The key stays on the cedar server.');
-    if (b.source === 'env') {
-      side.append(badge(`••••${b.last4 || ''}`, 'ok'), badge('Managed by environment'));
+    return keyRow(status.brave, status.storage, {
+      name: 'Brave Search',
+      what: 'Turns on web_search. The key stays on the cedar server.',
+      path: '/integrations/brave',
+      saved: 'Brave Search key saved; web search is on',
+      removeAsk: 'Remove the Brave Search key? Web search stops working for new messages.',
+    });
+  }
+
+  function bestbuyRow(status) {
+    const b = status.bestbuy || {};
+    if (b.enabled === false) {
+      const { row, side } = integrationRow('Best Buy', 'Product search is turned off on the server (PRODUCTS=off).');
+      side.append(badge('Off'));
       return row;
     }
-    if (b.configured) side.append(badge(`••••${b.last4 || ''}`, 'ok'));
+    return keyRow(b, status.storage, {
+      name: 'Best Buy',
+      what: 'Turns on search_products: product options with photos, prices, reviews and comparable picks. A free key from developer.bestbuy.com; it stays on the cedar server.',
+      path: '/integrations/bestbuy',
+      saved: 'Best Buy key saved; product search is on',
+      removeAsk: 'Remove the Best Buy key? Product search stops working for new messages.',
+    });
+  }
+
+  /**
+   * A row for an API key cedar keeps for a tool: its last four characters and where it is set,
+   * and, when cedar can store keys and the environment doesn't set it, a form to add or replace
+   * it (cedar checks it first) and a button to remove it. `k` is the key's entry in cedar's
+   * integration status, `{configured, source, last4}`.
+   */
+  function keyRow(k = {}, storage, { name, what, path, saved, removeAsk }) {
+    const { row, main, side } = integrationRow(name, what);
+    if (k.source === 'env') {
+      side.append(badge(`••••${k.last4 || ''}`, 'ok'), badge('Managed by environment'));
+      return row;
+    }
+    if (k.configured) side.append(badge(`••••${k.last4 || ''}`, 'ok'));
     else side.append(badge('Not set'));
-    if (!status.storage) return row;
+    if (!storage) return row;
 
     const edit = el('form', 'cedar-set-inline');
     edit.hidden = true;
     const input = el('input');
     input.type = 'password';
     input.autocomplete = 'off';
-    input.placeholder = 'Brave Search API key';
-    input.setAttribute('aria-label', 'Brave Search API key');
+    input.placeholder = `${name} API key`;
+    input.setAttribute('aria-label', `${name} API key`);
     const saveBtn = button('Check and save', () => edit.requestSubmit(), 'primary');
     edit.append(input, saveBtn, button('Cancel', () => { edit.hidden = true; }));
     edit.addEventListener('submit', async (e) => {
@@ -884,8 +915,8 @@ const cedarSettings = (() => {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Checking…';
       try {
-        await adminApi('PUT', '/integrations/brave', { api_key: input.value.trim() });
-        deps.toast('Brave Search key saved; web search is on');
+        await adminApi('PUT', path, { api_key: input.value.trim() });
+        deps.toast(saved);
         renderIntegrations();
         refreshTools();
       } catch (err) {
@@ -894,12 +925,12 @@ const cedarSettings = (() => {
         deps.toast(err.message);
       }
     });
-    side.append(button(b.configured ? 'Replace' : 'Add key', () => { edit.hidden = false; input.focus(); }));
-    if (b.configured) {
+    side.append(button(k.configured ? 'Replace' : 'Add key', () => { edit.hidden = false; input.focus(); }));
+    if (k.configured) {
       side.append(button('Remove', async () => {
-        if (!(await cedarConfirm('Remove the Brave Search key? Web search stops working for new messages.', { ok: 'Remove' }))) return;
+        if (!(await cedarConfirm(removeAsk, { ok: 'Remove' }))) return;
         try {
-          await adminApi('DELETE', '/integrations/brave');
+          await adminApi('DELETE', path);
           renderIntegrations();
           refreshTools();
         } catch (err) { deps.toast(err.message); }
