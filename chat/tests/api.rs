@@ -890,6 +890,8 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/transit-view.css\""), "{uri} loads the trip styles");
             assert!(page.contains("<script src=\"/stock-view.js\">"), "{uri} loads the stock view");
             assert!(page.contains("href=\"/stock-view.css\""), "{uri} loads the stock styles");
+            assert!(page.contains("<script src=\"/chart-view.js\">"), "{uri} loads the chart view");
+            assert!(page.contains("href=\"/chart-view.css\""), "{uri} loads the chart styles");
             assert!(page.contains("<script src=\"/models.js\">"), "{uri} loads the model registry script");
             assert!(
                 page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("/settings.js"),
@@ -942,6 +944,8 @@ async fn both_uis_are_served() {
         ("/transit-view.css", "text/css; charset=utf-8", ".cedar-trip"),
         ("/stock-view.js", "text/javascript; charset=utf-8", "cedarStocks"),
         ("/stock-view.css", "text/css; charset=utf-8", ".cedar-stocks"),
+        ("/chart-view.js", "text/javascript; charset=utf-8", "cedarChart"),
+        ("/chart-view.css", "text/css; charset=utf-8", ".cedar-chart"),
         ("/image-view.js", "text/javascript; charset=utf-8", "cedarImages"),
         ("/image-view.css", "text/css; charset=utf-8", ".cedar-image"),
         ("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8", "Leaflet 1.9.4"),

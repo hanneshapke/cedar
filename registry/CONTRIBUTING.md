@@ -8,7 +8,8 @@ request. The pull request is the review: a maintainer reads the code, and CI che
 A tool is a Python script that reads its input as JSON on stdin and prints its result on stdout.
 Exiting non-zero with a message on stderr reports an error to the model. See [Personal tools in
 Python](../README.md#personal-tools-in-python) for the details, and
-[tandem_glucose](tools/tandem_glucose) for a full example.
+[tandem_glucose](tools/tandem_glucose) for a full example. To show charts, print `[chart] {spec}`
+lines (the spec is `generate_chart`'s input without a path); the chat draws them as chart cards.
 
 - Test it locally first: put the folder in your own `TOOLS_DIR` and run cedar.
 - Read credentials from environment variables, and declare each one in `secrets`. Never put a

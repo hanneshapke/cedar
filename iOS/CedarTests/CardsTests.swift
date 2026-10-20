@@ -218,4 +218,71 @@ final class CardsTests: XCTestCase {
         guard case .map(let map)? = call.card else { return XCTFail("expected a map card") }
         XCTAssertEqual(map.markers.first?.label, "A")
     }
+
+    func testChartFromItsInput() {
+        let input: JSONValue = .object([
+            "path": .string("charts/sales.png"), "kind": .string("bar"), "title": .string(" Sales "),
+            "labels": .array([.string("Q1"), .string("Q2")]),
+            "series": .array([
+                .object(["name": .string("2025"), "values": .array([.number(1), .null])]),
+                .object(["values": .array([.number(3), .number(4)])]),
+            ]),
+            "stacked": .bool(true), "log_scale": .bool(true), "bins": .number(1e20),
+        ])
+        guard case .chart(let chart)? = Card.parse(name: "generate_chart", output: "wrote charts/sales.png: 12 bytes", input: input)
+        else { return XCTFail("expected a chart") }
+        XCTAssertEqual(chart.kind, .bar)
+        XCTAssertEqual(chart.title, "Sales")
+        XCTAssertEqual(chart.labels, [.text("Q1"), .text("Q2")])
+        XCTAssertEqual(chart.series.map(\.name), ["2025", "Series 2"])
+        XCTAssertEqual(chart.series[0].values, [1, nil])
+        XCTAssertTrue(chart.stacked)
+        XCTAssertTrue(chart.log)
+        XCTAssertNil(chart.bins, "an out-of-range bin count is ignored")
+
+        func parse(_ fields: [String: JSONValue]) -> Card? {
+            var base: [String: JSONValue] = ["kind": .string("line"), "labels": .array([.number(1), .number(2)]),
+                                             "series": .array([.object(["values": .array([.number(1), .number(2)])])])]
+            base.merge(fields) { $1 }
+            return Card.parse(name: "generate_chart", output: "", input: .object(base))
+        }
+        XCTAssertNotNil(parse([:]))
+        XCTAssertNil(parse(["kind": .string("donut")]))
+        XCTAssertNil(parse(["labels": .array([.number(1)])]), "labels and values must match")
+        XCTAssertNil(parse(["series": .array([.object(["values": .array([.string("1"), .number(2)])])])]))
+        XCTAssertNil(parse(["kind": .string("scatter"), "labels": .array([.string("a"), .string("b")])]))
+        XCTAssertNil(parse(["kind": .string("pie"), "series": .array([.object(["values": .array([.number(1), .number(-2)])])])]))
+        guard case .chart(let hist)? = parse(["kind": .string("histogram"), "labels": .null, "bins": .number(2),
+                                               "series": .array([.object(["values": .array([.number(0), .number(1), .number(1), .number(4)])])])])
+        else { return XCTFail("expected a histogram") }
+        XCTAssertEqual(hist.histogram?.edges, [0, 2, 4])
+        XCTAssertEqual(hist.histogram?.counts, [[3, 1]])
+
+        let long = (0..<5000).map { JSONValue.number(Double($0)) }
+        guard case .chart(let thin)? = parse(["labels": .array(long), "series": .array([.object(["values": .array(long)])])])
+        else { return XCTFail("expected a long line") }
+        XCTAssertTrue(thin.thinned)
+        XCTAssertLessThanOrEqual(thin.labels.count, 801)
+        XCTAssertEqual(thin.labels.last, .number(4999), "the last point is kept")
+        XCTAssertNil(Card.parse(name: "generate_chart", output: "", input: .null))
+    }
+
+    func testChartsAToolPrinted() {
+        let output = """
+        Report line
+        [chart] {"kind":"line","title":"Glucose","labels":["10:00","10:15"],"series":[{"values":[120,null]}],"band":{"from":180,"to":70,"label":"Target"},"path":"x.png"}
+        [chart] {"kind":"donut"}
+        [chart] not json
+        The end
+        """
+        let found = ChartCard.inOutput(output)
+        XCTAssertEqual(found.charts.count, 1)
+        XCTAssertEqual(found.charts[0].title, "Glucose")
+        XCTAssertNil(found.charts[0].path, "a printed chart saves no file")
+        XCTAssertEqual(found.charts[0].band, ChartCard.Band(from: 70, to: 180, label: "Target"))
+        XCTAssertEqual(found.text, "Report line\n[chart] {\"kind\":\"donut\"}\n[chart] not json\nThe end",
+                       "lines that aren't drawable charts stay in the text")
+        XCTAssertTrue(ChartCard.inOutput("no charts here").charts.isEmpty)
+    }
 }
+

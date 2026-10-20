@@ -36,8 +36,21 @@ Both interfaces have all of these, except where noted:
 - A files panel (the folder button in the header) lists what the agent saved under `/workspace`
   and downloads any of it; finished `write_file`, `generate_pdf`, `generate_chart`, and
   `download_file` calls get a download button too
+- A `generate_chart` call is drawn as a chart card from the data the agent gave it, rather than as
+  the picture it saved: the title, a legend whose entries hide and show their series, the plot drawn
+  to the card's width in a fixed palette with light and dark steps (lines, areas, grouped or stacked
+  bars, horizontal bars, scatter points, a histogram's bins, or a donut with its slices listed), a
+  tooltip that reads every series where you point (a crosshair over lines, the category over bars,
+  the nearest point of a scatter, a slice of a pie; arrow keys move it too), and the data as a table
+  folded under it. Very long series are thinned on the card; the saved file has every point. Cedar
+  style puts it on the stage with the file's View and Download buttons, Claude style under the tool
+  call (`chart-view.js` and `chart-view.css`). If the data can't be drawn, the picture is shown.
+  Any other tool can show charts the same way by printing `[chart] {spec}` lines (the spec is
+  `generate_chart`'s input without a path): they are drawn under the call, and in Cedar style on
+  its card with the rest of its output folded under them (see
+  [Personal tools in Python](../README.md#personal-tools-in-python)); `tandem_glucose` does this
 - The images the agent produces are shown in the response, once each, after its reply: a chart
-  from `generate_chart`, a picture `write_file` or `download_file` saved, or one a `bash` command
+  from `generate_chart` that wasn't drawn as a card, a picture `write_file` or `download_file` saved, or one a `bash` command
   or `run_python` script created (from the files the call lists). A file that was rewritten
   several times is shown as it is when the response ends. Claude style puts them under the reply,
   Cedar style in an images card on the stage after the response's other cards. An image the agent refers to in its text as

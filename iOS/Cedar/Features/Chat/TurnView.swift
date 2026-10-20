@@ -31,6 +31,9 @@ struct TurnView: View {
                     if let card = call.card {
                         CardView(card: card)
                     }
+                    ForEach(Array(call.charts.enumerated()), id: \.offset) { _, chart in
+                        ChartCardView(card: chart)
+                    }
                 }
             }
             if turn.items.isEmpty, let final = turn.turn.finalText, !final.isEmpty {
@@ -348,7 +351,8 @@ struct ToolCallView: View {
             if expanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
-                    if call.isCard, call.isFinished, !call.isError, call.card == nil, let webURL {
+                    // A chart that can't be drawn is still shown as the picture it saved.
+                    if call.isCard, call.name != "generate_chart", call.isFinished, !call.isError, call.card == nil, let webURL {
                         Link(destination: webURL) {
                             Label("Open the \(cardKind) on the web", systemImage: "safari")
                                 .font(.subheadline)
@@ -356,8 +360,10 @@ struct ToolCallView: View {
                     }
                     CodeBox(label: "Input", text: inputText)
                     if let output = call.output {
+                        // Charts the tool printed are drawn under it, so they're left out here.
+                        let text = call.charts.isEmpty ? output : ChartCard.inOutput(output).text
                         CodeBox(label: call.isError ? "Error" : "Output",
-                                text: output.isEmpty ? "(no output)" : output,
+                                text: text.isEmpty ? "(no output)" : text,
                                 isError: call.isError)
                     }
                     if !call.sources.isEmpty {
@@ -413,6 +419,7 @@ struct ToolCallView: View {
         case "plan_trip": return "route"
         case "compare_stocks": return "comparison"
         case "search_products": return "products"
+        case "generate_chart": return "chart"
         default: return "result"
         }
     }

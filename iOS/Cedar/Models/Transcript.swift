@@ -27,11 +27,14 @@ struct ToolCall: Identifiable, Hashable, Sendable {
     var sources: [Source] = []
     /// The card the app draws for a finished card tool, parsed once when its result arrives.
     var card: Card?
+    /// Charts any other tool printed (`[chart] {spec}` lines), drawn after it.
+    var charts: [ChartCard] = []
 
     var isFinished: Bool { output != nil }
 
-    /// Tools whose result is drawn as a card (map, recipe, route, stocks, products), here and in the web UI.
-    static let cardTools: Set<String> = ["show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products"]
+    /// Tools whose result is drawn as a card (map, recipe, route, stocks, products, and a chart from its
+    /// data), here and in the web UI.
+    static let cardTools: Set<String> = ["show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "generate_chart"]
 
     var isCard: Bool { Self.cardTools.contains(name) }
 
@@ -266,7 +269,9 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
             call.isError = data["is_error"]?.boolValue ?? false
             call.durationMs = data["duration_ms"]?.intValue
             if call.isCard, !call.isError, let output = call.output {
-                call.card = Card.parse(name: call.name, output: output)
+                call.card = Card.parse(name: call.name, output: output, input: call.input)
+            } else if !call.isError, let output = call.output {
+                call.charts = ChartCard.inOutput(output).charts
             }
             if case .array(let sources)? = data["sources"] {
                 call.sources = sources.compactMap { s in
@@ -329,7 +334,9 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
         var seen: Set<String> = []
         var paths: [String] = []
         for item in items {
-            guard case .tool(let call) = item, call.isFinished, !call.isError else { continue }
+            // A chart drawn as a card isn't shown again as a picture.
+            guard case .tool(let call) = item, call.isFinished, !call.isError,
+                  !(call.name == "generate_chart" && call.card != nil) else { continue }
             for path in WorkspaceImages.produced(by: call) where seen.insert(path).inserted {
                 paths.append(path)
             }
