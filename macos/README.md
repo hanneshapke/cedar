@@ -186,9 +186,10 @@ One-time setup:
 - **Apple secrets.** In the repository's Actions secrets: `APPLE_CERTIFICATE` (a Developer ID
   Application certificate exported as .p12 and base64-encoded: `base64 -i cert.p12 | pbcopy`),
   `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` (`Developer ID Application: Name
-  (TEAMID)`, as `security find-identity -v -p codesigning` prints it), `APPLE_ID`,
-  `APPLE_PASSWORD` (an app-specific password from appleid.apple.com), and `APPLE_TEAM_ID`. The
-  dmg job fails up front if any is missing.
+  (TEAMID)`, as `security find-identity -v -p codesigning` prints it), and for notarization the
+  App Store Connect API key the iOS TestFlight upload uses: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and
+  `ASC_KEY_P8` (see [the iOS README](../iOS/README.md#testflight)). The dmg job fails up front if
+  any is missing.
 - **Package visibility.** The first push creates each GHCR package as private, linked to this
   repository. Make `cedar-sandbox` and `cedar-browser` public once (the package's settings →
   Danger Zone → Change visibility), or users' pulls fail with "denied".

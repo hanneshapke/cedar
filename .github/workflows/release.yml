@@ -15,9 +15,10 @@
 #   APPLE_CERTIFICATE           the Developer ID Application certificate as a base64 .p12
 #   APPLE_CERTIFICATE_PASSWORD  its password
 #   APPLE_SIGNING_IDENTITY      "Developer ID Application: <name> (<team id>)"
-#   APPLE_ID                    the Apple ID that owns the certificate
-#   APPLE_PASSWORD              an app-specific password for it (appleid.apple.com)
-#   APPLE_TEAM_ID               the ten-character team id
+#   ASC_KEY_ID                  an App Store Connect API key's id, which notarizes the app and DMG
+#   ASC_ISSUER_ID               its issuer id
+#   ASC_KEY_P8                  the contents of its AuthKey_<id>.p8
+# The API key is the one testflight.yml uploads with (App Manager role; Developer is enough here).
 # GHCR uses the workflow's own GITHUB_TOKEN. See macos/README.md for the one-time steps.
 
 name: Release
@@ -207,15 +208,16 @@ jobs:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # tauri-bundler notarizes with the API key only while APPLE_ID is unset, so leave it out
+      APPLE_API_KEY: ${{ secrets.ASC_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
     steps:
       - name: Signing and notarization secrets are set
         # Without them tauri-bundler only warns and ships an unsigned app, so check up front.
         run: |
           missing=
-          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY APPLE_API_ISSUER ASC_KEY_P8; do
             eval "val=\${$v:-}"
             [ -n "$val" ] || missing="$missing $v"
           done
@@ -248,6 +250,14 @@ jobs:
           install -m 0755 "target/${{ matrix.target }}/release/cedar-chat" "macos/binaries/cedar-chat-${{ matrix.target }}"
           ls -l macos/binaries
 
+      - name: Write the App Store Connect key
+        # A file outside the checkout, for tauri-bundler (APPLE_API_KEY_PATH) and notarytool.
+        run: |
+          set -eu
+          key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$key"
+          echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+
       - uses: cargo-bins/cargo-binstall@main
 
       - name: Install the Tauri CLI
@@ -269,7 +279,7 @@ jobs:
           mkdir -p dist
           dmg="dist/Cedar-$VERSION-$ARCH.dmg"
           mv "$built" "$dmg"
-          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
           xcrun stapler staple "$dmg"
           spctl -a -t open --context context:primary-signature -vv "$dmg" || echo "::warning::spctl did not accept $dmg on this runner; check it on a Mac after the release"
 
