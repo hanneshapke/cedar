@@ -310,6 +310,7 @@ const TOOLS = {
   show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title, icon: 'recipe' },
   plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i), icon: 'trip' },
   compare_stocks: { doing: 'Looking up', did: 'Looked up', subject: (i) => stocksSubject(i), icon: 'stocks' },
+  search_products: { doing: 'Shopping for', did: 'Shopped for', subject: (i) => (typeof i.query === 'string' ? i.query : ''), icon: 'shop' },
   ask_user: { doing: 'Asking', did: 'Asked', subject: (i) => questionsSubject(i), icon: 'question' },
 };
 
@@ -327,6 +328,7 @@ const ICONS = {
   recipe: '<path d="M6 3v7a3 3 0 0 0 6 0V3M9 3v18M18 3c-2 1-3 3-3 7h3v11"/>',
   trip: '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 17h5a3 3 0 0 0 0-6h-2a3 3 0 0 1 0-6h5"/>',
   stocks: '<path d="M3 17l5-5 4 3 5-7 4 4"/><path d="M17 8h4v4"/>',
+  shop: '<path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/>',
   question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-9 8"/>',
   tool: '<path d="M14 4a4 4 0 0 0 5 5l-9 9a2.5 2.5 0 0 1-3.5-3.5l9-9z"/><path d="M5 19l1-1"/>',
@@ -367,6 +369,7 @@ const WIDGETS = {
   show_recipe: { lib: () => cedarRecipe, waiting: 'finding a photo…', count: (s) => `${s.steps.length} step${s.steps.length === 1 ? '' : 's'}` },
   plan_trip: { lib: () => cedarTransit, waiting: 'finding routes…', count: (s) => `${s.options.length} way${s.options.length === 1 ? '' : 's'} to go` },
   compare_stocks: { lib: () => cedarStocks, waiting: 'reading prices and news…', count: (s) => (s.stocks.length === 1 ? '1 stock' : `${s.stocks.length} stocks compared`) },
+  search_products: { lib: () => cedarProducts, waiting: 'searching the store…', count: (s) => `${s.options.length} option${s.options.length === 1 ? '' : 's'}` },
 };
 
 const subjectOf = (tool) => (TOOLS[tool.name]?.subject(tool.input || {}) || '').trim();

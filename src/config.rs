@@ -25,6 +25,9 @@ pub const DEFAULT_DRIVING_BASE_URL: &str = "https://router.project-osrm.org";
 /// Yahoo Finance's chart API (daily prices; the symbol goes under it) and search API (news).
 pub const DEFAULT_STOCKS_CHART_URL: &str = "https://query1.finance.yahoo.com/v8/finance/chart";
 pub const DEFAULT_STOCKS_NEWS_URL: &str = "https://query1.finance.yahoo.com/v1/finance/search";
+/// Best Buy's Products API (the search filter goes after it in parentheses), which
+/// `search_products` reads products, prices, photos, and ratings from.
+pub const DEFAULT_PRODUCTS_API_URL: &str = "https://api.bestbuy.com/v1/products";
 pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const DEFAULT_GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 /// What "Connect Google" asks for: the account's address, and what the default tools need.
@@ -177,6 +180,12 @@ pub struct Config {
     /// The chart API `compare_stocks` reads prices from, and the search API it reads news from.
     pub stocks_chart_url: String,
     pub stocks_news_url: String,
+    /// Offer the `search_products` tool (on by default), which still needs `bestbuy_api_key`.
+    pub products: bool,
+    /// Best Buy developer API key. `search_products` is only offered to the model when this is set.
+    pub bestbuy_api_key: Option<String>,
+    /// The Products API `search_products` searches; overridable so tests can point at a mock.
+    pub products_api_url: String,
     /// Offer the `ask_user` tool (on by default), which ends a run with clarifying questions.
     pub ask_user: bool,
     /// The Google account the Gmail and Calendar tools act for. Set when either is on.
@@ -425,6 +434,12 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_STOCKS_CHART_URL.into()),
             stocks_news_url: get("STOCKS_NEWS_URL")
                 .unwrap_or_else(|| DEFAULT_STOCKS_NEWS_URL.into()),
+            products: flag("PRODUCTS", true)?,
+            bestbuy_api_key: get("BESTBUY_API_KEY")
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty()),
+            products_api_url: get("PRODUCTS_API_URL")
+                .unwrap_or_else(|| DEFAULT_PRODUCTS_API_URL.into()),
             ask_user: flag("ASK_USER", true)?,
             google_oauth,
             google_apis,
@@ -669,6 +684,31 @@ mod tests {
         assert!(!cfg.stocks);
         assert_eq!(cfg.stocks_chart_url, "http://localhost:9999/chart");
         assert_eq!(cfg.stocks_news_url, "http://localhost:9999/search");
+    }
+
+    #[test]
+    fn product_search_needs_a_key_and_its_api_can_be_moved() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.products);
+        assert_eq!(cfg.bestbuy_api_key, None);
+        assert_eq!(cfg.products_api_url, DEFAULT_PRODUCTS_API_URL);
+        let blank =
+            Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("BESTBUY_API_KEY", " ")]))
+                .unwrap();
+        assert_eq!(blank.bestbuy_api_key, None, "a blank key is no key");
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("PRODUCTS", "off"),
+            ("BESTBUY_API_KEY", " bb-secret "),
+            ("PRODUCTS_API_URL", "http://localhost:9999/products"),
+        ]))
+        .unwrap();
+        assert!(!cfg.products);
+        assert_eq!(cfg.bestbuy_api_key.as_deref(), Some("bb-secret"));
+        assert_eq!(cfg.products_api_url, "http://localhost:9999/products");
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("PRODUCTS", "maybe")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("PRODUCTS"), "{err}");
     }
 
     #[test]

@@ -708,6 +708,7 @@ const TOOL_ICONS = {
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
   show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', compare_stocks: 'chart',
   show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', ask_user: 'tool',
+  search_products: 'search',
 };
 
 function toolSummary(name, input) {
@@ -793,9 +794,10 @@ function toolResult(view, d) {
     label.append(actions);
   }
   details.querySelector('.tool-body').append(label, out);
-  // A map is the point of show_map, a recipe card of show_recipe, and the stock card of
-  // compare_stocks, so each sits under the call instead of inside the collapsed details.
-  const card = { show_map: cedarMap, show_recipe: cedarRecipe, compare_stocks: cedarStocks }[details.dataset.tool];
+  // A map is the point of show_map, a recipe card of show_recipe, the stock card of
+  // compare_stocks, and the product card of search_products, so each sits under the call
+  // instead of inside the collapsed details.
+  const card = { show_map: cedarMap, show_recipe: cedarRecipe, compare_stocks: cedarStocks, search_products: cedarProducts }[details.dataset.tool];
   if (card && !d.is_error) {
     const spec = card.parse(text);
     if (spec) {

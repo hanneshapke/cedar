@@ -88,6 +88,17 @@ Both interfaces have all of these, except where noted:
   side and the news, which can be filtered by symbol; headlines open in a new tab. Cedar style puts
   it on the stage as a card, Claude style under the tool call (`stock-view.js` and
   `stock-view.css`; see [Stock news and privacy](#stock-news-and-privacy))
+- A `search_products` tool call (when cedar offers the tool) is drawn as a product card: a tile per
+  option with its photo, badges for cedar's picks (best rated, best value, most popular), the price
+  with the regular price and the savings, its stars with the number of reviews, and the verdict on
+  them. Pick a tile to see the product below: a photo gallery (click a thumbnail, or use the arrow
+  keys), the price, availability, a View at Best Buy button that opens the store page in a new tab,
+  the reading of its reviews (the stars, the rating adjusted for how many reviews there are on a
+  bar, the verdict and how much to trust it, and a sentence), the description, key features, and
+  specs, then a strip of comparable options with how much more or less each costs. Click one to
+  see it in turn, with a button back to the option it was compared to. Cedar style puts it on the
+  stage as a card, Claude style under the tool call (`product-view.js` and `product-view.css`; see
+  [Product photos and privacy](#product-photos-and-privacy))
 - An `ask_user` tool call, when the agent needs a clarification before it goes on, is drawn as a
   form: each question with its options as radio buttons (pick one) or checkboxes (pick any), and
   always a field for an answer in your own words (for an open question, that field alone). Send
@@ -129,7 +140,7 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
-`stock-view.css` for stocks, `clarify-view.js` and `clarify-view.css` for clarifying questions,
+`stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `clarify-view.js` and `clarify-view.css` for clarifying questions,
 `schedule.js` and `schedule.css` for scheduled agents, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
 push, and
@@ -180,6 +191,17 @@ them from the `https` addresses Yahoo Finance gave, without a referrer, and leav
 fail. Headlines are links that open in a new tab without a referrer. Everything else is set as text,
 so nothing in the tool's result runs in the page. The chat server makes no requests for stocks;
 cedar asks Yahoo Finance (see the top-level README). Set `STOCKS=off` on cedar to remove the tool.
+
+### Product photos and privacy
+
+Product photos are the one thing on a product card that comes from elsewhere: the browser loads
+them from the `https` addresses cedar found, normally `pisces.bbystatic.com`, without a referrer,
+so Best Buy sees the viewer's IP address and which photos were shown, but not this page; a photo
+that fails to load leaves a placeholder. The View at Best Buy button is a link that opens in a new
+tab without a referrer. Everything else is set as text, so nothing in the tool's result runs in
+the page. The chat server makes no requests for products; cedar asks Best Buy's API with its own
+key (see the top-level README). Remove `BESTBUY_API_KEY` or set `PRODUCTS=off` on cedar to remove
+the tool.
 
 ## Configuration
 

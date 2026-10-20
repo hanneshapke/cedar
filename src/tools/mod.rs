@@ -1,8 +1,8 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
 //! run's sandbox; `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and
-//! `show_recipe`, `plan_trip`, and `compare_stocks` run in the cedar process, because the sandbox
-//! has no network; so does `ask_user`, which only checks its questions; `browser` drives the run's browser
-//! container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
+//! `show_recipe`, `plan_trip`, `compare_stocks`, and `search_products` run in the cedar process,
+//! because the sandbox has no network; so does `ask_user`, which only checks its questions;
+//! `browser` drives the run's browser container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
 //! in the cedar process too. Personal tools written in Python (`custom`) run in the sandbox like
 //! `run_python`.
 
@@ -22,6 +22,7 @@ mod map;
 mod mcp;
 mod open_meteo;
 mod pdf;
+mod products;
 mod python;
 mod recipe;
 mod stocks;
@@ -40,6 +41,7 @@ pub use files::{ReadFile, WriteFile};
 pub use map::ShowMap;
 pub use mcp::{McpServer, McpTool};
 pub use pdf::GeneratePdf;
+pub use products::SearchProducts;
 pub use python::RunPython;
 pub use recipe::ShowRecipe;
 pub use stocks::CompareStocks;
@@ -123,8 +125,9 @@ impl ToolSet {
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
-    /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `ask_user` unless `ASK_USER` is
-    /// off, `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
+    /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `search_products` if a Best Buy
+    /// API key is configured (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
+    /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
     /// personal Python tools in `TOOLS_DIR`, if set.
     pub fn from_config(cfg: &Config) -> Result<Self> {
@@ -178,6 +181,12 @@ impl ToolSet {
             set.tools.push(Box::new(CompareStocks::new(
                 cfg.stocks_chart_url.clone(),
                 cfg.stocks_news_url.clone(),
+            )?));
+        }
+        if let Some(key) = cfg.bestbuy_api_key.as_ref().filter(|_| cfg.products) {
+            set.tools.push(Box::new(SearchProducts::new(
+                key.clone(),
+                cfg.products_api_url.clone(),
             )?));
         }
         if cfg.ask_user {
@@ -356,6 +365,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("recipes", "Recipes"),
     ("transit", "Directions & transit"),
     ("stocks", "Stocks & markets"),
+    ("products", "Shopping"),
     ("ask_user", "Clarifying questions"),
     ("browser", "Browser"),
     ("gmail", "Gmail"),
@@ -374,6 +384,7 @@ pub fn group_of(name: &str) -> &'static str {
         "show_recipe" => "recipes",
         "plan_trip" => "transit",
         "compare_stocks" => "stocks",
+        "search_products" => "products",
         "ask_user" => "ask_user",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
@@ -478,6 +489,14 @@ impl<'a> ToolView<'a> {
                 " For stock, ETF, or index prices, comparisons, market news, or whether to buy, \
                  hold, or sell, use compare_stocks; it shows charts, headlines, and a rating with \
                  its reasoning, which you then weigh in your own call.",
+            );
+        }
+        if self.get("search_products").is_some() {
+            note.push_str(
+                " When the user wants to buy, compare, or choose a product, use search_products; \
+                 it shows the options with photos, prices, ratings, and comparable alternatives, \
+                 which you then weigh in a short recommendation. Do not search the web for \
+                 products or scrape shops.",
             );
         }
         if self.get(ASK_USER).is_some() {
@@ -727,6 +746,15 @@ mod tests {
         assert!(note.contains("ask with ask_user"), "{note}");
         assert!(note.contains("![caption](path.png)"), "{note}");
         assert!(!note.contains("browser tool"));
+        assert!(
+            !note.contains("search_products"),
+            "no Best Buy key, no shopping note"
+        );
+        let shopping =
+            ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BESTBUY_API_KEY", "k")]))
+                .unwrap()
+                .environment_note("none");
+        assert!(shopping.contains("use search_products"), "{shopping}");
         let browser = ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BROWSER", "on")]))
             .unwrap()
             .environment_note("none");
@@ -788,6 +816,38 @@ mod tests {
                 "compare_stocks",
                 "ask_user"
             ])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("BESTBUY_API_KEY", "k")])),
+            with(&[
+                "fetch_url",
+                "download_file",
+                "weather_forecast",
+                "show_map",
+                "show_recipe",
+                "plan_trip",
+                "compare_stocks",
+                "search_products",
+                "ask_user"
+            ])
+        );
+        assert_eq!(
+            tool_names(&cfg(&[
+                ("CEDAR_API_KEYS", "a"),
+                ("BESTBUY_API_KEY", "k"),
+                ("PRODUCTS", "off")
+            ])),
+            with(&[
+                "fetch_url",
+                "download_file",
+                "weather_forecast",
+                "show_map",
+                "show_recipe",
+                "plan_trip",
+                "compare_stocks",
+                "ask_user"
+            ]),
+            "a key alone doesn't offer the tool when PRODUCTS is off"
         );
         assert_eq!(
             tool_names(&cfg(&[("CEDAR_API_KEYS", "a"), ("WEB_FETCH", "off")])),
@@ -895,6 +955,7 @@ mod tests {
         assert_eq!(group_of("download_file"), "web_fetch");
         assert_eq!(group_of("plan_trip"), "transit");
         assert_eq!(group_of("compare_stocks"), "stocks");
+        assert_eq!(group_of("search_products"), "products");
         assert_eq!(group_of("ask_user"), "ask_user");
         assert_eq!(group_of("gmail_search_threads"), "gmail");
         assert_eq!(group_of("calendar_list_events"), "calendar");
