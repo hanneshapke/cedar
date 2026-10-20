@@ -690,8 +690,7 @@ async fn choose(
     if !unavailable.is_empty() {
         trip["unavailable"] = json!(unavailable);
     }
-    let messages = [json!({ "role": "user", "content": trip.to_string() })];
-    let reply = model.ask(CHOOSE_SYSTEM, &messages).await?;
+    let reply = model.complete(CHOOSE_SYSTEM, &trip.to_string()).await?;
     parse_choice(&reply, options, request.has_car)
 }
 

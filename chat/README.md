@@ -88,14 +88,17 @@ Both interfaces have all of these, except where noted:
   side and the news, which can be filtered by symbol; headlines open in a new tab. Cedar style puts
   it on the stage as a card, Claude style under the tool call (`stock-view.js` and
   `stock-view.css`; see [Stock news and privacy](#stock-news-and-privacy))
-- A `search_products` tool call (when cedar offers the tool) is drawn as a product card: a tile per
-  option with its photo, badges for cedar's picks (best rated, best value, most popular), the price
-  with the regular price and the savings, its stars with the number of reviews, and the verdict on
-  them. Pick a tile to see the product below: a photo gallery (click a thumbnail, or use the arrow
-  keys), the price, availability, a View at Best Buy button that opens the store page in a new tab,
-  the reading of its reviews (the stars, the rating adjusted for how many reviews there are on a
-  bar, the verdict and how much to trust it, and a sentence), the description, key features, and
-  specs, then a strip of comparable options with how much more or less each costs. Click one to
+- A `search_products` tool call (when cedar offers the tool) is drawn as a product card: the
+  model's recommendation in a few sentences, then a tile per option with its photo, its badges
+  (top pick, best value, premium or budget pick, best rated), the price with the regular price and
+  the savings, its stars with the number of reviews, and the verdict on them. A price that comes
+  from review text rather than a store page is marked "≈", and one no page stated reads "Price at
+  the store". Pick a tile to see the product below: a photo gallery (click a thumbnail, or use the
+  arrow keys), the price, its stock when the store said, a View at button that opens the shop's
+  page in a new tab, why it fits and who it suits, its pros and cons, the reading of its reviews
+  (the stars, the rating adjusted for how many reviews there are on a bar, the verdict and how much
+  to trust it, and a sentence), the description, key features, specs, and the numbered sources
+  behind it, then a strip of comparable options with how much more or less each costs. Click one to
   see it in turn, with a button back to the option it was compared to. Cedar style puts it on the
   stage as a card, Claude style under the tool call (`product-view.js` and `product-view.css`; see
   [Product photos and privacy](#product-photos-and-privacy))
@@ -113,7 +116,7 @@ Both interfaces have all of these, except where noted:
   of the registered models with the levels each declares; an optional access token
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
-  [the models](#models) cedar can use, its Brave Search key and its Google account
+  [the models](#models) cedar can use, its Brave Search and Best Buy keys and its Google account
 - [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
@@ -195,13 +198,13 @@ cedar asks Yahoo Finance (see the top-level README). Set `STOCKS=off` on cedar t
 ### Product photos and privacy
 
 Product photos are the one thing on a product card that comes from elsewhere: the browser loads
-them from the `https` addresses cedar found, normally `pisces.bbystatic.com`, without a referrer,
-so Best Buy sees the viewer's IP address and which photos were shown, but not this page; a photo
-that fails to load leaves a placeholder. The View at Best Buy button is a link that opens in a new
-tab without a referrer. Everything else is set as text, so nothing in the tool's result runs in
-the page. The chat server makes no requests for products; cedar asks Best Buy's API with its own
-key (see the top-level README). Remove `BESTBUY_API_KEY` or set `PRODUCTS=off` on cedar to remove
-the tool.
+them from the `https` addresses cedar found on the shops' pages (or Brave's thumbnail server),
+without a referrer, so each shop sees the viewer's IP address and which photos were shown, but
+not this page; a photo that fails to load leaves a placeholder. The View at button and the sources
+are links that open in a new tab without a referrer. Everything else is set as text, so nothing in
+the tool's result runs in the page. The chat server makes no requests for products; cedar searches
+and reads the pages (see the top-level README). Remove the Brave and Best Buy keys (Settings →
+Server) or set `PRODUCTS=off` on cedar to remove the tool.
 
 ## Configuration
 
@@ -407,7 +410,7 @@ and the error is relayed.
 Settings → **Server** is where the models and the API keys go. Without
 `CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
 the page is unlocked with that token for the browser session and manages cedar's
-[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (checked with one search before it is saved, then shown
+[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (which also turns on product search) and its Best Buy key, which adds Best Buy's catalog to it (each checked with one search before it is saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's
@@ -485,6 +488,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT` / `DELETE /api/integrations/models/{id}` | Admin: register or change a model (the body is cedar's `{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "is_default"?}`, passed through as it is) or remove it |
 | `GET` / `PUT /api/integrations/settings` | Admin: cedar's server-wide settings (`GET` / `PUT /v1/admin/settings`, body `{"max_image_side"}`), relayed; the Server page's "Max image size" |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
+| `PUT` / `DELETE /api/integrations/bestbuy` | Admin: save (`{"api_key"}`) or remove cedar's Best Buy key |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |
 | `GET /api/oauth/google/callback` | Where Google sends the browser back. Needs no token: the single-use `state` cedar issued for the admin's "Connect Google" is the check. Redirects to `/?integrations=connected` or `/?integrations=error&message=…` |

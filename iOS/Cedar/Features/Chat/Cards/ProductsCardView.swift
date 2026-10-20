@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// A `search_products` card: a tile per option (its photo, cedar's picks, the price and savings,
-/// the stars and the verdict on the reviews), which also picks the product shown below; the
-/// selected product with its photos, availability, a link to the store, the reading of its
-/// reviews, features and specs; and the comparable options, which can be viewed in turn.
+/// A `search_products` card: the model's recommendation; a tile per option (its photo, its
+/// badges, the price and savings, the stars and the verdict on the reviews), which also picks the
+/// product shown below; the selected product with its photos, what is known of its stock, a link
+/// to the store, why it fits and who it suits, its pros and cons, the reading of its reviews,
+/// features, specs and sources; and the comparable options, which can be viewed in turn.
 struct ProductsCardView: View {
     let card: ProductsCard
     @State private var selected: String
@@ -32,6 +33,23 @@ struct ProductsCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            if let summary = card.summary {
+                VStack(alignment: .leading, spacing: 4) {
+                    CardLabel("The recommendation")
+                    Text(summary)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+            if let note = card.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             tiles
             Divider()
             detail
@@ -69,6 +87,9 @@ struct ProductsCardView: View {
 
     private var subtitle: String {
         var parts = [card.store, "\(card.options.count) of \(card.total.formatted()) result\(card.total == 1 ? "" : "s")"]
+        if let found = card.productsFound, let pages = card.pages {
+            parts = ["\(card.options.count) picked from \(found.formatted()) product\(found == 1 ? "" : "s") on \(pages.formatted()) page\(pages == 1 ? "" : "s")"]
+        }
         if let sort = card.sort { parts.append(sort) }
         return parts.joined(separator: " · ")
     }
@@ -101,7 +122,7 @@ struct ProductsCardView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
-                            PriceLine(product: p, currency: card.currency, large: false)
+                            PriceLine(product: p, currency: card.currency(of: p), large: false)
                             RatingLine(reviews: p.reviews)
                             VerdictPill(verdict: p.reviews.verdict, small: true)
                         }
@@ -121,7 +142,7 @@ struct ProductsCardView: View {
     }
 
     private func tileLabel(_ p: ProductsCard.Product) -> String {
-        var parts = [p.name, ProductFormat.money(p.price, card.currency)]
+        var parts = [p.name, priceText(p)]
         if let average = p.reviews.average {
             parts.append("\(ProductFormat.rating(average)) stars from \(p.reviews.count.formatted()) reviews")
         } else {
@@ -176,15 +197,37 @@ struct ProductsCardView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            PriceLine(product: p, currency: card.currency, large: true)
+            PriceLine(product: p, currency: card.currency(of: p), large: true)
             availability(p)
             if let url = p.url {
                 Link(destination: url) {
-                    Label("View at \(card.store)", systemImage: "arrow.up.right.square")
+                    Label("View at \(p.store ?? card.store)", systemImage: "arrow.up.right.square")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+            }
+            if p.why != nil || p.bestFor != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    CardLabel("Why it fits")
+                    if let why = p.why {
+                        Text(why)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let bestFor = p.bestFor {
+                        (Text("Best for: ").fontWeight(.semibold) + Text(bestFor))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if !p.pros.isEmpty || !p.cons.isEmpty {
+                HStack(alignment: .top, spacing: 16) {
+                    if !p.pros.isEmpty { prosCons("Pros", p.pros, icon: "plus.circle.fill", tint: .green) }
+                    if !p.cons.isEmpty { prosCons("Cons", p.cons, icon: "minus.circle.fill", tint: .red) }
+                }
             }
             ReviewsPanel(reviews: p.reviews)
             if let description = p.description {
@@ -216,7 +259,64 @@ struct ProductsCardView: View {
                     .font(.subheadline)
                 }
             }
+            if p.sources.contains(where: { card.sources[$0] != nil }) {
+                VStack(alignment: .leading, spacing: 4) {
+                    CardLabel("Sources")
+                    ForEach(p.sources, id: \.self) { n in
+                        if let source = card.sources[n] {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text("\(n)")
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                if let url = source.url {
+                                    Link(source.title, destination: url)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                } else {
+                                    Text(source.title)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                }
+                                if let host = source.host {
+                                    Text(host)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private func prosCons(_ title: String, _ items: [String], icon: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            CardLabel(title)
+            ForEach(items, id: \.self) { item in
+                Label {
+                    Text(item)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: icon).foregroundStyle(tint)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A product's price as text: about, when it comes from text rather than a store page.
+    private func priceText(_ p: ProductsCard.Product) -> String {
+        guard let price = p.price else { return "price at the store" }
+        return (p.priceChecked ? "" : "about ") + ProductFormat.money(price, card.currency(of: p))
+    }
+
+    /// How much more `c` costs than `p`, when both prices are known and in one currency.
+    private func gap(_ c: ProductsCard.Product, _ p: ProductsCard.Product) -> Double? {
+        guard let a = c.price, let b = p.price, card.currency(of: c) == card.currency(of: p) else { return nil }
+        return a - b
     }
 
     private func gallery(_ p: ProductsCard.Product) -> some View {
@@ -253,14 +353,23 @@ struct ProductsCardView: View {
         let ok: Bool
     }
 
-    private func availability(_ p: ProductsCard.Product) -> some View {
-        var chips = [Chip(text: p.online ? "Available online" : "Not available online", ok: p.online)]
-        if p.inStore { chips.append(Chip(text: "In store", ok: true)) }
-        if p.freeShipping { chips.append(Chip(text: "Free shipping", ok: true)) }
+    /// Only what the store said: a page that doesn't mention stock gets no chip for it.
+    private func chipList(_ p: ProductsCard.Product) -> [Chip] {
+        var chips: [Chip] = []
+        if let online = p.online { chips.append(Chip(text: online ? "In stock" : "Out of stock", ok: online)) }
+        if p.inStore == true { chips.append(Chip(text: "In store", ok: true)) }
+        if p.freeShipping == true { chips.append(Chip(text: "Free shipping", ok: true)) }
         if let condition = p.condition, condition.lowercased() != "new" { chips.append(Chip(text: condition, ok: false)) }
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) { chipRow(chips) }
-            VStack(alignment: .leading, spacing: 6) { chipRow(chips) }
+        return chips
+    }
+
+    @ViewBuilder private func availability(_ p: ProductsCard.Product) -> some View {
+        let chips = chipList(p)
+        if !chips.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { chipRow(chips) }
+                VStack(alignment: .leading, spacing: 6) { chipRow(chips) }
+            }
         }
     }
 
@@ -292,7 +401,8 @@ struct ProductsCardView: View {
                                 mini(c, against: p)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("\(c.name), \(ProductFormat.money(c.price, card.currency)), \(difference(c.price - p.price))")
+                            .accessibilityLabel([c.name, priceText(c), gap(c, p).map { difference($0, card.currency(of: c)) }]
+                                .compactMap { $0 }.joined(separator: ", "))
                             .accessibilityHint("Shows this product")
                         }
                     }
@@ -302,7 +412,7 @@ struct ProductsCardView: View {
     }
 
     private func mini(_ c: ProductsCard.Product, against p: ProductsCard.Product) -> some View {
-        let diff = c.price - p.price
+        let diff = gap(c, p)
         return HStack(alignment: .top, spacing: 8) {
             ProductPhoto(url: c.images.first, width: 56, height: 56)
             VStack(alignment: .leading, spacing: 3) {
@@ -311,12 +421,14 @@ struct ProductsCardView: View {
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(ProductFormat.money(c.price, card.currency))
+                    Text(c.price.map { (c.priceChecked ? "" : "≈ ") + ProductFormat.money($0, card.currency(of: c)) } ?? "Price at the store")
                         .font(.caption.weight(.bold))
                         .monospacedDigit()
-                    Text(difference(diff))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(abs(diff) < 0.005 ? Color.secondary : diff < 0 ? Color.green : Color.red)
+                    if let diff {
+                        Text(difference(diff, card.currency(of: c)))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(abs(diff) < 0.005 ? Color.secondary : diff < 0 ? Color.green : Color.red)
+                    }
                 }
                 RatingLine(reviews: c.reviews)
                 VerdictPill(verdict: c.reviews.verdict, small: true)
@@ -327,9 +439,9 @@ struct ProductsCardView: View {
         .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func difference(_ diff: Double) -> String {
+    private func difference(_ diff: Double, _ currency: String) -> String {
         if abs(diff) < 0.005 { return "same price" }
-        return "\(ProductFormat.money(abs(diff), card.currency)) \(diff < 0 ? "less" : "more")"
+        return "\(ProductFormat.money(abs(diff), currency)) \(diff < 0 ? "less" : "more")"
     }
 
     // MARK: Footer
@@ -366,7 +478,7 @@ private struct ReviewsPanel: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("No customer reviews yet")
+                    Text("No customer rating found")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -395,7 +507,7 @@ private struct ReviewsPanel: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if let summary = reviews.summary {
+            if let summary = reviews.summary, reviews.average != nil {
                 Text(summary)
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
@@ -460,16 +572,29 @@ private struct PriceLine: View {
     let large: Bool
 
     private var savings: Int? {
-        guard let regular = product.regularPrice, regular > 0 else { return nil }
-        let percent = Int((product.savingsPct ?? (1 - product.price / regular) * 100).rounded())
+        guard let price = product.price, let regular = product.regularPrice, regular > 0 else { return nil }
+        let percent = Int((product.savingsPct ?? (1 - price / regular) * 100).rounded())
         return percent >= 1 ? percent : nil
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        if let price = product.price {
+            priced(price)
+        } else {
+            Text("Price at the store")
+                .font(large ? .headline : .caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// A price from review or search text is marked "≈", with a word on where it comes from.
+    private func priced(_ price: Double) -> some View {
+        let amount = ProductFormat.money(price, currency)
+        return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(ProductFormat.money(product.price, currency))
+                Text((product.priceChecked ? "" : "≈ ") + amount)
                     .font(large ? .title2.weight(.bold) : .subheadline.weight(.bold))
+                    .accessibilityLabel(product.priceChecked ? amount : "about \(amount)")
                 if let regular = product.regularPrice {
                     Text(ProductFormat.money(regular, currency))
                         .font(large ? .subheadline : .caption2)
@@ -482,6 +607,11 @@ private struct PriceLine: View {
             .monospacedDigit()
             .lineLimit(1)
             if !large, let savings { SaveTag(percent: savings) }
+            if large, !product.priceChecked {
+                Text("From review or search text, not checked on a store page")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

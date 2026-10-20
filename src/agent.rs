@@ -223,18 +223,21 @@ pub async fn run_agent(
                     let result =
                         execute_tool_call(env, run, &tools, &ctx, &mut sources, events, cancel, block)
                             .await?;
+                    // A tool that asked the model something (search_products, plan_trip) counts toward the turn.
+                    if let Some(model) = &ctx.model {
+                        let used = model.take_usage();
+                        if used != Usage::default() {
+                            env.store.record_turn(run.id, turn, used).await?;
+                            let mut data = usage_event(env, run, turn, used);
+                            data["purpose"] = json!("tool");
+                            data["tool"] = block["name"].clone();
+                            events.emit(event::USAGE, data).await?;
+                        }
+                    }
                     if block["name"] == ASK_USER && result["is_error"] != true {
                         asked.extend(result["content"].as_str().and_then(question_text));
                     }
                     results.push(result);
-                }
-                // Tokens the tools spent asking the model something (e.g. `plan_trip` choosing).
-                let tool_usage = ctx.model.as_ref().map(|m| m.take_usage()).unwrap_or_default();
-                if tool_usage != Usage::default() {
-                    env.store.record_turn(run.id, turn, tool_usage).await?;
-                    let mut usage = usage_event(env, run, turn, tool_usage);
-                    usage["purpose"] = json!("tool");
-                    events.emit(event::USAGE, usage).await?;
                 }
                 push_message(env, run, &mut messages, "user", Value::Array(results)).await?;
                 // The model asked the user something: stop here, and the answer starts the next run.

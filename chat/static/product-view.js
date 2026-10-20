@@ -1,19 +1,24 @@
 'use strict';
 
 // Product display for cedar's `search_products` tool, shared by every UI. The tool's result is a
-// JSON object, {"query", "store", "currency", "total", "as_of", "sort", "filters", "options":
-// [{"sku", "name", "brand"?, "model"?, "color"?, "price", "regular_price"?, "savings_pct"?, "url"?,
-// "images": [url], "description"?, "features": [text], "specs": [{"name", "value"}], "category"?,
-// "availability": {"online", "in_store", "free_shipping"}, "rank"?, "reviews": {"average", "count",
-// "adjusted", "verdict", "confidence", "summary"}, "comparable": [sku]}], "others": [{... "image"?}],
-// "picks": {"best_rated"?, "best_value"?, "most_popular"?}, "disclaimer"}, and this turns it into a
-// card:
+// JSON object, {"query", "needs"?, "store", "currency", "total", "considered"?: {"pages",
+// "products"}, "as_of", "method"?: "model" | "ratings", "summary"?, "note"?, "options": [{"sku",
+// "name", "brand"?, "model"?, "price"?, "currency"?, "price_checked"?, "regular_price"?,
+// "savings_pct"?, "url"?, "store"?, "images": [url], "description"?, "features", "specs",
+// "category"?, "availability"?: {"online"?, "in_store"?, "free_shipping"?}, "reviews": {"average",
+// "count", "adjusted", "verdict", "confidence", "summary"}, "badges"?: [text], "why"?, "pros"?,
+// "cons"?, "best_for"?, "sources"?: [n], "comparable": [sku]}], "others": [...], "picks":
+// {"top_pick"?, "best_value"?, "best_rated"?, ...}, "sources"?: [{"n", "title", "url", "host"}],
+// "disclaimer"}, and this turns it into a card:
 //
-//   - a tile per option (its photo, badges for the picks, price and savings, stars and the number
-//     of reviews, the verdict), which picks the product shown below
-//   - the selected product: a photo gallery, the price, availability, a link to the store page,
-//     the reading of its reviews (stars, the adjusted rating on a bar, the verdict and how much to
-//     trust it), the description, key features, and specs
+//   - the model's recommendation in a sentence or three, when it weighed the options
+//   - a tile per option (its photo, its badges, price and savings, stars and the number of
+//     reviews, the verdict), which picks the product shown below
+//   - the selected product: a photo gallery, the price (marked when it comes from review text,
+//     not a store page), what is known of its stock, a link to the store, why it fits and who it
+//     suits, its pros and cons, the reading of its reviews (stars, the adjusted rating on a bar,
+//     the verdict and how much to trust it), the description, key features, specs, and the
+//     sources behind it
 //   - the comparable options for it, a strip of small tiles that can be viewed in turn
 //
 //   cedarProducts.parse(output) -> spec | null   the validated result, or null if it isn't one
@@ -31,9 +36,10 @@ const cedarProducts = (() => {
   const MAX_COMPARABLE = 4;
   const MAX_TEXT = 200;
   const MAX_LONG = 600;
-  const VERDICTS = { excellent: 'Excellent', good: 'Good', mixed: 'Mixed', poor: 'Poor', few: 'Few reviews', none: 'No reviews' };
+  const VERDICTS = { excellent: 'Excellent', good: 'Good', mixed: 'Mixed', poor: 'Poor', few: 'Few reviews', none: 'No rating' };
   const CONFIDENCE = { high: 'high confidence', medium: 'medium confidence', low: 'low confidence' };
-  const PICKS = [['best_rated', 'Best rated'], ['best_value', 'Best value'], ['most_popular', 'Most popular']];
+  const PICKS = [['top_pick', 'Top pick'], ['best_value', 'Best value'], ['best_rated', 'Best rated'], ['most_popular', 'Most popular']];
+  const MAX_SOURCES = 40;
   const SORTS = { best_selling: 'best selling first', rating: 'highest rated first', price_low: 'cheapest first', price_high: 'priciest first' };
   /** How far apart the tiles appear when the card is first shown; product-view.css uses it too. */
   const TILE_STAGGER_MS = 90;
@@ -68,11 +74,14 @@ const cedarProducts = (() => {
     if (!p || typeof p !== 'object') return null;
     const sku = num(p.sku) !== null ? String(Math.round(p.sku)) : str(p.sku, 40);
     const name = str(p.name);
-    const price = num(p.price);
-    if (!sku || !name || price === null || price < 0) return null;
+    const rawPrice = num(p.price);
+    const price = rawPrice !== null && rawPrice >= 0 ? rawPrice : null;
+    if (!sku || !name) return null;
     const images = (Array.isArray(p.images) ? p.images : [p.image]).map(https).filter(Boolean).slice(0, MAX_IMAGES);
     const regular = num(p.regular_price);
     const a = p.availability && typeof p.availability === 'object' ? p.availability : {};
+    const known = (v) => (typeof v === 'boolean' ? v : null);
+    const list = (v, max, n) => (Array.isArray(v) ? v : []).map((x) => str(x, max)).filter(Boolean).slice(0, n);
     return {
       sku,
       name,
@@ -81,15 +90,24 @@ const cedarProducts = (() => {
       color: str(p.color, 60),
       condition: str(p.condition, 40),
       price,
-      regularPrice: regular !== null && regular > price ? regular : null,
+      currency: /^[A-Za-z]{3}$/.test(str(p.currency, 3)) ? str(p.currency, 3).toUpperCase() : '',
+      priceChecked: p.price_checked !== false,
+      regularPrice: price !== null && regular !== null && regular > price ? regular : null,
       savingsPct: num(p.savings_pct),
       url: https(p.url),
+      store: str(p.store, 80),
       images,
       description: str(p.description, MAX_LONG),
       features: (Array.isArray(p.features) ? p.features : []).map((f) => str(f)).filter(Boolean).slice(0, MAX_FEATURES),
       specs: (Array.isArray(p.specs) ? p.specs : []).map((s) => [str(s?.name, 80), str(s?.value)]).filter(([n, v]) => n && v).slice(0, MAX_SPECS),
       category: str(p.category, 80),
-      availability: { online: a.online === true, inStore: a.in_store === true, freeShipping: a.free_shipping === true },
+      availability: { online: known(a.online), inStore: known(a.in_store), freeShipping: known(a.free_shipping) },
+      badges: Array.isArray(p.badges) ? list(p.badges, 40, 4) : null,
+      why: str(p.why, MAX_LONG),
+      pros: list(p.pros, 120, 4),
+      cons: list(p.cons, 120, 4),
+      bestFor: str(p.best_for, 160),
+      sources: (Array.isArray(p.sources) ? p.sources : []).map(num).filter((n) => n !== null).slice(0, 6),
       rank: num(p.rank),
       reviews: parseReviews(p.reviews),
       comparable: (Array.isArray(p.comparable) ? p.comparable : []).map((s) => (num(s) !== null ? String(Math.round(s)) : str(s, 40))).filter(Boolean).slice(0, MAX_COMPARABLE),
@@ -114,6 +132,17 @@ const cedarProducts = (() => {
       const sku = num(picks[key]) !== null ? String(Math.round(picks[key])) : str(picks[key], 40);
       if (known.has(sku)) badges.set(sku, [...(badges.get(sku) || []), label]);
     }
+    // An option that names its own badges (the tool's web search does) keeps exactly those.
+    for (const p of options) if (p.badges) badges.set(p.sku, p.badges);
+    const sources = new Map();
+    for (const s of (Array.isArray(data.sources) ? data.sources : []).slice(0, MAX_SOURCES)) {
+      const n = num(s?.n);
+      const title = str(s?.title) || str(s?.host, 80);
+      if (n !== null && title) sources.set(n, { title, url: https(s.url), host: str(s.host, 80) });
+    }
+    const considered = data.considered && typeof data.considered === 'object'
+      ? { pages: Math.max(0, Math.round(num(data.considered.pages) ?? 0)), products: Math.max(0, Math.round(num(data.considered.products) ?? 0)) }
+      : null;
     return {
       query: str(data.query, 160) || 'Products',
       store: str(data.store, 60) || 'the store',
@@ -121,6 +150,10 @@ const cedarProducts = (() => {
       total: Math.max(options.length + others.length, Math.round(num(data.total) ?? 0)),
       asOf: Date.parse(str(data.as_of, 40)),
       sort: SORTS[data.sort] || '',
+      considered,
+      summary: str(data.summary, 800),
+      note: str(data.note, 600),
+      sources,
       options,
       others,
       bySku,
@@ -141,6 +174,8 @@ const cedarProducts = (() => {
   }
 
   const count = (n) => `${n.toLocaleString()} review${n === 1 ? '' : 's'}`;
+  /** The currency a product's price is in: its own, else the card's. */
+  const cur = (p, spec) => p.currency || spec.currency;
 
   const ICONS = {
     bag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>',
@@ -193,7 +228,13 @@ const cedarProducts = (() => {
 
   function priceLine(p, currency, big) {
     const row = el('div', `cedar-products-price${big ? ' big' : ''}`);
-    row.append(el('span', 'now', money(p.price, currency)));
+    if (p.price === null) {
+      row.append(el('span', 'none', 'Price at the store'));
+      return row;
+    }
+    const now = el('span', `now${p.priceChecked ? '' : ' unchecked'}`, `${p.priceChecked ? '' : '≈ '}${money(p.price, currency)}`);
+    if (!p.priceChecked) now.title = 'From review or search text, not checked on a store page';
+    row.append(now);
     if (p.regularPrice !== null) {
       const was = el('s', 'was', money(p.regularPrice, currency));
       was.setAttribute('aria-label', `was ${money(p.regularPrice, currency)}`);
@@ -221,14 +262,14 @@ const cedarProducts = (() => {
     }
     b.append(el('span', 'name', p.name));
     if (p.brand) b.append(el('span', 'brand', p.brand));
-    b.append(priceLine(p, spec.currency, false));
+    b.append(priceLine(p, cur(p, spec), false));
     const r = p.reviews;
     const rating = el('span', 'rating');
     rating.append(stars(r.average, true));
     if (r.average !== null) rating.append(el('span', 'avg', r.average.toFixed(1)));
     rating.append(el('span', 'n', r.count ? `(${r.count.toLocaleString()})` : 'no reviews'));
     b.append(rating, verdictPill(r, true));
-    b.setAttribute('aria-label', `${p.name}, ${money(p.price, spec.currency)}, ${r.average !== null ? `${r.average.toFixed(1)} stars from ${count(r.count)}` : 'no reviews'}${badges.length ? `, ${badges.join(', ')}` : ''}`);
+    b.setAttribute('aria-label', `${p.name}, ${p.price === null ? 'price at the store' : money(p.price, cur(p, spec))}, ${r.average !== null ? `${r.average.toFixed(1)} stars from ${count(r.count)}` : 'no reviews'}${badges.length ? `, ${badges.join(', ')}` : ''}`);
     return b;
   }
 
@@ -284,7 +325,7 @@ const cedarProducts = (() => {
       head.append(el('span', 'avg', r.average.toFixed(1)));
       head.append(el('span', 'n', `from ${count(r.count)}`));
     } else {
-      head.append(el('span', 'n', 'No customer reviews yet'));
+      head.append(el('span', 'n', 'No customer rating found'));
     }
     box.append(head);
     if (r.adjusted !== null && r.count > 0) {
@@ -309,7 +350,7 @@ const cedarProducts = (() => {
     line.append(verdictPill(r, false));
     if (r.count > 0) line.append(el('span', 'conf', CONFIDENCE[r.confidence]));
     box.append(line);
-    if (r.summary) box.append(el('p', 'summary', r.summary));
+    if (r.summary && r.average !== null) box.append(el('p', 'summary', r.summary));
     return box;
   }
 
@@ -321,11 +362,12 @@ const cedarProducts = (() => {
       c.append(text);
       row.append(c);
     };
-    chip(p.availability.online ? 'Available online' : 'Not available online', p.availability.online);
+    // Only what the store said: a page that doesn't mention stock gets no chip for it.
+    if (p.availability.online !== null) chip(p.availability.online ? 'In stock' : 'Out of stock', p.availability.online);
     if (p.availability.inStore) chip('In store', true);
     if (p.availability.freeShipping) chip('Free shipping', true);
     if (p.condition && !/^new$/i.test(p.condition)) chip(p.condition, false);
-    return row;
+    return row.childElementCount ? row : null;
   }
 
   function comparableStrip(p, spec, state, select) {
@@ -340,19 +382,21 @@ const cedarProducts = (() => {
       b.append(picture(c.images[0], '', 'ph-mini'));
       const body = el('span', 'body');
       body.append(el('span', 'name', c.name));
-      const price = el('span', 'price', money(c.price, spec.currency));
-      if (c.regularPrice !== null) price.append(' ', el('s', 'was', money(c.regularPrice, spec.currency)));
+      const price = el('span', 'price', c.price === null ? 'Price at the store' : `${c.priceChecked ? '' : '≈ '}${money(c.price, cur(c, spec))}`);
+      if (c.regularPrice !== null) price.append(' ', el('s', 'was', money(c.regularPrice, cur(c, spec))));
       body.append(price);
       const rating = el('span', 'rating');
       rating.append(stars(c.reviews.average, true));
       rating.append(el('span', 'n', c.reviews.average !== null ? `${c.reviews.average.toFixed(1)} (${c.reviews.count.toLocaleString()})` : 'no reviews'));
       body.append(rating, verdictPill(c.reviews, true));
       b.append(body);
-      const diff = c.price - p.price;
-      const cmp = el('span', `diff ${diff < 0 ? 'less' : diff > 0 ? 'more' : 'same'}`,
-        Math.abs(diff) < 0.005 ? 'same price' : `${money(Math.abs(diff), spec.currency)} ${diff < 0 ? 'less' : 'more'}`);
-      b.append(cmp);
-      b.setAttribute('aria-label', `View ${c.name}, ${money(c.price, spec.currency)}`);
+      // A difference only means something between two prices in the same currency.
+      if (c.price !== null && p.price !== null && cur(c, spec) === cur(p, spec)) {
+        const diff = c.price - p.price;
+        b.append(el('span', `diff ${diff < 0 ? 'less' : diff > 0 ? 'more' : 'same'}`,
+          Math.abs(diff) < 0.005 ? 'same price' : `${money(Math.abs(diff), cur(c, spec))} ${diff < 0 ? 'less' : 'more'}`));
+      }
+      b.setAttribute('aria-label', `View ${c.name}, ${c.price === null ? 'price at the store' : money(c.price, cur(c, spec))}`);
       b.addEventListener('click', () => select(c.sku, spec.options.some((o) => o.sku === p.sku) ? p.sku : state.from));
       strip.append(b);
     }
@@ -392,17 +436,42 @@ const cedarProducts = (() => {
     info.append(name);
     const sub = [p.brand, p.model ? `Model ${p.model}` : '', p.color].filter(Boolean).join(' · ');
     if (sub) info.append(el('div', 'sub', sub));
-    info.append(priceLine(p, spec.currency, true));
-    info.append(availabilityChips(p));
+    info.append(priceLine(p, cur(p, spec), true));
+    const chips = availabilityChips(p);
+    if (chips) info.append(chips);
     if (p.url) {
       const link = el('a', 'cedar-products-link');
       link.href = p.url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.referrerPolicy = 'no-referrer';
-      link.append(`View at ${spec.store}`);
+      link.append(`View at ${p.store || spec.store}`);
       link.innerHTML += ICONS.out;
       info.append(link);
+    }
+    if (p.why || p.bestFor) {
+      const why = el('section', 'cedar-products-why');
+      why.append(el('div', 'cedar-products-label', 'Why it fits'));
+      if (p.why) why.append(el('p', '', p.why));
+      if (p.bestFor) {
+        const who = el('p', 'for');
+        who.append(el('strong', '', 'Best for: '), p.bestFor);
+        why.append(who);
+      }
+      info.append(why);
+    }
+    if (p.pros.length || p.cons.length) {
+      const pc = el('div', 'cedar-products-proscons');
+      for (const [label, items, cls] of [['Pros', p.pros, 'pros'], ['Cons', p.cons, 'cons']]) {
+        if (!items.length) continue;
+        const col = el('section', cls);
+        col.append(el('div', 'cedar-products-label', label));
+        const ul = el('ul');
+        for (const item of items) ul.append(el('li', '', item));
+        col.append(ul);
+        pc.append(col);
+      }
+      info.append(pc);
     }
     info.append(reviewsBlock(p));
     if (p.description) info.append(el('p', 'cedar-products-desc', p.description));
@@ -421,6 +490,30 @@ const cedarProducts = (() => {
       for (const [k, v] of p.specs) dl.append(el('dt', '', k), el('dd', '', v));
       s.append(dl);
       info.append(s);
+    }
+    const cited = p.sources.map((n) => [n, spec.sources.get(n)]).filter(([, s]) => s);
+    if (cited.length) {
+      const src = el('section', 'cedar-products-sources');
+      src.append(el('div', 'cedar-products-label', 'Sources'));
+      const ol = el('ol');
+      for (const [n, s] of cited) {
+        const li = el('li');
+        li.append(el('span', 'n', `${n}`));
+        if (s.url) {
+          const a = el('a', '', s.title);
+          a.href = s.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.referrerPolicy = 'no-referrer';
+          li.append(a);
+        } else {
+          li.append(el('span', '', s.title));
+        }
+        if (s.host) li.append(el('span', 'host', s.host));
+        ol.append(li);
+      }
+      src.append(ol);
+      info.append(src);
     }
     grid.append(info);
     panel.append(grid);
@@ -442,11 +535,19 @@ const cedarProducts = (() => {
     icon.innerHTML = ICONS.bag;
     const titles = el('div');
     titles.append(el('div', 'cedar-products-title', spec.query));
-    const parts = [spec.store, `${spec.options.length} of ${spec.total.toLocaleString()} result${spec.total === 1 ? '' : 's'}`];
+    const parts = spec.considered
+      ? [`${spec.options.length} picked from ${spec.considered.products.toLocaleString()} product${spec.considered.products === 1 ? '' : 's'} on ${spec.considered.pages.toLocaleString()} page${spec.considered.pages === 1 ? '' : 's'}`]
+      : [spec.store, `${spec.options.length} of ${spec.total.toLocaleString()} result${spec.total === 1 ? '' : 's'}`];
     if (spec.sort) parts.push(spec.sort);
     titles.append(el('div', 'cedar-products-sub', parts.join(' · ')));
     head.append(icon, titles);
     card.append(head);
+    if (spec.summary) {
+      const verdict = el('div', 'cedar-products-summary');
+      verdict.append(el('div', 'cedar-products-label', 'The recommendation'), el('p', '', spec.summary));
+      card.append(verdict);
+    }
+    if (spec.note) card.append(el('div', 'cedar-products-note', spec.note));
 
     const state = { selected: spec.options[0].sku, from: null };
     const tiles = el('div', 'cedar-products-options');

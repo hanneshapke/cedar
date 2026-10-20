@@ -1,179 +1,243 @@
+//! `search_products`: find products to buy in any category, from any shop, and recommend the
+//! best ones.
+//!
+//! 1. **Search.** Two Brave web searches, one for reviews and roundups ("best trail running shoes
+//!    review") and one for shops ("trail running shoes buy online"), and, with a Best Buy key,
+//!    Best Buy's catalog.
+//! 2. **Read.** The most promising pages are fetched (through the same public-addresses-only
+//!    client as `fetch_url`) and read for the schema.org product data shops embed: name, photos,
+//!    price, stock, and the customer rating with its review count (see [`super::product_page`]).
+//!    Review articles are kept as text.
+//! 3. **Reason.** The run's own model gets that evidence in one tool-free request and picks the
+//!    best options for the request, with why, pros, cons, and who each suits.
+//! 4. **Check.** The reply is held to the evidence: links and photos only come from the pages
+//!    and search results, a price is shown as checked only when a store page states it, and a
+//!    rating only when it comes with its review count. If the model can't be asked, or its reply
+//!    can't be used, the products found are ranked by their ratings instead.
+//!
+//! The chat front ends draw the result as a card (chat/static/product-view.js, and the iOS
+//! app's ProductsCardView).
+
+use super::bestbuy::{self, BestBuy};
+use super::fetch::WebClient;
+use super::product_page::{self, PageFacts};
+use super::web_search::{clean, BraveSearch};
 use super::{Tool, ToolContext};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use chrono::{SecondsFormat, Utc};
-use reqwest::StatusCode;
+use futures_util::future::join_all;
 use serde_json::{json, Map, Value};
+use std::sync::Arc;
 use std::time::Duration;
 
-const DEFAULT_COUNT: usize = 5;
-const MAX_COUNT: usize = 8;
-/// Products fetched per search: the options shown, plus the pool their comparable alternatives
-/// are picked from.
-const POOL_SIZE: usize = 24;
-const MAX_QUERY_CHARS: usize = 120;
-const MAX_WORDS: usize = 8;
-const MAX_IMAGES: usize = 6;
-const MAX_FEATURES: usize = 6;
-const MAX_SPECS: usize = 8;
-const MAX_COMPARABLE: usize = 4;
-/// Names, brands, features, and other short fields.
+const DEFAULT_COUNT: usize = 4;
+const MAX_COUNT: usize = 6;
+const MAX_QUERY_CHARS: usize = 160;
+const MAX_NEEDS_CHARS: usize = 600;
+/// Results asked for per search.
+const REVIEW_RESULTS: u64 = 8;
+const SHOP_RESULTS: u64 = 10;
+/// Pages read per call, at most this many shop pages and this many reviews among them.
+const MAX_PAGES: usize = 8;
+const MAX_SHOP_PAGES: usize = 5;
+const MAX_REVIEW_PAGES: usize = 3;
+const PAGE_BYTES: usize = 1_500_000;
+const PAGE_TIMEOUT: Duration = Duration::from_secs(12);
+/// Products kept from all the pages, for the model to choose from.
+const MAX_CANDIDATES: usize = 30;
+/// A page's text, for the model to read reviews in.
+const EXCERPT_CHARS: usize = 1800;
+/// The evidence sent to the model, in characters, before the instructions.
+const EVIDENCE_CHARS: usize = 32_000;
 const MAX_TEXT_CHARS: usize = 200;
-const MAX_DESCRIPTION_CHARS: usize = 400;
+const MAX_REASON_CHARS: usize = 500;
+const MAX_PROS: usize = 4;
+const MAX_COMPARABLE: usize = 3;
+const MAX_CITED: usize = 4;
 /// Fewer reviews than this and an average says little.
 const FEW_REVIEWS: u64 = 5;
 /// The adjusted rating shrinks the average toward `PRIOR_MEAN` as if `PRIOR_REVIEWS` typical
 /// reviews were added, so a 5.0 from three reviews ranks below a 4.6 from a thousand.
 const PRIOR_MEAN: f64 = 4.0;
 const PRIOR_REVIEWS: f64 = 15.0;
-/// The orders a search can come back in, with Best Buy's name for each.
-const SORTS: &[(&str, &str)] = &[
-    ("best_selling", "bestSellingRank.asc"),
-    ("rating", "customerReviewAverage.desc"),
-    ("price_low", "salePrice.asc"),
-    ("price_high", "salePrice.desc"),
+/// Hosts whose pages hold nothing to read without a browser.
+const SKIP_HOSTS: &[&str] = &["youtube.com", "youtu.be", "tiktok.com", "instagram.com"];
+/// The labels the model may give an option, and the badge each gets on the card.
+const LABELS: &[(&str, &str)] = &[
+    ("top_pick", "Top pick"),
+    ("best_value", "Best value"),
+    ("premium", "Premium pick"),
+    ("budget", "Budget pick"),
+    ("alternative", ""),
 ];
-const DEFAULT_SORT: &str = "best_selling";
-/// Words that narrow a keyword search without describing the product.
-const STOP_WORDS: &[&str] = &[
-    "a",
-    "an",
-    "the",
-    "for",
-    "with",
-    "and",
-    "or",
-    "of",
-    "to",
-    "in",
-    "on",
-    "best",
-    "good",
-    "top",
-    "cheap",
-    "cheapest",
-    "affordable",
-    "budget",
-    "new",
-    "buy",
-    "product",
-    "products",
-    "option",
-    "options",
-    "recommend",
-    "recommended",
-];
-/// The product attributes asked for, so a search doesn't carry the whole record.
-const SHOW: &str = "sku,name,manufacturer,modelNumber,color,condition,shortDescription,url,image,\
-                    images,salePrice,regularPrice,customerReviewAverage,customerReviewCount,\
-                    onlineAvailability,inStoreAvailability,freeShipping,features,details,\
-                    categoryPath,bestSellingRank,class";
-/// Best Buy allows a few requests a second on a developer key; one retry after this pause is
-/// enough.
-const RATE_LIMIT_PAUSE: Duration = Duration::from_secs(1);
-const STORE: &str = "Best Buy";
-const DISCLAIMER: &str = "Prices, sale savings, availability and ratings are Best Buy's (US) at \
-                          the time of the search and can change. The adjusted rating is a \
-                          statistical reading of the average and the number of reviews behind \
-                          it, not a judgment of the product.";
-const USER_AGENT: &str = concat!(
-    "cedar/",
-    env!("CARGO_PKG_VERSION"),
-    " (https://github.com/hanneshapke/cedar)"
-);
+const DISCLAIMER: &str = "Found with a web search and read from the stores' pages at the time of \
+                          the search; prices, stock and ratings change. The picks and their \
+                          reasons are the model's reading of those pages and reviews, so check \
+                          the store before you buy.";
 
-/// Searches a store's catalog for products and shows the user the options as a card drawn by the
-/// chat front end: each product's photos, price and sale savings, customer rating with the number
-/// of reviews behind it, availability, key features, and comparable alternatives.
-///
-/// The products come from Best Buy's Products API, which needs a free developer key. The tool
-/// runs in the cedar process, since the sandbox has no network and the key must stay out of it.
-/// It reads the reviews itself: an *adjusted* rating shrinks each product's average toward a
-/// typical one in proportion to how few reviews it rests on, and a verdict (`excellent`, `good`,
-/// `mixed`, `poor`, `few`, `none`) and a confidence say what the reviews amount to. The result is
-/// JSON: `{"query", "store", "currency", "total", "as_of", "sort", "filters", "options":
-/// [{"sku", "name", "brand", "price", "regular_price", "savings_pct", "images", "url",
-/// "description", "features", "specs", "category", "availability", "reviews": {"average",
-/// "count", "adjusted", "verdict", "confidence", "summary"}, "comparable": [sku], ...}],
-/// "others": [...], "picks": {"best_rated", "best_value", "most_popular"}, "disclaimer"}`.
+const SYSTEM: &str = "You are a careful, independent shopping advisor. You recommend products \
+    only from the evidence you are given: product data read from store pages, search results, \
+    and the text of review articles. Never invent a product, price, rating, link or fact the \
+    evidence does not support. Prefer products that fit the request and the stated needs, that \
+    reviewers recommend, and whose customer ratings rest on many reviews; weigh the price \
+    against what it buys. Say plainly when the evidence is thin. Reply with JSON only.";
+
+const INSTRUCTION: &str = "Pick the {count} best options for this request (fewer if the \
+    evidence supports fewer), best first. Reply with one JSON object and nothing else:
+{\"summary\": \"2-3 sentences: which one to buy and why, and what to watch out for\",
+ \"options\": [{\"name\": \"the product as it is sold\",
+   \"candidate\": \"C3, or null when the product only appears in an article or search result\",
+   \"sources\": [\"S1\", \"S4\"],
+   \"price\": 129.99, \"currency\": \"USD\",
+   \"label\": \"top_pick | best_value | premium | budget | alternative\",
+   \"why\": \"1-2 sentences on why it fits this request\",
+   \"pros\": [\"...\"], \"cons\": [\"...\"],
+   \"best_for\": \"who it suits, in a few words\",
+   \"compare_with\": [2, 3]}]}
+Rules: the first option is your top pick. Use a product's C id whenever it has one. Cite the S \
+ids of the sources behind what you say about it. Give a price only if a cited source or the \
+product data states it, else null. compare_with holds the numbers (1-based) of the other \
+options that are real alternatives to it. At most 4 pros and 4 cons, each a few words.";
+
+/// A product as a page or a catalog describes it. Every field but the name and the link may be
+/// missing.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Candidate {
+    pub name: String,
+    pub url: String,
+    /// Who sells it: the shop's host name, or the catalog's name.
+    pub store: String,
+    pub brand: Option<String>,
+    pub model: Option<String>,
+    pub description: Option<String>,
+    pub images: Vec<String>,
+    pub price: Option<f64>,
+    /// Only when it is above `price`.
+    pub regular_price: Option<f64>,
+    /// A three-letter code.
+    pub currency: Option<String>,
+    pub in_stock: Option<bool>,
+    pub in_store: Option<bool>,
+    pub free_shipping: Option<bool>,
+    /// Out of 5, and only with the number of reviews behind it.
+    pub rating: Option<f64>,
+    pub review_count: Option<u64>,
+    pub review_snippets: Vec<String>,
+    pub features: Vec<String>,
+    pub specs: Vec<(String, String)>,
+    pub category: Option<String>,
+}
+
+/// Finds products with a web search (and Best Buy's catalog, given a key), reads the pages, and
+/// asks the run's model to pick the best for the request. See the module docs.
 pub struct SearchProducts {
-    http: reqwest::Client,
-    api_key: String,
-    base_url: String,
+    brave: Option<BraveSearch>,
+    bestbuy: Option<BestBuy>,
+    web: Arc<WebClient>,
 }
 
 impl SearchProducts {
-    /// `base_url` is the Products API's collection endpoint, which the search filter goes after
-    /// in parentheses (see `DEFAULT_PRODUCTS_API_URL`).
-    pub fn new(api_key: String, base_url: String) -> Result<Self> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .user_agent(USER_AGENT)
-            .build()
-            .context("building HTTP client")?;
-        Ok(Self {
-            http,
-            api_key,
-            base_url: base_url.trim_end_matches('/').to_string(),
-        })
+    /// At least one of `brave` and `bestbuy` is needed for there to be anything to search.
+    pub fn new(brave: Option<BraveSearch>, bestbuy: Option<BestBuy>, web: Arc<WebClient>) -> Self {
+        Self {
+            brave,
+            bestbuy,
+            web,
+        }
     }
 
-    async fn send(&self, req: &Request, timeout: Duration) -> Result<reqwest::Response> {
-        let sort = SORTS
-            .iter()
-            .find(|(name, _)| *name == req.sort)
-            .map(|(_, by)| *by)
-            .unwrap_or(SORTS[0].1);
-        self.http
-            .get(format!("{}({})", self.base_url, filter(req)))
-            .header("Accept", "application/json")
-            .query(&[
-                ("apiKey", self.api_key.as_str()),
-                ("format", "json"),
-                ("show", SHOW),
-                ("sort", sort),
-                ("pageSize", &POOL_SIZE.to_string()),
-            ])
-            .timeout(timeout)
-            .send()
-            .await
-            .context("sending the product search")
+    async fn read_page(&self, url: &str, timeout: Duration) -> Result<PageFacts> {
+        let page = self
+            .web
+            .get(url, PAGE_BYTES, true, timeout.min(PAGE_TIMEOUT))
+            .await?;
+        let html = page.content_type.contains("html")
+            || (page.content_type.is_empty() && page.body.trim_ascii_start().starts_with(b"<"));
+        if !html {
+            bail!("{url} is not a web page");
+        }
+        let text = String::from_utf8_lossy(&page.body);
+        Ok(product_page::extract(&page.final_url, &text, EXCERPT_CHARS))
     }
 
-    /// The products matching `req`, in the order asked for, and how many matched in all.
-    async fn search(&self, req: &Request, timeout: Duration) -> Result<(Vec<Product>, u64)> {
-        let mut resp = self.send(req, timeout).await?;
-        if resp.status() == StatusCode::TOO_MANY_REQUESTS {
-            tokio::time::sleep(RATE_LIMIT_PAUSE).await;
-            resp = self.send(req, timeout).await?;
+    /// Search, read the pages, and collect what they say.
+    async fn gather(&self, req: &Request, timeout: Duration) -> Evidence {
+        let mut ev = Evidence::default();
+        if let Some(brave) = &self.brave {
+            let (review_q, shop_q) = queries(req);
+            // One search after the other: Brave's free plan allows one a second.
+            for (q, kind, count) in [
+                (review_q, Kind::Review, REVIEW_RESULTS),
+                (shop_q, Kind::Shop, SHOP_RESULTS),
+            ] {
+                match brave.results(&q, count, timeout).await {
+                    Ok(results) => {
+                        for r in &results {
+                            if let Some(src) = source_from_hit(r, kind) {
+                                if !ev.sources.iter().any(|s| s.url == src.url) {
+                                    ev.sources.push(src);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => ev.notes.push(format!("the search {q:?} failed: {e:#}")),
+                }
+                ev.queries.push(q);
+            }
+            let order = reading_order(&ev.sources);
+            let pages = join_all(
+                order
+                    .iter()
+                    .map(|&i| self.read_page(&ev.sources[i].url, timeout)),
+            )
+            .await;
+            for (i, page) in order.into_iter().zip(pages) {
+                match page {
+                    Ok(facts) => {
+                        let src = &mut ev.sources[i];
+                        src.read = true;
+                        src.image = facts.image;
+                        src.excerpt = facts.excerpt;
+                        if src.title.is_empty() {
+                            src.title = facts.title.unwrap_or_default();
+                        }
+                        if src.snippet.is_empty() {
+                            src.snippet = facts.description.unwrap_or_default();
+                        }
+                        for c in facts.products {
+                            add_candidate(&mut ev.candidates, c, i);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(url = %ev.sources[i].url, error = %format!("{e:#}"), "product page not read")
+                    }
+                }
+            }
         }
-        let status = resp.status();
-        let text = resp
-            .text()
-            .await
-            .context("reading the product search response")?;
-        match status {
-            s if s.is_success() => {}
-            StatusCode::BAD_REQUEST => {
-                bail!("{STORE} rejected the search: {}", error_message(&text))
+        if let Some(bb) = &self.bestbuy {
+            match bb
+                .candidates(&req.query, req.min_price, req.max_price, timeout)
+                .await
+            {
+                Ok(found) => {
+                    for c in found {
+                        ev.sources.push(Source {
+                            url: c.url.clone(),
+                            title: format!("{} at {}", c.name, bestbuy::STORE),
+                            host: "bestbuy.com".into(),
+                            kind: Kind::Catalog,
+                            read: true,
+                            ..Source::default()
+                        });
+                        let at = ev.sources.len() - 1;
+                        add_candidate(&mut ev.candidates, c, at);
+                    }
+                }
+                Err(e) => ev.notes.push(format!("{}: {e:#}", bestbuy::STORE)),
             }
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                bail!("{STORE} rejected the API key ({status})")
-            }
-            StatusCode::TOO_MANY_REQUESTS => {
-                bail!("{STORE}'s API is rate limited; wait a moment before searching again")
-            }
-            _ => bail!("{STORE} error {status}: {}", error_message(&text)),
         }
-        let body: Value =
-            serde_json::from_str(&text).context("parsing the product search response")?;
-        let products = body["products"]
-            .as_array()
-            .ok_or_else(|| anyhow!("{STORE} sent no product list"))?
-            .iter()
-            .filter_map(parse_product)
-            .collect();
-        Ok((products, body["total"].as_u64().unwrap_or(0)))
+        ev
     }
 }
 
@@ -184,94 +248,93 @@ impl Tool for SearchProducts {
     }
 
     fn description(&self) -> &str {
-        "Search Best Buy's catalog for products and show the user the options as a card in the \
-         chat: each product's photos, price and sale savings, customer rating with how many \
-         reviews it rests on, availability, key features, and comparable alternatives. Use it \
-         when the user wants to buy, compare, or choose a product: electronics, phones, laptops, \
-         TVs, headphones, cameras, games, appliances, and home gear. Give query as the words a \
-         shop's search box would take, e.g. \"noise cancelling headphones\" or \"65 inch OLED \
-         TV\", and the filters when the user named a budget or a minimum rating. The tool reads \
-         the reviews for you: each product's adjusted rating discounts a high average that rests \
-         on few reviews, with a verdict and a confidence. Afterwards, review the options in a few \
-         sentences: which one you would pick and why, weighing the ratings and the number of \
-         reviews behind them, the price against the comparable options, and the features; say \
-         when the reviews are too few to trust. Don't repeat the prices and ratings the card \
-         already shows."
+        "Find and compare products to buy, in any category and from any shop: shoes and \
+         clothing, electronics, home and kitchen, outdoor and sports gear, beauty, toys, and \
+         more. It searches the web for reviews and store pages, reads the product data on those \
+         pages (photos, price, stock, and customer ratings with how many reviews they rest on), \
+         weighs that evidence against the request to pick the best options, and shows them to \
+         the user as a card: photos, prices, a top pick with its reasons, pros and cons, who \
+         each suits, and comparable alternatives. Give query as what the user wants, e.g. \
+         \"trail running shoes for wide feet\" or \"carry-on suitcase\", needs for what matters \
+         to them (use, size, style, must-haves, brands to avoid), and the budget. The card shows \
+         the details, so afterwards answer in a sentence or two: your recommendation and \
+         anything to check before buying."
     }
 
     fn schema(&self) -> Value {
         json!({ "type": "object",
                 "properties": {
                     "query": { "type": "string",
-                               "description": "What to look for, as search words, e.g. \"wireless noise cancelling headphones\"." },
+                               "description": "What to look for, e.g. \"waterproof hiking boots for women\"." },
+                    "needs": { "type": "string",
+                               "description": "What matters to the user: how they'll use it, size or fit, style, must-haves, things to avoid." },
+                    "min_price": { "type": "number", "minimum": 0, "description": "The least it should cost." },
+                    "max_price": { "type": "number", "minimum": 0, "description": "The most it should cost." },
                     "count": { "type": "integer", "minimum": 1, "maximum": MAX_COUNT,
-                               "description": "How many options to show, default 5." },
-                    "min_price": { "type": "number", "minimum": 0, "description": "Only products at or above this price, in US dollars." },
-                    "max_price": { "type": "number", "minimum": 0, "description": "Only products at or below this price, in US dollars." },
-                    "min_rating": { "type": "number", "minimum": 1, "maximum": 5,
-                                    "description": "Only products whose customer rating is at least this, out of 5." },
-                    "in_stock": { "type": "boolean", "description": "Only products that can be ordered online now, default true." },
-                    "sort": { "type": "string", "enum": SORTS.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
-                              "description": "The order the options come in: best_selling (default), rating, price_low, or price_high." }
+                               "description": "How many options to recommend, default 4." }
                 },
                 "required": ["query"] })
     }
 
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
         let req = parse_input(input)?;
-        let (pool, total) = self.search(&req, ctx.timeout).await?;
-        if pool.is_empty() {
+        let ev = self.gather(&req, ctx.timeout).await;
+        if ev.sources.is_empty() {
+            let why = if ev.notes.is_empty() {
+                "nothing was found".to_string()
+            } else {
+                ev.notes.join("; ")
+            };
             bail!(
-                "no products found for {:?}; try fewer or different words, or looser filters",
+                "no products found for {:?} ({why}); try other words",
                 req.query
             );
         }
-        let rated: Vec<(Product, Reviews)> = pool
-            .into_iter()
-            .map(|p| {
-                let reviews = review_digest(p.average, p.count);
-                (p, reviews)
-            })
-            .collect();
-        let shown = req.count.min(rated.len());
-        let (options, others) = rated.split_at(shown);
 
-        let mut result = Map::new();
-        result.insert("query".into(), json!(req.query));
-        result.insert("store".into(), json!(STORE));
-        result.insert("currency".into(), json!("USD"));
-        result.insert("total".into(), json!(total.max(rated.len() as u64)));
-        result.insert(
-            "as_of".into(),
-            json!(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)),
-        );
-        result.insert("sort".into(), json!(req.sort));
-        result.insert("filters".into(), req.filters_json());
-        result.insert(
-            "options".into(),
-            Value::Array(
-                options
-                    .iter()
-                    .map(|(p, r)| {
-                        let mut v = product_json(p, r, true);
-                        v["comparable"] = json!(comparable(p, &rated));
-                        v
-                    })
-                    .collect(),
-            ),
-        );
-        result.insert(
-            "others".into(),
-            Value::Array(
-                others
-                    .iter()
-                    .map(|(p, r)| product_json(p, r, false))
-                    .collect(),
-            ),
-        );
-        result.insert("picks".into(), picks(options));
-        result.insert("disclaimer".into(), json!(DISCLAIMER));
-        Ok(Value::Object(result).to_string())
+        // Ask the model to weigh the evidence; fall back on the ratings if that doesn't work.
+        let asked = match &ctx.model {
+            None => Err(anyhow!("no model is available to weigh the options")),
+            Some(model) => {
+                let prompt = prompt(&req, &ev);
+                model
+                    .complete(SYSTEM, &prompt)
+                    .await
+                    .and_then(|reply| parse_reply(&reply))
+            }
+        };
+        let (method, summary, mut picks, note) = match asked {
+            Ok(reply) => {
+                let picks = assemble(&req, &ev, &reply.options);
+                if picks.is_empty() {
+                    let picks = by_ratings(&req, &ev);
+                    (
+                        "ratings",
+                        None,
+                        picks,
+                        Some("the model named no product found in the evidence".to_string()),
+                    )
+                } else {
+                    ("model", reply.summary, picks, None)
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %format!("{e:#}"), "search_products: falling back on ratings");
+                (
+                    "ratings",
+                    None,
+                    by_ratings(&req, &ev),
+                    Some(format!("{e:#}")),
+                )
+            }
+        };
+        if picks.is_empty() {
+            bail!(
+                "no products with a store page were found for {:?}; try other or fewer words",
+                req.query
+            );
+        }
+        link_comparable(&mut picks);
+        Ok(result(&req, &ev, method, summary, note, &picks).to_string())
     }
 }
 
@@ -280,65 +343,10 @@ impl Tool for SearchProducts {
 #[derive(Debug, PartialEq)]
 struct Request {
     query: String,
-    /// The keywords searched for, every one of which a product must match.
-    words: Vec<String>,
-    count: usize,
+    needs: Option<String>,
     min_price: Option<f64>,
     max_price: Option<f64>,
-    min_rating: Option<f64>,
-    in_stock: bool,
-    sort: &'static str,
-}
-
-impl Request {
-    fn filters_json(&self) -> Value {
-        let mut f = Map::new();
-        if let Some(p) = self.min_price {
-            f.insert("min_price".into(), json!(p));
-        }
-        if let Some(p) = self.max_price {
-            f.insert("max_price".into(), json!(p));
-        }
-        if let Some(r) = self.min_rating {
-            f.insert("min_rating".into(), json!(r));
-        }
-        f.insert("in_stock".into(), json!(self.in_stock));
-        Value::Object(f)
-    }
-}
-
-/// The search words in `query`: lower-cased runs of letters and digits, without the stop words.
-/// "under 300" (or "below $300") becomes the price cap instead, when none is set.
-fn keywords(query: &str, max_price: &mut Option<f64>) -> Vec<String> {
-    let tokens: Vec<String> = query
-        .to_lowercase()
-        .split(|c: char| !c.is_alphanumeric() && c != '$' && c != '.')
-        .map(|t| t.trim_matches(|c: char| c == '$' || c == '.').to_string())
-        .filter(|t| !t.is_empty())
-        .collect();
-    let mut words = Vec::new();
-    let mut i = 0;
-    while i < tokens.len() {
-        let t = &tokens[i];
-        if matches!(t.as_str(), "under" | "below" | "max") {
-            if let Some(price) = tokens.get(i + 1).and_then(|n| n.parse::<f64>().ok()) {
-                if max_price.is_none() && price > 0.0 {
-                    *max_price = Some(price);
-                }
-                i += 2;
-                continue;
-            }
-        }
-        if !STOP_WORDS.contains(&t.as_str())
-            && t.chars().all(char::is_alphanumeric)
-            && !words.contains(t)
-        {
-            words.push(t.clone());
-        }
-        i += 1;
-    }
-    words.truncate(MAX_WORDS);
-    words
+    count: usize,
 }
 
 fn parse_input(input: &Value) -> Result<Request> {
@@ -347,18 +355,17 @@ fn parse_input(input: &Value) -> Result<Request> {
         .map(str::trim)
         .filter(|q| !q.is_empty())
         .ok_or_else(|| {
-            anyhow!("give query: what to search for, e.g. \"noise cancelling headphones\"")
+            anyhow!("give query: what to look for, e.g. \"trail running shoes for wide feet\"")
         })?
         .chars()
         .take(MAX_QUERY_CHARS)
         .collect();
+    let needs = text(&input["needs"], MAX_NEEDS_CHARS);
     let money = |key: &str| -> Result<Option<f64>> {
         match &input[key] {
             Value::Null => Ok(None),
             v => {
-                let n = v
-                    .as_f64()
-                    .ok_or_else(|| anyhow!("{key} is a number of dollars"))?;
+                let n = v.as_f64().ok_or_else(|| anyhow!("{key} is a number"))?;
                 if !n.is_finite() || n < 0.0 {
                     bail!("{key} can't be negative");
                 }
@@ -367,15 +374,11 @@ fn parse_input(input: &Value) -> Result<Request> {
         }
     };
     let min_price = money("min_price")?;
-    let mut max_price = money("max_price")?;
+    let max_price = money("max_price")?;
     if let (Some(lo), Some(hi)) = (min_price, max_price) {
         if lo > hi {
             bail!("min_price ({lo}) is above max_price ({hi})");
         }
-    }
-    let words = keywords(&query, &mut max_price);
-    if words.is_empty() {
-        bail!("query {query:?} has no words to search for; name the product");
     }
     let count = match &input["count"] {
         Value::Null => DEFAULT_COUNT,
@@ -385,238 +388,548 @@ fn parse_input(input: &Value) -> Result<Request> {
             .ok_or_else(|| anyhow!("count is a whole number from 1 to {MAX_COUNT}"))?
             .min(MAX_COUNT as u64) as usize,
     };
-    let min_rating = match &input["min_rating"] {
-        Value::Null => None,
-        v => {
-            let r = v
-                .as_f64()
-                .filter(|r| (1.0..=5.0).contains(r))
-                .ok_or_else(|| anyhow!("min_rating is a number from 1 to 5"))?;
-            Some((r * 10.0).round() / 10.0)
-        }
-    };
-    let in_stock = match &input["in_stock"] {
-        Value::Null => true,
-        v => v
-            .as_bool()
-            .ok_or_else(|| anyhow!("in_stock is true or false"))?,
-    };
-    let sort = match input["sort"]
-        .as_str()
-        .map(|s| s.trim().to_ascii_lowercase())
-    {
-        None => DEFAULT_SORT,
-        Some(s) if s.is_empty() => DEFAULT_SORT,
-        Some(s) => SORTS
-            .iter()
-            .map(|(name, _)| *name)
-            .find(|name| *name == s)
-            .ok_or_else(|| {
-                anyhow!(
-                    "sort {s:?} is not one of {}",
-                    SORTS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
-                )
-            })?,
-    };
     Ok(Request {
         query,
-        words,
-        count,
+        needs,
         min_price,
         max_price,
-        min_rating,
-        in_stock,
-        sort,
+        count,
     })
 }
 
-/// The search as the Products API wants it in the path: `(search=a&search=b)&(salePrice<=300)`.
-/// The words hold letters and digits only (see [`keywords`]) and the numbers are checked, so
-/// nothing in it needs escaping.
-fn filter(req: &Request) -> String {
-    let words: Vec<String> = req.words.iter().map(|w| format!("search={w}")).collect();
-    let mut parts = vec![format!("({})", words.join("&"))];
-    if let Some(p) = req.min_price {
-        parts.push(format!("(salePrice>={p})"));
-    }
-    if let Some(p) = req.max_price {
-        parts.push(format!("(salePrice<={p})"));
-    }
-    if let Some(r) = req.min_rating {
-        parts.push(format!("(customerReviewAverage>={r})"));
-    }
-    if req.in_stock {
-        parts.push("(onlineAvailability=true)".into());
-    }
-    parts.join("&")
-}
-
-/// The message in an error body, which the API sends as JSON when it can, else its start.
-fn error_message(text: &str) -> String {
-    if let Ok(v) = serde_json::from_str::<Value>(text) {
-        for m in [
-            &v["error"]["message"],
-            &v["errorMessage"],
-            &v["message"],
-            &v["error"],
-        ] {
-            if let Some(s) = m.as_str().filter(|s| !s.trim().is_empty()) {
-                return s.trim().chars().take(MAX_TEXT_CHARS).collect();
-            }
-        }
-    }
-    let short: String = text.trim().chars().take(MAX_TEXT_CHARS).collect();
-    if short.is_empty() {
-        "no details".into()
+/// The two searches: one for reviews and roundups, one for shops.
+fn queries(req: &Request) -> (String, String) {
+    let budget = match (req.min_price, req.max_price) {
+        (_, Some(hi)) => format!(" under {}", plain_number(hi)),
+        (Some(lo), None) => format!(" over {}", plain_number(lo)),
+        (None, None) => String::new(),
+    };
+    let q = req.query.trim();
+    let review = if q.to_lowercase().starts_with("best ") {
+        format!("{q}{budget} review")
     } else {
-        short
+        format!("best {q}{budget} review")
+    };
+    (review, format!("{q}{budget} buy online"))
+}
+
+fn plain_number(n: f64) -> String {
+    if n.fract() == 0.0 {
+        format!("{}", n as i64)
+    } else {
+        format!("{n:.2}")
     }
 }
 
-// -- products ---------------------------------------------------------------------------------
+// -- evidence ---------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq)]
-struct Product {
-    sku: u64,
-    name: String,
-    brand: Option<String>,
-    model: Option<String>,
-    color: Option<String>,
-    condition: Option<String>,
-    description: Option<String>,
-    url: Option<String>,
-    /// https addresses, the main photo first.
-    images: Vec<String>,
-    price: f64,
-    regular_price: Option<f64>,
-    average: Option<f64>,
-    count: u64,
-    online: bool,
-    in_store: bool,
-    free_shipping: bool,
-    features: Vec<String>,
-    specs: Vec<(String, String)>,
-    /// The category path, without the store's root entry; the last one is the product's own.
-    categories: Vec<String>,
-    class: Option<String>,
-    rank: Option<u64>,
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+enum Kind {
+    /// From the search for reviews and roundups.
+    #[default]
+    Review,
+    /// From the search for shops.
+    Shop,
+    /// A catalog's product page.
+    Catalog,
 }
 
-impl Product {
-    fn category(&self) -> Option<&str> {
-        self.categories.last().map(String::as_str)
-    }
+#[derive(Debug, Clone, Default)]
+struct Source {
+    url: String,
+    title: String,
+    host: String,
+    snippet: String,
+    /// Brave's thumbnail for the result (served by Brave).
+    thumbnail: Option<String>,
+    kind: Kind,
+    /// The page's Open Graph picture, once read.
+    image: Option<String>,
+    excerpt: String,
+    read: bool,
+}
 
-    /// Percent off the regular price, when there is a sale.
-    fn savings_pct(&self) -> Option<f64> {
-        let regular = self.regular_price?;
-        if regular > self.price && regular > 0.0 {
-            Some(((1.0 - self.price / regular) * 1000.0).round() / 10.0)
-        } else {
-            None
-        }
-    }
+#[derive(Debug, Default)]
+struct Evidence {
+    sources: Vec<Source>,
+    /// Each product with the index of the source it came from.
+    candidates: Vec<(Candidate, usize)>,
+    queries: Vec<String>,
+    notes: Vec<String>,
 }
 
 /// `value` as trimmed text cut to `max` characters, or `None` if it is missing or blank.
 fn text(value: &Value, max: usize) -> Option<String> {
     value
         .as_str()
-        .map(str::trim)
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|s| !s.is_empty())
         .map(|s| s.chars().take(max).collect())
 }
 
-fn https(value: &Value) -> Option<String> {
+fn http_url(value: &Value) -> Option<String> {
     value
         .as_str()
         .map(str::trim)
-        .filter(|u| u.starts_with("https://") && !u.contains(char::is_whitespace))
+        .filter(|u| {
+            (u.starts_with("https://") || u.starts_with("http://"))
+                && !u.contains(char::is_whitespace)
+        })
         .map(String::from)
 }
 
-/// A product record as the Products API returns it. `None` without a sku, a name, and a price.
-fn parse_product(v: &Value) -> Option<Product> {
-    let sku = v["sku"]
-        .as_u64()
-        .or_else(|| v["sku"].as_str().and_then(|s| s.parse().ok()))?;
-    let name = text(&v["name"], MAX_TEXT_CHARS)?;
-    let price = v["salePrice"]
-        .as_f64()
-        .or_else(|| v["regularPrice"].as_f64())
-        .filter(|p| p.is_finite() && *p >= 0.0)?;
+/// A Brave web result as a source.
+fn source_from_hit(r: &Value, kind: Kind) -> Option<Source> {
+    let url = http_url(&r["url"])?;
+    let host = product_page::host(&url);
+    if SKIP_HOSTS
+        .iter()
+        .any(|h| host == *h || host.ends_with(&format!(".{h}")))
+    {
+        return None;
+    }
+    let mut snippet = clean(r["description"].as_str().unwrap_or_default());
+    for extra in r["extra_snippets"].as_array().into_iter().flatten().take(3) {
+        if let Some(e) = extra.as_str() {
+            snippet.push_str(" … ");
+            snippet.push_str(&clean(e));
+        }
+    }
+    Some(Source {
+        title: clean(r["title"].as_str().unwrap_or_default())
+            .chars()
+            .take(MAX_TEXT_CHARS)
+            .collect(),
+        snippet: snippet.chars().take(600).collect(),
+        thumbnail: http_url(&r["thumbnail"]["src"]).filter(|u| u.starts_with("https://")),
+        url,
+        host,
+        kind,
+        ..Source::default()
+    })
+}
 
-    // The main photo, then the others: the record's `image` and every `images` entry that is a
-    // picture, the one flagged primary first.
-    let mut images: Vec<String> = Vec::new();
-    let mut push = |u: Option<String>| {
-        if let Some(u) = u {
-            if !images.contains(&u) && images.len() < MAX_IMAGES {
-                images.push(u);
+/// Which sources to read, by index: shops first, then a few reviews, then the rest.
+fn reading_order(sources: &[Source]) -> Vec<usize> {
+    let shops = sources
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.kind == Kind::Shop)
+        .map(|(i, _)| i)
+        .take(MAX_SHOP_PAGES);
+    let reviews = sources
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.kind == Kind::Review)
+        .map(|(i, _)| i)
+        .take(MAX_REVIEW_PAGES);
+    let mut order: Vec<usize> = shops.chain(reviews).collect();
+    for (i, s) in sources.iter().enumerate() {
+        if order.len() >= MAX_PAGES {
+            break;
+        }
+        if !order.contains(&i) && s.kind != Kind::Catalog {
+            order.push(i);
+        }
+    }
+    order.truncate(MAX_PAGES);
+    order
+}
+
+/// Add `c` unless the same product from the same store is there already, keeping whichever
+/// says more.
+fn add_candidate(list: &mut Vec<(Candidate, usize)>, c: Candidate, source: usize) {
+    let detail = |c: &Candidate| {
+        c.price.is_some() as u8 * 2 + c.rating.is_some() as u8 * 2 + !c.images.is_empty() as u8
+    };
+    let key = |c: &Candidate| (c.name.to_lowercase(), c.store.clone());
+    if let Some(at) = list.iter().position(|(o, _)| key(o) == key(&c)) {
+        if detail(&c) > detail(&list[at].0) {
+            list[at] = (c, source);
+        }
+        return;
+    }
+    if list.len() < MAX_CANDIDATES {
+        list.push((c, source));
+    }
+}
+
+fn price_text(price: f64, currency: Option<&str>) -> String {
+    match currency {
+        Some(c) => format!("{price:.2} {c}"),
+        None => format!("{price:.2}"),
+    }
+}
+
+fn within_budget(req: &Request, price: Option<f64>) -> bool {
+    match price {
+        None => true,
+        Some(p) => req.min_price.is_none_or(|lo| p >= lo) && req.max_price.is_none_or(|hi| p <= hi),
+    }
+}
+
+/// The request and the evidence, as the model reads them.
+fn prompt(req: &Request, ev: &Evidence) -> String {
+    let mut out = format!("Shopping request: {}\n", req.query);
+    out.push_str(&format!(
+        "What matters to them: {}\n",
+        req.needs.as_deref().unwrap_or("(not stated)")
+    ));
+    let budget = match (req.min_price, req.max_price) {
+        (Some(lo), Some(hi)) => format!("{} to {}", plain_number(lo), plain_number(hi)),
+        (None, Some(hi)) => format!("at most {}", plain_number(hi)),
+        (Some(lo), None) => format!("at least {}", plain_number(lo)),
+        (None, None) => "(not stated)".into(),
+    };
+    out.push_str(&format!("Budget: {budget}\n"));
+    out.push_str(&format!("Today: {}\n\n", Utc::now().format("%Y-%m-%d")));
+
+    out.push_str("PRODUCTS FOUND ON STORE PAGES AND IN CATALOGS\n");
+    if ev.candidates.is_empty() {
+        out.push_str("(none: no page that was read had product data)\n");
+    }
+    for (i, (c, src)) in ev.candidates.iter().enumerate() {
+        let mut line = format!("[C{}] {}", i + 1, c.name);
+        if let Some(b) = &c.brand {
+            line.push_str(&format!(" | brand: {b}"));
+        }
+        if let Some(p) = c.price {
+            line.push_str(&format!(
+                " | price: {}",
+                price_text(p, c.currency.as_deref())
+            ));
+            if let Some(r) = c.regular_price {
+                line.push_str(&format!(" (was {r:.2})"));
+            }
+            if !within_budget(req, Some(p)) {
+                line.push_str(" (outside the budget)");
             }
         }
-    };
-    push(https(&v["image"]));
-    let listed: Vec<&Value> = v["images"].as_array().into_iter().flatten().collect();
-    for entry in listed
-        .iter()
-        .filter(|e| e["primary"].as_bool() == Some(true))
-        .chain(
-            listed
-                .iter()
-                .filter(|e| e["primary"].as_bool() != Some(true)),
-        )
-    {
-        push(https(&entry["href"]));
+        if let (Some(r), Some(n)) = (c.rating, c.review_count) {
+            line.push_str(&format!(
+                " | rating: {r:.1}/5 from {} reviews",
+                thousands(n)
+            ));
+        }
+        match c.in_stock {
+            Some(true) => line.push_str(" | in stock"),
+            Some(false) => line.push_str(" | out of stock"),
+            None => {}
+        }
+        line.push_str(&format!(" | store: {} (S{})\n", c.store, src + 1));
+        if !c.review_snippets.is_empty() {
+            line.push_str(&format!(
+                "    reviews: {}\n",
+                c.review_snippets
+                    .iter()
+                    .map(|r| format!("\"{r}\""))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
+        }
+        if !c.features.is_empty() {
+            line.push_str(&format!("    features: {}\n", c.features.join("; ")));
+        }
+        if let Some(d) = &c.description {
+            line.push_str(&format!(
+                "    about: {}\n",
+                d.chars().take(240).collect::<String>()
+            ));
+        }
+        out.push_str(&line);
     }
 
-    let features = v["features"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|f| text(&f["feature"], MAX_TEXT_CHARS).or_else(|| text(f, MAX_TEXT_CHARS)))
-        .take(MAX_FEATURES)
-        .collect();
-    let specs = v["details"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|d| Some((text(&d["name"], 80)?, text(&d["value"], MAX_TEXT_CHARS)?)))
-        .take(MAX_SPECS)
-        .collect();
-    let categories: Vec<String> = v["categoryPath"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|c| text(&c["name"], 80))
-        .filter(|n| n != STORE)
-        .collect();
+    out.push_str("\nSEARCH RESULTS AND PAGES\n");
+    for (i, s) in ev.sources.iter().enumerate() {
+        let kind = match s.kind {
+            Kind::Review => "review search",
+            Kind::Shop => "shop search",
+            Kind::Catalog => "catalog",
+        };
+        let mut entry = format!("[S{}] {} ({}, {kind})\n", i + 1, s.title, s.host);
+        if !s.snippet.is_empty() {
+            entry.push_str(&format!("    snippet: {}\n", s.snippet));
+        }
+        if !s.excerpt.is_empty() && out.len() + entry.len() + s.excerpt.len() < EVIDENCE_CHARS {
+            entry.push_str(&format!(
+                "    page text: {}\n",
+                s.excerpt.replace('\n', " / ")
+            ));
+        }
+        if out.len() + entry.len() > EVIDENCE_CHARS {
+            break;
+        }
+        out.push_str(&entry);
+    }
+    out.push_str("\n---\n");
+    out.push_str(&INSTRUCTION.replace("{count}", &req.count.to_string()));
+    out
+}
 
-    Some(Product {
-        sku,
-        name,
-        brand: text(&v["manufacturer"], 80),
-        model: text(&v["modelNumber"], 80),
-        color: text(&v["color"], 60),
-        condition: text(&v["condition"], 40),
-        description: text(&v["shortDescription"], MAX_DESCRIPTION_CHARS),
-        url: https(&v["url"]),
-        images,
-        price,
-        regular_price: v["regularPrice"].as_f64().filter(|p| p.is_finite()),
-        average: v["customerReviewAverage"]
-            .as_f64()
-            .filter(|a| (0.0..=5.0).contains(a)),
-        count: v["customerReviewCount"].as_u64().unwrap_or(0),
-        online: v["onlineAvailability"].as_bool().unwrap_or(false),
-        in_store: v["inStoreAvailability"].as_bool().unwrap_or(false),
-        free_shipping: v["freeShipping"].as_bool().unwrap_or(false),
-        features,
-        specs,
-        categories,
-        class: text(&v["class"], 80),
-        rank: v["bestSellingRank"].as_u64().filter(|r| *r > 0),
+// -- the model's reply --------------------------------------------------------------------------
+
+#[derive(Debug)]
+struct Reply {
+    summary: Option<String>,
+    options: Vec<Value>,
+}
+
+/// The JSON object in the model's reply, which may sit in a code fence or among other text.
+fn parse_reply(reply: &str) -> Result<Reply> {
+    let start = reply.find('{');
+    let end = reply.rfind('}');
+    let value: Value = match (start, end) {
+        (Some(s), Some(e)) if e > s => serde_json::from_str(&reply[s..=e])
+            .map_err(|e| anyhow!("the model's reply is not valid JSON: {e}"))?,
+        _ => bail!("the model's reply holds no JSON"),
+    };
+    let options = value["options"]
+        .as_array()
+        .cloned()
+        .ok_or_else(|| anyhow!("the model's reply has no options"))?;
+    Ok(Reply {
+        summary: text(&value["summary"], 800),
+        options,
     })
+}
+
+/// A recommended product, as the card shows it.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Pick {
+    name: String,
+    /// Its index in the evidence's candidates, when it has product data.
+    candidate: Option<usize>,
+    url: String,
+    store: String,
+    images: Vec<String>,
+    price: Option<f64>,
+    currency: Option<String>,
+    /// The price comes from a store page or catalog, not from text.
+    price_checked: bool,
+    label: Option<&'static str>,
+    why: Option<String>,
+    pros: Vec<String>,
+    cons: Vec<String>,
+    best_for: Option<String>,
+    /// Indexes of the sources behind it.
+    sources: Vec<usize>,
+    /// The model's 1-based option numbers it is compared with, then (see [`link_comparable`])
+    /// the indexes of those picks.
+    comparable: Vec<usize>,
+    /// Its 1-based number in the model's list.
+    rank: usize,
+}
+
+/// An id like `C3` (or `S3`, or a plain 3), as a 0-based index below `len`.
+fn index(v: &Value, prefix: char, len: usize) -> Option<usize> {
+    let n = match v {
+        Value::Number(n) => n.as_u64()?,
+        Value::String(s) => {
+            let s = s.trim();
+            let s = s
+                .strip_prefix(prefix)
+                .or_else(|| s.strip_prefix(prefix.to_ascii_lowercase()))
+                .unwrap_or(s);
+            s.parse().ok()?
+        }
+        _ => return None,
+    };
+    let n = usize::try_from(n).ok()?;
+    (1..=len).contains(&n).then(|| n - 1)
+}
+
+fn strings(v: &Value, max_items: usize, max_chars: usize) -> Vec<String> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| text(s, max_chars))
+        .take(max_items)
+        .collect()
+}
+
+/// Whether `text` mentions `price` as a number of its own ("129", "129.95", "1,299.00").
+fn mentions_price(text: &str, price: f64) -> bool {
+    let plain = text.replace(',', "");
+    let forms = [format!("{price:.2}"), plain_number(price)];
+    forms.iter().any(|f| {
+        plain.match_indices(f.as_str()).any(|(i, _)| {
+            let before = plain[..i].chars().next_back();
+            let after = plain[i + f.len()..].chars().next();
+            !before.is_some_and(|c| c.is_ascii_digit() || c == '.')
+                && !after.is_some_and(|c| c.is_ascii_digit())
+        })
+    })
+}
+
+/// The model's options, held to the evidence: each needs a link from a source or its product
+/// data, photos only come from those, and a price only from product data (checked) or the text
+/// of a source it cites. Options that can't be placed are left out.
+fn assemble(req: &Request, ev: &Evidence, options: &[Value]) -> Vec<Pick> {
+    let mut picks: Vec<Pick> = Vec::new();
+    for (i, o) in options.iter().enumerate().take(MAX_COUNT * 2) {
+        if picks.len() >= req.count {
+            break;
+        }
+        let Some(name) = text(&o["name"], MAX_TEXT_CHARS) else {
+            continue;
+        };
+        let candidate = index(&o["candidate"], 'C', ev.candidates.len());
+        let mut sources: Vec<usize> = Vec::new();
+        if let Some((_, src)) = candidate.map(|c| &ev.candidates[c]) {
+            sources.push(*src);
+        }
+        for s in o["sources"].as_array().into_iter().flatten() {
+            if let Some(s) = index(s, 'S', ev.sources.len()) {
+                if !sources.contains(&s) && sources.len() < MAX_CITED {
+                    sources.push(s);
+                }
+            }
+        }
+        let cand = candidate.map(|c| &ev.candidates[c].0);
+        let shop = sources
+            .iter()
+            .find(|&&s| ev.sources[s].kind != Kind::Review)
+            .or(sources.first())
+            .copied();
+        let url = match (cand, shop) {
+            (Some(c), _) => c.url.clone(),
+            (None, Some(s)) => ev.sources[s].url.clone(),
+            (None, None) => continue,
+        };
+        if picks.iter().any(|p| {
+            (candidate.is_some() && p.candidate == candidate)
+                || (p.url == url && p.name.eq_ignore_ascii_case(&name))
+        }) {
+            continue;
+        }
+        let mut images: Vec<String> = cand.map(|c| c.images.clone()).unwrap_or_default();
+        if images.is_empty() {
+            // Only a shop page's picture is a picture of the product; an article's is its own.
+            for &s in &sources {
+                let src = &ev.sources[s];
+                if src.kind != Kind::Review {
+                    images.extend(src.image.clone());
+                    images.extend(src.thumbnail.clone());
+                }
+            }
+            images.dedup();
+        }
+        let (price, currency, price_checked) = match cand.and_then(|c| c.price) {
+            Some(p) => (Some(p), cand.and_then(|c| c.currency.clone()), true),
+            None => {
+                let stated = o["price"].as_f64().filter(|p| p.is_finite() && *p > 0.0);
+                let seen = stated.filter(|&p| {
+                    sources.iter().any(|&s| {
+                        let src = &ev.sources[s];
+                        mentions_price(&src.snippet, p) || mentions_price(&src.excerpt, p)
+                    })
+                });
+                let cur = o["currency"]
+                    .as_str()
+                    .map(|c| c.trim().to_ascii_uppercase())
+                    .filter(|c| c.len() == 3 && c.chars().all(|c| c.is_ascii_alphabetic()));
+                (seen, seen.and(cur), false)
+            }
+        };
+        let label = o["label"].as_str().and_then(|l| {
+            let l = l.trim().to_ascii_lowercase();
+            LABELS.iter().map(|(k, _)| *k).find(|k| *k == l)
+        });
+        picks.push(Pick {
+            store: cand
+                .map(|c| c.store.clone())
+                .unwrap_or_else(|| product_page::host(&url)),
+            name,
+            candidate,
+            url,
+            images,
+            price,
+            currency,
+            price_checked,
+            label,
+            why: text(&o["why"], MAX_REASON_CHARS),
+            pros: strings(&o["pros"], MAX_PROS, 120),
+            cons: strings(&o["cons"], MAX_PROS, 120),
+            best_for: text(&o["best_for"], 160),
+            sources,
+            comparable: o["compare_with"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_u64)
+                .map(|n| n as usize)
+                .collect(),
+            rank: i + 1,
+        });
+    }
+    picks
+}
+
+/// The products found, ranked by their adjusted rating, for when the model can't weigh them.
+fn by_ratings(req: &Request, ev: &Evidence) -> Vec<Pick> {
+    let mut ranked: Vec<(usize, &Candidate, Reviews)> = ev
+        .candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, (c, _))| {
+            (c.price.is_some() || c.rating.is_some()) && within_budget(req, c.price)
+        })
+        .map(|(i, (c, _))| (i, c, review_digest(c.rating, c.review_count.unwrap_or(0))))
+        .collect();
+    ranked.sort_by(|a, b| {
+        let score = |r: &Reviews| r.adjusted.unwrap_or(0.0);
+        score(&b.2)
+            .total_cmp(&score(&a.2))
+            .then(b.2.count.cmp(&a.2.count))
+            .then(b.1.images.is_empty().cmp(&a.1.images.is_empty()).reverse())
+    });
+    ranked
+        .into_iter()
+        .take(req.count)
+        .enumerate()
+        .map(|(n, (i, c, _))| Pick {
+            name: c.name.clone(),
+            candidate: Some(i),
+            url: c.url.clone(),
+            store: c.store.clone(),
+            images: c.images.clone(),
+            price: c.price,
+            currency: c.currency.clone(),
+            price_checked: c.price.is_some(),
+            sources: vec![ev.candidates[i].1],
+            rank: n + 1,
+            ..Pick::default()
+        })
+        .collect()
+}
+
+/// Turn each pick's `comparable` from the model's option numbers into indexes of the picks;
+/// where the model named none, use the other picks closest in price.
+fn link_comparable(picks: &mut [Pick]) {
+    let ranks: Vec<usize> = picks.iter().map(|p| p.rank).collect();
+    let prices: Vec<Option<f64>> = picks.iter().map(|p| p.price).collect();
+    for (i, p) in picks.iter_mut().enumerate() {
+        let mut linked: Vec<usize> = Vec::new();
+        for n in &p.comparable {
+            if let Some(j) = ranks.iter().position(|r| r == n) {
+                if j != i && !linked.contains(&j) {
+                    linked.push(j);
+                }
+            }
+        }
+        if linked.is_empty() {
+            let mut others: Vec<usize> = (0..ranks.len()).filter(|&j| j != i).collect();
+            if let Some(own) = prices[i] {
+                others.sort_by(|&a, &b| {
+                    let gap = |j: usize| prices[j].map_or(f64::MAX, |q| (q - own).abs());
+                    gap(a).total_cmp(&gap(b))
+                });
+            }
+            linked = others;
+        }
+        linked.truncate(MAX_COMPARABLE);
+        p.comparable = linked;
+    }
 }
 
 // -- reviews ----------------------------------------------------------------------------------
@@ -655,7 +968,7 @@ fn review_digest(average: Option<f64>, count: u64) -> Reviews {
             adjusted: None,
             verdict: "none",
             confidence: "low",
-            summary: "No customer reviews yet.".into(),
+            summary: "No customer rating found.".into(),
         };
     };
     let n = count as f64;
@@ -706,349 +1019,563 @@ fn review_digest(average: Option<f64>, count: u64) -> Reviews {
 
 // -- the result -------------------------------------------------------------------------------
 
-/// Up to `MAX_COMPARABLE` other products from the pool that could stand in for `target`: those
-/// in its own category first, then its class, then any, the closest in price (and then the
-/// better reviewed) first.
-fn comparable(target: &Product, pool: &[(Product, Reviews)]) -> Vec<u64> {
-    let mut ranked: Vec<(u8, u64, i64, u64)> = pool
-        .iter()
-        .filter(|(p, _)| p.sku != target.sku)
-        .map(|(p, r)| {
-            let tier = if p.category().is_some() && p.category() == target.category() {
-                0
-            } else if p.class.is_some() && p.class == target.class {
-                1
-            } else {
-                2
-            };
-            let gap = if target.price > 0.0 {
-                ((p.price - target.price).abs() / target.price * 1000.0) as u64
-            } else {
-                (p.price * 100.0) as u64
-            };
-            let rating = -(r.adjusted.unwrap_or(0.0) * 10.0) as i64;
-            (tier, gap, rating, p.sku)
-        })
-        .collect();
-    ranked.sort();
-    ranked
-        .into_iter()
-        .take(MAX_COMPARABLE)
-        .map(|(_, _, _, sku)| sku)
-        .collect()
+fn pick_id(i: usize) -> String {
+    format!("P{}", i + 1)
 }
 
-/// Which of the shown options stands out: the best reviewed, the cheapest well-reviewed one, and
-/// the best seller. A pick is left out when no option qualifies.
-fn picks(options: &[(Product, Reviews)]) -> Value {
-    let judged = |r: &Reviews| r.count >= FEW_REVIEWS && r.adjusted.is_some();
-    let best_rated = options
-        .iter()
-        .filter(|(_, r)| judged(r))
-        .max_by(|(_, a), (_, b)| {
-            a.adjusted
-                .partial_cmp(&b.adjusted)
-                .unwrap()
-                .then(a.count.cmp(&b.count))
-        })
-        .map(|(p, _)| p.sku);
-    let best_value = options
-        .iter()
-        .filter(|(_, r)| judged(r) && r.adjusted.unwrap_or(0.0) >= 4.0)
-        .min_by(|(a, _), (b, _)| a.price.partial_cmp(&b.price).unwrap())
-        .map(|(p, _)| p.sku);
-    let most_popular = options
-        .iter()
-        .filter(|(p, _)| p.rank.is_some())
-        .min_by_key(|(p, _)| p.rank)
-        .or_else(|| {
-            options
-                .iter()
-                .filter(|(_, r)| r.count > 0)
-                .max_by_key(|(_, r)| r.count)
-        })
-        .map(|(p, _)| p.sku);
-    let mut out = Map::new();
-    for (key, sku) in [
-        ("best_rated", best_rated),
-        ("best_value", best_value),
-        ("most_popular", most_popular),
-    ] {
-        if let Some(sku) = sku {
-            out.insert(key.into(), json!(sku));
-        }
-    }
-    Value::Object(out)
-}
-
-/// A product as the result shows it: everything for a shown option, the essentials for one of
-/// the others.
-fn product_json(p: &Product, r: &Reviews, full: bool) -> Value {
+fn option_json(i: usize, p: &Pick, ev: &Evidence, badges: Vec<&str>) -> Value {
+    let cand = p.candidate.map(|c| &ev.candidates[c].0);
+    let reviews = review_digest(
+        cand.and_then(|c| c.rating),
+        cand.and_then(|c| c.review_count).unwrap_or(0),
+    );
     let mut v = Map::new();
-    v.insert("sku".into(), json!(p.sku));
+    v.insert("sku".into(), json!(pick_id(i)));
     v.insert("name".into(), json!(p.name));
-    if let Some(b) = &p.brand {
-        v.insert("brand".into(), json!(b));
-    }
     v.insert("price".into(), json!(p.price));
-    if let Some(regular) = p.regular_price.filter(|r| *r > p.price) {
-        v.insert("regular_price".into(), json!(regular));
-    }
-    if let Some(s) = p.savings_pct() {
-        v.insert("savings_pct".into(), json!(s));
-    }
-    if let Some(u) = &p.url {
-        v.insert("url".into(), json!(u));
-    }
-    if let Some(c) = p.category() {
-        v.insert("category".into(), json!(c));
-    }
-    v.insert(
-        "availability".into(),
-        json!({ "online": p.online, "in_store": p.in_store, "free_shipping": p.free_shipping }),
-    );
-    if let Some(rank) = p.rank {
-        v.insert("rank".into(), json!(rank));
-    }
-    v.insert(
-        "reviews".into(),
-        json!({
-            "average": r.average, "count": r.count, "adjusted": r.adjusted,
-            "verdict": r.verdict, "confidence": r.confidence, "summary": r.summary,
-        }),
-    );
-    if full {
-        if let Some(m) = &p.model {
+    v.insert("currency".into(), json!(p.currency));
+    v.insert("price_checked".into(), json!(p.price_checked));
+    v.insert("url".into(), json!(p.url));
+    v.insert("store".into(), json!(p.store));
+    v.insert("images".into(), json!(p.images));
+    if let Some(c) = cand {
+        if let Some(b) = &c.brand {
+            v.insert("brand".into(), json!(b));
+        }
+        if let Some(m) = &c.model {
             v.insert("model".into(), json!(m));
         }
-        if let Some(c) = &p.color {
-            v.insert("color".into(), json!(c));
+        if let (Some(price), Some(regular)) = (c.price, c.regular_price) {
+            if regular > price && p.price == Some(price) {
+                v.insert("regular_price".into(), json!(regular));
+                v.insert(
+                    "savings_pct".into(),
+                    json!(((1.0 - price / regular) * 1000.0).round() / 10.0),
+                );
+            }
         }
-        if let Some(c) = &p.condition {
-            v.insert("condition".into(), json!(c));
-        }
-        if let Some(d) = &p.description {
+        if let Some(d) = &c.description {
             v.insert("description".into(), json!(d));
         }
-        v.insert("images".into(), json!(p.images));
-        v.insert("features".into(), json!(p.features));
+        v.insert("features".into(), json!(c.features));
         v.insert(
             "specs".into(),
             Value::Array(
-                p.specs
+                c.specs
                     .iter()
                     .map(|(n, val)| json!({ "name": n, "value": val }))
                     .collect(),
             ),
         );
-        v.insert("categories".into(), json!(p.categories));
-    } else if let Some(first) = p.images.first() {
-        v.insert("image".into(), json!(first));
+        if let Some(cat) = &c.category {
+            v.insert("category".into(), json!(cat));
+        }
+        let mut avail = Map::new();
+        for (key, known) in [
+            ("online", c.in_stock),
+            ("in_store", c.in_store),
+            ("free_shipping", c.free_shipping),
+        ] {
+            if let Some(k) = known {
+                avail.insert(key.into(), json!(k));
+            }
+        }
+        if !avail.is_empty() {
+            v.insert("availability".into(), Value::Object(avail));
+        }
     }
+    v.insert(
+        "reviews".into(),
+        json!({
+            "average": reviews.average, "count": reviews.count, "adjusted": reviews.adjusted,
+            "verdict": reviews.verdict, "confidence": reviews.confidence, "summary": reviews.summary,
+        }),
+    );
+    v.insert("badges".into(), json!(badges));
+    if let Some(l) = p.label {
+        v.insert("label".into(), json!(l));
+    }
+    if let Some(w) = &p.why {
+        v.insert("why".into(), json!(w));
+    }
+    v.insert("pros".into(), json!(p.pros));
+    v.insert("cons".into(), json!(p.cons));
+    if let Some(b) = &p.best_for {
+        v.insert("best_for".into(), json!(b));
+    }
+    v.insert(
+        "sources".into(),
+        Value::Array(p.sources.iter().map(|&s| json!(s + 1)).collect()),
+    );
+    v.insert(
+        "comparable".into(),
+        Value::Array(p.comparable.iter().map(|&j| json!(pick_id(j))).collect()),
+    );
     Value::Object(v)
+}
+
+fn result(
+    req: &Request,
+    ev: &Evidence,
+    method: &str,
+    summary: Option<String>,
+    note: Option<String>,
+    picks: &[Pick],
+) -> Value {
+    let reviews: Vec<Reviews> = picks
+        .iter()
+        .map(|p| {
+            let c = p.candidate.map(|c| &ev.candidates[c].0);
+            review_digest(
+                c.and_then(|c| c.rating),
+                c.and_then(|c| c.review_count).unwrap_or(0),
+            )
+        })
+        .collect();
+    let best_rated = reviews
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.count >= FEW_REVIEWS && r.adjusted.is_some())
+        .max_by(|(_, a), (_, b)| {
+            a.adjusted
+                .unwrap_or(0.0)
+                .total_cmp(&b.adjusted.unwrap_or(0.0))
+                .then(a.count.cmp(&b.count))
+        })
+        .map(|(i, _)| i);
+    let mut picks_json = Map::new();
+    if method == "model" {
+        picks_json.insert("top_pick".into(), json!(pick_id(0)));
+    }
+    if let Some(i) = picks.iter().position(|p| p.label == Some("best_value")) {
+        picks_json.insert("best_value".into(), json!(pick_id(i)));
+    }
+    if let Some(i) = best_rated {
+        picks_json.insert("best_rated".into(), json!(pick_id(i)));
+    }
+
+    let options: Vec<Value> = picks
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let mut badges: Vec<&str> = Vec::new();
+            if method == "model" && i == 0 {
+                badges.push("Top pick");
+            }
+            if let Some(l) = p.label.filter(|l| *l != "top_pick") {
+                if let Some((_, badge)) = LABELS.iter().find(|(k, _)| *k == l) {
+                    if !badge.is_empty() {
+                        badges.push(badge);
+                    }
+                }
+            }
+            if best_rated == Some(i) {
+                badges.push("Best rated");
+            }
+            option_json(i, p, ev, badges)
+        })
+        .collect();
+
+    // The sources the picks cite, numbered as the model saw them.
+    let mut cited: Vec<usize> = picks.iter().flat_map(|p| p.sources.clone()).collect();
+    cited.sort_unstable();
+    cited.dedup();
+    let sources: Vec<Value> = cited
+        .iter()
+        .map(|&s| {
+            let src = &ev.sources[s];
+            json!({ "n": s + 1, "title": src.title, "url": src.url, "host": src.host })
+        })
+        .collect();
+
+    let stores = if ev.sources.iter().any(|s| s.kind != Kind::Catalog) {
+        "the web"
+    } else {
+        bestbuy::STORE
+    };
+    let mut out = Map::new();
+    out.insert("query".into(), json!(req.query));
+    if let Some(n) = &req.needs {
+        out.insert("needs".into(), json!(n));
+    }
+    out.insert("store".into(), json!(stores));
+    out.insert(
+        "currency".into(),
+        json!(picks
+            .iter()
+            .find_map(|p| p.currency.clone())
+            .unwrap_or_else(|| "USD".into())),
+    );
+    out.insert("total".into(), json!(ev.candidates.len().max(picks.len())));
+    out.insert(
+        "considered".into(),
+        json!({
+            "pages": ev.sources.iter().filter(|s| s.read).count(),
+            "products": ev.candidates.len(),
+            "searches": ev.queries,
+        }),
+    );
+    out.insert(
+        "as_of".into(),
+        json!(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)),
+    );
+    out.insert("method".into(), json!(method));
+    if let Some(s) = summary {
+        out.insert("summary".into(), json!(s));
+    }
+    let mut notes = ev.notes.clone();
+    if let Some(n) = note {
+        notes.insert(
+            0,
+            format!("Ranked by customer ratings, because the options could not be weighed: {n}."),
+        );
+    }
+    if !notes.is_empty() {
+        out.insert("note".into(), json!(notes.join(" ")));
+    }
+    out.insert("picks".into(), Value::Object(picks_json));
+    out.insert("options".into(), Value::Array(options));
+    out.insert("others".into(), json!([]));
+    out.insert("sources".into(), Value::Array(sources));
+    out.insert("disclaimer".into(), json!(DISCLAIMER));
+    Value::Object(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn record(sku: u64, name: &str, price: f64, avg: Option<f64>, count: u64) -> Value {
-        json!({
-            "sku": sku, "name": name, "manufacturer": "Sony", "modelNumber": format!("M{sku}"),
-            "salePrice": price, "regularPrice": price,
-            "customerReviewAverage": avg, "customerReviewCount": count,
-            "url": format!("https://shop.example/{sku}"),
-            "image": format!("https://img.example/{sku}.jpg"),
-            "onlineAvailability": true, "inStoreAvailability": false, "freeShipping": true,
-            "categoryPath": [{ "name": "Best Buy" }, { "name": "Audio" }, { "name": "Headphones" }],
-            "class": "HEADPHONES", "bestSellingRank": sku,
-        })
+    fn cand(name: &str, store: &str, price: Option<f64>, rating: Option<(f64, u64)>) -> Candidate {
+        Candidate {
+            name: name.into(),
+            url: format!("https://{store}/{}", name.replace(' ', "-")),
+            store: store.into(),
+            images: vec![format!("https://{store}/img.jpg")],
+            price,
+            currency: price.map(|_| "USD".into()),
+            rating: rating.map(|r| r.0),
+            review_count: rating.map(|r| r.1),
+            ..Candidate::default()
+        }
+    }
+
+    fn evidence() -> Evidence {
+        let src = |url: &str, kind: Kind, snippet: &str| Source {
+            url: url.into(),
+            title: format!("title of {url}"),
+            host: product_page::host(url),
+            snippet: snippet.into(),
+            kind,
+            read: true,
+            ..Source::default()
+        };
+        let mut ev = Evidence {
+            sources: vec![
+                src(
+                    "https://reviews.example/best-shoes",
+                    Kind::Review,
+                    "Our pick, the Cloud 5, costs $139.95.",
+                ),
+                src("https://shop.example/trail-5", Kind::Shop, ""),
+                src("https://outlet.example/speed", Kind::Shop, ""),
+            ],
+            ..Evidence::default()
+        };
+        ev.sources[2].image = Some("https://outlet.example/og.jpg".into());
+        add_candidate(
+            &mut ev.candidates,
+            cand(
+                "Trail Runner 5",
+                "shop.example",
+                Some(129.95),
+                Some((4.6, 1204)),
+            ),
+            1,
+        );
+        add_candidate(
+            &mut ev.candidates,
+            cand("Speedgoat", "outlet.example", Some(99.0), Some((5.0, 3))),
+            2,
+        );
+        ev
+    }
+
+    fn req(count: usize) -> Request {
+        parse_input(&json!({ "query": "trail running shoes", "count": count, "max_price": 150 }))
+            .unwrap()
     }
 
     #[test]
-    fn the_query_becomes_search_words_and_a_budget() {
-        let req = parse_input(
-            &json!({ "query": "Best wireless noise-cancelling headphones under $300" }),
+    fn input_is_read_and_checked() {
+        let r = parse_input(
+            &json!({ "query": "  rain jacket ", "needs": " light,\n packable ",
+                                     "min_price": 50, "max_price": 200.456 }),
         )
         .unwrap();
-        assert_eq!(req.words, ["wireless", "noise", "cancelling", "headphones"]);
-        assert_eq!(req.max_price, Some(300.0));
-        assert_eq!(req.count, DEFAULT_COUNT);
-        assert!(req.in_stock);
-        assert_eq!(req.sort, "best_selling");
+        assert_eq!(r.query, "rain jacket");
+        assert_eq!(r.needs.as_deref(), Some("light, packable"));
+        assert_eq!((r.min_price, r.max_price), (Some(50.0), Some(200.46)));
+        assert_eq!(r.count, DEFAULT_COUNT);
         assert_eq!(
-            filter(&req),
-            "(search=wireless&search=noise&search=cancelling&search=headphones)&(salePrice<=300)&(onlineAvailability=true)"
+            parse_input(&json!({ "query": "x", "count": 50 }))
+                .unwrap()
+                .count,
+            MAX_COUNT
         );
-
-        let req = parse_input(&json!({
-            "query": "65 inch OLED TV", "count": 20, "min_price": 800, "max_price": 1999.999,
-            "min_rating": 4.25, "in_stock": false, "sort": "Price_Low",
-        }))
-        .unwrap();
-        assert_eq!(req.words, ["65", "inch", "oled", "tv"]);
-        assert_eq!(req.count, MAX_COUNT, "count is capped");
-        assert_eq!((req.min_price, req.max_price), (Some(800.0), Some(2000.0)));
-        assert_eq!(req.min_rating, Some(4.3));
-        assert_eq!(req.sort, "price_low");
-        assert_eq!(
-            filter(&req),
-            "(search=65&search=inch&search=oled&search=tv)&(salePrice>=800)&(salePrice<=2000)&(customerReviewAverage>=4.3)"
-        );
-        // A max_price given outright wins over one in the words.
-        let req = parse_input(&json!({ "query": "laptop under 500", "max_price": 700 })).unwrap();
-        assert_eq!(req.max_price, Some(700.0));
-        assert_eq!(req.words, ["laptop"]);
-    }
-
-    #[test]
-    fn bad_input_is_rejected() {
-        let err = |input: Value| format!("{:#}", parse_input(&input).unwrap_err());
+        let err = |v: Value| format!("{:#}", parse_input(&v).unwrap_err());
         assert!(err(json!({})).starts_with("give query"));
-        assert!(err(json!({ "query": "the best" })).contains("no words to search for"));
-        assert!(err(json!({ "query": "tv", "count": 0 })).contains("count is a whole number"));
-        assert!(err(json!({ "query": "tv", "max_price": -1 })).contains("can't be negative"));
-        assert!(
-            err(json!({ "query": "tv", "min_price": 50, "max_price": 20 }))
-                .contains("above max_price")
+        assert!(err(json!({ "query": "x", "min_price": 9, "max_price": 1 })).contains("above"));
+        assert!(err(json!({ "query": "x", "count": 0 })).contains("count"));
+        assert_eq!(
+            queries(&req(4)),
+            (
+                "best trail running shoes under 150 review".to_string(),
+                "trail running shoes under 150 buy online".to_string()
+            )
         );
-        assert!(err(json!({ "query": "tv", "min_rating": 6 })).contains("from 1 to 5"));
-        assert!(err(json!({ "query": "tv", "in_stock": "yes" })).contains("true or false"));
-        assert!(err(json!({ "query": "tv", "sort": "newest" })).contains("not one of best_selling"));
+        let best = parse_input(&json!({ "query": "Best carry-on suitcase" })).unwrap();
+        assert_eq!(queries(&best).0, "Best carry-on suitcase review");
     }
 
     #[test]
-    fn a_product_record_is_read_with_its_pictures_first_primary() {
-        let mut v = record(
-            42,
-            "  WH-1000XM5 Wireless Headphones ",
-            299.99,
-            Some(4.7),
-            2345,
+    fn brave_hits_become_sources_and_pages_are_read_shops_first() {
+        let hit = json!({ "title": "<strong>Trail</strong> shoes &amp; more", "url": "https://www.shop.example/t",
+                          "description": "Cushioned.", "extra_snippets": ["Free returns."],
+                          "thumbnail": { "src": "https://imgs.search.brave.com/x.jpg" } });
+        let s = source_from_hit(&hit, Kind::Shop).unwrap();
+        assert_eq!(s.title, "Trail shoes & more");
+        assert_eq!(s.host, "shop.example");
+        assert_eq!(s.snippet, "Cushioned. … Free returns.");
+        assert_eq!(
+            s.thumbnail.as_deref(),
+            Some("https://imgs.search.brave.com/x.jpg")
         );
-        v["salePrice"] = json!(299.99);
-        v["regularPrice"] = json!(399.99);
-        v["images"] = json!([
-            { "href": "https://img.example/42-side.jpg", "primary": false },
-            { "href": "http://img.example/plain.jpg", "primary": true },
-            { "href": "https://img.example/42-front.jpg", "primary": true },
-            { "href": "https://img.example/42.jpg" },
+        assert!(source_from_hit(
+            &json!({ "url": "https://www.youtube.com/watch?v=1" }),
+            Kind::Review
+        )
+        .is_none());
+        assert!(source_from_hit(&json!({ "url": "ftp://x" }), Kind::Review).is_none());
+
+        let mut sources: Vec<Source> = (0..12)
+            .map(|i| Source {
+                url: format!("https://s{i}.example"),
+                kind: if i % 2 == 0 { Kind::Review } else { Kind::Shop },
+                ..Source::default()
+            })
+            .collect();
+        sources.push(Source {
+            kind: Kind::Catalog,
+            ..Source::default()
+        });
+        assert_eq!(reading_order(&sources), [1, 3, 5, 7, 9, 0, 2, 4]);
+    }
+
+    #[test]
+    fn the_same_product_from_one_store_is_kept_once_with_the_most_detail() {
+        let mut list = Vec::new();
+        add_candidate(&mut list, cand("Shoe", "a.example", None, None), 0);
+        add_candidate(&mut list, cand("shoe", "a.example", Some(10.0), None), 1);
+        add_candidate(&mut list, cand("Shoe", "b.example", Some(12.0), None), 2);
+        assert_eq!(list.len(), 2);
+        assert_eq!((list[0].0.price, list[0].1), (Some(10.0), 1));
+    }
+
+    #[test]
+    fn the_prompt_holds_the_request_the_products_and_the_sources() {
+        let p = prompt(&req(3), &evidence());
+        assert!(
+            p.starts_with("Shopping request: trail running shoes\n"),
+            "{p}"
+        );
+        assert!(p.contains("Budget: at most 150"));
+        assert!(p.contains(
+            "[C1] Trail Runner 5 | price: 129.95 USD | rating: 4.6/5 from 1,204 reviews | store: shop.example (S2)"
+        ), "{p}");
+        assert!(p.contains(
+            "[S1] title of https://reviews.example/best-shoes (reviews.example, review search)"
+        ));
+        assert!(p.contains("Pick the 3 best options"));
+    }
+
+    #[test]
+    fn the_models_options_are_held_to_the_evidence() {
+        let ev = evidence();
+        let options = json!([
+            { "name": "Trail Runner 5", "candidate": "C1", "sources": ["S1", "S9"], "price": 99,
+              "label": "top_pick", "why": "Grippy and cushioned.", "pros": ["grip", "", "comfort"],
+              "cons": ["narrow"], "best_for": "muddy trails", "compare_with": [4, 3, 2] },
+            { "name": "Made-up Shoe", "candidate": null, "sources": [] },
+            { "name": "Cloud 5", "candidate": null, "sources": ["S1"], "price": 139.95, "currency": "usd",
+              "label": "premium" },
+            { "name": "Speedgoat", "candidate": 2, "label": "best_value" },
+            { "name": "Trail Runner 5", "candidate": "C1" },
+            { "name": "Ghost", "sources": ["S3"], "price": 80 }
         ]);
-        v["features"] = json!([{ "feature": "30-hour battery" }, { "feature": "" }, "Multipoint"]);
-        v["details"] = json!([{ "name": "Weight", "value": "250 g" }, { "name": "Color" }]);
-        let p = parse_product(&v).unwrap();
-        assert_eq!(p.name, "WH-1000XM5 Wireless Headphones");
+        let picks = assemble(&req(4), &ev, options.as_array().unwrap());
+        let names: Vec<&str> = picks.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(
-            p.images,
-            [
-                "https://img.example/42.jpg",
-                "https://img.example/42-front.jpg",
-                "https://img.example/42-side.jpg"
-            ],
-            "the main photo, then the primary, then the rest; http is dropped"
+            names,
+            ["Trail Runner 5", "Cloud 5", "Speedgoat", "Ghost"],
+            "an option without a source is dropped, and a repeat too"
         );
-        assert_eq!(p.savings_pct(), Some(25.0));
-        assert_eq!(p.features, ["30-hour battery", "Multipoint"]);
-        assert_eq!(p.specs, [("Weight".to_string(), "250 g".to_string())]);
-        assert_eq!(p.categories, ["Audio", "Headphones"]);
-        assert_eq!(p.category(), Some("Headphones"));
-        assert_eq!(p.rank, Some(42));
+        let first = &picks[0];
+        assert_eq!(first.url, "https://shop.example/Trail-Runner-5");
         assert_eq!(
-            parse_product(&json!({ "sku": 1, "name": "x" })),
+            (first.price, first.price_checked),
+            (Some(129.95), true),
+            "the page's price wins"
+        );
+        assert_eq!(
+            first.sources,
+            [1, 0],
+            "its own page first; unknown ids dropped"
+        );
+        assert_eq!(first.pros, ["grip", "comfort"]);
+        assert_eq!(first.label, Some("top_pick"));
+        let cloud = &picks[1];
+        assert_eq!(
+            cloud.url, "https://reviews.example/best-shoes",
+            "only the article to link to"
+        );
+        assert!(
+            cloud.images.is_empty(),
+            "an article's picture isn't the product's"
+        );
+        assert_eq!(
+            (cloud.price, cloud.currency.as_deref(), cloud.price_checked),
+            (Some(139.95), Some("USD"), false),
+            "a price the cited text states is kept, unchecked"
+        );
+        let ghost = &picks[3];
+        assert_eq!(ghost.price, None, "a price no source states is dropped");
+        assert_eq!(
+            ghost.images,
+            ["https://outlet.example/og.jpg"],
+            "a shop page's picture is used"
+        );
+
+        let mut picks = picks;
+        link_comparable(&mut picks);
+        assert_eq!(
+            picks[0].comparable,
+            [2, 1],
+            "the model's numbers, as indexes of the picks; a dropped option's is skipped"
+        );
+        assert_eq!(picks[3].comparable, [0, 1, 2], "without a price, in order");
+        assert_eq!(
+            picks[2].comparable,
+            [0, 1, 3],
+            "else the closest in price first"
+        );
+    }
+
+    #[test]
+    fn without_the_model_the_products_are_ranked_by_their_ratings() {
+        let picks = by_ratings(&req(4), &evidence());
+        let names: Vec<&str> = picks.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["Trail Runner 5", "Speedgoat"],
+            "1,204 reviews beat three perfect ones"
+        );
+        assert!(picks.iter().all(|p| p.price_checked && p.label.is_none()));
+        let over = parse_input(&json!({ "query": "x", "max_price": 100 })).unwrap();
+        assert_eq!(
+            by_ratings(&over, &evidence()).len(),
+            1,
+            "over the budget is left out"
+        );
+    }
+
+    #[test]
+    fn replies_and_prices_are_read_carefully() {
+        let r = parse_reply(
+            "Sure!\n```json\n{\"summary\": \" Buy  it. \", \"options\": [{\"name\": \"A\"}]}\n```",
+        )
+        .unwrap();
+        assert_eq!(r.summary.as_deref(), Some("Buy it."));
+        assert_eq!(r.options.len(), 1);
+        assert!(parse_reply("no json here").is_err());
+        assert!(parse_reply("{\"summary\": \"x\"}").is_err());
+        assert!(mentions_price("Now $1,299.00 at the shop", 1299.0));
+        assert!(mentions_price("costs 129 dollars", 129.0));
+        assert!(!mentions_price("model 1290", 129.0));
+        assert!(!mentions_price("v2.129", 129.0));
+        assert_eq!(index(&json!("C2"), 'C', 3), Some(1));
+        assert_eq!(index(&json!("s3"), 'S', 3), Some(2));
+        assert_eq!(index(&json!(4), 'C', 3), None);
+        assert_eq!(index(&json!(null), 'C', 3), None);
+    }
+
+    #[test]
+    fn the_result_carries_badges_reviews_and_cited_sources() {
+        let ev = evidence();
+        let options = json!([
+            { "name": "Trail Runner 5", "candidate": "C1", "sources": ["S1"], "why": "Grippy." },
+            { "name": "Speedgoat", "candidate": "C2", "label": "best_value" }
+        ]);
+        let mut picks = assemble(&req(4), &ev, options.as_array().unwrap());
+        link_comparable(&mut picks);
+        let r = result(
+            &req(4),
+            &ev,
+            "model",
+            Some("Get the Trail Runner.".into()),
             None,
-            "a product needs a price"
+            &picks,
         );
+        assert_eq!(r["method"], "model");
+        assert_eq!(r["store"], "the web");
+        assert_eq!(r["currency"], "USD");
+        assert_eq!(r["summary"], "Get the Trail Runner.");
         assert_eq!(
-            parse_product(&json!({ "name": "x", "salePrice": 1 })),
-            None,
-            "and a sku"
+            r["picks"],
+            json!({ "top_pick": "P1", "best_value": "P2", "best_rated": "P1" })
         );
+        let first = &r["options"][0];
+        assert_eq!(first["sku"], "P1");
+        assert_eq!(first["badges"], json!(["Top pick", "Best rated"]));
+        assert_eq!(first["reviews"]["verdict"], "excellent");
+        assert_eq!(first["sources"], json!([2, 1]));
+        assert_eq!(first["comparable"], json!(["P2"]));
+        assert_eq!(r["options"][1]["badges"], json!(["Best value"]));
+        assert_eq!(r["options"][1]["reviews"]["verdict"], "few");
+        let cited: Vec<u64> = r["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["n"].as_u64().unwrap())
+            .collect();
+        assert_eq!(cited, [1, 2, 3]);
+
+        let fallback = result(
+            &req(4),
+            &ev,
+            "ratings",
+            None,
+            Some("the model timed out".into()),
+            &picks,
+        );
+        assert!(fallback["picks"].get("top_pick").is_none());
+        assert_eq!(fallback["options"][0]["badges"], json!(["Best rated"]));
+        assert!(fallback["note"]
+            .as_str()
+            .unwrap()
+            .starts_with("Ranked by customer ratings"));
     }
 
     #[test]
     fn reviews_are_read_with_the_count_in_mind() {
-        let none = review_digest(None, 0);
-        assert_eq!((none.verdict, none.adjusted), ("none", None));
-        assert_eq!(none.summary, "No customer reviews yet.");
+        assert_eq!(review_digest(None, 0).verdict, "none");
         let few = review_digest(Some(5.0), 3);
         assert_eq!((few.verdict, few.confidence), ("few", "low"));
-        assert_eq!(
-            few.summary,
-            "5.0 stars, but from only 3 reviews: too few to judge."
-        );
-        let many = review_digest(Some(4.6), 1234);
-        assert_eq!(
-            (many.verdict, many.confidence, many.adjusted),
-            ("excellent", "high", Some(4.6))
-        );
-        assert_eq!(
-            many.summary,
-            "4.6 stars from 1,234 reviews (4.6 adjusted for how many there are): consistently well reviewed."
-        );
-        // A perfect score from ten reviews is pulled below a 4.6 from a thousand.
         let ten = review_digest(Some(5.0), 10);
-        assert_eq!(
-            (ten.verdict, ten.confidence, ten.adjusted),
-            ("good", "low", Some(4.4))
-        );
+        assert_eq!((ten.verdict, ten.adjusted), ("good", Some(4.4)));
+        let many = review_digest(Some(4.6), 1234);
+        assert_eq!((many.verdict, many.confidence), ("excellent", "high"));
+        assert!(many.summary.starts_with("4.6 stars from 1,234 reviews"));
         assert_eq!(review_digest(Some(3.0), 20).verdict, "mixed");
         assert_eq!(review_digest(Some(2.5), 100).verdict, "poor");
-        assert_eq!(review_digest(Some(4.0), 500).verdict, "good");
-    }
-
-    #[test]
-    fn picks_and_comparable_options_come_from_the_pool() {
-        let pool: Vec<(Product, Reviews)> = [
-            (1, "A", 300.0, Some(4.8), 900),
-            (2, "B", 250.0, Some(4.6), 300),
-            (3, "C", 120.0, Some(4.4), 40),
-            (4, "D", 90.0, Some(5.0), 2),
-        ]
-        .into_iter()
-        .map(|(sku, name, price, avg, count)| {
-            let mut v = record(sku, name, price, avg, count);
-            if sku == 4 {
-                v["categoryPath"] =
-                    json!([{ "name": "Best Buy" }, { "name": "Audio" }, { "name": "Earbuds" }]);
-                v["bestSellingRank"] = Value::Null;
-            }
-            let p = parse_product(&v).unwrap();
-            let r = review_digest(p.average, p.count);
-            (p, r)
-        })
-        .collect();
-        let picks = picks(&pool);
-        assert_eq!(
-            picks,
-            json!({ "best_rated": 1, "best_value": 3, "most_popular": 1 })
-        );
-        // From B's point of view: A and C share its category (A closer in price), then D.
-        assert_eq!(comparable(&pool[1].0, &pool), [1, 3, 4]);
-        assert_eq!(
-            comparable(&pool[3].0, &pool),
-            [3, 2, 1],
-            "same class, closest price first"
-        );
-
-        let full = product_json(&pool[0].0, &pool[0].1, true);
-        assert_eq!(full["reviews"]["verdict"], "excellent");
-        assert!(full["images"].is_array() && full.get("image").is_none());
-        let brief = product_json(&pool[0].0, &pool[0].1, false);
-        assert_eq!(brief["image"], "https://img.example/1.jpg");
-        assert!(brief.get("images").is_none() && brief.get("features").is_none());
-    }
-
-    #[test]
-    fn error_bodies_are_summarized() {
-        assert_eq!(
-            error_message(r#"{"error": {"message": "Invalid query"}}"#),
-            "Invalid query"
-        );
-        assert_eq!(error_message(r#"{"errorMessage": "bad key"}"#), "bad key");
-        assert_eq!(
-            error_message("<html>Forbidden</html>"),
-            "<html>Forbidden</html>"
-        );
-        assert_eq!(error_message("  "), "no details");
     }
 }
