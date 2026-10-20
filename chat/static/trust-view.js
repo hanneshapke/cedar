@@ -140,6 +140,7 @@ const cedarTrust = (() => {
     installs: 'install packages',
     deletes: 'delete files',
     network: 'run code with internet access',
+    community: 'run a community tool',
   };
 
   /**

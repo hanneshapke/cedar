@@ -17,6 +17,7 @@ pub mod images;
 pub mod integrations;
 pub mod llm;
 pub mod manager;
+pub mod marketplace;
 pub mod mcp;
 pub mod models;
 pub mod plan;

@@ -38,3 +38,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked
+
+  # The community tool registry (registry/): every tool follows the rules and the index is up to
+  # date. cedar's own checks run on the tools too, in `tests/registry.rs` under `test`.
+  registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 registry/build_index.py --check

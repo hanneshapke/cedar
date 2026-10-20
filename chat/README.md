@@ -418,6 +418,13 @@ encrypted, and take effect on the next message without a restart. This needs thi
 a secret; see [Models](../README.md#models) and [Integrations](../README.md#integrations). Keys set
 in cedar's environment are shown as "Managed by environment" and can't be changed here.
 
+With cedar's `TOOLS_DIR` set, the page also lists the **Personal tools**: each one's source (local
+or community), version, what it asks for (internet hosts, secrets, packages, health data), and a
+field per secret it declares, saved by cedar like the API keys and never shown again. With
+`TOOLS_REGISTRY_URL` set too, **Community tools** lists the registry's tools, with Install,
+Update and Uninstall. Installing first spells out what the tool will be able to do and asks to
+confirm; see [Community tools](../README.md#community-tools).
+
 ### Models
 
 The **Models** list in that section shows every model cedar has registered: its label, the model
@@ -489,6 +496,12 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET` / `PUT /api/integrations/settings` | Admin: cedar's server-wide settings (`GET` / `PUT /v1/admin/settings`, body `{"max_image_side"}`), relayed; the Server page's "Max image size" |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `PUT` / `DELETE /api/integrations/bestbuy` | Admin: save (`{"api_key"}`) or remove cedar's Best Buy key |
+| `GET /api/integrations/tools` | Admin: cedar's personal tools with their permissions and which secrets are saved (`GET /v1/admin/tools`), relayed |
+| `PUT` / `DELETE /api/integrations/tools/{name}/secrets/{secret}` | Admin: save (`{"value"}`) or remove a secret a personal tool declares |
+| `POST /api/integrations/tools/{name}/setup` | Admin: install a personal tool's packages again |
+| `GET /api/integrations/marketplace` | Admin: the [community tool](../README.md#community-tools) registry's tools (`?refresh=true` to skip cedar's cache) |
+| `POST /api/integrations/marketplace/{name}/install` | Admin: install or update a community tool; the body is cedar's `{"accept": {...}}`, passed through |
+| `DELETE /api/integrations/marketplace/{name}` | Admin: uninstall a community tool |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |
 | `GET /api/oauth/google/callback` | Where Google sends the browser back. Needs no token: the single-use `state` cedar issued for the admin's "Connect Google" is the check. Redirects to `/?integrations=connected` or `/?integrations=error&message=…` |

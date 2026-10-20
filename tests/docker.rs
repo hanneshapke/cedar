@@ -21,6 +21,7 @@ fn config(network: &str) -> SandboxConfig {
         memory: "256m".into(),
         cpus: "1".into(),
         tools_dir: None,
+        tools_network: "none".into(),
     }
 }
 
@@ -825,11 +826,12 @@ async fn attached_pdfs_are_saved_and_their_first_pages_rendered() {
 
 #[tokio::test]
 #[ignore = "needs Docker and the cedar-sandbox image"]
-async fn personal_python_tools_run_from_the_mounted_directory() {
+async fn personal_python_tools_run_in_containers_of_their_own() {
+    use cedar::tools::custom::SavedSecrets;
     use cedar::tools::ToolSet;
     use serde_json::json;
 
-    // The sample tools in examples/tools, mounted the way `TOOLS_DIR` is.
+    // The sample tools in examples/tools, the way `TOOLS_DIR` holds them.
     let dir = std::fs::canonicalize("examples/tools").unwrap();
     let mut cfg = config("none");
     cfg.tools_dir = Some(dir.clone());
@@ -838,7 +840,7 @@ async fn personal_python_tools_run_from_the_mounted_directory() {
     let sb = factory.create(id, id).await.expect("create sandbox");
     let ctx = tool_ctx(&sb);
     let mut set = ToolSet::standard();
-    set.load_custom(&dir).unwrap();
+    set.load_custom(&dir, &SavedSecrets::new()).unwrap();
     let word_count = set.get("word_count").expect("the sample tool is loaded");
 
     sb.write_file("notes.txt", b"one two\nthree\n")
@@ -850,7 +852,7 @@ async fn personal_python_tools_run_from_the_mounted_directory() {
         .unwrap();
     assert_eq!(msg.trim(), r#"{"lines": 2, "words": 3, "characters": 14}"#);
 
-    // A failing script is a tool error carrying its stderr, and the staged input is cleaned up.
+    // A failing script is a tool error carrying its stderr, and leaves nothing in /tmp.
     let err = word_count
         .call(&ctx, &json!({ "path": "missing.txt" }))
         .await
@@ -864,16 +866,79 @@ async fn personal_python_tools_run_from_the_mounted_directory() {
     let out = sb.exec("ls /tmp", 10 * SECOND, 1000).await.unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "");
 
-    // The mount is read-only: the agent can run the tools but not change them.
+    // The run's own sandbox doesn't see the tools at all, so neither the agent nor another tool
+    // can read a tool's files (or a .env next to it).
     let out = sb
-        .exec(
-            "echo x >> /opt/cedar/tools/word_count/tool.py",
-            10 * SECOND,
-            1000,
-        )
+        .exec("ls /opt/cedar/tools /opt/cedar/tool", 10 * SECOND, 1000)
         .await
         .unwrap();
     assert_ne!(out.exit_code, Some(0));
 
+    factory.remove_tool_env("word_count").await.unwrap();
     teardown(&factory, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn a_tool_sees_neither_other_tools_nor_their_secrets_nor_the_network() {
+    use cedar::tools::custom::SavedSecrets;
+    use cedar::tools::ToolSet;
+    use serde_json::{json, Value};
+    use std::collections::HashMap;
+
+    let dir = std::env::temp_dir().join(format!("cedar-isolation-{}", Uuid::new_v4()));
+    let write = |rel: &str, text: &str| {
+        let p = dir.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    };
+    // `vault` keeps a .env and has a saved secret; `spy` looks for both, and for the network.
+    write("vault/tool.json", r#"{"description": "d", "secrets": ["VAULT_KEY"]}"#);
+    write("vault/tool.py", "print('vault')");
+    write("vault/.env", "VAULT_KEY=from-the-file");
+    write(
+        "spy/tool.json",
+        r#"{"description": "d", "secrets": ["SPY_KEY"]}"#,
+    );
+    write(
+        "spy/tool.py",
+        &format!(
+            r#"import json, os, socket
+found = [p for p in ["{vault}", "/opt/cedar/tools/vault", "/opt/cedar/tool/../vault/.env"] if os.path.exists(p)]
+try:
+    socket.create_connection(("1.1.1.1", 53), timeout=3); net = True
+except OSError:
+    net = False
+print(json.dumps({{"found": found, "own": sorted(os.listdir("/opt/cedar/tool")),
+                  "spy_key": os.environ.get("SPY_KEY"), "vault_key": os.environ.get("VAULT_KEY"),
+                  "net": net, "home": os.environ.get("HOME")}}))"#,
+            vault = dir.join("vault").display()
+        ),
+    );
+    let dir = std::fs::canonicalize(&dir).unwrap();
+    let mut cfg = config("none");
+    cfg.tools_dir = Some(dir.clone());
+    cfg.tools_network = "bridge".into();
+    let factory = DockerSandboxFactory::new(cfg);
+    let id = Uuid::new_v4();
+    let sb = factory.create(id, id).await.expect("create sandbox");
+    let ctx = tool_ctx(&sb);
+    let secrets = SavedSecrets::from([
+        ("spy".to_string(), HashMap::from([("SPY_KEY".to_string(), "mine".to_string())])),
+        ("vault".to_string(), HashMap::from([("VAULT_KEY".to_string(), "theirs".to_string())])),
+    ]);
+    let mut set = ToolSet::standard();
+    set.load_custom(&dir, &secrets).unwrap();
+    let out = set.get("spy").unwrap().call(&ctx, &json!({})).await.unwrap();
+    let seen: Value = serde_json::from_str(out.trim()).unwrap();
+    assert_eq!(seen["found"], json!([]), "{seen}");
+    assert_eq!(seen["own"], json!(["tool.json", "tool.py"]));
+    assert_eq!(seen["spy_key"], "mine");
+    assert_eq!(seen["vault_key"], Value::Null);
+    assert_eq!(seen["net"], false, "no hosts declared, so no network even with TOOLS_NETWORK=bridge");
+    assert_eq!(seen["home"], "/opt/cedar/env");
+
+    teardown(&factory, id, &sb).await;
+    factory.remove_tool_env("spy").await.unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
 }

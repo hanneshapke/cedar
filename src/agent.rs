@@ -442,8 +442,10 @@ const NOT_APPROVED: &str = "No one approved this call in time, so it did not run
 
 /// In an interactive run, wait for the user's OK if the call needs one (and isn't always
 /// allowed already). `Ok(None)`: go ahead; `Ok(Some(message))`: don't, and tell the model this.
+#[allow(clippy::too_many_arguments)]
 async fn approve(
     env: &AgentEnv,
+    tools: &ToolView<'_>,
     run: &Run,
     events: &Emitter,
     cancel: &CancellationToken,
@@ -454,7 +456,13 @@ async fn approve(
     if !run.interactive {
         return Ok(None);
     }
-    let Some(gate) = approvals::check(&env.approvals, name, input, &env.sandbox_network) else {
+    let personal = tools
+        .get(name)
+        .and_then(|t| t.personal())
+        .and_then(|t| approvals::check_personal(&env.approvals, t));
+    let Some(gate) =
+        approvals::check(&env.approvals, name, input, &env.sandbox_network).or(personal)
+    else {
         return Ok(None);
     };
     let rule = gate.rule.as_str();
@@ -508,7 +516,7 @@ async fn execute_tool_call(
     let input = &block["input"];
     // A call to a tool the run doesn't have fails below without running, so it needs no OK.
     let refused = if tools.get(name).is_some() {
-        approve(env, run, events, cancel, id, name, input).await?
+        approve(env, tools, run, events, cancel, id, name, input).await?
     } else {
         None
     };

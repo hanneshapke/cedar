@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "tandem_glucose",
+      "version": "1.0.0",
+      "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",
+      "category": "health",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/tandem_glucose",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "*.tandemdiabetes.com"
+        ],
+        "secrets": [
+          "TANDEM_EMAIL",
+          "TANDEM_PASSWORD",
+          "TANDEM_REGION",
+          "TANDEM_TIMEZONE",
+          "TANDEM_PUMP_SERIAL",
+          "GLUCOSE_UNIT",
+          "TARGET_LOW",
+          "TARGET_HIGH"
+        ],
+        "pip": [
+          "tconnectsync>=3.0",
+          "setuptools>=70,<81",
+          "tzdata"
+        ],
+        "health_data": true
+      },
+      "base_url": "tools/tandem_glucose/",
+      "files": {
+        ".env.example": "a442f1e4bcb057e4b09cc1aef8e3f7a75b0add4e0c1fba70d98c4cd0298b15d1",
+        "tool.json": "092585819273c8a0c04bc5233ce26c61ac983cb9e4efc0b43444a3cda7ead42a",
+        "tool.py": "b77db52485756cd42fa1860c571e0017706ee2b588d8a0f573b9e71b08cdfbd2"
+      },
+      "reviewed": true
+    }
+  ]
+}

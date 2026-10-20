@@ -12,7 +12,7 @@ use cedar::config::Config;
 use cedar::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
 use cedar::models::{ModelEntry, Usage};
 use cedar::sandbox::{
-    check_workspace_path, ExecOutput, FileContent, Sandbox, SandboxFactory, SandboxFatal,
+    check_workspace_path, ExecOutput, FileContent, Sandbox, SandboxFactory, SandboxFatal, ToolRun,
     WorkspaceFile, WorkspaceListing, WorkspaceMissing,
 };
 use cedar::store::Store;
@@ -138,6 +138,19 @@ pub struct FakeSandbox {
     /// The workspace files the listing of changes reports.
     pub changed: Mutex<Vec<String>>,
     pub destroyed: AtomicBool,
+    /// The personal tool calls, in order.
+    pub tool_calls: Mutex<Vec<ToolCallRecord>>,
+}
+
+/// What a personal tool call was handed (see [`Sandbox::run_tool`]).
+#[derive(Debug, Clone)]
+pub struct ToolCallRecord {
+    pub name: String,
+    pub dir: std::path::PathBuf,
+    pub entry: String,
+    pub input: Value,
+    pub env: Vec<(String, String)>,
+    pub network: bool,
 }
 
 impl FakeSandbox {
@@ -242,6 +255,39 @@ impl Sandbox for FakeSandbox {
         Ok(())
     }
 
+    /// Echoes `tool <name>: <input>`; a tool named `failing_tool` exits 1 with stderr.
+    async fn run_tool(
+        &self,
+        call: &ToolRun<'_>,
+        _timeout: Duration,
+        _max_output: usize,
+    ) -> Result<ExecOutput> {
+        let input: Value = serde_json::from_slice(call.input)?;
+        self.tool_calls.lock().unwrap().push(ToolCallRecord {
+            name: call.name.to_string(),
+            dir: call.dir.to_path_buf(),
+            entry: call.entry.to_string(),
+            input: input.clone(),
+            env: call.env.to_vec(),
+            network: call.network,
+        });
+        if call.name == "failing_tool" {
+            return Ok(ExecOutput {
+                stderr: b"no credentials".to_vec(),
+                stderr_total: 14,
+                exit_code: Some(1),
+                ..Default::default()
+            });
+        }
+        let out = format!("tool {}: {input}", call.name);
+        Ok(ExecOutput {
+            stdout_total: out.len(),
+            stdout: out.into_bytes(),
+            exit_code: Some(0),
+            ..Default::default()
+        })
+    }
+
     async fn destroy(&self) {
         self.destroyed.store(true, Ordering::SeqCst);
     }
@@ -256,6 +302,9 @@ pub struct FakeFactory {
     pub healthy: AtomicBool,
     /// Make `create` fail with an error full of "internal" detail.
     pub fail_create: AtomicBool,
+    /// Tool environments set up: (tool, requirements).
+    pub tool_setups: Mutex<Vec<(String, Vec<String>)>>,
+    pub removed_tool_envs: Mutex<Vec<String>>,
 }
 
 impl FakeFactory {
@@ -267,6 +316,8 @@ impl FakeFactory {
             cleanups: AtomicUsize::new(0),
             healthy: AtomicBool::new(true),
             fail_create: AtomicBool::new(false),
+            tool_setups: Mutex::default(),
+            removed_tool_envs: Mutex::default(),
         })
     }
 
@@ -369,6 +420,22 @@ impl SandboxFactory for FakeFactory {
         } else {
             Err(anyhow!("docker is down"))
         }
+    }
+
+    async fn setup_tool(&self, name: &str, requirements: &[String]) -> Result<String> {
+        self.tool_setups
+            .lock()
+            .unwrap()
+            .push((name.to_string(), requirements.to_vec()));
+        Ok("Successfully installed".into())
+    }
+
+    async fn remove_tool_env(&self, name: &str) -> Result<()> {
+        self.removed_tool_envs
+            .lock()
+            .unwrap()
+            .push(name.to_string());
+        Ok(())
     }
 }
 

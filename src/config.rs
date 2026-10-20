@@ -58,9 +58,12 @@ pub struct SandboxConfig {
     pub network: String,
     pub memory: String,
     pub cpus: String,
-    /// A directory of personal tools written in Python (`TOOLS_DIR`), mounted read-only into
-    /// every sandbox. See `tools::custom`.
+    /// A directory of personal tools written in Python (`TOOLS_DIR`). Each call of one runs in a
+    /// container of its own that sees only that tool's folder. See `tools::custom`.
     pub tools_dir: Option<PathBuf>,
+    /// Docker network mode for the calls of personal tools whose manifest declares `network`
+    /// hosts (`TOOLS_NETWORK`), `bridge` by default; tools that declare none always get `none`.
+    pub tools_network: String,
 }
 
 #[derive(Debug, Clone)]
@@ -226,6 +229,9 @@ pub struct Config {
     pub plan: PlanMode,
     /// Which tool calls wait for approval in interactive runs (`TOOL_APPROVALS`).
     pub tool_approvals: Rules,
+    /// The community tool registry's index (`TOOLS_REGISTRY_URL`). Unset: no marketplace. Tools
+    /// are installed from it into `TOOLS_DIR` (see `marketplace`).
+    pub tools_registry_url: Option<String>,
     /// How long a run waits for its plan to be agreed or a call to be approved before it goes on
     /// without (the plan as proposed; the call not made). The wait doesn't count toward
     /// `run_timeout`.
@@ -498,6 +504,9 @@ impl Config {
                     .ok_or_else(|| anyhow!("invalid PLAN={v:?}: use off, on or auto"))?,
             },
             tool_approvals: Rules::parse(&get("TOOL_APPROVALS").unwrap_or_default())?,
+            tools_registry_url: get("TOOLS_REGISTRY_URL")
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
             approval_timeout: Duration::from_secs(parse(
                 "APPROVAL_TIMEOUT_SECS",
                 get("APPROVAL_TIMEOUT_SECS"),
@@ -511,6 +520,7 @@ impl Config {
                 memory: get("SANDBOX_MEMORY").unwrap_or_else(|| "512m".into()),
                 cpus: get("SANDBOX_CPUS").unwrap_or_else(|| "1".into()),
                 tools_dir: get("TOOLS_DIR").map(|d| absolute(PathBuf::from(d))),
+                tools_network: get("TOOLS_NETWORK").unwrap_or_else(|| "bridge".into()),
             },
             browser: BrowserConfig {
                 enabled: flag("BROWSER", false)?,
@@ -537,6 +547,13 @@ impl Config {
         }
         if self.workspace_ttl.is_zero() {
             bail!("WORKSPACE_TTL_SECS must be at least 1");
+        }
+        if let Some(url) = &self.tools_registry_url {
+            let parsed = reqwest::Url::parse(url)
+                .map_err(|e| anyhow!("TOOLS_REGISTRY_URL is not a URL: {e}"))?;
+            if !matches!(parsed.scheme(), "https" | "http") {
+                bail!("TOOLS_REGISTRY_URL must be an http(s) URL");
+            }
         }
         if self.tool_timeout.is_zero() {
             bail!("TOOL_TIMEOUT_SECS must be at least 1");

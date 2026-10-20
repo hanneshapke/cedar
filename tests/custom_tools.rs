@@ -68,26 +68,24 @@ async fn a_personal_tool_is_offered_and_runs_its_script_on_the_staged_input() {
     assert_eq!(def["description"], "Count the words of a file.");
     assert_eq!(def["input_schema"]["required"], json!(["path"]));
 
+    // The call ran in a container of its own, with only this tool's folder and its input.
     let sandbox = app.factory.sandbox(0);
-    let commands = sandbox.commands.lock().unwrap().clone();
-    let cmd = commands
-        .iter()
-        .find(|c| c.contains("/opt/cedar/tools/word_count/tool.py"))
-        .unwrap_or_else(|| panic!("the script was not run: {commands:?}"));
-    assert!(cmd.contains("python3 -- '/opt/cedar/tools/word_count/tool.py' < '/tmp/cedar-tool-"));
-    let staged = cmd
-        .split('\'')
-        .find(|s| s.starts_with("/tmp/cedar-tool-") && s.ends_with(".json"))
-        .unwrap()
-        .to_string();
-    let files = sandbox.files.lock().unwrap();
-    let input: Value = serde_json::from_slice(&files[&staged]).unwrap();
-    assert_eq!(input, json!({ "path": "notes.txt" }));
+    let calls = sandbox.tool_calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert_eq!(calls[0].name, "word_count");
+    assert_eq!(calls[0].dir, dir.join("word_count"));
+    assert_eq!(calls[0].entry, "tool.py");
+    assert_eq!(calls[0].input, json!({ "path": "notes.txt" }));
+    assert!(calls[0].env.is_empty());
+    assert!(!calls[0].network, "no hosts declared, no network");
 
     let requests = app.llm.requests();
     let result = &requests[1]["messages"].as_array().unwrap().last().unwrap()["content"][0];
     assert_eq!(result["type"], "tool_result");
-    assert_eq!(result["content"], format!("ran: {cmd}"));
+    assert_eq!(
+        result["content"],
+        r#"tool word_count: {"path":"notes.txt"}"#
+    );
     assert!(result["is_error"].is_null() || result["is_error"] == false);
     std::fs::remove_dir_all(dir).unwrap();
 }

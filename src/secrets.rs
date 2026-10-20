@@ -18,6 +18,12 @@ pub const LEGACY_LLM_BASE_URL: &str = "llm_base_url";
 pub const LEGACY_LLM_API_KEY: &str = "llm_api_key";
 pub const LEGACY_LLM_MODEL: &str = "llm_model";
 
+/// Where a personal tool's secret is kept.
+pub fn tool_secret(tool: &str, name: &str) -> String {
+    format!("{TOOL_SECRET_PREFIX}{tool}:{name}")
+}
+pub const TOOL_SECRET_PREFIX: &str = "tool_secret:";
+
 /// Where a registered model's API key is kept.
 pub fn model_api_key(model_id: &str) -> String {
     format!("model_api_key:{model_id}")
@@ -103,6 +109,24 @@ impl SecretStore {
             .await?;
         row.map(|r| Ok(serde_json::from_str(r.try_get("meta")?)?))
             .transpose()
+    }
+
+    /// The names saved under `prefix`, sorted.
+    pub async fn names_with_prefix(&self, prefix: &str) -> Result<Vec<String>> {
+        // `prefix` comes from cedar's own constants, so LIKE wildcards in it are not a concern;
+        // the check below keeps a `_` from matching any character anyway.
+        let rows = sqlx::query("SELECT name FROM secrets WHERE name LIKE ? ORDER BY name")
+            .bind(format!("{prefix}%"))
+            .fetch_all(self.store.pool())
+            .await?;
+        let mut names = Vec::new();
+        for row in rows {
+            let name: String = row.try_get("name")?;
+            if name.starts_with(prefix) {
+                names.push(name);
+            }
+        }
+        Ok(names)
     }
 
     /// Remove `name`. Returns whether anything was saved under it.

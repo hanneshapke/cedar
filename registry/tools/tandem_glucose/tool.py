@@ -5,8 +5,11 @@ Downloads CGM readings, boluses, and basal deliveries from Tandem Source (t:conn
 tconnectsync, compares the last hours with the days before, and suggests what to try today.
 The analysis follows the Diabetes Concierge backend (stats, advisor, and daily summary rules).
 
-Credentials come from a `.env` file next to this script (copy `.env.example`). The sandbox needs
-network access (`SANDBOX_NETWORK=bridge`): for Tandem, and the first time for `pip install`.
+Credentials come from the secrets an admin saved for this tool in cedar (they arrive as
+environment variables), or else from a `.env` file next to this script (copy `.env.example`).
+cedar runs each call in a container of its own with network access to Tandem (the manifest
+declares the hosts), and installs tconnectsync into the tool's own environment when the tool is
+installed.
 
 Exit non-zero with a message on stderr to report an error; the model sees it as the tool's
 error and can try again differently.
@@ -37,10 +40,10 @@ CGM_TYPES = {"LidCgmDataGxb": "Dexcom G6", "LidCgmDataG7": "Dexcom G7", "LidCgmD
 # --- setup -----------------------------------------------------------------------------------
 
 def load_env(path):
-    """Read KEY=VALUE lines into os.environ, without overriding what is already set."""
+    """Read KEY=VALUE lines into os.environ, without overriding what is already set (the secrets
+    cedar passes in win). A missing file is fine when those secrets are set."""
     if not path.is_file():
-        sys.exit(f"no credentials: copy {HERE.name}/.env.example to {HERE.name}/.env and fill in "
-                 "TANDEM_EMAIL and TANDEM_PASSWORD")
+        return
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -65,7 +68,8 @@ def ensure_deps():
     done = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--quiet", *PACKAGES],
                           capture_output=True, text=True)
     if done.returncode != 0:
-        sys.exit("could not install tconnectsync (the sandbox needs SANDBOX_NETWORK=bridge):\n"
+        sys.exit("could not install tconnectsync (set it up again from the tool settings, or check "
+                 "TOOLS_NETWORK):\n"
                  + (done.stderr or done.stdout)[-2000:])
     # The user site didn't exist when the interpreter started, so it isn't on sys.path yet.
     site.addsitedir(site.getusersitepackages())
@@ -146,7 +150,7 @@ def download(days, tz):
         source = api.tandemsource  # logs in
     except ApiLoginException as e:
         # Don't retry: repeated bad logins can lock the account.
-        sys.exit(f"Tandem login failed; check TANDEM_EMAIL, TANDEM_PASSWORD and TANDEM_REGION in .env ({e})")
+        sys.exit(f"Tandem login failed; check TANDEM_EMAIL, TANDEM_PASSWORD and TANDEM_REGION ({e})")
 
     pumps = source.get_pumper().get("pumps") or []
     if not pumps:
@@ -459,7 +463,8 @@ def main():
 
     load_env(HERE / ".env")
     if not os.environ.get("TANDEM_EMAIL") or not os.environ.get("TANDEM_PASSWORD"):
-        sys.exit(f"set TANDEM_EMAIL and TANDEM_PASSWORD in {HERE.name}/.env")
+        sys.exit("no Tandem credentials: save TANDEM_EMAIL and TANDEM_PASSWORD in this tool's "
+                 f"settings in cedar, or put them in {HERE.name}/.env (see .env.example)")
     unit = os.environ.get("GLUCOSE_UNIT", "mgdl").strip().lower()
     low = int(os.environ.get("TARGET_LOW", 70))
     high = int(os.environ.get("TARGET_HIGH", 180))
