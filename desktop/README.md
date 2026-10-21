@@ -238,7 +238,10 @@ the OpenSSL that cedar-chat links statically (Git's own Perl can't). In PowerShe
 ```powershell
 # From the repository root.
 $T = "x86_64-pc-windows-msvc"
+# The C runtime linked in, so the servers run on PCs without the Visual C++ Redistributable.
+$env:RUSTFLAGS = "-C target-feature=+crt-static"
 cargo build --release -p cedar -p cedar-chat --target $T
+Remove-Item Env:RUSTFLAGS
 Copy-Item target/$T/release/cedar.exe desktop/binaries/cedar-$T.exe
 Copy-Item target/$T/release/cedar-chat.exe desktop/binaries/cedar-chat-$T.exe
 

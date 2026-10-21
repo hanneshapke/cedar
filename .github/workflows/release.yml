@@ -332,7 +332,12 @@ jobs:
             . -> target
             desktop -> target
 
+      # The MSVC C runtime linked in, not loaded from VCRUNTIME140.dll: Windows doesn't ship that
+      # DLL (the Visual C++ Redistributable does), so without it the servers don't start. Cedar.exe
+      # needs nothing here; tauri-build links its runtime statically already.
       - name: Build cedar and cedar-chat
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release --locked -p cedar -p cedar-chat --target $env:TARGET
 
       - name: Put them where the bundler expects sidecars
@@ -349,6 +354,25 @@ jobs:
       - name: Build Cedar.exe and pack the MSI
         working-directory: desktop
         run: cargo tauri build --ci --target $env:TARGET --bundles msi
+
+      - name: Check that no executable needs the Visual C++ Redistributable
+        run: |
+          # The app is cedar-app.exe as cargo builds it, Cedar.exe once the Tauri CLI renamed it.
+          $app = Get-ChildItem "desktop/target/$env:TARGET/release/*.exe" |
+            Where-Object { $_.Name -in 'cedar-app.exe', 'Cedar.exe' } | Select-Object -First 1
+          if (-not $app) { throw "Cedar.exe is not in desktop/target/$env:TARGET/release" }
+          $exes = @(
+            "target/$env:TARGET/release/cedar.exe",
+            "target/$env:TARGET/release/cedar-chat.exe",
+            $app.FullName
+          )
+          foreach ($exe in $exes) {
+            $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($exe))
+            if ($text -match '(?i)(vcruntime|msvcp)1[0-9]{2}d?\.dll') {
+              throw "$exe imports $($Matches[0]), which a PC without the Visual C++ Redistributable lacks"
+            }
+            "$exe needs no Visual C++ runtime DLL"
+          }
 
       - name: Name the MSI
         env:

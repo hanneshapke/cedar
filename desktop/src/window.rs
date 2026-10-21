@@ -9,6 +9,19 @@ use url::Url;
 
 pub const MAIN: &str = "main";
 
+/// The setup page's own URL, where Tauri serves `ui/index.html`: `tauri://localhost` on a Mac,
+/// `http://tauri.localhost` on Windows. Not read back from the window after it is built: on
+/// Windows that is still `about:blank` until WebView2 commits its first navigation, and going
+/// back there from the tray left the window blank.
+fn setup_url() -> Url {
+    let url = if cfg!(windows) {
+        "http://tauri.localhost/index.html"
+    } else {
+        "tauri://localhost/index.html"
+    };
+    Url::parse(url).expect("the setup page's URL is valid")
+}
+
 pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
     let script = token_script(
         &cfg.chat_url(),
@@ -100,12 +113,10 @@ pub fn show_conversation(app: &AppHandle, conversation: Option<&str>) -> Result<
 /// Loads the setup page (unless it is already open) and brings the window forward.
 pub fn show_setup(app: &AppHandle) -> Result<()> {
     let win = main_window(app)?;
-    let state = app.state::<AppState>();
-    if let Some(setup) = state.setup_url() {
-        let on_setup = win.url().map(|u| u == setup).unwrap_or(false);
-        if !on_setup {
-            win.navigate(setup)?;
-        }
+    let setup = setup_url();
+    let on_setup = win.url().map(|u| u == setup).unwrap_or(false);
+    if !on_setup {
+        win.navigate(setup)?;
     }
     present(&win)
 }
@@ -131,5 +142,12 @@ mod tests {
         assert!(s.contains(r#"localStorage.setItem('cedar-chat-token', "abc\"def")"#));
         assert!(s.contains(r#"sessionStorage.setItem('cedar-chat-admin', "adm")"#));
         assert!(s.contains("window.__CEDAR_DESKTOP_APP__ = true;"));
+    }
+
+    #[test]
+    fn the_setup_page_is_the_apps_own_index() {
+        let url = setup_url();
+        assert_eq!(url.path(), "/index.html");
+        assert_ne!(url.scheme(), "about");
     }
 }

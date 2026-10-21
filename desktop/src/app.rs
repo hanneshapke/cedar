@@ -14,7 +14,6 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
-use url::Url;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
@@ -71,9 +70,6 @@ pub struct AppState {
     pub supervisor: Supervisor,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
-    /// The setup page's own URL (`tauri://localhost` on a Mac, `http://tauri.localhost` on
-    /// Windows), to come back to from the chat.
-    setup_url: Mutex<Option<Url>>,
 }
 
 /// What the setup page renders.
@@ -115,7 +111,6 @@ impl AppState {
             served_port: Mutex::new(None),
             started_public_url: Mutex::new(None),
             bootstrap: tokio::sync::Mutex::new(()),
-            setup_url: Mutex::new(None),
         }
     }
 
@@ -129,14 +124,6 @@ impl AppState {
         change(&mut cfg);
         cfg.save(&self.paths.config())?;
         Ok(cfg.clone())
-    }
-
-    pub fn set_setup_url(&self, url: Url) {
-        *self.setup_url.lock().unwrap() = Some(url);
-    }
-
-    pub fn setup_url(&self) -> Option<Url> {
-        self.setup_url.lock().unwrap().clone()
     }
 
     fn set_docker(&self, s: DockerStatus) {
