@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "cedar"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "cedar-chat"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
