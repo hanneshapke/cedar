@@ -20,6 +20,19 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
 @keyframes popin{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(229,85,58,.45)}70%{box-shadow:0 0 0 14px rgba(229,85,58,0)}}
+/* Compared: label | Cedar | the picked assistant, stacking on phones */
+.cmp-row{display:grid;grid-template-columns:180px 1fr 1fr}
+.cmp-cell{padding:18px 22px}
+.cmp-who{display:none}
+@media (max-width:720px){
+.cmp-row{grid-template-columns:1fr;gap:8px;padding:16px 0;border-top:1px solid #f0dcc8}
+.cmp-row.cmp-head{display:none}
+.cmp-cell{padding:0 0 4px;border:0!important;background:none!important;border-radius:0!important}
+.cmp-cell.cmp-mine,.cmp-cell.cmp-theirs{padding:12px 14px!important;border-radius:14px!important}
+.cmp-cell.cmp-mine{background:#231f1b!important}
+.cmp-cell.cmp-theirs{background:#fbf4ea!important}
+.cmp-who{display:block;font-size:12px;font-weight:700;margin-bottom:4px}
+}
 @keyframes riseIn{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
 </style>
 </helmet>
@@ -237,40 +250,36 @@ scripts/cedar-stack.sh --pair</pre>
   </div>
 </section>
 
-<section id="compare" data-screen-label="Compared" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:40px;position:relative">
+<section id="compare" data-screen-label="Compared" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:32px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:760px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Compared</span>
     <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Cedar, OpenClaw,<br>Muse and Claude Duet.</h2>
     <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Four assistants that do tasks for you. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> lives in your chat apps and acts on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a> is Meta&#8217;s, run in Meta&#8217;s cloud. <a href="https://claude.com/product/claude-duet">Claude Duet</a> is Anthropic&#8217;s, a proactive agent on its own computer in Anthropic&#8217;s cloud. Cedar runs at home, on a Mac, a Windows PC or a Linux box, and keeps every task in its own sealed box.</p>
   </div>
-  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:20px;align-items:stretch">
-    <div style="background:#231f1b;color:#fbf4ea;border-radius:26px;padding:30px;display:flex;flex-direction:column;gap:22px;box-shadow:0 24px 60px rgba(60,30,10,.2);transition:transform .25s" style-hover="transform:translateY(-6px)">
-      <div style="display:flex;align-items:center;gap:10px"><img src="docs/assets/cedar-mark-on-dark.svg" width="28" height="28" alt=""><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em">Cedar</h3><span style="margin-left:auto;background:#f2a21c;color:#231f1b;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Free · open source</span></div>
-      <sc-for list="{{ cmpCedar }}" as="r" hint-placeholder-count="5">
-        <div style="display:flex;flex-direction:column;gap:4px;padding-top:16px;border-top:1px solid rgba(255,255,255,.12)"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#f2a21c">{{ r.k }}</span><span style="font-size:15.5px;line-height:1.45">{{ r.v }}</span></div>
+  <div data-reveal style="display:flex;flex-direction:column;gap:20px">
+    <div role="group" aria-label="Compare Cedar with" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:15px;font-weight:600;color:#4f4740;margin-right:4px">Cedar vs.</span>
+      <sc-for list="{{ cmpTabs }}" as="t" hint-placeholder-count="3">
+        <button type="button" onclick="{{ t.pick }}" aria-pressed="{{ t.pressed }}" style="font:inherit;font-size:15px;font-weight:600;cursor:pointer;border-radius:999px;padding:9px 18px;border:1px solid {{ t.border }};background:{{ t.bg }};color:{{ t.fg }};transition:background .2s,color .2s,transform .2s" style-hover="transform:translateY(-2px)">{{ t.name }}</button>
       </sc-for>
     </div>
-    <div style="background:#fff;border:1px solid #f0dcc8;border-radius:26px;padding:30px;display:flex;flex-direction:column;gap:22px;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <div style="display:flex;align-items:center;gap:10px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em">OpenClaw</h3><span style="margin-left:auto;background:#fbf4ea;color:#4f4740;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Free · open source</span></div>
-      <sc-for list="{{ cmpOpenClaw }}" as="r" hint-placeholder-count="5">
-        <div style="display:flex;flex-direction:column;gap:4px;padding-top:16px;border-top:1px solid #f0dcc8"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8a7f73">{{ r.k }}</span><span style="font-size:15.5px;line-height:1.45;color:#4f4740">{{ r.v }}</span></div>
-      </sc-for>
-    </div>
-    <div style="background:#fff;border:1px solid #f0dcc8;border-radius:26px;padding:30px;display:flex;flex-direction:column;gap:22px;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <div style="display:flex;align-items:center;gap:10px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em">Muse</h3><span style="margin-left:auto;background:#fbf4ea;color:#4f4740;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Free tier · paid plans</span></div>
-      <sc-for list="{{ cmpMuse }}" as="r" hint-placeholder-count="5">
-        <div style="display:flex;flex-direction:column;gap:4px;padding-top:16px;border-top:1px solid #f0dcc8"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8a7f73">{{ r.k }}</span><span style="font-size:15.5px;line-height:1.45;color:#4f4740">{{ r.v }}</span></div>
-      </sc-for>
-    </div>
-    <div style="background:#fff;border:1px solid #f0dcc8;border-radius:26px;padding:30px;display:flex;flex-direction:column;gap:22px;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <div style="display:flex;align-items:center;gap:10px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em">Claude Duet</h3><span style="margin-left:auto;background:#fbf4ea;color:#4f4740;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Pro &amp; Max · waitlist</span></div>
-      <sc-for list="{{ cmpDuet }}" as="r" hint-placeholder-count="5">
-        <div style="display:flex;flex-direction:column;gap:4px;padding-top:16px;border-top:1px solid #f0dcc8"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8a7f73">{{ r.k }}</span><span style="font-size:15.5px;line-height:1.45;color:#4f4740">{{ r.v }}</span></div>
+    <div style="background:#fff;border:1px solid #f0dcc8;border-radius:26px;padding:10px;box-shadow:0 20px 40px rgba(60,30,10,.08)">
+      <div class="cmp-row cmp-head">
+        <div class="cmp-cell"></div>
+        <div class="cmp-cell cmp-mine" style="background:#231f1b;color:#fbf4ea;border-radius:18px 18px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><img src="docs/assets/cedar-mark-on-dark.svg" width="26" height="26" alt=""><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.02em">Cedar</h3><span style="margin-left:auto;background:#f2a21c;color:#231f1b;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Free · open source</span></div>
+        <div class="cmp-cell" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.02em">{{ cmpOther.name }}</h3><span style="margin-left:auto;background:#fbf4ea;color:#4f4740;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">{{ cmpOther.badge }}</span></div>
+      </div>
+      <sc-for list="{{ cmpRows }}" as="r" hint-placeholder-count="5">
+        <div class="cmp-row">
+          <div class="cmp-cell" style="border-top:1px solid #f0dcc8;font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8a7f73">{{ r.k }}</div>
+          <div class="cmp-cell cmp-mine" style="background:#231f1b;color:#fbf4ea;border-top:1px solid rgba(255,255,255,.12);border-radius:{{ r.radius }};font-size:15.5px;line-height:1.5"><span class="cmp-who" style="color:#f2a21c">Cedar</span>{{ r.mine }}</div>
+          <div class="cmp-cell cmp-theirs" style="border-top:1px solid #f0dcc8;font-size:15.5px;line-height:1.5;color:#4f4740"><span class="cmp-who" style="color:#8a7f73">{{ cmpOther.name }}</span>{{ r.theirs }}</div>
+        </div>
       </sc-for>
     </div>
   </div>
   <div data-reveal style="display:flex;flex-direction:column;gap:10px">
-    <p style="margin:0;font-size:16px;line-height:1.5;color:#4f4740;text-wrap:pretty"><strong style="font-weight:600;color:#231f1b">Pick Cedar</strong> when the assistant should never touch the rest of your computer and your data should stay home. <strong style="font-weight:600;color:#231f1b">Pick OpenClaw</strong> when you want one assistant across all your chat apps that can act on your own computer. <strong style="font-weight:600;color:#231f1b">Pick Muse</strong> when you want nothing to set up and are happy for Meta to run it and hold your data. <strong style="font-weight:600;color:#231f1b">Pick Claude Duet</strong> when you already pay for Claude and want an assistant that watches your inbox and apps and speaks up when something needs you.</p>
+    <p style="margin:0;font-size:16px;line-height:1.5;color:#4f4740;text-wrap:pretty"><strong style="font-weight:600;color:#231f1b">Pick Cedar</strong> when the assistant should never touch the rest of your computer and your data should stay home. <strong style="font-weight:600;color:#231f1b">Pick {{ cmpOther.name }}</strong> {{ cmpOther.pick }}</p>
     <span style="font-size:12.5px;color:#8a7f73">OpenClaw details from its README, October 2026. Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. Claude Duet details from Anthropic&#8217;s product page, October 2026. Corrections welcome.</span>
   </div>
 </section>
@@ -313,7 +322,7 @@ scripts/cedar-stack.sh --pair</pre>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;demoSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero demo&quot;}}">
 class Component extends DCLogic {
-  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '' };
+  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', cmp: 'openclaw' };
   prompt = 'Compare the three largest EV battery makers and write a sourced report';
   plan = [
     { title: 'Search for the latest market figures', note: '14 sources' },
@@ -321,6 +330,49 @@ class Component extends DCLogic {
     { title: 'Compare capacity, revenue and growth', note: '1 table' },
     { title: 'Write the report with sources', note: 'PDF' },
   ];
+  cmpTopics = ['Where it runs', 'How you use it', 'The AI behind it', 'Guardrails', 'Your data'];
+  cmpCedar = [
+    'On your own Mac, Windows PC or Linux machine. Every task in a fresh sealed box that never touches the rest of your machine.',
+    'A Mac or Windows app, an iPhone app, or the browser. On Linux, one script starts it all.',
+    'Your choice: Ollama or LM Studio on a Mac or PC, vLLM on Linux, or a server you trust.',
+    'Shows you the plan first, asks before sending mail, downloading, installing or deleting.',
+    'Stays on your machine. No account, no cloud.',
+  ];
+  cmpOthers = [
+    { id: 'openclaw', name: 'OpenClaw', badge: 'Free · open source', pick: 'when you want one assistant across all your chat apps that can act on your own computer.', rows: [
+      'On your own computer, with direct access to it unless you set up sandboxing.',
+      'The chat apps you already have: WhatsApp, Telegram, Slack, Discord, iMessage and more.',
+      'Hosted or local providers, swappable as plugins.',
+      'Incoming messages are treated as untrusted; unknown senders have to be paired first.',
+      'On your computer, plus whatever the chosen AI provider sees.',
+    ] },
+    { id: 'muse', name: 'Muse', badge: 'Free tier · paid plans', pick: 'when you want nothing to set up and are happy for Meta to run it and hold your data.', rows: [
+      'In Meta\u2019s cloud, in a private VM Meta runs for you.',
+      'The Muse app on iPhone, Android and the web, or as a contact in WhatsApp. US only at launch.',
+      'Meta\u2019s own Muse Spark. No choice of model.',
+      'A Sentinel checks every outbound request against your permissions; it asks before mail or purchases.',
+      'Held by Meta.',
+    ] },
+    { id: 'duet', name: 'Claude Duet', badge: 'Pro & Max · waitlist', pick: 'when you already pay for Claude and want an assistant that watches your inbox and apps and speaks up when something needs you.', rows: [
+      'On its own computer in Anthropic\u2019s cloud, checking in on your apps in the background.',
+      'The Claude Duet app on iPhone and Android, or claude.ai on the web. Research preview, US only, Pro and Max plans.',
+      'Anthropic\u2019s Claude Opus. No choice of model.',
+      'Asks before sensitive steps like sending messages or paying; you can watch and steer what it does.',
+      'Held by Anthropic, along with your Claude memory and connected apps.',
+    ] },
+  ];
+  comparison(cmp) {
+    const other = this.cmpOthers.find((o) => o.id === cmp) || this.cmpOthers[0];
+    const last = this.cmpTopics.length - 1;
+    return {
+      cmpOther: other,
+      cmpTabs: this.cmpOthers.map((o) => {
+        const on = o.id === other.id;
+        return { name: o.name, pressed: on ? 'true' : 'false', pick: () => this.setState({ cmp: o.id }), bg: on ? '#231f1b' : '#fff', fg: on ? '#fbf4ea' : '#231f1b', border: on ? '#231f1b' : '#f0dcc8' };
+      }),
+      cmpRows: this.cmpTopics.map((k, i) => ({ k, mine: this.cmpCedar[i], theirs: other.rows[i], radius: i === last ? '0 0 18px 18px' : '0' })),
+    };
+  }
   componentDidMount() {
     this.setState({ os: this.detectOS() });
     this.findInstallers();
@@ -391,7 +443,7 @@ class Component extends DCLogic {
     }
   }
   renderVals() {
-    const { typed, phase, done, visible, os } = this.state;
+    const { typed, phase, done, visible, os, cmp } = this.state;
     const steps = this.plan.map((p, i) => {
       const finished = i < done, running = phase === 2 && i === done;
       return { title: p.title, note: finished ? p.note : (running ? 'working\u2026' : ''), icon: finished ? '\u2713' : String(i + 1), bg: finished ? '#3a5f4b' : (running ? '#e5553a' : '#c9bdae'), opacity: i < visible ? 1 : 0 };
@@ -405,34 +457,7 @@ class Component extends DCLogic {
       winHref: this.state.msi || 'https://github.com/hanneshapke/cedar/releases/latest',
       showPlan: phase >= 1, showResult: phase === 3,
       statusLine: phase === 0 ? 'new task' : phase === 1 ? 'planning' : phase === 2 ? 'working in a sealed box' : 'done',
-      cmpCedar: [
-        { k: 'Where it runs', v: 'On your own Mac, Windows PC or Linux machine. Every task in a fresh sealed box that never touches the rest of your machine.' },
-        { k: 'How you use it', v: 'A Mac or Windows app, an iPhone app, or the browser. On Linux, one script starts it all.' },
-        { k: 'The AI behind it', v: 'Your choice: Ollama or LM Studio on a Mac or PC, vLLM on Linux, or a server you trust.' },
-        { k: 'Guardrails', v: 'Shows you the plan first, asks before sending mail, downloading, installing or deleting.' },
-        { k: 'Your data', v: 'Stays on your machine. No account, no cloud.' },
-      ],
-      cmpOpenClaw: [
-        { k: 'Where it runs', v: 'On your own computer, with direct access to it unless you set up sandboxing.' },
-        { k: 'How you use it', v: 'The chat apps you already have: WhatsApp, Telegram, Slack, Discord, iMessage and more.' },
-        { k: 'The AI behind it', v: 'Hosted or local providers, swappable as plugins.' },
-        { k: 'Guardrails', v: 'Incoming messages are treated as untrusted; unknown senders have to be paired first.' },
-        { k: 'Your data', v: 'On your computer, plus whatever the chosen AI provider sees.' },
-      ],
-      cmpMuse: [
-        { k: 'Where it runs', v: 'In Meta\u2019s cloud, in a private VM Meta runs for you.' },
-        { k: 'How you use it', v: 'The Muse app on iPhone, Android and the web, or as a contact in WhatsApp. US only at launch.' },
-        { k: 'The AI behind it', v: 'Meta\u2019s own Muse Spark. No choice of model.' },
-        { k: 'Guardrails', v: 'A Sentinel checks every outbound request against your permissions; it asks before mail or purchases.' },
-        { k: 'Your data', v: 'Held by Meta.' },
-      ],
-      cmpDuet: [
-        { k: 'Where it runs', v: 'On its own computer in Anthropic\u2019s cloud, checking in on your apps in the background.' },
-        { k: 'How you use it', v: 'The Claude Duet app on iPhone and Android, or claude.ai on the web. Research preview, US only, Pro and Max plans.' },
-        { k: 'The AI behind it', v: 'Anthropic\u2019s Claude Opus. No choice of model.' },
-        { k: 'Guardrails', v: 'Asks before sensitive steps like sending messages or paying; you can watch and steer what it does.' },
-        { k: 'Your data', v: 'Held by Anthropic, along with your Claude memory and connected apps.' },
-      ],
+      ...this.comparison(cmp),
       abilities: ['Web search', 'Weather', 'Maps', 'Recipes', 'Directions & transit', 'Stocks', 'Shopping', 'Gmail', 'Calendar', 'Files & PDFs', 'Charts'],
     };
   }
