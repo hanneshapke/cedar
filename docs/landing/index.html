@@ -56,19 +56,19 @@ body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-we
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Quick start</h2>
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># 0. any OpenAI-compatible model server</span>
-<span class="hl-f">vllm</span> serve deepseek-ai/DeepSeek-V4-Flash \
+      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># 0. any OpenAI-compatible model server
+</span><span class="hl-f">vllm</span> serve deepseek-ai/DeepSeek-V4-Flash \
   <span class="hl-o">--trust-remote-code</span> <span class="hl-o">--tokenizer-mode</span> deepseek_v4 \
   <span class="hl-o">--enable-auto-tool-choice</span> <span class="hl-o">--tool-call-parser</span> deepseek_v4
 
-<span class="hl-c"># 1. the sandbox image, then the server</span>
-<span class="hl-f">docker</span> build <span class="hl-o">-t</span> cedar-sandbox sandbox/
+<span class="hl-c"># 1. the sandbox image, then the server
+</span><span class="hl-f">docker</span> build <span class="hl-o">-t</span> cedar-sandbox sandbox/
 <span class="hl-f">export</span> CEDAR_API_KEYS=<span class="hl-v">$(openssl</span> rand <span class="hl-o">-hex</span> 24) \
-  CEDAR_ADMIN_KEYS=<span class="hl-v">$CEDAR_API_KEYS</span>
-<span class="hl-f">cargo</span> run <span class="hl-o">--release</span>
+  CEDAR_ADMIN_KEYS=<span class="hl-v">$CEDAR_API_KEYS
+</span><span class="hl-f">cargo</span> run <span class="hl-o">--release
 
-<span class="hl-c"># 2. register the model, start a run, follow it live</span>
-<span class="hl-f">curl</span> <span class="hl-o">-s</span> <span class="hl-o">-X</span> PUT <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
+</span><span class="hl-c"># 2. register the model, start a run, follow it live
+</span><span class="hl-f">curl</span> <span class="hl-o">-s</span> <span class="hl-o">-X</span> PUT <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
   <span class="hl-o">-H</span> <span class="hl-s">'content-type: application/json'</span> \
   <span class="hl-o">-d</span> '{<span class="hl-s">"base_url"</span>: <span class="hl-s">"http://localhost:8000/v1"</span>,
        <span class="hl-s">"model"</span>: <span class="hl-s">"deepseek-ai/DeepSeek-V4-Flash"</span>}' \
@@ -147,8 +147,8 @@ body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-we
   <span class="hl-p">"secrets"</span>: [<span class="hl-s">"OPENAQ_API_KEY"</span>],
   <span class="hl-p">"pip"</span>: [<span class="hl-s">"requests&gt;=2.31"</span>]
 }</pre>
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># tools/air_quality/tool.py</span>
-<span class="hl-k">import</span> json, os, sys
+      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># tools/air_quality/tool.py
+</span><span class="hl-k">import</span> json, os, sys
 <span class="hl-k">import</span> requests
 
 args = json.<span class="hl-f">load</span>(sys.stdin)
@@ -159,11 +159,11 @@ r = requests.<span class="hl-f">get</span>(
     timeout=<span class="hl-n">20</span>,
 )
 <span class="hl-k">if</span> <span class="hl-k">not</span> r.ok:
-    sys.<span class="hl-f">exit</span>(<span class="hl-s">f"OpenAQ said {r.status_code}"</span>)  <span class="hl-c"># the model sees it</span>
-<span class="hl-f">print</span>(json.<span class="hl-f">dumps</span>(r.<span class="hl-f">json</span>()[<span class="hl-s">"results"</span>][:<span class="hl-n">1</span>]))
+    sys.<span class="hl-f">exit</span>(<span class="hl-s">f"OpenAQ said {r.status_code}"</span>)  <span class="hl-c"># the model sees it
+</span><span class="hl-f">print</span>(json.<span class="hl-f">dumps</span>(r.<span class="hl-f">json</span>()[<span class="hl-s">"results"</span>][:<span class="hl-n">1</span>]))
 
-<span class="hl-c"># share it</span>
-<span class="hl-f">python3</span> registry/build_index.py <span class="hl-o">--check</span></pre>
+<span class="hl-c"># share it
+</span><span class="hl-f">python3</span> registry/build_index.py <span class="hl-o">--check</span></pre>
     </div>
   </section>
 
