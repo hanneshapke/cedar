@@ -13,8 +13,24 @@ function dot(el, cls) {
   el.className = 'dot' + (cls ? ' ' + cls : '');
 }
 
+// The page's wording for the platform the app runs on.
+const PLATFORM = {
+  macos: {
+    computer: 'this Mac',
+    dockerApps: 'Docker Desktop, OrbStack, or Colima',
+    dockerStart: 'Start Docker Desktop (or OrbStack, Colima)',
+  },
+  windows: {
+    computer: 'this PC',
+    dockerApps: 'Docker Desktop (with the WSL 2 backend) or Rancher Desktop',
+    dockerStart: 'Start Docker Desktop (or Rancher Desktop)',
+  },
+};
+
 function render(s) {
   lastStatus = s;
+  const p = PLATFORM[s.platform] || PLATFORM.macos;
+  for (const e of document.querySelectorAll('.this-computer')) e.textContent = p.computer;
   $('version').textContent = 'v' + s.version;
   $('config-path').textContent = s.config_path;
   $('sandbox-image').textContent = s.sandbox_image;
@@ -28,12 +44,12 @@ function render(s) {
     $('docker-text').textContent = 'Looking for Docker…';
   } else if (d.state === 'missing') {
     dot($('docker-dot'), 'bad');
-    $('docker-text').textContent = 'No docker command was found. Install Docker Desktop, OrbStack, or Colima, start it, then check again.';
+    $('docker-text').textContent = 'No docker command was found. Install ' + p.dockerApps + ', start it, then check again.';
     dockerHelp.href = 'https://www.docker.com/products/docker-desktop/';
     dockerHelp.classList.remove('hidden');
   } else if (d.state === 'not_running') {
     dot($('docker-dot'), 'warn');
-    $('docker-text').textContent = 'Docker is installed but not answering. Start Docker Desktop (or OrbStack, Colima) and check again. ' + d.detail;
+    $('docker-text').textContent = 'Docker is installed but not answering. ' + p.dockerStart + ' and check again. ' + d.detail;
   } else {
     dot($('docker-dot'), 'ok');
     $('docker-text').textContent = d.detail;
@@ -118,7 +134,7 @@ function render(s) {
     $('share-text').textContent = 'Setting up tailscale serve…';
   } else if (sh.state === 'on') {
     dot($('share-dot'), 'ok');
-    $('share-text').textContent = 'In the iOS app’s Settings, scan the QR code, or enter ' + sh.detail + ' and the access token. It works while this Mac is awake and Cedar is running.';
+    $('share-text').textContent = 'In the iOS app’s Settings, scan the QR code, or enter ' + sh.detail + ' and the access token. It works while ' + p.computer + ' is awake and Cedar is running.';
   } else if (sh.state === 'failed') {
     dot($('share-dot'), 'bad');
     $('share-text').textContent = 'Not shared yet. Fix the cause, then try again.';
@@ -128,7 +144,7 @@ function render(s) {
     $('share-text').textContent = 'Turns on once Cedar is running.';
   } else {
     dot($('share-dot'), '');
-    $('share-text').textContent = 'Off. Only this Mac can reach the chat.';
+    $('share-text').textContent = 'Off. Only ' + p.computer + ' can reach the chat.';
   }
 
   $('open-chat').disabled = !running;

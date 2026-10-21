@@ -71,10 +71,13 @@ fn id_of(run: &Value) -> String {
     run["id"].as_str().unwrap().to_string()
 }
 
-/// Poll the delivery bookkeeping until the attempt count stops at `attempts`.
+/// Poll the delivery bookkeeping until the attempt count stops at `attempts`. Generous, because
+/// on Windows a connection to a closed local port isn't refused at once: the TCP stack retries
+/// the SYN first, so each failed attempt takes a second or two there, not milliseconds.
 async fn wait_attempts(store: &Store, run_id: &str, attempts: i64) -> (i64, bool, Option<String>) {
     let id = uuid::Uuid::parse_str(run_id).unwrap();
-    for _ in 0..500 {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
+    while tokio::time::Instant::now() < deadline {
         if let Some((n, delivered, error)) = store.delivery_status(id).await.unwrap() {
             if n >= attempts {
                 return (n, delivered.is_some(), error);

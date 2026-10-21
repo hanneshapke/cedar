@@ -17,7 +17,6 @@ tauri-build = { version = "2", features = [] }
 anyhow = "1"
 futures-util = "0.3"
 hex = "0.4"
-libc = "0.2"
 open = "5"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rand = "0.8"
@@ -29,11 +28,21 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "ti
 tokio-util = "0.7"
 url = "2"
 
+[target.'cfg(unix)'.dependencies]
+# SIGTERM for a graceful stop (see src/supervisor.rs); Windows closes the servers' stdin instead.
+libc = "0.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # Notification Center, with the click that opens the conversation (see src/notify.rs).
 mac-notification-sys = "0.6"
 # Lets those banners show while Cedar is the frontmost app (see `present_while_frontmost`).
 objc2 = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+# Toast notifications, with the click that opens the conversation (see src/notify.rs).
+tauri-winrt-notification = "0.8"
+# Starting Cedar again (Start Menu, a toast clicked after its handler went) shows the running one.
+tauri-plugin-single-instance = "2"
 
 [profile.release]
 strip = true

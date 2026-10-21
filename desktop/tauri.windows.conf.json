@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["msi"],
+    "longDescription": "Cedar runs the cedar agent server and its web chat on this PC. Each agent's tools run in a Docker container; the model server runs wherever you point it.",
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "wix": {
+        "upgradeCode": "42f0b668-4053-4b22-8009-cc3f9b148938"
+      }
+    }
+  }
+}

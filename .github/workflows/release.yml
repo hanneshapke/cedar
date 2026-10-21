@@ -5,7 +5,9 @@
 #               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
 #   3. dmg      cedar and cedar-chat for Apple Silicon, wrapped in Cedar.app, signed, notarized,
 #               and packed into a DMG (no Intel build: openssl-sys can't cross-compile to x86_64)
-#   4. release  tag v<version> at the merge commit and publish a GitHub Release with the DMGs
+#   4. msi      cedar.exe and cedar-chat.exe for x64 Windows, wrapped in Cedar.exe and packed into
+#               an MSI (unsigned for now: SmartScreen warns on first run, see desktop/README.md)
+#   5. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG and MSI
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the
@@ -79,6 +81,15 @@ jobs:
           case "$version" in
             ''|*[!0-9A-Za-z.+-]*) echo "::error::'$version' is not a usable version"; exit 1 ;;
           esac
+          # Windows Installer takes major.minor.patch only, with major and minor up to 255 and
+          # patch up to 65535; a pre-release suffix like -beta is refused when the MSI is built.
+          if ! printf '%s' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "::error::'$version' is not major.minor.patch, which the Windows installer (MSI) needs"; exit 1
+          fi
+          IFS=. read -r major minor patch <<< "$version"
+          if [ "$major" -gt 255 ] || [ "$minor" -gt 255 ] || [ "$patch" -gt 65535 ]; then
+            echo "::error::'$version' is too large for the Windows installer (MSI): major and minor go up to 255, patch to 65535"; exit 1
+          fi
           {
             echo "version=$version"
             echo "sha=$sha"
@@ -291,8 +302,65 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
 
+  msi:
+    needs: verify
+    # WiX, which Tauri builds the MSI with, only runs on Windows. Steps run in PowerShell, so the
+    # Perl that builds cedar-chat's static OpenSSL is Strawberry Perl, not Git's.
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-pc-windows-msvc
+          workspaces: |
+            . -> target
+            desktop -> target
+
+      - name: Build cedar and cedar-chat
+        run: cargo build --release --locked -p cedar -p cedar-chat --target $env:TARGET
+
+      - name: Put them where the bundler expects sidecars
+        run: |
+          Copy-Item "target/$env:TARGET/release/cedar.exe" "desktop/binaries/cedar-$env:TARGET.exe"
+          Copy-Item "target/$env:TARGET/release/cedar-chat.exe" "desktop/binaries/cedar-chat-$env:TARGET.exe"
+          Get-ChildItem desktop/binaries
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install the Tauri CLI
+        run: cargo binstall -y --locked tauri-cli --version '^2'
+
+      - name: Build Cedar.exe and pack the MSI
+        working-directory: desktop
+        run: cargo tauri build --ci --target $env:TARGET --bundles msi
+
+      - name: Name the MSI
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          $built = Get-ChildItem "desktop/target/$env:TARGET/release/bundle/msi/*.msi"
+          if ($built.Count -ne 1) { throw "expected one MSI, found $($built.Count)" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Move-Item $built.FullName "dist/Cedar-$env:VERSION-x64.msi"
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi-x64
+          path: dist/*.msi
+          if-no-files-found: error
+
   release:
-    needs: [verify, manifests, dmg]
+    needs: [verify, manifests, dmg, msi]
     if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     steps:
@@ -306,9 +374,15 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: msi-*
+          path: dist
+          merge-multiple: true
+
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.dmg | tee checksums.txt
+        run: sha256sum *.dmg *.msi | tee checksums.txt
 
       - name: Tag and publish the release
         env:
@@ -325,6 +399,13 @@ jobs:
           runs on Apple Silicon Macs only. The first launch needs Docker Desktop (or OrbStack, Colima)
           running and asks for your model server.
 
+          ## Cedar $VERSION for Windows
+
+          Download \`Cedar-$VERSION-x64.msi\` and run it (it needs administrator rights, like Docker
+          Desktop). It runs on 64-bit Windows 10 and 11 with Docker Desktop's WSL 2 backend. The
+          installer is not signed yet, so Windows SmartScreen warns the first time: choose *More info*,
+          then *Run anyway*.
+
           Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
           EOF
           gh release create "v$VERSION" \
@@ -332,4 +413,4 @@ jobs:
             --title "Cedar $VERSION" \
             --notes "$(cat notes.md)" \
             --generate-notes \
-            dist/*.dmg dist/checksums.txt
+            dist/*.dmg dist/*.msi dist/checksums.txt

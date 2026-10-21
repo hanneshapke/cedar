@@ -71,7 +71,8 @@ pub struct AppState {
     pub supervisor: Supervisor,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
-    /// The setup page's own URL (a `tauri://` address), to come back to from the chat.
+    /// The setup page's own URL (`tauri://localhost` on a Mac, `http://tauri.localhost` on
+    /// Windows), to come back to from the chat.
     setup_url: Mutex<Option<Url>>,
 }
 
@@ -79,6 +80,8 @@ pub struct AppState {
 #[derive(Serialize, Clone, Debug)]
 pub struct Status {
     pub version: String,
+    /// `macos` or `windows` (`std::env::consts::OS`), for the page's wording.
+    pub platform: &'static str,
     pub docker: DockerStatus,
     pub images: ImagesStatus,
     pub services: ServiceState,
@@ -211,6 +214,7 @@ impl AppState {
         let cfg = self.config();
         Status {
             version: VERSION.to_string(),
+            platform: std::env::consts::OS,
             docker: self.docker.lock().unwrap().clone(),
             images: self.images.lock().unwrap().clone(),
             services: self.supervisor.state(),

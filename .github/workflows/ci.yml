@@ -1,7 +1,8 @@
 name: CI
 
 # The same checks the README's Development section lists, over the whole workspace (cedar and
-# cedar-chat). The Docker-backed tests are #[ignore]d, so none of this needs Docker or the network.
+# cedar-chat), on Linux and Windows. The Docker-backed tests are #[ignore]d, so none of this needs
+# Docker or the network.
 on:
   push:
     branches: [main]
@@ -38,6 +39,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked
+
+  # The servers and the desktop app on Windows (desktop/README.md). Steps run in PowerShell, so
+  # the Perl that builds cedar-chat's static OpenSSL is Strawberry Perl, not Git's.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      # The registry test hashes the tools' files as committed; a CRLF checkout would change them.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            desktop -> target
+      - run: cargo build --workspace --locked
+      # Every test binary, so one run shows all that is Windows-specific, not just the first.
+      - run: cargo test --workspace --locked --no-fail-fast
+      - name: The desktop app compiles and lints clean
+        # tauri-build wants the sidecars to exist; their contents only matter for a bundle.
+        run: |
+          New-Item -ItemType File -Force desktop/binaries/cedar-x86_64-pc-windows-msvc.exe, desktop/binaries/cedar-chat-x86_64-pc-windows-msvc.exe | Out-Null
+          cargo clippy --manifest-path desktop/Cargo.toml --all-targets --locked -- -D warnings
 
   # The community tool registry (registry/): every tool follows the rules and the index is up to
   # date. cedar's own checks run on the tools too, in `tests/registry.rs` under `test`.

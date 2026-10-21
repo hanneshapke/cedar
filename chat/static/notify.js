@@ -34,7 +34,7 @@
 const cedarNotify = (() => {
   const METHODS = [
     ['none', 'Only in the app', 'The inbox, the marks in the conversation list and the count in the title.'],
-    ['desktop', 'Mac notification', 'A notification in Notification Center from the Cedar app on this Mac, its window open or not.'],
+    ['desktop', 'Desktop notification', 'A notification from the Cedar app on this computer (Notification Center on a Mac, a toast on Windows), its window open or not.'],
     ['browser', 'Browser push', 'A notification from this browser even when the tab is closed. Needs https, or localhost.'],
     ['ios', 'iPhone push', 'A notification from the Cedar iOS app, through Apple\'s push service.'],
     ['pushover', 'Phone push via Pushover', 'A push to your phone through pushover.net and its app.'],
@@ -54,8 +54,8 @@ const cedarNotify = (() => {
   let status = null;    // GET /api/notifications, as last loaded
   let started = false;
   const announced = new Set(); // turn ids already told about, so a reconnect doesn't repeat them
-  // Inside the Cedar app for macOS (its window sets this): its web view can't take browser push.
-  const inMacApp = window.__CEDAR_MAC_APP__ === true;
+  // Inside the Cedar desktop app (its window sets this): its web view can't take browser push.
+  const inDesktopApp = window.__CEDAR_DESKTOP_APP__ === true;
 
   // -- helpers -----------------------------------------------------------------------------------
 
@@ -385,9 +385,9 @@ const cedarNotify = (() => {
       for (const [id, radio] of radios) radio.setAttribute('aria-checked', String(draft.default_method === id));
     };
     for (const [id, label, sub] of METHODS) {
-      // The Mac app's method only where there is one; browser push not in the app's web view.
-      if (id === 'desktop' && !inMacApp && !status.desktop?.configured) continue;
-      if (id === 'browser' && inMacApp) continue;
+      // The desktop app's method only where there is one; browser push not in the app's web view.
+      if (id === 'desktop' && !inDesktopApp && !status.desktop?.configured) continue;
+      if (id === 'browser' && inDesktopApp) continue;
       const item = el('div', 'cedar-notify-method');
       const head = el('div', 'cedar-notify-method-head');
       const radio = el('button', 'cedar-notify-radio');
@@ -431,7 +431,7 @@ const cedarNotify = (() => {
       group.append(item);
     }
     if (!radios.has(draft.default_method)) {
-      // Picked once, no longer offered (the Mac app went away): shown so it can be changed.
+      // Picked once, no longer offered (the desktop app went away): shown so it can be changed.
       const m = draft.default_method;
       const item = el('div', 'cedar-notify-method');
       const head = el('div', 'cedar-notify-method-head');
@@ -521,7 +521,7 @@ const cedarNotify = (() => {
 
     function desktopBlock() {
       const d = status.desktop || {};
-      if (d.listening) return [helpRow('The Cedar app is running and will show them. If nothing appears, allow notifications for Cedar in System Settings → Notifications.', testButton('desktop'))];
+      if (d.listening) return [helpRow('The Cedar app is running and will show them. If nothing appears, allow notifications for Cedar in System Settings → Notifications on a Mac, or Settings → System → Notifications on Windows.', testButton('desktop'))];
       if (d.configured) return [helpRow(`The Cedar app last connected ${when(d.connected_at)}; it isn't running now, so nothing would show.`)];
       return [helpRow('Waiting for the Cedar app to connect.')];
     }

@@ -3,7 +3,9 @@
 are the source of truth:
 
     cedar-app-icon.svg   -> app-icon.png (1024 px, with the margin a macOS icon carries itself),
-                            icons/32x32.png, icons/128x128.png, icons/128x128@2x.png, icons/icon.icns
+                            icons/32x32.png, icons/128x128.png, icons/128x128@2x.png, icons/icon.icns,
+                            icons/icon.ico (full bleed, as Windows draws icons),
+                            tray-icon-color.png (32 px, full bleed: the tray icon on Windows)
     cedar-mark-mono.svg  -> tray-icon.png (44 px, black on transparency: a menu bar template image)
 
 Those SVGs are nothing but <rect> elements with rounded corners, so they are drawn here exactly
@@ -77,6 +79,15 @@ app.save(
     format="ICNS",
     sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)],
 )
+
+# Windows: the exe, the installer and the Start Menu draw the icon as it is, without the macOS margin.
+shape.save(
+    HERE / "icons" / "icon.ico",
+    format="ICO",
+    sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+)
+# The Windows tray shows icons in colour, on light and dark taskbars alike.
+render(units, rects, 32).save(HERE / "tray-icon-color.png")
 
 # Menu bar: the mono mark in black; macOS tints a template image to the menu bar's colour.
 units, rects = read_svg("cedar-mark-mono.svg")

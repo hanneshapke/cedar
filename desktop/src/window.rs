@@ -28,8 +28,8 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
 /// Runs before every page the window loads. On the chat's own origin it hands the page the access
 /// token the server expects (so there is no token prompt) and the admin token its Settings page
 /// sends with changes to cedar's models and integrations, and tells it that it runs in the app
-/// (whose web view can't take browser push; it offers Mac notifications instead); anywhere else
-/// it does nothing.
+/// (whose web view can't take browser push; it offers desktop notifications instead); anywhere
+/// else it does nothing.
 fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
     let origin = serde_json::to_string(chat_url).unwrap_or_default();
     let token = serde_json::to_string(token).unwrap_or_default();
@@ -38,7 +38,7 @@ fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
         "(function () {{\n  try {{\n    if (window.location.origin === {origin}) {{\n      \
          window.localStorage.setItem('cedar-chat-token', {token});\n      \
          window.sessionStorage.setItem('cedar-chat-admin', {admin});\n      \
-         window.__CEDAR_MAC_APP__ = true;\n    }}\n  }} catch (e) {{}}\n}})();"
+         window.__CEDAR_DESKTOP_APP__ = true;\n    }}\n  }} catch (e) {{}}\n}})();"
     )
 }
 
@@ -48,7 +48,8 @@ fn main_window(app: &AppHandle) -> Result<WebviewWindow> {
 }
 
 /// Shows the window and brings it forward. While the window is up the app is a regular one, with
-/// a Dock icon and a Command-Tab entry; closing it (see main.rs) makes it a menu bar app again.
+/// a Dock icon and a Command-Tab entry (a taskbar button on Windows); closing it (see main.rs)
+/// makes it a menu bar (tray) app again.
 fn present(win: &WebviewWindow) -> Result<()> {
     #[cfg(target_os = "macos")]
     win.app_handle()
@@ -129,6 +130,6 @@ mod tests {
         assert!(s.contains(r#"window.location.origin === "http://127.0.0.1:13000""#));
         assert!(s.contains(r#"localStorage.setItem('cedar-chat-token', "abc\"def")"#));
         assert!(s.contains(r#"sessionStorage.setItem('cedar-chat-admin', "adm")"#));
-        assert!(s.contains("window.__CEDAR_MAC_APP__ = true;"));
+        assert!(s.contains("window.__CEDAR_DESKTOP_APP__ = true;"));
     }
 }

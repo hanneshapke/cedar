@@ -1,6 +1,7 @@
-//! Notification Center: cedar-chat's `desktop` notification method. While the servers run, the
-//! app follows `GET /api/notifications/desktop/events` on the chat and shows each message there;
-//! a click opens the conversation it is about. Which responses are worth a message (the scope,
+//! Notification Center on a Mac, toast notifications on Windows: cedar-chat's `desktop`
+//! notification method. While the servers run, the app follows
+//! `GET /api/notifications/desktop/events` on the chat and shows each message there; a click opens
+//! the conversation it is about. Which responses are worth a message (the scope,
 //! a scheduled agent's own method, not if it was looked at meanwhile) is cedar-chat's decision.
 
 use crate::app::AppState;
@@ -160,8 +161,8 @@ fn uuid_like(s: &str) -> bool {
         })
 }
 
-/// Post the message to Notification Center. Waiting for a click blocks, so each waits on a
-/// thread of its own, which ends when the notification is clicked or dismissed.
+/// Post the message to Notification Center (a toast on Windows). Waiting for a click blocks, so
+/// each waits on a thread of its own, which ends when the notification is clicked or dismissed.
 fn show(app: &AppHandle, message: Message) {
     let conversation = conversation_of(&message.url);
     let app = app.clone();
@@ -189,9 +190,60 @@ fn show(app: &AppHandle, message: Message) {
                 Err(e) => eprintln!("showing a notification: {e}"),
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
+        show_toast(&app, &message, conversation);
+        #[cfg(not(any(target_os = "macos", windows)))]
         let _ = (app, message, conversation);
     });
+}
+
+/// How long a toast's click is waited for. One that times out moves to the notification centre,
+/// where it can still be clicked while the app runs.
+#[cfg(windows)]
+const TOAST_CLICK_WAIT: Duration = Duration::from_secs(60 * 60);
+
+/// A toast under the app's identifier, which the MSI's Start Menu shortcut carries as its
+/// AppUserModelID; Windows shows toasts only for an id it knows, so from `cargo run` without
+/// Cedar installed none appear. The toast is kept alive on this thread until it is clicked or
+/// dismissed, so its click handler is still there when the click comes.
+#[cfg(windows)]
+fn show_toast(app: &AppHandle, message: &Message, conversation: Option<String>) {
+    use std::sync::mpsc;
+    use tauri_winrt_notification::{Toast, ToastDismissalReason};
+
+    enum Outcome {
+        Clicked,
+        Dismissed,
+    }
+    let (tx, rx) = mpsc::channel();
+    let dismissed = tx.clone();
+    let toast = Toast::new(&app.config().identifier)
+        .title(&message.title)
+        .text1(&message.body)
+        .on_activated(move |_| {
+            let _ = tx.send(Outcome::Clicked);
+            Ok(())
+        })
+        .on_dismissed(move |reason| {
+            // A timeout only moves it to the notification centre; it can still be clicked there.
+            if !matches!(reason, Some(ToastDismissalReason::TimedOut)) {
+                let _ = dismissed.send(Outcome::Dismissed);
+            }
+            Ok(())
+        });
+    if let Err(e) = toast.show() {
+        eprintln!("showing a notification: {e}");
+        return;
+    }
+    if let Ok(Outcome::Clicked) = rx.recv_timeout(TOAST_CLICK_WAIT) {
+        let opened = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Err(e) = window::show_conversation(&opened, conversation.as_deref()) {
+                eprintln!("opening the conversation: {e:#}");
+            }
+        });
+    }
+    drop(toast);
 }
 
 #[cfg(test)]

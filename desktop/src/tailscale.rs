@@ -1,19 +1,20 @@
 //! Sharing the chat with an iPhone or iPad over Tailscale. The iOS app only connects over HTTPS
 //! with a certificate it trusts, and both servers listen on loopback, so `tailscale serve` does
-//! the reaching: it gets a Let's Encrypt certificate for this Mac's tailnet name and proxies
-//! `https://<mac>.<tailnet>.ts.net` to the chat on 127.0.0.1. Only devices on the tailnet can
-//! reach it. Tailscale itself is the user's: the app finds its CLI, it never installs or logs in.
+//! the reaching: it gets a Let's Encrypt certificate for this computer's tailnet name and proxies
+//! `https://<computer>.<tailnet>.ts.net` to the chat on 127.0.0.1. Only devices on the tailnet
+//! can reach it. Tailscale itself is the user's: the app finds its CLI, it never installs or logs in.
 
+use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::process::Command;
 
 /// Where the CLI is, in the order to try: the one Tailscale's own menu installs ("Install CLI"),
 /// Homebrew's, then the binary inside the app (Mac App Store or standalone download), which acts
 /// as the CLI when it is given arguments.
+#[cfg(not(windows))]
 fn candidates() -> Vec<PathBuf> {
     vec![
         PathBuf::from("/usr/local/bin/tailscale"),
@@ -22,9 +23,30 @@ fn candidates() -> Vec<PathBuf> {
     ]
 }
 
+/// The Windows installer puts `tailscale.exe` next to the GUI and on the system `PATH`.
+#[cfg(windows)]
+fn candidates() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("ProgramFiles")
+        .map(|pf| PathBuf::from(pf).join("Tailscale"))
+        .into_iter()
+        .collect();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    dirs.iter()
+        .filter_map(|d| proc::executable_in(d, "tailscale"))
+        .collect()
+}
+
+#[cfg(not(windows))]
 pub const MISSING: &str =
     "Tailscale is not installed. Get it from https://tailscale.com/download/mac \
     or the Mac App Store, log in, and try again";
+
+#[cfg(windows)]
+pub const MISSING: &str =
+    "Tailscale is not installed. Get it from https://tailscale.com/download/windows, \
+    log in, and try again";
 
 #[derive(Clone, Debug)]
 pub struct TailscaleCli {
@@ -34,22 +56,8 @@ pub struct TailscaleCli {
 pub fn find() -> Option<TailscaleCli> {
     candidates()
         .into_iter()
-        .find(|p| is_executable(p))
+        .find(|p| proc::is_executable(p))
         .map(|bin| TailscaleCli { bin })
-}
-
-fn is_executable(p: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(p)
-            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        p.is_file()
-    }
 }
 
 /// The parts of `tailscale status --json` this needs.
@@ -78,10 +86,10 @@ fn https_url(status: &str, https_port: u16) -> Result<String> {
     match s.backend_state.as_str() {
         "Running" => {}
         "NeedsLogin" | "NoState" | "" => {
-            bail!("Tailscale is not logged in. Log in from its menu bar item, then try again")
+            bail!("Tailscale is not logged in. Log in from the Tailscale app, then try again")
         }
         "Stopped" => {
-            bail!("Tailscale is turned off. Connect it from its menu bar item, then try again")
+            bail!("Tailscale is turned off. Connect it from the Tailscale app, then try again")
         }
         other => bail!("Tailscale is not connected yet ({other}). Try again in a moment"),
     }
@@ -89,7 +97,7 @@ fn https_url(status: &str, https_port: u16) -> Result<String> {
         s.me.map(|m| m.dns_name.trim_end_matches('.').to_string())
             .unwrap_or_default();
     if name.is_empty() {
-        bail!("this Mac has no tailnet name. Turn on MagicDNS in the Tailscale admin console (DNS page)");
+        bail!("this computer has no tailnet name. Turn on MagicDNS in the Tailscale admin console (DNS page)");
     }
     if s.cert_domains.unwrap_or_default().is_empty() {
         bail!(
@@ -108,7 +116,7 @@ impl TailscaleCli {
     async fn output(&self, args: &[&str], timeout: Duration) -> Result<String> {
         let out = tokio::time::timeout(
             timeout,
-            Command::new(&self.bin)
+            proc::command(&self.bin)
                 .args(args)
                 .stdin(Stdio::null())
                 .kill_on_drop(true)

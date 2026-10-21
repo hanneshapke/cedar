@@ -1,20 +1,23 @@
 //! Runs cedar and cedar-chat as child processes and keeps them running.
 //!
-//! Both binaries sit next to the app's own executable in `Contents/MacOS/` (Tauri's `externalBin`).
-//! They get their configuration as environment variables, write their logs to files, and hold a
-//! stdin pipe whose other end is this process: with `CEDAR_EXIT_ON_STDIN_EOF=1` they exit when the
-//! app goes away, however it goes. A deliberate stop is a SIGTERM and a grace period, like systemd.
+//! Both binaries sit next to the app's own executable (Tauri's `externalBin`): in `Contents/MacOS/`
+//! on a Mac, in the install directory on Windows. They get their configuration as environment
+//! variables, write their logs to files, and hold a stdin pipe whose other end is this process:
+//! with `CEDAR_EXIT_ON_STDIN_EOF=1` they exit when the app goes away, however it goes (Quit, a
+//! crash, Task Manager). A deliberate stop is a SIGTERM and a grace period, like systemd; Windows
+//! has no SIGTERM, so there it is closing that pipe, which the servers treat the same way.
 
 use crate::config::Config;
 use crate::docker::DockerCli;
 use crate::paths::Paths;
+use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::process::{Child, Command};
+use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -29,7 +32,7 @@ pub enum ServiceState {
 
 /// How long a server gets to answer `/healthz` after it was started.
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(45);
-/// cedar gives active runs 10 s to record their state on SIGTERM; wait a little longer than that.
+/// cedar gives active runs 10 s to record their state on a stop; wait a little longer than that.
 const STOP_GRACE: Duration = Duration::from_secs(15);
 const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
 /// An exit this soon after a start counts as a crash loop.
@@ -46,6 +49,14 @@ pub struct Supervisor {
 struct Handle {
     stop: CancellationToken,
     finished: tokio::task::JoinHandle<()>,
+}
+
+/// A running server and the stdin pipe it holds. tokio's `Child::wait` closes a stdin handle it
+/// finds in the child, which with CEDAR_EXIT_ON_STDIN_EOF would stop the server as soon as it is
+/// up, so the pipe is kept out here until [`terminate`] closes it.
+struct Server {
+    child: Child,
+    stdin: Option<ChildStdin>,
 }
 
 impl Supervisor {
@@ -174,11 +185,7 @@ impl Runner {
         self.set(ServiceState::Starting("starting cedar".into()));
         let cedar_log = self.paths.cedar_log();
         let mut cedar = self.spawn("cedar", self.cedar_env(), &cedar_log)?;
-        // tokio's `Child::wait` closes the stdin handle it finds in the child, which with
-        // CEDAR_EXIT_ON_STDIN_EOF would stop the server as soon as it is up. Hold the pipe here
-        // instead; it closes when this function returns, after the server was told to stop.
-        let _cedar_stdin = cedar.stdin.take();
-        if let Err(e) = wait_healthy(&mut cedar, &self.cfg.cedar_url(), "cedar", &cedar_log).await {
+        if let Err(e) = wait_healthy(&mut cedar.child, &self.cfg.cedar_url(), "cedar", &cedar_log).await {
             terminate(&mut cedar).await;
             return Err(e);
         }
@@ -192,8 +199,7 @@ impl Runner {
                 return Err(e);
             }
         };
-        let _chat_stdin = chat.stdin.take();
-        if let Err(e) = wait_healthy(&mut chat, &self.cfg.chat_url(), "cedar-chat", &chat_log).await {
+        if let Err(e) = wait_healthy(&mut chat.child, &self.cfg.chat_url(), "cedar-chat", &chat_log).await {
             terminate(&mut chat).await;
             terminate(&mut cedar).await;
             return Err(e);
@@ -210,25 +216,27 @@ impl Runner {
                 tokio::join!(terminate(&mut chat), terminate(&mut cedar));
                 Ok(())
             }
-            status = cedar.wait() => {
+            status = cedar.child.wait() => {
                 terminate(&mut chat).await;
                 Err(anyhow!("cedar exited ({}); see {}", describe(status), cedar_log.display()))
             }
-            status = chat.wait() => {
+            status = chat.child.wait() => {
                 terminate(&mut cedar).await;
                 Err(anyhow!("cedar-chat exited ({}); see {}", describe(status), chat_log.display()))
             }
         }
     }
 
-    fn spawn(&self, name: &str, env: Vec<(String, String)>, log: &Path) -> Result<Child> {
-        let bin = self.exe_dir.join(name);
+    fn spawn(&self, name: &str, env: Vec<(String, String)>, log: &Path) -> Result<Server> {
+        let bin = self
+            .exe_dir
+            .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
         if !bin.is_file() {
             bail!("{} is missing from the app bundle", bin.display());
         }
         let out = open_log(log)?;
         let err = out.try_clone()?;
-        Command::new(&bin)
+        let mut child = proc::command(&bin)
             .current_dir(&self.paths.data)
             .envs(env)
             .stdin(Stdio::piped()) // held, never written: closing it tells the server to exit
@@ -236,7 +244,9 @@ impl Runner {
             .stderr(Stdio::from(err))
             .kill_on_drop(true)
             .spawn()
-            .with_context(|| format!("starting {}", bin.display()))
+            .with_context(|| format!("starting {}", bin.display()))?;
+        let stdin = child.stdin.take();
+        Ok(Server { child, stdin })
     }
 
     fn cedar_env(&self) -> Vec<(String, String)> {
@@ -328,15 +338,20 @@ async fn wait_healthy(child: &mut Child, url: &str, name: &str, log: &Path) -> R
     }
 }
 
-/// SIGTERM, a grace period, then SIGKILL. Nothing to do if it already exited.
-async fn terminate(child: &mut Child) {
-    let Some(pid) = child.id() else { return };
+/// SIGTERM and closing its stdin (only the latter on Windows, which has no SIGTERM; the servers
+/// stop the same way on either), a grace period, then a kill. Nothing to do if it already exited.
+async fn terminate(server: &mut Server) {
+    let Some(pid) = server.child.id() else { return };
+    #[cfg(unix)]
     // SAFETY: a plain signal to a process id we own; the worst case is ESRCH if it just exited.
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGTERM);
     }
-    if tokio::time::timeout(STOP_GRACE, child.wait()).await.is_err() {
-        let _ = child.kill().await;
+    #[cfg(not(unix))]
+    let _ = pid;
+    server.stdin.take();
+    if tokio::time::timeout(STOP_GRACE, server.child.wait()).await.is_err() {
+        let _ = server.child.kill().await;
     }
 }
 
@@ -387,9 +402,10 @@ mod tests {
 
     /// The bug behind "stdin closed; the launcher is gone" half a second after every start:
     /// `Child::wait` drops the stdin handle unless it was taken out of the child first.
+    #[cfg(unix)]
     #[tokio::test]
     async fn waiting_does_not_close_a_stdin_handle_we_hold() {
-        let mut child = Command::new("cat")
+        let mut child = tokio::process::Command::new("cat")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .kill_on_drop(true)

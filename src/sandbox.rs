@@ -182,6 +182,19 @@ pub fn tool_env_volume(name: &str) -> String {
     format!("{TOOL_ENV_PREFIX}{name}")
 }
 
+/// A read-only `--mount` of a host directory. Not `-v <host>:<container>:ro`, which splits on
+/// colons and so can't take a Windows path (`C:\Users\...`). `--mount` is read as CSV, so the
+/// `src=` field is quoted when the path holds a comma or a quote.
+fn bind_mount_ro(host: &std::path::Path, container: &str) -> String {
+    let src = format!("src={}", host.display());
+    let src = if src.contains([',', '"']) {
+        format!("\"{}\"", src.replace('"', "\"\""))
+    } else {
+        src
+    };
+    format!("type=bind,{src},dst={container},readonly")
+}
+
 // ---------------------------------------------------------------------------------------------
 // Docker
 // ---------------------------------------------------------------------------------------------
@@ -443,8 +456,8 @@ pub fn tool_run_args(
         "/workspace".into(),
         "-v".into(),
         format!("{}:/workspace", volume_name(workspace_id)),
-        "-v".into(),
-        format!("{}:{TOOL_MOUNT}:ro", call.dir.display()),
+        "--mount".into(),
+        bind_mount_ro(call.dir, TOOL_MOUNT),
         "-v".into(),
         format!("{}:{TOOL_ENV_MOUNT}", tool_env_volume(call.name)),
     ]);
@@ -1083,6 +1096,19 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_folder_mounts_from_a_windows_path_or_one_with_a_comma() {
+        // `-v C:\tools\t:/opt/cedar/tool:ro` would split at the drive letter's colon.
+        assert_eq!(
+            bind_mount_ro(std::path::Path::new(r"C:\Users\me\tools\t"), TOOL_MOUNT),
+            r"type=bind,src=C:\Users\me\tools\t,dst=/opt/cedar/tool,readonly"
+        );
+        assert_eq!(
+            bind_mount_ro(std::path::Path::new(r#"/srv/a,b "c""#), TOOL_MOUNT),
+            r#"type=bind,"src=/srv/a,b ""c""",dst=/opt/cedar/tool,readonly"#
+        );
+    }
+
+    #[test]
     fn a_tool_call_sees_only_its_own_folder_environment_and_secrets() {
         let (run, ws) = (Uuid::nil(), Uuid::max());
         let env = vec![("TANDEM_PASSWORD".to_string(), "hunter2".to_string())];
@@ -1104,7 +1130,9 @@ mod tests {
         assert!(joined.contains("--user 1000:1000"));
         assert!(joined.contains(&format!("--label cedar.run={run}")));
         assert!(joined.contains(&format!("-v cedar-ws-{ws}:/workspace ")));
-        assert!(joined.contains("-v /home/me/tools/tandem_glucose:/opt/cedar/tool:ro"));
+        assert!(joined.contains(
+            "--mount type=bind,src=/home/me/tools/tandem_glucose,dst=/opt/cedar/tool,readonly"
+        ));
         assert!(joined.contains("-v cedar-tool-env-tandem_glucose:/opt/cedar/env"));
         assert!(joined.contains("-e PYTHONUSERBASE=/opt/cedar/env/.local"));
         // The secret goes by name; its value is in docker's environment, not its arguments.
