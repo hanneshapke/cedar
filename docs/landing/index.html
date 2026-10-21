@@ -8,248 +8,343 @@
 <body>
 <x-dc>
 <helmet>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>.code .hl-c{color:#a39a8c}.code .hl-s{color:#b8d4a3}.code .hl-k{color:#e8a98c}.code .hl-p{color:#e6c27a}.code .hl-n{color:#d9aed0}.code .hl-f{color:#8fc4d6}.code .hl-o{color:#c3b8e0}.code .hl-v{color:#e6c27a}
-body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}
-.hero h1{font-size:52px}
-@media (max-width:960px){.hero,.how{grid-template-columns:minmax(0,1fr)!important;gap:28px!important}.cards4{grid-template-columns:repeat(2,minmax(0,1fr))!important}.cards3{grid-template-columns:minmax(0,1fr)!important}}
-@media (max-width:640px){.wrap{padding:16px 16px 24px!important;gap:24px!important}.top{flex-direction:column;align-items:flex-start!important}.top nav{flex-wrap:wrap;gap:10px 16px!important}.hero h1{font-size:36px}.hero p{font-size:16px!important}.cards4{grid-template-columns:minmax(0,1fr)!important}.foot{flex-direction:column;align-items:flex-start!important}.cmp table{min-width:0!important}.cmp thead{display:none}.cmp tr{display:grid;grid-template-columns:minmax(0,1fr);padding:4px 0}.cmp tbody th{grid-column:1/-1;padding-bottom:0!important}.cmp td{padding:6px 16px 10px!important}.cmp td::before{content:attr(data-label);display:block;font-weight:600;color:#2a2622}.cmp td[data-label=cedar]::before{color:#3a5f4b}}</style>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#fbf4ea;color:#231f1b;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
+@keyframes floaty{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-16px) rotate(2deg)}}
+@keyframes floaty2{0%,100%{transform:translateY(0)}50%{transform:translateY(12px)}}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,-30px) scale(1.08)}100%{transform:translate(0,0) scale(1)}}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes popin{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(229,85,58,.45)}70%{box-shadow:0 0 0 14px rgba(229,85,58,0)}}
+@keyframes riseIn{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
+</style>
 </helmet>
-<div class="wrap" style="min-height:100vh;display:flex;flex-direction:column;max-width:1200px;margin:0 auto;padding:20px 32px 28px;box-sizing:border-box;gap:28px">
+<div style="position:relative;overflow:hidden">
 
-  <header class="top" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
-    <a href="#" style="display:flex;align-items:center;gap:10px;color:#2a2622"><img src="../assets/cedar-mark.svg" width="28" height="28" alt="cedar"><span style="font-weight:600;font-size:22px;letter-spacing:-.02em">cedar</span></a>
-    <nav style="display:flex;gap:22px;font-size:14px;align-items:center">
-      <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#share">Share a tool</a><a href="#apps">Apps</a><a href="#safety">Safety</a><a href="#openclaw">vs. OpenClaw &amp; Muse</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
-      <a href="https://github.com/hanneshapke/cedar" style="display:inline-flex;align-items:center;gap:8px;background:#2a2622;color:#f3ede3;padding:8px 14px;border-radius:8px;font-weight:500" style-hover="background:#3a5f4b;color:#f3ede3">★ Star on GitHub</a>
-    </nav>
-  </header>
+<div style="position:absolute;top:-180px;left:-140px;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle at 40% 40%,rgba(242,162,28,.55),rgba(242,162,28,0) 68%);animation:drift 14s ease-in-out infinite;pointer-events:none"></div>
+<div style="position:absolute;top:120px;right:-220px;width:680px;height:680px;border-radius:50%;background:radial-gradient(circle at 50% 50%,rgba(229,85,58,.38),rgba(229,85,58,0) 66%);animation:drift 18s ease-in-out infinite reverse;pointer-events:none"></div>
 
-  <section class="hero" style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:40px;align-items:center">
-    <div style="display:flex;flex-direction:column;gap:18px">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#3a5f4b">Rust · Apache 2.0 · self-hosted</span>
-      <h1 style="margin:0;line-height:1.05;letter-spacing:-.03em;font-weight:600;text-wrap:pretty">Run LLM agents on your own hardware, each one in its own box.</h1>
-      <p style="margin:0;font-size:18px;line-height:1.5;color:#5a534a;max-width:520px;text-wrap:pretty">cedar is a small backend that runs agent loops against the models you register: DeepSeek V4 on a local vLLM, Ollama or LM Studio on a Mac, or any other OpenAI-compatible server. Submit a task, follow it live over SSE, and let every tool call run inside a throwaway Docker container. Talk to it from the browser, a Mac menu bar app, or your iPhone.</p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-        <a href="https://github.com/hanneshapke/cedar" style="background:#3a5f4b;color:#f3ede3;padding:12px 20px;border-radius:9px;font-weight:500;font-size:15px" style-hover="background:#2e4c3c;color:#f3ede3">View on GitHub</a>
-        <a href="https://github.com/hanneshapke/cedar/releases" style="padding:12px 20px;border-radius:9px;font-weight:500;font-size:15px;border:1.5px solid #cfc6b6;color:#2a2622" style-hover="border-color:#3a5f4b;color:#3a5f4b">Download for Mac</a>
-        <a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="font-weight:500;font-size:15px">Read the docs →</a>
-      </div>
-      <span style="font-size:13px;color:#8a8275">Contributions welcome. Issues and PRs open.</span>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <img src="../screenshots/conversation-light.png" alt="cedar-chat: the agent writes a test file, runs pytest in its sandbox, and summarizes the result" style="width:100%;height:auto;border-radius:12px;border:1px solid #e2dacb;box-shadow:0 12px 32px rgba(42,38,34,.10)">
-      <span style="font-size:12px;color:#8a8275;text-align:center">cedar-chat, the included web UI. Light and dark, desktop and mobile.</span>
-    </div>
-  </section>
+<header style="max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;flex-wrap:wrap">
+  <a href="#" style="display:flex;align-items:center;gap:10px;color:#231f1b"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em">Cedar</span></a>
+  <nav style="display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap">
+    <a href="#does" style="color:#231f1b" style-hover="color:#e5553a">What it does</a>
+    <a href="#private" style="color:#231f1b" style-hover="color:#e5553a">Private by design</a>
+    <a href="#apps" style="color:#231f1b" style-hover="color:#e5553a">Mac &amp; iPhone</a>
+    <a href="#compare" style="color:#231f1b" style-hover="color:#e5553a">Compared</a>
+    <a href="#setup" style="color:#231f1b" style-hover="color:#e5553a">Setup</a>
+    <a href="https://github.com/hanneshapke/cedar/releases" style="background:#231f1b;color:#fbf4ea;padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s" style-hover="background:#e5553a;color:#fbf4ea;transform:translateY(-2px)">Download for Mac</a>
+  </nav>
+</header>
 
-  <section id="how" class="how" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start">
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">How a run works</h2>
-      <ol style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px;font-size:15px;line-height:1.45;color:#2a2622">
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">1</span><span><code style="font-family:'JetBrains Mono',monospace;font-size:13.5px;background:#ebe3d4;padding:1px 5px;border-radius:4px">POST /v1/runs</code> queues the task, with any PDFs or images attached, and answers <code style="font-family:'JetBrains Mono',monospace;font-size:13.5px">202</code> right away.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">2</span><span>When a slot frees up, cedar spins up a fresh sandbox container for the run. If you asked for a plan, the model breaks the task into steps first, and an interactive run waits for you to agree to them.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">3</span><span>The model gets the conversation and the tools you chose. Tool calls run in the sandbox and results go back, errors included so it can recover. Risky calls (sending mail, installs, deletes) can wait for your approval.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">4</span><span>Loop until the model is done, asks you a question, hits <code style="font-family:'JetBrains Mono',monospace;font-size:13.5px">max_turns</code>, or runs out of time.</span></li>
-        <li style="display:flex;gap:12px"><span style="font-family:'JetBrains Mono',monospace;color:#b5553a;flex:none;width:18px">5</span><span>The sandbox is destroyed. The run ends <em>completed</em>, <em>failed</em>, or <em>cancelled</em>, with everything logged to SQLite, and a webhook tells you it's over. Its workspace stays for a follow-up.</span></li>
-      </ol>
+<section data-screen-label="Hero" style="max-width:1160px;margin:0 auto;padding:56px 28px 40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:48px;align-items:center;position:relative">
+  <div style="display:flex;flex-direction:column;gap:22px;animation:riseIn .8s cubic-bezier(.2,.8,.2,1) both">
+    <div style="display:inline-flex;align-items:center;gap:8px;align-self:flex-start;background:#fff;border:1px solid #f0dcc8;border-radius:999px;padding:6px 14px 6px 8px;font-size:13px;font-weight:600;color:#3a5f4b"><span style="width:10px;height:10px;border-radius:50%;background:#e5553a;animation:pulse 2s infinite"></span>Free · Open source · Runs on your Mac</div>
+    <h1 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(42px,6vw,76px);line-height:.98;letter-spacing:-.035em;text-wrap:balance">Your own assistant.<br>Works on your Mac,<br><span style="color:#e5553a">answers to you.</span></h1>
+    <p style="margin:0;font-size:19px;line-height:1.5;color:#4f4740;max-width:520px;text-wrap:pretty">Give Cedar a task: research, documents, trips, your finances. It plans the work, does it in a sealed box, and shows you where every answer came from. Nothing leaves your Mac unless you say so.</p>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <a href="https://github.com/hanneshapke/cedar/releases" style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;box-shadow:0 10px 30px rgba(229,85,58,.35);transition:transform .2s,box-shadow .2s" style-hover="transform:translateY(-3px);box-shadow:0 16px 36px rgba(229,85,58,.42);color:#fff"> Download for Mac</a>
+      <a href="https://github.com/hanneshapke/cedar/discussions/51" style="display:inline-flex;align-items:center;gap:8px;padding:15px 22px;border-radius:999px;font-weight:600;font-size:16px;border:2px solid #231f1b;color:#231f1b;transition:transform .2s" style-hover="transform:translateY(-3px);border-color:#e5553a;color:#e5553a">iPhone app · request an invite</a>
     </div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Quick start</h2>
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># 0. any OpenAI-compatible model server
-</span><span class="hl-f">vllm</span> serve deepseek-ai/DeepSeek-V4-Flash \
-  <span class="hl-o">--trust-remote-code</span> <span class="hl-o">--tokenizer-mode</span> deepseek_v4 \
-  <span class="hl-o">--enable-auto-tool-choice</span> <span class="hl-o">--tool-call-parser</span> deepseek_v4
+    <span style="font-size:13px;color:#8a7f73">Apple silicon · Apache 2.0 · built in the open on GitHub</span>
+  </div>
 
-<span class="hl-c"># 1. the sandbox image, then the server
-</span><span class="hl-f">docker</span> build <span class="hl-o">-t</span> cedar-sandbox sandbox/
-<span class="hl-f">export</span> CEDAR_API_KEYS=<span class="hl-v">$(openssl</span> rand <span class="hl-o">-hex</span> 24) \
-  CEDAR_ADMIN_KEYS=<span class="hl-v">$CEDAR_API_KEYS
-</span><span class="hl-f">cargo</span> run <span class="hl-o">--release
+  <div style="position:relative;animation:riseIn 1s .15s cubic-bezier(.2,.8,.2,1) both">
+    <div style="position:absolute;inset:auto -20px -24px auto;width:140px;height:140px;border-radius:32px;background:#f2a21c;transform:rotate(12deg);animation:floaty 7s ease-in-out infinite;opacity:.9"></div>
+    <div style="position:absolute;top:-26px;left:-22px;width:84px;height:84px;border-radius:50%;background:#3a5f4b;animation:floaty2 6s ease-in-out infinite"></div>
+    <div style="position:relative;background:#fff;border-radius:22px;box-shadow:0 30px 70px rgba(60,30,10,.18);padding:22px;display:flex;flex-direction:column;gap:16px;min-height:380px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#8a7f73"><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt=""><span style="font-weight:600;color:#231f1b">Cedar</span><span>·</span><span>{{ statusLine }}</span></div>
+      <div style="background:#fbf4ea;border-radius:14px;padding:14px 16px;font-size:16px;line-height:1.45;min-height:72px;color:#231f1b">{{ typed }}<span style="display:inline-block;width:2px;height:18px;background:#e5553a;vertical-align:-3px;margin-left:2px;animation:blink 1s steps(1) infinite"></span></div>
+      <sc-if value="{{ showPlan }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:8px;animation:popin .4s ease both">
+          <span style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#3a5f4b">The plan · you can edit it</span>
+          <sc-for list="{{ steps }}" as="s" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:12px;font-size:15px;opacity:{{ s.opacity }};transition:opacity .4s;animation:popin .4s ease both">
+              <span style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;background:{{ s.bg }};transition:background .3s;flex:none">{{ s.icon }}</span>
+              <span style="flex:1">{{ s.title }}</span>
+              <span style="font-size:12px;color:#8a7f73">{{ s.note }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ showResult }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:auto;display:flex;align-items:center;gap:14px;background:#3a5f4b;color:#fbf4ea;border-radius:14px;padding:14px 16px;animation:popin .5s ease both">
+          <span style="width:40px;height:40px;border-radius:10px;background:#f2a21c;color:#231f1b;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-family:'Bricolage Grotesque',sans-serif;font-size:12px">PDF</span>
+          <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:600;font-size:15px">ev-battery-makers.pdf is ready</span><span style="font-size:13px;opacity:.85">14 sources, every claim linked · 2 min 10 s</span></div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</section>
 
-</span><span class="hl-c"># 2. register the model, start a run, follow it live
-</span><span class="hl-f">curl</span> <span class="hl-o">-s</span> <span class="hl-o">-X</span> PUT <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
-  <span class="hl-o">-H</span> <span class="hl-s">'content-type: application/json'</span> \
-  <span class="hl-o">-d</span> '{<span class="hl-s">"base_url"</span>: <span class="hl-s">"http://localhost:8000/v1"</span>,
-       <span class="hl-s">"model"</span>: <span class="hl-s">"deepseek-ai/DeepSeek-V4-Flash"</span>}' \
-  localhost:8080/v1/admin/models/deepseek
-<span class="hl-f">curl</span> <span class="hl-o">-s</span> <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
-  <span class="hl-o">-H</span> <span class="hl-s">'content-type: application/json'</span> \
-  <span class="hl-o">-d</span> <span class="hl-s">'{"prompt": "write hello.py, run it"}'</span> \
-  localhost:8080/v1/runs
-<span class="hl-f">curl</span> <span class="hl-o">-N</span> <span class="hl-o">-H</span> <span class="hl-s">"Authorization: Bearer $KEY"</span> \
-  localhost:8080/v1/runs/&lt;id&gt;/events</pre>
-    </div>
-  </section>
+<div style="padding:18px 0 10px;overflow:hidden;position:relative;mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)">
+  <div style="display:flex;gap:12px;width:max-content;animation:marquee 38s linear infinite">
+    <sc-for list="{{ marquee }}" as="m" hint-placeholder-count="12">
+      <span style="white-space:nowrap;padding:10px 18px;border-radius:999px;font-size:15px;font-weight:500;background:{{ m.bg }};color:{{ m.fg }}">{{ m.text }}</span>
+    </sc-for>
+  </div>
+</div>
 
-  <section class="cards4" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px">
-    <div id="tools" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
-      <h3 style="margin:0;font-size:15px;font-weight:600">Tools, in and out of the box</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Inside the sandbox: <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">bash</code>, files, Python, PDFs, charts, and reading Word, Excel, and PowerPoint. On the host, each behind a switch: web search and fetch, weather, maps, recipes, trip planning, stock comparisons, a headless browser, Gmail and Calendar.</p>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Add your own as a Rust trait, or drop a Python script in <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">TOOLS_DIR</code>: no rebuild, and each call runs in a container of its own. Then <a href="#share">share it</a> with everyone.</p>
-    </div>
-    <div id="api" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
-      <h3 style="margin:0;font-size:15px;font-weight:600">A small HTTP API</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Start, list, cancel, and delete runs. Pick the model, reasoning level, and tools per run. Stream events with replay and resume, answer plans and approvals, download workspace files, continue a finished run, or compact one into a single prompt.</p>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Signed webhooks or one event stream when runs end. Bearer keys, per-key limits, plain JSON errors.</p>
-    </div>
-    <div id="safety" style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
-      <h3 style="margin:0;font-size:15px;font-weight:600">Isolation is the design</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">One container per run, non-root, all capabilities dropped, memory and CPU limits, networking off by default. The host filesystem is never touched. Model keys and saved credentials stay out of the sandbox, encrypted at rest, and out of the logs.</p>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Workspaces persist for continuations, then expire.</p>
-    </div>
-    <div style="background:#3a5f4b;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;color:#f3ede3">
-      <h3 style="margin:0;font-size:15px;font-weight:600">Runs well on a DGX Spark</h3>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#dfe8e2">vLLM, cedar, and the chat UI together on one NVIDIA DGX Spark, as systemd services you reach from your laptop, and over Tailscale HTTPS from your phone. The guide walks through it.</p>
-      <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="margin-top:auto;font-size:13.5px;font-weight:500;color:#f3ede3" style-hover="color:#e0a98f">Read DEPLOYMENT.md →</a>
-    </div>
-  </section>
+<section id="does" data-screen-label="What it does" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:72px;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">What it does</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Real tasks, done for you.<br>Not just answers.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Cedar searches the web, reads your files, runs the numbers and writes the result: a report, a spreadsheet, a map, a chart. You see the plan before it starts and the sources when it's done.</p>
+  </div>
 
-  <section id="share" class="how" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start">
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
     <div style="display:flex;flex-direction:column;gap:14px">
-      <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Write a tool in Python, share it on GitHub</h2>
-      <p style="margin:0;font-size:18px;line-height:1.5;color:#2a2622;text-wrap:pretty">A tool is a folder: a <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">tool.json</code> that tells the model what it does, and a Python script that reads JSON on stdin and prints its answer. No Rust, no rebuild.</p>
-      <p style="margin:0;font-size:15px;line-height:1.5;color:#5a534a;text-wrap:pretty">The manifest also says what the tool needs: the hosts it reaches, the secrets it reads, the packages it installs, and whether it handles health data. cedar holds it to that. Every call runs in a container of its own that sees only that tool, gets the network only if it declared hosts, and gets only its own secrets, saved encrypted in the settings, never in a file.</p>
-      <div class="cards3" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
-        <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px">
-          <span style="font-family:'JetBrains Mono',monospace;color:#b5553a;font-size:13px">1 · write</span>
-          <p style="margin:0;font-size:13.5px;line-height:1.45;color:#5a534a">Put the folder in your <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">TOOLS_DIR</code> and try it in a conversation right away.</p>
-        </div>
-        <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px">
-          <span style="font-family:'JetBrains Mono',monospace;color:#b5553a;font-size:13px">2 · share</span>
-          <p style="margin:0;font-size:13.5px;line-height:1.45;color:#5a534a">Open a pull request that adds it to <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">registry/</code> in the cedar repo. CI checks the rules, a maintainer reads the code.</p>
-        </div>
-        <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px">
-          <span style="font-family:'JetBrains Mono',monospace;color:#b5553a;font-size:13px">3 · install</span>
-          <p style="margin:0;font-size:13.5px;line-height:1.45;color:#5a534a">Anyone's cedar lists it under Community tools. One click shows what it asks for, installs it, and checks every file's hash.</p>
-        </div>
-      </div>
-      <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a;text-wrap:pretty">Community tools are not officially supported, so each call waits for your OK until you allow that version. Health tools come with built-in rules: informational only, safety first, and never a dose or a device setting. The first one in the registry reads a Tandem insulin pump and CGM and compares your last day with the week before.</p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-        <a href="https://github.com/hanneshapke/cedar/blob/main/registry/CONTRIBUTING.md" style="background:#3a5f4b;color:#f3ede3;padding:10px 18px;border-radius:9px;font-weight:500;font-size:14.5px" style-hover="background:#2e4c3c;color:#f3ede3">Share a tool</a>
-        <a href="https://github.com/hanneshapke/cedar/tree/main/registry/tools" style="padding:10px 18px;border-radius:9px;font-weight:500;font-size:14.5px;border:1.5px solid #cfc6b6;color:#2a2622" style-hover="border-color:#3a5f4b;color:#3a5f4b">Browse the registry</a>
-        <a href="https://github.com/hanneshapke/cedar/blob/main/README.md#community-tools" style="font-weight:500;font-size:14.5px">How installs work →</a>
+      <span style="width:46px;height:46px;border-radius:14px;background:#f2a21c;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#231f1b">01</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1">Finds places and pins them on a map</h3>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty">A good flower shop, a quiet café, a trailhead for Saturday. Cedar searches, picks the best, and hands you a map with addresses, hours and the website for each.</p>
+    </div>
+    <div style="position:relative"><div style="position:absolute;inset:14% -8% -8% 10%;border-radius:28px;background:#f2a21c;transform:rotate(-3deg);animation:floaty 9s ease-in-out infinite"></div><img src="shots/map.png" alt="Cedar for Mac showing three flower shops pinned on a map of Portland" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
+  </div>
+
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
+    <div style="position:relative;order:0"><div style="position:absolute;inset:-8% 10% 14% -8%;border-radius:28px;background:#e5553a;transform:rotate(3deg);animation:floaty2 8s ease-in-out infinite"></div><img src="shots/charts.png" alt="Cedar charting glucose readings against a 7-day average" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <span style="width:46px;height:46px;border-radius:14px;background:#e5553a;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fff">02</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1">Reads your data and draws the chart</h3>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty">Spreadsheets, PDFs, bank exports, even a connected health device. Cedar runs the numbers and explains them in plain words, with interactive charts you can hover over.</p>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty">Turn any conversation into a schedule: every morning at 7, every Friday. It runs while you sleep and tells your Mac or iPhone when it's done.</p>
+    </div>
+  </div>
+
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <span style="width:46px;height:46px;border-radius:14px;background:#3a5f4b;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fff">03</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1">Every ability has a switch</h3>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty">Weather, maps, recipes, directions and transit, stocks, shopping, your email and calendar. Turn on what you want Cedar to reach. Everything else stays off.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <sc-for list="{{ abilities }}" as="a" hint-placeholder-count="8">
+          <span style="padding:7px 13px;border-radius:999px;background:#fff;border:1px solid #f0dcc8;font-size:14px;font-weight:500">{{ a }}</span>
+        </sc-for>
       </div>
     </div>
+    <div style="position:relative"><div style="position:absolute;inset:10% -6% -6% 12%;border-radius:28px;background:#3a5f4b;transform:rotate(2deg);animation:floaty 10s ease-in-out infinite"></div><img src="shots/tools.png" alt="Cedar settings with a toggle for each tool" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
+  </div>
+</section>
+
+<section id="private" data-screen-label="Private by design" style="max-width:1160px;margin:70px auto 0;padding:0 28px;position:relative">
+  <div data-reveal style="background:#231f1b;border-radius:32px;padding:clamp(36px,6vw,72px);color:#fbf4ea;display:flex;flex-direction:column;gap:44px;position:relative;overflow:hidden">
+    <div style="position:absolute;top:-120px;right:-120px;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(229,85,58,.55),rgba(229,85,58,0) 70%);animation:drift 12s ease-in-out infinite"></div>
+    <div style="display:flex;flex-direction:column;gap:14px;max-width:680px;position:relative">
+      <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#f2a21c">Private by design</span>
+      <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Your assistant.<br>Your Mac. Your data.</h2>
+      <p style="margin:0;font-size:18px;line-height:1.5;color:#d9cfc2;text-wrap:pretty">Most assistants run in someone else's cloud. Cedar runs at home, and treats every task like a stranger in the house.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:20px;position:relative">
+      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:26px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,background .25s" style-hover="transform:translateY(-6px);background:rgba(255,255,255,.1)">
+        <span style="width:44px;height:44px;border-radius:50%;background:#f2a21c"></span>
+        <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Stays on your Mac</h3>
+        <p style="margin:0;font-size:15.5px;line-height:1.5;color:#d9cfc2">The model, your conversations and your files live on your machine. No account, no cloud, nothing to subscribe to.</p>
+      </div>
+      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:26px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,background .25s" style-hover="transform:translateY(-6px);background:rgba(255,255,255,.1)">
+        <span style="width:44px;height:44px;border-radius:12px;background:#e5553a"></span>
+        <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Each task in a sealed box</h3>
+        <p style="margin:0;font-size:15.5px;line-height:1.5;color:#d9cfc2">Every task gets a fresh, throwaway workspace that can't see your documents, your photos or the internet unless you allow it. When it's done, the box is gone.</p>
+      </div>
+      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:26px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,background .25s" style-hover="transform:translateY(-6px);background:rgba(255,255,255,.1)">
+        <span style="width:44px;height:44px;border-radius:50% 50% 12px 12px;background:#3a5f4b;border:2px solid #7fae92"></span>
+        <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Asks before anything risky</h3>
+        <p style="margin:0;font-size:15.5px;line-height:1.5;color:#d9cfc2">Sending an email, downloading a file, deleting something: Cedar stops and asks. You approve once, or always, or never.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-screen-label="Yours" style="max-width:1160px;margin:0 auto;padding:110px 28px 40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:48px;align-items:center;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:16px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Yours to shape</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Pick the brain.<br>Add the hands.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Cedar isn't tied to one AI company. Run a model on your Mac with <strong style="font-weight:600;color:#231f1b">Ollama</strong> or <strong style="font-weight:600;color:#231f1b">LM Studio</strong>, or point it at a server you trust. Switch between them per conversation.</p>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Need something specific? Add a tool from the community with one click, after seeing exactly what it asks for. The first one reads an insulin pump and compares your day with your week.</p>
+    <a href="https://github.com/hanneshapke/cedar/tree/main/registry/tools" style="font-weight:600;font-size:16px;display:inline-flex;gap:8px;align-items:center">Browse community tools <span style="transition:transform .2s">→</span></a>
+  </div>
+  <div data-reveal style="position:relative"><div style="position:absolute;inset:12% -8% -10% 8%;border-radius:28px;background:linear-gradient(135deg,#f2a21c,#e5553a);transform:rotate(-2deg);animation:floaty2 9s ease-in-out infinite"></div><img src="shots/server.png" alt="Cedar settings listing three models you can switch between" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
+</section>
+
+<section id="apps" data-screen-label="Mac and iPhone" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:48px;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Mac &amp; iPhone</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">On your desk.<br>In your pocket.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Cedar for Mac does the work. Cedar for iPhone keeps up: the same conversations, maps and charts, a question when it needs one, and a notification when a task finishes while you're out.</p>
+  </div>
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:28px;align-items:stretch">
+    <div style="grid-column:span 2;background:#fff;border-radius:28px;padding:32px;display:flex;flex-direction:column;gap:18px;box-shadow:0 20px 50px rgba(60,30,10,.1);min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
+        <div style="display:flex;flex-direction:column;gap:6px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Cedar for Mac</h3><span style="font-size:15px;color:#4f4740">Lives in your menu bar. Free download.</span></div>
+        <a href="https://github.com/hanneshapke/cedar/releases" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s" style-hover="transform:translateY(-2px);color:#fff"> Download</a>
+      </div>
+      <img src="shots/welcome.png" alt="Cedar for Mac, ready for a new task, with recent conversations and a scheduled agent" style="width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 16px 40px rgba(60,30,10,.18)">
+    </div>
+    <div style="background:linear-gradient(160deg,#f2a21c,#e5553a);border-radius:28px;padding:32px 32px 0;display:flex;flex-direction:column;gap:18px;overflow:hidden;color:#231f1b;min-width:0">
+      <div style="display:flex;flex-direction:column;gap:6px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Cedar for iPhone</h3><span style="font-size:15px;line-height:1.4">Invite only for now. <a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b;font-weight:600;text-decoration:underline" style-hover="color:#fff">Request yours →</a></span></div>
+      <img src="shots/ios.png" alt="Cedar for iPhone showing flower shops on an Apple Maps card" style="width:78%;max-width:280px;height:auto;display:block;margin:auto auto -40px;border-radius:40px;box-shadow:0 30px 60px rgba(60,20,0,.35);animation:floaty 8s ease-in-out infinite">
+    </div>
+  </div>
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center;background:#fff;border-radius:28px;padding:32px;box-shadow:0 20px 50px rgba(60,30,10,.1)">
     <div style="display:flex;flex-direction:column;gap:12px">
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># tools/air_quality/tool.json</span>
-{
-  <span class="hl-p">"description"</span>: <span class="hl-s">"Current air quality for a city."</span>,
-  <span class="hl-p">"version"</span>: <span class="hl-s">"1.0.0"</span>,
-  <span class="hl-p">"author"</span>: <span class="hl-s">"You"</span>,
-  <span class="hl-p">"license"</span>: <span class="hl-s">"Apache-2.0"</span>,
-  <span class="hl-p">"input_schema"</span>: {
-    <span class="hl-p">"type"</span>: <span class="hl-s">"object"</span>,
-    <span class="hl-p">"properties"</span>: { <span class="hl-p">"city"</span>: { <span class="hl-p">"type"</span>: <span class="hl-s">"string"</span> } },
-    <span class="hl-p">"required"</span>: [<span class="hl-s">"city"</span>]
-  },
-  <span class="hl-p">"network"</span>: [<span class="hl-s">"api.openaq.org"</span>],
-  <span class="hl-p">"secrets"</span>: [<span class="hl-s">"OPENAQ_API_KEY"</span>],
-  <span class="hl-p">"pip"</span>: [<span class="hl-s">"requests&gt;=2.31"</span>]
-}</pre>
-      <pre style="margin:0;background:#2a2622;color:#d9d2c5;border-radius:12px;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none" class="code"><span class="hl-c"># tools/air_quality/tool.py
-</span><span class="hl-k">import</span> json, os, sys
-<span class="hl-k">import</span> requests
-
-args = json.<span class="hl-f">load</span>(sys.stdin)
-r = requests.<span class="hl-f">get</span>(
-    <span class="hl-s">"https://api.openaq.org/v3/locations"</span>,
-    params={<span class="hl-s">"city"</span>: args[<span class="hl-s">"city"</span>], <span class="hl-s">"limit"</span>: <span class="hl-n">1</span>},
-    headers={<span class="hl-s">"X-API-Key"</span>: os.environ[<span class="hl-s">"OPENAQ_API_KEY"</span>]},
-    timeout=<span class="hl-n">20</span>,
-)
-<span class="hl-k">if</span> <span class="hl-k">not</span> r.ok:
-    sys.<span class="hl-f">exit</span>(<span class="hl-s">f"OpenAQ said {r.status_code}"</span>)  <span class="hl-c"># the model sees it
-</span><span class="hl-f">print</span>(json.<span class="hl-f">dumps</span>(r.<span class="hl-f">json</span>()[<span class="hl-s">"results"</span>][:<span class="hl-n">1</span>]))
-
-<span class="hl-c"># share it
-</span><span class="hl-f">python3</span> registry/build_index.py <span class="hl-o">--check</span></pre>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Paired with one scan</h3>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty">Tick one box on the Mac, scan the code with your iPhone, done. The phone reaches your Mac over a private connection (Tailscale); nobody else can.</p>
     </div>
-  </section>
+    <img src="shots/pairing.png" alt="Cedar for Mac showing the QR code that pairs the iPhone app" style="width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 16px 40px rgba(60,30,10,.18)">
+  </div>
+</section>
 
-  <section id="apps" style="display:flex;flex-direction:column;gap:12px">
-    <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">Apps that talk to it</h2>
-    <div class="cards3" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
-      <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
-        <h3 style="margin:0;font-size:15px;font-weight:600">cedar-chat, in the browser</h3>
-        <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">Conversations with live tool calls, a files panel, and maps, recipes, routes, and stock charts drawn as cards. Attach PDFs and photos. Turn a conversation into a scheduled agent that runs daily or weekly, and get told when a response ends: browser push, Pushover, email, or your iPhone.</p>
-        <a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md" style="margin-top:auto;font-size:13.5px;font-weight:500">chat/README.md →</a>
-      </div>
-      <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
-        <h3 style="margin:0;font-size:15px;font-weight:600">Cedar for Mac</h3>
-        <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">A signed menu bar app that bundles both servers in one DMG. Bring Docker (or OrbStack, Colima) and a model server, Ollama or LM Studio on the Mac or a vLLM elsewhere, pick a model from the list it reports, and chat. One checkbox shares it with your iPhone over Tailscale, paired by QR code.</p>
-        <a href="https://github.com/hanneshapke/cedar/releases" style="margin-top:auto;font-size:13.5px;font-weight:500">Download from releases →</a>
-      </div>
-      <div style="background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px">
-        <h3 style="margin:0;font-size:15px;font-weight:600">Cedar for iPhone and iPad</h3>
-        <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a">A native SwiftUI client for the same conversations: streaming replies, native cards with Apple Maps, clarifying questions as a form, plans and tool calls to approve, and push notifications through APNs when a run ends while you are away. HTTPS only.</p>
-        <a href="https://github.com/hanneshapke/cedar/blob/main/iOS/README.md" style="margin-top:auto;font-size:13.5px;font-weight:500">iOS/README.md →</a>
-      </div>
+<section id="compare" data-screen-label="Compared" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:40px;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:760px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Compared</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Cedar, OpenClaw<br>and Meta&#8217;s Muse.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Three assistants that do tasks for you. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> lives in your chat apps and acts on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a> is Meta&#8217;s, run in Meta&#8217;s cloud. Cedar runs at home and keeps every task in its own sealed box.</p>
+  </div>
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:stretch">
+    <div style="background:#231f1b;color:#fbf4ea;border-radius:26px;padding:30px;display:flex;flex-direction:column;gap:22px;box-shadow:0 24px 60px rgba(60,30,10,.2);transition:transform .25s" style-hover="transform:translateY(-6px)">
+      <div style="display:flex;align-items:center;gap:10px"><img src="docs/assets/cedar-mark-on-dark.svg" width="28" height="28" alt=""><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em">Cedar</h3><span style="margin-left:auto;background:#f2a21c;color:#231f1b;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Free · open source</span></div>
+      <sc-for list="{{ cmpCedar }}" as="r" hint-placeholder-count="5">
+        <div style="display:flex;flex-direction:column;gap:4px;padding-top:16px;border-top:1px solid rgba(255,255,255,.12)"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#f2a21c">{{ r.k }}</span><span style="font-size:15.5px;line-height:1.45">{{ r.v }}</span></div>
+      </sc-for>
     </div>
-  </section>
-
-  <section id="openclaw" style="display:flex;flex-direction:column;gap:12px">
-    <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">cedar, OpenClaw, and Muse</h2>
-    <p style="margin:0;font-size:15px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty">cedar and <a href="https://github.com/openclaw/openclaw">OpenClaw</a> are open-source agents you run yourself; OpenClaw is a personal assistant that lives in your chat apps and acts on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a> is Meta&#8217;s personal agent, run for you in Meta&#8217;s cloud and reached from its app or WhatsApp. cedar is a run service: every task gets its own disposable sandbox, behind an API that your own clients, and ours, call.</p>
-    <div class="cmp" style="overflow-x:auto;background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px">
-      <table style="width:100%;min-width:860px;border-collapse:collapse;font-size:13.5px;line-height:1.45;text-align:left">
-        <thead>
-          <tr style="border-bottom:1px solid #e8e0d1">
-            <th style="padding:12px 16px;font-weight:500;color:#8a8275;width:16%"></th>
-            <th style="padding:12px 16px;font-weight:600;color:#3a5f4b;width:28%">cedar</th>
-            <th style="padding:12px 16px;font-weight:600;width:28%">OpenClaw</th>
-            <th style="padding:12px 16px;font-weight:600;width:28%">Muse</th>
-          </tr>
-        </thead>
-        <tbody style="color:#5a534a;vertical-align:top">
-          <tr style="border-bottom:1px solid #e8e0d1">
-            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Where tools run</th>
-            <td data-label="cedar" style="padding:10px 16px">In a fresh Docker container per run: non-root, capabilities dropped, no network unless you turn it on. Never on the host.</td>
-            <td data-label="OpenClaw" style="padding:10px 16px">On the host for the main session, unless you configure sandboxing.</td>
-            <td data-label="Muse" style="padding:10px 16px">In a dedicated cloud VM per person that Meta runs; nothing leaves it unless a separate Sentinel agent allows it.</td>
-          </tr>
-          <tr style="border-bottom:1px solid #e8e0d1">
-            <th style="padding:10px 16px;font-weight:500;color:#2a2622">How you reach it</th>
-            <td data-label="cedar" style="padding:10px 16px">An HTTP API with live SSE events and webhooks, plus a web chat, a Mac app, and an iOS app.</td>
-            <td data-label="OpenClaw" style="padding:10px 16px">The messaging apps you already use (WhatsApp, Telegram, Slack, Discord, iMessage, and many more), plus a CLI and companion apps.</td>
-            <td data-label="Muse" style="padding:10px 16px">The Muse app on iOS, Android, and the web, or as a contact in WhatsApp. US only at launch.</td>
-          </tr>
-          <tr style="border-bottom:1px solid #e8e0d1">
-            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Models</th>
-            <td data-label="cedar" style="padding:10px 16px">Any OpenAI-compatible server, registered per model. Built for local inference: vLLM, Ollama, LM Studio.</td>
-            <td data-label="OpenClaw" style="padding:10px 16px">Hosted and local providers, swappable as plugins.</td>
-            <td data-label="Muse" style="padding:10px 16px">Meta&#8217;s own Muse Spark, hosted by Meta. No choice of model.</td>
-          </tr>
-          <tr style="border-bottom:1px solid #e8e0d1">
-            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Guardrails</th>
-            <td data-label="cedar" style="padding:10px 16px">Plans to agree to, and approvals for mail, downloads, installs, deletes, network calls, and community tools. Every run, message, and event is kept in SQLite.</td>
-            <td data-label="OpenClaw" style="padding:10px 16px">Inbound messages are treated as untrusted; unknown senders in DMs have to be paired first.</td>
-            <td data-label="Muse" style="padding:10px 16px">Sentinel checks every outbound request against the permissions you set, and Muse asks before it sends mail or buys anything. The agent only sees stand-in tokens, not your real credentials.</td>
-          </tr>
-          <tr style="border-bottom:1px solid #e8e0d1">
-            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Extending it</th>
-            <td data-label="cedar" style="padding:10px 16px">A Rust trait, or a Python script with a JSON manifest that runs in a container of its own. Share it through the community registry on GitHub, where every file is hash-pinned and reviewed.</td>
-            <td data-label="OpenClaw" style="padding:10px 16px">Skills and plugins, with a community registry in ClawHub.</td>
-            <td data-label="Muse" style="padding:10px 16px">Connectors that Meta provides, such as Gmail, Google Calendar, Outlook, Plaid, and OpenTable.</td>
-          </tr>
-          <tr>
-            <th style="padding:10px 16px;font-weight:500;color:#2a2622">Stack</th>
-            <td data-label="cedar" style="padding:10px 16px">Rust, SQLite, Docker. Apache 2.0.</td>
-            <td data-label="OpenClaw" style="padding:10px 16px">Node.js and TypeScript. MIT.</td>
-            <td data-label="Muse" style="padding:10px 16px">A Meta service, not something you host. A free tier, plus paid plans for heavier use.</td>
-          </tr>
-        </tbody>
-      </table>
+    <div style="background:#fff;border:1px solid #f0dcc8;border-radius:26px;padding:30px;display:flex;flex-direction:column;gap:22px;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <div style="display:flex;align-items:center;gap:10px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em">OpenClaw</h3><span style="margin-left:auto;background:#fbf4ea;color:#4f4740;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Free · open source</span></div>
+      <sc-for list="{{ cmpOpenClaw }}" as="r" hint-placeholder-count="5">
+        <div style="display:flex;flex-direction:column;gap:4px;padding-top:16px;border-top:1px solid #f0dcc8"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8a7f73">{{ r.k }}</span><span style="font-size:15.5px;line-height:1.45;color:#4f4740">{{ r.v }}</span></div>
+      </sc-for>
     </div>
-    <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty"><strong style="font-weight:600;color:#2a2622">Pick cedar</strong> when the agent should never touch the machine it runs on, when you want to build on it over HTTP, or when the model runs on your own GPU. <strong style="font-weight:600;color:#2a2622">Pick OpenClaw</strong> when you want one assistant across all your chat apps that can act on your own computer. <strong style="font-weight:600;color:#2a2622">Pick Muse</strong> when you want an agent with nothing to set up, and you are happy for Meta to run it and hold your data.</p>
-    <span style="font-size:12px;color:#8a8275">OpenClaw details from its README, October 2026. Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. Corrections welcome.</span>
-  </section>
+    <div style="background:#fff;border:1px solid #f0dcc8;border-radius:26px;padding:30px;display:flex;flex-direction:column;gap:22px;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <div style="display:flex;align-items:center;gap:10px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em">Muse</h3><span style="margin-left:auto;background:#fbf4ea;color:#4f4740;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">Free tier · paid plans</span></div>
+      <sc-for list="{{ cmpMuse }}" as="r" hint-placeholder-count="5">
+        <div style="display:flex;flex-direction:column;gap:4px;padding-top:16px;border-top:1px solid #f0dcc8"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8a7f73">{{ r.k }}</span><span style="font-size:15.5px;line-height:1.45;color:#4f4740">{{ r.v }}</span></div>
+      </sc-for>
+    </div>
+  </div>
+  <div data-reveal style="display:flex;flex-direction:column;gap:10px;max-width:760px">
+    <p style="margin:0;font-size:16px;line-height:1.5;color:#4f4740;text-wrap:pretty"><strong style="font-weight:600;color:#231f1b">Pick Cedar</strong> when the assistant should never touch the rest of your Mac and your data should stay home. <strong style="font-weight:600;color:#231f1b">Pick OpenClaw</strong> when you want one assistant across all your chat apps that can act on your own computer. <strong style="font-weight:600;color:#231f1b">Pick Muse</strong> when you want nothing to set up and are happy for Meta to run it and hold your data.</p>
+    <span style="font-size:12.5px;color:#8a7f73">OpenClaw details from its README, October 2026. Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. Corrections welcome.</span>
+  </div>
+</section>
 
-  <footer class="foot" style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8a8275;flex-wrap:wrap;gap:8px">
-    <span>Apache 2.0 · built by <a href="https://github.com/hanneshapke">@hanneshapke</a> and contributors</span>
-    <span style="display:flex;gap:18px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar/issues">Good first issues</a><a href="https://github.com/hanneshapke/cedar/blob/main/chat/README.md">cedar-chat</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#personal-tools-in-python">Personal tools</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md#adding-a-tool">Adding a tool</a><a href="https://github.com/hanneshapke/cedar/blob/main/registry/CONTRIBUTING.md">Share a tool</a></span>
-  </footer>
+<section id="setup" data-screen-label="Setup" style="max-width:1160px;margin:0 auto;padding:90px 28px 60px;display:flex;flex-direction:column;gap:40px;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Setup</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Three things, then you're talking.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Cedar needs two free helpers on your Mac. The app walks you through both the first time it opens.</p>
+  </div>
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#f2a21c">1</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Install Docker Desktop</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">It builds the sealed boxes each task runs in. OrbStack works too. Free, one download.</p>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#e5553a">2</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Install a model</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Ollama or LM Studio put an AI model on your Mac in minutes. Already have a server elsewhere? Use that.</p>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#3a5f4b">3</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Open Cedar</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Pick your model from the list, and give it a task. Pair your iPhone whenever you like.</p>
+    </div>
+  </div>
+  <div data-reveal style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+    <a href="https://github.com/hanneshapke/cedar/releases" style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;box-shadow:0 10px 30px rgba(229,85,58,.35);transition:transform .2s" style-hover="transform:translateY(-3px);color:#fff"> Download for Mac</a>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/macos/README.md" style="font-weight:600;font-size:16px">Setup guide →</a>
+  </div>
+</section>
+
+<footer style="max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:#8a7f73;border-top:1px solid #f0dcc8;position:relative">
+  <span style="display:flex;align-items:center;gap:8px"><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:#231f1b">@hanneshapke</a> and contributors</span>
+  <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar" style="color:#231f1b">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b">iPhone invite</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="color:#231f1b">For developers</a></span>
+</footer>
 </div>
 </x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;demoSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero demo&quot;}}">
+class Component extends DCLogic {
+  state = { typed: '', phase: 0, done: 0, visible: 0 };
+  prompt = 'Compare the three largest EV battery makers and write a sourced report';
+  plan = [
+    { title: 'Search for the latest market figures', note: '14 sources' },
+    { title: 'Read each company\u2019s most recent report', note: '3 PDFs' },
+    { title: 'Compare capacity, revenue and growth', note: '1 table' },
+    { title: 'Write the report with sources', note: 'PDF' },
+  ];
+  componentDidMount() {
+    this.startDemo();
+    this.io = new IntersectionObserver((es) => es.forEach((e) => {
+      if (e.isIntersecting) { e.target.style.opacity = '1'; e.target.style.transform = 'none'; this.io.unobserve(e.target); }
+    }), { threshold: 0.12 });
+    this.observeReveals();
+  }
+  componentDidUpdate() { this.observeReveals(); }
+  observeReveals() {
+    document.querySelectorAll('[data-reveal]:not([data-rv])').forEach((el) => {
+      el.setAttribute('data-rv', '1');
+      el.style.opacity = '0'; el.style.transform = 'translateY(28px)';
+      el.style.transition = 'opacity .8s cubic-bezier(.2,.8,.2,1), transform .8s cubic-bezier(.2,.8,.2,1)';
+      this.io.observe(el);
+    });
+  }
+  componentWillUnmount() { clearTimeout(this.t); this.io && this.io.disconnect(); }
+  wait(ms) { return new Promise((r) => { this.t = setTimeout(r, ms / (this.props.demoSpeed ?? 1)); }); }
+  async startDemo() {
+    while (true) {
+      this.setState({ typed: '', phase: 0, done: 0, visible: 0 });
+      await this.wait(900);
+      for (let i = 1; i <= this.prompt.length; i++) { this.setState({ typed: this.prompt.slice(0, i) }); await this.wait(28 + Math.random() * 30); }
+      await this.wait(600);
+      this.setState({ phase: 1 });
+      for (let i = 1; i <= this.plan.length; i++) { this.setState({ visible: i }); await this.wait(350); }
+      await this.wait(900);
+      this.setState({ phase: 2 });
+      for (let i = 1; i <= this.plan.length; i++) { await this.wait(1100); this.setState({ done: i }); }
+      await this.wait(500);
+      this.setState({ phase: 3 });
+      await this.wait(5000);
+    }
+  }
+  renderVals() {
+    const { typed, phase, done, visible } = this.state;
+    const steps = this.plan.map((p, i) => {
+      const finished = i < done, running = phase === 2 && i === done;
+      return { title: p.title, note: finished ? p.note : (running ? 'working\u2026' : ''), icon: finished ? '\u2713' : String(i + 1), bg: finished ? '#3a5f4b' : (running ? '#e5553a' : '#c9bdae'), opacity: i < visible ? 1 : 0 };
+    });
+    const palette = [['#231f1b', '#fbf4ea'], ['#e5553a', '#fff'], ['#f2a21c', '#231f1b'], ['#fff', '#231f1b'], ['#3a5f4b', '#fbf4ea']];
+    const tasks = ['Plan a weekend in Lisbon', 'Turn these receipts into a spreadsheet', 'Summarize this 80-page PDF', 'Best way to the airport at 7am', 'Compare three index funds', 'What\u2019s the weather for the hike?', 'A recipe from what\u2019s in the fridge', 'Draft a reply to my landlord', 'Track my glucose every morning', 'Find a plumber near me'];
+    const marquee = [...tasks, ...tasks].map((text, i) => ({ text, bg: palette[i % palette.length][0], fg: palette[i % palette.length][1] }));
+    return {
+      typed, steps, marquee,
+      showPlan: phase >= 1, showResult: phase === 3,
+      statusLine: phase === 0 ? 'new task' : phase === 1 ? 'planning' : phase === 2 ? 'working in a sealed box' : 'done',
+      cmpCedar: [
+        { k: 'Where it runs', v: 'On your own Mac. Every task in a fresh sealed box that never touches the rest of your machine.' },
+        { k: 'How you use it', v: 'A Mac app, an iPhone app, or the browser.' },
+        { k: 'The AI behind it', v: 'Your choice: a model on your Mac with Ollama or LM Studio, or a server you trust.' },
+        { k: 'Guardrails', v: 'Shows you the plan first, asks before sending mail, downloading, installing or deleting.' },
+        { k: 'Your data', v: 'Stays on your Mac. No account, no cloud.' },
+      ],
+      cmpOpenClaw: [
+        { k: 'Where it runs', v: 'On your own computer, with direct access to it unless you set up sandboxing.' },
+        { k: 'How you use it', v: 'The chat apps you already have: WhatsApp, Telegram, Slack, Discord, iMessage and more.' },
+        { k: 'The AI behind it', v: 'Hosted or local providers, swappable as plugins.' },
+        { k: 'Guardrails', v: 'Incoming messages are treated as untrusted; unknown senders have to be paired first.' },
+        { k: 'Your data', v: 'On your computer, plus whatever the chosen AI provider sees.' },
+      ],
+      cmpMuse: [
+        { k: 'Where it runs', v: 'In Meta\u2019s cloud, in a private VM Meta runs for you.' },
+        { k: 'How you use it', v: 'The Muse app on iPhone, Android and the web, or as a contact in WhatsApp. US only at launch.' },
+        { k: 'The AI behind it', v: 'Meta\u2019s own Muse Spark. No choice of model.' },
+        { k: 'Guardrails', v: 'A Sentinel checks every outbound request against your permissions; it asks before mail or purchases.' },
+        { k: 'Your data', v: 'Held by Meta.' },
+      ],
+      abilities: ['Web search', 'Weather', 'Maps', 'Recipes', 'Directions & transit', 'Stocks', 'Shopping', 'Gmail', 'Calendar', 'Files & PDFs', 'Charts'],
+    };
+  }
+}
+</script>
 </body>
 </html>
