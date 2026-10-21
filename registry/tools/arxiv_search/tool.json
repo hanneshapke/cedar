@@ -1,0 +1,74 @@
+{
+  "description": "Search arXiv for research papers, or look papers up by their arXiv ids, and return each paper's title, authors, submission and update dates, categories, journal reference, links and abstract. Use it when the user asks for papers, recent research or the state of the art on a topic, wants a paper they half remember, or names an arXiv id or link. Search with a few distinctive keywords (quote exact phrases), and narrow with title, author, category (such as cs.CL, cs.LG, stat.ML, q-bio.GN, astro-ph.CO) and since/until dates; sort=newest for the latest work. Turn the result into a short answer: pick the papers that answer the question, say in a sentence or two what each contributes, and cite each with its title, first author, year and arXiv link. Only cite papers and claims the tool returned, never ones from memory, and say that preprints on arXiv are not necessarily peer reviewed unless a journal reference is given. To read a paper in full, call it with download_pdfs=true and the paper's id, then use read_document on the saved PDF.",
+  "version": "1.0.0",
+  "author": "Hannes Hapke",
+  "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/arxiv_search",
+  "license": "Apache-2.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Keywords searched in titles, abstracts and authors, all of which must match; quote exact phrases (\"retrieval augmented generation\"). arXiv's own syntax works too (ti:, au:, abs:, cat:, with AND, OR, ANDNOT)."
+      },
+      "title": {
+        "type": "string",
+        "description": "Words that must appear in the title."
+      },
+      "author": {
+        "type": "string",
+        "description": "An author's name, such as \"Yoshua Bengio\" or a last name."
+      },
+      "category": {
+        "type": "string",
+        "description": "One or more arXiv categories, comma-separated, such as cs.CL, cs.LG or astro-ph.*; any of them matches."
+      },
+      "since": {
+        "type": "string",
+        "format": "date",
+        "description": "Only papers first submitted on or after this date (YYYY-MM-DD)."
+      },
+      "until": {
+        "type": "string",
+        "format": "date",
+        "description": "Only papers first submitted on or before this date (YYYY-MM-DD)."
+      },
+      "ids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "maxItems": 25,
+        "description": "arXiv ids or links to look up directly, such as 1706.03762 or https://arxiv.org/abs/2005.14165."
+      },
+      "sort": {
+        "type": "string",
+        "enum": ["relevance", "newest", "updated"],
+        "default": "relevance",
+        "description": "relevance, newest (by first submission) or updated (by latest version)."
+      },
+      "max_results": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 25,
+        "default": 8,
+        "description": "How many papers to return."
+      },
+      "start": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "Skip this many results, to page through a search."
+      },
+      "download_pdfs": {
+        "type": "boolean",
+        "default": false,
+        "description": "Also save the PDFs of the first five results to arxiv/ in the workspace."
+      }
+    }
+  },
+  "timeout_secs": 120,
+  "network": [
+    "export.arxiv.org",
+    "arxiv.org"
+  ],
+  "health_data": false
+}

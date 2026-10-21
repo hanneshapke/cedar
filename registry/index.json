@@ -2,6 +2,79 @@
   "version": 1,
   "tools": [
     {
+      "name": "air_quality",
+      "version": "1.0.0",
+      "summary": "Air quality index, pollutants, UV and pollen now and for the next days, from Open-Meteo (no key)",
+      "category": "health",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/air_quality",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "geocoding-api.open-meteo.com",
+          "air-quality-api.open-meteo.com"
+        ],
+        "secrets": [],
+        "pip": [],
+        "health_data": false
+      },
+      "base_url": "tools/air_quality/",
+      "files": {
+        "tool.json": "8d5ad11d1752e97f3711ff2faa6fb7bab87e3af30d2fd8a9505f4970a7d03c9c",
+        "tool.py": "72a42400e8dc13f676c77b8bd9eb74f7ecd7a253aed0a2550b94339d56dbb3f5"
+      },
+      "reviewed": false
+    },
+    {
+      "name": "arxiv_search",
+      "version": "1.0.0",
+      "summary": "Search arXiv papers by topic, author, category and date, or fetch them by id, with abstracts and PDFs",
+      "category": "productivity",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/arxiv_search",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "export.arxiv.org",
+          "arxiv.org"
+        ],
+        "secrets": [],
+        "pip": [],
+        "health_data": false
+      },
+      "base_url": "tools/arxiv_search/",
+      "files": {
+        "tool.json": "766430393604252d57a923bcb0acb75c423bd853fce730cae9bfed748da3e03e",
+        "tool.py": "b3a80d28575245fc0ecca9f60974b60317a83f2f83e6d6d44a79c203c7e20827"
+      },
+      "reviewed": false
+    },
+    {
+      "name": "dep_audit",
+      "version": "1.0.0",
+      "summary": "Check Python and npm dependencies for known vulnerabilities (OSV.dev) and outdated releases",
+      "category": "developer",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/dep_audit",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "api.osv.dev",
+          "pypi.org",
+          "registry.npmjs.org"
+        ],
+        "secrets": [],
+        "pip": [],
+        "health_data": false
+      },
+      "base_url": "tools/dep_audit/",
+      "files": {
+        "tool.json": "dd2fd4cebe7b53d823b6cc8f7a01405bfe4bd99428fd176693e6902455b4fe49",
+        "tool.py": "d65de3d5bc8cbfc1ec365be30980ee8ffba1fa21bbcb5b2ff5ecb0c188e2b993"
+      },
+      "reviewed": false
+    },
+    {
       "name": "tandem_glucose",
       "version": "1.1.0",
       "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",

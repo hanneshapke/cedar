@@ -1,0 +1,4 @@
+{
+  "summary": "Check Python and npm dependencies for known vulnerabilities (OSV.dev) and outdated releases",
+  "category": "developer"
+}
