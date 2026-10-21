@@ -25,7 +25,10 @@ struct ChatView: View {
                         QuestionsView(questions: questions) { answers in
                             Task { await chat.answer(questions, with: answers) }
                         }
-                        .id(chat.turns.last?.id ?? "")
+                        // Its own identity per turn (a fresh form for new questions), never the turn's
+                        // id itself: the ForEach above already uses that, and a lazy stack draws only
+                        // one of two views that share an id.
+                        .id("questions-\(chat.turns.last?.id ?? "")")
                     }
                     if let pending = chat.pendingPrompt {
                         UserBubble(text: pending)
