@@ -1,0 +1,47 @@
+{
+  "description": "Current air quality and an hourly forecast (up to 7 days) for a place, from Open-Meteo's open air-quality data (Copernicus CAMS, no key): the US or European air quality index with its band and main pollutant, PM2.5, PM10, ozone, nitrogen dioxide, sulphur dioxide, carbon monoxide, dust and UV, plus pollen (alder, birch, grass, mugwort, olive, ragweed) where it is modelled, which is Europe only. Use it when the user asks about air quality, smog, wildfire smoke, pollen or hay fever, or whether it's a good time to run, cycle, ventilate or be outdoors. Takes a location (a place name or postal code; add the region or country to disambiguate, as in \"Portland, Oregon\") or latitude and longitude. The index follows the place: European in Europe, US elsewhere, unless standard says otherwise. Turn the result into a short answer: lead with whether the air is fine to be outdoors now and for whom, name the hours or days to plan around, and mention pollen when it is moderate or higher. The advice is the index's general guidance, not medical advice: people with asthma, heart or lung conditions should follow their own care plan. Its output ends with [chart] lines, which the chat draws as charts for the user (the index over the forecast with the good band shaded, and daily peak pollen): don't repeat those numbers or redraw them with generate_chart unless the user asks for an image file.",
+  "version": "1.0.0",
+  "author": "Hannes Hapke",
+  "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/air_quality",
+  "license": "Apache-2.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "location": {
+        "type": "string",
+        "description": "A place name or postal code, such as \"Berlin\", \"Portland, Oregon\" or \"10115\"."
+      },
+      "latitude": {
+        "type": "number",
+        "minimum": -90,
+        "maximum": 90,
+        "description": "Instead of a location: the latitude, with longitude."
+      },
+      "longitude": {
+        "type": "number",
+        "minimum": -180,
+        "maximum": 180,
+        "description": "Instead of a location: the longitude, with latitude."
+      },
+      "days": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 7,
+        "default": 3,
+        "description": "How many days of forecast, today included."
+      },
+      "standard": {
+        "type": "string",
+        "enum": ["auto", "us", "european"],
+        "default": "auto",
+        "description": "Which air quality index to report: the US AQI (0-500), the European AQI (0-100+), or auto (European in Europe, US elsewhere)."
+      }
+    }
+  },
+  "timeout_secs": 60,
+  "network": [
+    "geocoding-api.open-meteo.com",
+    "air-quality-api.open-meteo.com"
+  ],
+  "health_data": false
+}
