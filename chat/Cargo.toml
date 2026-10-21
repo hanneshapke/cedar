@@ -20,7 +20,7 @@ web-push = { version = "0.10", default-features = false }
 # web-push encrypts with OpenSSL (its `ece` dependency has no other backend). Built from source and
 # linked statically, so cedar-chat needs no OpenSSL library at run time: macOS has none of its own,
 # and the signed Mac app's hardened runtime won't load Homebrew's (another team's signature).
-# Needs Perl and make for the build.
+# Needs Perl and make for the build (on Windows, Strawberry Perl, not Git's).
 openssl = { version = "0.10", features = ["vendored"] }
 # Generates the VAPID key pair (web-push only reads one) and signs the APNs provider token.
 jwt-simple = { version = "0.11", default-features = false }
@@ -37,12 +37,6 @@ tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
-
-# web-push encrypts with OpenSSL (its `ece` dependency has no other backend). Windows has no
-# system OpenSSL to link, so it is built from source and linked statically there, which keeps
-# cedar-chat.exe free of OpenSSL DLLs. Needs Perl (Strawberry Perl, not Git's) for the build.
-[target.'cfg(windows)'.dependencies]
-openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
