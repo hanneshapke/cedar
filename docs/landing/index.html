@@ -13,14 +13,14 @@
 body{margin:0;background:#f3ede3;font-family:Outfit,sans-serif;color:#2a2622;-webkit-font-smoothing:antialiased}a{color:#3a5f4b;text-decoration:none}a:hover{color:#b5553a}
 .hero h1{font-size:52px}
 @media (max-width:960px){.hero,.how{grid-template-columns:minmax(0,1fr)!important;gap:28px!important}.cards4{grid-template-columns:repeat(2,minmax(0,1fr))!important}.cards3{grid-template-columns:minmax(0,1fr)!important}}
-@media (max-width:640px){.wrap{padding:16px 16px 24px!important;gap:24px!important}.top{flex-direction:column;align-items:flex-start!important}.top nav{flex-wrap:wrap;gap:10px 16px!important}.hero h1{font-size:36px}.hero p{font-size:16px!important}.cards4{grid-template-columns:minmax(0,1fr)!important}.foot{flex-direction:column;align-items:flex-start!important}.cmp table{min-width:0!important}.cmp thead{display:none}.cmp tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:4px 0}.cmp tbody th{grid-column:1/-1;padding-bottom:0!important}.cmp td{padding:6px 16px 10px!important}.cmp td::before{content:attr(data-label);display:block;font-weight:600;color:#2a2622}.cmp td[data-label=cedar]::before{color:#3a5f4b}}</style>
+@media (max-width:640px){.wrap{padding:16px 16px 24px!important;gap:24px!important}.top{flex-direction:column;align-items:flex-start!important}.top nav{flex-wrap:wrap;gap:10px 16px!important}.hero h1{font-size:36px}.hero p{font-size:16px!important}.cards4{grid-template-columns:minmax(0,1fr)!important}.foot{flex-direction:column;align-items:flex-start!important}.cmp table{min-width:0!important}.cmp thead{display:none}.cmp tr{display:grid;grid-template-columns:minmax(0,1fr);padding:4px 0}.cmp tbody th{grid-column:1/-1;padding-bottom:0!important}.cmp td{padding:6px 16px 10px!important}.cmp td::before{content:attr(data-label);display:block;font-weight:600;color:#2a2622}.cmp td[data-label=cedar]::before{color:#3a5f4b}}</style>
 </helmet>
 <div class="wrap" style="min-height:100vh;display:flex;flex-direction:column;max-width:1200px;margin:0 auto;padding:20px 32px 28px;box-sizing:border-box;gap:28px">
 
   <header class="top" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
     <a href="#" style="display:flex;align-items:center;gap:10px;color:#2a2622"><img src="../assets/cedar-mark.svg" width="28" height="28" alt="cedar"><span style="font-weight:600;font-size:22px;letter-spacing:-.02em">cedar</span></a>
     <nav style="display:flex;gap:22px;font-size:14px;align-items:center">
-      <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#share">Share a tool</a><a href="#apps">Apps</a><a href="#safety">Safety</a><a href="#openclaw">vs. OpenClaw</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
+      <a href="#how">How it works</a><a href="#tools">Tools</a><a href="#share">Share a tool</a><a href="#apps">Apps</a><a href="#safety">Safety</a><a href="#openclaw">vs. OpenClaw &amp; Muse</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Deploy</a>
       <a href="https://github.com/hanneshapke/cedar" style="display:inline-flex;align-items:center;gap:8px;background:#2a2622;color:#f3ede3;padding:8px 14px;border-radius:8px;font-weight:500" style-hover="background:#3a5f4b;color:#f3ede3">★ Star on GitHub</a>
     </nav>
   </header>
@@ -189,15 +189,16 @@ r = requests.<span class="hl-f">get</span>(
   </section>
 
   <section id="openclaw" style="display:flex;flex-direction:column;gap:12px">
-    <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">cedar and OpenClaw</h2>
-    <p style="margin:0;font-size:15px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty">Both are open-source agents you run yourself. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> is a personal assistant that lives in your chat apps and acts on your computer. cedar is a run service: every task gets its own disposable sandbox, behind an API that your own clients, and ours, call.</p>
+    <h2 style="margin:0;font-size:14px;font-weight:500;color:#3a5f4b;letter-spacing:.04em;text-transform:uppercase">cedar, OpenClaw, and Muse</h2>
+    <p style="margin:0;font-size:15px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty">cedar and <a href="https://github.com/openclaw/openclaw">OpenClaw</a> are open-source agents you run yourself; OpenClaw is a personal assistant that lives in your chat apps and acts on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a> is Meta&#8217;s personal agent, run for you in Meta&#8217;s cloud and reached from its app or WhatsApp. cedar is a run service: every task gets its own disposable sandbox, behind an API that your own clients, and ours, call.</p>
     <div class="cmp" style="overflow-x:auto;background:#faf6ef;border:1px solid #e8e0d1;border-radius:12px">
-      <table style="width:100%;min-width:640px;border-collapse:collapse;font-size:13.5px;line-height:1.45;text-align:left">
+      <table style="width:100%;min-width:860px;border-collapse:collapse;font-size:13.5px;line-height:1.45;text-align:left">
         <thead>
           <tr style="border-bottom:1px solid #e8e0d1">
-            <th style="padding:12px 16px;font-weight:500;color:#8a8275;width:18%"></th>
-            <th style="padding:12px 16px;font-weight:600;color:#3a5f4b;width:41%">cedar</th>
-            <th style="padding:12px 16px;font-weight:600;width:41%">OpenClaw</th>
+            <th style="padding:12px 16px;font-weight:500;color:#8a8275;width:16%"></th>
+            <th style="padding:12px 16px;font-weight:600;color:#3a5f4b;width:28%">cedar</th>
+            <th style="padding:12px 16px;font-weight:600;width:28%">OpenClaw</th>
+            <th style="padding:12px 16px;font-weight:600;width:28%">Muse</th>
           </tr>
         </thead>
         <tbody style="color:#5a534a;vertical-align:top">
@@ -205,37 +206,43 @@ r = requests.<span class="hl-f">get</span>(
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Where tools run</th>
             <td data-label="cedar" style="padding:10px 16px">In a fresh Docker container per run: non-root, capabilities dropped, no network unless you turn it on. Never on the host.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">On the host for the main session, unless you configure sandboxing.</td>
+            <td data-label="Muse" style="padding:10px 16px">In a dedicated cloud VM per person that Meta runs; nothing leaves it unless a separate Sentinel agent allows it.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">How you reach it</th>
             <td data-label="cedar" style="padding:10px 16px">An HTTP API with live SSE events and webhooks, plus a web chat, a Mac app, and an iOS app.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">The messaging apps you already use (WhatsApp, Telegram, Slack, Discord, iMessage, and many more), plus a CLI and companion apps.</td>
+            <td data-label="Muse" style="padding:10px 16px">The Muse app on iOS, Android, and the web, or as a contact in WhatsApp. US only at launch.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Models</th>
             <td data-label="cedar" style="padding:10px 16px">Any OpenAI-compatible server, registered per model. Built for local inference: vLLM, Ollama, LM Studio.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">Hosted and local providers, swappable as plugins.</td>
+            <td data-label="Muse" style="padding:10px 16px">Meta&#8217;s own Muse Spark, hosted by Meta. No choice of model.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Guardrails</th>
             <td data-label="cedar" style="padding:10px 16px">Plans to agree to, and approvals for mail, downloads, installs, deletes, network calls, and community tools. Every run, message, and event is kept in SQLite.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">Inbound messages are treated as untrusted; unknown senders in DMs have to be paired first.</td>
+            <td data-label="Muse" style="padding:10px 16px">Sentinel checks every outbound request against the permissions you set, and Muse asks before it sends mail or buys anything. The agent only sees stand-in tokens, not your real credentials.</td>
           </tr>
           <tr style="border-bottom:1px solid #e8e0d1">
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Extending it</th>
             <td data-label="cedar" style="padding:10px 16px">A Rust trait, or a Python script with a JSON manifest that runs in a container of its own. Share it through the community registry on GitHub, where every file is hash-pinned and reviewed.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">Skills and plugins, with a community registry in ClawHub.</td>
+            <td data-label="Muse" style="padding:10px 16px">Connectors that Meta provides, such as Gmail, Google Calendar, Outlook, Plaid, and OpenTable.</td>
           </tr>
           <tr>
             <th style="padding:10px 16px;font-weight:500;color:#2a2622">Stack</th>
             <td data-label="cedar" style="padding:10px 16px">Rust, SQLite, Docker. Apache 2.0.</td>
             <td data-label="OpenClaw" style="padding:10px 16px">Node.js and TypeScript. MIT.</td>
+            <td data-label="Muse" style="padding:10px 16px">A Meta service, not something you host. A free tier, plus paid plans for heavier use.</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty"><strong style="font-weight:600;color:#2a2622">Pick cedar</strong> when the agent should never touch the machine it runs on, when you want to build on it over HTTP, or when the model runs on your own GPU. <strong style="font-weight:600;color:#2a2622">Pick OpenClaw</strong> when you want one assistant across all your chat apps that can act on your own computer.</p>
-    <span style="font-size:12px;color:#8a8275">OpenClaw details from its README, October 2026. Corrections welcome.</span>
+    <p style="margin:0;font-size:13.5px;line-height:1.5;color:#5a534a;max-width:760px;text-wrap:pretty"><strong style="font-weight:600;color:#2a2622">Pick cedar</strong> when the agent should never touch the machine it runs on, when you want to build on it over HTTP, or when the model runs on your own GPU. <strong style="font-weight:600;color:#2a2622">Pick OpenClaw</strong> when you want one assistant across all your chat apps that can act on your own computer. <strong style="font-weight:600;color:#2a2622">Pick Muse</strong> when you want an agent with nothing to set up, and you are happy for Meta to run it and hold your data.</p>
+    <span style="font-size:12px;color:#8a8275">OpenClaw details from its README, October 2026. Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. Corrections welcome.</span>
   </section>
 
   <footer class="foot" style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8a8275;flex-wrap:wrap;gap:8px">
