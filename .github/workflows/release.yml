@@ -293,7 +293,14 @@ jobs:
           dmg="dist/Cedar-$VERSION-$ARCH.dmg"
           mv "$built" "$dmg"
           xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
-          xcrun stapler staple "$dmg"
+          # Stapling fetches the ticket from Apple's CloudKit, which sometimes drops the connection
+          # (NSURLErrorDomain -1005) or doesn't serve a fresh ticket yet; try again before failing.
+          for attempt in 1 2 3 4 5; do
+            if xcrun stapler staple "$dmg"; then break; fi
+            if [ "$attempt" -eq 5 ]; then echo "::error::stapling $dmg failed 5 times"; exit 1; fi
+            echo "::warning::stapling failed (attempt $attempt); trying again in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
           spctl -a -t open --context context:primary-signature -vv "$dmg" || echo "::warning::spctl did not accept $dmg on this runner; check it on a Mac after the release"
 
       - uses: actions/upload-artifact@v4
