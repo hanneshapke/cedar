@@ -51,10 +51,7 @@ fn main() {
             app.manage(AppState::new(paths, cfg.clone(), exe_dir));
 
             tray::build(&handle)?;
-            let win = window::create(&handle, &cfg)?;
-            if let Ok(url) = win.url() {
-                app.state::<AppState>().set_setup_url(url);
-            }
+            window::create(&handle, &cfg)?;
             notify::start(handle.clone());
             tauri::async_runtime::spawn(app::bootstrap(handle));
             Ok(())
