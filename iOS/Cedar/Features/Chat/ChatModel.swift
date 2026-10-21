@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import PhotosUI
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// One conversation's turns, kept up to date from the server's event streams.
