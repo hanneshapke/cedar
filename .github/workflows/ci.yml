@@ -58,7 +58,8 @@ jobs:
             . -> target
             desktop -> target
       - run: cargo build --workspace --locked
-      - run: cargo test --workspace --locked
+      # Every test binary, so one run shows all that is Windows-specific, not just the first.
+      - run: cargo test --workspace --locked --no-fail-fast
       - name: The desktop app compiles and lints clean
         # tauri-build wants the sidecars to exist; their contents only matter for a bundle.
         run: |
