@@ -16,6 +16,8 @@
 #   scripts/cedar-stack.sh --down --with-vllm
 #                                     also stop vLLM (docker compose down)
 #   scripts/cedar-stack.sh --down-all same as --down --with-vllm
+#   scripts/cedar-stack.sh --pair     print the QR code the iOS app scans to connect (its address
+#                                     on the tailnet and the access token); needs qrencode
 #
 # Settings come from .env in the repo root (created on first run with fresh keys). Besides
 # cedar's and cedar-chat's own variables it reads:
@@ -105,6 +107,41 @@ serve_stop() {
     tailscale_ready || return 0
     if tailscale serve --https="$TAILSCALE_HTTPS_PORT" off >/dev/null 2>&1; then
         echo "Stopped tailscale serve on HTTPS port $TAILSCALE_HTTPS_PORT."
+    fi
+}
+
+# --- pairing the iOS app ------------------------------------------------------------------
+
+# pair: print the QR code the iOS app scans under Settings → Scan QR Code. It carries
+# cedar://connect?server=<url>&token=<token>, the same link the Mac app shows (macos/src/connect.rs;
+# the iOS app reads it in ConnectionCode.swift). The address is CHAT_PUBLIC_URL when that is HTTPS,
+# else the tailnet address `tailscale serve` gives the chat UI.
+pair() {
+    load_env
+    for cmd in curl jq; do
+        command -v "$cmd" >/dev/null || die "$cmd is not installed"
+    done
+    [[ -n ${CHAT_ACCESS_TOKEN:-} ]] || die "CHAT_ACCESS_TOKEN is not set in $ENV_FILE; the iOS app needs it to connect"
+    local server
+    if [[ ${CHAT_PUBLIC_URL:-} == https://* ]]; then
+        server=${CHAT_PUBLIC_URL%/}
+    else
+        [[ $TAILSCALE_SERVE == off ]] && die "TAILSCALE_SERVE=off and CHAT_PUBLIC_URL is not an https:// address; the iOS app connects over HTTPS only"
+        tailscale_ready || die "tailscale is not installed or not logged in (run: sudo tailscale up); the iOS app connects over HTTPS only"
+        server=$(tailscale_url) || die "tailscale has no name for this machine; turn on MagicDNS at https://login.tailscale.com/admin/dns"
+    fi
+    curl -fs -m 5 -o /dev/null "$server/" ||
+        echo "warning: $server does not answer yet; start the stack (scripts/cedar-stack.sh) before you scan." >&2
+    local link
+    link="cedar://connect?server=$(jq -rn --arg v "$server" '$v|@uri')&token=$(jq -rn --arg v "$CHAT_ACCESS_TOKEN" '$v|@uri')"
+    echo "In the iOS app's Settings, tap Scan QR Code and scan this. Or enter $server and the"
+    echo "access token from CHAT_ACCESS_TOKEN in $ENV_FILE. Anyone who scans it can use your cedar."
+    echo
+    if command -v qrencode >/dev/null; then
+        qrencode -t ansiutf8 -m 2 "$link"
+    else
+        echo "qrencode is not installed (sudo apt install qrencode), so here is the link instead:"
+        echo "$link"
     fi
 }
 
@@ -216,7 +253,7 @@ down() {
 # --- main ----------------------------------------------------------------------------------
 
 main() {
-    local build=1 restart=0 stop=0 with_vllm=0 no_vllm=0
+    local build=1 restart=0 stop=0 with_vllm=0 no_vllm=0 pair_only=0
     for arg in "$@"; do
         case $arg in
             --no-build) build=0 ;;
@@ -225,10 +262,16 @@ main() {
             --down) stop=1 ;;
             --with-vllm) with_vllm=1 ;;
             --down-all) stop=1; with_vllm=1 ;;
+            --pair) pair_only=1 ;;
             -h|--help) sed -n '2,/^[^#]/p' "$SELF" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
             *) die "unknown option: $arg" ;;
         esac
     done
+    if (( pair_only )); then
+        (( stop || with_vllm )) && die "--pair can't be combined with --down"
+        pair
+        exit 0
+    fi
     if (( stop )); then
         down "$with_vllm"
         exit 0
@@ -297,7 +340,10 @@ main() {
     done
 
     echo "Started tmux session '$TMUX_SESSION'. Chat UI: http://$CHAT_BIND_ADDR"
-    [[ -n $ts_url ]] && echo "On your tailnet (iOS app, other devices): $ts_url"
+    if [[ -n $ts_url ]]; then
+        echo "On your tailnet (iOS app, other devices): $ts_url"
+        echo "To connect the iOS app, run  scripts/cedar-stack.sh --pair  and scan the QR code."
+    fi
     if [[ -t 1 && -z ${TMUX:-} ]]; then
         exec tmux attach -t "$TMUX_SESSION"
     elif [[ -n ${TMUX:-} ]]; then
