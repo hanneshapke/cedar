@@ -152,8 +152,10 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=The environment cedar runs an agent's tools in
             org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+          # The GitHub Actions cache sometimes refuses a write ("failed to reserve cache"); that
+          # must not cancel the push, the cache only speeds up the next build.
           cache-from: type=gha,scope=sandbox-${{ matrix.arch }}
-          cache-to: type=gha,scope=sandbox-${{ matrix.arch }},mode=max
+          cache-to: type=gha,scope=sandbox-${{ matrix.arch }},mode=max,ignore-error=true
 
       - name: Build and push the browser image (${{ matrix.arch }})
         uses: docker/build-push-action@v6
@@ -167,7 +169,7 @@ jobs:
             org.opencontainers.image.description=The headless Chromium behind cedar's browser tool
             org.opencontainers.image.version=${{ needs.verify.outputs.version }}
           cache-from: type=gha,scope=browser-${{ matrix.arch }}
-          cache-to: type=gha,scope=browser-${{ matrix.arch }},mode=max
+          cache-to: type=gha,scope=browser-${{ matrix.arch }},mode=max,ignore-error=true
 
   manifests:
     # One multi-arch tag per image, pointing at the two builds above.
