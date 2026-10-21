@@ -384,8 +384,17 @@ your tailnet can reach it, and `CHAT_BIND_ADDR` stays `127.0.0.1:3000`.
    ```
 
 5. Install Tailscale on the iPhone and log in to the same tailnet. In the cedar app's Settings,
-   enter `https://<spark>.<tailnet>.ts.net` (no port) and the chat access token, then tap
-   **Test Connection**. The same URL works in any browser on the tailnet.
+   tap **Scan QR Code** and scan the code this prints (it needs `sudo apt install qrencode`):
+
+   ```sh
+   TOKEN=$(sudo sed -n 's/^CHAT_ACCESS_TOKEN=//p' /etc/cedar/chat.env)
+   qrencode -t ansiutf8 "cedar://connect?server=$(jq -rn --arg v "$URL" '$v|@uri')&token=$TOKEN"
+   ```
+
+   The app fills in the address and token and tests the connection. Or enter
+   `https://<spark>.<tailnet>.ts.net` (no port) and the chat access token yourself, then tap
+   **Test Connection**. The same URL works in any browser on the tailnet. Anyone who scans the
+   code can use your cedar, so don't leave it on screen.
 
 To stop serving: `sudo tailscale serve --https=443 off`.
 
@@ -398,7 +407,9 @@ you whenever Tailscale is logged in: it serves the port from `CHAT_BIND_ADDR`, p
 to `cedar-chat` as `CHAT_PUBLIC_URL`, prints it, and turns serving off again on `--down`. Set `TAILSCALE_SERVE=off`
 in `.env` to skip it, `TAILSCALE_SERVE=on` to fail when it can't serve, or `TAILSCALE_HTTPS_PORT`
 to use another tailnet port than 443. If it fails with "access denied", let your user manage
-Tailscale once with `sudo tailscale set --operator=$USER`.
+Tailscale once with `sudo tailscale set --operator=$USER`. For step 5, `scripts/cedar-stack.sh --pair`
+prints the QR code (the tailnet address, or `CHAT_PUBLIC_URL` when it is HTTPS, and
+`CHAT_ACCESS_TOKEN` from `.env`); install `qrencode` for it, or it prints the link instead.
 
 ## Day-to-day
 
