@@ -19,7 +19,7 @@
 #   ASC_ISSUER_ID               its issuer id
 #   ASC_KEY_P8                  the contents of its AuthKey_<id>.p8
 # The API key is the one testflight.yml uploads with (App Manager role; Developer is enough here).
-# GHCR uses the workflow's own GITHUB_TOKEN. See macos/README.md for the one-time steps.
+# GHCR uses the workflow's own GITHUB_TOKEN. See desktop/README.md for the one-time steps.
 
 name: Release
 
@@ -99,10 +99,10 @@ jobs:
         run: |
           set -eu
           ws=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cedar") | .version')
-          app=$(cargo metadata --no-deps --format-version 1 --manifest-path macos/Cargo.toml | jq -r '.packages[] | select(.name == "cedar-app") | .version')
-          echo "workspace: $ws, macos app: $app, branch: $VERSION"
+          app=$(cargo metadata --no-deps --format-version 1 --manifest-path desktop/Cargo.toml | jq -r '.packages[] | select(.name == "cedar-app") | .version')
+          echo "workspace: $ws, desktop app: $app, branch: $VERSION"
           [ "$ws" = "$VERSION" ] || { echo "::error::Cargo.toml [workspace.package] version is $ws, the branch says $VERSION"; exit 1; }
-          [ "$app" = "$VERSION" ] || { echo "::error::macos/Cargo.toml version is $app, the branch says $VERSION"; exit 1; }
+          [ "$app" = "$VERSION" ] || { echo "::error::desktop/Cargo.toml version is $app, the branch says $VERSION"; exit 1; }
 
       - name: The tag does not exist yet
         if: steps.meta.outputs.publish == 'true'
@@ -240,7 +240,7 @@ jobs:
           key: ${{ matrix.target }}
           workspaces: |
             . -> target
-            macos -> target
+            desktop -> target
 
       - name: Build cedar and cedar-chat
         run: cargo build --release --locked -p cedar -p cedar-chat --target ${{ matrix.target }}
@@ -248,9 +248,9 @@ jobs:
       - name: Put them where the bundler expects sidecars
         run: |
           set -eu
-          install -m 0755 "target/${{ matrix.target }}/release/cedar" "macos/binaries/cedar-${{ matrix.target }}"
-          install -m 0755 "target/${{ matrix.target }}/release/cedar-chat" "macos/binaries/cedar-chat-${{ matrix.target }}"
-          ls -l macos/binaries
+          install -m 0755 "target/${{ matrix.target }}/release/cedar" "desktop/binaries/cedar-${{ matrix.target }}"
+          install -m 0755 "target/${{ matrix.target }}/release/cedar-chat" "desktop/binaries/cedar-chat-${{ matrix.target }}"
+          ls -l desktop/binaries
 
       - name: Write the App Store Connect key
         # A file outside the checkout, for tauri-bundler (APPLE_API_KEY_PATH) and notarytool.
@@ -266,7 +266,7 @@ jobs:
         run: cargo binstall -y --locked tauri-cli --version '^2'
 
       - name: Build, sign, and notarize Cedar.app, then pack the DMG
-        working-directory: macos
+        working-directory: desktop
         run: cargo tauri build --ci --target ${{ matrix.target }} --bundles dmg
 
       - name: Notarize and staple the DMG itself
@@ -277,7 +277,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -eu
-          built=$(ls macos/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
+          built=$(ls desktop/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
           mkdir -p dist
           dmg="dist/Cedar-$VERSION-$ARCH.dmg"
           mv "$built" "$dmg"

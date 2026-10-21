@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the QR code in the Cedar Mac app carries: `cedar://connect?server=<url>&token=<token>`,
-/// the chat's HTTPS address on the tailnet and its access token (`macos/src/connect.rs` makes it,
+/// the chat's HTTPS address on the tailnet and its access token (`desktop/src/connect.rs` makes it,
 /// and `scripts/cedar-stack.sh --pair` on Linux).
 struct ConnectionCode: Equatable {
     var serverURL: String
