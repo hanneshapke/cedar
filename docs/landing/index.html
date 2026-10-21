@@ -189,14 +189,14 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
       <div id="mac" style="background:#fff;border-radius:28px;padding:32px;display:flex;flex-direction:column;gap:18px;box-shadow:0 20px 50px rgba(60,30,10,.1);min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
           <div style="display:flex;flex-direction:column;gap:6px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Cedar for Mac</h3><span style="font-size:15px;color:#4f4740">Lives in your menu bar. For Apple silicon.</span></div>
-          <a href="https://github.com/hanneshapke/cedar/releases/latest" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fff"">Download</a>
+          <a href="{{ macHref }}" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fff"">Download</a>
         </div>
         <img src="shots/welcome.png" alt="Cedar for Mac, ready for a new task, with recent conversations and a scheduled agent" style="width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 16px 40px rgba(60,30,10,.18)">
       </div>
       <div id="windows" style="background:#fff;border-radius:28px;padding:32px;display:flex;flex-direction:column;gap:18px;box-shadow:0 20px 50px rgba(60,30,10,.1);min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
           <div style="display:flex;flex-direction:column;gap:6px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Cedar for Windows</h3><span style="font-size:15px;color:#4f4740">Lives in your tray. Installer for x64 PCs.</span></div>
-          <a href="https://github.com/hanneshapke/cedar/releases/latest" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fff"">Download</a>
+          <a href="{{ winHref }}" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fff"">Download</a>
         </div>
         <img src="shots/windows.png" alt="Cedar for Windows, ready for a new task, with a recent conversation" style="width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 16px 40px rgba(60,30,10,.18)">
         <span style="font-size:13px;line-height:1.45;color:#8a7f73">Not code-signed yet, so Windows warns the first time: choose <em>More info</em>, then <em>Run anyway</em>.</span>
@@ -307,7 +307,7 @@ scripts/cedar-stack.sh --pair</pre>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;demoSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero demo&quot;}}">
 class Component extends DCLogic {
-  state = { typed: '', phase: 0, done: 0, visible: 0, os: '' };
+  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '' };
   prompt = 'Compare the three largest EV battery makers and write a sourced report';
   plan = [
     { title: 'Search for the latest market figures', note: '14 sources' },
@@ -317,6 +317,7 @@ class Component extends DCLogic {
   ];
   componentDidMount() {
     this.setState({ os: this.detectOS() });
+    this.findInstallers();
     this.startDemo();
     this.io = new IntersectionObserver((es) => es.forEach((e) => {
       if (e.isIntersecting) { e.target.style.opacity = '1'; e.target.style.transform = 'none'; this.io.unobserve(e.target); }
@@ -343,11 +344,23 @@ class Component extends DCLogic {
     if (/Linux|X11|CrOS/.test(platform + ua)) return 'linux';
     return '';
   }
+  // The installers' names carry the version, so ask GitHub for the latest release's files.
+  // Until that answers (or if it fails), the buttons go to the releases page.
+  async findInstallers() {
+    try {
+      const res = await fetch('https://api.github.com/repos/hanneshapke/cedar/releases/latest');
+      if (!res.ok) return;
+      const assets = (await res.json()).assets || [];
+      const find = (ext) => (assets.find((a) => a.name.endsWith(ext)) || {}).browser_download_url || '';
+      this.setState({ dmg: find('.dmg'), msi: find('.msi') });
+    } catch (e) { /* offline or rate limited: keep the releases page */ }
+  }
   downloadFor(os) {
     const releases = 'https://github.com/hanneshapke/cedar/releases/latest';
+    const { dmg, msi } = this.state;
     switch (os) {
-      case 'mac': return { label: 'Download for Mac', href: releases, other: 'Windows or Linux? →', invite: true };
-      case 'windows': return { label: 'Download for Windows', href: releases, other: 'Mac or Linux? →', invite: true };
+      case 'mac': return { label: 'Download for Mac', href: dmg || releases, other: 'Windows or Linux? →', invite: true };
+      case 'windows': return { label: 'Download for Windows', href: msi || releases, other: 'Mac or Linux? →', invite: true };
       case 'linux': return { label: 'Run it on Linux', href: 'https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md', other: 'Mac or Windows? →', invite: true };
       case 'ios': return { label: 'Get the iPhone app', href: 'https://github.com/hanneshapke/cedar/discussions/51', other: 'Cedar for your computer →', invite: false };
       default: return { label: 'Download Cedar', href: '#apps', other: 'Mac, Windows or Linux →', invite: true };
@@ -382,6 +395,8 @@ class Component extends DCLogic {
     const marquee = [...tasks, ...tasks].map((text, i) => ({ text, bg: palette[i % palette.length][0], fg: palette[i % palette.length][1] }));
     return {
       typed, steps, marquee, dl: this.downloadFor(os),
+      macHref: this.state.dmg || 'https://github.com/hanneshapke/cedar/releases/latest',
+      winHref: this.state.msi || 'https://github.com/hanneshapke/cedar/releases/latest',
       showPlan: phase >= 1, showResult: phase === 3,
       statusLine: phase === 0 ? 'new task' : phase === 1 ? 'planning' : phase === 2 ? 'working in a sealed box' : 'done',
       cmpCedar: [
