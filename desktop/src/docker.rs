@@ -175,7 +175,7 @@ impl DockerCli {
             if stderr.contains("denied") || stderr.contains("not found") || stderr.contains("manifest unknown") {
                 bail!(
                     "{image} could not be pulled ({stderr}). Either this version's images have not been \
-                     published yet or the package is private on GitHub; see macos/README.md"
+                     published yet or the package is private on GitHub; see desktop/README.md"
                 );
             }
             bail!("pulling {image} failed: {stderr}")

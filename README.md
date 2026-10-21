@@ -353,11 +353,11 @@ To run vLLM, cedar, and the chat UI together on an NVIDIA DGX Spark, with system
 
 ### macOS app
 
-`macos/` builds **Cedar.app**, a menu bar app that bundles both servers in one DMG. It needs
+`desktop/` builds **Cedar.app**, a menu bar app that bundles both servers in one DMG. It needs
 Docker Desktop (or OrbStack, Colima) for the sandboxes and asks for the address of a model server
 (Ollama or LM Studio on the Mac, or a vLLM elsewhere), pulls the sandbox image from GHCR, and
 shows the chat in its window. Download it from the
-[releases](https://github.com/hanneshapke/cedar/releases); see [macos/README.md](macos/README.md)
+[releases](https://github.com/hanneshapke/cedar/releases); see [desktop/README.md](desktop/README.md)
 for what it does, where it keeps its files, and how releases are built.
 
 ![A cedar-chat conversation: the agent writes a test file, runs pytest in its sandbox, and summarizes the result in a table](docs/screenshots/conversation-light.png)

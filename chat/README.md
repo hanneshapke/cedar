@@ -139,7 +139,7 @@ Both interfaces have all of these, except where noted:
   another tab, or away is marked unread in the conversation list and counted in the page title and
   on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
   marked "Needs answer". Out of the app, by the method you pick in Settings: a Mac notification
-  from [Cedar for macOS](../macos/README.md), a browser push (tab open or not), a push to the
+  from [Cedar for macOS](../desktop/README.md), a browser push (tab open or not), a push to the
   Cedar iOS app, a phone push through Pushover, or an email
 
 ## Running it
@@ -295,7 +295,7 @@ another's without picking it); each has its credentials, a **Set up** badge once
 **Send a test**, which saves first. The server sends a message a few seconds after cedar says the run ended,
 unless the response was looked at in the meantime (a page that watched it end marks it seen first).
 
-- **Mac notification**: a notification in Notification Center from [Cedar for macOS](../macos/README.md),
+- **Mac notification**: a notification in Notification Center from [Cedar for macOS](../desktop/README.md),
   its window open or not; clicking it is meant to open the conversation. The app follows
   `GET /api/notifications/desktop/events`, and its first connection sets the method up (and makes
   it the default if none was chosen). It is offered once the app has connected; a send while the app

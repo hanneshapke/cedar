@@ -41,8 +41,8 @@ tower = { version = "0.5", features = ["util"] }
 
 [workspace]
 members = [".", "chat"]
-# The macOS app (a Tauri crate) is built on its own: it needs system libraries the servers don't.
-exclude = ["macos"]
+# The desktop app (a Tauri crate) is built on its own: it needs system libraries the servers don't.
+exclude = ["desktop"]
 
 [workspace.package]
 version = "0.1.0"

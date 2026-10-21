@@ -4,7 +4,7 @@ This guide sets up the whole stack on one NVIDIA DGX Spark and shows how to open
 your laptop, and over HTTPS from your phone with Tailscale (the iOS app needs HTTPS).
 
 For running cedar and the chat on a Mac instead, with a model server elsewhere, see the
-[macOS app](macos/README.md): one DMG, no systemd.
+[macOS app](desktop/README.md): one DMG, no systemd.
 
 ```
 laptop browser ──SSH tunnel───────────┐

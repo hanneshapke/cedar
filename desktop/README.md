@@ -134,7 +134,7 @@ up (`PUT /v1/admin/models/default`).
 
 ## How it is built
 
-`macos/` is a [Tauri 2](https://v2.tauri.app) crate written in Rust only; the setup page is the
+`desktop/` is a [Tauri 2](https://v2.tauri.app) crate written in Rust only; the setup page is the
 static HTML in `ui/`, and the chat page is whatever cedar-chat serves. It is not a member of the
 workspace (Tauri needs GTK and WebKit on Linux, which the servers don't), so build it from this
 directory. The `cedar` and `cedar-chat` binaries are bundled as sidecars: the bundler expects
@@ -145,11 +145,11 @@ them in `binaries/` with the target triple as a suffix.
 T=aarch64-apple-darwin
 rustup target add $T
 cargo build --release -p cedar -p cedar-chat --target $T
-install -m 0755 target/$T/release/cedar macos/binaries/cedar-$T
-install -m 0755 target/$T/release/cedar-chat macos/binaries/cedar-chat-$T
+install -m 0755 target/$T/release/cedar desktop/binaries/cedar-$T
+install -m 0755 target/$T/release/cedar-chat desktop/binaries/cedar-chat-$T
 
 cargo install tauri-cli --version '^2' --locked     # once
-cd macos
+cd desktop
 cargo tauri build --target $T --bundles dmg          # target/$T/release/bundle/dmg/Cedar_<version>_*.dmg
 ```
 
@@ -170,7 +170,7 @@ Releases are built by [`.github/workflows/release.yml`](../.github/workflows/rel
 pull request from a branch named `release/<version>` is merged into `main`:
 
 1. Set the version in two places: `[workspace.package] version` in the root `Cargo.toml` (cedar
-   and cedar-chat) and `version` in `macos/Cargo.toml` (the app, and the image tag it pulls).
+   and cedar-chat) and `version` in `desktop/Cargo.toml` (the app, and the image tag it pulls).
 2. Open a pull request from `release/<version>` to `main` and merge it.
 3. The workflow checks the versions match the branch and the tag is free, runs the tests, builds
    and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>` and `cedar-browser:<version>` for
