@@ -1,6 +1,10 @@
-//! Cedar for macOS: a menu bar app that runs the cedar agent server and its chat UI from the
-//! binaries bundled next to it, with Docker Desktop (or OrbStack, Colima, Rancher Desktop) for
-//! the sandboxes and a model server of the user's choosing. See README.md in this directory.
+//! Cedar for macOS and Windows: a menu bar (tray) app that runs the cedar agent server and its chat
+//! UI from the binaries bundled next to it, with Docker Desktop (or OrbStack, Colima, Rancher
+//! Desktop) for the sandboxes and a model server of the user's choosing. See README.md in this
+//! directory.
+
+// A GUI program on Windows: no console window next to it (debug builds keep one for the logs).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
 mod commands;
@@ -10,6 +14,7 @@ mod docker;
 mod models;
 mod notify;
 mod paths;
+mod proc;
 mod supervisor;
 mod tailscale;
 mod tray;
@@ -21,7 +26,15 @@ use paths::Paths;
 use tauri::Manager;
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // On a Mac, LaunchServices keeps it to one instance; on Windows a second start shows the first.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        if let Err(e) = window::show(app) {
+            eprintln!("showing the window: {e:#}");
+        }
+    }));
+    builder
         .setup(|app| {
             // A menu bar app until its window is shown: window::present switches to a regular
             // app (Dock icon, Command-Tab) and closing the window switches back.
@@ -63,7 +76,7 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Cedar could not start")
         .run(|app, event| match event {
-            // Closing the window hides it; the app goes back to being a menu bar item.
+            // Closing the window hides it; the app goes back to being a menu bar (tray) item.
             tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },

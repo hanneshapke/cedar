@@ -1,8 +1,10 @@
-//! The menu bar item. The app has no Dock icon, so this is how it is reached.
+//! The menu bar item (a tray icon on Windows). The app has no Dock icon or taskbar button while its
+//! window is closed, so this is how it is reached. On a Mac a click opens the menu; on Windows a
+//! left click opens the window and a right click the menu, as tray icons do there.
 
 use crate::app::{self, AppState};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
 const OPEN: &str = "open";
@@ -31,14 +33,34 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &item(QUIT, "Quit Cedar")?,
         ],
     )?;
+    // A template image on a Mac, tinted to the menu bar; Windows draws icons as they are, and a
+    // black mark would vanish on a dark taskbar, so there it is the app icon in colour.
+    #[cfg(target_os = "macos")]
     let icon = tauri::image::Image::from_bytes(include_bytes!("../tray-icon.png"))?;
+    #[cfg(not(target_os = "macos"))]
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../tray-icon-color.png"))?;
     TrayIconBuilder::with_id("main")
         .icon(icon)
-        .icon_as_template(true)
+        .icon_as_template(cfg!(target_os = "macos"))
         .tooltip("Cedar")
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| handle(app, event.id().as_ref()))
+        .on_tray_icon_event(|tray, event| {
+            if cfg!(target_os = "macos") {
+                return;
+            }
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Err(e) = crate::window::show(tray.app_handle()) {
+                    eprintln!("showing the window: {e:#}");
+                }
+            }
+        })
         .build(app)?;
     Ok(())
 }
@@ -70,10 +92,12 @@ fn handle(app: &AppHandle, id: &str) {
     }
 }
 
-/// `pbcopy`, which every Mac has; the token is short-lived in the clipboard either way.
+/// `pbcopy`, which every Mac has, or `clip.exe` on Windows; the token is short-lived in the
+/// clipboard either way. Both are ASCII here (a hex token, a URL), which `clip` takes as it is.
 pub fn copy_to_clipboard(text: &str) -> anyhow::Result<()> {
     use std::io::Write;
-    let mut child = std::process::Command::new("pbcopy")
+    let program = if cfg!(windows) { "clip" } else { "pbcopy" };
+    let mut child = crate::proc::std_command(program)
         .stdin(std::process::Stdio::piped())
         .spawn()?;
     if let Some(mut stdin) = child.stdin.take() {

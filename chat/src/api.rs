@@ -194,7 +194,7 @@ pub struct AppState {
     /// Live notices for the open tabs (`GET /api/events`): a finished response, as `notify` learns
     /// of one from cedar.
     pub notices: broadcast::Sender<Value>,
-    /// Messages for the Cedar app for macOS (`GET /api/notifications/desktop/events`), as
+    /// Messages for the Cedar desktop app (`GET /api/notifications/desktop/events`), as
     /// `channels` sends them.
     pub desktop: broadcast::Sender<Value>,
     /// For Pushover and the push services (`channels`).
@@ -533,8 +533,8 @@ async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = 
     relay(state.notices.subscribe(), state.shutdown.clone())
 }
 
-/// Server-Sent Events for the Cedar app for macOS: a `notification` event for every message
-/// sent by the `desktop` method, which the app shows in Notification Center. Connecting is what
+/// Server-Sent Events for the Cedar desktop app: a `notification` event for every message
+/// sent by the `desktop` method, which the app shows in Notification Center (a toast on Windows). Connecting is what
 /// sets the method up; the first time, it also becomes the default if none was chosen.
 async fn desktop_events(State(state): State<AppState>) -> Result<Sse<impl Stream<Item = Result<SseEvent, Infallible>>>, AppError> {
     // Listening before saving, so a test send right after the app connects reaches it.

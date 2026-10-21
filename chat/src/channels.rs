@@ -1,8 +1,8 @@
 //! Telling the user out of the app when a response finishes: a phone push through Pushover, a
 //! browser push through Web Push (a service worker shows it, tab open or not), a push to the
 //! iOS app through APNs (Apple's push service), an email over SMTP, or a notification from the
-//! Cedar app for macOS, which follows `GET /api/notifications/desktop/events` and shows what
-//! comes on it in Notification Center. Each method is set up with its credentials in Settings → Notifications, as many as
+//! Cedar desktop app, which follows `GET /api/notifications/desktop/events` and shows what
+//! comes on it in Notification Center (a toast on Windows). Each method is set up with its credentials in Settings → Notifications, as many as
 //! wanted; a default method covers conversations, and a scheduled agent can pick its own. The
 //! settings live in this service's database (see [`NotificationSettings`]) and the secrets are
 //! never sent back to the page.
