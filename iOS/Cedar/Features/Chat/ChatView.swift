@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct ChatView: View {
@@ -31,7 +32,7 @@ struct ChatView: View {
                         .id("questions-\(chat.turns.last?.id ?? "")")
                     }
                     if let pending = chat.pendingPrompt {
-                        UserBubble(text: pending)
+                        UserBubble(text: pending, attachments: chat.pendingAttachments)
                         ProgressView().padding(.leading, 4)
                     }
                     if let error = chat.errorMessage {
@@ -166,9 +167,51 @@ private struct ErrorBanner: View {
 private struct Composer: View {
     @Bindable var chat: ChatModel
     var focused: FocusState<Bool>.Binding
+    @State private var showingPhotos = false
+    @State private var showingFiles = false
+    @State private var photos: [PhotosPickerItem] = []
 
     var body: some View {
+        VStack(spacing: 8) {
+            if !chat.attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(chat.attachments) { file in
+                            AttachmentChip(file: file) { chat.removeAttachment(file) }
+                        }
+                    }
+                }
+            }
+            row
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 820)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+        .photosPicker(isPresented: $showingPhotos, selection: $photos,
+                      maxSelectionCount: OutgoingAttachment.maxFiles, matching: .images)
+        .onChange(of: photos) {
+            guard !photos.isEmpty else { return }
+            let picked = photos
+            photos = []
+            Task { await chat.addPhotos(picked) }
+        }
+        .fileImporter(isPresented: $showingFiles,
+                      allowedContentTypes: chat.acceptsImages ? [.pdf, .image] : [.pdf],
+                      allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls):
+                Task { await chat.addFiles(at: urls) }
+            case .failure(let error):
+                chat.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private var row: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            attachMenu
             TextField(chat.openQuestions == nil ? "Message cedar" : "Or answer in your own words", text: $chat.draft, axis: .vertical)
                 .lineLimit(1...8)
                 .focused(focused)
@@ -195,10 +238,85 @@ private struct Composer: View {
                 .disabled(!chat.canSend)
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .frame(maxWidth: 820)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
+    }
+
+    /// Photos (when the model takes images) and PDFs or images from Files.
+    private var attachMenu: some View {
+        Menu {
+            if chat.acceptsImages {
+                Button {
+                    showingPhotos = true
+                } label: {
+                    Label("Photo Library", systemImage: "photo.on.rectangle")
+                }
+            }
+            Button {
+                showingFiles = true
+            } label: {
+                Label(chat.acceptsImages ? "Choose Files" : "Choose PDFs", systemImage: "folder")
+            }
+        } label: {
+            Group {
+                if chat.isAddingAttachments {
+                    ProgressView()
+                } else {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 20))
+                }
+            }
+            .frame(width: 34, height: 34)
+        }
+        .accessibilityLabel(chat.acceptsImages ? "Attach images or PDFs" : "Attach PDFs")
+        .disabled(chat.isActive || chat.isAddingAttachments || chat.attachments.count >= OutgoingAttachment.maxFiles)
+    }
+}
+
+/// A file picked for the next message, with a thumbnail for images and a remove button.
+private struct AttachmentChip: View {
+    let file: OutgoingAttachment
+    let remove: () -> Void
+    @State private var thumbnail: UIImage?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Group {
+                if let thumbnail {
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: file.isImage ? "photo" : "doc.richtext")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(file.name)
+                    .font(.caption)
+                    .lineLimit(1)
+                Text(OutgoingAttachment.format(file.data.count))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: 140, alignment: .leading)
+            Button(action: remove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(file.name)")
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
+        .background(Color(.secondarySystemBackground), in: Capsule())
+        .task(id: file.id) {
+            guard file.isImage else { return }
+            let data = file.data
+            thumbnail = await Task.detached {
+                UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 84, height: 84))
+            }.value
+        }
     }
 }

@@ -112,6 +112,20 @@ struct ChatClient: Sendable {
         var content: String
         var model: String?
         var reasoning: String?
+        /// PDFs for any model; images for one registered as accepting them.
+        var attachments: [Upload]?
+
+        struct Upload: Encodable {
+            var name: String
+            var mediaType: String
+            /// The file's bytes, base64.
+            var data: String
+
+            enum CodingKeys: String, CodingKey {
+                case name, data
+                case mediaType = "media_type"
+            }
+        }
     }
 
     /// Starts a response. 409 if one is still running in the conversation.
