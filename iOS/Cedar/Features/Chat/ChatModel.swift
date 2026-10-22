@@ -69,6 +69,7 @@ final class ChatModel {
         guard let conversationId, let client else { return }
         do {
             let detail = try await client.conversation(id: conversationId)
+            app?.remember(detail.conversation)
             sync(with: detail.turns)
             errorMessage = nil
         } catch let error as ChatError where error.status == 404 {

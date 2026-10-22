@@ -54,6 +54,40 @@ final class APITests: XCTestCase {
         XCTAssertEqual(models.models[1].label, "bare")
     }
 
+    func testDecodesSchedulesAndRuns() throws {
+        let list = try JSONDecoder.cedar.decode(ScheduleList.self, from: Data("""
+        {"schedules":[{"id":"s1","title":"News","prompt":"Summarize the news","model":null,"reasoning":null,
+          "source_conversation_id":null,"tools":null,"notify":null,"frequency":"weekly","weekday":0,"time_of_day":"07:30",
+          "timezone":"Mars/Olympus","enabled":true,"next_run_at":"2026-10-26T06:30:00Z","last_run_at":"2026-10-19T06:30:00Z",
+          "created_at":"2026-10-01T00:00:00Z","updated_at":"2026-10-01T00:00:00Z",
+          "last_run":{"id":"r1","schedule_id":"s1","conversation_id":"c1","turn_id":"t1","due_at":"2026-10-19T06:30:00Z",
+            "started_at":"2026-10-19T06:30:05Z","manual":false,"error":null,
+            "turn":{"id":"t1","conversation_id":"c1","seq":1,"run_id":"x","prompt":"Summarize the news","status":"completed",
+                    "final_text":"Done","error":null,"stop_reason":null,"finished_at":"2026-10-19T06:31:00Z","seen":false,
+                    "attachments":[],"created_at":"2026-10-19T06:30:05Z"}}},
+         {"id":"s2","title":"Paused","prompt":"p","frequency":"daily","weekday":null,"time_of_day":"09:00",
+          "timezone":"UTC","enabled":false,"next_run_at":"2026-10-23T09:00:00Z","last_run_at":null,"last_run":null}]}
+        """.utf8))
+        XCTAssertEqual(list.schedules.count, 2)
+        let news = list.schedules[0]
+        XCTAssertEqual(news.cadence, "Mondays at 07:30 (Mars/Olympus)")
+        XCTAssertEqual(news.lastRun?.outcome, .completed)
+        XCTAssertEqual(news.lastRun?.unread, true)
+        XCTAssertFalse(list.schedules[1].enabled)
+        XCTAssertNil(list.schedules[1].lastRun)
+
+        let detail = try JSONDecoder.cedar.decode(ScheduleDetail.self, from: Data("""
+        {"schedule":{"id":"s1","title":"News","prompt":"p","frequency":"weekdays","weekday":null,"time_of_day":"07:30",
+                     "timezone":"Mars/Olympus","enabled":true,"next_run_at":"2026-10-26T06:30:00Z"},
+         "runs":[{"id":"r2","schedule_id":"s1","conversation_id":null,"turn_id":null,"due_at":"2026-10-20T06:30:00Z",
+                  "started_at":"2026-10-20T07:30:00Z","manual":true,"error":"cedar is busy","turn":null}]}
+        """.utf8))
+        XCTAssertEqual(detail.schedule.cadence, "Weekdays at 07:30 (Mars/Olympus)")
+        XCTAssertEqual(detail.runs.first?.outcome, .notStarted)
+        XCTAssertEqual(detail.runs.first?.unread, false)
+        XCTAssertNil(detail.runs.first?.conversationId)
+    }
+
     func testParsesDatesWithAnyPrecision() {
         XCTAssertNotNil(CedarDate.parse("2026-10-12T03:36:00Z"))
         XCTAssertNotNil(CedarDate.parse("2026-10-12T03:36:00.1Z"))

@@ -106,6 +106,27 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(conversationId)/seen", method: "POST"))
     }
 
+    // MARK: Schedules
+
+    func schedules() async throws -> [Schedule] {
+        let list: ScheduleList = try await decode(makeRequest("api/schedules"))
+        return list.schedules
+    }
+
+    func schedule(id: String) async throws -> ScheduleDetail {
+        try await decode(makeRequest("api/schedules/\(id)"))
+    }
+
+    /// Starts a run now, without moving the next scheduled one. 409 while the latest is going.
+    func runSchedule(id: String) async throws -> ScheduleRun {
+        try await decode(makeRequest("api/schedules/\(id)/run", method: "POST"))
+    }
+
+    /// Pauses or resumes. Resuming skips the slots missed while paused.
+    func setSchedule(id: String, enabled: Bool) async throws -> Schedule {
+        try await decode(makeRequest("api/schedules/\(id)", method: "PATCH", json: ["enabled": enabled]))
+    }
+
     // MARK: Messages and turns
 
     struct SendMessage: Encodable {
