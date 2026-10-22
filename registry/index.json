@@ -27,7 +27,7 @@
     },
     {
       "name": "apple_running",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "summary": "Summarize your runs from Apple Fitness and the Apple Watch: weekly distance, pace, heart rate, best runs",
       "category": "health",
       "author": "Hannes Hapke",
@@ -51,8 +51,8 @@
       "base_url": "tools/apple_running/",
       "files": {
         ".env.example": "adfa44a069ae98d3afc5ca7379f027fc5ab66ec2fb01c8596d6d45eeb0d26348",
-        "tool.json": "2e987f7f8522c61dc5e8c58b4143d03442ae5accec7c80b46657fd59cf7cf971",
-        "tool.py": "3038cf3db3ceab9ba412a77dfe986ba93a8984e43b711ba88d30099bda6cef81"
+        "tool.json": "ea737ebf84c5ed41768e08c2b38bf8416ad86ace7eecc7d676a1220106e71ac8",
+        "tool.py": "ebf765baace9514fb3cd8ab0a0b7da4bb4426cde989e8c79a4a90df0bd4a2007"
       },
       "reviewed": true
     },

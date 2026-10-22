@@ -4,8 +4,9 @@
 Reads the running workouts from an Apple Health export (the export.zip the Health app makes under
 your profile → Export All Health Data, which holds what Apple Fitness and the Apple Watch record)
 and summarizes them: totals, weekly distance, pace, heart rate, cadence, power, and the longest
-and fastest runs. Apple offers no web API for Health or Fitness data, so the export is the source.
-The report ends with `[chart] {...}` lines, which the cedar chat draws as charts.
+and fastest runs, and per-km (or per-mile) splits of one run from its GPS route: pace, heart rate,
+and climb, with pauses left out. Apple offers no web API for Health or Fitness data, so the export
+is the source. The report ends with `[chart] {...}` lines, which the cedar chat draws as charts.
 
 The export is found, in this order:
 1. `path` in the input: export.zip, export.xml, or the unzipped apple_health_export folder in
@@ -21,9 +22,11 @@ export parses the whole file (which can take a minute or two for years of data).
 Exit non-zero with a message on stderr to report an error; the model sees it as the tool's
 error and can try again differently.
 """
+import bisect
 import csv
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -34,13 +37,14 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+from array import array
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 WORKSPACE = Path("/workspace")
 CACHE = Path.home() / ".cache" / "apple_running"
-CACHE_FORMAT = 1  # bump when the cached run fields change
+CACHE_FORMAT = 2  # bump when the cached run fields change
 RUNNING = "HKWorkoutActivityTypeRunning"
 # The hosts the manifest declares; a share link (and every redirect it takes) must stay on them.
 HOSTS = ("www.dropbox.com", "dropbox.com", "drive.google.com", "drive.usercontent.google.com")
@@ -50,6 +54,12 @@ METERS = {"m": 1.0, "cm": 0.01, "km": 1000.0, "ft": 0.3048, "in": 0.0254}
 MINUTES = {"min": 1.0, "s": 1 / 60, "hr": 60.0, "h": 60.0}
 KCAL = {"kcal": 1.0, "Cal": 1.0, "kJ": 1 / 4.184, "cal": 0.001}
 Q = "HKQuantityTypeIdentifier"
+HEART_RATE = Q + "HeartRate"
+PAUSE = ("HKWorkoutEventTypePause", "HKWorkoutEventTypeMotionPaused")
+RESUME = ("HKWorkoutEventTypeResume", "HKWorkoutEventTypeMotionResumed")
+EARTH_KM = 6371.0088
+MAX_H_ACCURACY_M = 50  # GPS points less accurate than this are left out of the splits
+CLIMB_STEP_M = 2  # elevation changes smaller than this count as GPS noise
 
 
 # --- setup -----------------------------------------------------------------------------------
@@ -206,11 +216,40 @@ def when(text):
     return datetime.strptime(text, "%Y-%m-%d %H:%M:%S %z")
 
 
+def unix_time(text):
+    """A Health date as Unix seconds; fromisoformat is much faster than strptime, which matters
+    for the millions of heart-rate records in a large export."""
+    try:
+        return datetime.fromisoformat(text[:19] + text[20:]).timestamp()
+    except (TypeError, ValueError):
+        return when(text).timestamp()
+
+
 def number(text):
     try:
         return float(text)
     except (TypeError, ValueError):
         return None
+
+
+def pauses(w, end):
+    """The paused stretches of a workout (by hand or auto-pause) as [from, to] Unix times."""
+    events = []
+    for e in w.iter("WorkoutEvent"):
+        try:
+            events.append((unix_time(e.get("date")), e.get("type", "")))
+        except (TypeError, ValueError):
+            pass
+    out, since = [], None
+    for t, kind in sorted(events):
+        if kind in PAUSE and since is None:
+            since = t
+        elif kind in RESUME and since is not None:
+            out.append([since, t])
+            since = None
+    if since is not None:
+        out.append([since, end])
+    return out
 
 
 def parse_run(w):
@@ -221,7 +260,9 @@ def parse_run(w):
         (end - start).total_seconds() / 60
     run = {"start": start.isoformat(), "minutes": round(minutes, 2), "source": w.get("sourceName", ""),
            "km": None, "kcal": None, "avg_hr": None, "max_hr": None, "cadence": None,
-           "power_w": None, "elevation_m": None, "indoor": False, "temperature_c": None}
+           "power_w": None, "elevation_m": None, "indoor": False, "temperature_c": None,
+           "start_ts": start.timestamp(), "end_ts": end.timestamp(), "pauses": pauses(w, end.timestamp()),
+           "route": next((f.get("path") for f in w.iter("FileReference") if f.get("path")), None), "hr": []}
     # Exports before iOS 16 carry totals as attributes; later ones as WorkoutStatistics.
     if number(w.get("totalDistance")):
         run["km"] = number(w.get("totalDistance")) * KM.get(w.get("totalDistanceUnit", "km"), 1.0)
@@ -260,9 +301,11 @@ def parse_run(w):
 
 
 def read_runs(source):
-    """Every running workout in the export, oldest first. Streams the XML and throws away each
-    top-level element once read, so a multi-gigabyte export fits in memory."""
+    """Every running workout in the export, oldest first, each with the heart-rate samples taken
+    during it (for the splits). Streams the XML and throws away each top-level element once read,
+    so a multi-gigabyte export fits in memory."""
     runs, depth, root = [], 0, None
+    hr_times, hr_values = array("d"), array("d")  # every heart-rate record; they come before the workouts
     with open_xml(source) as f:
         try:
             for event, elem in ET.iterparse(f, events=("start", "end")):
@@ -273,7 +316,15 @@ def read_runs(source):
                     continue
                 depth -= 1
                 if depth == 1:
-                    if elem.tag == "Workout" and elem.get("workoutActivityType") == RUNNING:
+                    if elem.tag == "Record" and elem.get("type") == HEART_RATE:
+                        value = number(elem.get("value"))
+                        if value:
+                            try:
+                                hr_times.append(unix_time(elem.get("startDate")))
+                                hr_values.append(value)
+                            except (TypeError, ValueError):
+                                pass
+                    elif elem.tag == "Workout" and elem.get("workoutActivityType") == RUNNING:
                         try:
                             runs.append(parse_run(elem))
                         except (TypeError, ValueError):
@@ -282,7 +333,19 @@ def read_runs(source):
         except ET.ParseError as e:
             sys.exit(f"couldn't read the export's XML ({e}); export it again from the Health app")
     runs.sort(key=lambda r: r["start"])
+    attach_heart_rate(runs, hr_times, hr_values)
     return runs
+
+
+def attach_heart_rate(runs, times, values):
+    """Give each run the heart-rate samples inside it, as [seconds from the start, bpm]."""
+    starts = [r["start_ts"] for r in runs]
+    for t, v in zip(times, values):
+        i = bisect.bisect_right(starts, t) - 1
+        if i >= 0 and t <= runs[i]["end_ts"]:
+            runs[i]["hr"].append([round(t - starts[i], 1), v])
+    for r in runs:
+        r["hr"].sort()
 
 
 def cached_runs(source):
@@ -303,6 +366,152 @@ def cached_runs(source):
     except OSError:
         pass  # no cache this time; the result is still right
     return runs
+
+
+# --- splits from the GPS route ---------------------------------------------------------------
+
+def parse_gpx(f):
+    """A route's GPS points as (Unix time, lat, lon, elevation or None, segment number), in order."""
+    points, segment = [], 0
+    try:
+        for _, el in ET.iterparse(f):
+            tag = el.tag.rsplit("}", 1)[-1]
+            if tag == "trkseg":
+                segment += 1  # its end: the points after it are in the next segment
+            elif tag == "trkpt":
+                fields = {c.tag.rsplit("}", 1)[-1]: c.text for c in el.iter()}
+                accuracy = number(fields.get("hAcc"))
+                try:
+                    if fields.get("time") and (accuracy is None or accuracy <= MAX_H_ACCURACY_M):
+                        t = datetime.fromisoformat(fields["time"].strip().replace("Z", "+00:00")).timestamp()
+                        points.append((t, float(el.get("lat")), float(el.get("lon")),
+                                       number(fields.get("ele")), segment))
+                except (TypeError, ValueError):
+                    pass
+                el.clear()
+    except ET.ParseError:
+        return []
+    points.sort()
+    return points
+
+
+def read_route(source, route):
+    """The points of a run's route file, or None when the export doesn't hold it (an export.xml
+    without its workout-routes folder, say)."""
+    name = route.rsplit("/", 1)[-1]
+    if source.suffix.lower() == ".zip":
+        with zipfile.ZipFile(source) as archive:
+            members = [n for n in archive.namelist() if n.endswith("workout-routes/" + name)]
+            if not members:
+                return None
+            with archive.open(members[0]) as f:
+                return parse_gpx(f)
+    path = source.parent / "workout-routes" / name
+    if not path.is_file():
+        return None
+    with open(path, "rb") as f:
+        return parse_gpx(f)
+
+
+def haversine_km(a, b):
+    lat1, lon1, lat2, lon2 = map(math.radians, (a[1], a[2], b[1], b[2]))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    return 2 * EARTH_KM * math.asin(math.sqrt(min(1.0, h)))
+
+
+def compute_splits(run, points, split_km):
+    """Cut the route into splits of split_km. Each split's time is moving time (the run's pauses
+    taken out), its heart rate the average of the samples inside it, and its climb the up and down
+    in steps of at least CLIMB_STEP_M. Distance isn't counted across a gap between segments."""
+    paused = lambda a, b: sum(max(0.0, min(b, y) - max(a, x)) for x, y in run["pauses"])  # noqa: E731
+    hr_at = [s[0] for s in run["hr"]]
+
+    def split(n, t0, t1, km, up, down, full=True):
+        lo = bisect.bisect_left(hr_at, t0 - run["start_ts"])
+        hi = bisect.bisect_right(hr_at, t1 - run["start_ts"])
+        hr = mean(s[1] for s in run["hr"][lo:hi])
+        return {"n": n, "full": full, "km": round(km, 3), "minutes": round(max(0.0, t1 - t0 - paused(t0, t1)) / 60, 2),
+                "avg_hr": round(hr) if hr else None, "up_m": round(up), "down_m": round(down)}
+
+    out, dist, done = [], 0.0, 0.0  # done: the distance at the end of the last split
+    t_split, up, down, anchor, prev = points[0][0], 0.0, 0.0, None, None
+    for p in points:
+        if prev is not None and p[4] == prev[4]:
+            step = haversine_km(prev, p)
+            while step > 0 and dist + step >= done + split_km:
+                frac = (done + split_km - dist) / step
+                t = prev[0] + frac * (p[0] - prev[0])
+                out.append(split(len(out) + 1, t_split, t, split_km, up, down))
+                t_split, up, down, done = t, 0.0, 0.0, done + split_km
+            dist += step
+        if p[3] is not None:
+            if anchor is None or abs(p[3] - anchor) >= CLIMB_STEP_M:
+                if anchor is not None:
+                    up, down = up + max(0.0, p[3] - anchor), down + max(0.0, anchor - p[3])
+                anchor = p[3]
+        prev = p
+    if dist - done >= 0.05 * split_km:  # the last, shorter stretch
+        out.append(split(len(out) + 1, t_split, points[-1][0], dist - done, up, down, full=False))
+    return out, dist
+
+
+def pick_run(runs, period, wanted):
+    """The run to split: the newest with a route on the wanted day, or in the period."""
+    pool = [r for r in runs if r["start"][:10] == wanted] if wanted else period
+    with_route = [r for r in pool if r.get("route")]
+    return (with_route or pool or [None])[-1]
+
+
+def splits_report(source, run, u, wanted):
+    """The splits text and chart lines for one run, and the splits (for the CSV)."""
+    if run is None:
+        return (f"No run on {wanted} to split." if wanted else ""), [], []
+    label = run["start"][:16].replace("T", " ")
+    if not run.get("route"):
+        why = "an indoor run" if run["indoor"] else "no GPS route in the export"
+        return f"No splits for the run on {label}: {why}.", [], []
+    points = read_route(source, run["route"])
+    if points is None:
+        return (f"No splits for the run on {label}: its route file isn't in the export (use export.zip, "
+                "or the unzipped folder with its workout-routes folder, not export.xml alone)."), [], []
+    split_km = KM["mi"] if u.miles else 1.0
+    splits, gps_km = compute_splits(run, points, split_km) if len(points) >= 2 else ([], 0.0)
+    if not splits:
+        return f"No splits for the run on {label}: its route has too few GPS points.", [], []
+
+    climb = "ft" if u.miles else "m"
+    per_m = 3.28084 if u.miles else 1
+    health = f"; Health says {u.distance(run['km'])} {u.dist}" if run["km"] else ""
+    lines = [f"Splits for the run on {label} (GPS route {u.distance(gps_km)} {u.dist}{health}; pauses left out):"]
+    for s in splits:
+        name = f"{u.dist} {s['n']}" if s["full"] else f"last {u.distance(s['km'])} {u.dist}"
+        bits = [f"{name}: {u.pace_text(s['minutes'], s['km'])}"]
+        if s["avg_hr"]:
+            bits.append(f"HR {s['avg_hr']}")
+        if s["up_m"] or s["down_m"]:
+            bits.append(f"+{round(s['up_m'] * per_m)}/-{round(s['down_m'] * per_m)} {climb}")
+        lines.append("- " + ", ".join(bits))
+    full = [s for s in splits if s["full"] and s["minutes"]]
+    if len(full) >= 2:
+        fast = min(full, key=lambda s: s["minutes"])
+        slow = max(full, key=lambda s: s["minutes"])
+        half = len(full) // 2
+        first, second = (sum(s["minutes"] for s in part) / len(part) for part in (full[:half], full[-half:]))
+        # Within 1% counts as even, so a few seconds of GPS jitter don't make a trend.
+        how = ("even pacing" if abs(second - first) <= 0.01 * first else
+               "a negative split (faster second half)" if second < first else "a positive split (slower second half)")
+        if slow["minutes"] - fast["minutes"] <= 0.01 * fast["minutes"]:
+            lines.append(f"- Every {u.dist} within a few seconds of {u.pace_text(fast['minutes'], fast['km'])}: {how}")
+        else:
+            lines.append(f"- Fastest {u.dist} {fast['n']} ({u.pace_text(fast['minutes'], fast['km'])}), slowest "
+                         f"{u.dist} {slow['n']} ({u.pace_text(slow['minutes'], slow['km'])}); {how}")
+
+    chart = {"kind": "bar", "title": f"Splits on {run['start'][:10]}: pace per {u.dist} (lower is faster)",
+             "labels": [str(s["n"]) if s["full"] else f"{s['n']} ({u.distance(s['km'])})"
+                        for s in splits],
+             "series": [{"name": f"Pace (min/{u.dist})", "values": [u.pace(s["minutes"], s["km"]) for s in splits]}],
+             "x_label": u.dist, "y_label": f"min/{u.dist}"}
+    return "\n".join(lines), ["[chart] " + json.dumps(chart, separators=(",", ":"), ensure_ascii=False)], splits
 
 
 # --- analysis --------------------------------------------------------------------------------
@@ -456,9 +665,15 @@ def charts(period, start_day, today, u):
     return ["[chart] " + json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]
 
 
-def export_csv(runs, u):
+def export_csv(runs, splits, u):
     out = Path("apple_running")
     out.mkdir(exist_ok=True)
+    if splits:
+        with open(out / "splits.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["split", "km", "moving_minutes", "pace_min_per_" + u.dist, "avg_hr", "up_m", "down_m"])
+            w.writerows([s["n"], s["km"], s["minutes"], u.pace(s["minutes"], s["km"]), s["avg_hr"],
+                         s["up_m"], s["down_m"]] for s in splits)
     fields = ["start", "km", "minutes", "pace_min_per_" + u.dist, "avg_hr", "max_hr", "cadence",
               "power_w", "elevation_m", "kcal", "indoor", "temperature_c", "source"]
     with open(out / "runs.csv", "w", newline="") as f:
@@ -495,12 +710,23 @@ def main():
     today = date.today()
     start_day = today - timedelta(days=days - 1)
     period = [r for r in runs if date.fromisoformat(r["start"][:10]) >= start_day]
+    wanted = str(args.get("splits_date") or "").strip()[:10] or None
+    if wanted:
+        try:
+            date.fromisoformat(wanted)
+        except ValueError:
+            sys.exit(f"splits_date must be a date like 2026-05-01, not {args['splits_date']!r}")
     print(report(runs, period, start_day, today, u, max_runs))
-    lines = charts(period, start_day, today, u)
+    lines, splits = charts(period, start_day, today, u), []
+    if args.get("splits", True) is not False:
+        text, chart, splits = splits_report(source, pick_run(runs, period, wanted), u, wanted)
+        if text:
+            print("\n" + text)
+        lines += chart
     if lines:
         print("\n" + "\n".join(lines))
     if args.get("export"):
-        export_csv(period, u)
+        export_csv(period, splits, u)
 
 
 if __name__ == "__main__":
