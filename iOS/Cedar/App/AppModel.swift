@@ -2,7 +2,13 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// App-wide state: settings, the conversation list, the inbox count, and the open chats.
+/// What the sidebar lists: the conversations, or the scheduled agents and their runs.
+enum SidebarMode: Hashable {
+    case chats, scheduled
+}
+
+/// App-wide state: settings, the conversation list, the scheduled agents, the inbox count, and
+/// the open chats.
 @MainActor
 @Observable
 final class AppModel {
@@ -13,6 +19,18 @@ final class AppModel {
     private(set) var inboxUnread = 0
     private(set) var isRefreshing = false
     var listError: String?
+    var sidebarMode: SidebarMode = .chats
+    private(set) var schedules: [Schedule] = []
+    /// Each expanded schedule's runs, newest first, once loaded.
+    private(set) var scheduleRuns: [String: [ScheduleRun]] = [:]
+    var expandedSchedules: Set<String> = []
+    /// The schedules with a finished run nobody has looked at, and how many runs that is.
+    private(set) var unreadSchedules: Set<String> = []
+    private(set) var scheduledUnread = 0
+    private(set) var schedulesLoaded = false
+    var scheduleError: String?
+    /// Conversations the list leaves out (a schedule's runs), as their chats loaded them.
+    private var otherConversations: [String: Conversation] = [:]
     /// The selected conversation id, or a draft chat's key.
     var selection: String?
     /// Which column a compact (iPhone) split view shows.
@@ -43,6 +61,13 @@ final class AppModel {
             chats.values.forEach { $0.stopStreaming() }
             chats = [:]
             conversations = []
+            otherConversations = [:]
+            schedules = []
+            scheduleRuns = [:]
+            expandedSchedules = []
+            unreadSchedules = []
+            scheduledUnread = 0
+            schedulesLoaded = false
             models = []
             modelsLoaded = false
             selection = nil
@@ -72,7 +97,7 @@ final class AppModel {
             async let inbox = client.inbox()
             conversations = try await list
             let box = try await inbox
-            inboxUnread = box.unread
+            take(box)
             listError = nil
             if !modelsLoaded {
                 modelsLoaded = true
@@ -82,10 +107,34 @@ final class AppModel {
         } catch {
             listError = error.localizedDescription
         }
+        if sidebarMode == .scheduled { await refreshSchedules() }
+    }
+
+    private func take(_ inbox: Inbox) {
+        inboxUnread = inbox.unread
+        let scheduled = inbox.items.compactMap(\.scheduleId)
+        scheduledUnread = scheduled.count
+        unreadSchedules = Set(scheduled)
     }
 
     func conversation(id: String) -> Conversation? {
-        conversations.first { $0.id == id }
+        conversations.first { $0.id == id } ?? otherConversations[id]
+    }
+
+    /// A chat loaded its conversation. One the list leaves out is kept here, so its title shows
+    /// and opening it marks it seen.
+    func remember(_ conversation: Conversation) {
+        guard !conversations.contains(where: { $0.id == conversation.id }) else { return }
+        let isNew = otherConversations[conversation.id] == nil
+        otherConversations[conversation.id] = conversation
+        guard selection == conversation.id else { return }
+        if isNew, let scheduleId = conversation.scheduleId, sidebarMode != .scheduled || !expandedSchedules.contains(scheduleId) {
+            // Opened from a push, say: show where it belongs.
+            sidebarMode = .scheduled
+            expandedSchedules.insert(scheduleId)
+            Task { await refreshSchedules() }
+        }
+        if isActive { markSeen(conversationId: conversation.id) }
     }
 
     func title(for conversation: Conversation) -> String {
@@ -123,7 +172,10 @@ final class AppModel {
         Task {
             if let updated = try? await client.markSeen(conversationId: conversationId) {
                 replace(updated)
-                inboxUnread = (try? await client.inbox().unread) ?? inboxUnread
+                if let inbox = try? await client.inbox() { take(inbox) }
+                if let scheduleId = updated.scheduleId, scheduleRuns[scheduleId] != nil {
+                    await loadRuns(scheduleId: scheduleId)
+                }
             }
         }
     }
@@ -131,6 +183,75 @@ final class AppModel {
     private func replace(_ conversation: Conversation) {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index] = conversation
+        } else if otherConversations[conversation.id] != nil {
+            otherConversations[conversation.id] = conversation
+        }
+    }
+
+    // MARK: Schedules
+
+    /// Reads the schedules, and the runs of the ones that are expanded.
+    func refreshSchedules() async {
+        guard let client else { return }
+        do {
+            schedules = try await client.schedules()
+            schedulesLoaded = true
+            scheduleError = nil
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
+        } catch {
+            scheduleError = error.localizedDescription
+            return
+        }
+        let ids = Set(schedules.map(\.id))
+        scheduleRuns = scheduleRuns.filter { ids.contains($0.key) }
+        expandedSchedules.formIntersection(ids)
+        for id in expandedSchedules {
+            await loadRuns(scheduleId: id)
+        }
+    }
+
+    func loadRuns(scheduleId: String) async {
+        guard let client else { return }
+        do {
+            let detail = try await client.schedule(id: scheduleId)
+            scheduleRuns[scheduleId] = detail.runs
+            if let index = schedules.firstIndex(where: { $0.id == scheduleId }) {
+                var schedule = detail.schedule
+                schedule.lastRun = detail.runs.first
+                schedules[index] = schedule
+            }
+        } catch let error as ChatError where error.status == 404 {
+            schedules.removeAll { $0.id == scheduleId }
+            scheduleRuns.removeValue(forKey: scheduleId)
+            expandedSchedules.remove(scheduleId)
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            scheduleError = error.localizedDescription
+        }
+    }
+
+    /// Starts a run now and opens it, so it streams in.
+    func runNow(_ schedule: Schedule) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        let run = try await client.runSchedule(id: schedule.id)
+        expandedSchedules.insert(schedule.id)
+        await loadRuns(scheduleId: schedule.id)
+        if let conversationId = run.conversationId {
+            selection = conversationId
+            compactColumn = .detail
+        }
+    }
+
+    func setEnabled(_ schedule: Schedule, _ enabled: Bool) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        var updated = try await client.setSchedule(id: schedule.id, enabled: enabled)
+        if let index = schedules.firstIndex(where: { $0.id == schedule.id }) {
+            updated.lastRun = schedules[index].lastRun
+            schedules[index] = updated
         }
     }
 

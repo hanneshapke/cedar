@@ -5,58 +5,46 @@ struct ConversationListView: View {
     @State private var renaming: Conversation?
     @State private var newTitle = ""
     @State private var actionError: String?
+    @State private var showingPrompt: Schedule?
 
     var body: some View {
         @Bindable var app = app
         List(selection: $app.selection) {
-            if let error = app.listError {
-                Section {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                        .font(.footnote)
-                }
-            }
-            ForEach(app.conversations) { conversation in
-                ConversationRow(title: app.title(for: conversation), conversation: conversation, isActive: app.isActive(conversationId: conversation.id))
-                    .tag(conversation.id)
-                    .swipeActions {
-                        Button(role: .destructive) {
-                            delete(conversation)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                        Button {
-                            newTitle = app.title(for: conversation)
-                            renaming = conversation
-                        } label: {
-                            Label("Rename", systemImage: "pencil")
-                        }
-                        .tint(.orange)
-                    }
-                    .contextMenu {
-                        Button {
-                            newTitle = app.title(for: conversation)
-                            renaming = conversation
-                        } label: {
-                            Label("Rename", systemImage: "pencil")
-                        }
-                        if let client = app.client {
-                            Link(destination: client.webURL(conversationId: conversation.id)) {
-                                Label("Open on the Web", systemImage: "safari")
-                            }
-                        }
-                        Button(role: .destructive) {
-                            delete(conversation)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
+            switch app.sidebarMode {
+            case .chats: chats
+            case .scheduled: ScheduleRows(actionError: $actionError, showingPrompt: $showingPrompt)
             }
         }
+        .safeAreaInset(edge: .top) {
+            Picker("Show", selection: $app.sidebarMode) {
+                Text("Chats").tag(SidebarMode.chats)
+                Text(app.scheduledUnread > 0 ? "Scheduled (\(app.scheduledUnread))" : "Scheduled")
+                    .tag(SidebarMode.scheduled)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .background(.bar)
+        }
+        .onChange(of: app.sidebarMode) { _, mode in
+            if mode == .scheduled { Task { await app.refreshSchedules() } }
+        }
         .overlay {
-            if app.conversations.isEmpty && app.listError == nil && !app.isRefreshing {
-                ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
-                                       description: Text("Start a new chat to run the agent."))
+            switch app.sidebarMode {
+            case .chats:
+                if app.conversations.isEmpty && app.listError == nil && !app.isRefreshing {
+                    ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
+                                           description: Text("Start a new chat to run the agent."))
+                }
+            case .scheduled:
+                if app.schedules.isEmpty && app.scheduleError == nil {
+                    if app.schedulesLoaded {
+                        ContentUnavailableView("No Scheduled Agents", systemImage: "clock",
+                                               description: Text("On the web, the Schedule button turns a finished conversation into an agent that runs on its own."))
+                    } else {
+                        ProgressView()
+                    }
+                }
             }
         }
         .navigationTitle("cedar")
@@ -71,12 +59,16 @@ struct ConversationListView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    app.sidebarMode = .chats
                     app.newChat()
                 } label: {
                     Label("New Chat", systemImage: "square.and.pencil")
                 }
                 .disabled(!app.settings.isConfigured)
             }
+        }
+        .sheet(item: $showingPrompt) { schedule in
+            SchedulePromptView(schedule: schedule)
         }
         .alert("Rename Conversation", isPresented: Binding(
             get: { renaming != nil },
@@ -96,6 +88,53 @@ struct ConversationListView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(actionError ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var chats: some View {
+        if let error = app.listError {
+            Section {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+            }
+        }
+        ForEach(app.conversations) { conversation in
+            ConversationRow(title: app.title(for: conversation), conversation: conversation, isActive: app.isActive(conversationId: conversation.id))
+                .tag(conversation.id)
+                .swipeActions {
+                    Button(role: .destructive) {
+                        delete(conversation)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    Button {
+                        newTitle = app.title(for: conversation)
+                        renaming = conversation
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    .tint(.orange)
+                }
+                .contextMenu {
+                    Button {
+                        newTitle = app.title(for: conversation)
+                        renaming = conversation
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    if let client = app.client {
+                        Link(destination: client.webURL(conversationId: conversation.id)) {
+                            Label("Open on the Web", systemImage: "safari")
+                        }
+                    }
+                    Button(role: .destructive) {
+                        delete(conversation)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
         }
     }
 

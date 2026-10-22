@@ -29,6 +29,10 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Attach PDFs (any model) and photos or images (models registered as multimodal) to a
   message from the paperclip: the photo library or Files. Photos in a type cedar doesn't take,
   such as HEIC, are sent as JPEG; the limits are the server's (10 files, 20 MB each, 32 MB in all)
+- Scheduled agents: a **Chats | Scheduled** switch at the top of the sidebar lists each
+  schedule with its timing, next run and last result; expand one to see its runs and open any of
+  them as a conversation. **Run now**, **Pause** and **Resume** from a swipe or a long press, and
+  read the prompt; creating and editing schedules is done on the web
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered

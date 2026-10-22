@@ -208,6 +208,104 @@ struct Inbox: Decodable, Sendable {
     let unread: Int
 }
 
+/// A scheduled agent (`GET /api/schedules`): a prompt the server starts as a fresh run whenever
+/// it is due, each run in a conversation of its own that the conversation list leaves out.
+struct Schedule: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    var title: String
+    var prompt: String
+    var model: String?
+    var reasoning: String?
+    /// `daily`, `weekdays` or `weekly`.
+    var frequency: String
+    /// 0–6, Monday–Sunday; weekly only.
+    var weekday: Int?
+    /// `HH:MM` in `timezone`.
+    var timeOfDay: String
+    var timezone: String
+    var enabled: Bool
+    var nextRunAt: Date
+    var lastRunAt: Date?
+    /// Only in the list; a schedule as `PATCH` returns it has none.
+    var lastRun: ScheduleRun?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, prompt, model, reasoning, frequency, weekday, timezone, enabled
+        case timeOfDay = "time_of_day"
+        case nextRunAt = "next_run_at"
+        case lastRunAt = "last_run_at"
+        case lastRun = "last_run"
+    }
+
+    /// "Weekdays at 07:30", with the schedule's time zone when it isn't this device's.
+    var cadence: String {
+        let when: String
+        switch frequency {
+        case "daily": when = "Daily"
+        case "weekdays": when = "Weekdays"
+        case "weekly":
+            let names = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"]
+            when = weekday.flatMap { names.indices.contains($0) ? names[$0] : nil } ?? "Weekly"
+        default: when = frequency.capitalized
+        }
+        let zone = timezone == TimeZone.current.identifier ? "" : " (\(timezone))"
+        return "\(when) at \(timeOfDay)\(zone)"
+    }
+}
+
+/// One time a schedule fired, with the turn that carries its run, or the `error` that kept it
+/// from starting.
+struct ScheduleRun: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let scheduleId: String
+    let conversationId: String?
+    let turnId: String?
+    let dueAt: Date
+    let startedAt: Date
+    /// Started with Run now rather than on schedule.
+    let manual: Bool
+    let error: String?
+    let turn: Turn?
+
+    enum CodingKeys: String, CodingKey {
+        case id, manual, error, turn
+        case scheduleId = "schedule_id"
+        case conversationId = "conversation_id"
+        case turnId = "turn_id"
+        case dueAt = "due_at"
+        case startedAt = "started_at"
+    }
+
+    enum Outcome: Hashable, Sendable {
+        case queued, running, completed, needsAnswer, failed, cancelled, notStarted
+    }
+
+    var outcome: Outcome {
+        guard let turn else { return .notStarted }
+        switch turn.status {
+        case .queued: return .queued
+        case .running: return .running
+        case .completed: return turn.needsAnswer ? .needsAnswer : .completed
+        case .failed: return .failed
+        case .cancelled: return .cancelled
+        }
+    }
+
+    var isActive: Bool { turn?.isActive ?? false }
+    /// A finished response in it nobody has looked at.
+    var unread: Bool { turn.map { !$0.isActive && !$0.seen } ?? false }
+}
+
+struct ScheduleList: Decodable, Sendable {
+    let schedules: [Schedule]
+}
+
+/// `GET /api/schedules/{id}`: the schedule and its runs, newest first.
+struct ScheduleDetail: Decodable, Sendable {
+    let schedule: Schedule
+    let runs: [ScheduleRun]
+}
+
 /// A `turn.finished` notice from `GET /api/events`: a response ended somewhere.
 struct Notice: Decodable, Hashable, Sendable {
     let turnId: String
