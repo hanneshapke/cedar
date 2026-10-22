@@ -1,0 +1,52 @@
+{
+  "description": "Read the user's running workouts from their Apple Health export (what Apple Fitness and the Apple Watch record; Apple has no web API, so the source is the export.zip the Health app makes) and summarize the last days (90 by default): totals, weekly distance against the four weeks before, average pace, heart rate, cadence, power and climb, the longest run and the fastest runs of 5 km, 10 km and a half marathon or longer by average pace, and a list of the latest runs. Use it when the user asks about their running, training load, pace or heart rate. Turn the result into a short answer: how the period went, what changed lately, and anything worth care (a sharp jump in weekly distance). It is informational, not medical advice; for pain, injury or heart concerns, point the user to a doctor. The export comes from `path` (export.zip, export.xml or the unzipped folder in the workspace), else a file in the tool's own folder, else the APPLE_HEALTH_EXPORT_URL share link; the result says which run is newest, so mention it when the export looks out of date (the user re-exports from the Health app to update it). Its output ends with [chart] lines, which the chat draws as charts for the user (distance by week, or by month beyond half a year; pace and heart rate per run): don't repeat those numbers or redraw them with generate_chart unless the user asks for an image file. With export=true it also writes apple_running/runs.csv to the workspace.",
+  "version": "1.0.0",
+  "author": "Hannes Hapke",
+  "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/apple_running",
+  "license": "Apache-2.0",
+  "timeout_secs": 600,
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "days": {
+        "type": "integer",
+        "minimum": 7,
+        "maximum": 3650,
+        "default": 90,
+        "description": "The window to summarize, in days up to today."
+      },
+      "path": {
+        "type": "string",
+        "description": "Optional: the export in the workspace (export.zip, export.xml, or the apple_health_export folder), relative to /workspace."
+      },
+      "unit": {
+        "type": "string",
+        "enum": ["km", "mi"],
+        "description": "Optional: km or mi. Defaults to the DISTANCE_UNIT setting, else km."
+      },
+      "max_runs": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 20,
+        "description": "How many of the latest runs to list one by one."
+      },
+      "refresh": {
+        "type": "boolean",
+        "default": false,
+        "description": "Download the export from the share link again even if it looks unchanged."
+      },
+      "export": {
+        "type": "boolean",
+        "default": false,
+        "description": "Also write the period's runs to apple_running/runs.csv in the workspace."
+      }
+    }
+  },
+  "network": ["www.dropbox.com", "dropbox.com", "*.dropboxusercontent.com", "drive.google.com", "drive.usercontent.google.com"],
+  "secrets": [
+    {"name": "APPLE_HEALTH_EXPORT_URL", "description": "A Dropbox or Google Drive share link (anyone with the link can view) to the export.zip the Health app made", "optional": true},
+    {"name": "DISTANCE_UNIT", "description": "km or mi (default km)", "optional": true}
+  ],
+  "health_data": true
+}
