@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-ui="v5">
+<html lang="en" data-ui="v5" data-scheme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -28,6 +28,22 @@
   <link rel="stylesheet" href="/settings.css">
   <link rel="stylesheet" href="/models.css">
   <link rel="stylesheet" href="/attach.css">
+  <script>
+    // Light mode is switched off for now: with data-scheme="dark" on <html>, every rule for
+    // (prefers-color-scheme: dark), in this skin's sheets and the shared ones, and the logo's dark
+    // source apply whatever the system is set to. Remove the attribute to follow the system again.
+    if (document.documentElement.dataset.scheme === 'dark') {
+      const force = (text) => text.replace(/\(prefers-color-scheme:\s*dark\)/g, 'all');
+      for (const sheet of document.styleSheets) {
+        let rules;
+        try { rules = sheet.cssRules; } catch { continue; }
+        for (const rule of rules) if (rule.media && /prefers-color-scheme/.test(rule.media.mediaText)) rule.media.mediaText = force(rule.media.mediaText);
+      }
+      document.addEventListener('DOMContentLoaded', () => {
+        for (const source of document.querySelectorAll('source[media*="prefers-color-scheme"]')) source.media = force(source.media);
+      });
+    }
+  </script>
 </head>
 <body>
   <div class="app empty" id="app" data-pane="talk">
