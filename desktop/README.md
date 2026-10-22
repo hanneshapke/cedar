@@ -263,8 +263,11 @@ dependencies are compiled once.
   the version for dark mode. `--icon` (a PNG with a transparent background, or an SVG) is the
   glyph of the app icon, the menu bar icon, the tray icon on Windows and the favicons' PNGs; it is
   drawn on a rounded tile of `--icon-background`, and without `--icon` the logo is used (the dark
-  version on a dark background). The icons need Python 3 with Pillow, and an SVG icon also
-  cairosvg (`python3 -m pip install pillow cairosvg`) or `rsvg-convert` (`brew install librsvg`).
+  version on a dark background). The icons need Python 3 with Pillow (`python3 -m pip install
+  pillow`). An SVG is drawn by `rebrand.py` itself if it is a flat logo (filled paths and shapes);
+  one with transforms, strokes, gradients or text needs cairosvg with Homebrew's Cairo (`brew
+  install cairo && python3 -m pip install cairosvg`) or `rsvg-convert` (`brew install librsvg`),
+  which are used first when they work.
 - A **brand folder** holds any of `logo.svg`, `logo-on-dark.svg`, `icon.png` or `icon.svg`, and a
   `brand.conf` of `KEY=value` lines: `SKIN`, `ASSISTANT_NAME`, `APP_NAME`, `IDENTIFIER` and
   `ICON_BACKGROUND`. Options on the command line win over it. Keep brand folders outside this

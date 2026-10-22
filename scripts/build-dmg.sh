@@ -23,7 +23,7 @@
 # given on the command line win over the folder.
 #
 # Runs on macOS with Rust, the Tauri CLI (`cargo install tauri-cli --version '^2' --locked`) and,
-# for a logo or icon, Python 3 with Pillow (plus cairosvg or rsvg-convert for an SVG icon).
+# for a logo or icon, Python 3 with Pillow (see scripts/rebrand.py for the SVGs it can draw).
 # Signing and notarization follow the environment, as in .github/workflows/release.yml:
 #   APPLE_SIGNING_IDENTITY (+ APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD on a machine without
 #   the certificate in its keychain) signs; without it the app is signed ad hoc, fine for your own

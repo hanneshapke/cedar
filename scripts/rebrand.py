@@ -15,7 +15,9 @@ staged copy before compiling; never point it at your checkout, it edits files in
 --logo            an SVG mark for light backgrounds: the logo in the chat's top bar and the favicon.
 --logo-on-dark    the same for dark backgrounds (default: --logo).
 --icon            the glyph for the app icon, the menu bar and the favicons' PNGs: a PNG with a
-                  transparent background (or an SVG, rendered with cairosvg or rsvg-convert),
+                  transparent background, or an SVG: rendered with cairosvg or rsvg-convert where
+                  they work, else by this script itself, which draws flat logos (filled paths and
+                  shapes, no transforms, strokes, gradients or text),
                   drawn on --icon-background (default white). Default: --logo-on-dark if the
                   background is dark, else --logo.
 
@@ -168,19 +170,191 @@ def rebrand_bundle(root, app_name, identifier, assistant_name):
 # -- the logo and the icons ------------------------------------------------------------------
 
 def rasterize(path, px):
-    """A PNG or SVG as a px-wide RGBA image (an SVG through cairosvg, else rsvg-convert)."""
+    """A PNG or SVG as a px-wide RGBA image. An SVG goes through cairosvg or rsvg-convert when
+    either works here, else through `draw_svg`, which knows the flat shapes logos are made of."""
     from PIL import Image
     if path.suffix.lower() != ".svg":
         return Image.open(path).convert("RGBA")
     try:
         import cairosvg
-        data = cairosvg.svg2png(url=str(path), output_width=px)
-    except ImportError:
-        if not shutil.which("rsvg-convert"):
-            sys.exit(f"{path}: rendering an SVG needs cairosvg (python3 -m pip install cairosvg) or "
-                     "rsvg-convert (brew install librsvg); or pass --icon as a PNG")
+        return Image.open(io.BytesIO(cairosvg.svg2png(url=str(path), output_width=px))).convert("RGBA")
+    except (ImportError, OSError):
+        pass  # not installed, or installed without the Cairo library (as on a Mac without Homebrew's)
+    if shutil.which("rsvg-convert"):
         data = subprocess.run(["rsvg-convert", "-w", str(px), str(path)], check=True, capture_output=True).stdout
-    return Image.open(io.BytesIO(data)).convert("RGBA")
+        return Image.open(io.BytesIO(data)).convert("RGBA")
+    return draw_svg(path, px)
+
+
+# -- a small SVG renderer for flat logos -----------------------------------------------------
+
+SVG_UNSUPPORTED = re.compile(r"\btransform=|<(image|text|use|mask|clipPath|pattern|filter|\w*[Gg]radient)\b|\bstroke=\"(?!none)")
+SVG_SHAPE = re.compile(r"<(path|rect|circle|ellipse|polygon)\b([^>]*)>")
+SVG_ATTR = re.compile(r'([\w-]+)="([^"]*)"')
+PATH_TOKEN = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def draw_svg(path, px):
+    """Draws an SVG of filled paths, rects, circles, ellipses and polygons (no transforms,
+    strokes, gradients, text or images: the shapes of a flat logo) as a px-wide RGBA image.
+    Overlapping subpaths of one shape cut holes (the even-odd rule)."""
+    from PIL import Image, ImageChops, ImageColor, ImageDraw
+    text = re.sub(r"<metadata>.*?</metadata>", "", path.read_text(), flags=re.S)
+    if SVG_UNSUPPORTED.search(text):
+        sys.exit(f"{path}: this SVG uses transforms, strokes, gradients, text or images; render it with "
+                 "cairosvg (brew install cairo && python3 -m pip install cairosvg) or rsvg-convert "
+                 "(brew install librsvg), or pass --icon as a PNG")
+    vb = re.search(r'viewBox="([^"]+)"', text)
+    if not vb:
+        sys.exit(f"{path}: no viewBox")
+    x0, y0, w, h = (float(v) for v in vb.group(1).replace(",", " ").split())
+    ss = 4
+    k = px * ss / w
+    size = (px * ss, max(1, round(h * k)))
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    pt = lambda x, y: ((x - x0) * k, (y - y0) * k)
+    for tag, attrs in SVG_SHAPE.findall(text):
+        a = dict(SVG_ATTR.findall(attrs))
+        style = dict(kv.split(":", 1) for kv in a.get("style", "").replace(" ", "").split(";") if ":" in kv)
+        fill = style.get("fill", a.get("fill", "#000"))
+        if fill == "none":
+            continue
+        mask = Image.new("L", size, 0)
+        if tag == "path":
+            for poly in path_polygons(a.get("d", "")):
+                if len(poly) > 2:
+                    sub = Image.new("L", size, 0)
+                    ImageDraw.Draw(sub).polygon([pt(x, y) for x, y in poly], fill=255)
+                    mask = ImageChops.difference(mask, sub)
+        else:
+            num = lambda n: float(a.get(n, 0))
+            d = ImageDraw.Draw(mask)
+            if tag == "rect":
+                d.rounded_rectangle([pt(num("x"), num("y")), pt(num("x") + num("width"), num("y") + num("height"))],
+                                    radius=max(num("rx"), num("ry")) * k, fill=255)
+            elif tag == "circle":
+                d.ellipse([pt(num("cx") - num("r"), num("cy") - num("r")), pt(num("cx") + num("r"), num("cy") + num("r"))], fill=255)
+            elif tag == "ellipse":
+                d.ellipse([pt(num("cx") - num("rx"), num("cy") - num("ry")), pt(num("cx") + num("rx"), num("cy") + num("ry"))], fill=255)
+            else:
+                v = [float(t) for t in re.findall(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?", a.get("points", ""))]
+                d.polygon([pt(x, y) for x, y in zip(v[::2], v[1::2])], fill=255)
+        opacity = float(style.get("fill-opacity", a.get("fill-opacity", 1))) * float(style.get("opacity", a.get("opacity", 1)))
+        color = ImageColor.getrgb(fill if fill.startswith(("#", "rgb")) or fill.isalpha() else "#000")[:3]
+        layer = Image.new("RGBA", size, color + (0,))
+        layer.putalpha(mask.point(lambda v: round(v * opacity)))
+        img.alpha_composite(layer)
+    return img.resize((px, max(1, round(size[1] / ss))), Image.LANCZOS)
+
+
+def path_polygons(d):
+    """The subpaths of SVG path data as lists of points, curves and arcs flattened."""
+    import math
+    tokens = PATH_TOKEN.findall(d)
+    polys, cur, i = [], [], 0
+    x = y = sx = sy = 0.0
+    last_ctrl, cmd, prev = None, None, None
+
+    def nums(n):
+        nonlocal i
+        vals = [float(t) for t in tokens[i:i + n]]
+        i += n
+        return vals
+
+    def curve(points, steps=24):
+        # Bezier through the control points, by de Casteljau.
+        for s in range(1, steps + 1):
+            t, ps = s / steps, list(points)
+            while len(ps) > 1:
+                ps = [(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t) for a, b in zip(ps, ps[1:])]
+            cur.append(ps[0])
+
+    while i < len(tokens):
+        if tokens[i].isalpha():
+            cmd = tokens[i]; i += 1
+        elif cmd is None:
+            break
+        rel = cmd.islower()
+        c = cmd.upper()
+        ox, oy = (x, y) if rel else (0.0, 0.0)
+        if c == "Z":
+            if cur:
+                polys.append(cur)
+            cur, (x, y) = [], (sx, sy)
+            last_ctrl = None
+            prev = c
+            continue
+        if c == "M":
+            if cur:
+                polys.append(cur)
+            px_, py_ = nums(2)
+            x, y = ox + px_, oy + py_
+            sx, sy, cur = x, y, [(x, y)]
+            cmd = "l" if rel else "L"  # coordinates after a moveto are linetos
+        elif c == "L":
+            px_, py_ = nums(2); x, y = ox + px_, oy + py_; cur.append((x, y))
+        elif c == "H":
+            (v,) = nums(1); x = (x if rel else 0) + v; cur.append((x, y))
+        elif c == "V":
+            (v,) = nums(1); y = (y if rel else 0) + v; cur.append((x, y))
+        elif c in "CS":
+            if c == "C":
+                x1, y1, x2, y2, ex, ey = nums(6); c1 = (ox + x1, oy + y1)
+            else:
+                x2, y2, ex, ey = nums(4)
+                c1 = (2 * x - last_ctrl[0], 2 * y - last_ctrl[1]) if last_ctrl and prev in "CS" else (x, y)
+            c2, end = (ox + x2, oy + y2), (ox + ex, oy + ey)
+            curve([(x, y), c1, c2, end]); last_ctrl, (x, y) = c2, end
+        elif c in "QT":
+            if c == "Q":
+                x1, y1, ex, ey = nums(4); c1 = (ox + x1, oy + y1)
+            else:
+                ex, ey = nums(2)
+                c1 = (2 * x - last_ctrl[0], 2 * y - last_ctrl[1]) if last_ctrl and prev in "QT" else (x, y)
+            end = (ox + ex, oy + ey)
+            curve([(x, y), c1, end]); last_ctrl, (x, y) = c1, end
+        elif c == "A":
+            rx, ry, rot, large, sweep, ex, ey = nums(7)
+            ex, ey = ox + ex, oy + ey
+            cur.extend(arc_points(x, y, rx, ry, rot, large, sweep, ex, ey, math))
+            x, y = ex, ey
+        if c not in "CSQT":
+            last_ctrl = None
+        prev = c
+    if cur:
+        polys.append(cur)
+    return polys
+
+
+def arc_points(x1, y1, rx, ry, rot, large, sweep, x2, y2, math, steps=32):
+    """An SVG elliptical arc as points, by the endpoint-to-centre conversion of SVG 1.1 F.6.5."""
+    if rx == 0 or ry == 0 or (x1, y1) == (x2, y2):
+        return [(x2, y2)]
+    rx, ry, phi = abs(rx), abs(ry), math.radians(rot)
+    cos, sin = math.cos(phi), math.sin(phi)
+    dx, dy = (x1 - x2) / 2, (y1 - y2) / 2
+    x1p, y1p = cos * dx + sin * dy, -sin * dx + cos * dy
+    scale = (x1p / rx) ** 2 + (y1p / ry) ** 2
+    if scale > 1:
+        rx, ry = rx * math.sqrt(scale), ry * math.sqrt(scale)
+    num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p
+    co = math.sqrt(max(0, num / (rx * rx * y1p * y1p + ry * ry * x1p * x1p)))
+    if large == sweep:
+        co = -co
+    cxp, cyp = co * rx * y1p / ry, -co * ry * x1p / rx
+    cx, cy = cos * cxp - sin * cyp + (x1 + x2) / 2, sin * cxp + cos * cyp + (y1 + y2) / 2
+    ang = lambda ux, uy, vx, vy: math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)
+    t1 = ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry)
+    dt = ang((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry)
+    if not sweep and dt > 0:
+        dt -= 2 * math.pi
+    elif sweep and dt < 0:
+        dt += 2 * math.pi
+    out = []
+    for s in range(1, steps + 1):
+        t = t1 + dt * s / steps
+        out.append((cx + rx * math.cos(t) * cos - ry * math.sin(t) * sin, cy + rx * math.cos(t) * sin + ry * math.sin(t) * cos))
+    return out
 
 
 def fit(glyph, box):
