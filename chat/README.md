@@ -233,7 +233,7 @@ Server) or set `PRODUCTS=off` on cedar to remove the tool.
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
-| `CHAT_DEFAULT_UI` | `v3` | The front end `/` opens until the browser picks one in Settings → Interface: `v3` (Ledger), `v4` (Dossier), `v2` (Cedar style) or `v1` (Claude style). `CEDAR_DEFAULT_UI` at build time changes the built-in default (see [desktop/README.md](../desktop/README.md#white-label-builds)) |
+| `CHAT_DEFAULT_UI` | `v3` | The front end `/` opens until the browser picks one in Settings → Interface: `v3` (Ledger), `v4` (Dossier), `v2` (Cedar style), `v1` (Claude style) or `v5` (Dataiku, a test skin for white-label builds). `CEDAR_DEFAULT_UI` at build time changes the built-in default (see [desktop/README.md](../desktop/README.md#white-label-builds)) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.

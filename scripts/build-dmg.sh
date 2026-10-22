@@ -22,13 +22,14 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # The front ends cedar-chat serves (chat/static/vN/), as named in chat/static/ui-pref.js.
-SKINS="v1 v2 v3 v4"
+SKINS="v1 v2 v3 v4 v5"
 skin_label() {
   case "$1" in
     v1) echo "Claude style" ;;
     v2) echo "Cedar style" ;;
     v3) echo "Ledger" ;;
     v4) echo "Dossier" ;;
+    v5) echo "Dataiku" ;;
   esac
 }
 # Accepts vN or the skin's name, in any case.
@@ -38,6 +39,7 @@ skin_id() {
     v2 | cedar | cedarstyle) echo v2 ;;
     v3 | ledger) echo v3 ;;
     v4 | dossier) echo v4 ;;
+    v5 | dataiku) echo v5 ;;
     *) return 1 ;;
   esac
 }

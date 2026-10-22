@@ -1,0 +1,127 @@
+/* cedar-chat v5 "Dataiku": a test skin for a white-label build. It keeps Ledger's layout and script
+   (the page loads /v3/style.css first) and restyles it after the Dataiku brand guidelines: the
+   core black, white and beige with the dark green, green and light green as the brand colours;
+   Spectral Light for headings and documents, Roboto (Regular and Light) for the interface, DM Mono
+   for labels; square corners, and the thin vertical rule and mono caps label of the brand's cards.
+
+   The guidelines give CMYK and Pantone values only. The hex values below are their screen
+   equivalents: the core colours as the brand's own layouts render them, the others converted
+   from CMYK. Swap in official RGB values when there are any. The palette has no red, so errors
+   keep Ledger's. */
+
+:root {
+  /* The palette, named as in the guidelines. */
+  --dk-core-black: #171717;
+  --dk-core-white: #fdfdfa;
+  --dk-dark-green: #06322e;
+  --dk-beige: #f8f4e5;
+  --dk-green: #3ddab1;
+  --dk-light-green: #c6fff0;
+  --dk-orange: #efa33c;
+  --dk-blue: #7d96dc;
+  --dk-dark-grey: #2c2e2c;
+  --dk-grey: #8f9289;
+  --dk-light-grey: #efedec;
+  --dk-dark-blue-grey: #1b2440;
+  --dk-blue-grey: #4a5470;
+  --dk-light-blue-grey: #aec2e6;
+
+  --paper: var(--dk-beige);
+  --desk: #efeadb;
+  --sheet: var(--dk-core-white);
+  --ink: var(--dk-core-black);
+  --ink-2: var(--dk-dark-grey);
+  --muted: #5f625b;
+  --faint: #8f9289;
+  --line: #e2ddcb;
+  --line-soft: #ebe7d7;
+  --wash: #f2eedf;
+  --accent: var(--dk-dark-green);
+  --accent-wash: #e3fff7;
+  --accent-line: var(--dk-green);
+  --brand: var(--dk-green);
+  --warn: #8a560f;
+  --warn-wash: #fdf4e4;
+  --warn-line: #f5d6a6;
+  --on-ink: var(--dk-core-white);
+  --slot-line: #cdc8b5;
+  --shadow-card: 0 1px 2px rgba(6, 50, 46, .05), 0 6px 20px rgba(6, 50, 46, .06);
+  --shadow-doc: 0 2px 4px rgba(6, 50, 46, .06), 0 14px 40px rgba(6, 50, 46, .10);
+  --sans: Roboto, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: Spectral, Georgia, serif;
+  --mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 2px;
+}
+
+/* Dark: the brand's dark green cards, with the green for what needs the eye. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: var(--dk-dark-green);
+    --desk: #042622;
+    --sheet: #0b3c37;
+    --ink: var(--dk-beige);
+    --ink-2: #dcd8c9;
+    --muted: #a3b8b2;
+    --faint: #6f8c86;
+    --line: #1d4c46;
+    --line-soft: #164440;
+    --wash: #0f413c;
+    --accent: var(--dk-green);
+    --accent-wash: #0f4a42;
+    --accent-line: #1f6b5d;
+    --warn: var(--dk-orange);
+    --warn-wash: #3a2e17;
+    --warn-line: #6b5124;
+    --on-ink: var(--dk-dark-green);
+    --slot-line: #2a5c55;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+    --shadow-doc: 0 2px 4px rgba(0, 0, 0, .3), 0 14px 40px rgba(0, 0, 0, .4);
+  }
+}
+
+body { font-weight: 400; }
+::selection { background: var(--dk-light-green); color: var(--dk-core-black); }
+:focus-visible { outline-color: var(--brand); }
+
+/* -- type: Spectral Light for what is read as a heading or a document ------------------------ */
+
+.hero h1 { font: 300 40px/1.12 var(--serif); letter-spacing: -.015em; }
+.hero p { font-weight: 300; font-size: 16px; }
+.card.doc .md { font-weight: 300; font-size: 16.5px; }
+.card.doc .md h1, .card.doc .md h2, .card.doc .md h3 { font-weight: 300; }
+.md h1, .md h2, .md h3 { font-family: var(--serif); font-weight: 300; letter-spacing: -.01em; }
+.md strong, .md b { font-weight: 500; }
+dialog h2, .settings-page h2 { font-family: var(--serif); font-weight: 300; }
+
+/* Labels as the brand sets them: DM Mono capitals. */
+.label, .turn-head .n, .example .kind { font: 400 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.example .kind { color: var(--accent); }
+
+/* -- the top bar and the mark ---------------------------------------------------------------- */
+
+.brand { font-weight: 400; font-size: 16px; letter-spacing: 0; }
+.mark { fill: none; stroke: var(--brand); stroke-width: 1.4; }
+
+/* -- square corners -------------------------------------------------------------------------- */
+
+.title, .title-input, .ghost, .example, .home-conv, .note.user, .note.error, .work-sum, .step,
+.composer, .stage-empty .slot, .turn-sources .cedar-source, .turn-sources .sandbox, .card,
+.card-head .ico, .card .out, .result, .md .code, .copy-btn, .primary, .drawer-new, .conv,
+.conv .del, .toast, dialog, dialog input, .file-row, .ui-option { border-radius: var(--radius); }
+
+/* -- buttons: dark green with white type; the green ring on focus ---------------------------- */
+
+.send { border-radius: var(--radius); background: var(--accent); color: var(--on-ink); }
+.primary, .card-head .acts .copy-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-ink); }
+.composer:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); }
+.title-input { border-color: var(--brand); }
+
+/* -- the brand's card: a thin vertical rule at the left -------------------------------------- */
+
+.example { position: relative; padding-left: 20px; border-color: var(--line); }
+.example::before { content: ""; position: absolute; left: 10px; top: 14px; bottom: 14px; width: 1px; background: var(--accent-line); }
+.example:hover { border-color: var(--accent); background: var(--accent-wash); }
+.note.user { border-left: 2px solid var(--brand); }
+.conv.active { box-shadow: inset 2px 0 0 var(--brand); }
+.conv .needs { border-radius: var(--radius); font-family: var(--mono); font-weight: 400; }
+.ui-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--brand); }

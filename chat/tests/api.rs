@@ -863,7 +863,7 @@ async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
 async fn both_uis_are_served() {
     let h = Harness::new(&[]).await;
 
-    for ui in ["v1", "v2", "v3", "v4"] {
+    for ui in ["v1", "v2", "v3", "v4", "v5"] {
         // The page is reachable with and without the trailing slash and loads its own assets.
         for uri in [format!("/{ui}"), format!("/{ui}/")] {
             let (status, headers, page) = fetch(&h, &uri).await;
@@ -915,6 +915,10 @@ async fn both_uis_are_served() {
             );
             assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in the sidebar");
             assert!(page.contains("id=\"schedule-btn\""), "{uri} has a Schedule button");
+        }
+        for other in ["v1", "v2", "v3", "v4", "v5"] {
+            let (_, _, page) = fetch(&h, &format!("/{ui}/")).await;
+            assert!(page.contains(&format!("data-ui=\"{other}\" aria-pressed")), "/{ui}/ offers {other} in Settings → Interface");
         }
         let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));

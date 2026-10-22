@@ -112,7 +112,7 @@ const TRUST_VIEW_CSS: &str = include_str!("../static/trust-view.css");
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
 const LEAFLET_CSS: &str = include_str!("../static/vendor/leaflet/leaflet.css");
-/// The v3 and v4 typefaces (SIL Open Font License 1.1, see `static/fonts/OFL-*.txt`), served from
+/// The v3, v4 and v5 typefaces (SIL Open Font License 1.1, see `static/fonts/OFL-*.txt`), served from
 /// here so the pages load no fonts from another host. `fonts.css` holds their `@font-face` rules.
 const FONTS_CSS: &str = include_str!("../static/fonts/fonts.css");
 const FONTS: &[(&str, &[u8])] = &[
@@ -130,6 +130,20 @@ const FONTS: &[(&str, &[u8])] = &[
     ("lora-italic-latin.woff2", include_bytes!("../static/fonts/lora-italic-latin.woff2")),
     ("lora-latin-ext.woff2", include_bytes!("../static/fonts/lora-latin-ext.woff2")),
     ("lora-latin.woff2", include_bytes!("../static/fonts/lora-latin.woff2")),
+    ("dm-mono-latin-ext.woff2", include_bytes!("../static/fonts/dm-mono-latin-ext.woff2")),
+    ("dm-mono-latin.woff2", include_bytes!("../static/fonts/dm-mono-latin.woff2")),
+    ("roboto-300-latin-ext.woff2", include_bytes!("../static/fonts/roboto-300-latin-ext.woff2")),
+    ("roboto-300-latin.woff2", include_bytes!("../static/fonts/roboto-300-latin.woff2")),
+    ("roboto-400-latin-ext.woff2", include_bytes!("../static/fonts/roboto-400-latin-ext.woff2")),
+    ("roboto-400-latin.woff2", include_bytes!("../static/fonts/roboto-400-latin.woff2")),
+    ("roboto-500-latin-ext.woff2", include_bytes!("../static/fonts/roboto-500-latin-ext.woff2")),
+    ("roboto-500-latin.woff2", include_bytes!("../static/fonts/roboto-500-latin.woff2")),
+    ("spectral-latin-ext.woff2", include_bytes!("../static/fonts/spectral-latin-ext.woff2")),
+    ("spectral-latin.woff2", include_bytes!("../static/fonts/spectral-latin.woff2")),
+    ("spectral-light-italic-latin-ext.woff2", include_bytes!("../static/fonts/spectral-light-italic-latin-ext.woff2")),
+    ("spectral-light-italic-latin.woff2", include_bytes!("../static/fonts/spectral-light-italic-latin.woff2")),
+    ("spectral-light-latin-ext.woff2", include_bytes!("../static/fonts/spectral-light-latin-ext.woff2")),
+    ("spectral-light-latin.woff2", include_bytes!("../static/fonts/spectral-light-latin.woff2")),
 ];
 /// The logo and icons, shared with the README and the landing page in `docs/assets`. The mark has a
 /// light and a dark variant; the pages pick one with `prefers-color-scheme`.
@@ -178,6 +192,15 @@ const V4: Ui = Ui {
     index: include_str!("../static/v4/index.html"),
     js: include_str!("../static/v4/app.js"),
     css: include_str!("../static/v4/style.css"),
+};
+
+/// "Dataiku": a test skin for white-label builds. Ledger's script and layout, restyled by its own
+/// stylesheet, which the page loads after Ledger's.
+const V5: Ui = Ui {
+    prefix: "/v5",
+    index: include_str!("../static/v5/index.html"),
+    js: include_str!("../static/v3/app.js"),
+    css: include_str!("../static/v5/style.css"),
 };
 
 #[derive(Clone)]
@@ -319,7 +342,7 @@ pub fn router(state: AppState) -> Router {
     let pages = FONTS.iter().fold(pages, |pages, &(name, bytes)| {
         pages.route(&format!("/fonts/{name}"), get(move || async move { asset(WOFF2, bytes) }))
     });
-    with_ui(with_ui(with_ui(with_ui(pages, V1), V2), V3), V4)
+    [V1, V2, V3, V4, V5].into_iter().fold(pages, with_ui)
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))

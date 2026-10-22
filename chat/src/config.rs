@@ -28,12 +28,12 @@ pub struct Config {
     /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
     /// addresses (for a mock in tests, or a relay).
     pub apns_url: Option<String>,
-    /// The front end `/` opens until the browser has picked one in Settings → Interface: `v1`–`v4`.
+    /// The front end `/` opens until the browser has picked one in Settings → Interface: `v1`–`v5`.
     pub default_ui: String,
 }
 
 /// The front ends `default_ui` can name (see `static/ui-pref.js`).
-pub const UIS: [&str; 4] = ["v1", "v2", "v3", "v4"];
+pub const UIS: [&str; 5] = ["v1", "v2", "v3", "v4", "v5"];
 
 /// The default front end baked in at build time (`CEDAR_DEFAULT_UI=v4 cargo build …`, as
 /// `scripts/build-dmg.sh` does for a white-label app); `CHAT_DEFAULT_UI` overrides it at run time.
@@ -41,11 +41,11 @@ pub const BUILD_DEFAULT_UI: &str = match option_env!("CEDAR_DEFAULT_UI") {
     Some(ui) => ui,
     None => "v3",
 };
-const _: () = assert!(is_ui(BUILD_DEFAULT_UI), "CEDAR_DEFAULT_UI must be one of v1, v2, v3, v4");
+const _: () = assert!(is_ui(BUILD_DEFAULT_UI), "CEDAR_DEFAULT_UI must be one of v1, v2, v3, v4, v5");
 
 /// Whether `ui` is one of `UIS`, usable in a constant.
 const fn is_ui(ui: &str) -> bool {
-    matches!(ui.as_bytes(), [b'v', b'1'..=b'4'])
+    matches!(ui.as_bytes(), [b'v', b'1'..=b'5'])
 }
 
 impl Config {
@@ -134,6 +134,6 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_DEFAULT_UI", " v4 ")])).unwrap();
         assert_eq!(cfg.default_ui, "v4");
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_DEFAULT_UI", "v9")])).is_err());
-        assert!(UIS.iter().all(|ui| is_ui(ui)) && !is_ui("v5") && !is_ui("v"));
+        assert!(UIS.iter().all(|ui| is_ui(ui)) && !is_ui("v6") && !is_ui("v"));
     }
 }
