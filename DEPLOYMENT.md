@@ -155,6 +155,36 @@ remove it. So does `show_map` (which only needs the geocoding host); set `MAPS=o
 The map itself is drawn by the chat page in the user's browser, which loads the tiles from
 `tile.openstreetmap.org`, so the people using the chat need access to that host, not the server.
 
+### Optional: microVMs instead of containers
+
+cedar can run each run's tools in a microVM with its own kernel ([Docker
+Sandboxes](https://docs.docker.com/ai/sandboxes/), the `sbx` CLI) instead of a container on the
+host's kernel. It needs hardware virtualisation: check with `ls -l /dev/kvm`. Bare-metal machines
+like the Spark have it; most cloud VMs don't, unless they offer nested virtualisation, and there
+you keep the default Docker backend. To use it, install `sbx`, then as the `cedar` user from step 4
+(which also needs to be in the `kvm` group):
+
+```sh
+sudo usermod -aG kvm cedar
+sudo -u cedar sbx login                # once; a Docker account, or a token with --password-stdin
+sudo -u cedar sbx policy init deny-all # tools reach only the hosts they declare
+docker save -o /tmp/cedar-sandbox.tar cedar-sandbox
+sudo -u cedar sbx template load /tmp/cedar-sandbox.tar
+```
+
+and add to `cedar.env` in step 4:
+
+```sh
+SANDBOX_BACKEND=sbx
+SBX_DATA_DIR=/var/lib/cedar/sbx
+SBX_PULL=never
+```
+
+Each microVM takes `SANDBOX_MEMORY` (at least 512 MB) on top of `sbx`'s own overhead, so leave
+room for `MAX_CONCURRENT_RUNS` of them next to the model. See the README's [Running tools in
+microVMs](README.md#running-tools-in-microvms-sbx) for what changes and what hasn't been verified
+yet.
+
 ## 4. Configure
 
 Create a service user, a state directory, and the two environment files. The user is in the
@@ -440,8 +470,9 @@ sudo apt install -y sqlite3
 sudo -u cedar sqlite3 /var/lib/cedar/cedar-chat.db ".backup '/var/lib/cedar/cedar-chat.bak'"
 ```
 
-Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
-`WORKSPACE_TTL_SECS` (24 h by default), so don't treat them as storage.
+Agent workspaces are Docker volumes named `cedar-ws-*` (with `SANDBOX_BACKEND=sbx`, directories
+under `SBX_DATA_DIR/workspaces`). cedar deletes them after `WORKSPACE_TTL_SECS` (24 h by default),
+so don't treat them as storage.
 
 ## Troubleshooting
 
@@ -454,7 +485,7 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 | Run fails: `run exceeded the Ns time limit` | The whole run took longer than `RUN_TIMEOUT_SECS`. Raise it, or lower the model's **Max tokens per reply** so each model turn is shorter. |
 | Run fails: `run did not finish within N turns` | The task needed more model turns than allowed. Raise `max_turns` in the request (capped by `MAX_TURNS_CAP`, 25 by default) or give the agent a smaller task. |
 | Run fails: `sending API request` after a long wait | A single model reply took longer than the 300 s request limit (see "Reply length" above), and cedar retried it. Lower the model's **Max tokens per reply**. |
-| `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`) or the `cedar-sandbox` image is missing. The log says which. |
+| `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`) or the `cedar-sandbox` image is missing. The log says which. With `SANDBOX_BACKEND=sbx`: no `/dev/kvm` (or `cedar` isn't in the `kvm` group), `sbx` isn't installed or signed in for `cedar`, or the template isn't loaded. |
 | Chat page shows a 502 error | `cedar-chat` can't reach cedar, or `CEDAR_API_KEY` in `chat.env` doesn't match `CEDAR_API_KEYS` in `cedar.env`. |
 | Chat page asks for a token and rejects it | Use the value of `CHAT_ACCESS_TOKEN` from `/etc/cedar/chat.env`, not the cedar key. |
 | iOS app can't connect | It needs HTTPS: use the `https://<spark>.<tailnet>.ts.net` address from step 7, not `http://…:3000`, and check that the phone is logged in to Tailscale (`tailscale serve status` on the Spark shows what is served). |

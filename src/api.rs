@@ -4,7 +4,7 @@ use crate::agent::AgentEnv;
 use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
 use crate::compact;
-use crate::config::Config;
+use crate::config::{Config, SandboxBackend};
 use crate::error::AppError;
 use crate::events::EventHub;
 use crate::images;
@@ -17,6 +17,7 @@ use crate::models::{
     ALLOWED_ATTACHMENT_TYPES,
 };
 use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
+use crate::sbx::SbxBrowserFactory;
 use crate::sse;
 use crate::store::{InsertRefused, Store};
 use crate::webhooks::{self, Webhooks};
@@ -75,7 +76,8 @@ pub struct AppState {
 
 impl AppState {
     /// Wire the services together. The LLM client and sandbox factory are injected so tests can
-    /// substitute fakes; browsers run in Docker when the browser is on (see [`Self::with_browsers`]).
+    /// substitute fakes; browsers run on the sandbox backend when the browser is on (see
+    /// [`Self::with_browsers`]).
     /// Fails only if a tool can't be set up (e.g. the HTTP client for web search).
     pub fn new(
         cfg: Config,
@@ -83,7 +85,12 @@ impl AppState {
         llm: Arc<LlmRouter>,
         sandboxes: Arc<dyn SandboxFactory>,
     ) -> Result<Self> {
-        let browsers = Arc::new(DockerBrowserFactory::new(cfg.browser.clone()));
+        let browsers: Arc<dyn BrowserFactory> = match cfg.sandbox_backend {
+            SandboxBackend::Docker => Arc::new(DockerBrowserFactory::new(cfg.browser.clone())),
+            SandboxBackend::Sbx => {
+                Arc::new(SbxBrowserFactory::new(cfg.browser.clone(), cfg.sbx.clone()))
+            }
+        };
         Self::with_browsers(cfg, store, llm, sandboxes, browsers)
     }
 
@@ -104,6 +111,10 @@ impl AppState {
             llm: llm.clone(),
             sandbox_network: cfg.sandbox.network.clone(),
             sandbox_info: json!({
+                "backend": match cfg.sandbox_backend {
+                    SandboxBackend::Docker => "docker",
+                    SandboxBackend::Sbx => "sbx",
+                },
                 "network": cfg.sandbox.network,
                 "memory": cfg.sandbox.memory,
                 // A number when it is one ("1", "0.5"), as Docker takes it.

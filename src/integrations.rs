@@ -11,7 +11,7 @@
 //! reported as such and can't be changed here. Models are only ever registered here.
 
 use crate::api::MAX_MODEL_LEN;
-use crate::config::{Config, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL};
+use crate::config::{Config, SandboxBackend, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL};
 use crate::error::AppError;
 use crate::llm::{list_models, ChatCompletionsClient, LlmClient, LlmRouter};
 use crate::mcp::http_client;
@@ -236,7 +236,11 @@ impl Integrations {
         Ok(json!({
             "tools_dir": self.cfg.sandbox.tools_dir.is_some(),
             "storage": self.secrets.is_some(),
-            "network": self.cfg.sandbox.tools_network,
+            // With `sbx`, a tool reaches exactly the hosts its manifest declares.
+            "network": match self.cfg.sandbox_backend {
+                SandboxBackend::Docker => self.cfg.sandbox.tools_network.as_str(),
+                SandboxBackend::Sbx => "manifest hosts",
+            },
             "tools": tools,
         }))
     }

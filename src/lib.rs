@@ -1,4 +1,5 @@
-//! cedar: a backend service that runs LLM agents in sandboxed containers.
+//! cedar: a backend service that runs LLM agents in sandboxed containers (or
+//! microVMs, with the `sbx` backend).
 //!
 //! The binary (`src/main.rs`) wires these modules together; they are a library so integration
 //! tests can substitute fakes for the LLM, the sandbox, and the browser.
@@ -22,6 +23,7 @@ pub mod mcp;
 pub mod models;
 pub mod plan;
 pub mod sandbox;
+pub mod sbx;
 pub mod secrets;
 pub mod sources;
 pub mod sse;

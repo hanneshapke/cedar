@@ -35,6 +35,10 @@ COPY --chmod=0755 render_pages.py /usr/local/bin/cedar-render-pages
 
 # uid/gid 1000 must match the `--user` cedar passes to `docker run`. /workspace is created and
 # owned by that user so the per-run named volume mounted there inherits the right ownership.
+# Docker Sandboxes (`SANDBOX_BACKEND=sbx`) use this image as their template and look for exactly
+# this: a non-root `agent` user with uid 1000 and its home in /home/agent (plus bash, curl, git
+# and CA certificates, installed above). There cedar replaces /workspace with a link to the
+# run's workspace directory.
 RUN groupadd --gid 1000 agent \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/sh agent \
     && mkdir /workspace \
