@@ -229,6 +229,32 @@ Without the Apple secrets below the bundler signs ad hoc and skips notarization,
 for your own Mac: open the app once with right-click → Open. `cargo tauri dev` runs the app
 against the sidecars in `binaries/` without bundling.
 
+### White-label builds
+
+`scripts/build-dmg.sh` does the steps above in one go on a Mac and picks the chat front end the
+app opens by default, for a customized build:
+
+```sh
+scripts/build-dmg.sh --list-skins                    # v1 Claude style, v2 Cedar style, v3 Ledger, v4 Dossier
+scripts/build-dmg.sh --skin dossier                  # dist/Cedar-<version>-v4-apple-silicon.dmg
+scripts/build-dmg.sh --skin v1 --name "Acme Chat" --identifier com.acme.chat
+```
+
+- `--skin` (required) is baked into cedar-chat as `CEDAR_DEFAULT_UI` when it is compiled. The
+  window opens that front end until a user picks another in Settings → Interface; the choice is
+  remembered by the window from then on. A Mac can still override the default with
+  `CHAT_DEFAULT_UI` in `config.json`'s `chat_env`. All four front ends stay in the app.
+- `--name` renames the app and the DMG; `--identifier` changes the bundle identifier, and with it
+  the folders in [Where things are](#where-things-are), so the build installs and keeps its data
+  next to a regular Cedar. Both are merged over `tauri.conf.json` for that build only. The menu
+  and the setup page still say "Cedar", and the icons are `icons/`'s.
+- `--target x86_64-apple-darwin` builds for an Intel Mac (default: this Mac's architecture), and
+  `--out` puts the DMG somewhere other than `dist/`.
+- Signing works as in the release workflow: with `APPLE_SIGNING_IDENTITY` (and
+  `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD` if the certificate isn't in your keychain) the
+  app is signed, and with `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_KEY_PATH` notarized;
+  `--notarize` notarizes and staples the DMG as well. Without them the app is signed ad hoc.
+
 ### On Windows
 
 Needs the [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)

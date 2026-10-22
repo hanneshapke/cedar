@@ -273,7 +273,7 @@ pub fn router(state: AppState) -> Router {
 
     let pages = Router::new()
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
-        .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
+        .route("/ui-pref.js", get(ui_pref_js))
         .route("/confirm.js", get(|| async { asset(JS, CONFIRM_JS) }))
         .route("/image-view.js", get(|| async { asset(JS, IMAGE_VIEW_JS) }))
         .route("/image-view.css", get(|| async { asset(CSS, IMAGE_VIEW_CSS) }))
@@ -342,6 +342,15 @@ fn with_ui(router: Router<AppState>, ui: Ui) -> Router<AppState> {
         .route(&format!("{prefix}/"), get(move || async move { asset(HTML, index) }))
         .route(&format!("{prefix}/app.js"), get(move || async move { asset(JS, js) }))
         .route(&format!("{prefix}/style.css"), get(move || async move { asset(CSS, css) }))
+}
+
+/// The line of `ui-pref.js` that names the front end `/` opens by default.
+const UI_PREF_DEFAULT: &str = "const DEFAULT = 'v3';";
+
+/// `ui-pref.js` with the configured default front end (`CHAT_DEFAULT_UI`).
+async fn ui_pref_js(State(state): State<AppState>) -> Response {
+    let line = format!("const DEFAULT = '{}';", state.cfg.default_ui);
+    asset(JS, UI_PREF_JS.replacen(UI_PREF_DEFAULT, &line, 1))
 }
 
 fn asset(content_type: &'static str, body: impl IntoResponse) -> Response {
@@ -1810,6 +1819,12 @@ struct ApprovalBody {
 mod tests {
     use super::*;
     use futures_util::StreamExt;
+
+    /// `ui_pref_js` swaps this line for the configured default, so it must stay in `ui-pref.js`.
+    #[test]
+    fn ui_pref_names_the_default_where_it_is_replaced() {
+        assert_eq!(UI_PREF_JS.matches(UI_PREF_DEFAULT).count(), 1);
+    }
 
     /// An open event stream held the graceful shutdown up until the launcher's SIGKILL.
     #[tokio::test]

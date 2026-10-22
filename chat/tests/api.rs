@@ -926,6 +926,11 @@ async fn both_uis_are_served() {
     let (status, headers, script) = fetch(&h, "/ui-pref.js").await;
     assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
     assert!(script.contains("cedar-chat-ui"));
+    let built_in = format!("const DEFAULT = '{}';", cedar_chat::config::BUILD_DEFAULT_UI);
+    assert!(script.contains(&built_in), "without CHAT_DEFAULT_UI, / opens the front end built in");
+    let branded = Harness::new(&[("CHAT_DEFAULT_UI", "v4")]).await;
+    let (_, _, script) = fetch(&branded, "/ui-pref.js").await;
+    assert!(script.contains("const DEFAULT = 'v4';"), "CHAT_DEFAULT_UI picks the front end / opens");
 
     // So does the file viewer, which both pages load before their own script.
     let (status, headers, script) = fetch(&h, "/file-viewer.js").await;

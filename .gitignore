@@ -37,3 +37,6 @@ __pycache__/
 xcuserdata/
 DerivedData/
 *.xcuserstate
+
+# Hand-built DMGs (scripts/build-dmg.sh)
+/dist/

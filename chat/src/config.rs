@@ -28,6 +28,24 @@ pub struct Config {
     /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
     /// addresses (for a mock in tests, or a relay).
     pub apns_url: Option<String>,
+    /// The front end `/` opens until the browser has picked one in Settings → Interface: `v1`–`v4`.
+    pub default_ui: String,
+}
+
+/// The front ends `default_ui` can name (see `static/ui-pref.js`).
+pub const UIS: [&str; 4] = ["v1", "v2", "v3", "v4"];
+
+/// The default front end baked in at build time (`CEDAR_DEFAULT_UI=v4 cargo build …`, as
+/// `scripts/build-dmg.sh` does for a white-label app); `CHAT_DEFAULT_UI` overrides it at run time.
+pub const BUILD_DEFAULT_UI: &str = match option_env!("CEDAR_DEFAULT_UI") {
+    Some(ui) => ui,
+    None => "v3",
+};
+const _: () = assert!(is_ui(BUILD_DEFAULT_UI), "CEDAR_DEFAULT_UI must be one of v1, v2, v3, v4");
+
+/// Whether `ui` is one of `UIS`, usable in a constant.
+const fn is_ui(ui: &str) -> bool {
+    matches!(ui.as_bytes(), [b'v', b'1'..=b'4'])
 }
 
 impl Config {
@@ -61,7 +79,11 @@ impl Config {
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
             apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
+            default_ui: get("CHAT_DEFAULT_UI").map(|u| u.trim().to_string()).unwrap_or_else(|| BUILD_DEFAULT_UI.into()),
         };
+        if !UIS.contains(&cfg.default_ui.as_str()) {
+            bail!("CHAT_DEFAULT_UI (or CEDAR_DEFAULT_UI at build time) must be one of {}", UIS.join(", "));
+        }
         if cfg.history_max_bytes > 60_000 {
             // cedar rejects prompts over 100 KB; leave room for the new message itself.
             bail!("CHAT_HISTORY_MAX_BYTES must be at most 60000");
@@ -98,6 +120,7 @@ mod tests {
         assert!(cfg.access_token.is_none());
         assert!(cfg.admin_token.is_none());
         assert_eq!(cfg.public_url, "http://127.0.0.1:3000");
+        assert_eq!(cfg.default_ui, BUILD_DEFAULT_UI);
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_PUBLIC_URL", "https://chat.example/")])).unwrap();
         assert_eq!(cfg.public_url, "https://chat.example");
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_PUBLIC_URL", "chat.example")])).is_err());
@@ -108,5 +131,9 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "http://127.0.0.1:1/apns/")])).unwrap();
         assert_eq!(cfg.apns_url.as_deref(), Some("http://127.0.0.1:1/apns"));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "apns.example")])).is_err());
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_DEFAULT_UI", " v4 ")])).unwrap();
+        assert_eq!(cfg.default_ui, "v4");
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_DEFAULT_UI", "v9")])).is_err());
+        assert!(UIS.iter().all(|ui| is_ui(ui)) && !is_ui("v5") && !is_ui("v"));
     }
 }
