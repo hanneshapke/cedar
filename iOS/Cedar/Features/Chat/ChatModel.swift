@@ -26,6 +26,9 @@ final class ChatModel {
 
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private var followers: [String: Task<Void, Never>] = [:]
+    /// The first load, owned here rather than by the view: SwiftUI can rebuild a chat's view
+    /// while it loads, and the rebuilt view joins this load instead of cancelling it.
+    @ObservationIgnored private var loading: Task<Void, Never>?
 
     init(app: AppModel, conversationId: String? = nil) {
         self.app = app
@@ -59,9 +62,16 @@ final class ChatModel {
     /// Loads the conversation when first shown.
     func start() async {
         guard conversationId != nil, turns.isEmpty else { return }
-        isLoading = true
-        await reload()
-        isLoading = false
+        if loading == nil {
+            isLoading = true
+            loading = Task { [weak self] in
+                guard let self else { return }
+                await self.reload()
+                self.isLoading = false
+                self.loading = nil
+            }
+        }
+        await loading?.value
     }
 
     /// Reads the conversation from the server and follows any turn not seen yet.
@@ -75,6 +85,8 @@ final class ChatModel {
         } catch let error as ChatError where error.status == 404 {
             errorMessage = "This conversation no longer exists on the server."
         } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+            // URLSession's cancellation, not a failure: its description is just "cancelled".
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -199,6 +199,8 @@ final class AppModel {
             scheduleError = nil
         } catch is CancellationError {
             return
+        } catch let error as URLError where error.code == .cancelled {
+            return
         } catch {
             scheduleError = error.localizedDescription
             return
@@ -226,6 +228,7 @@ final class AppModel {
             scheduleRuns.removeValue(forKey: scheduleId)
             expandedSchedules.remove(scheduleId)
         } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
             scheduleError = error.localizedDescription
         }
