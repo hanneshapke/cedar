@@ -96,7 +96,7 @@ a { color: var(--accent); }
 
 .top { grid-area: top; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 12px; border-bottom: 1px solid var(--line); background: var(--paper); font-size: 13px; color: var(--muted); }
 .brand { display: flex; align-items: center; gap: 8px; margin-right: 6px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; color: var(--ink); text-decoration: none; }
-.mark { display: block; width: 22px; height: 22px; }
+.mark { display: block; width: 22px; height: 22px; object-fit: contain; }
 .crumb { color: var(--line); } .app.empty .crumb { display: none; }
 .title-wrap { min-width: 0; display: flex; }
 .title { max-width: 420px; padding: 4px 8px; margin-left: -8px; border: 0; border-radius: 6px; background: none; color: var(--ink); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

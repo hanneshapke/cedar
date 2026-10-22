@@ -97,10 +97,9 @@ dialog h2, .settings-page h2 { font-family: var(--serif); font-weight: 300; }
 .label, .turn-head .n, .example .kind { font: 400 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
 .example .kind { color: var(--accent); }
 
-/* -- the top bar and the mark ---------------------------------------------------------------- */
+/* -- the top bar: the mark is /assets/cedar-mark.svg, which scripts/build-dmg.sh --logo replaces */
 
 .brand { font-weight: 400; font-size: 16px; letter-spacing: 0; }
-.mark { fill: none; stroke: var(--brand); stroke-width: 1.4; }
 
 /* -- square corners -------------------------------------------------------------------------- */
 

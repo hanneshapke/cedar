@@ -231,24 +231,51 @@ against the sidecars in `binaries/` without bundling.
 
 ### White-label builds
 
-`scripts/build-dmg.sh` does the steps above in one go on a Mac and picks the chat front end the
-app opens by default, for a customized build:
+`scripts/build-dmg.sh` does the steps above in one go on a Mac, picks the chat front end the app
+opens by default, and can rebrand the app: the assistant's name, the logo, the app icon, and the
+bundle identifier.
 
 ```sh
 scripts/build-dmg.sh --list-skins                    # v1 Claude style, v2 Cedar style, v3 Ledger, v4 Dossier, v5 Dataiku
 scripts/build-dmg.sh --skin dossier                  # dist/Cedar-<version>-v4-apple-silicon.dmg
-scripts/build-dmg.sh --skin dataiku                  # the Dataiku test skin (v5)
-scripts/build-dmg.sh --skin v1 --name "Acme Chat" --identifier com.acme.chat
+scripts/build-dmg.sh --brand ~/brands/acme           # everything from a brand folder (below)
+scripts/build-dmg.sh --skin v1 --assistant-name Acme --logo acme.svg --icon-background '#0b2545'
+scripts/build-dmg.sh --brand ~/brands/acme --stage /tmp/acme   # only the rebranded sources, on any OS
 ```
+
+The script never edits your checkout. It copies the sources to `target/white-label/`, rebrands the
+copy with `scripts/rebrand.py`, and builds from there, sharing `target/` and `desktop/target/` so
+dependencies are compiled once.
 
 - `--skin` (required) is baked into cedar-chat as `CEDAR_DEFAULT_UI` when it is compiled. The
   window opens that front end until a user picks another in Settings → Interface; the choice is
   remembered by the window from then on. A Mac can still override the default with
   `CHAT_DEFAULT_UI` in `config.json`'s `chat_env`. All the front ends stay in the app.
-- `--name` renames the app and the DMG; `--identifier` changes the bundle identifier, and with it
-  the folders in [Where things are](#where-things-are), so the build installs and keeps its data
-  next to a regular Cedar. Both are merged over `tauri.conf.json` for that build only. The menu
-  and the setup page still say "Cedar", and the icons are `icons/`'s.
+- `--assistant-name` puts the name in place of "Cedar" wherever people read it: the chat pages,
+  the setup page, the menu bar menu, the window title, notifications, and the servers' error
+  messages, where the word "cedar" in a sentence becomes the name too. Code is left alone: CSS
+  classes, storage keys, file and image names, `CEDAR_*` variables, and the front end called
+  "Cedar style". `scripts/rebrand.py <dir> --assistant-name X --dry-run` lists every change.
+- `--name` renames the app and the DMG (default: the assistant's name); `--identifier` changes the
+  bundle identifier, and with it the folders in [Where things are](#where-things-are), so the
+  build installs and keeps its data next to a regular Cedar.
+- `--logo` (an SVG) replaces the mark in the chat's top bar and the favicon; `--logo-on-dark` is
+  the version for dark mode. `--icon` (a PNG with a transparent background, or an SVG) is the
+  glyph of the app icon, the menu bar icon, the tray icon on Windows and the favicons' PNGs; it is
+  drawn on a rounded tile of `--icon-background`, and without `--icon` the logo is used (the dark
+  version on a dark background). The icons need Python 3 with Pillow, and an SVG icon also
+  cairosvg (`python3 -m pip install pillow cairosvg`) or `rsvg-convert` (`brew install librsvg`).
+- A **brand folder** holds any of `logo.svg`, `logo-on-dark.svg`, `icon.png` or `icon.svg`, and a
+  `brand.conf` of `KEY=value` lines: `SKIN`, `ASSISTANT_NAME`, `APP_NAME`, `IDENTIFIER` and
+  `ICON_BACKGROUND`. Options on the command line win over it. Keep brand folders outside this
+  repository if the logos aren't yours to publish. For example:
+
+  ```
+  SKIN=dataiku
+  ASSISTANT_NAME=Dataiku
+  IDENTIFIER=io.github.hanneshapke.cedar.dataiku
+  ICON_BACKGROUND=#06322e
+  ```
 - `--target x86_64-apple-darwin` builds for an Intel Mac (default: this Mac's architecture), and
   `--out` puts the DMG somewhere other than `dist/`.
 - Signing works as in the release workflow: with `APPLE_SIGNING_IDENTITY` (and

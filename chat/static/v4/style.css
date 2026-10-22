@@ -89,7 +89,7 @@ a { color: var(--accent); }
 .side { display: flex; flex-direction: column; gap: 14px; min-height: 0; padding: 18px 14px 16px; background: var(--desk); border-right: 1px solid var(--line); }
 .side-head { display: flex; align-items: center; gap: 6px; padding: 0 4px; }
 .brand { flex: 1; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; color: var(--ink); text-decoration: none; }
-.mark { display: block; width: 22px; height: 22px; }
+.mark { display: block; width: 22px; height: 22px; object-fit: contain; }
 .side .side-head .side-close { display: none; }
 .side-new { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 8px; background: var(--ink); color: var(--on-ink); text-decoration: none; font-weight: 500; font-size: 13px; }
 .side-new:hover { opacity: .9; }
