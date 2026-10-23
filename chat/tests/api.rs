@@ -855,6 +855,67 @@ async fn access_token_guards_the_api_but_not_the_page() {
     assert!(page.contains("<script src=\"/ui-pref.js\">"));
 }
 
+#[tokio::test]
+async fn pairing_waits_for_https() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "letmein"), ("CHAT_TAILSCALE_CLI", "/nonexistent/tailscale")]).await;
+    assert_eq!(h.call(Method::GET, "/api/pairing", None, None).await.0, StatusCode::UNAUTHORIZED);
+    let (status, body) = h.call(Method::GET, "/api/pairing", Some("letmein"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let p: Value = serde_json::from_str(&body).unwrap();
+    // CHAT_PUBLIC_URL is the plain-http default, which the iOS app can't use.
+    assert_eq!(p["server"], Value::Null);
+    assert_eq!(p["link"], Value::Null);
+    assert_eq!(p["qr_svg"], Value::Null);
+    assert_eq!(p["on_tailnet"], false);
+    assert_eq!(p["access_token"], "letmein");
+    assert_eq!(p["platform"], std::env::consts::OS);
+    assert_eq!(p["tailscale"]["state"], "unavailable");
+    assert!(p["tailscale"]["detail"].as_str().unwrap().contains("/nonexistent/tailscale"));
+}
+
+/// A stand-in for the tailscale CLI that prints `status`, and fails like a logged-out one when told.
+#[cfg(unix)]
+fn fake_tailscale(name: &str, status: &str, exit: i32) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("cedar-chat-ts-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("tailscale");
+    std::fs::write(&bin, format!("#!/bin/sh\n[ \"$1 $2\" = \"status --json\" ] || exit 9\ncat <<'EOF'\n{status}\nEOF\nexit {exit}\n")).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    bin.to_string_lossy().into_owned()
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn pairing_on_the_tailnet_gives_the_code() {
+    let ready = r#"{"BackendState": "Running", "Self": {"DNSName": "box.tail1234.ts.net."}, "CertDomains": ["box.tail1234.ts.net"]}"#;
+    let cli = fake_tailscale("ready", ready, 0);
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "tok&en"), ("CHAT_PUBLIC_URL", "https://box.tail1234.ts.net"), ("CHAT_TAILSCALE_CLI", &cli)]).await;
+    let (status, body) = h.call(Method::GET, "/api/pairing", Some("tok&en"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let p: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(p["server"], "https://box.tail1234.ts.net");
+    assert_eq!(p["on_tailnet"], true);
+    assert_eq!(p["tailscale"]["state"], "ready");
+    assert_eq!(p["tailscale"]["name"], "box.tail1234.ts.net");
+    // The link the iOS app parses (ConnectionCode.swift), with the token encoded.
+    assert_eq!(p["link"], "cedar://connect?server=https%3A%2F%2Fbox.tail1234.ts.net&token=tok%26en");
+    assert!(p["qr_svg"].as_str().unwrap().starts_with("<svg"));
+
+    // A logged-out Tailscale prints its status and exits non-zero; the page still learns why.
+    let cli = fake_tailscale("logged-out", r#"{"BackendState": "NeedsLogin", "Self": {"DNSName": ""}}"#, 1);
+    let h = Harness::new(&[("CHAT_PUBLIC_URL", "https://chat.example:8443"), ("CHAT_TAILSCALE_CLI", &cli)]).await;
+    let (_, p) = h.json(Method::GET, "/api/pairing", None).await;
+    assert_eq!(p["tailscale"]["state"], "logged_out");
+    assert!(p["tailscale"]["detail"].as_str().unwrap().contains("not logged in"));
+    // The user's own HTTPS address works too, just not as a tailnet one; without a token the
+    // code carries an empty one.
+    assert_eq!(p["server"], "https://chat.example:8443");
+    assert_eq!(p["on_tailnet"], false);
+    assert_eq!(p["access_token"], Value::Null);
+    assert_eq!(p["link"], "cedar://connect?server=https%3A%2F%2Fchat.example%3A8443&token=");
+}
+
 async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
     h.call_full(Request::builder().uri(uri).body(Body::empty()).unwrap()).await
 }
@@ -901,12 +962,18 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
             assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
             assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
+            assert!(page.contains("<script src=\"/star.js\">"), "{uri} loads the starring script");
+            assert!(page.contains("href=\"/star.css\""), "{uri} loads the starring styles");
+            assert!(page.contains("data-starred") && page.contains("data-star-toggle"), "{uri} has the Starred list and the star button");
             assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
             assert!(page.contains("href=\"/attach.css\""), "{uri} loads the attachments styles");
             assert!(page.contains("<script src=\"/notify.js\">"), "{uri} loads the inbox script");
             assert!(page.contains("href=\"/notify.css\""), "{uri} loads the inbox styles");
             assert!(page.contains("id=\"inbox-btn\""), "{uri} has the inbox button");
             assert!(page.contains("id=\"notify-section\""), "{uri} has the Notifications settings");
+            assert!(page.contains("<script src=\"/pairing.js\">"), "{uri} loads the iPhone settings");
+            assert!(page.contains("id=\"iphone-section\""), "{uri} has the iPhone settings");
+            assert!(page.find("/settings-shell.js") < page.find("/pairing.js"), "{uri} loads the iPhone page after the frame it registers with");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("<script src=\"/settings-shell.js\">"), "{uri} loads the Settings dialog's frame");
             assert!(
@@ -963,12 +1030,15 @@ async fn both_uis_are_served() {
         ("/models.css", "text/css; charset=utf-8", ".cedar-send-menu"),
         ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),
         ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
+        ("/star.js", "text/javascript; charset=utf-8", "cedarStar"),
+        ("/star.css", "text/css; charset=utf-8", ".cedar-star"),
         ("/settings-shell.js", "text/javascript; charset=utf-8", "cedarSettingsShell"),
         ("/settings.js", "text/javascript; charset=utf-8", "cedarSettings"),
         ("/settings.css", "text/css; charset=utf-8", ".settings-dialog"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
         ("/attach.css", "text/css; charset=utf-8", ".cedar-attach"),
         ("/notify.js", "text/javascript; charset=utf-8", "cedarNotify"),
+        ("/pairing.js", "text/javascript; charset=utf-8", "cedarPairing"),
         ("/notify.css", "text/css; charset=utf-8", ".cedar-inbox"),
         ("/sw.js", "text/javascript; charset=utf-8", "showNotification"),
     ] {
@@ -1328,6 +1398,65 @@ async fn run_now_starts_a_run_without_moving_the_schedule() {
     let (_, latest) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
     assert_eq!(latest["runs"].as_array().unwrap().len(), 2);
     assert_eq!(h.state.store.list_conversations(100).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn chats_and_scheduled_runs_can_be_starred() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("hi", "hello").await;
+    let (_, other) = h.json(Method::POST, "/api/conversations", Some(json!({ "title": "Other" }))).await;
+    let other = other["id"].as_str().unwrap().to_string();
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let sid = s["id"].as_str().unwrap().to_string();
+    let (_, run) = h.json(Method::POST, &format!("/api/schedules/{sid}/run"), None).await;
+    let run_cid = run["conversation_id"].as_str().unwrap().to_string();
+
+    let (status, list) = h.json(Method::GET, "/api/starred", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["conversations"], json!([]));
+    let (_, conv) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(conv["conversation"]["starred_at"], Value::Null);
+
+    let (status, starred) = h.json(Method::PUT, &format!("/api/conversations/{cid}/star"), None).await;
+    assert_eq!(status, StatusCode::OK, "{starred}");
+    let first = starred["starred_at"].clone();
+    assert!(first.is_string(), "{starred}");
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (status, starred) = h.json(Method::PUT, &format!("/api/conversations/{run_cid}/star"), None).await;
+    assert_eq!(status, StatusCode::OK, "{starred}");
+    assert_eq!(starred["schedule_id"], sid);
+    // Starring again keeps the first time, so the list's order doesn't change.
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (_, again) = h.json(Method::PUT, &format!("/api/conversations/{cid}/star"), None).await;
+    assert_eq!(again["starred_at"], first);
+
+    // Most recently starred first; the scheduled run carries its schedule's title, and stays out
+    // of the main list.
+    let (_, list) = h.json(Method::GET, "/api/starred", None).await;
+    let items = list["conversations"].as_array().unwrap();
+    let ids: Vec<&str> = items.iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, [run_cid.as_str(), cid.as_str()]);
+    assert_eq!(items[0]["schedule_title"], "Morning digest");
+    assert_eq!(items[1]["schedule_title"], Value::Null);
+    assert_eq!(items[1]["title"], "hi");
+    let (_, main) = h.json(Method::GET, "/api/conversations", None).await;
+    let listed: Vec<&str> = main["conversations"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(listed, [other.as_str(), cid.as_str()]);
+    assert!(main["conversations"][1]["starred_at"].is_string(), "the main list marks it starred too");
+
+    // Unstarring is idempotent too.
+    for _ in 0..2 {
+        let (status, unstarred) = h.json(Method::DELETE, &format!("/api/conversations/{cid}/star"), None).await;
+        assert_eq!(status, StatusCode::OK, "{unstarred}");
+        assert_eq!(unstarred["starred_at"], Value::Null);
+    }
+    let (_, list) = h.json(Method::GET, "/api/starred", None).await;
+    assert_eq!(list["conversations"].as_array().unwrap().len(), 1);
+
+    let (status, _) = h.json(Method::PUT, &format!("/api/conversations/{}/star", Uuid::new_v4()), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = h.json(Method::DELETE, "/api/conversations/nope/star", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

@@ -1,0 +1,26 @@
+/* Starred conversations (star.js), shared by every UI: the star button in the header and the
+   Starred list in the conversations sidebar. It draws with the variables each UI defines
+   (--ink-2, --muted, --wash, --mono), like schedule.css, so it reads in the light and dark themes
+   alike. The button keeps each UI's own .icon-btn or .ghost look. */
+
+.cedar-star-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.cedar-star-btn[aria-pressed="true"] svg { fill: #e0a526; stroke: #c48a12; }
+.cedar-star-btn[hidden] { display: none; }
+
+/* -- the sidebar list ------------------------------------------------------------------------ */
+
+.cedar-star-side { display: flex; flex-direction: column; gap: 6px; flex: none; max-height: 40%; min-height: 0; margin-bottom: 8px; }
+.cedar-star-side[hidden] { display: none; }
+.cedar-star-side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
+.cedar-star-side-head > :first-child { padding: 0; }
+.cedar-star-count { font: 11.5px var(--mono); color: var(--muted); }
+.cedar-star-links { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+.cedar-star-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 10px; border-radius: 7px; color: var(--ink-2); font-size: 13px; text-decoration: none; }
+.cedar-star-link:hover { background: var(--wash); }
+.cedar-star-link.active { background: var(--wash); font-weight: 500; }
+.cedar-star-link.is-unread .cedar-star-link-title { font-weight: 600; }
+.cedar-star-link-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cedar-star-link-name svg { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.cedar-star-link-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-star-link-note { flex: none; font-size: 11px; color: var(--accent); white-space: nowrap; }
+.cedar-star-link-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }

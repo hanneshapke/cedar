@@ -1178,6 +1178,7 @@ function updateChrome() {
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
+  cedarStar.setCurrent(c);
   els.scheduleBtn.hidden = !c || busy || state.sending || !hasCompletedTurn();
   els.stop.hidden = !busy;
   els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }) : '';
@@ -1590,6 +1591,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown });
+  cedarStar.init({ api, toast, onOpen: closeDrawer });
   cedarSettings.init({
     api, toast, authHeaders,
     config: () => state.config,
@@ -1608,10 +1610,12 @@ async function init() {
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: loadConversations });
+  cedarPairing.init({ api, toast });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
   cedarSchedule.start();
+  cedarStar.start();
   await loadConversations();
   route();
   cedarNotify.start();

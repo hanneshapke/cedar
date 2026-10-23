@@ -134,7 +134,7 @@ def rebrand_html(src, name):
 TEXT_FILES = {
     "html": ["chat/static/index.html", "chat/static/v*/index.html", "desktop/ui/*.html"],
     "js": ["chat/static/*.js", "chat/static/v*/app.js", "desktop/ui/*.js"],
-    "rs": ["chat/src/*.rs", "desktop/src/*.rs"],
+    "rs": ["chat/src/*.rs", "desktop/src/*.rs", "pairing/src/*.rs"],
 }
 
 

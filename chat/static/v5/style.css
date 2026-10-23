@@ -124,3 +124,11 @@ dialog h2, .settings-page h2 { font-family: var(--serif); font-weight: 300; }
 .conv.active { box-shadow: inset 2px 0 0 var(--brand); }
 .conv .needs { border-radius: var(--radius); font-family: var(--mono); font-weight: 400; }
 .ui-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--brand); }
+
+/* -- starred conversations and the iPhone page (star.css, settings.css) ---------------------- */
+
+.cedar-star-link, .cedar-pair-qr-code { border-radius: var(--radius); }
+.cedar-star-link.active { box-shadow: inset 2px 0 0 var(--brand); }
+/* :root, as star.css loads after this sheet. */
+:root .cedar-star-btn[aria-pressed="true"] svg { fill: var(--brand); stroke: var(--brand); }
+.cedar-star-count { font-family: var(--mono); }

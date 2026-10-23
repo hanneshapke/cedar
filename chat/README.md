@@ -132,6 +132,13 @@ Both interfaces have all of these, except where noted:
   [the models](#models) cedar can use, its Brave Search and Best Buy keys and its Google account
 - [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
+- Starred conversations: the star button in the header stars the open conversation, a chat or a
+  scheduled run alike, and a **Starred** list at the top of the sidebar (the drawer in the other
+  styles) lists them, most recently starred first, with a clock on scheduled runs. Stars are kept
+  by this server, so the same list shows in every browser, the
+  [Cedar app for macOS and Windows](../desktop/README.md) and the Cedar iOS app; a page picks up
+  stars set elsewhere when it comes back into view, and every minute while it is shown
+  (`star.js` and `star.css`)
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, listed in the sidebar with
   every run's result
@@ -157,7 +164,8 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `clarify-view.js` and `clarify-view.css` for clarifying questions,
-`schedule.js` and `schedule.css` for scheduled agents, `notify.js` and `notify.css` for the inbox
+`schedule.js` and `schedule.css` for scheduled agents, `star.js` and `star.css` for starred
+conversations, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
 push, and
 `models.js` and `models.css` for the send button's model menu, `settings-shell.js` for the Settings
@@ -234,6 +242,7 @@ Server) or set `PRODUCTS=off` on cedar to remove the tool.
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
 | `CHAT_DEFAULT_UI` | `v3` | The front end `/` opens until the browser picks one in Settings → Interface: `v3` (Ledger), `v4` (Dossier), `v2` (Cedar style), `v1` (Claude style) or `v5` (Dataiku, a test skin for white-label builds). `CEDAR_DEFAULT_UI` at build time changes the built-in default (see [desktop/README.md](../desktop/README.md#white-label-builds)) |
+| `CHAT_TAILSCALE_CLI` | found | The `tailscale` CLI that Settings → iPhone asks about Tailscale, when it isn't in the usual places or on `PATH` |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -400,6 +409,21 @@ sent with every message (as the entry's id and the level), cedar checks them aga
 and the conversation remembers them, so opening it again shows the choice its last message used.
 Until cedar has a model registered, the message box says so and sending is off.
 
+### Pairing the iOS app
+
+**Settings → iPhone** has what the [iOS app](../iOS/README.md) needs to connect: the chat's
+HTTPS address, the access token (and the admin token, if this browser has entered it), and the QR
+code the app scans under Settings → **Scan QR Code** (`cedar://connect?server=…&token=…`, drawn by
+the server and shown only on request, since it holds the token). The app connects over HTTPS only,
+so the address is `CHAT_PUBLIC_URL` when it is an `https://` one: the tailnet address that the
+[desktop app](../desktop/README.md#using-it-from-an-iphone-or-ipad) and `scripts/cedar-stack.sh`
+start the chat with when they serve it with `tailscale serve`, or your own. The page also runs
+`tailscale status` on the chat's computer and lists what is missing (Tailscale installed, logged
+in, MagicDNS, HTTPS Certificates, the chat served), with how to serve it on this platform, and the
+steps and apps on the phone. It only reports: serving the chat is up to the desktop app or the
+script. The QR code and the Tailscale checks are shared with the desktop app's setup page
+(`../pairing`).
+
 ### Attachments
 
 A paperclip button by the message box attaches files to a message; they can also be dropped on
@@ -478,6 +502,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
 | `POST /api/conversations/{id}/compact` | Have cedar write one prompt for the conversation so far: `{prompt, source}` where `source` is `run` or, when cedar has lost the run, `history`. Returns 409 while a response is running, 404 without a finished response |
+| `PUT` / `DELETE /api/conversations/{id}/star` | Star or unstar the conversation (a chat or a scheduled run) for every client. Both are idempotent; starring again keeps the first `starred_at`. Returns the conversation |
+| `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, scheduled runs included, each with `schedule_title` (the schedule a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
@@ -501,6 +527,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
 | `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own), plus `defaults`: cedar's own model (`model` and `model_id`, `null` until one is registered), system prompt and turn limit (`null` if cedar can't be reached) |
 | `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
+| `GET /api/pairing` | What the iOS app connects with (Settings → iPhone): `{platform, server, on_tailnet, access_token, link, qr_svg, tailscale: {state, name, detail}}`. `server` (and `link`, `qr_svg`) is `null` unless `CHAT_PUBLIC_URL` is `https://`; `tailscale.state` is `missing`, `unavailable`, `logged_out`, `stopped`, `connecting`, `no_magic_dns`, `no_https` or `ready` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |

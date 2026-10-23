@@ -68,6 +68,10 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
     var tools: [String]?
     var unread: Bool
     var needsAnswer: Bool
+    /// When it was starred, on any device; `nil` when it isn't.
+    var starredAt: Date?
+    /// The schedule a scheduled run belongs to; only the Starred list sends it.
+    var scheduleTitle: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -75,6 +79,8 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
         case id, title, model, reasoning, tools, unread
         case scheduleId = "schedule_id"
         case needsAnswer = "needs_answer"
+        case starredAt = "starred_at"
+        case scheduleTitle = "schedule_title"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -84,6 +90,10 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
         let t = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? "New chat" : t
     }
+}
+
+extension Conversation {
+    var isStarred: Bool { starredAt != nil }
 }
 
 struct ConversationList: Decodable, Sendable {

@@ -438,13 +438,13 @@ name = "cedar-app"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "cedar-pairing",
  "futures-util",
  "hex",
  "libc",
  "mac-notification-sys",
  "objc2",
  "open",
- "qrcode",
  "rand 0.8.8",
  "reqwest 0.12.28",
  "serde",
@@ -455,6 +455,17 @@ dependencies = [
  "tauri-winrt-notification",
  "tokio",
  "tokio-util",
+ "url",
+]
+
+[[package]]
+name = "cedar-pairing"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "qrcode",
+ "serde",
+ "serde_json",
  "url",
 ]
 

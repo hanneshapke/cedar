@@ -2,13 +2,14 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// What the sidebar lists: the conversations, or the scheduled agents and their runs.
+/// What the sidebar lists: the conversations, the starred ones (chats and scheduled runs), or
+/// the scheduled agents and their runs.
 enum SidebarMode: Hashable {
-    case chats, scheduled
+    case chats, starred, scheduled
 }
 
-/// App-wide state: settings, the conversation list, the scheduled agents, the inbox count, and
-/// the open chats.
+/// App-wide state: settings, the conversation list, the starred conversations, the scheduled
+/// agents, the inbox count, and the open chats.
 @MainActor
 @Observable
 final class AppModel {
@@ -29,6 +30,11 @@ final class AppModel {
     private(set) var scheduledUnread = 0
     private(set) var schedulesLoaded = false
     var scheduleError: String?
+    /// Starred conversations, most recently starred first, chats and scheduled runs alike. Stars
+    /// are kept by the server, so they are the same on the web, the desktop app and here.
+    private(set) var starred: [Conversation] = []
+    private(set) var starredLoaded = false
+    var starredError: String?
     /// Conversations the list leaves out (a schedule's runs), as their chats loaded them.
     private var otherConversations: [String: Conversation] = [:]
     /// The selected conversation id, or a draft chat's key.
@@ -62,6 +68,8 @@ final class AppModel {
             chats = [:]
             conversations = []
             otherConversations = [:]
+            starred = []
+            starredLoaded = false
             schedules = []
             scheduleRuns = [:]
             expandedSchedules = []
@@ -95,10 +103,20 @@ final class AppModel {
         do {
             async let list = client.conversations()
             async let inbox = client.inbox()
+            async let stars = client.starred()
             conversations = try await list
             let box = try await inbox
             take(box)
             listError = nil
+            do {
+                starred = try await stars
+                starredLoaded = true
+                starredError = nil
+            } catch is CancellationError {
+            } catch let error as URLError where error.code == .cancelled {
+            } catch {
+                starredError = error.localizedDescription
+            }
             if !modelsLoaded {
                 modelsLoaded = true
                 models = (try? await client.models()) ?? []
@@ -118,7 +136,7 @@ final class AppModel {
     }
 
     func conversation(id: String) -> Conversation? {
-        conversations.first { $0.id == id } ?? otherConversations[id]
+        conversations.first { $0.id == id } ?? otherConversations[id] ?? starred.first { $0.id == id }
     }
 
     /// A chat loaded its conversation. One the list leaves out is kept here, so its title shows
@@ -128,8 +146,9 @@ final class AppModel {
         let isNew = otherConversations[conversation.id] == nil
         otherConversations[conversation.id] = conversation
         guard selection == conversation.id else { return }
-        if isNew, let scheduleId = conversation.scheduleId, sidebarMode != .scheduled || !expandedSchedules.contains(scheduleId) {
-            // Opened from a push, say: show where it belongs.
+        if isNew, let scheduleId = conversation.scheduleId, sidebarMode != .starred,
+           sidebarMode != .scheduled || !expandedSchedules.contains(scheduleId) {
+            // Opened from a push, say: show where it belongs. One opened from Starred stays there.
             sidebarMode = .scheduled
             expandedSchedules.insert(scheduleId)
             Task { await refreshSchedules() }
@@ -152,6 +171,33 @@ final class AppModel {
         replace(updated)
     }
 
+    func isStarred(conversationId: String) -> Bool {
+        if starredLoaded { return starred.contains { $0.id == conversationId } }
+        return conversation(id: conversationId)?.isStarred ?? false
+    }
+
+    /// Stars or unstars a conversation (a chat or a scheduled run) for every device. The lists
+    /// change at once and go back if the server refuses.
+    func setStarred(conversationId: String, _ on: Bool) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        let before = starred
+        if on, !starred.contains(where: { $0.id == conversationId }), var known = conversation(id: conversationId) {
+            known.starredAt = .now
+            starred.insert(known, at: 0)
+        } else if !on {
+            starred.removeAll { $0.id == conversationId }
+        }
+        do {
+            let updated = try await client.setStarred(conversationId: conversationId, starred: on)
+            replace(updated)
+            // For the schedule's title, and anything starred elsewhere in the meantime.
+            if let fresh = try? await client.starred() { starred = fresh }
+        } catch {
+            starred = before
+            throw error
+        }
+    }
+
     /// Deletes the conversation and its runs on cedar. The server refuses while a response is
     /// running.
     func delete(_ conversation: Conversation) async throws {
@@ -159,6 +205,7 @@ final class AppModel {
         try await client.delete(conversationId: conversation.id)
         chats.removeValue(forKey: conversation.id)?.stopStreaming()
         conversations.removeAll { $0.id == conversation.id }
+        starred.removeAll { $0.id == conversation.id }
         if selection == conversation.id {
             selection = nil
             compactColumn = .sidebar
@@ -185,6 +232,12 @@ final class AppModel {
             conversations[index] = conversation
         } else if otherConversations[conversation.id] != nil {
             otherConversations[conversation.id] = conversation
+        }
+        if let index = starred.firstIndex(where: { $0.id == conversation.id }) {
+            // The list's copy carries the schedule's title, which other responses don't.
+            var updated = conversation
+            updated.scheduleTitle = updated.scheduleTitle ?? starred[index].scheduleTitle
+            starred[index] = updated
         }
     }
 

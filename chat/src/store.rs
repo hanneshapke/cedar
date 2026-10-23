@@ -33,8 +33,19 @@ pub struct Conversation {
     pub unread: bool,
     /// The last response ended with a question (`ask_user`) that has not been answered.
     pub needs_answer: bool,
+    /// When the user starred it; `None` when it is not starred.
+    pub starred_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// A starred conversation as the Starred list shows it: scheduled runs' conversations carry the
+/// title of the schedule they belong to.
+#[derive(Debug, Clone, Serialize)]
+pub struct StarredConversation {
+    #[serde(flatten)]
+    pub conversation: Conversation,
+    pub schedule_title: Option<String>,
 }
 
 /// A browser that turned on Web Push: where its push service takes messages, and the keys
@@ -230,6 +241,7 @@ fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
         tools: opt_json(r, "tools")?,
         unread: r.try_get::<i64, _>("unread")? != 0,
         needs_answer: r.try_get::<i64, _>("needs_answer")? != 0,
+        starred_at: r.try_get::<Option<i64>, _>("starred_at")?.map(to_dt),
         created_at: to_dt(r.try_get("created_at")?),
         updated_at: to_dt(r.try_get("updated_at")?),
     })
@@ -385,6 +397,39 @@ impl Store {
         .fetch_all(&self.pool)
         .await?;
         rows.iter().map(conversation_from_row).collect()
+    }
+
+    /// Starred conversations, most recently starred first, scheduled runs' conversations included.
+    pub async fn list_starred(&self, limit: u32) -> Result<Vec<StarredConversation>> {
+        let select = CONVERSATION_SELECT.replace(
+            "FROM conversations c",
+            ", (SELECT s.title FROM schedules s WHERE s.id = c.schedule_id) AS schedule_title FROM conversations c",
+        );
+        let rows = sqlx::query(&format!(
+            "{select} WHERE c.starred_at IS NOT NULL ORDER BY c.starred_at DESC, c.id DESC LIMIT ?"
+        ))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(StarredConversation { conversation: conversation_from_row(r)?, schedule_title: r.try_get("schedule_title")? })
+            })
+            .collect()
+    }
+
+    /// Star or unstar a conversation. Starring one that is already starred keeps the time it was
+    /// first starred, so it doesn't jump to the top of the list. Returns whether it exists.
+    pub async fn set_starred(&self, id: Uuid, starred: bool) -> Result<bool> {
+        let res = if starred {
+            sqlx::query("UPDATE conversations SET starred_at = COALESCE(starred_at, ?) WHERE id = ?").bind(now_ms())
+        } else {
+            sqlx::query("UPDATE conversations SET starred_at = NULL WHERE id = ?")
+        }
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected() == 1)
     }
 
     /// The conversation has been looked at: its finished responses are no longer unread. Returns

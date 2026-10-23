@@ -7,6 +7,8 @@ license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1"
+# Settings -> iPhone: the QR code the iOS app scans and the Tailscale checks, shared with the desktop app.
+cedar-pairing = { path = "../pairing" }
 axum = { version = "0.8", features = ["macros"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
 chrono-tz = "0.10"
@@ -31,7 +33,7 @@ sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 subtle = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time", "io-util", "io-std"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time", "io-util", "io-std", "process"] }
 tokio-util = "0.7"
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"

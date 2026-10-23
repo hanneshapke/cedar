@@ -30,6 +30,9 @@ pub struct Config {
     pub apns_url: Option<String>,
     /// The front end `/` opens until the browser has picked one in Settings → Interface: `v1`–`v5`.
     pub default_ui: String,
+    /// The tailscale CLI Settings -> iPhone asks about Tailscale, when it isn't in the usual places
+    /// (or, in tests, a fake).
+    pub tailscale_cli: Option<String>,
 }
 
 /// The front ends `default_ui` can name (see `static/ui-pref.js`).
@@ -80,6 +83,7 @@ impl Config {
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
             apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
             default_ui: get("CHAT_DEFAULT_UI").map(|u| u.trim().to_string()).unwrap_or_else(|| BUILD_DEFAULT_UI.into()),
+            tailscale_cli: get("CHAT_TAILSCALE_CLI").map(|p| p.trim().to_string()),
         };
         if !UIS.contains(&cfg.default_ui.as_str()) {
             bail!("CHAT_DEFAULT_UI (or CEDAR_DEFAULT_UI at build time) must be one of {}", UIS.join(", "));
@@ -128,6 +132,7 @@ mod tests {
         assert!(Config::from_lookup(lookup(&[])).is_err());
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_HISTORY_MAX_BYTES", "999999")])).is_err());
         assert!(cfg.apns_url.is_none());
+        assert!(cfg.tailscale_cli.is_none());
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "http://127.0.0.1:1/apns/")])).unwrap();
         assert_eq!(cfg.apns_url.as_deref(), Some("http://127.0.0.1:1/apns"));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "apns.example")])).is_err());
