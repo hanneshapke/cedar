@@ -185,7 +185,7 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 
 | Type | `data` |
 | --- | --- |
-| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{network, memory, cpus}` |
+| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{backend, network, memory, cpus}` (`backend` is `docker` or `sbx`) |
 | `plan` | `steps` (`[{id, title}]`), `editable`, `awaiting` (see [Plans and approvals](#plans-and-approvals)) |
 | `plan.updated` | `steps`, `by` (`user`, or `timeout` when no answer came) |
 | `assistant.reasoning` | `turn`, `text`, `duration_ms`, `done`: the model's reasoning, when its server returns it (`reasoning_content` or `reasoning`). Not kept in the conversation |
@@ -428,7 +428,9 @@ Settings come from environment variables. The important ones:
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
 | `DOCKER_BIN` | `docker` (the Docker CLI, as a name on `PATH` or an absolute path; the desktop app sets it) |
 | `CEDAR_EXIT_ON_STDIN_EOF` | `off` (set `1` to shut down when stdin reaches end-of-file: a launcher holding a pipe to cedar then takes it down with itself) |
-| `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
+| `SANDBOX_BACKEND` | `docker` (set `sbx` to run each run's tools in a microVM; see [Running tools in microVMs](#running-tools-in-microvms-sbx)) |
+| `SBX_BIN` / `SBX_DATA_DIR` / `SBX_PULL` | `sbx` / `./cedar-sbx` / `missing` (the `sbx` CLI; where its workspaces and tool environments live on the host; when it pulls template images: `missing`, `always` or `never`) |
+| `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages; with `sbx`, a comma-separated list of hosts also works) |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
 | `TOOLS_DIR` | empty (a directory of [personal tools in Python](#personal-tools-in-python); each call runs in a container that sees only its own tool) |
 | `TOOLS_NETWORK` | `bridge` (the Docker network for calls of personal tools that declare `network` hosts; tools that declare none get no network) |
@@ -487,6 +489,37 @@ Output is cut at `TOOL_OUTPUT_MAX_BYTES` per stream with a `[truncated N bytes]`
 ### The sandbox image
 
 `sandbox/Dockerfile` builds a Debian image with `python3`, `pip`, `venv`, `git`, `curl`, `jq`, `cedar-render-pdf` (WeasyPrint and python-markdown from PyPI, with the pango and DejaVu font packages they need), `cedar-render-chart` (matplotlib), and `cedar-read-document` (pypdf, python-docx, openpyxl, python-pptx). Those libraries are importable from `run_python` too. pip installs go to `/workspace/.local` (via `PYTHONUSERBASE`), so packages the agent installs in one run are still there in a [continuation](#continuing-a-run), and scripts they install are on `PATH`. Installing needs network access: with the default `SANDBOX_NETWORK=none` the container is offline and `pip install` fails to reach PyPI, so set `SANDBOX_NETWORK=bridge` if you want the agent to add packages itself (see [Safety](#safety)). Anything the agent should have offline goes into the Dockerfile.
+
+### Running tools in microVMs (sbx)
+
+By default a run's tools run in a locked-down container on the host's Docker daemon, which shares the host kernel. With `SANDBOX_BACKEND=sbx` they run in [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) instead: each run gets a microVM with its own kernel (and its own Docker engine), driven by the `sbx` CLI. The agent's environment no longer touches the host's Docker daemon, and outbound traffic goes through a host-side proxy that enforces a network policy per sandbox. Docker stays the default, since many servers (cloud VMs without nested virtualisation) have no KVM.
+
+How it maps:
+
+| | `docker` (default) | `sbx` |
+| --- | --- | --- |
+| A run's sandbox | container `cedar-run-<id>` | microVM `cedar-run-<id>` from the `SANDBOX_IMAGE` template, sized by `SANDBOX_MEMORY` / `SANDBOX_CPUS` (rounded up to whole CPUs), removed when the run ends |
+| Workspace | volume `cedar-ws-<id>` | directory `SBX_DATA_DIR/workspaces/<id>`, mounted into the microVM; `/workspace` is a link to it |
+| Files of a finished run | read in a one-off container | read in `cedar-files`, a microVM that sees every workspace read-only and has no network |
+| `SANDBOX_NETWORK=none` | `--network none` | a deny-everything rule for the sandbox, which no allow rule can reopen |
+| `SANDBOX_NETWORK=bridge` | the bridge network | every host allowed for the sandbox; a comma-separated list of hosts allows just those |
+| Personal tools | a container per call | a microVM per tool per run, seeing the workspace, its own folder (read-only) and its own environment (`SBX_DATA_DIR/tool-envs/<name>`), allowed exactly the hosts its manifest declares |
+| Browser | container `cedar-browser-<id>` | microVM `cedar-browser-<id>` from the `BROWSER_IMAGE` template |
+
+To set it up:
+
+1. Install `sbx` and sign in once as the user cedar runs as (`sbx login`; on a server, `echo "$DOCKER_PAT" | sbx login --username <id> --password-stdin`). Local sandboxes need hardware virtualisation: on Linux, `/dev/kvm` and that user in the `kvm` group.
+2. Make the images available as templates. With the default `SBX_PULL=missing`, `sbx` pulls `SANDBOX_IMAGE` (and `BROWSER_IMAGE`) on first use, so point them at the published images (`ghcr.io/hanneshapke/cedar-sandbox:<version>`). For locally built images, load them and set `SBX_PULL=never`:
+   ```sh
+   docker build -t cedar-sandbox sandbox/
+   docker save -o cedar-sandbox.tar cedar-sandbox && sbx template load cedar-sandbox.tar
+   ```
+3. Make the global policy deny by default, so personal tools reach only their declared hosts: `sbx policy init deny-all`. A run with `SANDBOX_NETWORK=none` is offline whatever the global policy says, but a sandbox's allow rules add to the global policy, so under `balanced` or `allow-all` a tool (or a run with a host list) can reach more than you listed.
+4. Start cedar with `SANDBOX_BACKEND=sbx`. `/readyz` reports `sandbox: failed` with the reason in the log: no KVM, `sbx` missing or not signed in, or (with `SBX_PULL=never`) a template that isn't loaded. `sbx ls` shows each run's microVM while it runs.
+
+Every file and command operation still goes through the sandbox (`sbx exec`); cedar never reads workspace files host-side, so a symlink the agent leaves in a workspace can't lead out of it. `cedar-files` and the leftovers of a crash (`cedar-run-*`, `cedar-tool-*`, `cedar-browser-*`) are removed at startup.
+
+Not verified yet: the issue that introduced this backend ([#59](https://github.com/hanneshapke/cedar/issues/59)) lists open questions (start-up time and memory per microVM, file ownership on the mounted workspace, whether the browser's background driver survives `sbx exec`, Windows paths, and `sbx`'s terms for unattended servers). The backend was built against the `sbx` CLI reference and tested against a stand-in for `sbx`, not on a KVM host; run `cargo test --test sbx -- --ignored --test-threads 1` on one before relying on it.
 
 ### The browser
 
@@ -824,6 +857,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
 - Turning networking on for the sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
+- With `SANDBOX_BACKEND=sbx` each run's tools run in a microVM with its own kernel instead of a container on the host's kernel, and the host's Docker daemon is not involved. Credentials stored with `sbx secret` are injected by `sbx`'s proxy into requests from any sandbox that can reach the service, cedar's included, so don't store any on a host that runs cedar with network access for its sandboxes.
 - [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
@@ -841,6 +875,7 @@ cargo test                        # unit + integration tests; no Docker or netwo
 cargo clippy --all-targets -- -D warnings
 cargo test --test docker -- --ignored   # sandbox tests; need Docker and the cedar-sandbox image
 cargo test --test docker_browser -- --ignored   # browser tests; need Docker and the cedar-browser image
+cargo test --test sbx -- --ignored --test-threads 1   # the sbx backend; needs sbx, KVM and the template
 python3 registry/build_index.py --check  # the community tool registry's rules and index
 ```
 

@@ -1,8 +1,8 @@
 //! Isolated execution environments for a run's tools.
 //!
-//! Every file and command operation goes through the sandbox (`docker exec`), never the host
-//! filesystem. Reading host-side from a bind mount would let the agent point a symlink outside
-//! its workspace.
+//! Every file and command operation goes through the sandbox (`docker exec`, or `sbx exec` with
+//! the [`crate::sbx`] backend), never the host filesystem. Reading host-side from a bind mount
+//! would let the agent point a symlink outside its workspace.
 
 use crate::config::SandboxConfig;
 use anyhow::{anyhow, bail, Context, Result};
@@ -163,8 +163,16 @@ pub struct ToolRun<'a> {
     pub input: &'a [u8],
     /// Environment variables for the script: the secrets its manifest declares.
     pub env: &'a [(String, String)],
-    /// The manifest declares hosts it reaches, so the call gets `tools_network` instead of none.
-    pub network: bool,
+    /// The hosts its manifest declares. Any at all give the call `tools_network` on Docker; with
+    /// `sbx` they are the call's allow-list.
+    pub hosts: &'a [String],
+}
+
+impl ToolRun<'_> {
+    /// Does the call get a network at all?
+    pub fn network(&self) -> bool {
+        !self.hosts.is_empty()
+    }
 }
 
 /// Where a personal tool's folder is mounted in its container.
@@ -174,7 +182,7 @@ pub const TOOL_ENV_MOUNT: &str = "/opt/cedar/env";
 const TOOL_LABEL: &str = "cedar.tool";
 const TOOL_ENV_PREFIX: &str = "cedar-tool-env-";
 /// How long a tool's packages may take to install.
-const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
+pub(crate) const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The volume that holds a personal tool's environment. It outlives runs, so packages installed
 /// once are there for every later call, and it is shared by no other tool.
@@ -205,8 +213,8 @@ const VOLUME_PREFIX: &str = "cedar-ws-";
 pub(crate) const DOCKER_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const DOCKER_CREATE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Extra time beyond the in-container `timeout` before the host gives up on `docker exec`.
-const EXEC_BACKSTOP: Duration = Duration::from_secs(10);
-const WRITE_SCRIPT: &str = r#"mkdir -p -- "$(dirname -- "$1")" && cat > "$1""#;
+pub(crate) const EXEC_BACKSTOP: Duration = Duration::from_secs(10);
+pub(crate) const WRITE_SCRIPT: &str = r#"mkdir -p -- "$(dirname -- "$1")" && cat > "$1""#;
 
 fn container_name(run_id: Uuid) -> String {
     format!("cedar-run-{run_id}")
@@ -256,26 +264,27 @@ pub fn run_args(cfg: &SandboxConfig, run_id: Uuid, workspace_id: Uuid) -> Vec<St
     args
 }
 
-/// Lists regular files (symlinks excluded) as NUL-separated `size\tmtime\tpath` records, skipping
-/// [`UNLISTED_DIRS`]. One record more than the cap is read so truncation can be detected.
-fn list_script() -> String {
+/// Lists the regular files (symlinks excluded) under the directory `$1` as NUL-separated
+/// `size\tmtime\tpath` records, skipping [`UNLISTED_DIRS`]. One record more than the cap is read
+/// so truncation can be detected.
+pub(crate) fn list_script() -> String {
     let prune = UNLISTED_DIRS
         .iter()
         .map(|d| format!("-name '{d}'"))
         .collect::<Vec<_>>()
         .join(" -o ");
     format!(
-        "find /workspace -mindepth 1 \\( {prune} \\) -prune -o -type f -printf '%s\\t%T@\\t%P\\0' \
+        "find \"$1\" -mindepth 1 \\( {prune} \\) -prune -o -type f -printf '%s\\t%T@\\t%P\\0' \
          | head -z -n {}",
         MAX_LISTED_FILES + 1
     )
 }
 
-/// Prints up to `$2` bytes of `$1` if it is a regular file inside /workspace (after resolving
-/// symlinks); exits 2 if there is no such file.
-const READ_WORKSPACE_SCRIPT: &str = r#"cd /workspace || exit 3
+/// Prints up to `$2` bytes of `$1` if it is a regular file inside the workspace directory `$3`
+/// (after resolving symlinks); exits 2 if there is no such file.
+pub(crate) const READ_WORKSPACE_SCRIPT: &str = r#"r=$(realpath -e -- "$3") && cd "$r" || exit 3
 p=$(realpath -e -- "$1" 2>/dev/null) || exit 2
-case $p in /workspace/*) ;; *) exit 2 ;; esac
+case $p in "$r"/*) ;; *) exit 2 ;; esac
 [ -f "$p" ] || exit 2
 exec head -c "$2" -- "$p""#;
 
@@ -325,7 +334,7 @@ pub fn workspace_run_args(
 }
 
 /// Parse the output of [`list_script`]. Unparseable records are skipped.
-fn parse_listing(raw: &[u8]) -> WorkspaceListing {
+pub(crate) fn parse_listing(raw: &[u8]) -> WorkspaceListing {
     let mut files: Vec<WorkspaceFile> = raw
         .split(|&b| b == 0)
         .filter(|rec| !rec.is_empty())
@@ -396,7 +405,7 @@ fn locked_down(cfg: &SandboxConfig, network: &str, pids: &str) -> Vec<String> {
 /// The environment a personal tool's container gets: its own home and package directory. Secret
 /// names follow as `-e NAME` only, so their values come from the `docker` process's environment
 /// and never appear in its arguments (which other users of the host can see).
-fn tool_env_args(env_names: &[&str]) -> Vec<String> {
+pub(crate) fn tool_env_args(env_names: &[&str]) -> Vec<String> {
     let mut args: Vec<String> = [
         format!("HOME={TOOL_ENV_MOUNT}"),
         format!("PYTHONUSERBASE={TOOL_ENV_MOUNT}/.local"),
@@ -450,7 +459,7 @@ pub fn tool_run_args(
     .iter()
     .map(|s| s.to_string())
     .collect();
-    args.extend(locked_down(cfg, tool_network(cfg, call.network), "128"));
+    args.extend(locked_down(cfg, tool_network(cfg, call.network()), "128"));
     args.extend([
         "-w".to_string(),
         "/workspace".into(),
@@ -572,6 +581,120 @@ async fn read_capped<R: AsyncRead + Unpin>(
     }
 }
 
+/// Run `cmd`, handing it `input` on stdin (or none), and collect at most `max_output` bytes of
+/// each stream. `Ok(None)` if it hasn't finished after `limit`; the process is killed then.
+pub(crate) async fn run_capped(
+    mut cmd: Command,
+    input: Option<&[u8]>,
+    limit: Duration,
+    max_output: usize,
+) -> Result<Option<ExecOutput>> {
+    cmd.stdin(if input.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .kill_on_drop(true);
+    let program = cmd.as_std().get_program().to_string_lossy().into_owned();
+    let mut child = cmd
+        .spawn()
+        .with_context(|| format!("failed to run `{program}`"))?;
+    let stdin = child.stdin.take();
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let write = async move {
+        if let (Some(mut stdin), Some(input)) = (stdin, input) {
+            // A script that never reads its input closes the pipe early; that is not an error.
+            let _ = stdin.write_all(input).await;
+            drop(stdin);
+        }
+    };
+    let finished = tokio::time::timeout(limit, async {
+        tokio::join!(
+            write,
+            read_capped(stdout, max_output),
+            read_capped(stderr, max_output),
+            child.wait()
+        )
+    })
+    .await;
+    match finished {
+        Ok(((), out, err, status)) => {
+            let (stdout, stdout_total) = out?;
+            let (stderr, stderr_total) = err?;
+            Ok(Some(ExecOutput {
+                stdout,
+                stderr,
+                stdout_total,
+                stderr_total,
+                exit_code: status?.code(),
+            }))
+        }
+        Err(_) => Ok(None),
+    }
+}
+
+/// Run `bin args` with `content` on stdin (for [`WRITE_SCRIPT`]); a non-zero exit is an error
+/// carrying its stderr.
+pub(crate) async fn write_via_stdin(
+    bin: &str,
+    args: &[String],
+    path: &str,
+    content: &[u8],
+) -> Result<()> {
+    let mut child = Command::new(bin)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .with_context(|| format!("failed to run `{bin}`"))?;
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let write = async move {
+        let res = stdin.write_all(content).await;
+        drop(stdin); // EOF for `cat`
+        res
+    };
+    let (written, out) = tokio::time::timeout(DOCKER_CALL_TIMEOUT, async {
+        tokio::join!(write, child.wait_with_output())
+    })
+    .await
+    .map_err(|_| anyhow!("writing {path} timed out"))?;
+    let out = out?;
+    if !out.status.success() {
+        bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    // A broken pipe with a zero exit would mean `cat` quit early; surface it.
+    written.context("writing file contents")?;
+    Ok(())
+}
+
+/// Run `bin args`, which prints the first bytes of a file, and keep at most `max_bytes` of them.
+pub(crate) async fn read_via(bin: &str, args: &[String], max_bytes: usize) -> Result<FileContent> {
+    let out = docker_output(bin, args, DOCKER_CALL_TIMEOUT).await?;
+    if !out.status.success() {
+        bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    let mut bytes = out.stdout;
+    let truncated = bytes.len() > max_bytes;
+    bytes.truncate(max_bytes);
+    Ok(FileContent { bytes, truncated })
+}
+
+/// The command, after `exec <sandbox>`, that prints up to `max_bytes + 1` bytes of `path`.
+pub(crate) fn head_command(path: &str, max_bytes: usize) -> Vec<String> {
+    vec![
+        "head".into(),
+        "-c".into(),
+        (max_bytes + 1).to_string(),
+        "--".into(),
+        path.into(),
+    ]
+}
+
 pub struct DockerSandbox {
     docker: String,
     container: String,
@@ -589,41 +712,12 @@ impl Sandbox for DockerSandbox {
         max_output: usize,
     ) -> Result<ExecOutput> {
         let args = exec_args(&self.container, timeout.as_secs().max(1), command);
-        let mut child = Command::new(&self.docker)
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .with_context(|| format!("failed to run `{}`", self.docker))?;
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let stderr = child.stderr.take().expect("stderr is piped");
-
-        let finished = tokio::time::timeout(timeout + EXEC_BACKSTOP, async {
-            tokio::join!(
-                read_capped(stdout, max_output),
-                read_capped(stderr, max_output),
-                child.wait()
-            )
-        })
-        .await;
-
-        match finished {
-            Ok((out, err, status)) => {
-                let (stdout, stdout_total) = out?;
-                let (stderr, stderr_total) = err?;
-                Ok(ExecOutput {
-                    stdout,
-                    stderr,
-                    stdout_total,
-                    stderr_total,
-                    exit_code: status?.code(),
-                })
-            }
-            Err(_) => {
+        let mut cmd = Command::new(&self.docker);
+        cmd.args(&args);
+        match run_capped(cmd, None, timeout + EXEC_BACKSTOP, max_output).await? {
+            Some(out) => Ok(out),
+            None => {
                 // The in-container timeout should have fired long ago, so the container is wedged.
-                drop(child);
                 self.destroy().await;
                 Err(SandboxFatal("command did not terminate after its timeout".into()).into())
             }
@@ -632,65 +726,25 @@ impl Sandbox for DockerSandbox {
 
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent> {
         check_path(path)?;
-        let args: Vec<String> = [
-            "exec",
-            &self.container,
-            "head",
-            "-c",
-            &(max_bytes + 1).to_string(),
-            "--",
-            path,
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        let out = docker_output(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
-        if !out.status.success() {
-            bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
-        }
-        let mut bytes = out.stdout;
-        let truncated = bytes.len() > max_bytes;
-        bytes.truncate(max_bytes);
-        Ok(FileContent { bytes, truncated })
+        let mut args = vec!["exec".to_string(), self.container.clone()];
+        args.extend(head_command(path, max_bytes));
+        read_via(&self.docker, &args, max_bytes).await
     }
 
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
         check_path(path)?;
-        let mut child = Command::new(&self.docker)
-            .args([
-                "exec",
-                "-i",
-                &self.container,
-                "sh",
-                "-c",
-                WRITE_SCRIPT,
-                "sh",
-                path,
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .with_context(|| format!("failed to run `{}`", self.docker))?;
-        let mut stdin = child.stdin.take().expect("stdin is piped");
-        let write = async move {
-            let res = stdin.write_all(content).await;
-            drop(stdin); // EOF for `cat`
-            res
-        };
-        let (written, out) = tokio::time::timeout(DOCKER_CALL_TIMEOUT, async {
-            tokio::join!(write, child.wait_with_output())
-        })
-        .await
-        .map_err(|_| anyhow!("writing {path} timed out"))?;
-        let out = out?;
-        if !out.status.success() {
-            bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
-        }
-        // A broken pipe with a zero exit would mean `cat` quit early; surface it.
-        written.context("writing file contents")?;
-        Ok(())
+        let args = [
+            "exec",
+            "-i",
+            &self.container,
+            "sh",
+            "-c",
+            WRITE_SCRIPT,
+            "sh",
+            path,
+        ]
+        .map(String::from);
+        write_via_stdin(&self.docker, &args, path, content).await
     }
 
     async fn run_tool(
@@ -710,51 +764,16 @@ impl Sandbox for DockerSandbox {
             timeout.as_secs().max(1),
         );
         let mut cmd = Command::new(&self.docker);
-        cmd.args(&args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
+        cmd.args(&args);
         // Passed by name in the arguments; docker takes the values from its own environment.
         for (k, v) in call.env {
             cmd.env(k, v);
         }
-        let mut child = cmd
-            .spawn()
-            .with_context(|| format!("failed to run `{}`", self.docker))?;
-        let mut stdin = child.stdin.take().expect("stdin is piped");
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let stderr = child.stderr.take().expect("stderr is piped");
-        let input = call.input;
-        let write = async move {
-            // A script that never reads its input closes the pipe early; that is not an error.
-            let _ = stdin.write_all(input).await;
-            drop(stdin);
-        };
         // Starting a container takes a moment on top of the script's own limit.
-        let finished = tokio::time::timeout(timeout + EXEC_BACKSTOP + DOCKER_CALL_TIMEOUT, async {
-            tokio::join!(
-                write,
-                read_capped(stdout, max_output),
-                read_capped(stderr, max_output),
-                child.wait()
-            )
-        })
-        .await;
-        match finished {
-            Ok(((), out, err, status)) => {
-                let (stdout, stdout_total) = out?;
-                let (stderr, stderr_total) = err?;
-                Ok(ExecOutput {
-                    stdout,
-                    stderr,
-                    stdout_total,
-                    stderr_total,
-                    exit_code: status?.code(),
-                })
-            }
-            Err(_) => {
-                drop(child);
+        let limit = timeout + EXEC_BACKSTOP + DOCKER_CALL_TIMEOUT;
+        match run_capped(cmd, Some(call.input), limit, max_output).await? {
+            Some(out) => Ok(out),
+            None => {
                 let rm = vec!["rm".to_string(), "-f".into(), container.clone()];
                 if let Err(e) = docker_checked(&self.docker, &rm, DOCKER_CALL_TIMEOUT).await {
                     tracing::warn!(error = %e, %container, "removing a stuck tool container failed");
@@ -773,7 +792,7 @@ impl Sandbox for DockerSandbox {
     }
 }
 
-fn check_path(path: &str) -> Result<()> {
+pub(crate) fn check_path(path: &str) -> Result<()> {
     if path.is_empty() {
         bail!("path must not be empty");
     }
@@ -921,7 +940,7 @@ impl SandboxFactory for DockerSandboxFactory {
 
     async fn list_workspace_files(&self, workspace_id: Uuid) -> Result<WorkspaceListing> {
         let out = self
-            .run_in_workspace(workspace_id, &list_script(), &[])
+            .run_in_workspace(workspace_id, &list_script(), &["/workspace"])
             .await?;
         if !out.status.success() {
             bail!(
@@ -942,7 +961,11 @@ impl SandboxFactory for DockerSandboxFactory {
         check_workspace_path(path)?;
         let limit = (max_bytes + 1).to_string();
         let out = self
-            .run_in_workspace(workspace_id, READ_WORKSPACE_SCRIPT, &[path, &limit])
+            .run_in_workspace(
+                workspace_id,
+                READ_WORKSPACE_SCRIPT,
+                &[path, &limit, "/workspace"],
+            )
             .await?;
         match out.status.code() {
             Some(0) => {
@@ -1118,7 +1141,7 @@ mod tests {
             entry: "tool.py",
             input: b"{}",
             env: &env,
-            network: false,
+            hosts: &[],
         };
         let args = tool_run_args(&cfg(), run, ws, "cedar-tool-x", &call, 30);
         let joined = args.join(" ");
@@ -1156,8 +1179,9 @@ mod tests {
             ]
         );
 
+        let hosts = ["api.example.com".to_string()];
         let networked = ToolRun {
-            network: true,
+            hosts: &hosts,
             ..call
         };
         let joined = tool_run_args(&cfg(), run, ws, "c", &networked, 30).join(" ");
@@ -1192,6 +1216,77 @@ mod tests {
         assert_eq!((kept.len(), total), (100, 20_000));
         let (kept, total) = read_capped(&b"abc"[..], 100).await.unwrap();
         assert_eq!((kept.as_slice(), total), (&b"abc"[..], 3));
+    }
+
+    #[tokio::test]
+    async fn run_capped_pipes_input_and_keeps_the_streams_apart() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "cat; echo err >&2; exit 3"]);
+        let out = run_capped(cmd, Some(b"hello"), Duration::from_secs(10), 100)
+            .await
+            .unwrap()
+            .expect("finished");
+        assert_eq!(out.stdout, b"hello");
+        assert_eq!(out.stderr, b"err\n");
+        assert_eq!(out.exit_code, Some(3));
+
+        // A script that never reads its input is not an error, however much input there is.
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo done"]);
+        let input = vec![b'x'; 1 << 20];
+        let out = run_capped(cmd, Some(&input), Duration::from_secs(10), 100)
+            .await
+            .unwrap()
+            .expect("finished");
+        assert_eq!((out.stdout.as_slice(), out.exit_code), (&b"done\n"[..], Some(0)));
+
+        let mut cmd = Command::new("sleep");
+        cmd.arg("30");
+        let started = std::time::Instant::now();
+        let out = run_capped(cmd, None, Duration::from_millis(200), 100)
+            .await
+            .unwrap();
+        assert!(out.is_none(), "timed out");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// The listing and read scripts, run here against a real directory, as `cedar-files` runs
+    /// them against a workspace mounted at its host path.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_workspace_scripts_take_the_root_and_stay_inside_it() {
+        let dir = std::env::temp_dir().join(format!("cedar-test-{}", Uuid::new_v4()));
+        let root = dir.join("work space");
+        std::fs::create_dir_all(root.join("out")).unwrap();
+        std::fs::write(root.join("out/a.txt"), "hello").unwrap();
+        std::fs::write(dir.join("secret.txt"), "outside").unwrap();
+        std::os::unix::fs::symlink(dir.join("secret.txt"), root.join("evil")).unwrap();
+        let root = root.display().to_string();
+        let run = |script: String, args: Vec<String>| async move {
+            let mut cmd = Command::new("sh");
+            cmd.arg("-c").arg(script).arg("sh").args(args);
+            run_capped(cmd, None, Duration::from_secs(10), 1 << 16)
+                .await
+                .unwrap()
+                .expect("finished")
+        };
+        let read = |path: &str| {
+            run(
+                READ_WORKSPACE_SCRIPT.to_string(),
+                vec![path.into(), "100".into(), root.clone()],
+            )
+        };
+        let out = read("out/a.txt").await;
+        assert_eq!((out.stdout.as_slice(), out.exit_code), (&b"hello"[..], Some(0)));
+        assert_eq!(read("evil").await.exit_code, Some(2), "a symlink out");
+        assert_eq!(read("../secret.txt").await.exit_code, Some(2));
+        assert_eq!(read("nope").await.exit_code, Some(2));
+
+        let out = run(list_script(), vec![root.clone()]).await;
+        let listing = parse_listing(&out.stdout);
+        let paths: Vec<_> = listing.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, ["out/a.txt"], "symlinks are not listed");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

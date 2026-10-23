@@ -269,7 +269,7 @@ impl Sandbox for FakeSandbox {
             entry: call.entry.to_string(),
             input: input.clone(),
             env: call.env.to_vec(),
-            network: call.network,
+            network: call.network(),
         });
         if call.name == "failing_tool" {
             return Ok(ExecOutput {

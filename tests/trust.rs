@@ -77,7 +77,7 @@ async fn reasoning_cost_and_the_sandbox_are_reported() {
     let started = of_kind(&events, "run.started")[0];
     assert_eq!(
         started["sandbox"],
-        json!({ "network": "none", "memory": "1g", "cpus": 1.0 })
+        json!({ "backend": "docker", "network": "none", "memory": "1g", "cpus": 1.0 })
     );
     assert_eq!(started["interactive"], false);
     let reasoning = of_kind(&events, "assistant.reasoning");

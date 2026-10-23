@@ -166,9 +166,21 @@ pub fn call_args(container: &str, request: &Value) -> Vec<String> {
     ]
 }
 
+/// A browser container reached by `exec`: `docker exec`, or `sbx exec` with the `sbx` backend
+/// (see [`crate::sbx`]), whose flags are the same.
 pub struct DockerBrowser {
     docker: String,
     container: String,
+}
+
+impl DockerBrowser {
+    /// The browser in `container`, called through the `bin` CLI.
+    pub(crate) fn new(bin: &str, container: &str) -> Self {
+        Self {
+            docker: bin.into(),
+            container: container.into(),
+        }
+    }
 }
 
 #[async_trait]

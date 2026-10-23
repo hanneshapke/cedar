@@ -5,9 +5,10 @@
 
 use anyhow::{Context, Result};
 use cedar::api::{self, AppState};
-use cedar::config::Config;
+use cedar::config::{Config, SandboxBackend};
 use cedar::llm::LlmRouter;
-use cedar::sandbox::DockerSandboxFactory;
+use cedar::sandbox::{DockerSandboxFactory, SandboxFactory};
+use cedar::sbx::SbxSandboxFactory;
 use cedar::store::Store;
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,7 +29,17 @@ async fn main() -> Result<()> {
     // One client per registered model; Integrations fills it from the registry and keeps it
     // current as admins change it.
     let llm = Arc::new(LlmRouter::new());
-    let sandboxes = Arc::new(DockerSandboxFactory::new(cfg.sandbox.clone()));
+    let sandboxes: Arc<dyn SandboxFactory> = match cfg.sandbox_backend {
+        SandboxBackend::Docker => Arc::new(DockerSandboxFactory::new(cfg.sandbox.clone())),
+        SandboxBackend::Sbx => {
+            tracing::info!(
+                sbx = %cfg.sbx.bin,
+                data_dir = %cfg.sbx.data_dir.display(),
+                "running tools in Docker Sandboxes (microVMs)"
+            );
+            Arc::new(SbxSandboxFactory::new(cfg.sandbox.clone(), cfg.sbx.clone()))
+        }
+    };
     let bind_addr = cfg.bind_addr;
     let workspace_ttl = cfg.workspace_ttl;
 

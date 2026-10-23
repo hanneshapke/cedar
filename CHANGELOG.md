@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Run the agent's tools in microVMs (experimental):** `SANDBOX_BACKEND=sbx` runs each run's tools, its personal tools and its browser in [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (the `sbx` CLI), each a microVM with its own kernel, with per-sandbox network policies. Docker stays the default (#59).
+- The browser image's user is now `agent`, as Docker Sandboxes' templates require.
+
 ## 0.1.2
 
 - **Fix: Cedar for Windows starts its servers on PCs without the Visual C++ Redistributable.** In 0.1.1, cedar.exe and cedar-chat.exe loaded `VCRUNTIME140.dll`, which Windows doesn't ship, so they failed with "VCRUNTIME140.dll was not found". The C runtime is now linked in, and the release checks that no executable needs the DLL.

@@ -31,9 +31,11 @@ RUN pip install --no-cache-dir playwright==1.56.0 \
     && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 driver.py /usr/local/bin/cedar-browser
 
-RUN groupadd --gid 1000 browser \
-    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/sh browser
+# Docker Sandboxes (`SANDBOX_BACKEND=sbx`) use this image as a template too, which wants a
+# non-root `agent` user with uid 1000 and its home in /home/agent.
+RUN groupadd --gid 1000 agent \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/sh agent
 
-USER browser
-WORKDIR /home/browser
+USER agent
+WORKDIR /home/agent
 CMD ["cedar-browser", "serve"]

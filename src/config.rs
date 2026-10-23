@@ -66,6 +66,29 @@ pub struct SandboxConfig {
     pub tools_network: String,
 }
 
+/// What runs a run's tools (`SANDBOX_BACKEND`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxBackend {
+    /// A locked-down container on the host's Docker daemon (the default).
+    Docker,
+    /// A Docker Sandbox: a microVM with its own kernel, driven by the `sbx` CLI (see `sbx`).
+    Sbx,
+}
+
+/// Settings for the `sbx` backend. The image, memory, CPU and network settings are the same as
+/// the Docker backend's ([`SandboxConfig`], [`BrowserConfig`]).
+#[derive(Debug, Clone)]
+pub struct SbxConfig {
+    /// The `sbx` command: a name looked up on `PATH` or an absolute path (`SBX_BIN`).
+    pub bin: String,
+    /// Where workspaces and personal tools' environments live on the host (`SBX_DATA_DIR`). Each
+    /// workspace is a directory here, mounted into the run's microVM.
+    pub data_dir: PathBuf,
+    /// When `sbx` pulls the template images (`SBX_PULL`): `missing` (the default), `always` or
+    /// `never` (the image must have been loaded with `sbx template load`).
+    pub pull: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct BrowserConfig {
     /// Offer the `browser` tool (off by default).
@@ -239,6 +262,8 @@ pub struct Config {
 
     pub sandbox: SandboxConfig,
     pub browser: BrowserConfig,
+    pub sandbox_backend: SandboxBackend,
+    pub sbx: SbxConfig,
 }
 
 /// Docker wants an absolute host path for a bind mount, so a relative `TOOLS_DIR` is resolved
@@ -530,6 +555,18 @@ impl Config {
                 memory: get("BROWSER_MEMORY").unwrap_or_else(|| "1g".into()),
                 cpus: get("BROWSER_CPUS").unwrap_or_else(|| "1".into()),
             },
+            sandbox_backend: match get("SANDBOX_BACKEND").as_deref().map(str::trim) {
+                None | Some("") | Some("docker") => SandboxBackend::Docker,
+                Some("sbx") => SandboxBackend::Sbx,
+                Some(other) => bail!("invalid SANDBOX_BACKEND={other:?}: use docker or sbx"),
+            },
+            sbx: SbxConfig {
+                bin: get("SBX_BIN").unwrap_or_else(|| "sbx".into()),
+                data_dir: absolute(PathBuf::from(
+                    get("SBX_DATA_DIR").unwrap_or_else(|| "cedar-sbx".into()),
+                )),
+                pull: get("SBX_PULL").unwrap_or_else(|| "missing".into()),
+            },
         };
         cfg.validate()?;
         Ok(cfg)
@@ -560,6 +597,12 @@ impl Config {
         }
         if self.approval_timeout.is_zero() {
             bail!("APPROVAL_TIMEOUT_SECS must be at least 1");
+        }
+        if !matches!(self.sbx.pull.as_str(), "missing" | "always" | "never") {
+            bail!(
+                "invalid SBX_PULL={:?}: use missing, always or never",
+                self.sbx.pull
+            );
         }
         if self.browser.enabled && self.browser.network == "none" {
             bail!("BROWSER_NETWORK=none leaves the browser without internet access; use a network that has it");
@@ -777,6 +820,34 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.brave_api_key.as_deref(), Some("BSA-secret"));
         assert_eq!(cfg.brave_base_url, "http://localhost:9999/search");
+    }
+
+    #[test]
+    fn the_sandbox_backend_is_docker_unless_sbx_is_chosen() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert_eq!(cfg.sandbox_backend, SandboxBackend::Docker);
+        assert_eq!(cfg.sbx.bin, "sbx");
+        assert_eq!(cfg.sbx.pull, "missing");
+        assert!(cfg.sbx.data_dir.is_absolute());
+
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("SANDBOX_BACKEND", "sbx"),
+            ("SBX_BIN", "/usr/local/bin/sbx"),
+            ("SBX_DATA_DIR", "/var/lib/cedar/sbx"),
+            ("SBX_PULL", "never"),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.sandbox_backend, SandboxBackend::Sbx);
+        assert_eq!(cfg.sbx.bin, "/usr/local/bin/sbx");
+        assert_eq!(cfg.sbx.data_dir, PathBuf::from("/var/lib/cedar/sbx"));
+        assert_eq!(cfg.sbx.pull, "never");
+
+        for (key, value) in [("SANDBOX_BACKEND", "podman"), ("SBX_PULL", "sometimes")] {
+            let err =
+                Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), (key, value)])).unwrap_err();
+            assert!(err.to_string().contains(key), "{err}");
+        }
     }
 
     #[test]

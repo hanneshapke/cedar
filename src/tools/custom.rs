@@ -540,7 +540,7 @@ impl Tool for PythonTool {
             entry: &self.entry,
             input: staged.as_bytes(),
             env: &self.env,
-            network: !self.network.is_empty(),
+            hosts: &self.network,
         };
         let out = ctx.sandbox.run_tool(&call, timeout, ctx.max_output).await;
         let out = match out {
