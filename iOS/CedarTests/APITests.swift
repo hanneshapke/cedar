@@ -28,6 +28,28 @@ final class APITests: XCTestCase {
         XCTAssertEqual(Conversation(id: "x", unread: false, needsAnswer: false, createdAt: Date(), updatedAt: Date()).displayTitle, "New chat")
     }
 
+    func testDecodesStarredConversations() throws {
+        let list = try JSONDecoder.cedar.decode(ConversationList.self, from: Data("""
+        {"conversations":[{"id":"c2","title":"Morning digest · Fri 23 Oct","model":null,"reasoning":null,"schedule_id":"s1",
+           "tools":null,"unread":false,"needs_answer":false,"starred_at":"2026-10-23T08:00:00Z","schedule_title":"Morning digest",
+           "created_at":"2026-10-23T07:00:00Z","updated_at":"2026-10-23T07:01:00Z"},
+          {"id":"c1","title":"Trip","model":null,"reasoning":null,"schedule_id":null,"tools":null,"unread":true,
+           "needs_answer":false,"starred_at":"2026-10-22T08:00:00Z","schedule_title":null,
+           "created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:40:00Z"}]}
+        """.utf8))
+        XCTAssertEqual(list.conversations.map(\.id), ["c2", "c1"])
+        XCTAssertTrue(list.conversations.allSatisfy(\.isStarred))
+        XCTAssertEqual(list.conversations[0].scheduleTitle, "Morning digest")
+        XCTAssertNil(list.conversations[1].scheduleTitle)
+
+        // The main list sends `starred_at` but no `schedule_title`; older servers send neither.
+        let plain = try JSONDecoder.cedar.decode(Conversation.self, from: Data("""
+        {"id":"c3","title":null,"model":null,"reasoning":null,"schedule_id":null,"tools":null,"unread":false,
+         "needs_answer":false,"created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:40:00Z"}
+        """.utf8))
+        XCTAssertFalse(plain.isStarred)
+    }
+
     func testDecodesInboxNoticesAndModels() throws {
         let inbox = try JSONDecoder.cedar.decode(Inbox.self, from: Data("""
         {"items":[{"turn_id":"t1","conversation_id":"c1","title":"Trip","schedule_id":null,"status":"failed",

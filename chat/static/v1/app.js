@@ -373,6 +373,7 @@ function setHeader() {
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
+  cedarStar.setCurrent(c);
   cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
 
@@ -1200,6 +1201,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown });
+  cedarStar.init({ api, toast, onOpen: () => toggleSidebar(false) });
   cedarSettings.init({
     api, toast, authHeaders,
     config: () => state.config,
@@ -1227,6 +1229,7 @@ async function init() {
   await loadModels();
   cedarSettings.start();
   cedarSchedule.start();
+  cedarStar.start();
   await loadConversations();
   route();
   cedarNotify.start();

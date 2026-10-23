@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="/product-view.css">
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/star.css">
   <link rel="stylesheet" href="/notify.css">
   <link rel="stylesheet" href="/settings.css">
   <link rel="stylesheet" href="/models.css">
@@ -44,6 +45,7 @@
       <button class="ghost" id="new-chat" type="button" title="New conversation">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New</span>
       </button>
+      <button class="ghost" id="star-btn" type="button" data-star-toggle hidden><span class="lbl">Star</span></button>
       <button class="ghost" id="schedule-btn" type="button" hidden aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Schedule</span>
       </button>
@@ -111,6 +113,10 @@
     <a class="drawer-new" href="#/" id="drawer-new">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New conversation
     </a>
+    <div class="cedar-star-side" id="starred-section" data-starred hidden>
+      <div class="cedar-star-side-head"><span class="label">Starred</span><span class="cedar-star-count"></span></div>
+      <nav class="cedar-star-links" aria-label="Starred conversations"></nav>
+    </div>
     <nav class="recents" id="recents"></nav>
     <div class="cedar-sched-side" id="schedules-section" data-schedules hidden>
       <div class="cedar-sched-side-head"><span class="label">Scheduled agents</span><span class="cedar-sched-count"></span></div>
@@ -207,6 +213,7 @@
   <script src="/product-view.js"></script>
   <script src="/models.js"></script>
   <script src="/schedule.js"></script>
+  <script src="/star.js"></script>
   <script src="/notify.js"></script>
   <script src="/pairing.js"></script>
   <script src="/settings.js"></script>

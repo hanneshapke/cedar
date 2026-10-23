@@ -5,6 +5,7 @@ struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Bindable var chat: ChatModel
     @FocusState private var composerFocused: Bool
+    @State private var starError: String?
 
     private let bottomID = "bottom"
 
@@ -57,6 +58,23 @@ struct ChatView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if let id = chat.conversationId {
+                let starred = app.isStarred(conversationId: id)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            do {
+                                try await app.setStarred(conversationId: id, !starred)
+                            } catch {
+                                starError = error.localizedDescription
+                            }
+                        }
+                    } label: {
+                        Label(starred ? "Unstar" : "Star", systemImage: starred ? "star.fill" : "star")
+                    }
+                    .tint(starred ? Color.yellow : nil)
+                }
+            }
             if let webURL {
                 ToolbarItem(placement: .topBarTrailing) {
                     Link(destination: webURL) {
@@ -64,6 +82,14 @@ struct ChatView: View {
                     }
                 }
             }
+        }
+        .alert("Could Not Change the Star", isPresented: Binding(
+            get: { starError != nil },
+            set: { if !$0 { starError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(starError ?? "")
         }
         .task { await chat.start() }
         .onAppear {

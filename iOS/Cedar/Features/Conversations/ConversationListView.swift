@@ -12,12 +12,14 @@ struct ConversationListView: View {
         List(selection: $app.selection) {
             switch app.sidebarMode {
             case .chats: chats
+            case .starred: starredRows
             case .scheduled: ScheduleRows(actionError: $actionError, showingPrompt: $showingPrompt)
             }
         }
         .safeAreaInset(edge: .top) {
             Picker("Show", selection: $app.sidebarMode) {
                 Text("Chats").tag(SidebarMode.chats)
+                Text("Starred").tag(SidebarMode.starred)
                 Text(app.scheduledUnread > 0 ? "Scheduled (\(app.scheduledUnread))" : "Scheduled")
                     .tag(SidebarMode.scheduled)
             }
@@ -27,7 +29,12 @@ struct ConversationListView: View {
             .background(.bar)
         }
         .onChange(of: app.sidebarMode) { _, mode in
-            if mode == .scheduled { Task { await app.refreshSchedules() } }
+            switch mode {
+            case .chats: break
+            // Stars set on the web or the desktop app since the last refresh.
+            case .starred: Task { await app.refresh() }
+            case .scheduled: Task { await app.refreshSchedules() }
+            }
         }
         .overlay {
             switch app.sidebarMode {
@@ -35,6 +42,15 @@ struct ConversationListView: View {
                 if app.conversations.isEmpty && app.listError == nil && !app.isRefreshing {
                     ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
                                            description: Text("Start a new chat to run the agent."))
+                }
+            case .starred:
+                if app.starred.isEmpty && app.starredError == nil {
+                    if app.starredLoaded {
+                        ContentUnavailableView("No Starred Conversations", systemImage: "star",
+                                               description: Text("Star a chat or a scheduled run, here or on the web, to keep it at hand on every device."))
+                    } else {
+                        ProgressView()
+                    }
                 }
             case .scheduled:
                 if app.schedules.isEmpty && app.scheduleError == nil {
@@ -101,7 +117,9 @@ struct ConversationListView: View {
             }
         }
         ForEach(app.conversations) { conversation in
-            ConversationRow(title: app.title(for: conversation), conversation: conversation, isActive: app.isActive(conversationId: conversation.id))
+            let starred = app.isStarred(conversationId: conversation.id)
+            ConversationRow(title: app.title(for: conversation), conversation: conversation,
+                            isActive: app.isActive(conversationId: conversation.id), starred: starred)
                 .tag(conversation.id)
                 .swipeActions {
                     Button(role: .destructive) {
@@ -117,7 +135,11 @@ struct ConversationListView: View {
                     }
                     .tint(.orange)
                 }
+                .swipeActions(edge: .leading) {
+                    StarButton(starred: starred) { setStarred(conversation, !starred) }
+                }
                 .contextMenu {
+                    StarButton(starred: starred) { setStarred(conversation, !starred) }
                     Button {
                         newTitle = app.title(for: conversation)
                         renaming = conversation
@@ -135,6 +157,44 @@ struct ConversationListView: View {
                         Label("Delete", systemImage: "trash")
                     }
                 }
+        }
+    }
+
+    /// Chats and scheduled runs together, most recently starred first.
+    @ViewBuilder
+    private var starredRows: some View {
+        if let error = app.starredError {
+            Section {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+            }
+        }
+        ForEach(app.starred) { conversation in
+            ConversationRow(title: app.title(for: conversation), conversation: conversation,
+                            isActive: app.isActive(conversationId: conversation.id), starred: false)
+                .tag(conversation.id)
+                .swipeActions {
+                    StarButton(starred: true) { setStarred(conversation, false) }
+                }
+                .contextMenu {
+                    StarButton(starred: true) { setStarred(conversation, false) }
+                    if let client = app.client {
+                        Link(destination: client.webURL(conversationId: conversation.id)) {
+                            Label("Open on the Web", systemImage: "safari")
+                        }
+                    }
+                }
+        }
+    }
+
+    private func setStarred(_ conversation: Conversation, _ on: Bool) {
+        Task {
+            do {
+                try await app.setStarred(conversationId: conversation.id, on)
+            } catch {
+                actionError = error.localizedDescription
+            }
         }
     }
 
@@ -166,6 +226,8 @@ private struct ConversationRow: View {
     let title: String
     let conversation: Conversation
     let isActive: Bool
+    /// Marks the row with a star (the Chats list; the Starred list needs none).
+    let starred: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -180,12 +242,19 @@ private struct ConversationRow: View {
                     Text(title)
                         .lineLimit(1)
                         .font(conversation.unread ? .body.weight(.semibold) : .body)
+                    if starred { StarMark() }
                     if isActive {
                         ProgressView()
                             .controlSize(.mini)
                     }
                 }
                 HStack(spacing: 6) {
+                    if conversation.scheduleId != nil {
+                        Label(conversation.scheduleTitle ?? "Scheduled", systemImage: "clock")
+                            .labelStyle(.titleAndIcon)
+                            .lineLimit(1)
+                        Text("·")
+                    }
                     Text(conversation.updatedAt, format: .relative(presentation: .named))
                     if conversation.needsAnswer {
                         Text("Needs answer")
@@ -207,6 +276,31 @@ private struct ConversationRow: View {
             }
         }
         .padding(.vertical, 2)
-        .accessibilityLabel(conversation.unread ? "\(title), unread" : title)
+        .accessibilityLabel([title, starred ? "starred" : nil, conversation.unread ? "unread" : nil].compactMap { $0 }.joined(separator: ", "))
+    }
+}
+
+/// Stars or unstars a conversation, in a swipe action or a context menu.
+struct StarButton: View {
+    let starred: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            starred
+                ? Label("Unstar", systemImage: "star.slash")
+                : Label("Star", systemImage: "star")
+        }
+        .tint(.yellow)
+    }
+}
+
+/// The small star a starred conversation's row carries.
+struct StarMark: View {
+    var body: some View {
+        Image(systemName: "star.fill")
+            .font(.caption2)
+            .foregroundStyle(.yellow)
+            .accessibilityLabel("Starred")
     }
 }

@@ -132,6 +132,13 @@ Both interfaces have all of these, except where noted:
   [the models](#models) cedar can use, its Brave Search and Best Buy keys and its Google account
 - [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
+- Starred conversations: the star button in the header stars the open conversation, a chat or a
+  scheduled run alike, and a **Starred** list at the top of the sidebar (the drawer in the other
+  styles) lists them, most recently starred first, with a clock on scheduled runs. Stars are kept
+  by this server, so the same list shows in every browser, the
+  [Cedar app for macOS and Windows](../desktop/README.md) and the Cedar iOS app; a page picks up
+  stars set elsewhere when it comes back into view, and every minute while it is shown
+  (`star.js` and `star.css`)
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, listed in the sidebar with
   every run's result
@@ -157,7 +164,8 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `clarify-view.js` and `clarify-view.css` for clarifying questions,
-`schedule.js` and `schedule.css` for scheduled agents, `notify.js` and `notify.css` for the inbox
+`schedule.js` and `schedule.css` for scheduled agents, `star.js` and `star.css` for starred
+conversations, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
 push, and
 `models.js` and `models.css` for the send button's model menu, `settings-shell.js` for the Settings
@@ -493,6 +501,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
 | `POST /api/conversations/{id}/compact` | Have cedar write one prompt for the conversation so far: `{prompt, source}` where `source` is `run` or, when cedar has lost the run, `history`. Returns 409 while a response is running, 404 without a finished response |
+| `PUT` / `DELETE /api/conversations/{id}/star` | Star or unstar the conversation (a chat or a scheduled run) for every client. Both are idempotent; starring again keeps the first `starred_at`. Returns the conversation |
+| `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, scheduled runs included, each with `schedule_title` (the schedule a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
