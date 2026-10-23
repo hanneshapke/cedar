@@ -113,7 +113,7 @@ serve_stop() {
 # --- pairing the iOS app ------------------------------------------------------------------
 
 # pair: print the QR code the iOS app scans under Settings → Scan QR Code. It carries
-# cedar://connect?server=<url>&token=<token>, the same link the Mac app shows (desktop/src/connect.rs;
+# cedar://connect?server=<url>&token=<token>, the same link the Mac app shows (pairing/src/connect.rs;
 # the iOS app reads it in ConnectionCode.swift). The address is CHAT_PUBLIC_URL when that is HTTPS,
 # else the tailnet address `tailscale serve` gives the chat UI.
 pair() {

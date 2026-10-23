@@ -855,6 +855,67 @@ async fn access_token_guards_the_api_but_not_the_page() {
     assert!(page.contains("<script src=\"/ui-pref.js\">"));
 }
 
+#[tokio::test]
+async fn pairing_waits_for_https() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "letmein"), ("CHAT_TAILSCALE_CLI", "/nonexistent/tailscale")]).await;
+    assert_eq!(h.call(Method::GET, "/api/pairing", None, None).await.0, StatusCode::UNAUTHORIZED);
+    let (status, body) = h.call(Method::GET, "/api/pairing", Some("letmein"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let p: Value = serde_json::from_str(&body).unwrap();
+    // CHAT_PUBLIC_URL is the plain-http default, which the iOS app can't use.
+    assert_eq!(p["server"], Value::Null);
+    assert_eq!(p["link"], Value::Null);
+    assert_eq!(p["qr_svg"], Value::Null);
+    assert_eq!(p["on_tailnet"], false);
+    assert_eq!(p["access_token"], "letmein");
+    assert_eq!(p["platform"], std::env::consts::OS);
+    assert_eq!(p["tailscale"]["state"], "unavailable");
+    assert!(p["tailscale"]["detail"].as_str().unwrap().contains("/nonexistent/tailscale"));
+}
+
+/// A stand-in for the tailscale CLI that prints `status`, and fails like a logged-out one when told.
+#[cfg(unix)]
+fn fake_tailscale(name: &str, status: &str, exit: i32) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("cedar-chat-ts-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("tailscale");
+    std::fs::write(&bin, format!("#!/bin/sh\n[ \"$1 $2\" = \"status --json\" ] || exit 9\ncat <<'EOF'\n{status}\nEOF\nexit {exit}\n")).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    bin.to_string_lossy().into_owned()
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn pairing_on_the_tailnet_gives_the_code() {
+    let ready = r#"{"BackendState": "Running", "Self": {"DNSName": "box.tail1234.ts.net."}, "CertDomains": ["box.tail1234.ts.net"]}"#;
+    let cli = fake_tailscale("ready", ready, 0);
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "tok&en"), ("CHAT_PUBLIC_URL", "https://box.tail1234.ts.net"), ("CHAT_TAILSCALE_CLI", &cli)]).await;
+    let (status, body) = h.call(Method::GET, "/api/pairing", Some("tok&en"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let p: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(p["server"], "https://box.tail1234.ts.net");
+    assert_eq!(p["on_tailnet"], true);
+    assert_eq!(p["tailscale"]["state"], "ready");
+    assert_eq!(p["tailscale"]["name"], "box.tail1234.ts.net");
+    // The link the iOS app parses (ConnectionCode.swift), with the token encoded.
+    assert_eq!(p["link"], "cedar://connect?server=https%3A%2F%2Fbox.tail1234.ts.net&token=tok%26en");
+    assert!(p["qr_svg"].as_str().unwrap().starts_with("<svg"));
+
+    // A logged-out Tailscale prints its status and exits non-zero; the page still learns why.
+    let cli = fake_tailscale("logged-out", r#"{"BackendState": "NeedsLogin", "Self": {"DNSName": ""}}"#, 1);
+    let h = Harness::new(&[("CHAT_PUBLIC_URL", "https://chat.example:8443"), ("CHAT_TAILSCALE_CLI", &cli)]).await;
+    let (_, p) = h.json(Method::GET, "/api/pairing", None).await;
+    assert_eq!(p["tailscale"]["state"], "logged_out");
+    assert!(p["tailscale"]["detail"].as_str().unwrap().contains("not logged in"));
+    // The user's own HTTPS address works too, just not as a tailnet one; without a token the
+    // code carries an empty one.
+    assert_eq!(p["server"], "https://chat.example:8443");
+    assert_eq!(p["on_tailnet"], false);
+    assert_eq!(p["access_token"], Value::Null);
+    assert_eq!(p["link"], "cedar://connect?server=https%3A%2F%2Fchat.example%3A8443&token=");
+}
+
 async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
     h.call_full(Request::builder().uri(uri).body(Body::empty()).unwrap()).await
 }
@@ -907,6 +968,9 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/notify.css\""), "{uri} loads the inbox styles");
             assert!(page.contains("id=\"inbox-btn\""), "{uri} has the inbox button");
             assert!(page.contains("id=\"notify-section\""), "{uri} has the Notifications settings");
+            assert!(page.contains("<script src=\"/pairing.js\">"), "{uri} loads the iPhone settings");
+            assert!(page.contains("id=\"iphone-section\""), "{uri} has the iPhone settings");
+            assert!(page.find("/settings-shell.js") < page.find("/pairing.js"), "{uri} loads the iPhone page after the frame it registers with");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("<script src=\"/settings-shell.js\">"), "{uri} loads the Settings dialog's frame");
             assert!(
@@ -960,6 +1024,7 @@ async fn both_uis_are_served() {
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
         ("/attach.css", "text/css; charset=utf-8", ".cedar-attach"),
         ("/notify.js", "text/javascript; charset=utf-8", "cedarNotify"),
+        ("/pairing.js", "text/javascript; charset=utf-8", "cedarPairing"),
         ("/notify.css", "text/css; charset=utf-8", ".cedar-inbox"),
         ("/sw.js", "text/javascript; charset=utf-8", "showNotification"),
     ] {

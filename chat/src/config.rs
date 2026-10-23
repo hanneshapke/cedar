@@ -28,6 +28,9 @@ pub struct Config {
     /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
     /// addresses (for a mock in tests, or a relay).
     pub apns_url: Option<String>,
+    /// The tailscale CLI Settings -> iPhone asks about Tailscale, when it isn't in the usual places
+    /// (or, in tests, a fake).
+    pub tailscale_cli: Option<String>,
 }
 
 impl Config {
@@ -61,6 +64,7 @@ impl Config {
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
             apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
+            tailscale_cli: get("CHAT_TAILSCALE_CLI").map(|p| p.trim().to_string()),
         };
         if cfg.history_max_bytes > 60_000 {
             // cedar rejects prompts over 100 KB; leave room for the new message itself.
@@ -105,6 +109,7 @@ mod tests {
         assert!(Config::from_lookup(lookup(&[])).is_err());
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_HISTORY_MAX_BYTES", "999999")])).is_err());
         assert!(cfg.apns_url.is_none());
+        assert!(cfg.tailscale_cli.is_none());
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "http://127.0.0.1:1/apns/")])).unwrap();
         assert_eq!(cfg.apns_url.as_deref(), Some("http://127.0.0.1:1/apns"));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "apns.example")])).is_err());

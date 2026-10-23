@@ -3,7 +3,7 @@ import XCTest
 
 final class ConnectionCodeTests: XCTestCase {
     func testReadsTheMacAppsLink() {
-        // As desktop/src/connect.rs writes it: form-encoded, so ':' and '/' are escaped.
+        // As pairing/src/connect.rs writes it: form-encoded, so ':' and '/' are escaped.
         let code = ConnectionCode("cedar://connect?server=https%3A%2F%2Fmy-mac.tail1234.ts.net&token=ab%26c%3Dd")
         XCTAssertEqual(code, ConnectionCode(serverURL: "https://my-mac.tail1234.ts.net", accessToken: "ab&c=d"))
         XCTAssertEqual(ConnectionCode("cedar://connect?server=https://m.t.ts.net:8443")?.serverURL, "https://m.t.ts.net:8443")

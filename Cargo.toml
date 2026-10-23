@@ -40,7 +40,7 @@ http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 
 [workspace]
-members = [".", "chat"]
+members = [".", "chat", "pairing"]
 # The desktop app (a Tauri crate) is built on its own: it needs system libraries the servers don't.
 exclude = ["desktop"]
 

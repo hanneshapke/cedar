@@ -233,6 +233,7 @@ Server) or set `PRODUCTS=off` on cedar to remove the tool.
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
+| `CHAT_TAILSCALE_CLI` | found | The `tailscale` CLI that Settings → iPhone asks about Tailscale, when it isn't in the usual places or on `PATH` |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -399,6 +400,21 @@ sent with every message (as the entry's id and the level), cedar checks them aga
 and the conversation remembers them, so opening it again shows the choice its last message used.
 Until cedar has a model registered, the message box says so and sending is off.
 
+### Pairing the iOS app
+
+**Settings → iPhone** has what the [iOS app](../iOS/README.md) needs to connect: the chat's
+HTTPS address, the access token (and the admin token, if this browser has entered it), and the QR
+code the app scans under Settings → **Scan QR Code** (`cedar://connect?server=…&token=…`, drawn by
+the server and shown only on request, since it holds the token). The app connects over HTTPS only,
+so the address is `CHAT_PUBLIC_URL` when it is an `https://` one: the tailnet address that the
+[desktop app](../desktop/README.md#using-it-from-an-iphone-or-ipad) and `scripts/cedar-stack.sh`
+start the chat with when they serve it with `tailscale serve`, or your own. The page also runs
+`tailscale status` on the chat's computer and lists what is missing (Tailscale installed, logged
+in, MagicDNS, HTTPS Certificates, the chat served), with how to serve it on this platform, and the
+steps and apps on the phone. It only reports: serving the chat is up to the desktop app or the
+script. The QR code and the Tailscale checks are shared with the desktop app's setup page
+(`../pairing`).
+
 ### Attachments
 
 A paperclip button by the message box attaches files to a message; they can also be dropped on
@@ -500,6 +516,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
 | `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own), plus `defaults`: cedar's own model (`model` and `model_id`, `null` until one is registered), system prompt and turn limit (`null` if cedar can't be reached) |
 | `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
+| `GET /api/pairing` | What the iOS app connects with (Settings → iPhone): `{platform, server, on_tailnet, access_token, link, qr_svg, tailscale: {state, name, detail}}`. `server` (and `link`, `qr_svg`) is `null` unless `CHAT_PUBLIC_URL` is `https://`; `tailscale.state` is `missing`, `unavailable`, `logged_out`, `stopped`, `connecting`, `no_magic_dns`, `no_https` or `ready` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |
