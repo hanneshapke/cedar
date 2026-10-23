@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- **Starred conversations.** Star a chat or a scheduled run from its header; the starred ones are listed under Starred at the top of the sidebar. Stars are kept by the chat server, so the list is the same on the web, in the Mac and Windows app and in the iOS app (#72).
+- **Settings → iPhone.** The chat's HTTPS address, access token and the QR code the iOS app scans, with a check of what Tailscale on this computer still needs (#71).
+- iOS: switch the sidebar between Chats, Starred and Scheduled; scheduled agents list their runs, with Run now, Pause and Resume (#69, #72). Fix: opening a scheduled run no longer shows an empty chat marked "cancelled" (#69).
+- Landing page: Cedar for Windows, download buttons that follow the visitor's OS (#66), and a Cedar vs. comparison picker (#68).
+
 ## 0.1.2
 
 - **Fix: Cedar for Windows starts its servers on PCs without the Visual C++ Redistributable.** In 0.1.1, cedar.exe and cedar-chat.exe loaded `VCRUNTIME140.dll`, which Windows doesn't ship, so they failed with "VCRUNTIME140.dll was not found". The C runtime is now linked in, and the release checks that no executable needs the DLL.

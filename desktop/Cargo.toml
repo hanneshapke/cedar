@@ -2,7 +2,7 @@
 name = "cedar-app"
 # Keep in step with the workspace version in ../Cargo.toml: the release workflow checks both, and
 # this version picks the sandbox images the app pulls (ghcr.io/hanneshapke/cedar-sandbox:<version>).
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Cedar for macOS and Windows: a menu bar / tray app that runs the cedar agent server and its chat UI"
 license = "Apache-2.0"
