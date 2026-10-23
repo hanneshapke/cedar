@@ -106,6 +106,17 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(conversationId)/seen", method: "POST"))
     }
 
+    /// Starred conversations, most recently starred first: chats and scheduled runs alike.
+    func starred() async throws -> [Conversation] {
+        let list: ConversationList = try await decode(makeRequest("api/starred"))
+        return list.conversations
+    }
+
+    /// Stars or unstars the conversation, for every device. Both are idempotent.
+    func setStarred(conversationId: String, starred: Bool) async throws -> Conversation {
+        try await decode(makeRequest("api/conversations/\(conversationId)/star", method: starred ? "PUT" : "DELETE"))
+    }
+
     // MARK: Schedules
 
     func schedules() async throws -> [Schedule] {

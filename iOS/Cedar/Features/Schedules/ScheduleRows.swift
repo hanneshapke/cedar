@@ -70,11 +70,18 @@ struct ScheduleRows: View {
             }
             ForEach(runs) { run in
                 if let conversationId = run.conversationId {
-                    RunRow(run: run)
+                    let starred = app.isStarred(conversationId: conversationId)
+                    RunRow(run: run, starred: starred)
                         .tag(conversationId)
+                        .swipeActions {
+                            StarButton(starred: starred) { setStarred(conversationId, !starred) }
+                        }
+                        .contextMenu {
+                            StarButton(starred: starred) { setStarred(conversationId, !starred) }
+                        }
                 } else {
-                    // It never started: nothing to open.
-                    RunRow(run: run)
+                    // It never started: nothing to open (or star).
+                    RunRow(run: run, starred: false)
                 }
             }
         } else {
@@ -101,6 +108,16 @@ struct ScheduleRows: View {
         Task {
             do {
                 try await app.runNow(schedule)
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func setStarred(_ conversationId: String, _ on: Bool) {
+        Task {
+            do {
+                try await app.setStarred(conversationId: conversationId, on)
             } catch {
                 actionError = error.localizedDescription
             }
@@ -170,6 +187,7 @@ private struct ScheduleRow: View {
 
 private struct RunRow: View {
     let run: ScheduleRun
+    let starred: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -180,8 +198,11 @@ private struct RunRow: View {
                 .opacity(run.unread ? 1 : 0)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(run.dueAt, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
-                    .font(run.unread ? .subheadline.weight(.semibold) : .subheadline)
+                HStack(spacing: 4) {
+                    Text(run.dueAt, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+                        .font(run.unread ? .subheadline.weight(.semibold) : .subheadline)
+                    if starred { StarMark() }
+                }
                 HStack(spacing: 4) {
                     RunOutcomeLabel(outcome: run.outcome)
                     if run.manual { Text("· Run now") }

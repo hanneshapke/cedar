@@ -8,7 +8,7 @@ use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
 use crate::notify;
 use crate::pairing;
-use crate::store::{AttachmentInfo, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
+use crate::store::{AttachmentInfo, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, StarredConversation, Store, Turn};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use chrono::Utc;
 use futures_util::Stream;
@@ -100,6 +100,9 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
 const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
+/// The star button and the Starred list in the conversations sidebar; every UI loads it.
+const STAR_JS: &str = include_str!("../static/star.js");
+const STAR_CSS: &str = include_str!("../static/star.css");
 /// The inbox of finished responses, the unread count in the title, the Notifications settings and
 /// the push subscription; both UIs load it.
 const NOTIFY_JS: &str = include_str!("../static/notify.js");
@@ -231,6 +234,8 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/tools", put(set_conversation_tools))
         .route("/conversations/{id}/compact", post(compact_conversation))
         .route("/conversations/{id}/seen", post(mark_seen))
+        .route("/conversations/{id}/star", put(star_conversation).delete(unstar_conversation))
+        .route("/starred", get(list_starred))
         .route("/inbox", get(inbox))
         .route("/events", get(notice_events))
         .route("/notifications", get(get_notifications).put(put_notifications))
@@ -305,6 +310,8 @@ pub fn router(state: AppState) -> Router {
         .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
+        .route("/star.js", get(|| async { asset(JS, STAR_JS) }))
+        .route("/star.css", get(|| async { asset(CSS, STAR_CSS) }))
         .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
         .route("/notify.css", get(|| async { asset(CSS, NOTIFY_CSS) }))
         .route("/pairing.js", get(|| async { asset(JS, PAIRING_JS) }))
@@ -515,6 +522,33 @@ async fn delete_conversation(State(state): State<AppState>, Path(id): Path<Strin
     }
     state.store.delete_conversation(conversation.id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+struct StarredList {
+    conversations: Vec<StarredConversation>,
+}
+
+/// Starred conversations, most recently starred first: chats and scheduled runs alike, so every
+/// client (the web pages, the desktop app, the iOS app) shows the same list.
+async fn list_starred(State(state): State<AppState>) -> Result<Json<StarredList>, AppError> {
+    Ok(Json(StarredList { conversations: state.store.list_starred(MAX_CONVERSATIONS).await? }))
+}
+
+async fn star_conversation(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
+    set_starred(&state, &id, true).await
+}
+
+async fn unstar_conversation(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
+    set_starred(&state, &id, false).await
+}
+
+/// Both are idempotent, so a client that retries, or two clients that star the same
+/// conversation, end up in the same state.
+async fn set_starred(state: &AppState, id: &str, starred: bool) -> Result<Json<Conversation>, AppError> {
+    let conversation = find_conversation(state, id).await?;
+    state.store.set_starred(conversation.id, starred).await?;
+    Ok(Json(state.store.get_conversation(conversation.id).await?.unwrap_or(conversation)))
 }
 
 /// The conversation has been looked at: its finished responses leave the inbox. Unfinished

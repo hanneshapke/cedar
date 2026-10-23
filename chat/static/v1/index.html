@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="/product-view.css">
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/star.css">
   <link rel="stylesheet" href="/notify.css">
   <link rel="stylesheet" href="/settings.css">
   <link rel="stylesheet" href="/models.css">
@@ -40,6 +41,10 @@
         <span class="plus" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
         New chat
       </button>
+      <div class="cedar-star-side" id="starred-section" data-starred hidden>
+        <div class="cedar-star-side-head"><span class="section-label">Starred</span><span class="cedar-star-count"></span></div>
+        <nav class="cedar-star-links" aria-label="Starred conversations"></nav>
+      </div>
       <div class="section-label">Recents</div>
       <nav class="conv-list" id="conv-list"></nav>
       <div class="cedar-sched-side" id="schedules-section" data-schedules hidden>
@@ -59,6 +64,7 @@
           <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
           <span class="cedar-sched-badge" id="schedule-badge" hidden>Scheduled run</span>
         </div>
+        <button class="icon-btn" id="star-btn" type="button" data-star-toggle hidden></button>
         <button class="icon-btn" id="schedule-btn" type="button" aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
         </button>
@@ -191,6 +197,7 @@
   <script src="/product-view.js"></script>
   <script src="/models.js"></script>
   <script src="/schedule.js"></script>
+  <script src="/star.js"></script>
   <script src="/notify.js"></script>
   <script src="/pairing.js"></script>
   <script src="/settings.js"></script>
