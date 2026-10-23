@@ -37,7 +37,8 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered
 - Markdown rendering: headings, lists, quotes, tables, and code blocks with a copy button
-- Connecting by scanning the QR code the Cedar Mac app or `scripts/cedar-stack.sh --pair` shows
+- Connecting by scanning the QR code the chat's Settings → iPhone page, the Cedar desktop app or
+  `scripts/cedar-stack.sh --pair` shows
 - iPhone and iPad layouts, light and dark mode
 
 ## Requirements

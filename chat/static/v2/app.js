@@ -1575,6 +1575,7 @@ async function init() {
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: loadConversations });
+  cedarPairing.init({ api, toast });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();

@@ -114,7 +114,9 @@ both servers stay on loopback.
    them in: *Copy address* and *Copy access token* put them on the clipboard.
 
 The QR code holds `cedar://connect?server=<address>&token=<access token>` (made in
-`src/connect.rs`; the iOS app reads it in `ConnectionCode.swift`). It is drawn only when asked
+`../pairing/src/connect.rs`, shared with the chat; the iOS app reads it in `ConnectionCode.swift`).
+Once sharing is on, the chat's own **Settings → iPhone** page shows the same code, the address
+and token, and what Tailscale still needs, so it can be paired from the chat window too. It is drawn only when asked
 and hidden again with *Hide QR code*, since anyone who scans it can use your Cedar.
 
 The setting is saved, so sharing comes back on every time Cedar starts. Cedar turns the serve

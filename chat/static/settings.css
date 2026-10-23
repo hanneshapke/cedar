@@ -203,6 +203,25 @@
 .cedar-set-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .cedar-set-actions .primary:disabled { opacity: .5; cursor: default; }
 
+/* -- the iPhone page (pairing.js) ----------------------------------------------------------- */
+
+.cedar-pair-token { font-family: var(--mono); }
+.cedar-pair-acts { display: flex; gap: 8px; }
+/* Black on white whatever the theme, so cameras read it. */
+.cedar-pair-qr { display: flex; flex-direction: column; gap: 8px; }
+.cedar-pair-qr[hidden] { display: none; }
+.cedar-pair-qr-code { width: 220px; padding: 0; border-radius: 8px; overflow: hidden; line-height: 0; background: #fff; }
+/* Some UIs stroke every svg (their icons); the code is fills only. */
+.cedar-pair-qr-code svg { width: 220px; height: 220px; stroke: none; }
+.cedar-pair-checks { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.cedar-pair-checks li { display: flex; gap: 8px; }
+.cedar-pair-checks li.done { color: var(--ink); }
+.cedar-pair-mark { flex: none; width: 14px; text-align: center; }
+.cedar-pair-checks li.done .cedar-pair-mark { color: var(--accent); }
+.cedar-pair-checks code, .cedar-pair-steps code { font-size: 12px; font-family: var(--mono); }
+.cedar-pair-steps { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.55; }
+.cedar-pair-steps li { margin: 4px 0; }
+
 /* -- narrow ---------------------------------------------------------------------------------- */
 
 @media (max-width: 760px) {

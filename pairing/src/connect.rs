@@ -1,7 +1,7 @@
 //! The QR code the iOS app scans to connect: `cedar://connect?server=<url>&token=<token>`, with
-//! the chat's tailnet address and its access token. The iOS app parses the same link
+//! the chat's HTTPS address and its access token. The iOS app parses the same link
 //! (`ConnectionCode.swift`), so the two must agree on it. `scripts/cedar-stack.sh --pair` makes
-//! the same link on Linux.
+//! the same link in a terminal.
 
 use anyhow::Result;
 use qrcode::render::svg;

@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
 use crate::notify;
+use crate::pairing;
 use crate::store::{AttachmentInfo, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, Store, Turn};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use chrono::Utc;
@@ -103,6 +104,8 @@ const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
 /// the push subscription; both UIs load it.
 const NOTIFY_JS: &str = include_str!("../static/notify.js");
 const NOTIFY_CSS: &str = include_str!("../static/notify.css");
+/// The iPhone page of Settings: the QR code and token the iOS app connects with; every UI loads it.
+const PAIRING_JS: &str = include_str!("../static/pairing.js");
 /// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
 const SW_JS: &str = include_str!("../static/sw.js");
 /// The plan, approval cards, folded reasoning, sources and citations; v3 and v4 load it.
@@ -247,6 +250,7 @@ pub fn router(state: AppState) -> Router {
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
         .route("/settings", get(get_settings).put(put_settings))
+        .route("/pairing", get(get_pairing))
         .route("/tools", get(list_tools))
         .route("/models", get(list_models))
         .route("/integrations", get(get_integrations))
@@ -303,6 +307,7 @@ pub fn router(state: AppState) -> Router {
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
         .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
         .route("/notify.css", get(|| async { asset(CSS, NOTIFY_CSS) }))
+        .route("/pairing.js", get(|| async { asset(JS, PAIRING_JS) }))
         .route("/sw.js", get(|| async { asset(JS, SW_JS) }))
         .route("/trust-view.js", get(|| async { asset(JS, TRUST_VIEW_JS) }))
         .route("/trust-view.css", get(|| async { asset(CSS, TRUST_VIEW_CSS) }))
@@ -425,6 +430,12 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
         "auth_required": state.token_digest.is_some(),
         "admin_enabled": state.admin_digest.is_some(),
     }))
+}
+
+/// Settings -> iPhone: the address, token and QR code the iOS app connects with, and whether
+/// Tailscale is ready to serve the chat to it (see `pairing`).
+async fn get_pairing(State(state): State<AppState>) -> Json<pairing::Pairing> {
+    Json(pairing::pairing(&state).await)
 }
 
 // -- conversations --------------------------------------------------------------------------

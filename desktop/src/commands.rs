@@ -79,8 +79,8 @@ pub fn share_qr(state: State<'_, AppState>) -> Result<String, String> {
     let url = state
         .share_url()
         .ok_or("the chat is not shared on the tailnet")?;
-    let link = crate::connect::link(&url, &state.config().secrets.chat_access_token);
-    crate::connect::qr_svg(&link).map_err(fail)
+    let link = cedar_pairing::connect::link(&url, &state.config().secrets.chat_access_token);
+    cedar_pairing::connect::qr_svg(&link).map_err(fail)
 }
 
 #[tauri::command]

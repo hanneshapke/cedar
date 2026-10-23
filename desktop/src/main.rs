@@ -9,7 +9,6 @@
 mod app;
 mod commands;
 mod config;
-mod connect;
 mod docker;
 mod models;
 mod notify;
