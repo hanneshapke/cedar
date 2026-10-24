@@ -61,8 +61,7 @@ private fun WorkspaceImage(client: ChatClient, conversationId: String, path: Str
     val scope = rememberCoroutineScope()
     val key = "${client.baseURL}|$conversationId|$path"
     val state by produceState<Loaded>(ImageCache.get(key) ?: Loaded.Loading, key) {
-        if (value is Loaded.Done) return@produceState
-        value = try {
+        value = (value as? Loaded.Done) ?: try {
             val bytes = client.file(conversationId, path)
             if (bytes.size > ImageCache.MAX_BYTES) {
                 Loaded.Failed

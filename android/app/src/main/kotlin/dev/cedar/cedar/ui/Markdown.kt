@@ -54,12 +54,12 @@ private fun Block(block: MarkdownBlock) {
     when (block) {
         is MarkdownBlock.Heading -> InlineText(
             block.text,
-            when (block.level) {
+            Modifier.padding(top = 4.dp),
+            style = when (block.level) {
                 1 -> type.titleLarge
                 2 -> type.titleMedium
                 else -> type.titleSmall
             }.copy(fontWeight = FontWeight.Bold),
-            Modifier.padding(top = 4.dp),
         )
         is MarkdownBlock.Paragraph -> InlineText(block.text)
         is MarkdownBlock.Code -> CodeBox(block.language.ifEmpty { null }, block.code)
@@ -75,14 +75,14 @@ private fun Block(block: MarkdownBlock) {
         is MarkdownBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
             Spacer(Modifier.width(3.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
             Spacer(Modifier.width(10.dp))
-            InlineText(block.text, type.bodyLarge.copy(color = CedarColors.secondaryText))
+            InlineText(block.text, style = type.bodyLarge.copy(color = CedarColors.secondaryText))
         }
         is MarkdownBlock.Table -> Row(Modifier.horizontalScroll(rememberScrollState())) {
             // Column by column, so each is as wide as its widest cell.
             block.header.indices.forEach { column ->
                 Column(Modifier.padding(end = 16.dp).widthIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    InlineText(block.header[column], type.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                    block.rows.forEach { row -> InlineText(row.getOrElse(column) { "" }, type.bodyMedium) }
+                    InlineText(block.header[column], style = type.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                    block.rows.forEach { row -> InlineText(row.getOrElse(column) { "" }, style = type.bodyMedium) }
                 }
             }
         }
@@ -92,7 +92,7 @@ private fun Block(block: MarkdownBlock) {
 
 /** A run of inline Markdown (emphasis, code spans, links), keeping line breaks. */
 @Composable
-private fun InlineText(source: String, style: TextStyle = MaterialTheme.typography.bodyLarge, modifier: Modifier = Modifier) {
+private fun InlineText(source: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.bodyLarge) {
     val link = MaterialTheme.colorScheme.primary
     val code = MaterialTheme.colorScheme.surfaceContainerHighest
     val text = remember(source, link, code) { inline(source, link, code) }

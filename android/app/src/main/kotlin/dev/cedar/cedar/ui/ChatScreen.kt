@@ -314,11 +314,9 @@ private fun Composer(chat: ChatModel) {
 @Composable
 private fun AttachmentChip(file: OutgoingAttachment, remove: () -> Unit) {
     val thumbnail by produceState<ImageBitmap?>(null, file.id) {
-        if (file.isImage) {
-            value = withContext(Dispatchers.Default) {
-                val options = BitmapFactory.Options().apply { inSampleSize = 8 }
-                BitmapFactory.decodeByteArray(file.data, 0, file.data.size, options)?.asImageBitmap()
-            }
+        value = if (!file.isImage) null else withContext(Dispatchers.Default) {
+            val options = BitmapFactory.Options().apply { inSampleSize = 8 }
+            BitmapFactory.decodeByteArray(file.data, 0, file.data.size, options)?.asImageBitmap()
         }
     }
     Row(
