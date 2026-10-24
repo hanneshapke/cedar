@@ -23,7 +23,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,8 +63,10 @@ private fun WorkspaceImage(client: ChatClient, conversationId: String, path: Str
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val key = "${client.baseURL}|$conversationId|$path"
-    val state by produceState<Loaded>(ImageCache.get(key) ?: Loaded.Loading, key) {
-        value = (value as? Loaded.Done) ?: try {
+    var state by remember(key) { mutableStateOf<Loaded>(ImageCache.get(key) ?: Loaded.Loading) }
+    LaunchedEffect(key) {
+        if (state is Loaded.Done) return@LaunchedEffect
+        state = try {
             val bytes = client.file(conversationId, path)
             if (bytes.size > ImageCache.MAX_BYTES) {
                 Loaded.Failed

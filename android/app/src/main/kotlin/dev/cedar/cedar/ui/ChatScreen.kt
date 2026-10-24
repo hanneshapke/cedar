@@ -58,7 +58,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -313,10 +312,13 @@ private fun Composer(chat: ChatModel) {
 /** A file picked for the next message, with a thumbnail for images and a remove button. */
 @Composable
 private fun AttachmentChip(file: OutgoingAttachment, remove: () -> Unit) {
-    val thumbnail by produceState<ImageBitmap?>(null, file.id) {
-        value = if (!file.isImage) null else withContext(Dispatchers.Default) {
-            val options = BitmapFactory.Options().apply { inSampleSize = 8 }
-            BitmapFactory.decodeByteArray(file.data, 0, file.data.size, options)?.asImageBitmap()
+    var thumbnail by remember(file.id) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file.id) {
+        if (file.isImage) {
+            thumbnail = withContext(Dispatchers.Default) {
+                val options = BitmapFactory.Options().apply { inSampleSize = 8 }
+                BitmapFactory.decodeByteArray(file.data, 0, file.data.size, options)?.asImageBitmap()
+            }
         }
     }
     Row(
