@@ -2532,7 +2532,7 @@ async fn android_push_goes_through_fcm_and_unifiedpush_and_drops_dead_phones() {
     assert_eq!(pushes.len(), 3);
     for (_, _, body) in &pushes {
         let text = String::from_utf8_lossy(body);
-        assert!(!text.contains("Secret plans") && !text.contains("42") && !text.contains("title") && !text.contains("body"), "{text}");
+        assert!(!text.contains("Secret plans") && !text.contains("The answer is") && !text.contains("title") && !text.contains("body"), "{text}");
     }
     let payload: Value = serde_json::from_slice(&pushes.iter().find(|(n, _, _)| n == "ntfy-1").unwrap().2).unwrap();
     assert_eq!(payload["kind"], "turn");

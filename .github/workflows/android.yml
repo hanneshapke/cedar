@@ -55,11 +55,15 @@ jobs:
       - name: Core unit tests
         run: ./gradlew --no-daemon :core:test
 
-      - name: Lint
-        run: ./gradlew --no-daemon :app:lintDebug
-
       - name: Debug APK
         run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Lint
+        run: |
+          ./gradlew --no-daemon :app:lintDebug || {
+            cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            exit 1
+          }
 
       - name: Keep the debug APK
         uses: actions/upload-artifact@v4

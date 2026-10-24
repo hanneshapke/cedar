@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Cedar for Android.** A native Kotlin/Compose port of the iOS app in `android/`: Chats, Starred and Scheduled, streamed turns with tool calls, plans, approvals and questions, attachments, agent images, cards (maps on OpenStreetMap, charts, recipes, routes, stocks, products), and QR pairing. Releases attach a signed `Cedar-<version>-android.apk`; `android/build-apk.sh` builds one yourself (#60).
+- **Android push.** A new *Android push* notification method in the chat, through Firebase Cloud Messaging or UnifiedPush (ntfy, without Google). Pushes carry only ids; the app fetches the text from your server (#60).
+- Settings → iPhone is now Settings → Phone, with the steps for Android too.
+
 ## 0.1.3
 
 - **Starred conversations.** Star a chat or a scheduled run from its header; the starred ones are listed under Starred at the top of the sidebar. Stars are kept by the chat server, so the list is the same on the web, in the Mac and Windows app and in the iOS app (#72).

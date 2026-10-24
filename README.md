@@ -379,6 +379,15 @@ live tool calls, the agent's images, its clarifying questions and approval promp
 notifications through APNs when a response ends while you are away. Open `iOS/Cedar.xcodeproj`
 in Xcode 16 or newer. See [iOS/README.md](iOS/README.md).
 
+## Android app
+
+`android/` holds the same client for Android 8 and newer, in Kotlin and Jetpack Compose: the
+conversation list with Starred and Scheduled, streamed turns, cards (maps on OpenStreetMap),
+attachments, QR pairing from the chat's Settings → Phone page, and push notifications through
+Google's FCM or, without Google, through ntfy (UnifiedPush). Each GitHub Release carries a signed
+`Cedar-<version>-android.apk`; `android/build-apk.sh` builds one locally. See
+[android/README.md](android/README.md).
+
 ## Configuration
 
 Settings come from environment variables. The important ones:
@@ -447,7 +456,7 @@ Settings come from environment variables. The important ones:
 | `run_python` | Runs a Python 3 script (`code`, optional `args`) in the container with `/workspace` as working directory and on the import path. Returns what `bash` does. Unlike `bash`, the code needs no shell quoting. |
 | `read_document` | Extracts the text of a PDF, Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), CSV/TSV, or HTML file in the workspace, with tables as Markdown. Takes `path`, optional `pages` (PDF pages or slides, like `2-5` or `1,4-`), `sheet`, and `rows` (spreadsheet or CSV data rows; the header is always shown). |
 | `generate_pdf` | Renders Markdown (default) or HTML to a PDF file in the workspace. Takes `path` (must end in `.pdf`), `content`, optional `format` (`markdown` or `html`) and optional `title`. Returns the page count and size, plus the renderer's warnings (a missing image, say). |
-| `generate_chart` | Draws a chart with matplotlib and saves it as PNG, SVG, or PDF, in the same palette and style as the chat's chart card. Takes `path`, `kind` (`line`, `bar`, `barh`, `area`, `scatter`, `pie`, `histogram`), `labels` (x categories or values), `series` (`[{name?, values}]`, `null` for gaps), and optional `title`, `x_label`, `y_label`, `stacked`, `bins`, `log_scale`, and `band` (`{from, to, label?}`: a shaded range on the value axis, such as a target range). The chat interfaces and the iOS app draw the call's data as an interactive chart card instead of showing the picture ([chat/README.md](chat/README.md)). |
+| `generate_chart` | Draws a chart with matplotlib and saves it as PNG, SVG, or PDF, in the same palette and style as the chat's chart card. Takes `path`, `kind` (`line`, `bar`, `barh`, `area`, `scatter`, `pie`, `histogram`), `labels` (x categories or values), `series` (`[{name?, values}]`, `null` for gaps), and optional `title`, `x_label`, `y_label`, `stacked`, `bins`, `log_scale`, and `band` (`{from, to, label?}`: a shaded range on the value axis, such as a target range). The chat interfaces and the phone apps draw the call's data as an interactive chart card instead of showing the picture ([chat/README.md](chat/README.md)). |
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
 | `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
@@ -699,7 +708,7 @@ print(json.dumps({"lines": text.count("\n"), "words": len(text.split()), "charac
 A tool can also show charts: each line of its output of the form `[chart] {...}`, where the JSON
 is what `generate_chart` takes without a `path` (`kind`, `labels`, `series`, and optionally
 `title`, `x_label`, `y_label`, `stacked`, `bins`, `log_scale`, `band`), is drawn as a chart card by
-the chat interfaces and the iOS app, and left out of the output they show. The model still reads
+the chat interfaces and the phone apps, and left out of the output they show. The model still reads
 the lines, so the tool's description should say they are drawn for the user. At most six are drawn
 per call; a line that isn't a drawable chart stays in the text.
 
