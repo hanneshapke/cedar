@@ -7,7 +7,7 @@ license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1"
-# Settings -> iPhone: the QR code the iOS app scans and the Tailscale checks, shared with the desktop app.
+# Settings -> Phone: the QR code the phone apps scan and the Tailscale checks, shared with the desktop app.
 cedar-pairing = { path = "../pairing" }
 axum = { version = "0.8", features = ["macros"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
@@ -22,7 +22,8 @@ web-push = { version = "0.10", default-features = false }
 # web-push encrypts with OpenSSL (its `ece` dependency has no other backend). Built from source and
 # linked statically, so cedar-chat needs no OpenSSL library at run time: macOS has none of its own,
 # and the signed Mac app's hardened runtime won't load Homebrew's (another team's signature).
-# Needs Perl and make for the build (on Windows, Strawberry Perl, not Git's).
+# Needs Perl and make for the build (on Windows, Strawberry Perl, not Git's). It also signs (RS256)
+# the Firebase service account's token request for Android push.
 openssl = { version = "0.10", features = ["vendored"] }
 # Generates the VAPID key pair (web-push only reads one) and signs the APNs provider token.
 jwt-simple = { version = "0.11", default-features = false }

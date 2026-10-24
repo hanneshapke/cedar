@@ -121,7 +121,7 @@ function render(s) {
       ? 'Not running.'
       : 'Waiting for a model server to be chosen above.';
   }
-  // Sharing with the iOS app
+  // Sharing with the phone apps (iOS, Android)
   const sh = s.share;
   const shareToggle = $('share-toggle');
   if (document.activeElement !== shareToggle && !shareBusy) shareToggle.checked = s.tailscale_share;
@@ -134,7 +134,7 @@ function render(s) {
     $('share-text').textContent = 'Setting up tailscale serve…';
   } else if (sh.state === 'on') {
     dot($('share-dot'), 'ok');
-    $('share-text').textContent = 'In the iOS app’s Settings, scan the QR code, or enter ' + sh.detail + ' and the access token. It works while ' + p.computer + ' is awake and Cedar is running.';
+    $('share-text').textContent = 'In the Cedar app’s Settings (iOS or Android), scan the QR code, or enter ' + sh.detail + ' and the access token. It works while ' + p.computer + ' is awake and Cedar is running.';
   } else if (sh.state === 'failed') {
     dot($('share-dot'), 'bad');
     $('share-text').textContent = 'Not shared yet. Fix the cause, then try again.';

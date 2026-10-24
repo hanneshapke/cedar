@@ -24,7 +24,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &item(OPEN, "Open Cedar")?,
             &item(BROWSER, "Open in Browser")?,
             &item(COPY_TOKEN, "Copy Access Token")?,
-            &item(IPHONE, "iPhone & iPad Access…")?,
+            &item(IPHONE, "Phone Access…")?,
             &PredefinedMenuItem::separator(app)?,
             &item(SETUP, "Model Server & Setup…")?,
             &item(RESTART, "Restart Services")?,

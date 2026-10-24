@@ -1,7 +1,7 @@
-//! Settings -> iPhone: what the Cedar iOS app needs to connect to this chat. The app connects over
-//! HTTPS only, so the address is `CHAT_PUBLIC_URL` when that is an `https://` one: the tailnet
-//! address the desktop app and `scripts/cedar-stack.sh` start the chat with when they serve it with
-//! `tailscale serve`, or the user's own. The QR code and the reading of `tailscale status` are
+//! Settings -> Phone: what the Cedar iOS and Android apps need to connect to this chat. The apps
+//! connect over HTTPS only, so the address is `CHAT_PUBLIC_URL` when that is an `https://` one:
+//! the tailnet address the desktop app and `scripts/cedar-stack.sh` start the chat with when they
+//! serve it with `tailscale serve`, or the user's own. The QR code and the reading of `tailscale status` are
 //! shared with the desktop app's setup page (`cedar_pairing`).
 
 use crate::api::AppState;

@@ -136,7 +136,7 @@ Both interfaces have all of these, except where noted:
   scheduled run alike, and a **Starred** list at the top of the sidebar (the drawer in the other
   styles) lists them, most recently starred first, with a clock on scheduled runs. Stars are kept
   by this server, so the same list shows in every browser, the
-  [Cedar app for macOS and Windows](../desktop/README.md) and the Cedar iOS app; a page picks up
+  [Cedar app for macOS and Windows](../desktop/README.md) and the Cedar iOS and Android apps; a page picks up
   stars set elsewhere when it comes back into view, and every minute while it is shown
   (`star.js` and `star.css`)
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
@@ -147,7 +147,7 @@ Both interfaces have all of these, except where noted:
   on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
   marked "Needs answer". Out of the app, by the method you pick in Settings: a desktop
   notification from the [Cedar app for macOS and Windows](../desktop/README.md), a browser push (tab open or not), a push to the
-  Cedar iOS app, a phone push through Pushover, or an email
+  Cedar iOS or Android app, a phone push through Pushover, or an email
 
 ## Running it
 
@@ -241,7 +241,9 @@ Server) or set `PRODUCTS=off` on cedar to remove the tool.
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
-| `CHAT_TAILSCALE_CLI` | found | The `tailscale` CLI that Settings → iPhone asks about Tailscale, when it isn't in the usual places or on `PATH` |
+| `CHAT_FCM_URL` | `https://fcm.googleapis.com` | Where Android pushes through Firebase go (`…/v1/projects/{project}/messages:send`; for tests) |
+| `CHAT_GOOGLE_TOKEN_URL` | `https://oauth2.googleapis.com/token` | Where the Firebase service account's signed assertion is traded for an access token (for tests) |
+| `CHAT_TAILSCALE_CLI` | found | The `tailscale` CLI that Settings → Phone asks about Tailscale, when it isn't in the usual places or on `PATH` |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -327,6 +329,20 @@ unless the response was looked at in the meantime (a page that watched it end ma
   against this server and allows notifications registers itself and is listed, and can be removed;
   one Apple reports gone is dropped. A tap on the notification opens the conversation in the app.
   `CHAT_APNS_URL` points the pushes somewhere else (a mock in tests).
+- **Android push**: a notification from the Cedar Android app, through Firebase Cloud Messaging
+  (FCM), or through [UnifiedPush](https://unifiedpush.org) on a phone without Google Play
+  services (the [ntfy](https://ntfy.sh) app as the distributor). Every phone that opens the app
+  against this server and allows notifications registers itself with its FCM token or its
+  UnifiedPush endpoint (https only) and is listed, and can be removed; one the service reports
+  gone (FCM: 404, `UNREGISTERED`, or a 400 that blames the token; UnifiedPush: 404 or 410) is
+  dropped. UnifiedPush needs nothing set up here. FCM needs the key of a service account of the
+  Firebase project the app was built with (Firebase console → Project settings → Service
+  accounts → Generate new private key): paste the JSON file; the server signs a token request
+  with it (RS256) and trades it at Google for an access token, kept for 50 minutes. The push
+  carries data only, `{"kind": "turn"|"test", "conversation_id": "<id, empty for a test>",
+  "tag": "<the turn's id>"}`, never the conversation's text: the app fetches what to show from
+  this API, so nothing is sent unencrypted to a UnifiedPush server or through Google.
+  `CHAT_FCM_URL` and `CHAT_GOOGLE_TOKEN_URL` point it somewhere else (a mock in tests).
 - **Phone push via Pushover**: a push to the [Pushover](https://pushover.net) app on your phone.
   Needs an application token (make an application at pushover.net/apps) and your user key.
 - **Email**: a mail through an SMTP server: host, port (left empty, the connection's usual one),
@@ -408,12 +424,12 @@ sent with every message (as the entry's id and the level), cedar checks them aga
 and the conversation remembers them, so opening it again shows the choice its last message used.
 Until cedar has a model registered, the message box says so and sending is off.
 
-### Pairing the iOS app
+### Pairing the iOS and Android apps
 
-**Settings → iPhone** has what the [iOS app](../iOS/README.md) needs to connect: the chat's
+**Settings → Phone** has what the [iOS app](../iOS/README.md) and the Android app need to connect: the chat's
 HTTPS address, the access token (and the admin token, if this browser has entered it), and the QR
-code the app scans under Settings → **Scan QR Code** (`cedar://connect?server=…&token=…`, drawn by
-the server and shown only on request, since it holds the token). The app connects over HTTPS only,
+code both apps scan under Settings → **Scan QR Code** (`cedar://connect?server=…&token=…`, drawn by
+the server and shown only on request, since it holds the token). The apps connect over HTTPS only,
 so the address is `CHAT_PUBLIC_URL` when it is an `https://` one: the tailnet address that the
 [desktop app](../desktop/README.md#using-it-from-an-iphone-or-ipad) and `scripts/cedar-stack.sh`
 start the chat with when they serve it with `tailscale serve`, or your own. The page also runs
@@ -506,8 +522,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
-| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, desktop: {configured, connected_at, listening}, ios: {configured, team_id, key_id, key_set, topic, environment, devices: [{id, name, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
-| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"desktop"\|"browser"\|"ios"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "ios": {"team_id"?, "key_id"?, "private_key"? (the `.p8` file's contents), "topic"?, "environment"?: "production"\|"sandbox"}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser, no registered iPhone, the Mac app never connected) |
+| `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, desktop: {configured, connected_at, listening}, ios: {configured, team_id, key_id, key_set, topic, environment, devices: [{id, name, created_at, last_used_at}]}, android: {configured (FCM set up, or a UnifiedPush phone registered), fcm_configured, project_id, client_email, key_set, devices: [{id, transport: "fcm"\|"unifiedpush", name, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
+| `PUT /api/notifications` | Change any of `{"default_method": "none"\|"desktop"\|"browser"\|"ios"\|"android"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "ios": {"team_id"?, "key_id"?, "private_key"? (the `.p8` file's contents), "topic"?, "environment"?: "production"\|"sandbox"}, "android": {"service_account"? (the Firebase service account's JSON file; checked for `project_id`, `client_email` and an RSA `private_key`)}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser, no registered iPhone or Android phone, only FCM phones and no service account, the Mac app never connected) |
 | `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
 | `GET /api/notifications/desktop/events` | For Cedar for macOS: SSE, a `notification` event `{type, title, body, url, tag}` for every message sent by the `desktop` method. Connecting sets the method up |
 | `POST /api/notifications/push/subscriptions` | A browser's `PushSubscription` (as `JSON.stringify` gives it). Returns the settings plus `subscription_id` |
@@ -516,17 +532,20 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/notifications/apns/devices` | The iOS app registered for push: `{"token": "<the device token, hex>", "name"?}`. Returns the settings plus `device_id`; the same token again renames the device |
 | `DELETE /api/notifications/apns/devices` | `{"token"}`: the app turned push off, or left for another server |
 | `DELETE /api/notifications/apns/devices/{id}` | Remove a registered iPhone |
+| `POST /api/notifications/android/devices` | The Android app registered for push: `{"transport": "fcm"\|"unifiedpush", "token": "<the FCM registration token, or the UnifiedPush endpoint URL, https only>", "name"?}`. Returns the settings plus `device: {id, transport, name, created_at, last_used_at}` and `device_id`; the same token again updates the device |
+| `DELETE /api/notifications/android/devices` | `{"token"}`: the app turned push off, or left for another server |
+| `DELETE /api/notifications/android/devices/{id}` | Remove a registered Android phone |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |
-| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`desktop`, `browser`, `ios`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
+| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
 | `GET /api/schedules/{id}` | `{schedule, runs}`, newest run first, each with its `turn` (refreshed while unfinished) or an `error` if the run could not be started |
 | `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
 | `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
 | `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns}` (`null` means cedar's own), plus `defaults`: cedar's own model (`model` and `model_id`, `null` until one is registered), system prompt and turn limit (`null` if cedar can't be reached) |
 | `PUT /api/settings` | Replace them. Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
-| `GET /api/pairing` | What the iOS app connects with (Settings → iPhone): `{platform, server, on_tailnet, access_token, link, qr_svg, tailscale: {state, name, detail}}`. `server` (and `link`, `qr_svg`) is `null` unless `CHAT_PUBLIC_URL` is `https://`; `tailscale.state` is `missing`, `unavailable`, `logged_out`, `stopped`, `connecting`, `no_magic_dns`, `no_https` or `ready` |
+| `GET /api/pairing` | What the iOS and Android apps connect with (Settings → Phone): `{platform, server, on_tailnet, access_token, link, qr_svg, tailscale: {state, name, detail}}`. `server` (and `link`, `qr_svg`) is `null` unless `CHAT_PUBLIC_URL` is `https://`; `tailscale.state` is `missing`, `unavailable`, `logged_out`, `stopped`, `connecting`, `no_magic_dns`, `no_https` or `ready` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |

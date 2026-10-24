@@ -1,14 +1,14 @@
 # Deploying cedar and the chat UI on a DGX Spark
 
 This guide sets up the whole stack on one NVIDIA DGX Spark and shows how to open the chat UI from
-your laptop, and over HTTPS from your phone with Tailscale (the iOS app needs HTTPS).
+your laptop, and over HTTPS from your phone with Tailscale (the iOS and Android apps need HTTPS).
 
 For running cedar and the chat on a Mac or a Windows PC instead, with a model server elsewhere,
 see the [desktop app](desktop/README.md): one DMG or MSI, no systemd.
 
 ```
 laptop browser ──SSH tunnel───────────┐
-iOS app / any device ──Tailscale HTTPS┴─▶ cedar-chat :3000 ──▶ cedar :8080 ──▶ vLLM :8000 (DeepSeek V4)
+phones / any device ───Tailscale HTTPS┴─▶ cedar-chat :3000 ──▶ cedar :8080 ──▶ vLLM :8000 (DeepSeek V4)
                                                                      │
                                                                      └──▶ one Docker container per run (the agent's tools)
 ```
@@ -347,9 +347,11 @@ To skip the tunnel, bind to the network instead: set `CHAT_BIND_ADDR=0.0.0.0:300
 
 Leave `cedar` on `127.0.0.1:8080`. Only `cedar-chat` talks to it.
 
-### Over HTTPS with Tailscale (the iOS app)
+<a id="over-https-with-tailscale-the-ios-app"></a>
 
-The iOS app only connects to servers it can reach over HTTPS. The simplest way to give
+### Over HTTPS with Tailscale (the iOS and Android apps)
+
+The iOS and Android apps only connect to servers they can reach over HTTPS. The simplest way to give
 `cedar-chat` a trusted certificate without exposing it to the internet is
 [Tailscale](https://tailscale.com): `tailscale serve` terminates TLS with a Let's Encrypt
 certificate for the Spark's tailnet name and proxies to `cedar-chat` on loopback. Only devices on
@@ -383,8 +385,9 @@ your tailnet can reach it, and `CHAT_BIND_ADDR` stays `127.0.0.1:3000`.
    sudo systemctl restart cedar-chat
    ```
 
-5. Install Tailscale on the iPhone and log in to the same tailnet. In the cedar app's Settings,
-   tap **Scan QR Code** and scan the code this prints (it needs `sudo apt install qrencode`):
+5. Install Tailscale on the iPhone or Android phone and log in to the same tailnet. In the cedar
+   app's Settings (iOS, or the Android app from GitHub Releases), tap **Scan QR Code** and scan
+   the code this prints (it needs `sudo apt install qrencode`):
 
    ```sh
    TOKEN=$(sudo sed -n 's/^CHAT_ACCESS_TOKEN=//p' /etc/cedar/chat.env)
@@ -457,6 +460,6 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 | `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`) or the `cedar-sandbox` image is missing. The log says which. |
 | Chat page shows a 502 error | `cedar-chat` can't reach cedar, or `CEDAR_API_KEY` in `chat.env` doesn't match `CEDAR_API_KEYS` in `cedar.env`. |
 | Chat page asks for a token and rejects it | Use the value of `CHAT_ACCESS_TOKEN` from `/etc/cedar/chat.env`, not the cedar key. |
-| iOS app can't connect | It needs HTTPS: use the `https://<spark>.<tailnet>.ts.net` address from step 7, not `http://…:3000`, and check that the phone is logged in to Tailscale (`tailscale serve status` on the Spark shows what is served). |
+| The iOS or Android app can't connect | It needs HTTPS: use the `https://<spark>.<tailnet>.ts.net` address from step 7, not `http://…:3000`, and check that the phone is logged in to Tailscale (`tailscale serve status` on the Spark shows what is served). |
 | `tailscale serve` waits or says HTTPS is not enabled | Turn on MagicDNS and HTTPS Certificates in the Tailscale admin console (step 7). |
 | The whole machine slows down or freezes during a run | Memory. See the memory note in step 1: lower `MAX_CONCURRENT_RUNS`, or use a smaller model or quant. |

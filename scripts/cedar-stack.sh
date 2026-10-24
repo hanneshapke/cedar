@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build cedar and cedar-chat, then run vLLM, cedar, and the chat UI in one tmux session. If
 # Tailscale is installed and logged in, the chat UI is also served over HTTPS on the tailnet
-# (`tailscale serve`), which is what the iOS app needs.
+# (`tailscale serve`), which is what the iOS and Android apps need.
 #
 # This runs the stack on one machine you are logged in to. Nothing restarts it after a crash or a
 # reboot; for a long-running server use the systemd setup in DEPLOYMENT.md.
@@ -16,8 +16,9 @@
 #   scripts/cedar-stack.sh --down --with-vllm
 #                                     also stop vLLM (docker compose down)
 #   scripts/cedar-stack.sh --down-all same as --down --with-vllm
-#   scripts/cedar-stack.sh --pair     print the QR code the iOS app scans to connect (its address
-#                                     on the tailnet and the access token); needs qrencode
+#   scripts/cedar-stack.sh --pair     print the QR code the iOS and Android apps scan to connect
+#                                     (its address on the tailnet and the access token); needs
+#                                     qrencode
 #
 # Settings come from .env in the repo root (created on first run with fresh keys). Besides
 # cedar's and cedar-chat's own variables it reads:
@@ -110,31 +111,31 @@ serve_stop() {
     fi
 }
 
-# --- pairing the iOS app ------------------------------------------------------------------
+# --- pairing the phone apps (iOS, Android) -----------------------------------------------
 
-# pair: print the QR code the iOS app scans under Settings → Scan QR Code. It carries
+# pair: print the QR code the iOS and Android apps scan under Settings → Scan QR Code. It carries
 # cedar://connect?server=<url>&token=<token>, the same link the Mac app shows (pairing/src/connect.rs;
-# the iOS app reads it in ConnectionCode.swift). The address is CHAT_PUBLIC_URL when that is HTTPS,
+# the iOS app reads it in ConnectionCode.swift, the Android app the same link). The address is CHAT_PUBLIC_URL when that is HTTPS,
 # else the tailnet address `tailscale serve` gives the chat UI.
 pair() {
     load_env
     for cmd in curl jq; do
         command -v "$cmd" >/dev/null || die "$cmd is not installed"
     done
-    [[ -n ${CHAT_ACCESS_TOKEN:-} ]] || die "CHAT_ACCESS_TOKEN is not set in $ENV_FILE; the iOS app needs it to connect"
+    [[ -n ${CHAT_ACCESS_TOKEN:-} ]] || die "CHAT_ACCESS_TOKEN is not set in $ENV_FILE; the phone apps need it to connect"
     local server
     if [[ ${CHAT_PUBLIC_URL:-} == https://* ]]; then
         server=${CHAT_PUBLIC_URL%/}
     else
-        [[ $TAILSCALE_SERVE == off ]] && die "TAILSCALE_SERVE=off and CHAT_PUBLIC_URL is not an https:// address; the iOS app connects over HTTPS only"
-        tailscale_ready || die "tailscale is not installed or not logged in (run: sudo tailscale up); the iOS app connects over HTTPS only"
+        [[ $TAILSCALE_SERVE == off ]] && die "TAILSCALE_SERVE=off and CHAT_PUBLIC_URL is not an https:// address; the phone apps connect over HTTPS only"
+        tailscale_ready || die "tailscale is not installed or not logged in (run: sudo tailscale up); the phone apps connect over HTTPS only"
         server=$(tailscale_url) || die "tailscale has no name for this machine; turn on MagicDNS at https://login.tailscale.com/admin/dns"
     fi
     curl -fs -m 5 -o /dev/null "$server/" ||
         echo "warning: $server does not answer yet; start the stack (scripts/cedar-stack.sh) before you scan." >&2
     local link
     link="cedar://connect?server=$(jq -rn --arg v "$server" '$v|@uri')&token=$(jq -rn --arg v "$CHAT_ACCESS_TOKEN" '$v|@uri')"
-    echo "In the iOS app's Settings, tap Scan QR Code and scan this. Or enter $server and the"
+    echo "In the Cedar app's Settings (iOS or Android), tap Scan QR Code and scan this. Or enter $server and the"
     echo "access token from CHAT_ACCESS_TOKEN in $ENV_FILE. Anyone who scans it can use your cedar."
     echo
     if command -v qrencode >/dev/null; then
@@ -178,7 +179,7 @@ SANDBOX_NETWORK=bridge
 
 # cedar-chat (its CEDAR_API_KEY is the first of CEDAR_API_KEYS)
 # Keep it on loopback: when Tailscale is logged in, the script serves it to your tailnet over HTTPS
-# (https://<machine>.<tailnet>.ts.net), which the iOS app and other devices use.
+# (https://<machine>.<tailnet>.ts.net), which the iOS and Android apps and other devices use.
 CHAT_BIND_ADDR=127.0.0.1:3000
 CHAT_ACCESS_TOKEN=$token
 # auto: serve over Tailscale if it is logged in; on: fail if it can't; off: never.
@@ -341,8 +342,8 @@ main() {
 
     echo "Started tmux session '$TMUX_SESSION'. Chat UI: http://$CHAT_BIND_ADDR"
     if [[ -n $ts_url ]]; then
-        echo "On your tailnet (iOS app, other devices): $ts_url"
-        echo "To connect the iOS app, run  scripts/cedar-stack.sh --pair  and scan the QR code."
+        echo "On your tailnet (iOS and Android apps, other devices): $ts_url"
+        echo "To connect the iOS or Android app, run  scripts/cedar-stack.sh --pair  and scan the QR code."
     fi
     if [[ -t 1 && -z ${TMUX:-} ]]; then
         exec tmux attach -t "$TMUX_SESSION"

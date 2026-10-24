@@ -49,6 +49,8 @@ struct FakeCedar {
     push_answers: Mutex<HashMap<String, VecDeque<u16>>>,
     /// Answers to runs' plans and approvals: (path, body).
     answers: Mutex<Vec<(String, Value)>>,
+    /// The fake Google token endpoint: every form it received. Each gets a new access token.
+    google_tokens: Mutex<Vec<HashMap<String, String>>>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -181,6 +183,33 @@ async fn apns_service(State(s): State<Shared>, Path(token): Path<String>, header
         _ => "InternalServerError",
     };
     (status, Json(json!({ "reason": reason }))).into_response()
+}
+
+/// The fake Google OAuth token endpoint: trades any assertion for `access-N`.
+async fn google_token(State(s): State<Shared>, axum::Form(form): axum::Form<HashMap<String, String>>) -> axum::response::Response {
+    let mut forms = s.google_tokens.lock().unwrap();
+    forms.push(form);
+    Json(json!({ "access_token": format!("access-{}", forms.len()), "expires_in": 3599, "token_type": "Bearer" })).into_response()
+}
+
+/// The fake FCM: records pushes under the message's token (with the project in the headers as
+/// `x-project`), answers like `push_service` (200 by default) with FCM's error bodies.
+async fn fcm_service(State(s): State<Shared>, Path((project, action)): Path<(String, String)>, mut headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
+    assert_eq!(action, "messages:send");
+    let token = body["message"]["token"].as_str().unwrap_or("").to_string();
+    headers.insert("x-project", project.parse().unwrap());
+    s.pushes.lock().unwrap().push((token.clone(), headers, body.to_string().into_bytes()));
+    let status = s.push_answers.lock().unwrap().get_mut(&token).and_then(|q| q.pop_front()).unwrap_or(200);
+    let status = StatusCode::from_u16(status).unwrap();
+    let (name, code, message) = match status.as_u16() {
+        200 => return Json(json!({ "name": format!("projects/{project}/messages/1") })).into_response(),
+        400 => ("INVALID_ARGUMENT", "INVALID_ARGUMENT", "The registration token is not a valid FCM registration token"),
+        401 => ("UNAUTHENTICATED", "THIRD_PARTY_AUTH_ERROR", "Request had invalid authentication credentials."),
+        404 => ("NOT_FOUND", "UNREGISTERED", "Requested entity was not found."),
+        _ => ("INTERNAL", "INTERNAL", "Internal error."),
+    };
+    let details = json!([{ "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", "errorCode": code }]);
+    (status, Json(json!({ "error": { "code": status.as_u16(), "message": message, "status": name, "details": details } }))).into_response()
 }
 
 /// A mail server that takes anything: returns its port and the messages it was given.
@@ -466,6 +495,8 @@ impl Harness {
             .route("/pushover", post(pushover))
             .route("/push/{name}", post(push_service))
             .route("/apns/3/device/{token}", post(apns_service))
+            .route("/fcm/v1/projects/{project}/{action}", post(fcm_service))
+            .route("/google/token", post(google_token))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -473,8 +504,16 @@ impl Harness {
 
         let pushover_url = format!("{url}/pushover");
         let apns_url = format!("{url}/apns");
-        let mut env: HashMap<String, String> =
-            [("CEDAR_URL", url.as_str()), ("CEDAR_API_KEY", CEDAR_KEY), ("CHAT_PUSHOVER_URL", pushover_url.as_str()), ("CHAT_APNS_URL", apns_url.as_str())]
+        let fcm_url = format!("{url}/fcm");
+        let google_token_url = format!("{url}/google/token");
+        let mut env: HashMap<String, String> = [
+            ("CEDAR_URL", url.as_str()),
+            ("CEDAR_API_KEY", CEDAR_KEY),
+            ("CHAT_PUSHOVER_URL", pushover_url.as_str()),
+            ("CHAT_APNS_URL", apns_url.as_str()),
+            ("CHAT_FCM_URL", fcm_url.as_str()),
+            ("CHAT_GOOGLE_TOKEN_URL", google_token_url.as_str()),
+        ]
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
@@ -973,7 +1012,7 @@ async fn both_uis_are_served() {
             assert!(page.contains("id=\"notify-section\""), "{uri} has the Notifications settings");
             assert!(page.contains("<script src=\"/pairing.js\">"), "{uri} loads the iPhone settings");
             assert!(page.contains("id=\"iphone-section\""), "{uri} has the iPhone settings");
-            assert!(page.find("/settings-shell.js") < page.find("/pairing.js"), "{uri} loads the iPhone page after the frame it registers with");
+            assert!(page.find("/settings-shell.js") < page.find("/pairing.js"), "{uri} loads the Phone page after the frame it registers with");
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("<script src=\"/settings-shell.js\">"), "{uri} loads the Settings dialog's frame");
             assert!(
@@ -2390,6 +2429,165 @@ async fn iphone_push_reaches_every_registered_phone_and_drops_dead_ones() {
     let (status, err) = h.json(Method::POST, "/api/schedules", Some(json!({ "title": "t", "prompt": "p", "frequency": "daily", "time": "09:00", "timezone": "UTC", "notify": "ios" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
     assert!(err["error"]["message"].as_str().unwrap().contains("no iPhone"), "{err}");
+}
+
+/// A Firebase service account's JSON file, with a new RSA key.
+fn service_account() -> String {
+    let key = openssl::pkey::PKey::from_rsa(openssl::rsa::Rsa::generate(2048).unwrap()).unwrap();
+    let pem = String::from_utf8(key.private_key_to_pem_pkcs8().unwrap()).unwrap();
+    json!({ "type": "service_account", "project_id": "cedar-test", "private_key_id": "kid-1", "private_key": pem, "client_email": "fcm@cedar-test.iam.gserviceaccount.com" }).to_string()
+}
+
+#[tokio::test]
+async fn android_push_goes_through_fcm_and_unifiedpush_and_drops_dead_phones() {
+    let h = Harness::new(&[]).await;
+    let register = |body: Value| {
+        let h = &h;
+        async move { h.json(Method::POST, "/api/notifications/android/devices", Some(body)).await }
+    };
+    // Registration is checked: a known transport, and for UnifiedPush an https endpoint.
+    let (status, err) = register(json!({ "transport": "carrier-pigeon", "token": "x" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("fcm or unifiedpush"), "{err}");
+    let (status, err) = register(json!({ "transport": "unifiedpush", "token": "http://ntfy.example/upabc" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("only https endpoints"), "{err}");
+    let (status, _) = register(json!({ "transport": "unifiedpush", "token": "not a url" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = register(json!({ "transport": "fcm", "token": "has spaces in it" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = register(json!({ "transport": "fcm", "token": "x".repeat(5000) })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, got) = register(json!({ "transport": "fcm", "token": "fcm-a", "name": "Pixel 8" })).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["device"]["transport"], "fcm");
+    assert_eq!(got["device"]["name"], "Pixel 8");
+    assert_eq!(got["device"]["id"], got["device_id"]);
+    assert!(got["device"]["created_at"].is_string() && got["device"]["last_used_at"].is_null(), "{got}");
+    assert!(got["device"].get("token").is_none() && !got.to_string().contains("fcm-a"), "tokens stay on the server");
+    assert_eq!(got["android"]["devices"].as_array().unwrap().len(), 1);
+    // The same phone again is one device.
+    let (_, got) = register(json!({ "transport": "fcm", "token": "fcm-a", "name": "Pixel 9" })).await;
+    assert_eq!(got["android"]["devices"].as_array().unwrap().len(), 1);
+    assert_eq!(got["android"]["devices"][0]["name"], "Pixel 9");
+    // A phone without Google's services, through ntfy. Its endpoint is https in real life; the
+    // fake here is plain http, so it goes into the store directly.
+    let ntfy = format!("{}/push/ntfy-1", h.base_url());
+    h.state.store.add_android_device("unifiedpush", &ntfy, Some("GrapheneOS")).await.unwrap();
+    register(json!({ "transport": "fcm", "token": "fcm-b" })).await;
+
+    // FCM phones need the key; the UnifiedPush one doesn't.
+    let (status, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["android"]["fcm_configured"], false);
+    assert_eq!(got["android"]["configured"], true, "the UnifiedPush phone works without a key");
+    let (status, err) = h.json(Method::PUT, "/api/notifications", Some(json!({ "android": { "service_account": "{\"project_id\":\"p\"}" } }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("service-account key"), "{err}");
+    let account = service_account();
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "android", "android": { "service_account": account } }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["android"]["fcm_configured"], true);
+    assert_eq!(got["android"]["key_set"], true);
+    assert_eq!(got["android"]["project_id"], "cedar-test");
+    assert!(!got.to_string().contains("PRIVATE KEY"), "the key is never sent back");
+    assert_eq!(got["configured"], json!(["android"]));
+
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "android" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert!(got["detail"].as_str().unwrap().contains("sent to 3 Android phones"), "{got}");
+    // One access token, from a signed assertion, for both FCM pushes.
+    let forms = h.cedar.google_tokens.lock().unwrap().clone();
+    assert_eq!(forms.len(), 1);
+    assert_eq!(forms[0]["grant_type"], "urn:ietf:params:oauth:grant-type:jwt-bearer");
+    assert_eq!(forms[0]["assertion"].matches('.').count(), 2);
+    let pushes = h.cedar.pushes.lock().unwrap().clone();
+    assert_eq!(pushes.len(), 3);
+    let fcm: Vec<_> = pushes.iter().filter(|(n, _, _)| n.starts_with("fcm-")).collect();
+    assert_eq!(fcm.len(), 2);
+    let (_, headers, body) = fcm[0];
+    assert_eq!(headers["authorization"], "Bearer access-1");
+    assert_eq!(headers["x-project"], "cedar-test");
+    let body: Value = serde_json::from_slice(body).unwrap();
+    assert_eq!(body["message"]["data"], json!({ "kind": "test", "conversation_id": "", "tag": "test" }));
+    assert_eq!(body["message"]["android"], json!({ "priority": "high", "collapse_key": "test" }));
+    assert!(body["message"].get("notification").is_none(), "data only");
+    let (_, headers, body) = pushes.iter().find(|(n, _, _)| n == "ntfy-1").expect("the ntfy push");
+    assert_eq!(headers["content-type"], "application/json");
+    assert_eq!(headers["ttl"], "86400");
+    assert_eq!(headers["urgency"], "high");
+    let payload: Value = serde_json::from_slice(body).unwrap();
+    assert_eq!(payload, json!({ "kind": "test", "conversation_id": "", "tag": "test" }));
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert!(got["android"]["devices"].as_array().unwrap().iter().all(|d| d["last_used_at"].is_string()), "{got}");
+    assert_eq!(got["last_delivery"]["method"], "android");
+
+    // A finished run: which conversation and turn, never what was said.
+    h.cedar.pushes.lock().unwrap().clear();
+    let turn = ended_turn(&h, "Secret plans", "completed", Some("ask_user")).await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, turn).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let pushes = h.cedar.pushes.lock().unwrap().clone();
+    assert_eq!(pushes.len(), 3);
+    for (_, _, body) in &pushes {
+        let text = String::from_utf8_lossy(body);
+        assert!(!text.contains("Secret plans") && !text.contains("42") && !text.contains("title") && !text.contains("body"), "{text}");
+    }
+    let payload: Value = serde_json::from_slice(&pushes.iter().find(|(n, _, _)| n == "ntfy-1").unwrap().2).unwrap();
+    assert_eq!(payload["kind"], "turn");
+    assert_eq!(payload["tag"], turn.to_string());
+    assert!(Uuid::parse_str(payload["conversation_id"].as_str().unwrap()).is_ok(), "{payload}");
+    assert_eq!(h.cedar.google_tokens.lock().unwrap().len(), 1, "the access token is reused");
+
+    // FCM's 401 gets a new access token and one retry.
+    h.cedar.push_answers.lock().unwrap().insert("fcm-a".into(), [401].into());
+    h.cedar.pushes.lock().unwrap().clear();
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "android" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert!(got["detail"].as_str().unwrap().contains("sent to 3"), "{got}");
+    assert_eq!(h.cedar.google_tokens.lock().unwrap().len(), 2);
+
+    // Dead phones are dropped: FCM's UNREGISTERED (404), a token FCM calls invalid (400), and
+    // a UnifiedPush endpoint that is gone (410).
+    h.cedar.push_answers.lock().unwrap().insert("fcm-a".into(), [404].into());
+    h.cedar.push_answers.lock().unwrap().insert("ntfy-1".into(), [410].into());
+    let (status, got) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "android" }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!(got["detail"], "sent to 1 Android phone, 2 no longer registered");
+    let (_, got) = h.json(Method::GET, "/api/notifications", None).await;
+    assert_eq!(got["android"]["devices"].as_array().unwrap().len(), 1);
+    h.cedar.push_answers.lock().unwrap().insert("fcm-b".into(), [500].into());
+    let (status, err) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "android" }))).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY, "a server error keeps the phone");
+    assert!(err["error"]["message"].as_str().unwrap().contains("FCM answered 500"), "{err}");
+    h.cedar.push_answers.lock().unwrap().insert("fcm-b".into(), [400].into());
+    let (status, err) = h.json(Method::POST, "/api/notifications/test", Some(json!({ "method": "android" }))).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(err["error"]["message"].as_str().unwrap().contains("every registered Android phone has gone"), "{err}");
+
+    // The app turns push off, or the user removes a phone from the list.
+    let (_, got) = register(json!({ "transport": "unifiedpush", "token": "https://ntfy.example/upxyz?up=1", "name": "Fairphone" })).await;
+    let id = got["device_id"].as_str().unwrap().to_string();
+    register(json!({ "transport": "fcm", "token": "fcm-c" })).await;
+    let (status, got) = h.json(Method::DELETE, "/api/notifications/android/devices", Some(json!({ "token": "fcm-c" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["android"]["devices"].as_array().unwrap().len(), 1);
+    let (status, got) = h.json(Method::DELETE, &format!("/api/notifications/android/devices/{id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got["android"]["devices"], json!([]));
+    let (status, _) = h.json(Method::DELETE, &format!("/api/notifications/android/devices/{id}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // With no phone left the method can't be picked, by default or by a schedule.
+    let (status, _) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "android" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, err) = h.json(Method::POST, "/api/schedules", Some(json!({ "title": "t", "prompt": "p", "frequency": "daily", "time": "09:00", "timezone": "UTC", "notify": "android" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert!(err["error"]["message"].as_str().unwrap().contains("no Android phone"), "{err}");
+    // An empty key clears it.
+    let (status, got) = h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "none", "android": { "service_account": "" } }))).await;
+    assert_eq!(status, StatusCode::OK, "{got}");
+    assert_eq!((got["android"]["key_set"].as_bool(), got["android"]["project_id"].as_str()), (Some(false), Some("")));
 }
 
 #[tokio::test]

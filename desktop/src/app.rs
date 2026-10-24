@@ -44,7 +44,7 @@ pub enum ModelStatus {
     Failed(String),
 }
 
-/// Whether the chat is served on the tailnet for the iOS app (see tailscale.rs).
+/// Whether the chat is served on the tailnet for the phone apps (see tailscale.rs).
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
 pub enum ShareStatus {

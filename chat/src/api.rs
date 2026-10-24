@@ -107,7 +107,7 @@ const STAR_CSS: &str = include_str!("../static/star.css");
 /// the push subscription; both UIs load it.
 const NOTIFY_JS: &str = include_str!("../static/notify.js");
 const NOTIFY_CSS: &str = include_str!("../static/notify.css");
-/// The iPhone page of Settings: the QR code and token the iOS app connects with; every UI loads it.
+/// The Phone page of Settings: the QR code and token the iOS and Android apps connect with; every UI loads it.
 const PAIRING_JS: &str = include_str!("../static/pairing.js");
 /// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
 const SW_JS: &str = include_str!("../static/sw.js");
@@ -207,6 +207,8 @@ pub struct AppState {
     pub http: reqwest::Client,
     /// The APNs connection and its provider token (`channels`).
     pub apns: Arc<channels::Apns>,
+    /// The Google access token FCM (Android push) is sent with (`channels`).
+    pub fcm: Arc<channels::Fcm>,
     /// Cancelled when the server begins to shut down. Ends the event streams, which would
     /// otherwise hold the graceful shutdown open for as long as a client stays connected.
     pub shutdown: CancellationToken,
@@ -221,7 +223,7 @@ impl AppState {
         let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns, shutdown: CancellationToken::new() })
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), shutdown: CancellationToken::new() })
     }
 }
 
@@ -245,6 +247,8 @@ pub fn router(state: AppState) -> Router {
         .route("/notifications/desktop/events", get(desktop_events))
         .route("/notifications/apns/devices", post(register_apns_device).delete(unregister_apns_device))
         .route("/notifications/apns/devices/{id}", axum::routing::delete(delete_apns_device))
+        .route("/notifications/android/devices", post(register_android_device).delete(unregister_android_device))
+        .route("/notifications/android/devices/{id}", axum::routing::delete(delete_android_device))
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
@@ -439,8 +443,8 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
     }))
 }
 
-/// Settings -> iPhone: the address, token and QR code the iOS app connects with, and whether
-/// Tailscale is ready to serve the chat to it (see `pairing`).
+/// Settings -> Phone: the address, token and QR code the iOS and Android apps connect with, and
+/// whether Tailscale is ready to serve the chat to them (see `pairing`).
 async fn get_pairing(State(state): State<AppState>) -> Json<pairing::Pairing> {
     Json(pairing::pairing(&state).await)
 }
@@ -624,19 +628,20 @@ fn relay_stream(rx: broadcast::Receiver<Value>, shutdown: CancellationToken) -> 
 // -- notifications out of the app (channels) ------------------------------------------------
 
 /// The settings as the page sees them (no secrets), with the subscribed browsers and the
-/// registered iPhones.
+/// registered iPhones and Android phones.
 async fn notification_status(state: &AppState) -> Result<Value, AppError> {
     let settings = state.store.notification_settings().await?;
     let subscriptions = state.store.push_subscriptions().await?;
     let devices = state.store.apns_devices().await?;
-    let mut status = settings.status(&subscriptions, &devices);
+    let androids = state.store.android_devices().await?;
+    let mut status = settings.status(&subscriptions, &devices, &androids);
     status["desktop"]["listening"] = json!(state.desktop.receiver_count() > 0);
     Ok(status)
 }
 
-/// How many browsers and iPhones a push could reach right now.
+/// How many browsers, iPhones and Android phones a push could reach right now.
 async fn reach(state: &AppState) -> Result<Reach, AppError> {
-    Ok(Reach { browsers: state.store.push_subscriptions().await?.len(), iphones: state.store.apns_devices().await?.len() })
+    Ok(Reach::new(&state.store.push_subscriptions().await?, &state.store.apns_devices().await?, &state.store.android_devices().await?))
 }
 
 /// The page subscribes a browser with the server's public key, so the keys are made here.
@@ -655,6 +660,7 @@ struct NotificationsBody {
     pushover: Option<PushoverBody>,
     email: Option<EmailBody>,
     ios: Option<ApnsBody>,
+    android: Option<AndroidBody>,
     /// The contact the push services may write to about this server (an email address).
     contact: Option<String>,
 }
@@ -669,6 +675,16 @@ struct ApnsBody {
     topic: Option<String>,
     environment: Option<String>,
 }
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct AndroidBody {
+    /// The Firebase service account's JSON file, as pasted.
+    service_account: Option<String>,
+}
+
+/// A service account's JSON file is a little over 2000 characters.
+const MAX_SERVICE_ACCOUNT_CHARS: usize = 16384;
 
 /// A `.p8` file is a few hundred characters; this leaves room for one pasted with its
 /// surroundings.
@@ -774,6 +790,18 @@ async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson
         }
         if let Some(environment) = &a.environment {
             settings.apns.environment = ApnsEnvironment::parse(environment).ok_or_else(|| AppError::BadRequest(format!("environment must be production or sandbox, not {environment:?}")))?;
+        }
+    }
+    if let Some(a) = body.android {
+        if let Some(json) = a.service_account {
+            let json = json.trim().to_string();
+            if json.chars().count() > MAX_SERVICE_ACCOUNT_CHARS {
+                return Err(AppError::BadRequest(format!("the service-account key is longer than {MAX_SERVICE_ACCOUNT_CHARS} characters")));
+            }
+            if !json.is_empty() {
+                channels::ServiceAccount::parse(&json).and_then(|account| account.signing_key()).map_err(AppError::BadRequest)?;
+            }
+            settings.android.service_account = json;
         }
     }
     if let Some(contact) = body.contact {
@@ -915,6 +943,70 @@ async fn unregister_apns_device(State(state): State<AppState>, ApiJson(body): Ap
 async fn delete_apns_device(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let id = parse_id(&id, "device not found")?;
     if !state.store.delete_apns_device(id).await? {
+        return Err(AppError::NotFound("device not found"));
+    }
+    notification_status(&state).await.map(Json)
+}
+
+/// What the Android app sends once it has a way to be pushed to: an FCM registration token, or
+/// the endpoint its UnifiedPush distributor (ntfy, say) gave it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AndroidDeviceBody {
+    /// `fcm` or `unifiedpush`.
+    transport: String,
+    /// The FCM registration token, or the UnifiedPush endpoint URL.
+    token: String,
+    /// The device's name, for Settings.
+    name: Option<String>,
+}
+
+/// An FCM registration token is about 160 characters; a UnifiedPush endpoint a URL.
+const MAX_ANDROID_TOKEN_CHARS: usize = 2048;
+
+/// The Android app registered for push: keep its token or endpoint. Returns the settings with
+/// the phone as `device` (and its id as `device_id`, as for an iPhone).
+async fn register_android_device(State(state): State<AppState>, ApiJson(body): ApiJson<AndroidDeviceBody>) -> Result<Json<Value>, AppError> {
+    let transport = body.transport.trim().to_ascii_lowercase();
+    let token = body.token.trim().to_string();
+    match transport.as_str() {
+        channels::FCM => {
+            if token.is_empty() || token.len() > MAX_ANDROID_TOKEN_CHARS || !token.bytes().all(|b| b.is_ascii_graphic()) {
+                return Err(AppError::BadRequest("the FCM token must be the registration token Firebase gave the app".into()));
+            }
+        }
+        channels::UNIFIEDPUSH => {
+            // The payload goes unencrypted (it only names a turn), so at least not in the clear.
+            let url = reqwest::Url::parse(&token).ok().filter(|u| u.scheme() == "https" && u.host_str().is_some());
+            if url.is_none() || token.len() > MAX_ANDROID_TOKEN_CHARS {
+                return Err(AppError::BadRequest("the UnifiedPush endpoint must be an https:// URL; only https endpoints are accepted".into()));
+            }
+        }
+        _ => return Err(AppError::BadRequest(format!("transport must be fcm or unifiedpush, not {:?}", body.transport))),
+    }
+    let name = body.name.map(|n| short("the device name", n)).transpose()?.filter(|n| !n.is_empty());
+    let device = state.store.add_android_device(&transport, &token, name.as_deref()).await?;
+    let mut status = notification_status(&state).await?;
+    status["device_id"] = json!(device.id);
+    status["device"] = json!(device);
+    Ok(Json(status))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnregisterAndroidBody {
+    token: String,
+}
+
+/// The app turned push off, or left for another server: forget its token or endpoint.
+async fn unregister_android_device(State(state): State<AppState>, ApiJson(body): ApiJson<UnregisterAndroidBody>) -> Result<Json<Value>, AppError> {
+    state.store.delete_android_device_by_token(body.token.trim()).await?;
+    notification_status(&state).await.map(Json)
+}
+
+async fn delete_android_device(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    let id = parse_id(&id, "device not found")?;
+    if !state.store.delete_android_device(id).await? {
         return Err(AppError::NotFound("device not found"));
     }
     notification_status(&state).await.map(Json)
@@ -1536,7 +1628,7 @@ struct ScheduleBody {
     #[serde(default, deserialize_with = "nullable")]
     tools: Option<Option<Vec<String>>>,
     /// How a finished run is announced out of the app: a method set up under Settings →
-    /// Notifications (`browser`, `pushover`, `email`, `ios`), `none`, or `null` for the default method
+    /// Notifications (`browser`, `pushover`, `email`, `ios`, `android`), `none`, or `null` for the default method
     /// there (the default when creating).
     #[serde(default, deserialize_with = "nullable")]
     notify: Option<Option<String>>,

@@ -138,11 +138,11 @@
 </section>
 
 <section id="share">
-  <h2><span class="dot" id="share-dot"></span>iPhone &amp; iPad</h2>
-  <p class="muted">The Cedar iOS app connects over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on <span class="this-computer">this computer</span> and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
+  <h2><span class="dot" id="share-dot"></span>iPhone, iPad &amp; Android</h2>
+  <p class="muted">The Cedar iOS and Android apps connect over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on <span class="this-computer">this computer</span> and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
   <div class="row">
     <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
-      <input type="checkbox" id="share-toggle"> Share with the iOS app over Tailscale
+      <input type="checkbox" id="share-toggle"> Share with the phone apps over Tailscale
     </label>
   </div>
   <p id="share-text" class="muted"></p>
@@ -154,7 +154,7 @@
   </div>
   <div id="share-qr" class="hidden">
     <div id="share-qr-code" class="qr"></div>
-    <p class="muted">In the iOS app’s Settings, tap <b>Scan QR Code</b> and point the camera here. The code holds the access token, so hide it again when you are done.</p>
+    <p class="muted">In the Cedar app’s Settings (iOS or Android), tap <b>Scan QR Code</b> and point the camera here. The code holds the access token, so hide it again when you are done.</p>
   </div>
   <div class="row">
     <button class="hidden" id="share-retry">Try again</button>

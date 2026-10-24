@@ -203,7 +203,7 @@
 .cedar-set-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .cedar-set-actions .primary:disabled { opacity: .5; cursor: default; }
 
-/* -- the iPhone page (pairing.js) ----------------------------------------------------------- */
+/* -- the Phone page (pairing.js) ------------------------------------------------------------ */
 
 .cedar-pair-token { font-family: var(--mono); }
 .cedar-pair-acts { display: flex; gap: 8px; }

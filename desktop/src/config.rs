@@ -27,7 +27,7 @@ pub struct Config {
     pub browser_image: String,
     /// Pull the browser image and offer the `browser` tool.
     pub browser: bool,
-    /// Serve the chat on the tailnet over HTTPS (`tailscale serve`), for the iOS app.
+    /// Serve the chat on the tailnet over HTTPS (`tailscale serve`), for the iOS and Android apps.
     pub tailscale_share: bool,
     /// The tailnet port it is served on; 443 gives an address without a port.
     pub tailscale_https_port: u16,

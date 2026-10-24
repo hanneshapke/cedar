@@ -5,7 +5,7 @@ edition = "2021"
 description = "Pairing the Cedar iOS app with a chat server: the QR code it scans and the Tailscale checks"
 license = "Apache-2.0"
 
-# Shared by cedar-chat (Settings -> iPhone) and the desktop app (its setup page), so the two show
+# Shared by cedar-chat (Settings -> Phone) and the desktop app (its setup page), so the two show
 # the same code and say the same about Tailscale. No I/O here: each runs the tailscale CLI its own way.
 [dependencies]
 anyhow = "1"

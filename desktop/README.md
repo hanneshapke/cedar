@@ -74,7 +74,7 @@ The window switches to the chat once both servers answer and the model is regist
 
 *Open in Browser* opens the same chat in your default browser; it asks for an access token once,
 which *Copy Access Token* puts on the clipboard. Only this computer can reach the servers: both
-listen on 127.0.0.1. To use the chat from the iOS app, share it over Tailscale (below).
+listen on 127.0.0.1. To use the chat from the iOS or Android app, share it over Tailscale (below).
 
 To change the model server later, choose *Model Server & Setup…* from the menu; the new choice
 is registered with the running cedar, so nothing restarts. The chat's own Settings page can add
@@ -86,11 +86,13 @@ When a response finishes, the app can tell you with a **desktop notification**: 
 Center on a Mac, as a toast on Windows. Clicking it opens the conversation. The app sets this
 method up in the chat's Settings → Notifications on its first start, unless another was chosen.
 
-## Using it from an iPhone or iPad
+<a id="using-it-from-an-iphone-or-ipad"></a>
 
-The [iOS app](../iOS/README.md) connects over HTTPS only, so the setup page's **iPhone & iPad**
-section (*iPhone & iPad Access…* in the menu) can serve the chat on your
-[Tailscale](https://tailscale.com) network. Tick *Share with the iOS app over Tailscale* and
+## Using it from an iPhone, iPad or Android phone
+
+The [iOS app](../iOS/README.md) and the Android app connect over HTTPS only, so the setup page's
+**iPhone, iPad & Android** section (*Phone Access…* in the menu) can serve the chat on your
+[Tailscale](https://tailscale.com) network. Tick *Share with the phone apps over Tailscale* and
 the app runs `tailscale serve --bg --https=443 http://127.0.0.1:<chat_port>`. Tailscale gets a
 Let's Encrypt certificate for the computer's tailnet name and proxies
 `https://<computer>.<tailnet>.ts.net` to the chat. Only devices on your tailnet can reach it, and
@@ -108,14 +110,15 @@ both servers stay on loopback.
 3. Tick the checkbox. Cedar restarts once, so the chat is started with the tailnet address as
    `CHAT_PUBLIC_URL` (for the links in notifications and *Connect Google*). A response still
    running when it restarts is stopped.
-4. Install Tailscale on the iPhone and log in to the same tailnet. In the Cedar app's Settings,
-   tap **Scan QR Code** and point the camera at the code the setup page shows after *Show QR
-   code*; the app fills in the address and token and tests the connection. Tap **Save**. Or type
-   them in: *Copy address* and *Copy access token* put them on the clipboard.
+4. Install Tailscale on the iPhone or Android phone and log in to the same tailnet. In the Cedar
+   app's Settings (iOS, or the Android app from GitHub Releases), tap **Scan QR Code** and point
+   the camera at the code the setup page shows after *Show QR code*; the app fills in the address
+   and token and tests the connection. Tap **Save**. Or type them in: *Copy address* and *Copy
+   access token* put them on the clipboard.
 
 The QR code holds `cedar://connect?server=<address>&token=<access token>` (made in
-`../pairing/src/connect.rs`, shared with the chat; the iOS app reads it in `ConnectionCode.swift`).
-Once sharing is on, the chat's own **Settings → iPhone** page shows the same code, the address
+`../pairing/src/connect.rs`, shared with the chat; the iOS app reads it in `ConnectionCode.swift`, the Android app the same
+link). Once sharing is on, the chat's own **Settings → Phone** page shows the same code, the address
 and token, and what Tailscale still needs, so it can be paired from the chat window too. It is drawn only when asked
 and hidden again with *Hide QR code*, since anyone who scans it can use your Cedar.
 
@@ -132,9 +135,9 @@ With the address set as `CHAT_PUBLIC_URL`, *Connect Google* sends Google back to
 Google OAuth client before you connect, or set your own `CHAT_PUBLIC_URL` in `chat_env`, which
 wins.
 
-For push notifications on the phone, set up **iPhone push** in the chat's Settings →
-Notifications (see [iOS/README.md](../iOS/README.md#push-notifications)) and choose it as the
-default method; the app chooses *Desktop notification* on its first start.
+For push notifications on the phone, set up **iPhone push** or **Android push** in the chat's
+Settings → Notifications (see [iOS/README.md](../iOS/README.md#push-notifications) and
+[chat/README.md](../chat/README.md#out-of-the-app)) and choose it as the default method; the app chooses *Desktop notification* on its first start.
 
 ## Where things are
 
@@ -318,8 +321,8 @@ One-time setup:
 | Runs finish instantly with tool calls printed as text | The model or server doesn't do tool calling. Pick a model that does; for vLLM see the [deployment guide](../DEPLOYMENT.md#2-make-sure-vllm-is-ready-for-cedar). |
 | "port … is already in use" | Something else listens on 18080 or 13000. Change `cedar_port` or `chat_port` in `config.json`, then *Restart Services*. |
 | No notification when a response finishes | Settings → Notifications in the chat should list *Desktop notification* as set up and the default (the app sets that up on its first start, unless another method was already chosen). A response you looked at within a few seconds of it ending isn't announced. |
-| iPhone & iPad: "HTTPS is not enabled" or "no tailnet name" | Turn on HTTPS Certificates and MagicDNS in the Tailscale admin console's DNS page, then click *Try again*. |
-| The iOS app can't connect | Use the `https://…ts.net` address from the setup page, without a port; check that the phone is logged in to the same tailnet, that the computer is awake, and that `tailscale serve status` on it lists the chat port. The first connection can take a few seconds while Tailscale gets the certificate. |
+| iPhone, iPad & Android: "HTTPS is not enabled" or "no tailnet name" | Turn on HTTPS Certificates and MagicDNS in the Tailscale admin console's DNS page, then click *Try again*. |
+| The iOS or Android app can't connect | Use the `https://…ts.net` address from the setup page, without a port; check that the phone is logged in to the same tailnet, that the computer is awake, and that `tailscale serve status` on it lists the chat port. The first connection can take a few seconds while Tailscale gets the certificate. |
 | Cedar stopped with an error | *Open Logs Folder*; `cedar.log` says why. After three quick crashes the app stops retrying until *Restart Services*. |
 
 ### macOS
@@ -328,7 +331,7 @@ One-time setup:
 | --- | --- |
 | "No docker command was found" | Docker Desktop, OrbStack, Colima, or Rancher Desktop isn't installed, or its CLI isn't in `/usr/local/bin`, `/opt/homebrew/bin`, `~/.orbstack/bin`, `~/.rd/bin`, or `/Applications/Docker.app/Contents/Resources/bin`. |
 | No notification appears | Allow notifications for Cedar in System Settings → Notifications. |
-| iPhone & iPad: "Tailscale is not installed" | Install it from tailscale.com or the Mac App Store. Running it from the menu bar is not enough if the CLI is somewhere else: choose *Install CLI* in Tailscale's settings to put `tailscale` in `/usr/local/bin`. |
+| iPhone, iPad & Android: "Tailscale is not installed" | Install it from tailscale.com or the Mac App Store. Running it from the menu bar is not enough if the CLI is somewhere else: choose *Install CLI* in Tailscale's settings to put `tailscale` in `/usr/local/bin`. |
 
 ### Windows
 
@@ -339,5 +342,5 @@ One-time setup:
 | The sandbox image won't start, or Docker says "image operating system "linux" cannot be used on this platform" | Docker Desktop is set to Windows containers. Right-click its tray icon and choose *Switch to Linux containers*; the WSL 2 backend is the default. |
 | No notification appears | Allow notifications for Cedar in Settings → System → Notifications, and check that Do Not Disturb is off. Toasts only show for the installed app (from the MSI), not for `cargo tauri dev`. |
 | Cedar's tray icon is missing | Windows may hide it under the ^ arrow in the notification area; drag it onto the taskbar, or turn it on in Settings → Personalization → Taskbar → Other system tray icons. |
-| iPhone & iPad: "Tailscale is not installed" | Install it from tailscale.com/download/windows; the app looks for `C:\Program Files\Tailscale\tailscale.exe`. |
+| iPhone, iPad & Android: "Tailscale is not installed" | Install it from tailscale.com/download/windows; the app looks for `C:\Program Files\Tailscale\tailscale.exe`. |
 | `cedar.exe` or `cedar-chat.exe` still running after Cedar is gone | They stop within a few seconds once Cedar ends, however it ends; if one stays, its log says why. End it in Task Manager and start Cedar again. |

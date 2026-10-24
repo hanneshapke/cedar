@@ -58,7 +58,7 @@ pub fn set_browser(app: AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Shares the chat with the iOS app over Tailscale, or stops sharing it.
+/// Shares the chat with the phone apps (iOS, Android) over Tailscale, or stops sharing it.
 #[tauri::command]
 pub async fn set_share(app: AppHandle, enabled: bool) -> Result<(), String> {
     app::set_share(app, enabled).await.map_err(fail)
@@ -72,7 +72,7 @@ pub fn copy_share_url(state: State<'_, AppState>) -> Result<(), String> {
     crate::tray::copy_to_clipboard(&url).map_err(fail)
 }
 
-/// The QR code the iOS app scans to connect, as SVG markup. It holds the access token, so the
+/// The QR code the iOS and Android apps scan to connect, as SVG markup. It holds the access token, so the
 /// page shows it only when asked.
 #[tauri::command]
 pub fn share_qr(state: State<'_, AppState>) -> Result<String, String> {

@@ -1,10 +1,10 @@
 'use strict';
 
-// The iPhone page of Settings (framed by settings-shell.js), shared by every UI: what the Cedar iOS
-// app needs to connect to this chat (GET /api/pairing). The app connects over HTTPS only, so the
-// page shows the address the chat is served at (CHAT_PUBLIC_URL when it is https, normally the
+// The Phone page of Settings (framed by settings-shell.js, id `iphone`), shared by every UI: what
+// the Cedar iOS and Android apps need to connect to this chat (GET /api/pairing). Both scan the
+// same cedar://connect code and connect over HTTPS only, so the page shows the address the chat is served at (CHAT_PUBLIC_URL when it is https, normally the
 // tailnet address `tailscale serve` gives it), the QR code the app scans, the access token, and
-// whether Tailscale on this computer is ready, with the steps on the phone. The Cedar desktop app
+// whether Tailscale on this computer is ready, with the steps on each kind of phone. The Cedar desktop app
 // (macOS, Windows) serves the chat on the tailnet from its setup page and scripts/cedar-stack.sh
 // does it on Linux; this page only says how, it changes nothing.
 //
@@ -119,7 +119,7 @@ const cedarPairing = (() => {
     const at = Math.max(0, order.indexOf(p.tailscale.state));
     const past = (state) => at > order.indexOf(state);
     const serveHow = inDesktopApp()
-      ? ['Turn on ', el('b', '', 'Share with the iOS app over Tailscale'), ' on Cedar\'s setup page (', el('b', '', 'iPhone & iPad Access…'), ' in the menu).']
+      ? ['Turn on ', el('b', '', 'Share with the phone apps over Tailscale'), ' on Cedar\'s setup page (', el('b', '', 'Phone Access…'), ' in the menu).']
       : ['Start the chat with ', code('scripts/cedar-stack.sh'), ' (', code('TAILSCALE_SERVE=auto'), ' or ', code('on'), ' in ', code('.env'), '), or run ', code('tailscale serve'), ' yourself and set ', code('CHAT_PUBLIC_URL'), ' to its address.'];
     return [
       { done: past('unavailable'), parts: [`Tailscale installed on ${computer}`, ' (', link('https://tailscale.com/download', 'tailscale.com/download'), ').'] },
@@ -194,7 +194,7 @@ const cedarPairing = (() => {
     const pair = [];
     const addr = row('Address', p.server
       ? (p.on_tailnet ? `Served on your tailnet. It works while ${computer} is awake and Cedar is running.` : 'This chat\'s HTTPS address (CHAT_PUBLIC_URL).')
-      : 'The iOS app connects over HTTPS only, and the chat isn\'t served over HTTPS yet. See the steps below.');
+      : 'The phone apps connect over HTTPS only, and the chat isn\'t served over HTTPS yet. See the steps below.');
     if (p.server) {
       addr.main.append(code(p.server));
       addr.side.append(badge('HTTPS', 'ok'), button('Copy', () => copy(p.server, 'Address')));
@@ -209,7 +209,7 @@ const cedarPairing = (() => {
     }
     const admin = adminToken();
     if (admin) {
-      pair.push(tokenRow('Admin token', 'CHAT_ADMIN_TOKEN, entered in this browser: it unlocks the Server page. The iOS app doesn\'t need it.', admin, 'Admin token'));
+      pair.push(tokenRow('Admin token', 'CHAT_ADMIN_TOKEN, entered in this browser: it unlocks the Server page. The phone apps don\'t need it.', admin, 'Admin token'));
     }
     if (p.server && p.qr_svg) {
       const { toggle, wrap } = qrBlock(p);
@@ -226,14 +226,23 @@ const cedarPairing = (() => {
     tsRow.side.append(tailscaleBadge(ts), button('Check again', () => renderPage(section)));
     parts.push(block(`On ${computer}`, tsRow.row, checklist(computerSteps(p, computer))));
 
-    // The phone.
-    const phone = el('ol', 'cedar-pair-steps');
-    const step = (...nodes) => { const li = el('li'); li.append(...nodes); phone.append(li); };
-    step(el('b', '', 'Tailscale'), ' from the App Store: log in with the same account as ', computer, ' and turn it on, so the phone is on the same tailnet.');
-    step(el('b', '', 'Cedar'), ' for iOS (iOS 17 or newer): from TestFlight, or built from ', code('iOS/'), ' with Xcode.');
-    step('In Cedar\'s Settings, tap ', el('b', '', 'Scan QR Code'), ' and scan the code above, or enter the address and the access token.');
-    step('Optional: allow notifications in Cedar, then choose ', el('b', '', 'iPhone push'), ' on the Notifications page to hear when a response finishes.');
-    parts.push(block('On the iPhone or iPad', phone));
+    // The phones: the same code for both apps.
+    const steps = () => {
+      const list = el('ol', 'cedar-pair-steps');
+      return { list, step: (...nodes) => { const li = el('li'); li.append(...nodes); list.append(li); } };
+    };
+    const ios = steps();
+    ios.step(el('b', '', 'Tailscale'), ' from the App Store: log in with the same account as ', computer, ' and turn it on, so the phone is on the same tailnet.');
+    ios.step(el('b', '', 'Cedar'), ' for iOS (iOS 17 or newer): from TestFlight, or built from ', code('iOS/'), ' with Xcode.');
+    ios.step('In Cedar\'s Settings, tap ', el('b', '', 'Scan QR Code'), ' and scan the code above, or enter the address and the access token.');
+    ios.step('Optional: allow notifications in Cedar, then choose ', el('b', '', 'iPhone push'), ' on the Notifications page to hear when a response finishes.');
+    parts.push(block('On the iPhone or iPad', ios.list));
+    const android = steps();
+    android.step(el('b', '', 'Tailscale'), ' from Google Play or F-Droid: log in with the same account as ', computer, ' and turn it on.');
+    android.step(el('b', '', 'Cedar'), ' for Android: install the APK from ', link('https://github.com/hanneshapke/cedar/releases', 'GitHub Releases'), '.');
+    android.step('In Cedar\'s Settings, tap ', el('b', '', 'Scan QR code'), ' and scan the code above, or enter the address and the access token.');
+    android.step('Optional: allow notifications in Cedar, then choose ', el('b', '', 'Android push'), ' on the Notifications page. A phone without Google Play services gets pushes through the ', link('https://ntfy.sh', 'ntfy'), ' app (UnifiedPush) instead.');
+    parts.push(block('On an Android phone', android.list));
 
     section.replaceChildren(...parts);
   }
@@ -259,8 +268,8 @@ const cedarPairing = (() => {
 
   function bind() {
     shell()?.register({
-      id: 'iphone', label: 'iPhone', title: 'iPhone & iPad',
-      description: 'Connect the Cedar iOS app to this chat: the QR code, the access token, and what Tailscale needs.',
+      id: 'iphone', label: 'Phone', title: 'iPhone, iPad & Android',
+      description: 'Connect the Cedar iOS or Android app to this chat: the QR code, the access token, and what Tailscale needs.',
       render: renderPage, summary, footer: false,
     });
   }

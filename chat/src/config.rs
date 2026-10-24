@@ -28,7 +28,12 @@ pub struct Config {
     /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
     /// addresses (for a mock in tests, or a relay).
     pub apns_url: Option<String>,
-    /// The tailscale CLI Settings -> iPhone asks about Tailscale, when it isn't in the usual places
+    /// Where Android pushes through Firebase go (`{fcm_url}/v1/projects/{project}/messages:send`),
+    /// and where the Firebase service account's signed assertion is traded for an access token;
+    /// overridable so tests can point at a mock.
+    pub fcm_url: String,
+    pub google_token_url: String,
+    /// The tailscale CLI Settings -> Phone asks about Tailscale, when it isn't in the usual places
     /// (or, in tests, a fake).
     pub tailscale_cli: Option<String>,
 }
@@ -64,6 +69,12 @@ impl Config {
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
             apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
+            fcm_url: get("CHAT_FCM_URL")
+                .map(|u| u.trim().trim_end_matches('/').to_string())
+                .unwrap_or_else(|| crate::channels::FCM_URL.into()),
+            google_token_url: get("CHAT_GOOGLE_TOKEN_URL")
+                .map(|u| u.trim().to_string())
+                .unwrap_or_else(|| crate::channels::GOOGLE_TOKEN_URL.into()),
             tailscale_cli: get("CHAT_TAILSCALE_CLI").map(|p| p.trim().to_string()),
         };
         if cfg.history_max_bytes > 60_000 {
@@ -76,6 +87,11 @@ impl Config {
         if let Some(u) = &cfg.apns_url {
             if !(u.starts_with("http://") || u.starts_with("https://")) {
                 bail!("CHAT_APNS_URL must start with http:// or https://");
+            }
+        }
+        for (name, u) in [("CHAT_FCM_URL", &cfg.fcm_url), ("CHAT_GOOGLE_TOKEN_URL", &cfg.google_token_url)] {
+            if !(u.starts_with("http://") || u.starts_with("https://")) {
+                bail!("{name} must start with http:// or https://");
             }
         }
         if cfg.admin_token.is_some() && cfg.admin_token == cfg.access_token {
@@ -113,5 +129,10 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "http://127.0.0.1:1/apns/")])).unwrap();
         assert_eq!(cfg.apns_url.as_deref(), Some("http://127.0.0.1:1/apns"));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_APNS_URL", "apns.example")])).is_err());
+        assert_eq!(cfg.fcm_url, "https://fcm.googleapis.com");
+        assert_eq!(cfg.google_token_url, "https://oauth2.googleapis.com/token");
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_FCM_URL", "http://127.0.0.1:1/fcm/"), ("CHAT_GOOGLE_TOKEN_URL", "http://127.0.0.1:1/token")])).unwrap();
+        assert_eq!((cfg.fcm_url.as_str(), cfg.google_token_url.as_str()), ("http://127.0.0.1:1/fcm", "http://127.0.0.1:1/token"));
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_FCM_URL", "fcm.example")])).is_err());
     }
 }
