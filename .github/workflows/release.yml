@@ -7,7 +7,10 @@
 #               and packed into a DMG (no Intel build: openssl-sys can't cross-compile to x86_64)
 #   4. msi      cedar.exe and cedar-chat.exe for x64 Windows, wrapped in Cedar.exe and packed into
 #               an MSI (unsigned for now: SmartScreen warns on first run, see desktop/README.md)
-#   5. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG and MSI
+#   5. apk      the Android app as a signed release APK (android/), versionName <version> and
+#               versionCode major*1000000 + minor*1000 + patch, so every release updates in place
+#   6. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG, MSI
+#               and APK
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the
@@ -21,6 +24,15 @@
 #   ASC_ISSUER_ID               its issuer id
 #   ASC_KEY_P8                  the contents of its AuthKey_<id>.p8
 # The API key is the one testflight.yml uploads with (App Manager role; Developer is enough here).
+#
+# The apk job signs with these (required to publish; a manual run without them builds unsigned):
+#   ANDROID_KEYSTORE            the release keystore (.jks) as base64. Keep the same key forever:
+#                               installed apps only update from APKs signed with it
+#   ANDROID_KEYSTORE_PASSWORD   its password
+#   ANDROID_KEY_ALIAS           the key's alias in it
+#   ANDROID_KEY_PASSWORD        the key's password
+#   ANDROID_GOOGLE_SERVICES_JSON  optional: the Firebase project's google-services.json, for FCM
+#                               (without it the APK uses ntfy / UnifiedPush only)
 # GHCR uses the workflow's own GITHUB_TOKEN. See desktop/README.md for the one-time steps.
 
 name: Release
@@ -390,8 +402,75 @@ jobs:
           path: dist/*.msi
           if-no-files-found: error
 
+  apk:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing key and Firebase config
+        env:
+          PUBLISH: ${{ needs.verify.outputs.publish }}
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          set -eu
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            printf '%s' "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/cedar.jks"
+            echo "CEDAR_KEYSTORE=$RUNNER_TEMP/cedar.jks" >> "$GITHUB_ENV"
+          elif [ "$PUBLISH" = true ]; then
+            echo "::error::ANDROID_KEYSTORE is not set; a published APK must be signed with the release key"; exit 1
+          else
+            echo "::warning::ANDROID_KEYSTORE is not set: building an unsigned APK"
+          fi
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          else
+            echo "::warning::ANDROID_GOOGLE_SERVICES_JSON is not set: the APK has no FCM, only ntfy / UnifiedPush"
+          fi
+
+      - name: Build the release APK
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          CEDAR_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CEDAR_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CEDAR_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -eu
+          ./gradlew --no-daemon -Pcedar.version="$VERSION" :core:test :app:assembleRelease
+          built=$(ls app/build/outputs/apk/release/*.apk)
+          [ "$(echo "$built" | wc -l)" = 1 ] || { echo "::error::expected one APK, found: $built"; exit 1; }
+          mkdir -p ../dist
+          if [ -n "${CEDAR_KEYSTORE:-}" ]; then
+            apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+            "$apksigner" verify --print-certs "$built" | head -3
+            mv "$built" "../dist/Cedar-$VERSION-android.apk"
+          else
+            mv "$built" "../dist/Cedar-$VERSION-android-unsigned.apk"
+          fi
+          ls -l ../dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-android
+          path: dist/*.apk
+          if-no-files-found: error
+
   release:
-    needs: [verify, manifests, dmg, msi]
+    needs: [verify, manifests, dmg, msi, apk]
     if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     steps:
@@ -411,9 +490,15 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: apk-*
+          path: dist
+          merge-multiple: true
+
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.dmg *.msi | tee checksums.txt
+        run: sha256sum *.dmg *.msi *.apk | tee checksums.txt
 
       - name: Tag and publish the release
         env:
@@ -437,6 +522,13 @@ jobs:
           installer is not signed yet, so Windows SmartScreen warns the first time: choose *More info*,
           then *Run anyway*.
 
+          ## Cedar $VERSION for Android
+
+          Download \`Cedar-$VERSION-android.apk\` on the phone and open it (allow installs from
+          your browser or file manager when Android asks). It runs on Android 8 and newer and talks to
+          your cedar-chat over HTTPS: scan the QR code under Settings → Phone in the chat. Later
+          releases install over it. See android/README.md.
+
           Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
           EOF
           gh release create "v$VERSION" \
@@ -444,4 +536,4 @@ jobs:
             --title "Cedar $VERSION" \
             --notes "$(cat notes.md)" \
             --generate-notes \
-            dist/*.dmg dist/*.msi dist/checksums.txt
+            dist/*.dmg dist/*.msi dist/*.apk dist/checksums.txt
