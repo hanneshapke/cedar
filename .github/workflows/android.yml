@@ -1,0 +1,81 @@
+name: Android
+
+# Builds the Android app and runs its tests on a Linux runner, for every change to `android/` (a
+# push or a pull request) and on request. The plain-Kotlin `core` module's unit tests (the /api
+# types, the transcript reducer, the SSE parser, Markdown, cards, attachments, the client) run
+# first, then Android lint and a debug APK, which is kept as an artifact for a week.
+#
+# A build without the ANDROID_GOOGLE_SERVICES_JSON secret (a fork's pull request, say) leaves FCM
+# out and still passes; the app then offers ntfy (UnifiedPush) only. The signed release APK is built
+# by release.yml.
+on:
+  push:
+    paths: ["android/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Firebase config (FCM), when the secret is there
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            echo "Building with FCM"
+          else
+            echo "No ANDROID_GOOGLE_SERVICES_JSON: building without FCM (ntfy / UnifiedPush only)"
+          fi
+
+      - name: Core unit tests
+        run: ./gradlew --no-daemon :core:test
+
+      - name: Lint
+        run: ./gradlew --no-daemon :app:lintDebug
+
+      - name: Debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Keep the debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cedar-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Keep the reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-reports
+          path: |
+            android/core/build/reports/
+            android/app/build/reports/
+          retention-days: 7
+          if-no-files-found: ignore
