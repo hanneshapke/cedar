@@ -63,6 +63,7 @@ fn main() {
             commands::set_browser,
             commands::open_chat,
             commands::open_in_browser,
+            commands::open_url,
             commands::open_logs,
             commands::copy_token,
             commands::set_share,

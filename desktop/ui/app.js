@@ -260,6 +260,14 @@ $('share-copy-token').addEventListener('click', () => invoke('copy_token').catch
 $('open-chat').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
 $('open-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));
 $('copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
+// Links to other sites (Get Docker Desktop, Tailscale) open in the default browser: the web view
+// doesn't open target="_blank" links on its own.
+document.addEventListener('click', (ev) => {
+  const a = ev.target.closest('a[target="_blank"]');
+  if (!a || !/^https?:\/\//i.test(a.href)) return;
+  ev.preventDefault();
+  invoke('open_url', { url: a.href }).catch((e) => alert(e));
+});
 $('open-logs').addEventListener('click', () => invoke('open_logs').catch((e) => alert(e)));
 
 refresh();
