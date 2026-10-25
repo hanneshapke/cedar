@@ -46,7 +46,7 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
   <nav style="display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap">
     <a href="#does" style="color:#231f1b" style-hover="color:#e5553a">What it does</a>
     <a href="#private" style="color:#231f1b" style-hover="color:#e5553a">Private by design</a>
-    <a href="#apps" style="color:#231f1b" style-hover="color:#e5553a">Mac, Windows, Linux &amp; iPhone</a>
+    <a href="#apps" style="color:#231f1b" style-hover="color:#e5553a">Mac, Windows, Linux &amp; phones</a>
     <a href="#compare" style="color:#231f1b" style-hover="color:#e5553a">Compared</a>
     <a href="#setup" style="color:#231f1b" style-hover="color:#e5553a">Setup</a>
     <a href="{{ dl.href }}" style="background:#231f1b;color:#fbf4ea;padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s" style-hover="background:#e5553a;color:#fbf4ea;transform:translateY(-2px)">{{ dl.label }}</a>
@@ -60,10 +60,10 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
     <p style="margin:0;font-size:19px;line-height:1.5;color:#4f4740;max-width:520px;text-wrap:pretty">Give Cedar a task: research, documents, trips, your finances. It plans the work, does it in a sealed box, and shows you where every answer came from. Nothing leaves your computer unless you say so.</p>
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
       <a href="{{ dl.href }}" style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;box-shadow:0 10px 30px rgba(229,85,58,.35);transition:transform .2s,box-shadow .2s" style-hover="transform:translateY(-3px);box-shadow:0 16px 36px rgba(229,85,58,.42);color:#fff">{{ dl.label }}</a>
-      <sc-if value="{{ dl.invite }}" hint-placeholder-val="{{ true }}"><a href="https://github.com/hanneshapke/cedar/discussions/51" style="display:inline-flex;align-items:center;gap:8px;padding:15px 22px;border-radius:999px;font-weight:600;font-size:16px;border:2px solid #231f1b;color:#231f1b;transition:transform .2s" style-hover="transform:translateY(-3px);border-color:#e5553a;color:#e5553a">iPhone app · request an invite</a></sc-if>
+      <sc-if value="{{ dl.invite }}" hint-placeholder-val="{{ true }}"><a href="#phone" style="display:inline-flex;align-items:center;gap:8px;padding:15px 22px;border-radius:999px;font-weight:600;font-size:16px;border:2px solid #231f1b;color:#231f1b;transition:transform .2s" style-hover="transform:translateY(-3px);border-color:#e5553a;color:#e5553a">iPhone &amp; Android apps</a></sc-if>
       <a href="#apps" style="font-weight:600;font-size:16px">{{ dl.other }}</a>
     </div>
-    <span style="font-size:13px;color:#8a7f73">Mac app for Apple silicon · Windows app for x64 · Linux from source · Apache 2.0 · built in the open on GitHub</span>
+    <span style="font-size:13px;color:#8a7f73">Mac app for Apple silicon · Windows app for x64 · Linux for x64 and arm64 · iPhone and Android · Apache 2.0 · built in the open on GitHub</span>
   </div>
 
   <div style="position:relative;animation:riseIn 1s .15s cubic-bezier(.2,.8,.2,1) both">
@@ -190,11 +190,11 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
   <div data-reveal style="position:relative"><div style="position:absolute;inset:12% -8% -10% 8%;border-radius:28px;background:linear-gradient(135deg,#f2a21c,#e5553a);transform:rotate(-2deg);animation:floaty2 9s ease-in-out infinite"></div><img src="shots/server.png" alt="Cedar settings listing three models you can switch between" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
 </section>
 
-<section id="apps" data-screen-label="Mac, Windows, Linux and iPhone" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:48px;position:relative">
+<section id="apps" data-screen-label="Mac, Windows, Linux and phones" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:48px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
-    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Mac, Windows, Linux &amp; iPhone</span>
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Mac, Windows, Linux &amp; phones</span>
     <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">On your desk.<br>In your pocket.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Pick the computer that does the work: a Mac, a Windows PC or a Linux box at home. Whichever it is, Cedar for iPhone pairs with it and keeps up: the same conversations, maps and charts, a question when it needs one, and a notification when a task finishes while you're out.</p>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Pick the computer that does the work: a Mac, a Windows PC or a Linux box at home. Whichever it is, Cedar for iPhone or Android pairs with it and keeps up: the same conversations, maps and charts, a question when it needs one, and a notification when a task finishes while you're out.</p>
   </div>
   <div data-reveal style="display:flex;flex-direction:column;gap:20px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#8a7f73">1 · On your desk, pick one</span>
@@ -218,29 +218,48 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
     <div id="linux" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center;background:#231f1b;color:#fbf4ea;border-radius:28px;padding:32px;box-shadow:0 20px 50px rgba(60,30,10,.18)">
       <div style="display:flex;flex-direction:column;gap:12px">
         <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Cedar for Linux</h3>
-        <p style="margin:0;font-size:17px;line-height:1.5;color:#d9cfc2;text-wrap:pretty">Got a GPU box or a home server, like an NVIDIA DGX Spark? One script builds Cedar from source, starts it next to vLLM, and serves the chat to your browser and your iPhone. Same sealed boxes, same guardrails.</p>
+        <p style="margin:0;font-size:17px;line-height:1.5;color:#d9cfc2;text-wrap:pretty">Got a GPU box or a home server, like an NVIDIA DGX Spark? Download Cedar's two programs, run them next to vLLM, and open the chat in your browser or on your phone. Same sealed boxes, same guardrails.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <a href="{{ linuxX64Href }}" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fff">Download for x64</a>
+          <a href="{{ linuxArmHref }}" style="background:#fbf4ea;color:#231f1b;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#231f1b">Download for arm64</a>
+        </div>
+        <span style="font-size:13px;line-height:1.45;color:#a89d90">For Ubuntu 22.04, Debian 12 and newer. arm64 is the one for a DGX Spark. Rather build it yourself? <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#fbf4ea">scripts/cedar-stack.sh</code> builds from source and starts it all.</span>
         <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff">Read the Linux guide →</a>
       </div>
-      <pre style="margin:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.7;color:#fbf4ea"><span style="color:#8a7f73"># build and start everything</span>
-git clone https://github.com/hanneshapke/cedar
-cd cedar &amp;&amp; scripts/cedar-stack.sh
+      <pre style="margin:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.7;color:#fbf4ea"><span style="color:#8a7f73"># download and install (on arm64, swap in linux-arm64)</span>
+V={{ ver }}
+F=Cedar-$V-linux-x64
+curl -fLO https://github.com/hanneshapke/cedar/releases/download/v$V/$F.tar.gz
+tar -xzf $F.tar.gz
+sudo install $F/cedar* /usr/local/bin/
 
-<span style="color:#8a7f73"># show the code your iPhone scans</span>
-scripts/cedar-stack.sh --pair</pre>
+<span style="color:#8a7f73"># then run them under systemd: see the Linux guide</span></pre>
     </div>
   </div>
   <div data-reveal style="display:flex;flex-direction:column;gap:20px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#8a7f73">2 · In your pocket, with any of them</span>
-    <div id="iphone" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:32px;align-items:stretch;background:linear-gradient(160deg,#f2a21c,#e5553a);border-radius:28px;padding:32px 32px 0;overflow:hidden;color:#231f1b">
+    <div id="phone" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:32px;align-items:stretch;background:linear-gradient(160deg,#f2a21c,#e5553a);border-radius:28px;padding:32px 32px 0;overflow:hidden;color:#231f1b">
       <div style="display:flex;flex-direction:column;gap:18px;padding-bottom:32px">
-        <div style="display:flex;flex-direction:column;gap:6px"><h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Cedar for iPhone</h3><span style="font-size:15px;line-height:1.4">Invite only for now. <a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b;font-weight:600;text-decoration:underline" style-hover="color:#fff">Request yours →</a></span></div>
+        <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em">Cedar for iPhone &amp; Android</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px">
+          <div style="background:rgba(251,244,234,.55);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+            <span style="font-weight:700;font-size:16px">iPhone &amp; iPad</span>
+            <span style="font-size:14.5px;line-height:1.4">On TestFlight, invite only for now. iOS 17 or newer.</span>
+            <a href="https://github.com/hanneshapke/cedar/discussions/51" style="align-self:flex-start;background:#231f1b;color:#fbf4ea;padding:10px 16px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fbf4ea">Request an invite</a>
+          </div>
+          <div style="background:rgba(251,244,234,.55);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+            <span style="font-weight:700;font-size:16px">Android</span>
+            <span style="font-size:14.5px;line-height:1.4">Download the app on the phone and open it. Android 8 or newer.</span>
+            <a href="{{ apkHref }}" style="align-self:flex-start;background:#231f1b;color:#fbf4ea;padding:10px 16px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fbf4ea">Download the APK</a>
+          </div>
+        </div>
         <p style="margin:0;font-size:17px;line-height:1.5;text-wrap:pretty">Paired with one scan, whatever Cedar runs on. The phone reaches it over a private connection (Tailscale); nobody else can.</p>
         <div style="display:flex;flex-direction:column;gap:10px;font-size:15.5px;line-height:1.45">
-          <div style="display:flex;gap:12px;align-items:baseline"><span style="flex:none;width:78px;font-weight:700">Mac</span><span>Tick one box in the iPhone &amp; iPad settings.</span></div>
+          <div style="display:flex;gap:12px;align-items:baseline"><span style="flex:none;width:78px;font-weight:700">Mac</span><span>Tick one box under iPhone, iPad &amp; Android.</span></div>
           <div style="display:flex;gap:12px;align-items:baseline"><span style="flex:none;width:78px;font-weight:700">Windows</span><span>The same box, in the same place.</span></div>
-          <div style="display:flex;gap:12px;align-items:baseline"><span style="flex:none;width:78px;font-weight:700">Linux</span><span>Run <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap;font-size:14px;color:#231f1b">cedar-stack.sh --pair</code></span></div>
+          <div style="display:flex;gap:12px;align-items:baseline"><span style="flex:none;width:78px;font-weight:700">Linux</span><span>Open Settings → Phone in the chat.</span></div>
         </div>
-        <span style="font-size:15.5px;font-weight:600">Then scan the code with your iPhone. Done.</span>
+        <span style="font-size:15.5px;font-weight:600">Then scan the code with your phone. Done.</span>
       </div>
       <div style="display:flex;align-items:flex-end;justify-content:center;gap:0;min-width:0;position:relative">
         <img src="shots/pairing.png" alt="Cedar for Mac showing the QR code that pairs the iPhone app" style="width:88%;height:auto;display:block;border-radius:14px;box-shadow:0 16px 40px rgba(60,20,0,.25);align-self:center;margin-bottom:24px">
@@ -304,7 +323,7 @@ scripts/cedar-stack.sh --pair</pre>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#3a5f4b">3</span>
       <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Open Cedar</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Pick your model from the list, and give it a task. On Linux, run <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap">scripts/cedar-stack.sh</code> and open the chat in your browser. Pair your iPhone whenever you like.</p>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Pick your model from the list, and give it a task. On Linux, start <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap">cedar</code> and <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap">cedar-chat</code> and open the chat in your browser. Pair your phone whenever you like.</p>
     </div>
   </div>
   <div data-reveal style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
@@ -316,13 +335,13 @@ scripts/cedar-stack.sh --pair</pre>
 
 <footer style="max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:#8a7f73;border-top:1px solid #f0dcc8;position:relative">
   <span style="display:flex;align-items:center;gap:8px"><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:#231f1b">@hanneshapke</a> and contributors</span>
-  <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar" style="color:#231f1b">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b">iPhone invite</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" style="color:#231f1b">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="color:#231f1b">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="color:#231f1b">For developers</a></span>
+  <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar" style="color:#231f1b">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b">iPhone invite</a><a href="{{ apkHref }}" style="color:#231f1b">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" style="color:#231f1b">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="color:#231f1b">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="color:#231f1b">For developers</a></span>
 </footer>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;demoSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero demo&quot;}}">
 class Component extends DCLogic {
-  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', cmp: 'openclaw' };
+  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', apk: '', linuxX64: '', linuxArm: '', ver: '', cmp: 'openclaw' };
   prompt = 'Compare the three largest EV battery makers and write a sourced report';
   plan = [
     { title: 'Search for the latest market figures', note: '14 sources' },
@@ -333,7 +352,7 @@ class Component extends DCLogic {
   cmpTopics = ['Where it runs', 'How you use it', 'The AI behind it', 'Guardrails', 'Your data'];
   cmpCedar = [
     'On your own Mac, Windows PC or Linux machine. Every task in a fresh sealed box that never touches the rest of your machine.',
-    'A Mac or Windows app, an iPhone app, or the browser. On Linux, one script starts it all.',
+    'A Mac or Windows app, an iPhone or Android app, or the browser. On Linux, two programs you download.',
     'Your choice: Ollama or LM Studio on a Mac or PC, vLLM on Linux, or a server you trust.',
     'Shows you the plan first, asks before sending mail, downloading, installing or deleting.',
     'Stays on your machine. No account, no cloud.',
@@ -408,18 +427,26 @@ class Component extends DCLogic {
     try {
       const res = await fetch('https://api.github.com/repos/hanneshapke/cedar/releases/latest');
       if (!res.ok) return;
-      const assets = (await res.json()).assets || [];
+      const release = await res.json();
+      const assets = release.assets || [];
       const find = (ext) => (assets.find((a) => a.name.endsWith(ext)) || {}).browser_download_url || '';
-      this.setState({ dmg: find('.dmg'), msi: find('.msi') });
+      const linuxX64 = find('-linux-x64.tar.gz');
+      this.setState({
+        dmg: find('.dmg'), msi: find('.msi'), apk: find('-android.apk'),
+        linuxX64, linuxArm: find('-linux-arm64.tar.gz'),
+        // The install commands name this version, so only one that has the Linux files.
+        ver: linuxX64 ? (release.tag_name || '').replace(/^v/, '') : '',
+      });
     } catch (e) { /* offline or rate limited: keep the releases page */ }
   }
   downloadFor(os) {
     const releases = 'https://github.com/hanneshapke/cedar/releases/latest';
-    const { dmg, msi } = this.state;
+    const { dmg, msi, apk } = this.state;
     switch (os) {
       case 'mac': return { label: 'Download for Mac', href: dmg || releases, other: 'Windows or Linux? →', invite: true };
       case 'windows': return { label: 'Download for Windows', href: msi || releases, other: 'Mac or Linux? →', invite: true };
-      case 'linux': return { label: 'Run it on Linux', href: 'https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md', other: 'Mac or Windows? →', invite: true };
+      case 'linux': return { label: 'Download for Linux', href: '#linux', other: 'Mac or Windows? →', invite: true };
+      case 'android': return { label: 'Get the Android app', href: apk || releases, other: 'Cedar for your computer →', invite: false };
       case 'ios': return { label: 'Get the iPhone app', href: 'https://github.com/hanneshapke/cedar/discussions/51', other: 'Cedar for your computer →', invite: false };
       default: return { label: 'Download Cedar', href: '#apps', other: 'Mac, Windows or Linux →', invite: true };
     }
@@ -455,6 +482,11 @@ class Component extends DCLogic {
       typed, steps, marquee, dl: this.downloadFor(os),
       macHref: this.state.dmg || 'https://github.com/hanneshapke/cedar/releases/latest',
       winHref: this.state.msi || 'https://github.com/hanneshapke/cedar/releases/latest',
+      apkHref: this.state.apk || 'https://github.com/hanneshapke/cedar/releases/latest',
+      linuxX64Href: this.state.linuxX64 || 'https://github.com/hanneshapke/cedar/releases/latest',
+      linuxArmHref: this.state.linuxArm || 'https://github.com/hanneshapke/cedar/releases/latest',
+      // The newest release with Linux builds, until GitHub says which is latest.
+      ver: this.state.ver || '0.1.4',
       showPlan: phase >= 1, showResult: phase === 3,
       statusLine: phase === 0 ? 'new task' : phase === 1 ? 'planning' : phase === 2 ? 'working in a sealed box' : 'done',
       ...this.comparison(cmp),
