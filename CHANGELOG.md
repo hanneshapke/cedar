@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- **Cedar for Windows sets Docker up itself.** When no Docker is found, the setup page offers *Set up Docker for me*: it checks the PC (Windows build, virtualization in the firmware), downloads Docker Desktop, and after one permission prompt turns on WSL 2, installs Docker Desktop with the WSL 2 backend, and lets your account use it. When a restart or sign-out is needed, Cedar offers it and opens again afterwards to finish. A Docker Desktop that isn't running is now started by Cedar (#79).
+- Landing page: Linux downloads, and the Android app next to iOS (#78).
+- Fix: a port race in the webhook tests that failed the 0.1.4 release (#77).
+
 ## 0.1.4
 
 - **Every platform in one release.** Each release now also publishes Linux tarballs of `cedar` and `cedar-chat` for x64 and arm64 (`Cedar-<version>-linux-<arch>.tar.gz`, glibc 2.35 and newer), which replace building them for the systemd setup in DEPLOYMENT.md, and uploads the iOS app to TestFlight under the same version.
