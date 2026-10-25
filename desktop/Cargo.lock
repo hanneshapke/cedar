@@ -438,6 +438,7 @@ name = "cedar-app"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "cedar-pairing",
  "futures-util",
  "hex",
@@ -449,6 +450,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",
