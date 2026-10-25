@@ -430,10 +430,12 @@ class Component extends DCLogic {
       const release = await res.json();
       const assets = release.assets || [];
       const find = (ext) => (assets.find((a) => a.name.endsWith(ext)) || {}).browser_download_url || '';
+      const linuxX64 = find('-linux-x64.tar.gz');
       this.setState({
         dmg: find('.dmg'), msi: find('.msi'), apk: find('-android.apk'),
-        linuxX64: find('-linux-x64.tar.gz'), linuxArm: find('-linux-arm64.tar.gz'),
-        ver: (release.tag_name || '').replace(/^v/, ''),
+        linuxX64, linuxArm: find('-linux-arm64.tar.gz'),
+        // The install commands name this version, so only one that has the Linux files.
+        ver: linuxX64 ? (release.tag_name || '').replace(/^v/, '') : '',
       });
     } catch (e) { /* offline or rate limited: keep the releases page */ }
   }
