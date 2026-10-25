@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+- Mac and Windows app: links the chat opens in a new tab (an answer's sources, map attributions, recipe credits) now open in the default browser instead of doing nothing (#81).
+
 ## 0.1.5
 
 - **Cedar for Windows sets Docker up itself.** When no Docker is found, the setup page offers *Set up Docker for me*: it checks the PC (Windows build, virtualization in the firmware), downloads Docker Desktop, and after one permission prompt turns on WSL 2, installs Docker Desktop with the WSL 2 backend, and lets your account use it. When a restart or sign-out is needed, Cedar offers it and opens again afterwards to finish. A Docker Desktop that isn't running is now started by Cedar (#79).
