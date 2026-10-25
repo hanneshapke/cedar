@@ -98,6 +98,31 @@ fn apns_device_from_row(r: &SqliteRow) -> Result<ApnsDevice> {
     })
 }
 
+/// An Android phone that registered for push through the Android app: `fcm` with the
+/// registration token Firebase gave it, or `unifiedpush` with the endpoint URL its distributor
+/// (ntfy, say) gave it. The token is never shown to the page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AndroidDevice {
+    pub id: Uuid,
+    pub transport: String,
+    #[serde(skip)]
+    pub token: String,
+    pub name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+fn android_device_from_row(r: &SqliteRow) -> Result<AndroidDevice> {
+    Ok(AndroidDevice {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        transport: r.try_get("transport")?,
+        token: r.try_get("token")?,
+        name: r.try_get("name")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        last_used_at: r.try_get::<Option<i64>, _>("last_used_at")?.map(to_dt),
+    })
+}
+
 /// A finished response nobody has looked at, as the page's inbox lists it.
 #[derive(Debug, Clone, Serialize)]
 pub struct InboxItem {
@@ -723,6 +748,52 @@ impl Store {
         Ok(())
     }
 
+    // -- Android phones (FCM, UnifiedPush) ----------------------------------------------------
+
+    /// Oldest first.
+    pub async fn android_devices(&self) -> Result<Vec<AndroidDevice>> {
+        let rows = sqlx::query("SELECT * FROM android_devices ORDER BY created_at, id").fetch_all(&self.pool).await?;
+        rows.iter().map(android_device_from_row).collect()
+    }
+
+    /// Add an Android phone's token or endpoint, or update the one that already has it.
+    pub async fn add_android_device(&self, transport: &str, token: &str, name: Option<&str>) -> Result<AndroidDevice> {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO android_devices (id, transport, token, name, created_at) VALUES (?, ?, ?, ?, ?) \
+             ON CONFLICT (token) DO UPDATE SET transport = excluded.transport, name = excluded.name",
+        )
+        .bind(id.to_string())
+        .bind(transport)
+        .bind(token)
+        .bind(name)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        let row = sqlx::query("SELECT * FROM android_devices WHERE token = ?").bind(token).fetch_one(&self.pool).await?;
+        android_device_from_row(&row)
+    }
+
+    pub async fn delete_android_device(&self, id: Uuid) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM android_devices WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// The app turned push off, or moved to another server: forget its token.
+    pub async fn delete_android_device_by_token(&self, token: &str) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM android_devices WHERE token = ?").bind(token).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    pub async fn touch_android_device(&self, id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE android_devices SET last_used_at = ? WHERE id = ?")
+            .bind(now_ms())
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// The id of the last notification taken from cedar's event stream (0: none yet).
     pub async fn notifications_cursor(&self) -> Result<i64> {
         let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications_cursor'")
@@ -1104,6 +1175,30 @@ mod tests {
         assert!(store.delete_apns_device(a.id).await.unwrap());
         assert!(!store.delete_apns_device(a.id).await.unwrap());
         assert!(store.apns_devices().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn android_devices_round_trip() {
+        let store = Store::connect_memory().await.unwrap();
+        let a = store.add_android_device("fcm", "fcm-token-a", Some("Pixel 8")).await.unwrap();
+        let again = store.add_android_device("fcm", "fcm-token-a", Some("Pixel 9")).await.unwrap();
+        assert_eq!(a.id, again.id, "the same token is one device");
+        assert_eq!(again.name.as_deref(), Some("Pixel 9"));
+        let b = store.add_android_device("unifiedpush", "https://ntfy.example/upabc?up=1", None).await.unwrap();
+        let listed = store.android_devices().await.unwrap();
+        assert_eq!(listed.iter().map(|d| d.id).collect::<Vec<_>>(), [a.id, b.id]);
+        assert_eq!(listed[1].transport, "unifiedpush");
+        assert!(listed[0].last_used_at.is_none());
+        store.touch_android_device(a.id).await.unwrap();
+        assert!(store.android_devices().await.unwrap()[0].last_used_at.is_some());
+        // The page never sees the tokens.
+        let json = serde_json::to_string(&listed).unwrap();
+        assert!(!json.contains("fcm-token") && !json.contains("ntfy.example"), "{json}");
+        assert!(json.contains("\"transport\":\"fcm\""), "{json}");
+        assert!(store.delete_android_device_by_token("https://ntfy.example/upabc?up=1").await.unwrap());
+        assert!(store.delete_android_device(a.id).await.unwrap());
+        assert!(!store.delete_android_device(a.id).await.unwrap());
+        assert!(store.android_devices().await.unwrap().is_empty());
     }
 
     #[test]

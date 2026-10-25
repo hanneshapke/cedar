@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cedar</string>
+    <string name="channel_responses">Responses</string>
+    <string name="channel_responses_description">A response finished while you were away</string>
+</resources>

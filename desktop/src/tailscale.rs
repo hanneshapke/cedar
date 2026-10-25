@@ -1,4 +1,4 @@
-//! Sharing the chat with an iPhone or iPad over Tailscale: `tailscale serve` proxies
+//! Sharing the chat with an iPhone, iPad or Android phone over Tailscale: `tailscale serve` proxies
 //! `https://<computer>.<tailnet>.ts.net` to the chat on 127.0.0.1, so only devices on the tailnet
 //! can reach it. What Tailscale must be ready for, and where its CLI is, is shared with the chat's
 //! own Settings page (`cedar_pairing::tailscale`); running the CLI is this app's.

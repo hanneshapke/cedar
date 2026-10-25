@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mark from docs/assets/cedar-app-icon.svg, scaled into the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="18.800" android:translateY="18.800" android:scaleX="1.4667" android:scaleY="1.4667">
+        <path android:fillColor="@color/cedar_cream" android:pathData="M10.5,9 h27.0 a1.5,1.5 0 0 1 1.5,1.5 v2.0 a1.5,1.5 0 0 1 -1.5,1.5 h-27.0 a1.5,1.5 0 0 1 -1.5,-1.5 v-2.0 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+        <path android:fillColor="@color/cedar_cream" android:pathData="M10.5,17.5 h7.0 a1.5,1.5 0 0 1 1.5,1.5 v2.0 a1.5,1.5 0 0 1 -1.5,1.5 h-7.0 a1.5,1.5 0 0 1 -1.5,-1.5 v-2.0 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+        <path android:fillColor="@color/cedar_cream" android:pathData="M10.5,25.5 h7.0 a1.5,1.5 0 0 1 1.5,1.5 v2.0 a1.5,1.5 0 0 1 -1.5,1.5 h-7.0 a1.5,1.5 0 0 1 -1.5,-1.5 v-2.0 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+        <path android:fillColor="@color/cedar_cream" android:pathData="M10.5,34 h27.0 a1.5,1.5 0 0 1 1.5,1.5 v2.0 a1.5,1.5 0 0 1 -1.5,1.5 h-27.0 a1.5,1.5 0 0 1 -1.5,-1.5 v-2.0 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+        <path android:fillColor="@color/cedar_clay" android:pathData="M32.5,21.5 h5.0 a1.5,1.5 0 0 1 1.5,1.5 v2.0 a1.5,1.5 0 0 1 -1.5,1.5 h-5.0 a1.5,1.5 0 0 1 -1.5,-1.5 v-2.0 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+    </group>
+</vector>

@@ -1,6 +1,6 @@
 # cedar for iOS
 
-A native SwiftUI client for [cedar-chat](../chat/README.md). The app is a thin client: it talks
+A native SwiftUI client for [cedar-chat](../chat/README.md); [android/](../android/README.md) is the same client for Android. The app is a thin client: it talks
 to cedar-chat's `/api`, the same routes the web page uses, so your conversations, their unread
 state, scheduled agents, tool and model settings, and notifications are the same in the app and
 in the browser. cedar's own API key never leaves the server.
@@ -41,7 +41,7 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered
 - Markdown rendering: headings, lists, quotes, tables, and code blocks with a copy button
-- Connecting by scanning the QR code the chat's Settings → iPhone page, the Cedar desktop app or
+- Connecting by scanning the QR code the chat's Settings → Phone page, the Cedar desktop app or
   `scripts/cedar-stack.sh --pair` shows
 - iPhone and iPad layouts, light and dark mode
 

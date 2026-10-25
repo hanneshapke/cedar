@@ -13,7 +13,8 @@
 //     again, and the server clears the marks.
 //   - The Notifications page of Settings (framed by settings-shell.js): the ways to be told out
 //     of the app (a notification from the Cedar app for macOS, browser push through the service
-//     worker at /sw.js, a phone push through Pushover, an email) as one list of methods, the
+//     worker at /sw.js, a push to the Cedar iOS or Android app, a phone push through Pushover, an
+//     email) as one list of methods, the
 //     chosen one unfolding its credentials and a test send, and which responses are worth it
 //     (GET/PUT /api/notifications). schedule.js asks cedarNotify for the set-up methods to offer
 //     in a scheduled agent's own picker.
@@ -37,6 +38,7 @@ const cedarNotify = (() => {
     ['desktop', 'Desktop notification', 'A notification from the Cedar app on this computer (Notification Center on a Mac, a toast on Windows), its window open or not.'],
     ['browser', 'Browser push', 'A notification from this browser even when the tab is closed. Needs https, or localhost.'],
     ['ios', 'iPhone push', 'A notification from the Cedar iOS app, through Apple\'s push service.'],
+    ['android', 'Android push', 'A notification from the Cedar Android app, through Firebase or UnifiedPush (ntfy).'],
     ['pushover', 'Phone push via Pushover', 'A push to your phone through pushover.net and its app.'],
     ['email', 'Email', 'A mail through an SMTP server of yours.'],
   ];
@@ -331,7 +333,7 @@ const cedarNotify = (() => {
     return options;
   }
 
-  let draft = null;        // { default_method, scope, pushover: {}, email: {}, ios: {}, contact? }
+  let draft = null;        // { default_method, scope, pushover: {}, email: {}, ios: {}, android: {}, contact? }
   let openMethod = null;   // which method's setup panel is unfolded
   let local = null;        // this browser's push subscription, if any
 
@@ -364,7 +366,7 @@ const cedarNotify = (() => {
     updateAwayLine();
     // A re-render after a test or a Forget keeps what was picked but not yet saved.
     const kept = draft && shell()?.current() === 'notify' ? draft : null;
-    draft = { default_method: kept?.default_method ?? status.default_method, scope: kept?.scope ?? status.scope, pushover: {}, email: {}, ios: {} };
+    draft = { default_method: kept?.default_method ?? status.default_method, scope: kept?.scope ?? status.scope, pushover: {}, email: {}, ios: {}, android: {} };
     const configured = new Set(status.configured || []);
     const dirty = () => shell()?.setDirty('notify', true);
     const row = (label) => {
@@ -423,6 +425,7 @@ const cedarNotify = (() => {
         if (id === 'desktop') panel.append(...desktopBlock());
         if (id === 'browser') panel.append(...browserBlock(local));
         if (id === 'ios') panel.append(...iosBlock());
+        if (id === 'android') panel.append(...androidBlock());
         if (id === 'pushover') panel.append(...pushoverBlock());
         if (id === 'email') panel.append(...emailBlock());
         panels.set(id, panel);
@@ -623,6 +626,52 @@ const cedarNotify = (() => {
       return parts;
     }
 
+    function androidBlock() {
+      const a = status.android || {};
+      const parts = [];
+      const devices = a.devices || [];
+      if (devices.length) {
+        const list = el('div', 'cedar-notify-subs');
+        for (const d of devices) {
+          const row = el('div', 'cedar-notify-sub');
+          const via = d.transport === 'unifiedpush' ? 'UnifiedPush' : 'Firebase';
+          row.append(el('span', '', `${d.name || 'Android phone'} · ${via} · since ${when(d.created_at)}${d.last_used_at ? ` · last sent ${when(d.last_used_at)}` : ''}`));
+          row.append(button('Remove', async () => {
+            try { status = await deps.api('DELETE', `/notifications/android/devices/${d.id}`); } catch (e) { deps.toast(e.message); }
+            renderSettings();
+          }, 'settings-ghost'));
+          list.append(row);
+        }
+        parts.push(list);
+      }
+      const fields = el('div', 'cedar-set-fields');
+      const key = el('textarea');
+      key.rows = 4;
+      key.placeholder = a.key_set ? `Saved${a.project_id ? ` (project ${a.project_id})` : ''}; paste to replace` : '{ "type": "service_account", "project_id": …, "private_key": …, "client_email": … }';
+      key.setAttribute('aria-label', 'Firebase service-account key (JSON)');
+      key.spellcheck = false;
+      key.addEventListener('input', () => { draft.android.service_account = key.value; dirty(); });
+      const keyField = field('Firebase service-account key (optional; the JSON file\'s contents)', key);
+      keyField.style.gridColumn = '1 / -1';
+      fields.append(keyField);
+      parts.push(fields);
+      const buttons = [];
+      if (devices.length) buttons.push(testButton('android'));
+      if (a.key_set) {
+        buttons.push(button('Forget the saved key', async () => {
+          const fcmOnly = devices.every((d) => d.transport !== 'unifiedpush');
+          try { await submit({ android: { service_account: '' }, default_method: draft.default_method === 'android' && fcmOnly ? 'none' : draft.default_method }); } catch { /* reported */ }
+          renderSettings();
+        }, 'settings-ghost'));
+      }
+      const registered = devices.length
+        ? `${devices.length} ${devices.length === 1 ? 'Android phone has' : 'Android phones have'} registered.`
+        : 'No Android phone has registered yet: open the Cedar app, point it at this server, and allow notifications.';
+      const project = a.fcm_configured ? ` Firebase project: ${a.project_id}.` : '';
+      parts.push(helpRow(`${registered}${project} A phone that gets pushes through UnifiedPush (the ntfy app, for phones without Google Play services) needs nothing here. For Firebase, in the Firebase console of the project the app was built with, under Project settings → Service accounts, generate a new private key and paste the JSON file. The key stays on this server; pushes carry only which conversation finished, and the app fetches the rest from here.`, ...buttons));
+      return parts;
+    }
+
     function pushoverBlock() {
       const p = status.pushover || {};
       const fields = el('div', 'cedar-set-fields');
@@ -684,9 +733,10 @@ const cedarNotify = (() => {
     if (Object.keys(draft.pushover).length) body.pushover = draft.pushover;
     if (Object.keys(draft.email).length) body.email = draft.email;
     if (Object.keys(draft.ios).length) body.ios = draft.ios;
+    if (Object.keys(draft.android).length) body.android = draft.android;
     try {
       status = await deps.api('PUT', '/notifications', body);
-      draft = { default_method: status.default_method, scope: status.scope, pushover: {}, email: {}, ios: {} };
+      draft = { default_method: status.default_method, scope: status.scope, pushover: {}, email: {}, ios: {}, android: {} };
       updateAwayLine();
       const s = shell();
       s?.setDirty('notify', 0);

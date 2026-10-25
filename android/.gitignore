@@ -1,0 +1,13 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+# The Firebase config is a repository secret in CI and your own file locally; never committed.
+app/google-services.json
+# Signing keys stay out of the repository.
+*.jks
+*.keystore
+keystore.properties
