@@ -8,7 +8,9 @@ outside the app:
 - **Docker.** Each agent run's tools execute in a container, so Docker must be installed and
   running: Docker Desktop, OrbStack, Colima, or Rancher Desktop on a Mac; Docker Desktop (with
   its WSL 2 backend) or Rancher Desktop on Windows. The sandbox is a Linux image either way. The
-  app finds the `docker` command in the usual places and tells you when it can't.
+  app finds the `docker` command in the usual places and tells you when it can't. On Windows it
+  can also install WSL 2 and Docker Desktop itself (see [Setting Docker up on
+  Windows](#setting-docker-up-on-windows)), and it starts Docker Desktop when it isn't running.
 - **The model server.** vLLM doesn't run on macOS or Windows, so the app asks for the address of
   any OpenAI-compatible server with tool calling: Ollama or LM Studio on the same computer, or a
   vLLM on another machine (a DGX Spark over Tailscale, say). It lists the server's models and you
@@ -37,9 +39,10 @@ Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080
 
 ### Windows
 
-1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) with the WSL 2
-   backend (its default), or Rancher Desktop, and start it. Both need administrator rights to
-   install, and so does Cedar's MSI.
+1. If you already use Docker Desktop (with the WSL 2 backend, its default) or Rancher Desktop,
+   keep it. If not, Cedar's setup window can install WSL 2 and Docker Desktop for you in step 3
+   (see [Setting Docker up on Windows](#setting-docker-up-on-windows)). Either way it needs
+   administrator rights once, and so does Cedar's MSI.
 2. Download `Cedar-<version>-x64.msi` from the
    [releases page](https://github.com/hanneshapke/cedar/releases) and run it. It installs for all
    users of the PC into `C:\Program Files\Cedar` and adds Cedar to the Start Menu. The installer
@@ -62,7 +65,8 @@ uninstalling touches.
 
 The setup window shows three steps:
 
-- **Docker**: found and running, or what to do.
+- **Docker**: found and running, or what to do. On Windows, *Set up Docker for me* does it (see
+  below), and a Docker Desktop that isn't running is started.
 - **Sandbox image**: pulled once per version from `ghcr.io/hanneshapke/cedar-sandbox`. Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
   tool.
@@ -85,6 +89,41 @@ admin token, so Settings works without typing anything.
 When a response finishes, the app can tell you with a **desktop notification**: in Notification
 Center on a Mac, as a toast on Windows. Clicking it opens the conversation. The app sets this
 method up in the chat's Settings → Notifications on its first start, unless another was chosen.
+
+### Setting Docker up on Windows
+
+When no `docker` command is found, the Docker step offers **Set up Docker for me** (and **Repair
+WSL and Docker** when Docker Desktop is installed but won't start). It runs these steps and shows
+each one on the page:
+
+1. **Checks the PC.** WSL 2 needs Windows 10 version 2004 (build 19041) or newer and
+   virtualization turned on in the firmware. Neither can be fixed from Windows, so the page says
+   what to do: run Windows Update, or turn on Intel VT-x / AMD-V (SVM) in the BIOS or UEFI
+   settings and click *Check again*.
+2. **Downloads Docker Desktop** (about 600 MB, x64 or Arm64 to match the PC) from
+   `desktop.docker.com` into the temp folder.
+3. **Asks Windows for permission once** (the UAC prompt; on a PC where you aren't an
+   administrator, an administrator types their password). Then, elevated, it turns on the
+   *Windows Subsystem for Linux* and *Virtual Machine Platform* features, runs `wsl --update`,
+   checks that the installer is signed by Docker Inc, runs it with `install --quiet
+   --accept-license --backend=wsl-2`, and adds your account to the `docker-users` group.
+4. **Restart or sign out.** Turning on the WSL features needs a restart, and a new group
+   membership a new sign-in; the page offers *Restart now* or *Sign out now*. Cedar sets itself to
+   open once at the next sign-in (`HKCU\…\RunOnce`), starts Docker Desktop, waits for it, and
+   carries on with the sandbox image.
+
+`--accept-license` accepts the [Docker Subscription Service
+Agreement](https://www.docker.com/legal/docker-subscription-service-agreement/) for you, and the
+page says so before you click. Docker Desktop is free for personal use, education, and businesses
+with fewer than 250 employees and less than $10 million in annual revenue; larger organizations
+need a [paid subscription](https://www.docker.com/pricing/). There, install Docker Desktop under
+your organization's subscription, or use Rancher Desktop, before opening Cedar.
+
+The elevated part is one PowerShell script, saved as `docker-setup.ps1` in the logs folder so you
+can read what ran. The elevated command carries the script's SHA-256 and runs only the text it
+read and checked, so nothing can change the file in between. The script copies the installer
+into a folder under `C:\Windows\Temp` that only administrators can write to before checking its
+signature and running it. Its progress and any error go to `docker-setup.log` in the logs folder.
 
 <a id="using-it-from-an-iphone-or-ipad"></a>
 
@@ -162,6 +201,7 @@ Tauri derives both folders from the bundle identifier, `io.github.hanneshapke.ce
 | cedar's database (runs, conversations) | `%APPDATA%\io.github.hanneshapke.cedar\cedar.db` |
 | cedar-chat's database (the sidebar, schedules) | `%APPDATA%\io.github.hanneshapke.cedar\cedar-chat.db` |
 | Logs | `%LOCALAPPDATA%\io.github.hanneshapke.cedar\logs\cedar.log` and `cedar-chat.log` (*Open Logs Folder* in the menu) |
+| The Docker setup's script and log | `docker-setup.ps1` and `docker-setup.log` in the logs folder |
 | The app and the two servers | `C:\Program Files\Cedar\` (`Cedar.exe`, `cedar.exe`, `cedar-chat.exe`) |
 | Agent workspaces | Docker volumes named `cedar-ws-*`, removed after `WORKSPACE_TTL_SECS` |
 
@@ -338,6 +378,10 @@ One-time setup:
 | Symptom | What to check |
 | --- | --- |
 | "Windows protected your PC" when installing | The MSI isn't code-signed yet. Choose *More info*, then *Run anyway*. |
+| *Set up Docker for me* says virtualization is off | Turn on Intel VT-x, AMD-V or SVM ("Virtualization Technology") in the PC's BIOS or UEFI settings; reach them by pressing the key the PC shows while starting (often F2, F10, or Del) or from Settings → System → Recovery → Advanced startup. On a virtual machine, turn on nested virtualization for it. |
+| *Set up Docker for me* failed | The page shows the reason; `docker-setup.log` in the logs folder has the steps that ran. Docker Desktop's own installer log is in `C:\ProgramData\DockerDesktop`. *Try again* reuses a completed download. |
+| The UAC prompt never appeared | Windows may have put it behind Cedar: click the flashing shield icon in the taskbar. |
+| Docker Desktop asks to update WSL on its first start | `wsl --update` can't always run before the restart that turns WSL on. Click its *Update* button, or run `wsl --update` once. |
 | "No docker command was found" | Docker Desktop or Rancher Desktop isn't installed, or its CLI isn't in `C:\Program Files\Docker\Docker\resources\bin`, Rancher Desktop's `resources\resources\win32\bin`, or on `PATH`. If you installed Docker while Cedar was running, quit Cedar and start it again so it sees the new `PATH`. |
 | The sandbox image won't start, or Docker says "image operating system "linux" cannot be used on this platform" | Docker Desktop is set to Windows containers. Right-click its tray icon and choose *Switch to Linux containers*; the WSL 2 backend is the default. |
 | No notification appears | Allow notifications for Cedar in Settings → System → Notifications, and check that Do Not Disturb is off. Toasts only show for the installed app (from the MSI), not for `cargo tauri dev`. |

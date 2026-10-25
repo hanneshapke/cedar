@@ -19,6 +19,41 @@ pub fn recheck(app: AppHandle) {
     tauri::async_runtime::spawn(app::bootstrap(app));
 }
 
+/// Sets up WSL 2 and Docker Desktop (Windows only); the page follows along in `docker_setup`.
+#[tauri::command]
+pub fn install_docker(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if !app.state::<AppState>().begin_docker_setup() {
+            return Err("Docker is already being set up".into());
+        }
+        tauri::async_runtime::spawn(crate::winsetup::install(app));
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Err("Cedar sets Docker up only on Windows".into())
+    }
+}
+
+/// Restarts the PC or signs out to finish the Docker setup, and only when it asks for that.
+#[tauri::command]
+pub fn finish_docker_setup(state: State<'_, AppState>) -> Result<(), String> {
+    let sign_out = match state.docker_setup() {
+        app::SetupStatus::NeedsSignOut => true,
+        app::SetupStatus::NeedsRestart => false,
+        _ => return Err("the Docker setup doesn't need a restart".into()),
+    };
+    #[cfg(windows)]
+    return crate::winsetup::restart(sign_out).map_err(fail);
+    #[cfg(not(windows))]
+    {
+        let _ = sign_out;
+        Err("only on Windows".into())
+    }
+}
+
 #[tauri::command]
 pub async fn list_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
     models::list_models(&base_url, &api_key).await.map_err(fail)
@@ -93,7 +128,7 @@ pub fn open_in_browser(state: State<'_, AppState>) -> Result<(), String> {
     open::that(state.config().chat_url()).map_err(|e| e.to_string())
 }
 
-/// Opens a link from the setup page (Get Docker Desktop, Tailscale) in the default browser: the
+/// Opens a link from the setup page (Get Docker Desktop, Tailscale, Docker's terms) in the default browser: the
 /// web view doesn't follow `target="_blank"` links itself (on Windows, WebView2 drops them).
 /// Only http(s) URLs, so the page can't have the app open a file or run a program.
 #[tauri::command]

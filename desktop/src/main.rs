@@ -18,6 +18,7 @@ mod supervisor;
 mod tailscale;
 mod tray;
 mod window;
+mod winsetup;
 
 use app::AppState;
 use config::Config;
@@ -58,6 +59,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::recheck,
+            commands::install_docker,
+            commands::finish_docker_setup,
             commands::list_models,
             commands::save_model_server,
             commands::set_browser,

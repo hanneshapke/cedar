@@ -13,6 +13,7 @@ use anyhow::Result;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 #[derive(Serialize, Clone, Debug)]
@@ -20,6 +21,8 @@ use tauri::{AppHandle, Manager};
 pub enum DockerStatus {
     Checking,
     Missing,
+    /// Docker Desktop was started because its daemon didn't answer; waiting for it.
+    Starting,
     NotRunning(String),
     Ok(String),
 }
@@ -30,6 +33,20 @@ pub enum ImagesStatus {
     Waiting,
     Pulling(String),
     Ready,
+    Failed(String),
+}
+
+/// Setting Docker up from the setup page (Windows only, see winsetup.rs).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum SetupStatus {
+    Idle,
+    /// The step it is on.
+    Running(String),
+    NeedsSignOut,
+    NeedsRestart,
+    /// Virtualization is off in the firmware, which only the user can turn on.
+    NeedsVirtualization,
     Failed(String),
 }
 
@@ -60,6 +77,7 @@ pub struct AppState {
     config: Mutex<Config>,
     docker: Mutex<DockerStatus>,
     docker_cli: Mutex<Option<DockerCli>>,
+    docker_setup: Mutex<SetupStatus>,
     images: Mutex<ImagesStatus>,
     model: Mutex<ModelStatus>,
     share: Mutex<ShareStatus>,
@@ -79,6 +97,9 @@ pub struct Status {
     /// `macos` or `windows` (`std::env::consts::OS`), for the page's wording.
     pub platform: &'static str,
     pub docker: DockerStatus,
+    pub docker_setup: SetupStatus,
+    /// The page offers to set Docker up (on Windows).
+    pub docker_setup_available: bool,
     pub images: ImagesStatus,
     pub services: ServiceState,
     pub model: ModelStatus,
@@ -105,6 +126,7 @@ impl AppState {
             config: Mutex::new(config),
             docker: Mutex::new(DockerStatus::Checking),
             docker_cli: Mutex::new(None),
+            docker_setup: Mutex::new(SetupStatus::Idle),
             images: Mutex::new(ImagesStatus::Waiting),
             model: Mutex::new(ModelStatus::Unset),
             share: Mutex::new(ShareStatus::Off),
@@ -128,6 +150,24 @@ impl AppState {
 
     fn set_docker(&self, s: DockerStatus) {
         *self.docker.lock().unwrap() = s;
+    }
+
+    pub fn set_docker_setup(&self, s: SetupStatus) {
+        *self.docker_setup.lock().unwrap() = s;
+    }
+
+    /// Marks the Docker setup as started, unless it already runs.
+    pub fn begin_docker_setup(&self) -> bool {
+        let mut setup = self.docker_setup.lock().unwrap();
+        if matches!(*setup, SetupStatus::Running(_)) {
+            return false;
+        }
+        *setup = SetupStatus::Running("Starting".into());
+        true
+    }
+
+    pub fn docker_setup(&self) -> SetupStatus {
+        self.docker_setup.lock().unwrap().clone()
     }
 
     fn set_images(&self, s: ImagesStatus) {
@@ -203,6 +243,8 @@ impl AppState {
             version: VERSION.to_string(),
             platform: std::env::consts::OS,
             docker: self.docker.lock().unwrap().clone(),
+            docker_setup: self.docker_setup(),
+            docker_setup_available: cfg!(windows),
             images: self.images.lock().unwrap().clone(),
             services: self.supervisor.state(),
             model: self.model.lock().unwrap().clone(),
@@ -266,7 +308,11 @@ pub async fn bootstrap(app: AppHandle) {
         state.set_docker(DockerStatus::Missing);
         return;
     };
-    match cli.server_version().await {
+    let mut answer = cli.server_version().await;
+    if answer.is_err() {
+        answer = start_docker_desktop(&state, &cli).await.unwrap_or(answer);
+    }
+    match answer {
         Ok(version) => state.set_docker(DockerStatus::Ok(format!(
             "Docker {version} via {}",
             cli.bin.display()
@@ -324,6 +370,26 @@ pub async fn bootstrap(app: AppHandle) {
             eprintln!("showing the chat: {e:#}");
         }
     }
+}
+
+/// Starts Docker Desktop when its daemon doesn't answer (on Windows, where it doesn't start with
+/// the PC unless asked to) and waits for it, or `None` if there is nothing to start. Not while
+/// the setup is installing it or waiting for the restart it needs.
+async fn start_docker_desktop(state: &AppState, cli: &DockerCli) -> Option<Result<String>> {
+    let desktop = docker::desktop_app()?;
+    if !matches!(
+        state.docker_setup(),
+        SetupStatus::Idle | SetupStatus::Failed(_)
+    ) {
+        return None;
+    }
+    if let Err(e) = docker::launch(&desktop) {
+        eprintln!("starting Docker Desktop: {e:#}");
+        return None;
+    }
+    state.set_docker(DockerStatus::Starting);
+    // Its first start after installing sets up its WSL distribution, which takes a while.
+    Some(cli.wait_until_answering(Duration::from_secs(240)).await)
 }
 
 /// After the model server was changed on the setup page: registers it with the running cedar,

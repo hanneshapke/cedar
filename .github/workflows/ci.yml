@@ -65,6 +65,8 @@ jobs:
         run: |
           New-Item -ItemType File -Force desktop/binaries/cedar-x86_64-pc-windows-msvc.exe, desktop/binaries/cedar-chat-x86_64-pc-windows-msvc.exe | Out-Null
           cargo clippy --manifest-path desktop/Cargo.toml --all-targets --locked -- -D warnings
+      # The PowerShell the Docker setup runs (desktop/src/winsetup.rs) parses on a real Windows.
+      - run: cargo test --manifest-path desktop/Cargo.toml --locked winsetup
 
   # The community tool registry (registry/): every tool follows the rules and the index is up to
   # date. cedar's own checks run on the tools too, in `tests/registry.rs` under `test`.

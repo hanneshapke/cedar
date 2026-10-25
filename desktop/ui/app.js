@@ -47,6 +47,9 @@ function render(s) {
     $('docker-text').textContent = 'No docker command was found. Install ' + p.dockerApps + ', start it, then check again.';
     dockerHelp.href = 'https://www.docker.com/products/docker-desktop/';
     dockerHelp.classList.remove('hidden');
+  } else if (d.state === 'starting') {
+    dot($('docker-dot'), 'busy');
+    $('docker-text').textContent = 'Starting Docker Desktop… The first start after installing it takes a minute or two.';
   } else if (d.state === 'not_running') {
     dot($('docker-dot'), 'warn');
     $('docker-text').textContent = 'Docker is installed but not answering. ' + p.dockerStart + ' and check again. ' + d.detail;
@@ -54,6 +57,8 @@ function render(s) {
     dot($('docker-dot'), 'ok');
     $('docker-text').textContent = d.detail;
   }
+
+  renderDockerSetup(s);
 
   // Images
   const i = s.images;
@@ -151,6 +156,50 @@ function render(s) {
   $('open-browser').disabled = !running;
 }
 
+// Setting Docker up from here (Windows only): offered while Docker is missing or won't start, and
+// shown until it has finished.
+function renderDockerSetup(s) {
+  const st = s.docker_setup;
+  const d = s.docker;
+  const inProgress = st.state !== 'idle' && st.state !== 'failed';
+  const show = s.docker_setup_available && (inProgress || st.state === 'failed' || d.state === 'missing' || d.state === 'not_running');
+  $('docker-setup').classList.toggle('hidden', !show);
+  if (!show) return;
+  const install = $('docker-install');
+  const finish = $('docker-finish');
+  const text = $('docker-setup-text');
+  install.classList.remove('hidden');
+  install.disabled = false;
+  install.textContent = d.state === 'not_running' ? 'Repair WSL and Docker' : 'Set up Docker for me';
+  finish.classList.add('hidden');
+  text.className = 'muted';
+  text.textContent = '';
+  $('docker-setup-detail').textContent = '';
+  if (st.state === 'running') {
+    dot($('docker-dot'), 'busy');
+    install.disabled = true;
+    text.textContent = st.detail;
+  } else if (st.state === 'needs_restart' || st.state === 'needs_sign_out') {
+    const restart = st.state === 'needs_restart';
+    dot($('docker-dot'), 'warn');
+    install.classList.add('hidden');
+    finish.classList.remove('hidden');
+    finish.textContent = restart ? 'Restart now' : 'Sign out now';
+    text.textContent = 'Almost done. ' + (restart ? 'Restart the PC' : 'Sign out of Windows and sign in again')
+      + ' to finish; save your work in other apps first. Cedar opens again after you sign in, starts Docker Desktop, and carries on.';
+  } else if (st.state === 'needs_virtualization') {
+    dot($('docker-dot'), 'bad');
+    install.textContent = 'Check again';
+    text.textContent = 'Virtualization is turned off in this PC\u2019s firmware (BIOS or UEFI), and WSL 2 needs it. Restart the PC into its firmware settings (often by pressing F2, F10, or Del while it starts, or from Settings → System → Recovery → Advanced startup), turn on Intel VT-x, AMD-V or SVM (sometimes just “Virtualization Technology”), save, and start Windows again. Then click Check again.';
+    $('docker-setup-detail').innerHTML = '<a href="https://learn.microsoft.com/windows/wsl/troubleshooting" target="_blank" rel="noreferrer">Microsoft\u2019s WSL troubleshooting guide</a>';
+  } else if (st.state === 'failed') {
+    install.textContent = 'Try again';
+    text.className = 'error';
+    text.textContent = 'Setting up Docker did not finish.';
+    $('docker-setup-detail').textContent = st.detail;
+  }
+}
+
 async function refresh() {
   try {
     render(await invoke('get_status'));
@@ -160,6 +209,8 @@ async function refresh() {
 }
 
 $('docker-recheck').addEventListener('click', () => invoke('recheck').then(refresh));
+$('docker-install').addEventListener('click', () => invoke('install_docker').then(refresh).catch((e) => alert(e)));
+$('docker-finish').addEventListener('click', () => invoke('finish_docker_setup').catch((e) => alert(e)));
 $('browser-toggle').addEventListener('change', (ev) => {
   invoke('set_browser', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
 });
@@ -260,7 +311,7 @@ $('share-copy-token').addEventListener('click', () => invoke('copy_token').catch
 $('open-chat').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
 $('open-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));
 $('copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
-// Links to other sites (Get Docker Desktop, Tailscale) open in the default browser: the web view
+// Links to other sites (Get Docker Desktop, Docker's terms, Tailscale) open in the default browser: the web view
 // doesn't open target="_blank" links on its own.
 document.addEventListener('click', (ev) => {
   const a = ev.target.closest('a[target="_blank"]');

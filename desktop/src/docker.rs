@@ -105,6 +105,31 @@ pub fn path_env(bin: Option<&Path>) -> String {
         .unwrap_or_default()
 }
 
+/// Docker Desktop's own program, to start when the daemon isn't answering. Only on Windows: on a
+/// Mac the user picks among several apps that provide Docker, and starts the one they use.
+#[cfg(windows)]
+pub fn desktop_app() -> Option<PathBuf> {
+    let app =
+        PathBuf::from(std::env::var_os("ProgramFiles")?).join(r"Docker\Docker\Docker Desktop.exe");
+    app.is_file().then_some(app)
+}
+
+#[cfg(not(windows))]
+pub fn desktop_app() -> Option<PathBuf> {
+    None
+}
+
+/// Starts a GUI program and leaves it running after the app quits.
+pub fn launch(program: &Path) -> Result<()> {
+    proc::std_command(program)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("running {}", program.display()))?;
+    Ok(())
+}
+
 impl DockerCli {
     fn command(&self, args: &[&str]) -> Command {
         let mut cmd = proc::command(&self.bin);
@@ -138,6 +163,18 @@ impl DockerCli {
             Duration::from_secs(20),
         )
         .await
+    }
+
+    /// [`Self::server_version`], asked again until the daemon answers or `within` has passed.
+    pub async fn wait_until_answering(&self, within: Duration) -> Result<String> {
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            match self.server_version().await {
+                Ok(version) => return Ok(version),
+                Err(e) if tokio::time::Instant::now() >= deadline => return Err(e),
+                Err(_) => tokio::time::sleep(Duration::from_secs(3)).await,
+            }
+        }
     }
 
     pub async fn image_present(&self, image: &str) -> bool {
