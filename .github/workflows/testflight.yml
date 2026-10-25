@@ -1,7 +1,16 @@
+# Archives the iOS app signed for distribution and uploads it to App Store Connect (TestFlight).
+# Run it by hand (Actions -> TestFlight -> Run workflow) for a build from the current commit;
+# release.yml calls it with the release's merge commit, so every release reaches TestFlight too.
+# The version is MARKETING_VERSION in the project, which release.yml checks against the release.
 name: TestFlight
 on:
   workflow_dispatch:
-  # or: push: tags: ['ios-v*']
+  workflow_call:
+    inputs:
+      ref:
+        description: "The commit to build"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -20,6 +29,9 @@ jobs:
       PROFILE_NAME: Cedar App Store   # the name given to the profile in step 4
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Empty on a manual run, which builds the commit it was started from.
+          ref: ${{ inputs.ref }}
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
@@ -51,6 +63,10 @@ jobs:
       - name: Archive
         run: |
           set -o pipefail
+          # The build number only has to grow within a version. A UTC timestamp does that for manual
+          # runs and release runs alike, which a run number (one counter per workflow) would not.
+          build=$(date -u +%Y%m%d.%H%M%S)
+          echo "build number $build"
           xcodebuild archive \
             -project Cedar.xcodeproj -scheme Cedar -configuration Release \
             -destination 'generic/platform=iOS' \
@@ -59,7 +75,7 @@ jobs:
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=$TEAM_ID \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CURRENT_PROJECT_VERSION="$build" \
             | xcbeautify --renderer github-actions
 
       - name: Export and upload to TestFlight
