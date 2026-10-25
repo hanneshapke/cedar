@@ -4,6 +4,7 @@ use crate::app::AppState;
 use crate::config::Config;
 use crate::supervisor::ServiceState;
 use anyhow::{anyhow, Context, Result};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use url::Url;
 
@@ -33,9 +34,26 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
         .inner_size(1120.0, 780.0)
         .min_inner_size(720.0, 520.0)
         .initialization_script(script)
+        .on_new_window(|url, _| {
+            if let Err(e) = open_web_link(&url) {
+                eprintln!("opening {url}: {e:#}");
+            }
+            NewWindowResponse::Deny
+        })
         .build()
         .context("creating the window")?;
     Ok(win)
+}
+
+/// Opens a link in the default browser. The window never opens a second one: a link the chat
+/// opens in a new tab (`target="_blank"`, `window.open`), such as a source in an answer's
+/// references, goes here instead; the web view drops such links on its own (WKWebView on a Mac
+/// opens nothing). Only http(s) URLs, so a page can't have the app open a file or run a program.
+pub fn open_web_link(url: &Url) -> Result<()> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(anyhow!("not a web link: {url}"));
+    }
+    open::that(url.as_str()).context("opening the default browser")
 }
 
 /// Runs before every page the window loads. On the chat's own origin it hands the page the access
@@ -142,6 +160,17 @@ mod tests {
         assert!(s.contains(r#"localStorage.setItem('cedar-chat-token', "abc\"def")"#));
         assert!(s.contains(r#"sessionStorage.setItem('cedar-chat-admin', "adm")"#));
         assert!(s.contains("window.__CEDAR_DESKTOP_APP__ = true;"));
+    }
+
+    #[test]
+    fn only_web_links_open_in_the_browser() {
+        for url in [
+            "file:///etc/passwd",
+            "blob:http://127.0.0.1:13000/x",
+            "javascript:alert(1)",
+        ] {
+            assert!(open_web_link(&Url::parse(url).unwrap()).is_err(), "{url}");
+        }
     }
 
     #[test]
