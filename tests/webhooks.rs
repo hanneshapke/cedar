@@ -199,10 +199,12 @@ async fn a_rejected_delivery_is_not_retried() {
 
 #[tokio::test]
 async fn an_unreachable_endpoint_is_given_up_on_after_the_last_attempt() {
-    // Nothing listens on this port.
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}/hook", listener.local_addr().unwrap());
-    drop(listener);
+    // Nothing listens on this port: the socket is bound but never listens, so connections are
+    // refused. It stays bound for the whole test, as a dropped one would free the port for
+    // another test's webhook receiver, which would then get these deliveries.
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let url = format!("http://{}/hook", socket.local_addr().unwrap());
     let app = TestApp::with_env(vec![Step::Reply(text("done"))], LOCAL).await;
     let run = app
         .create_run_with(KEY_A, json!({ "prompt": "hi", "callback_url": url }))
