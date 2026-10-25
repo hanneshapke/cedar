@@ -130,14 +130,10 @@ pub fn open_in_browser(state: State<'_, AppState>) -> Result<(), String> {
 
 /// Opens a link from the setup page (Get Docker Desktop, Tailscale, Docker's terms) in the default browser: the
 /// web view doesn't follow `target="_blank"` links itself (on Windows, WebView2 drops them).
-/// Only http(s) URLs, so the page can't have the app open a file or run a program.
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
     let parsed = url::Url::parse(&url).map_err(|e| e.to_string())?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(format!("not a web link: {url}"));
-    }
-    open::that(parsed.as_str()).map_err(|e| e.to_string())
+    crate::window::open_web_link(&parsed).map_err(fail)
 }
 
 #[tauri::command]
