@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "cedar-app"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "cedar-pairing",
@@ -460,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "cedar-pairing"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "qrcode",

@@ -1,10 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
 
+- **Every platform in one release.** Each release now also publishes Linux tarballs of `cedar` and `cedar-chat` for x64 and arm64 (`Cedar-<version>-linux-<arch>.tar.gz`, glibc 2.35 and newer), which replace building them for the systemd setup in DEPLOYMENT.md, and uploads the iOS app to TestFlight under the same version.
 - **Cedar for Android.** A native Kotlin/Compose port of the iOS app in `android/`: Chats, Starred and Scheduled, streamed turns with tool calls, plans, approvals and questions, attachments, agent images, cards (maps on OpenStreetMap, charts, recipes, routes, stocks, products), and QR pairing. Releases attach a signed `Cedar-<version>-android.apk`; `android/build-apk.sh` builds one yourself (#60).
-- **Android push.** A new *Android push* notification method in the chat, through Firebase Cloud Messaging or UnifiedPush (ntfy, without Google). Pushes carry only ids; the app fetches the text from your server (#60).
+- **Android push.** A new *Android push* notification method in the chat, through Firebase Cloud Messaging or UnifiedPush (ntfy, without Google). Pushes carry only ids; the app fetches the text from your server (#74).
 - Settings → iPhone is now Settings → Phone, with the steps for Android too.
+- Mac and Windows app: links on the setup page open in the default browser (#75).
+- iOS: the app's version follows the release (0.1.4), and TestFlight build numbers are UTC timestamps, so manual and release uploads never collide.
 
 ## 0.1.3
 

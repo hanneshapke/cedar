@@ -163,8 +163,11 @@ processed. It needs these repository secrets:
 
 The app record for `dev.cedar.Cedar` must exist in App Store Connect before the first upload.
 
-- **Build number.** The workflow sets `CURRENT_PROJECT_VERSION` to the run number, so every
-  upload is higher than the last. Change `MARKETING_VERSION` in the project for a new version.
+- **Releases.** `release.yml` calls this workflow for every release, so each version reaches
+  TestFlight. `MARKETING_VERSION` in the project is the release version (the release checks it);
+  bump it with the Cargo.toml versions on the `release/<version>` branch.
+- **Build number.** The workflow sets `CURRENT_PROJECT_VERSION` to the UTC time of the build
+  (`YYYYMMDD.HHMMSS`), so every upload is higher than the last, from a release or a manual run.
 - **Export compliance.** The app declares `ITSAppUsesNonExemptEncryption = NO` (it only uses
   HTTPS), so builds don't wait on the encryption question.
 - **Push.** TestFlight builds use the production APNs environment, so set the server's iPhone

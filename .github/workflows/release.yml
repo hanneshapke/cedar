@@ -1,6 +1,7 @@
 # Builds a release when a pull request from a `release/<version>` branch is merged into main:
 #
-#   1. verify   the branch's version matches both Cargo.toml versions, the tag is free, tests pass
+#   1. verify   the branch's version matches both Cargo.toml versions and the iOS app's
+#               MARKETING_VERSION, the tag is free, tests pass
 #   2. images   the sandbox and browser images, built natively for amd64 and arm64 and pushed to
 #               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
 #   3. dmg      cedar and cedar-chat for Apple Silicon, wrapped in Cedar.app, signed, notarized,
@@ -9,12 +10,16 @@
 #               an MSI (unsigned for now: SmartScreen warns on first run, see desktop/README.md)
 #   5. apk      the Android app as a signed release APK (android/), versionName <version> and
 #               versionCode major*1000000 + minor*1000 + patch, so every release updates in place
-#   6. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG, MSI
-#               and APK
+#   6. linux    cedar and cedar-chat for x64 and arm64 Linux, in a tarball each (built on Ubuntu
+#               22.04, so they run on glibc 2.35 and newer; OpenSSL is linked in)
+#   7. ios      the iOS app archived, signed and uploaded to TestFlight (testflight.yml); App Store
+#               apps can't be attached to a GitHub Release, so TestFlight is where it is published
+#   8. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG, MSI,
+#               APK and Linux tarballs
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the
-# version given.
+# version given. The iOS upload is skipped: TestFlight -> Run workflow does that on its own.
 #
 # Secrets (Settings -> Secrets and variables -> Actions), all required by the dmg job:
 #   APPLE_CERTIFICATE           the Developer ID Application certificate as a base64 .p12
@@ -33,6 +38,8 @@
 #   ANDROID_KEY_PASSWORD        the key's password
 #   ANDROID_GOOGLE_SERVICES_JSON  optional: the Firebase project's google-services.json, for FCM
 #                               (without it the APK uses ntfy / UnifiedPush only)
+# The ios job takes the secrets testflight.yml lists (IOS_DIST_CERT_P12, IOS_DIST_CERT_PASSWORD,
+# IOS_PROFILE, KEYCHAIN_PASSWORD and the ASC_* key above); see iOS/README.md.
 # GHCR uses the workflow's own GITHUB_TOKEN. See desktop/README.md for the one-time steps.
 
 name: Release
@@ -126,6 +133,10 @@ jobs:
           echo "workspace: $ws, desktop app: $app, branch: $VERSION"
           [ "$ws" = "$VERSION" ] || { echo "::error::Cargo.toml [workspace.package] version is $ws, the branch says $VERSION"; exit 1; }
           [ "$app" = "$VERSION" ] || { echo "::error::desktop/Cargo.toml version is $app, the branch says $VERSION"; exit 1; }
+          # Every build configuration (app and tests, Debug and Release) carries the same version.
+          ios=$(grep -o 'MARKETING_VERSION = [^;]*' iOS/Cedar.xcodeproj/project.pbxproj | sed 's/.* = //' | sort -u)
+          echo "iOS app: $ios"
+          [ "$ios" = "$VERSION" ] || { echo "::error::iOS/Cedar.xcodeproj MARKETING_VERSION is $(echo $ios), the branch says $VERSION"; exit 1; }
 
       - name: The tag does not exist yet
         if: steps.meta.outputs.publish == 'true'
@@ -469,8 +480,75 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
+  linux:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-${{ matrix.arch }}
+
+      - name: Build cedar and cedar-chat
+        run: cargo build --release --locked -p cedar -p cedar-chat
+
+      - name: Check that they need no OpenSSL from the system
+        # cedar uses rustls and cedar-chat links a vendored OpenSSL, so a server without libssl3
+        # (or with another version of it) runs them too.
+        run: |
+          set -eu
+          for exe in target/release/cedar target/release/cedar-chat; do
+            ldd "$exe"
+            if ldd "$exe" | grep -Eq 'lib(ssl|crypto)\.so'; then
+              echo "::error::$exe loads OpenSSL from the system"; exit 1
+            fi
+          done
+
+      - name: Pack the tarball
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          name="Cedar-$VERSION-linux-$ARCH"
+          mkdir -p "dist/$name"
+          install -m 0755 target/release/cedar target/release/cedar-chat "dist/$name/"
+          install -m 0644 LICENSE NOTICE README.md DEPLOYMENT.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          tar -tzvf "dist/$name.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  ios:
+    needs: verify
+    # An upload to App Store Connect is a publication, so a manual run of this workflow skips it.
+    if: needs.verify.outputs.publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/testflight.yml
+    with:
+      ref: ${{ needs.verify.outputs.sha }}
+    secrets: inherit
+
   release:
-    needs: [verify, manifests, dmg, msi, apk]
+    needs: [verify, manifests, dmg, msi, apk, linux, ios]
     if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     steps:
@@ -496,9 +574,15 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: linux-*
+          path: dist
+          merge-multiple: true
+
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.dmg *.msi *.apk | tee checksums.txt
+        run: sha256sum *.dmg *.msi *.apk *.tar.gz | tee checksums.txt
 
       - name: Tag and publish the release
         env:
@@ -529,6 +613,22 @@ jobs:
           your cedar-chat over HTTPS: scan the QR code under Settings → Phone in the chat. Later
           releases install over it. See android/README.md.
 
+          ## Cedar $VERSION for iPhone and iPad
+
+          This version is on TestFlight: open the TestFlight invitation on the device and install
+          or update Cedar. It needs iOS 17 or newer and pairs with your cedar-chat the same way: scan
+          the QR code under Settings → Phone. See iOS/README.md.
+
+          ## Cedar $VERSION for Linux
+
+          \`Cedar-$VERSION-linux-x64.tar.gz\` (x86_64) and \`Cedar-$VERSION-linux-arm64.tar.gz\`
+          (aarch64, e.g. a DGX Spark) hold the \`cedar\` and \`cedar-chat\` servers for glibc 2.35
+          and newer (Ubuntu 22.04, Debian 12). Unpack, install them to \`/usr/local/bin\` and run them
+          under systemd as DEPLOYMENT.md describes, in place of building them yourself:
+
+              tar -xzf Cedar-$VERSION-linux-x64.tar.gz
+              sudo install -m 0755 Cedar-$VERSION-linux-x64/cedar Cedar-$VERSION-linux-x64/cedar-chat /usr/local/bin/
+
           Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
           EOF
           gh release create "v$VERSION" \
@@ -536,4 +636,4 @@ jobs:
             --title "Cedar $VERSION" \
             --notes "$(cat notes.md)" \
             --generate-notes \
-            dist/*.dmg dist/*.msi dist/*.apk dist/checksums.txt
+            dist/*.dmg dist/*.msi dist/*.apk dist/*.tar.gz dist/checksums.txt

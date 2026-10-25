@@ -139,6 +139,17 @@ docker build -t cedar-sandbox sandbox/
 The chat UI's HTML, CSS, and JavaScript are compiled into the `cedar-chat` binary, so there is
 nothing else to deploy.
 
+To skip the build, take the binaries from a [release](https://github.com/hanneshapke/cedar/releases)
+instead: `Cedar-<version>-linux-arm64.tar.gz` on the Spark (`-linux-x64` on an x86_64 server).
+They need glibc 2.35 or newer and no OpenSSL library.
+
+```sh
+V=0.1.4   # the release you want
+curl -fLO https://github.com/hanneshapke/cedar/releases/download/v$V/Cedar-$V-linux-arm64.tar.gz
+tar -xzf Cedar-$V-linux-arm64.tar.gz
+sudo install -m 0755 Cedar-$V-linux-arm64/cedar Cedar-$V-linux-arm64/cedar-chat /usr/local/bin/
+```
+
 By default the sandbox has no network, so the agent can only use what the image ships with; add
 tools to `sandbox/Dockerfile` and rebuild the image if your tasks need more. To let the agent
 `pip install` packages itself, set `SANDBOX_NETWORK=bridge` in cedar's environment file (step 4).
