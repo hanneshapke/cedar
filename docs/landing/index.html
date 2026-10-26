@@ -114,25 +114,25 @@ html{scroll-padding-top:96px}
 
 <section id="new" data-screen-label="What's new" style="max-width:1160px;margin:0 auto;padding:90px 28px 0;display:flex;flex-direction:column;gap:40px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
-    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#3a5f4b">What's new in 0.1.7</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Plans when it counts.<br>Keeps your place.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">On every app: Mac, Windows, Linux, iPhone and Android. The <a href="https://github.com/hanneshapke/cedar/blob/main/CHANGELOG.md">changelog</a> has the details.</p>
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#3a5f4b">What's new in 0.1.8</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Keeps itself up to date.<br>One click, every computer.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">From this version on, Cedar tells you when a new one is out and installs it for you. The <a href="https://github.com/hanneshapke/cedar/blob/main/CHANGELOG.md">changelog</a> has the details.</p>
   </div>
   <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="width:44px;height:44px;border-radius:12px;background:#e5553a"></span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Plans when it helps</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Pick <em>When Cedar thinks it helps</em> under Settings → Plans, and Cedar decides which tasks need one. For a trip or a sourced report it proposes the steps and waits for your go-ahead; quick questions just get an answer.</p>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Updates on Mac and Windows</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">When a new release is out, a banner in the app says so. Click <em>Update</em> and Cedar downloads it, checks it really comes from us, and restarts on the new version. Your chats and settings stay.</p>
     </div>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="width:44px;height:44px;border-radius:50%;background:#f2a21c"></span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Picks up where you left off</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">A chat keeps its sealed box between messages, so what Cedar installed or started is still there next time. After ten quiet minutes the box is paused, and your next message wakes it.</p>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">One click on Linux too</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">The chat shows the same banner on your server. Set up the small updater from the <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md#updates">Linux guide</a> once, and <em>Update</em> installs the release, restarts Cedar, and goes back to the old one if it doesn't start.</p>
     </div>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="width:44px;height:44px;border-radius:12px 12px 12px 22px;background:#3a5f4b"></span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">A personal assistant first</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Out of the box, Cedar answers first, asks when your answer would change what it does, checks before anything it can't undo, and keeps what it learns about you to itself.</p>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Your data stays yours, in writing</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Cedar collects nothing: no account, no analytics, no Cedar cloud. The new <a href="https://github.com/hanneshapke/cedar/blob/main/PRIVACY.md">privacy policy</a> puts it in writing, including what the update check asks GitHub.</p>
     </div>
   </div>
 </section>
@@ -530,7 +530,7 @@ class Component extends DCLogic {
       linuxX64Href: this.state.linuxX64 || 'https://github.com/hanneshapke/cedar/releases/latest',
       linuxArmHref: this.state.linuxArm || 'https://github.com/hanneshapke/cedar/releases/latest',
       // The newest release with Linux builds, until GitHub says which is latest.
-      ver: this.state.ver || '0.1.7',
+      ver: this.state.ver || '0.1.8',
       showPlan: phase >= 1, showResult: phase === 3,
       statusLine: phase === 0 ? 'new task' : phase === 1 ? 'planning' : phase === 2 ? 'working in a sealed box' : 'done',
       ...this.comparison(cmp),

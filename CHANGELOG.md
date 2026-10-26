@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.8
 
-- **Update banner.** When a newer release is out, the chat shows a banner with its release notes and an *Update* button. The Mac and Windows app checks the release's signed `latest.json` every six hours (tauri-plugin-updater) and installs the update itself: it downloads the new app or MSI, checks its signature against the key built into the app, stops the servers and restarts on the new version; the tray menu offers it too, and the setup page has an *Updates* section to check now or turn the checks off. On Linux the chat looks up the latest GitHub Release (`GET /api/update`; `CHAT_UPDATE_CHECK=off` turns it off) and, with the new root `cedar-update` unit set up (DEPLOYMENT.md, "Updates"), an admin's *Update* installs it: the tarball is checked against `checksums.txt`, both binaries are replaced and restarted, and the old ones come back if cedar doesn't start. Without it the banner shows the commands. `cedar --version` and `cedar-chat --version` print the version.
+- **Update banner.** When a newer release is out, the chat shows a banner with its release notes and an *Update* button. The Mac and Windows app checks the release's signed `latest.json` every six hours (tauri-plugin-updater) and installs the update itself: it downloads the new app or MSI, checks its signature against the key built into the app, stops the servers and restarts on the new version; the tray menu offers it too, and the setup page has an *Updates* section to check now or turn the checks off. On Linux the chat looks up the latest GitHub Release (`GET /api/update`; `CHAT_UPDATE_CHECK=off` turns it off) and, with the new root `cedar-update` unit set up (DEPLOYMENT.md, "Updates"), an admin's *Update* installs it: the tarball is checked against `checksums.txt`, both binaries are replaced and restarted, and the old ones come back if cedar doesn't start. Without it the banner shows the commands. `cedar --version` and `cedar-chat --version` print the version. (#94)
+- **An install guide that picks the steps for you.** The website's install page (`docs/landing/install.html`) asks which computer you have, whether Docker is already there, where the model runs and whether you want the phone app, and shows only the steps for that setup, ending with the downloads (#88–#91).
+- **Privacy policy.** [PRIVACY.md](PRIVACY.md) spells out that Cedar collects no data: no account, no analytics or telemetry, and no Cedar cloud your data passes through. It also says what the new update check sends to GitHub (#93).
 
 ## 0.1.7
 
