@@ -14,11 +14,19 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:'Instrument Sans
 a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-dark)}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#f6e9da;padding:1px 6px;border-radius:6px}
 .wrap{max-width:1000px;margin:0 auto;padding:0 28px}
-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 0;flex-wrap:wrap}
+/* Header and footer: the same as the landing page's (index.html) */
+.site-header{max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink)}
 .brand span{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em}
-header nav{display:flex;gap:22px;font-size:15px;font-weight:500}
-header nav a{color:var(--ink)}header nav a:hover{color:var(--accent)}
+.site-header nav{display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap}
+.site-header nav a{color:var(--ink)}.site-header nav a:hover,.site-header nav a[aria-current]{color:var(--accent)}
+.site-header nav a.dl{background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s}
+.site-header nav a.dl:hover{background:var(--accent);color:var(--bg);transform:translateY(-2px)}
+.site-footer{max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--faint);border-top:1px solid var(--line)}
+.site-footer span{display:flex;align-items:center;gap:8px}
+.site-footer .links{gap:20px;flex-wrap:wrap}
+.site-footer .links a{color:var(--ink)}.site-footer .links a:hover{color:var(--accent)}
+.back{display:inline-block;margin:6px 0 18px;font-weight:600;font-size:15px}
 .eyebrow{font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--green)}
 h1{margin:10px 0 12px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(36px,5.4vw,60px);line-height:1;letter-spacing:-.03em}
 .lede{margin:0;font-size:18px;line-height:1.5;color:var(--muted);max-width:640px}
@@ -74,23 +82,27 @@ ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;g
 .code .shell{position:absolute;top:-9px;left:14px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--amber);color:var(--ink);border-radius:6px;padding:1px 7px}
 details{margin:10px 0}
 summary{cursor:pointer;font-weight:600;color:var(--ink)}
-footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px 24px;font-size:15px;color:var(--faint)}
+.help{margin:56px 0 48px;display:flex;flex-wrap:wrap;gap:12px 24px;font-size:15px;color:var(--faint)}
 @keyframes popin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.step{animation:none}.opt,.btn{transition:none}}
 </style>
 </head>
 <body>
+<header class="site-header">
+  <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
+  <nav>
+    <a href="./#new">What's new</a>
+    <a href="./#does">What it does</a>
+    <a href="./#private">Private by design</a>
+    <a href="./#apps">Mac, Windows, Linux &amp; phones</a>
+    <a href="./#compare">Compared</a>
+    <a href="install.html" aria-current="page">Install</a>
+    <a class="dl" id="header-dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
+  </nav>
+</header>
 <div class="wrap">
-  <header>
-    <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt=""><span>Cedar</span></a>
-    <nav>
-      <a href="./">Home</a>
-      <a href="https://github.com/hanneshapke/cedar/releases/latest">Releases</a>
-      <a href="https://github.com/hanneshapke/cedar">GitHub</a>
-    </nav>
-  </header>
-
   <main>
+    <a class="back" href="./">← Back to the Cedar home page</a><br>
     <span class="eyebrow">Install guide</span>
     <h1>Your path to Cedar.</h1>
     <p class="lede">Tell us what you're working with, and we'll put the steps in order for you. Pick an answer in each row; the steps below change as you go, and the page address remembers your answers so you can share them.</p>
@@ -102,13 +114,18 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
     <ol class="steps" id="steps"></ol>
   </main>
 
-  <footer>
+  <div class="help">
     <span>Stuck?</span>
     <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md#troubleshooting">Mac &amp; Windows troubleshooting</a>
     <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md#troubleshooting">Linux troubleshooting</a>
     <a href="https://github.com/hanneshapke/cedar/discussions">Ask in Discussions</a>
-  </footer>
+  </div>
 </div>
+
+<footer class="site-footer">
+  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+</footer>
 
 <script>
 (() => {
@@ -236,7 +253,19 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
     list.innerHTML = steps.map((st) => `<li class="step${st.kind ? ' ' + st.kind : ''}"><h2>${st.title}${st.tag ? `<span class="tag">${esc(st.tag)}</span>` : ''}</h2><div class="body">${st.body}</div></li>`).join('');
   }
 
+  function renderDownload() {
+    const dl = {
+      mac: ['Download for Mac', release.dmg], windows: ['Download for Windows', release.msi],
+      linux: ['Download for Linux', release[state.arch === 'arm64' ? 'linux-arm64' : 'linux-x64']],
+    }[state.os] || ['Download Cedar', ''];
+    const a = document.getElementById('header-dl');
+    a.textContent = dl[0];
+    a.href = dl[1] || RELEASES;
+    if (release.apk) document.getElementById('footer-apk').href = release.apk;
+  }
+
   function render() {
+    renderDownload();
     renderPicker();
     renderSummary();
     renderSteps();
@@ -519,6 +548,7 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
       }
       if (release['linux-x64'] && rel.tag_name) release.ver = rel.tag_name.replace(/^v/, '');
       renderSteps();
+      renderDownload();
     })
     .catch(() => { /* offline or rate limited: keep the releases page */ });
 })();
