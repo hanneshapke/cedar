@@ -143,7 +143,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const DESKTOP = REPO + '/blob/main/desktop/README.md';
   const LINUX = REPO + '/blob/main/DEPLOYMENT.md';
   // Filled in from GitHub once the latest release answers; until then the buttons go to the releases page.
-  const release = { ver: '0.1.7', dmg: '', msi: '', apk: '', 'linux-x64': '', 'linux-arm64': '' };
+  const release = { ver: '0.1.8', dmg: '', msi: '', apk: '', 'linux-x64': '', 'linux-arm64': '' };
 
   // Each question: its id in the address (?os=mac&arch=arm64&docker=no...), and the answers.
   // An answer's `os` limits it to some systems; a question's `when` hides it for others.
@@ -477,6 +477,9 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     return step(title, `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">Only your own devices on your tailnet can reach Cedar. More in the <a href="${s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad'}">phone guide</a>.</p>`, kind, wanted ? '' : 'Optional');
   }
 
+  // The Mac and Windows apps update themselves (desktop/README.md, "Updates"); a self-built one doesn't.
+  const UPDATES_NOTE = '<p class="note">Cedar keeps itself up to date: when a new version is out, a banner in the app offers to install it.</p>';
+
   function macSteps(s) {
     const steps = [];
     if (s.docker === 'yes') {
@@ -495,7 +498,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     }
     steps.push(step('Open Cedar and follow the setup', `<p>A tree appears in your menu bar and the setup window opens with three checks:</p>
       <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
-      <p>The window turns into the chat. Give it a task.</p>`));
+      <p>The window turns into the chat. Give it a task.</p>${s.arch === 'x64' ? '' : UPDATES_NOTE}`));
     return steps;
   }
 
@@ -518,7 +521,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     }
     steps.push(step('Finish the setup', `<p>Cedar's icon sits in the tray (it may be under the <strong>^</strong> arrow) and the setup window shows three checks:</p>
       <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
-      <p>The window turns into the chat. Give it a task.</p>`));
+      <p>The window turns into the chat. Give it a task.</p>${UPDATES_NOTE}`));
     return steps;
   }
 
@@ -548,6 +551,9 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     steps.push(step('Open the chat and add your model', `<p>On this machine, open <code>http://localhost:3000</code>. From a laptop, tunnel to it first:</p>
       ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', 'Laptop')}
       <p>Enter the <strong>chat access token</strong>. Then go to <strong>Settings → Server</strong>, unlock it with the <strong>admin token</strong>, add your model server (<code>${esc(modelAddress(s))}</code>${s.host === 'no' ? ' with your API key' : s.serve === 'vllm' ? ', or your GPU box\'s address' : ''}), click <strong>List models</strong>, choose one and save. Give it a task.</p>`));
+    steps.push(step('Turn on one-click updates', `<p>When a new release is out, the chat shows a banner. With Cedar's small updater set up, its <strong>Update</strong> button (with the admin token) downloads the release, checks it against the release's checksums, installs it, restarts both services, and goes back to the old version if Cedar doesn't come up.</p>
+      ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nsudo install -m 0755 $F/cedar-update /usr/local/sbin/cedar-update\nsudo install -m 0644 $F/cedar-update.path $F/cedar-update.service /etc/systemd/system/\nsudo install -d -o cedar -g cedar -m 0750 /var/lib/cedar/update\necho "CHAT_UPDATE_DIR=/var/lib/cedar/update" | sudo tee -a /etc/cedar/chat.env\n\n# also pull the matching sealed box with each update\necho "CEDAR_UPDATE_PULL_IMAGE=1" | sudo tee /etc/cedar/update.env\n\nsudo systemctl daemon-reload\nsudo systemctl enable --now cedar-update.path\nsudo systemctl restart cedar-chat`, 'Terminal')}
+      <p class="note">Run it from the folder you unpacked Cedar in. <code>sudo cedar-update</code> does the same from a shell. More in the <a href="${LINUX}#updates">Linux guide</a>.</p>`, 'optional', 'Optional'));
     return steps;
   }
 
