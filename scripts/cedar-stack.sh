@@ -6,7 +6,8 @@
 # This runs the stack on one machine you are logged in to. Nothing restarts it after a crash or a
 # reboot; for a long-running server use the systemd setup in DEPLOYMENT.md.
 #
-# Before it starts, it checks Docker and (unless TAILSCALE_SERVE=off) Tailscale. On Linux it offers
+# Before it starts, it checks Docker and (unless TAILSCALE_SERVE=off) Tailscale; --pair checks
+# Tailscale too, --down neither. On Linux it offers
 # to fix what is missing, showing each command and running it only when you answer yes: install
 # Docker Engine (get.docker.com), start it, let your user run it, install Tailscale
 # (tailscale.com/install.sh) and log in. Without a terminal it installs nothing and says what to
@@ -24,7 +25,7 @@
 #   scripts/cedar-stack.sh --down-all same as --down --with-vllm
 #   scripts/cedar-stack.sh --pair     print the QR code the iOS and Android apps scan to connect
 #                                     (its address on the tailnet and the access token); needs
-#                                     qrencode
+#                                     qrencode, and offers to install Tailscale and log in
 #
 # Settings come from .env in the repo root (created on first run with fresh keys). Besides
 # cedar's and cedar-chat's own variables it reads:
@@ -159,30 +160,32 @@ ensure_docker() {
     fi
 }
 
-# skip_tailscale: carry on without Tailscale, unless TAILSCALE_SERVE=on needs it.
+# skip_tailscale <need>: carry on without Tailscale, unless <need> says why it can't.
 skip_tailscale() {
-    [[ $TAILSCALE_SERVE == on ]] && die "TAILSCALE_SERVE=on needs Tailscale installed and logged in"
+    [[ -n $1 ]] && die "$1"
     echo "Carrying on without Tailscale; the phone apps can't reach the chat. Set TAILSCALE_SERVE=off in $ENV_FILE to stop this question." >&2
 }
 
-# ensure_tailscale: unless TAILSCALE_SERVE=off, Tailscale installed and logged in, for the phone
-# apps; offers to install it and log in on Linux. With TAILSCALE_SERVE=auto it is optional, so
-# saying no carries on without it.
+# ensure_tailscale [need]: unless TAILSCALE_SERVE=off, Tailscale installed and logged in, for the
+# phone apps; offers to install it and log in on Linux. It is optional (saying no carries on
+# without it) unless TAILSCALE_SERVE=on or <need> says why it is required.
 ensure_tailscale() {
     [[ $TAILSCALE_SERVE == off ]] && return 0
+    local need=${1:-}
+    [[ $TAILSCALE_SERVE == on && -z $need ]] && need="TAILSCALE_SERVE=on needs Tailscale installed and logged in"
     local default=n
-    [[ $TAILSCALE_SERVE == on ]] && default=y
+    [[ -n $need ]] && default=y
 
     if ! command -v tailscale >/dev/null; then
         if [[ $(uname -s) != Linux ]]; then
             echo "Tailscale is not installed; get it from https://tailscale.com/download" >&2
-            skip_tailscale
+            skip_tailscale "$need"
             return 0
         fi
         echo "Tailscale is not installed. It serves the chat to the iOS and Android apps over HTTPS, on your"
         echo "tailnet only. Tailscale's script installs it:"
         echo "  curl -fsSL https://tailscale.com/install.sh | sudo sh"
-        ask "Install Tailscale now?" "$default" || { skip_tailscale; return 0; }
+        ask "Install Tailscale now?" "$default" || { skip_tailscale "$need"; return 0; }
         run_installer https://tailscale.com/install.sh
         command -v tailscale >/dev/null || die "tailscale is still not on PATH after installing it"
     fi
@@ -190,7 +193,7 @@ ensure_tailscale() {
     tailscale_ready && return 0
     echo "Tailscale is installed but this machine is not logged in to a tailnet."
     echo "  sudo tailscale up       (prints a link to log in with)"
-    ask "Log in now?" "$default" || { skip_tailscale; return 0; }
+    ask "Log in now?" "$default" || { skip_tailscale "$need"; return 0; }
     as_root tailscale up || die "tailscale up failed (see above)"
     # So `tailscale serve` (and --down) work without sudo.
     (( EUID == 0 )) || as_root tailscale set --operator="$(id -un)" ||
@@ -273,11 +276,12 @@ pair() {
         server=${CHAT_PUBLIC_URL%/}
     else
         [[ $TAILSCALE_SERVE == off ]] && die "TAILSCALE_SERVE=off and CHAT_PUBLIC_URL is not an https:// address; the phone apps connect over HTTPS only"
+        ensure_tailscale "the phone apps connect over HTTPS only, so --pair needs Tailscale installed and logged in (or CHAT_PUBLIC_URL set to an https:// address)"
         tailscale_ready || die "tailscale is not installed or not logged in (run: sudo tailscale up); the phone apps connect over HTTPS only"
         server=$(tailscale_url) || die "tailscale has no name for this machine; turn on MagicDNS at https://login.tailscale.com/admin/dns"
     fi
     curl -fs -m 5 -o /dev/null "$server/" ||
-        echo "warning: $server does not answer yet; start the stack (scripts/cedar-stack.sh) before you scan." >&2
+        echo "warning: $server does not answer yet; start the stack (scripts/cedar-stack.sh) before you scan, or restart it (--restart) if it started before Tailscale was ready." >&2
     local link
     link="cedar://connect?server=$(jq -rn --arg v "$server" '$v|@uri')&token=$(jq -rn --arg v "$CHAT_ACCESS_TOKEN" '$v|@uri')"
     echo "In the Cedar app's Settings (iOS or Android), tap Scan QR Code and scan this. Or enter $server and the"
