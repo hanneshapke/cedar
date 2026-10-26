@@ -1,0 +1,95 @@
+# Builds the iOS app as an unsigned IPA, for sideloading with SideStore or AltStore. Those sign
+# the app on the phone with the user's own Apple ID, so the IPA carries no signature of ours and
+# no entitlements: without the push entitlement (which free Apple IDs can't have anyway) the app
+# runs without iPhone push and everything else works. See iOS/README.md, "Sideloading".
+#
+# Run it by hand (Actions -> IPA -> Run workflow) for an IPA of the current commit, kept as the
+# run's `ipa-ios` artifact; release.yml calls it with the release's merge commit and attaches the
+# IPA to the GitHub Release. The version is MARKETING_VERSION in the project, which release.yml
+# checks against the release. No secrets are needed.
+name: IPA
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "The commit to build"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: iOS
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Empty on a manual run, which builds the commit it was started from.
+          ref: ${{ inputs.ref }}
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Archive, unsigned
+        run: |
+          set -o pipefail
+          # The same kind of build number as testflight.yml: it only has to grow within a version,
+          # which is what SideStore compares to offer an update.
+          build=$(date -u +%Y%m%d.%H%M%S)
+          echo "build number $build"
+          xcodebuild archive \
+            -project Cedar.xcodeproj -scheme Cedar -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Cedar.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            CURRENT_PROJECT_VERSION="$build" \
+            | xcbeautify --renderer github-actions
+
+      - name: Pack the IPA
+        run: |
+          set -eu
+          app=build/Cedar.xcarchive/Products/Applications/Cedar.app
+          plist="$app/Info.plist"
+          version=$(plutil -extract CFBundleShortVersionString raw "$plist")
+          build=$(plutil -extract CFBundleVersion raw "$plist")
+          bundle=$(plutil -extract CFBundleIdentifier raw "$plist")
+          minos=$(plutil -extract MinimumOSVersion raw "$plist")
+          # An IPA is a zip of Payload/<name>.app (-y keeps the bundle's symlinks as links).
+          mkdir -p build/ipa/Payload ../dist
+          cp -R "$app" build/ipa/Payload/
+          ipa="Cedar-$version-ios.ipa"
+          (cd build/ipa && zip -qry "../../../dist/$ipa" Payload)
+          size=$(stat -f %z "../dist/$ipa")
+          sha256=$(shasum -a 256 "../dist/$ipa" | cut -d' ' -f1)
+          md5=$(md5 -q "../dist/$ipa")
+          ls -l ../dist
+          # What a SideStore/AltStore source entry for this build needs.
+          {
+            echo "### $ipa"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| bundleIdentifier | \`$bundle\` |"
+            echo "| version | \`$version\` |"
+            echo "| buildVersion | \`$build\` |"
+            echo "| minOSVersion | \`$minos\` |"
+            echo "| size | \`$size\` |"
+            echo "| sha256 | \`$sha256\` |"
+            echo "| md5 | \`$md5\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipa-ios
+          path: dist/*.ipa
+          if-no-files-found: error
