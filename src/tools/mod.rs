@@ -599,7 +599,8 @@ impl<'a> ToolView<'a> {
             note.push_str(
                 " When a request is ambiguous and the answer would change what you do, ask with \
                  ask_user, offering the likely choices, instead of guessing; don't ask about what \
-                 you can find out or reasonably assume.",
+                 you can find out or reasonably assume. Don't use ask_user to show a plan or to \
+                 ask whether to go ahead with one: ask about the choice itself.",
             );
         }
         if ["bash", "run_python", "write_file", "generate_chart"]
@@ -880,6 +881,7 @@ mod tests {
         assert!(note.contains("use plan_trip"), "{note}");
         assert!(note.contains("use compare_stocks"), "{note}");
         assert!(note.contains("ask with ask_user"), "{note}");
+        assert!(note.contains("Don't use ask_user to show a plan"), "{note}");
         assert!(note.contains("![caption](path.png)"), "{note}");
         assert!(!note.contains("browser tool"));
         assert!(
