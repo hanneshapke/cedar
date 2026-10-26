@@ -49,7 +49,6 @@ html{scroll-padding-top:96px}
 <header style="max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
   <a href="#" style="display:flex;align-items:center;gap:10px;color:#231f1b"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em">Cedar</span></a>
   <nav style="display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap">
-    <a href="#new" style="color:#231f1b" style-hover="color:#e5553a">What's new</a>
     <a href="#does" style="color:#231f1b" style-hover="color:#e5553a">What it does</a>
     <a href="#private" style="color:#231f1b" style-hover="color:#e5553a">Private by design</a>
     <a href="#apps" style="color:#231f1b" style-hover="color:#e5553a">Mac, Windows, Linux &amp; phones</a>
@@ -111,31 +110,6 @@ html{scroll-padding-top:96px}
     </sc-for>
   </div>
 </div>
-
-<section id="new" data-screen-label="What's new" style="max-width:1160px;margin:0 auto;padding:90px 28px 0;display:flex;flex-direction:column;gap:40px;position:relative">
-  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
-    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#3a5f4b">What's new in 0.1.8</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Keeps itself up to date.<br>One click, every computer.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">From this version on, Cedar tells you when a new one is out and installs it for you. The <a href="https://github.com/hanneshapke/cedar/blob/main/CHANGELOG.md">changelog</a> has the details.</p>
-  </div>
-  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
-    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <span style="width:44px;height:44px;border-radius:12px;background:#e5553a"></span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Updates on Mac and Windows</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">When a new release is out, a banner in the app says so. Click <em>Update</em> and Cedar downloads it, checks it really comes from us, and restarts on the new version. Your chats and settings stay.</p>
-    </div>
-    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <span style="width:44px;height:44px;border-radius:50%;background:#f2a21c"></span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">One click on Linux too</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">The chat shows the same banner on your server. Set up the small updater from the <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md#updates">Linux guide</a> once, and <em>Update</em> installs the release, restarts Cedar, and goes back to the old one if it doesn't start.</p>
-    </div>
-    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <span style="width:44px;height:44px;border-radius:12px 12px 12px 22px;background:#3a5f4b"></span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Your data stays yours, in writing</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Cedar collects nothing: no account, no analytics, no Cedar cloud. The new <a href="https://github.com/hanneshapke/cedar/blob/main/PRIVACY.md">privacy policy</a> puts it in writing, including what the update check asks GitHub.</p>
-    </div>
-  </div>
-</section>
 
 <section id="does" data-screen-label="What it does" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:72px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
@@ -342,8 +316,8 @@ sudo install $F/cedar* /usr/local/bin/
 <section id="setup" data-screen-label="Setup" style="max-width:1160px;margin:0 auto;padding:90px 28px 60px;display:flex;flex-direction:column;gap:40px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Setup</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Three things, then you're talking.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Cedar needs a sealed box to work in, a model to think with, and itself. The <a href="install.html" style="font-weight:600">install guide</a> puts the steps in order for your computer, whether Docker is already there, and whether you run the model at home or use a provider.</p>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Three steps, then you're talking.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Cedar needs a model to think with, itself, and a sealed box to work in. On a Mac or PC, it sets that box up for you. The <a href="install.html" style="font-weight:600">install guide</a> puts the steps in order for your computer, whether Docker is already there, and whether you run the model at home or use a provider.</p>
   </div>
   <a data-reveal href="install.html" style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:20px 32px;align-items:center;background:#231f1b;color:#fbf4ea;border-radius:28px;padding:clamp(26px,4vw,40px);position:relative;overflow:hidden;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-4px);box-shadow:0 24px 50px rgba(60,30,10,.25);color:#fbf4ea">
     <div style="display:flex;flex-direction:column;gap:10px;flex:1 1 420px;min-width:0">
@@ -356,18 +330,18 @@ sudo install $F/cedar* /usr/local/bin/
   <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#f2a21c">1</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Install Docker Desktop</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">It builds the sealed boxes your chats run in. Free, one download. OrbStack works too on a Mac, Rancher Desktop on Windows. On Linux, Docker Engine.</p>
-    </div>
-    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#e5553a">2</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Install a model</h3>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Pick a model</h3>
       <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Ollama or LM Studio put an AI model on your Mac or PC in minutes. On a Linux GPU box, run vLLM. No big computer? Use a provider like Doubleword or Baseten.</p>
     </div>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#e5553a">2</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Install Cedar</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Drag it to Applications on a Mac, run the installer on Windows. On Linux, install Docker Engine and Cedar's two programs; the guide has the commands.</p>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#3a5f4b">3</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Open Cedar</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Pick your model from the list, and give it a task. On Linux, start <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap">cedar</code> and <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap">cedar-chat</code> and open the chat in your browser. Pair your phone whenever you like.</p>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Let Cedar set up the rest</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">No Docker yet? Click <em>Set up Docker for me</em> and Cedar installs Docker Desktop, asking for permission once; one you already have works too. Pick your model and give it a task. For your phone, <em>Set up Tailscale for me</em>, then scan one code. On Linux, start <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap">cedar</code> and <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;white-space:nowrap">cedar-chat</code> and open the chat in your browser.</p>
     </div>
   </div>
   <div data-reveal style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
