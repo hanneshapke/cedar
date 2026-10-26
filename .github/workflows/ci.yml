@@ -20,7 +20,41 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Whether a pull request touches anything the Rust jobs build or read. One that changes only the
+  # landing page, the screenshots, the mobile apps (they have their own workflows) or top-level
+  # Markdown skips clippy, test and windows; a skipped job counts as passed for a required check.
+  # Pushes to main always run everything.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      # On a pull request the filter asks the API for the changed files, so it needs no checkout.
+      - if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            rust:
+              - '**'
+              - '!docs/landing/**'
+              - '!docs/screenshots/**'
+              - '!docs/scripts/**'
+              - '!android/**'
+              - '!iOS/**'
+              - '!*.md'
+              - '!.github/workflows/android.yml'
+              - '!.github/workflows/ios.yml'
+              - '!.github/workflows/pages.yml'
+              - '!.github/workflows/testflight.yml'
+
   clippy:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -32,6 +66,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -43,6 +79,8 @@ jobs:
   # The servers and the desktop app on Windows (desktop/README.md). Steps run in PowerShell, so
   # the Perl that builds cedar-chat's static OpenSSL is Strawberry Perl, not Git's.
   windows:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
