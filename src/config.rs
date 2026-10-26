@@ -245,7 +245,8 @@ pub struct Config {
     pub webhook_allow_private: bool,
     /// The wait before the first retry of a failed webhook call; each later one doubles it.
     pub webhook_retry: Duration,
-    /// Whether a run that doesn't say plans before it starts (`PLAN`: off, on, auto).
+    /// Whether a run that doesn't say plans before it starts (`PLAN`: off, on, auto), or may propose
+    /// a plan with `propose_plan` (`tool`).
     pub plan: PlanMode,
     /// Which tool calls wait for approval in interactive runs (`TOOL_APPROVALS`).
     pub tool_approvals: Rules,
@@ -521,7 +522,7 @@ impl Config {
             plan: match get("PLAN") {
                 None => PlanMode::Off,
                 Some(v) => PlanMode::parse(&v)
-                    .ok_or_else(|| anyhow!("invalid PLAN={v:?}: use off, on or auto"))?,
+                    .ok_or_else(|| anyhow!("invalid PLAN={v:?}: use off, on, auto or tool"))?,
             },
             tool_approvals: Rules::parse(&get("TOOL_APPROVALS").unwrap_or_default())?,
             tools_registry_url: get("TOOLS_REGISTRY_URL")

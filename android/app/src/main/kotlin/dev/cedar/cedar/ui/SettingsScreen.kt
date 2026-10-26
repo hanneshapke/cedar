@@ -62,6 +62,7 @@ import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.push.Transport
 import dev.cedar.core.ChatClient
 import dev.cedar.core.ConnectionCode
+import dev.cedar.core.PLAN_MODES
 import dev.cedar.core.ServerSettings
 import kotlinx.coroutines.launch
 
@@ -226,6 +227,18 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                 Footnote(
                     if (models.isEmpty()) "The models cedar has registered are listed once the server is reachable."
                     else "Used for your messages. Tools, the turn limit and the system prompt follow the server's Settings.",
+                )
+
+                HorizontalDivider()
+                Section("Plans")
+                Picker(
+                    label = "Plan",
+                    value = PLAN_MODES.firstOrNull { it.first == draft.plan }?.second ?: draft.plan,
+                    options = PLAN_MODES,
+                ) { draft = draft.copy(plan = it) }
+                Footnote(
+                    "Cedar shows its steps and waits for your go-ahead; you can stop it there. With \"When Cedar thinks it " +
+                        "helps\", it decides which requests need a plan, so quick questions get none.",
                 )
 
                 HorizontalDivider()

@@ -859,7 +859,7 @@ function showPlan(view, data, awaiting) {
   body.append(el);
   view.planEl = el;
   view.blocks.plan.hidden = false;
-  blockSub(view.blocks.plan, awaiting && !view.done ? 'Change anything, then start.' : `Agreed ${fmtTime(data.created_at)}`);
+  blockSub(view.blocks.plan, awaiting && !view.done ? cedarTrust.plan.awaitingNote(plan) : `Agreed ${fmtTime(data.created_at)}`);
   if (awaiting && !view.done) setWorking(view, 'Waiting for your go on the plan');
   renderOutline();
 }

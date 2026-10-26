@@ -122,6 +122,8 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         val reasoning: String? = null,
         /** PDFs for any model; images for one registered as accepting them. */
         val attachments: List<Upload>? = null,
+        /** `off`, `on`, `auto` or `tool`; absent leaves it to the server's Settings. */
+        val plan: String? = null,
     ) {
         @Serializable
         data class Upload(

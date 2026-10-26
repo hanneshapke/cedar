@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -108,6 +109,22 @@ class TranscriptTest {
         t = t.apply(event(5, "approval.resolved", """{"id":"abc123","decision":"deny","by":"user"}"""))
         assertNull(t.pendingApproval)
         assertEquals("deny", assertIs<TranscriptItem.ApprovalItem>(t.items[1]).approval.decision)
+    }
+
+    @Test
+    fun aPlanCedarProposesMidRunWaitsLikeAnyOther() {
+        var t = TurnTranscript(turn())
+        t = t.apply(event(1, "assistant.text", """{"turn":1,"text":"Let me plan this."}"""))
+        t = t.apply(event(2, "plan", """{"steps":[{"id":"1","title":"Search"},{"id":"2","title":"Write"}],"editable":true,"awaiting":true,"origin":"tool"}"""))
+        val waiting = assertNotNull(t.awaitingPlan)
+        assertTrue(waiting.isProposed)
+        assertIs<TranscriptItem.PlanItem>(t.items[1], "the plan comes after what Cedar said first")
+        t = t.apply(event(3, "plan.updated", """{"steps":["Search"],"by":"timeout"}"""))
+        val plan = assertIs<TranscriptItem.PlanItem>(t.items[1]).plan
+        assertTrue(plan.isProposed && !plan.awaiting)
+        assertEquals("timeout", plan.by)
+        val before = TurnTranscript(turn()).apply(event(1, "plan", """{"steps":["A","B"],"awaiting":true}"""))
+        assertFalse(assertNotNull(before.awaitingPlan).isProposed)
     }
 
     @Test

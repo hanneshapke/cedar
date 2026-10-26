@@ -293,7 +293,8 @@ final class ChatModel {
                 reasoning: settings.reasoning.isEmpty ? nil : settings.reasoning,
                 attachments: attachments.isEmpty ? nil : attachments.map {
                     .init(name: $0.name, mediaType: $0.mediaType, data: $0.data.base64EncodedString())
-                }
+                },
+                plan: settings.plan.isEmpty ? nil : settings.plan
             ))
             turns.append(TurnTranscript(turn: turn))
             follow(turnId: turn.id)

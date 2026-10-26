@@ -11,8 +11,26 @@ struct ServerSettings: Equatable, Sendable {
     var model: String
     /// The reasoning level to ask for, or empty for the model's default.
     var reasoning: String
+    /// Whether messages' runs plan (one of `planModes`), or empty for the server's Settings.
+    var plan: String = ""
 
     static let defaultServerURL = "http://127.0.0.1:3000"
+
+    /// The plan modes a message can ask for, with their labels: Cedar decides (`tool`, it proposes
+    /// a plan with `propose_plan` when a request needs one), for longer requests, always, or never.
+    /// The empty mode leaves it to the server's Settings.
+    static let planModes: [PlanMode] = [
+        PlanMode(id: "", label: "Server setting"),
+        PlanMode(id: "tool", label: "When Cedar thinks it helps"),
+        PlanMode(id: "auto", label: "For longer requests"),
+        PlanMode(id: "on", label: "Always"),
+        PlanMode(id: "off", label: "Never"),
+    ]
+
+    struct PlanMode: Identifiable, Sendable {
+        let id: String
+        let label: String
+    }
 
     var isConfigured: Bool {
         !serverURL.trimmingCharacters(in: .whitespaces).isEmpty
@@ -28,6 +46,7 @@ struct ServerSettings: Equatable, Sendable {
         static let serverURL = "chatServerURL"
         static let model = "model"
         static let reasoning = "reasoning"
+        static let plan = "plan"
         static let accessToken = "accessToken"
     }
 
@@ -36,7 +55,8 @@ struct ServerSettings: Equatable, Sendable {
             serverURL: defaults.string(forKey: Key.serverURL) ?? defaultServerURL,
             accessToken: Keychain.read(Key.accessToken) ?? "",
             model: defaults.string(forKey: Key.model) ?? "",
-            reasoning: defaults.string(forKey: Key.reasoning) ?? ""
+            reasoning: defaults.string(forKey: Key.reasoning) ?? "",
+            plan: defaults.string(forKey: Key.plan) ?? ""
         )
     }
 
@@ -44,6 +64,7 @@ struct ServerSettings: Equatable, Sendable {
         defaults.set(serverURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Key.serverURL)
         defaults.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Key.model)
         defaults.set(reasoning.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Key.reasoning)
+        defaults.set(plan.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Key.plan)
         Keychain.write(accessToken.trimmingCharacters(in: .whitespacesAndNewlines), for: Key.accessToken)
     }
 }

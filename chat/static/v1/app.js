@@ -607,7 +607,7 @@ function showPlan(view, data, awaiting) {
   const waits = awaiting && !view.done && ACTIVE.has(view.turn.status);
   const el = cedarTrust.plan.element(plan, {
     awaiting: waits,
-    note: waits ? 'Change anything, then start.' : data.by === 'user' ? 'Agreed' : data.by === 'timeout' ? 'No answer, so Cedar went ahead' : '',
+    note: waits ? cedarTrust.plan.awaitingNote(plan) : data.by === 'user' ? 'Agreed' : data.by === 'timeout' ? 'No answer, so Cedar went ahead' : '',
     onApprove: async (steps) => {
       try { await api('POST', `/turns/${view.turn.id}/plan`, { steps }); } catch (e) { toast(e.message); throw e; }
       setThinking(view, 'Thinking…');

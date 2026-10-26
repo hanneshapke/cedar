@@ -250,6 +250,110 @@ async fn an_unanswered_plan_times_out_into_the_proposed_one() {
 }
 
 #[tokio::test]
+async fn in_tool_mode_the_model_proposes_a_plan_when_it_wants_one() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use(
+            "p1",
+            "propose_plan",
+            json!({ "steps": ["Find the figures", "Draw a chart"] }),
+        )),
+        Step::Reply(tool_use("p2", "propose_plan", json!({ "steps": ["Again", "And again"] }))),
+        Step::Reply(text("Here it is.")),
+    ])
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "chart the market", "plan": "tool" }))
+        .await;
+    let id = id_of(&run);
+    app.wait_status(KEY_A, &id, "completed").await;
+    let events = app.events(KEY_A, &id, None).await;
+
+    // No planning call before the run: the model's first request offers the tool instead.
+    let requests = app.llm.requests();
+    assert_eq!(requests.len(), 3);
+    let tools: Vec<&str> = requests[0]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(tools.contains(&"propose_plan"), "{tools:?}");
+    assert!(requests[0]["system"].as_str().unwrap().contains("call propose_plan"));
+
+    let plan = of_kind(&events, "plan");
+    assert_eq!(plan.len(), 1, "a second plan is refused");
+    assert_eq!(
+        *plan[0],
+        json!({ "steps": [{ "id": "1", "title": "Find the figures" }, { "id": "2", "title": "Draw a chart" }],
+                "editable": false, "awaiting": false, "origin": "tool" })
+    );
+    // The plan is its own event, not a tool card.
+    assert!(of_kind(&events, "tool.call").is_empty());
+    let first = result_before(&app, 1);
+    assert_eq!(first["tool_use_id"], "p1");
+    assert!(first["content"].as_str().unwrap().starts_with("The plan is shown"), "{first}");
+    let again = result_before(&app, 2);
+    assert_eq!(again["is_error"], true);
+    assert!(again["content"].as_str().unwrap().contains("already a plan"), "{again}");
+}
+
+#[tokio::test]
+async fn the_tool_is_offered_only_in_tool_mode_and_bad_steps_go_back_to_the_model() {
+    let app = TestApp::new(vec![
+        Step::Reply(text("ok")),
+        Step::Reply(tool_use("p1", "propose_plan", json!({ "steps": ["just one"] }))),
+        Step::Reply(text("Fine, no plan.")),
+    ])
+    .await;
+    let run = app.create_run_with(KEY_A, json!({ "prompt": "hi", "plan": "off" })).await;
+    app.wait_status(KEY_A, &id_of(&run), "completed").await;
+    let request = &app.llm.requests()[0];
+    assert!(!request["tools"].to_string().contains("propose_plan"));
+    assert!(!request["system"].as_str().unwrap().contains("propose_plan"));
+
+    let run = app.create_run_with(KEY_A, json!({ "prompt": "go", "plan": "tool" })).await;
+    let id = id_of(&run);
+    app.wait_status(KEY_A, &id, "completed").await;
+    let result = result_before(&app, 2);
+    assert_eq!(result["is_error"], true);
+    assert!(result["content"].as_str().unwrap().contains("2 to 7 steps, got 1"), "{result}");
+    assert!(of_kind(&app.events(KEY_A, &id, None).await, "plan").is_empty());
+}
+
+#[tokio::test]
+async fn an_interactive_run_waits_mid_run_for_the_plan_the_model_proposed() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("p1", "propose_plan", json!({ "steps": ["Search", "Write"] }))),
+        Step::Reply(text("Done.")),
+    ])
+    .await;
+    let run = app
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "research this", "plan": "tool", "interactive": true }),
+        )
+        .await;
+    let id = id_of(&run);
+    let plan = wait_for(&app, &id, "plan").await;
+    assert_eq!(plan.data["data"]["awaiting"], true);
+    assert_eq!(plan.data["data"]["editable"], true);
+    assert_eq!(plan.data["data"]["origin"], "tool");
+    assert_eq!(app.llm.call_count(), 1, "the run waits on the plan");
+
+    let edited = json!({ "steps": [{ "id": "1", "title": "Search the archive" }, { "id": "3", "title": "Summarize" }] });
+    let (status, _) = post(&app, &format!("/v1/runs/{id}/plan"), edited).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let events = app.events(KEY_A, &id, None).await;
+    assert_eq!(of_kind(&events, "plan.updated")[0]["by"], "user");
+    let result = result_before(&app, 1);
+    let content = result["content"].as_str().unwrap();
+    assert!(content.starts_with("The user agreed"), "{content}");
+    assert!(content.ends_with("\n1. Search the archive\n2. Summarize"), "{content}");
+}
+
+#[tokio::test]
 async fn a_risky_call_waits_and_a_declined_one_does_not_run() {
     let app = TestApp::new(vec![
         Step::Reply(tool_use("t1", "bash", json!({ "command": "rm -rf out" }))),

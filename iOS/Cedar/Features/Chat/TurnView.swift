@@ -139,9 +139,15 @@ private struct PlanView: View {
     let agree: () -> Void
     @State private var sent = false
 
+    private var title: String {
+        if plan.awaiting { return plan.isProposed ? "Cedar planned this, waiting for your go-ahead" : "Plan, waiting for your go-ahead" }
+        if plan.by == "timeout" { return "Plan (followed as proposed)" }
+        return plan.isProposed ? "Cedar's plan" : "Plan"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(plan.awaiting ? "Plan, waiting for your go-ahead" : plan.by == "timeout" ? "Plan (followed as proposed)" : "Plan", systemImage: "list.number")
+            Label(title, systemImage: "list.number")
                 .font(.subheadline.weight(.medium))
             ForEach(Array(plan.steps.enumerated()), id: \.offset) { offset, step in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -153,7 +159,7 @@ private struct PlanView: View {
                 .font(.subheadline)
             }
             if plan.awaiting && canAgree {
-                Button(sent ? "Sent" : "Go ahead") {
+                Button(sent ? "Sent" : plan.isProposed ? "Go on" : "Go ahead") {
                     sent = true
                     agree()
                 }
