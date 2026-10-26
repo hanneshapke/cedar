@@ -880,6 +880,10 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 - Per-key limiting is only the active-run cap; there is no request rate limit or token budget.
 - Gmail and Calendar act for a single Google account, set in the environment, for every API key. There is no per-user sign-in yet.
 
+## Privacy
+
+cedar collects no data. See [PRIVACY.md](PRIVACY.md).
+
 ## License
 
 Apache 2.0. See [LICENSE](LICENSE).
