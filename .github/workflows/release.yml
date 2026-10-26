@@ -14,9 +14,11 @@
 #               22.04, so they run on glibc 2.35 and newer; OpenSSL is linked in)
 #   7. ios      the iOS app archived, signed and uploaded to TestFlight (testflight.yml); App Store
 #               apps can't be attached to a GitHub Release, so TestFlight is where it is published
-#   8. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG, MSI,
-#               APK and Linux tarballs, the desktop app's update bundles and their signatures, and
-#               latest.json, which installed desktop apps check for updates (desktop/src/update.rs)
+#   8. ipa      the iOS app as an unsigned IPA (ipa.yml), for sideloading with SideStore or AltStore
+#   9. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG, MSI,
+#               APK, IPA and Linux tarballs, the desktop app's update bundles and their signatures, and
+#               latest.json, which installed desktop apps check for updates (desktop/src/update.rs);
+#               then run pages.yml, which adds the IPA to the SideStore source (docs/sidestore)
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the
@@ -595,10 +597,21 @@ jobs:
       ref: ${{ needs.verify.outputs.sha }}
     secrets: inherit
 
+  ipa:
+    needs: verify
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ipa.yml
+    with:
+      ref: ${{ needs.verify.outputs.sha }}
+
   release:
-    needs: [verify, manifests, dmg, msi, apk, linux, ios]
+    needs: [verify, manifests, dmg, msi, apk, linux, ios, ipa]
     if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write   # to start pages.yml
     steps:
       - uses: actions/checkout@v4
         with:
@@ -628,6 +641,12 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ipa-*
+          path: dist
+          merge-multiple: true
+
       - name: The desktop app's update manifest
         # What installed desktop apps read (releases/latest/download/latest.json, in
         # tauri.conf.json): the version, and per platform the update bundle and its signature.
@@ -654,7 +673,7 @@ jobs:
 
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.dmg *.msi *.apk *.tar.gz | tee checksums.txt
+        run: sha256sum *.dmg *.msi *.apk *.ipa *.tar.gz | tee checksums.txt
 
       - name: Tag and publish the release
         env:
@@ -691,6 +710,12 @@ jobs:
           or update Cedar. It needs iOS 17 or newer and pairs with your cedar-chat the same way: scan
           the QR code under Settings → Phone. See iOS/README.md.
 
+          To sideload it instead, install \`Cedar-$VERSION-ios.ipa\` with SideStore or AltStore, which
+          sign it with your own Apple ID, or add the source
+          https://hanneshapke.github.io/cedar/sidestore.json in SideStore to install it and get
+          updates. Sideloaded, the app has no iPhone push; everything else is the same. See
+          iOS/README.md, "Sideloading".
+
           ## Cedar $VERSION for Linux
 
           \`Cedar-$VERSION-linux-x64.tar.gz\` (x86_64) and \`Cedar-$VERSION-linux-arm64.tar.gz\`
@@ -717,5 +742,13 @@ jobs:
             --title "Cedar $VERSION" \
             --notes "$(cat notes.md)" \
             --generate-notes \
-            dist/*.dmg dist/*.msi dist/*.apk dist/*.tar.gz dist/checksums.txt \
-            dist/*.sig dist/latest.json
+            dist/*.dmg dist/*.msi dist/*.apk dist/*.ipa dist/*.tar.gz dist/checksums.txt \
+            dist/*.sig dist/latest.json dist/*.source.json
+
+      - name: Update the SideStore source
+        # pages.yml rebuilds sidestore.json from the releases, this one now included. What the
+        # job's token does starts no other workflow, except a workflow_dispatch like this one.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --repo "$REPO" --ref main

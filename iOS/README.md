@@ -176,6 +176,28 @@ The app record for `dev.cedar.Cedar` must exist in App Store Connect before the 
 - **Push.** TestFlight builds use the production APNs environment, so set the server's iPhone
   push setting to **Production** (see [Push notifications](#push-notifications)).
 
+### Sideloading
+
+`.github/workflows/ipa.yml` (Actions → IPA → Run workflow) builds the app as an unsigned IPA,
+`Cedar-<version>-ios.ipa`, kept as the run's `ipa-ios` artifact; `release.yml` calls it for every
+release and attaches the IPA to the GitHub Release. It needs no secrets. Install it with
+[SideStore](https://sidestore.io) or AltStore, which sign it on the phone with your own Apple ID.
+The simplest way is to add the project's source, `https://hanneshapke.github.io/cedar/sidestore.json`,
+under **Sources → +**: it lists every release's IPA, so SideStore offers updates too (see
+[docs/sidestore](../docs/sidestore/README.md)). What changes when the app is sideloaded:
+
+- **No push.** The IPA carries no entitlements, so the sideloaded app doesn't register for iPhone
+  push (free Apple IDs can't have the capability anyway). Conversations, the inbox and live
+  notices work as usual while the app is open.
+- **Weekly refresh.** With a free Apple ID the app is signed for 7 days and counts towards its
+  3 active apps; SideStore refreshes it in the background or when you tap **Refresh**.
+- **Bundle id.** SideStore may append your team id to `dev.cedar.Cedar`; the app doesn't depend
+  on it. The access token is in that install's Keychain, so a fresh install asks for it again.
+
+The run's summary lists the IPA's bundle id, version, build number, minimum iOS version, size,
+SHA-256 and MD5, and the IPA comes with `Cedar-<version>-ios.source.json`, its entry in the
+source.
+
 ## Limitations
 
 - Events arrive per model turn and per tool call, not per token, so text appears a turn at a

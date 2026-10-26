@@ -1,6 +1,9 @@
 name: Landing page
 
 # Publishes docs/landing to GitHub Pages. One-time setup: Settings > Pages > Source: GitHub Actions.
+# The site also carries sidestore.json, the SideStore/AltStore source for the iOS app, built from
+# docs/sidestore and the IPA of every release (ipa.yml); release.yml runs this workflow after it
+# publishes, so a new version shows up in SideStore. See docs/sidestore/README.md.
 on:
   push:
     branches: [main]
@@ -8,6 +11,8 @@ on:
       - docs/landing/**
       - docs/assets/**
       - docs/screenshots/**
+      - docs/sidestore/**
+      - iOS/Cedar/Assets.xcassets/AppIcon.appiconset/**
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -20,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pages: read
     steps:
       - uses: actions/checkout@v7
 
@@ -36,6 +42,37 @@ jobs:
             echo "::error file=docs/landing/index.html::a ../ path is left in the page, so it would break once published"
             exit 1
           fi
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: The SideStore source
+        # One version per published release that carries an IPA and its metadata from ipa.yml.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SITE: ${{ steps.pages.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          versions="$RUNNER_TEMP/versions"
+          mkdir -p _site/sidestore "$versions"
+          cp iOS/Cedar/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png _site/sidestore/icon.png
+          gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[]
+            | select(.draft or .prerelease | not)
+            | {tag: .tag_name, date: .published_at, notes: .html_url,
+               ipa: ([.assets[] | select(.name | endswith("-ios.ipa")) | .browser_download_url][0]),
+               meta: ([.assets[] | select(.name | endswith("-ios.source.json")) | .name][0])}
+            | select(.ipa and .meta) | @json' |
+          while read -r release; do
+            tag=$(jq -r .tag <<< "$release")
+            meta=$(jq -r .meta <<< "$release")
+            gh release download "$tag" --repo "$REPO" --pattern "$meta" --output - |
+              jq --argjson r "$release" '. + {downloadURL: $r.ipa, date: $r.date,
+                  localizedDescription: "Cedar \(.version). Release notes: \($r.notes)"}' \
+              > "$versions/$tag.json"
+          done
+          docs/sidestore/build.sh "$SITE" "$versions" > _site/sidestore.json
+          jq '{source: .name, apps: [.apps[] | {name, versions: [.versions[].version]}]}' _site/sidestore.json
 
       - uses: actions/upload-pages-artifact@v5
         with:
