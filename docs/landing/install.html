@@ -15,6 +15,8 @@ a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-dark)}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#f6e9da;padding:1px 6px;border-radius:6px}
 .wrap{max-width:1000px;margin:0 auto;padding:0 28px}
 /* Header and footer: the same as the landing page's (index.html) */
+html{scroll-padding-top:96px}
+.site-header-bar{position:sticky;top:0;z-index:50;background:rgba(251,244,234,.86);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid rgba(240,220,200,.7)}
 .site-header{max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink)}
 .brand span{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em}
@@ -22,6 +24,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 .site-header nav a{color:var(--ink)}.site-header nav a:hover,.site-header nav a[aria-current]{color:var(--accent)}
 .site-header nav a.dl{background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s}
 .site-header nav a.dl:hover{background:var(--accent);color:var(--bg);transform:translateY(-2px)}
+@media (max-width:720px){html{scroll-padding-top:120px}.site-header-bar header{padding:12px 16px;gap:8px}.site-header-bar nav{flex-wrap:nowrap;gap:18px;width:100%;overflow-x:auto;white-space:nowrap;scrollbar-width:none;padding:4px 0}.site-header-bar nav::-webkit-scrollbar{display:none}}
 .site-footer{max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--faint);border-top:1px solid var(--line)}
 .site-footer span{display:flex;align-items:center;gap:8px}
 .site-footer .links{gap:20px;flex-wrap:wrap}
@@ -90,6 +93,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 </style>
 </head>
 <body>
+<div class="site-header-bar">
 <header class="site-header">
   <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
   <nav>
@@ -102,6 +106,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     <a class="dl" id="header-dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
   </nav>
 </header>
+</div>
 <div class="wrap">
   <main>
     <a class="back" href="./">← Back to the Cedar home page</a><br>
