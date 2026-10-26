@@ -37,7 +37,8 @@ pub enum ImagesStatus {
     Failed(String),
 }
 
-/// Setting Docker up from the setup page (Windows only, see winsetup.rs).
+/// Setting Docker up from the setup page (Windows and macOS, see winsetup.rs and macsetup.rs), or
+/// installing Tailscale (tssetup.rs).
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
 pub enum SetupStatus {
@@ -48,6 +49,8 @@ pub enum SetupStatus {
     NeedsRestart,
     /// Virtualization is off in the firmware, which only the user can turn on.
     NeedsVirtualization,
+    /// Installed; what is left is the user's (logging in to Tailscale).
+    Installed,
     Failed(String),
 }
 
@@ -79,6 +82,7 @@ pub struct AppState {
     docker: Mutex<DockerStatus>,
     docker_cli: Mutex<Option<DockerCli>>,
     docker_setup: Mutex<SetupStatus>,
+    tailscale_setup: Mutex<SetupStatus>,
     images: Mutex<ImagesStatus>,
     model: Mutex<ModelStatus>,
     share: Mutex<ShareStatus>,
@@ -101,8 +105,11 @@ pub struct Status {
     pub platform: &'static str,
     pub docker: DockerStatus,
     pub docker_setup: SetupStatus,
-    /// The page offers to set Docker up (on Windows).
+    /// The page offers to set Docker up, and to install Tailscale (on Windows and macOS).
     pub docker_setup_available: bool,
+    pub tailscale_setup: SetupStatus,
+    /// The tailscale CLI was found.
+    pub tailscale_installed: bool,
     pub images: ImagesStatus,
     pub services: ServiceState,
     pub model: ModelStatus,
@@ -132,6 +139,7 @@ impl AppState {
             docker: Mutex::new(DockerStatus::Checking),
             docker_cli: Mutex::new(None),
             docker_setup: Mutex::new(SetupStatus::Idle),
+            tailscale_setup: Mutex::new(SetupStatus::Idle),
             images: Mutex::new(ImagesStatus::Waiting),
             model: Mutex::new(ModelStatus::Unset),
             share: Mutex::new(ShareStatus::Off),
@@ -164,16 +172,20 @@ impl AppState {
 
     /// Marks the Docker setup as started, unless it already runs.
     pub fn begin_docker_setup(&self) -> bool {
-        let mut setup = self.docker_setup.lock().unwrap();
-        if matches!(*setup, SetupStatus::Running(_)) {
-            return false;
-        }
-        *setup = SetupStatus::Running("Starting".into());
-        true
+        begin(&self.docker_setup)
     }
 
     pub fn docker_setup(&self) -> SetupStatus {
         self.docker_setup.lock().unwrap().clone()
+    }
+
+    pub fn set_tailscale_setup(&self, s: SetupStatus) {
+        *self.tailscale_setup.lock().unwrap() = s;
+    }
+
+    /// Marks installing Tailscale as started, unless it already runs.
+    pub fn begin_tailscale_setup(&self) -> bool {
+        begin(&self.tailscale_setup)
     }
 
     pub fn update(&self) -> UpdateStatus {
@@ -261,7 +273,9 @@ impl AppState {
             platform: std::env::consts::OS,
             docker: self.docker.lock().unwrap().clone(),
             docker_setup: self.docker_setup(),
-            docker_setup_available: cfg!(windows),
+            docker_setup_available: cfg!(any(windows, target_os = "macos")),
+            tailscale_setup: self.tailscale_setup.lock().unwrap().clone(),
+            tailscale_installed: tailscale::find().is_some(),
             images: self.images.lock().unwrap().clone(),
             services: self.supervisor.state(),
             model: self.model.lock().unwrap().clone(),
@@ -313,6 +327,16 @@ impl AppState {
             }
         }
     }
+}
+
+/// Marks a setup as started, unless it already runs.
+fn begin(setup: &Mutex<SetupStatus>) -> bool {
+    let mut setup = setup.lock().unwrap();
+    if matches!(*setup, SetupStatus::Running(_)) {
+        return false;
+    }
+    *setup = SetupStatus::Running("Starting".into());
+    true
 }
 
 /// The launch sequence. Safe to run again at any time (after a setting changed, say): it stops
@@ -391,11 +415,11 @@ pub async fn bootstrap(app: AppHandle) {
     }
 }
 
-/// Starts Docker Desktop when its daemon doesn't answer (on Windows, where it doesn't start with
-/// the PC unless asked to) and waits for it, or `None` if there is nothing to start. Not while
-/// the setup is installing it or waiting for the restart it needs.
+/// Starts Docker Desktop (on a Mac, whichever app the CLI comes from) when its daemon doesn't
+/// answer, and waits for it, or `None` if there is nothing to start. Not while the setup is
+/// installing it or waiting for the restart it needs.
 async fn start_docker_desktop(state: &AppState, cli: &DockerCli) -> Option<Result<String>> {
-    let desktop = docker::desktop_app()?;
+    let desktop = docker::provider_app(cli)?;
     if !matches!(
         state.docker_setup(),
         SetupStatus::Idle | SetupStatus::Failed(_)
@@ -403,11 +427,11 @@ async fn start_docker_desktop(state: &AppState, cli: &DockerCli) -> Option<Resul
         return None;
     }
     if let Err(e) = docker::launch(&desktop) {
-        eprintln!("starting Docker Desktop: {e:#}");
+        eprintln!("starting {}: {e:#}", desktop.display());
         return None;
     }
     state.set_docker(DockerStatus::Starting);
-    // Its first start after installing sets up its WSL distribution, which takes a while.
+    // Its first start after installing sets up its WSL distribution or VM, which takes a while.
     Some(cli.wait_until_answering(Duration::from_secs(240)).await)
 }
 

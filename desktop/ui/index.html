@@ -97,7 +97,7 @@
     <a id="docker-help" class="hidden muted" href="#" target="_blank" rel="noreferrer">Get Docker Desktop</a>
   </div>
   <div id="docker-setup" class="hidden">
-    <p class="muted">Cedar can set Docker up for you. It turns on WSL 2 (the Windows Subsystem for Linux), then downloads and installs Docker Desktop (about 600 MB). Windows asks once whether Cedar may make changes, and you may need to restart or sign out at the end; Cedar opens again by itself afterwards and finishes.</p>
+    <p class="muted" id="docker-setup-intro"></p>
     <p class="muted">Docker Desktop is free for personal use, education, and businesses with fewer than 250 employees and less than $10 million in annual revenue; larger organizations need a <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">paid subscription</a>. Setting it up here accepts the <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a> on your behalf.</p>
     <div class="row">
       <button class="primary" id="docker-install">Set up Docker for me</button>
@@ -164,6 +164,14 @@
 <section id="share">
   <h2><span class="dot" id="share-dot"></span>iPhone, iPad &amp; Android</h2>
   <p class="muted">The Cedar iOS and Android apps connect over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on <span class="this-computer">this computer</span> and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
+  <div id="ts-setup" class="hidden">
+    <p class="muted" id="ts-setup-intro"></p>
+    <div class="row">
+      <button class="primary" id="ts-install">Set up Tailscale for me</button>
+    </div>
+    <p id="ts-setup-text" class="muted"></p>
+    <p class="detail" id="ts-setup-detail"></p>
+  </div>
   <div class="row">
     <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
       <input type="checkbox" id="share-toggle"> Share with the phone apps over Tailscale

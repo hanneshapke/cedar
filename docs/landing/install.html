@@ -99,11 +99,11 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 <header class="site-header">
   <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
   <nav>
-    <a href="./#new">What's new</a>
     <a href="./#does">What it does</a>
     <a href="./#private">Private by design</a>
     <a href="./#apps">Mac, Windows, Linux &amp; phones</a>
     <a href="./#compare">Compared</a>
+    <a href="models.html">Models</a>
     <a href="install.html" aria-current="page">Install</a>
     <a class="dl" id="header-dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
   </nav>
@@ -133,7 +133,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
 <footer class="site-footer">
   <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
-  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
 </footer>
 
 <script>
@@ -144,6 +144,16 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const LINUX = REPO + '/blob/main/DEPLOYMENT.md';
   // Filled in from GitHub once the latest release answers; until then the buttons go to the releases page.
   const release = { ver: '0.1.8', dmg: '', msi: '', apk: '', 'linux-x64': '', 'linux-arm64': '' };
+  // The first release whose setup window installs Docker on a Mac, and Tailscale on a Mac and
+  // Windows (CHANGELOG.md). Until the latest release is at least this one, the steps say to
+  // install them by hand. An Intel Mac builds from main, so it has them already.
+  const APP_SETUP_SINCE = '0.1.9';
+  function appSetsUp(s) {
+    if (s.os === 'mac' && s.arch === 'x64') return true;
+    const [a, b] = [release.ver, APP_SETUP_SINCE].map((v) => v.split('.').map(Number));
+    for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    return true;
+  }
 
   // Each question: its id in the address (?os=mac&arch=arm64&docker=no...), and the answers.
   // An answer's `os` limits it to some systems; a question's `when` hides it for others.
@@ -363,7 +373,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const inSetup = s.os === 'linux'
       ? '<p class="note">You\'ll register it in the chat\'s <strong>Settings → Server</strong> in a later step.</p>'
       : `<p class="note">You'll pick it in Cedar's setup window in a later step: ${modelChoice(s)}.</p>`;
-    const toolsNote = '<p class="note">Whatever you pick, it must support <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower.</p>';
+    const toolsNote = '<p class="note">Whatever you pick, it must support <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower. Not sure which one? The <a href="models.html">model guide</a> suggests one for your hardware.</p>';
 
     if (s.host === 'no') return providerStep(s, inSetup);
     if (s.host === 'yes') {
@@ -384,6 +394,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       ${s.os === 'windows' ? code('# your graphics card and its memory\nGet-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM\n# total memory\n(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB', 'PowerShell')
         : s.os === 'linux' ? code('free -h                 # memory\nnvidia-smi              # NVIDIA GPU and its memory, if any\nrocm-smi --showmeminfo vram   # AMD GPU, if any', 'Terminal')
         : code("system_profiler SPHardwareDataType | grep -E 'Chip|Memory'", 'Terminal')}
+      <p class="note">The <a href="models.html">model guide</a> shows which models fit each of these.</p>
       <p>One of those? Choose <strong>Yes</strong> above. A laptop with 8 or 16 GB can run a small model, but it will be slow and miss steps; choose <strong>No</strong> and use a token provider instead. You can switch later, per conversation.</p>`, 'optional');
   }
 
@@ -401,7 +412,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     return step(`Get a key from ${p.name}`, `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
       <ol><li>Copy the key somewhere safe; it's shown once.</li><li>Check it works and see which models you can use:${check}</li></ol>
       ${where}
-      <p class="note">Pick a model that supports tool calling; a large one (DeepSeek, Qwen3 235B, GLM, gpt-oss 120B) does best. Cedar keeps the key encrypted and never puts it inside a sealed box.${p.docs ? ` More in <a href="${p.docs}">${p.name}'s docs</a>.` : ''}</p>`);
+      <p class="note">Pick a model that supports tool calling; a large one (DeepSeek, GLM, Kimi, Qwen) does best, and the <a href="models.html?where=factory">model guide</a> suggests some. Cedar keeps the key encrypted and never puts it inside a sealed box.${p.docs ? ` More in <a href="${p.docs}">${p.name}'s docs</a>.` : ''}</p>`);
   }
 
   function ollamaStep(s, shell, inSetup, toolsNote) {
@@ -457,9 +468,15 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const ask = !wanted ? '<p class="note">Answer <em>Do you want to reach your assistant from your phone?</em> above to tailor this step. Skip it if you won\'t use a phone.</p>'
       : !s.tailscale ? '<p class="note">Answer <em>Do you have Tailscale installed?</em> above to tailor this step.</p>' : '';
     const intro = (s.tailscale === 'unknown' ? WHAT_IS_TAILSCALE : '') + ask;
+    const menu = s.os === 'mac' ? 'menu bar' : 'tray';
+    const byCedar = `<p>In Cedar, choose <strong>Phone Access…</strong> from the ${menu} menu and click <strong>Set up Tailscale for me</strong>. Cedar downloads Tailscale, checks that it is signed by Tailscale, installs it (${s.os === 'mac' ? 'macOS asks once for an administrator’s password' : 'Windows asks once for permission'}) and opens it. Log in from Tailscale’s icon in the ${menu}${s.os === 'mac' ? ', and allow its VPN configuration when macOS asks' : ''}.</p>`;
     const install = {
-      mac: `<p>Install Tailscale from <a href="https://tailscale.com/download/mac">tailscale.com</a> or the Mac App Store, open it and log in. Then, in Tailscale's settings, choose <strong>Install CLI</strong> so Cedar can find the <code>tailscale</code> command.</p>`,
-      windows: `<p>Install Tailscale from <a href="https://tailscale.com/download/windows">tailscale.com</a>, open it and log in.</p>`,
+      mac: appSetsUp(s)
+        ? byCedar + '<p class="note">Rather do it yourself? Get it from <a href="https://tailscale.com/download/mac">tailscale.com</a> or the Mac App Store, open it and log in.</p>'
+        : '<p>Install Tailscale from <a href="https://tailscale.com/download/mac">tailscale.com</a> or the Mac App Store, open it and log in.</p>',
+      windows: appSetsUp(s)
+        ? byCedar + '<p class="note">Rather do it yourself? Get it from <a href="https://tailscale.com/download/windows">tailscale.com</a>, open it and log in.</p>'
+        : '<p>Install Tailscale from <a href="https://tailscale.com/download/windows">tailscale.com</a>, open it and log in.</p>',
       linux: code('curl -fsSL https://tailscale.com/install.sh | sh\nsudo tailscale up', 'Terminal'),
     }[s.os];
     const dns = '<li>In the Tailscale <a href="https://login.tailscale.com/admin/dns">admin console\'s DNS page</a>, turn on <strong>MagicDNS</strong> and <strong>HTTPS Certificates</strong>.</li>';
@@ -482,9 +499,11 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
   function macSteps(s) {
     const steps = [];
+    const cedarSetsUpDocker = s.docker !== 'yes' && appSetsUp(s);
     if (s.docker === 'yes') {
-      steps.push(step('Make sure Docker is running', `<p>Docker Desktop, OrbStack, Colima and Rancher Desktop all work. Start it, then check it answers:</p>${code("docker info --format '{{.ServerVersion}}'   # prints a version number", 'Terminal')}`, 'ok'));
-    } else {
+      const starts = appSetsUp(s) ? '<p class="note">If Docker Desktop, OrbStack or Rancher Desktop is installed but not running, Cedar starts it for you.</p>' : '';
+      steps.push(step('Make sure Docker is running', `<p>Docker Desktop, OrbStack, Colima and Rancher Desktop all work. Start it, then check it answers:</p>${code("docker info --format '{{.ServerVersion}}'   # prints a version number", 'Terminal')}${starts}`, 'ok'));
+    } else if (!cedarSetsUpDocker) {
       steps.push(step('Install Docker', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p><strong>Docker Desktop</strong> is free for personal use and the most common choice. <strong>OrbStack</strong> is a lighter alternative for Macs.</p>
         <p>${btn('https://www.docker.com/products/docker-desktop/', 'Get Docker Desktop')}${btn('https://orbstack.dev', 'Or OrbStack', true)}</p>
         <p>Or with Homebrew:</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}
@@ -496,7 +515,13 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     } else {
       steps.push(step('Download Cedar for Mac', `<p>${btn(release.dmg || RELEASES, 'Download for Mac')}</p><p>Open the <code>.dmg</code> and drag Cedar to Applications. It's signed and notarized, so it opens without warnings.</p>`));
     }
-    steps.push(step('Open Cedar and follow the setup', `<p>A tree appears in your menu bar and the setup window opens with three checks:</p>
+    if (cedarSetsUpDocker) {
+      // Cedar's own setup window installs Docker Desktop, so Cedar comes first here.
+      steps.push(step('Let Cedar set up Docker for you', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>Open Cedar from Applications; a tree appears in your menu bar and the setup window opens. In its Docker step, click <strong>Set up Docker for me</strong>. Cedar:</p>
+        <ol><li>checks that your Mac can run Docker,</li><li>downloads Docker Desktop for your Mac’s chip (about 600 MB),</li><li>checks that it is signed by Docker and installs it into Applications, asking once for an administrator’s password,</li><li>starts it and carries on. No restart needed.</li></ol>
+        <p class="note">Docker Desktop is free for personal use, education and small businesses. Rather do it by hand, or prefer OrbStack?</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}`));
+    }
+    steps.push(step(cedarSetsUpDocker ? 'Finish the setup' : 'Open Cedar and follow the setup', `<p>${cedarSetsUpDocker ? 'The setup window shows' : 'A tree appears in your menu bar and the setup window opens with'} three checks:</p>
       <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
       <p>The window turns into the chat. Give it a task.</p>${s.arch === 'x64' ? '' : UPDATES_NOTE}`));
     return steps;

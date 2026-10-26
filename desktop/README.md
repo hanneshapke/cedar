@@ -8,9 +8,10 @@ outside the app:
 - **Docker.** Each agent run's tools execute in a container, so Docker must be installed and
   running: Docker Desktop, OrbStack, Colima, or Rancher Desktop on a Mac; Docker Desktop (with
   its WSL 2 backend) or Rancher Desktop on Windows. The sandbox is a Linux image either way. The
-  app finds the `docker` command in the usual places and tells you when it can't. On Windows it
-  can also install WSL 2 and Docker Desktop itself (see [Setting Docker up on
-  Windows](#setting-docker-up-on-windows)), and it starts Docker Desktop when it isn't running.
+  app finds the `docker` command in the usual places and tells you when it can't. It can also
+  install Docker Desktop itself (see [Setting Docker up on a Mac](#setting-docker-up-on-a-mac)
+  and [on Windows](#setting-docker-up-on-windows), where it turns on WSL 2 too), and it starts
+  Docker Desktop (on a Mac, the app the `docker` command comes from) when it isn't running.
 - **The model server.** vLLM doesn't run on macOS or Windows, so the app asks for the address of
   any OpenAI-compatible server with tool calling: Ollama or LM Studio on the same computer, or a
   vLLM on another machine (a DGX Spark over Tailscale, say). It lists the server's models and you
@@ -30,7 +31,9 @@ Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080
    [releases page](https://github.com/hanneshapke/cedar/releases), open it, and drag Cedar to
    Applications. Releases are built for Apple Silicon only; on an Intel Mac, build it yourself
    (see below). The app is signed and notarized, so it opens without warnings.
-2. Start Docker Desktop (or OrbStack, Colima).
+2. If you already use Docker Desktop, OrbStack, Colima or Rancher Desktop, keep it. If not,
+   Cedar's setup window can install Docker Desktop for you in step 3 (see [Setting Docker up on
+   a Mac](#setting-docker-up-on-a-mac)); it asks for an administrator's password once.
 3. Open Cedar. A tree appears in the menu bar and the setup window opens (see
    [Setting it up](#setting-it-up)).
 4. While the window is open Cedar has a Dock icon and shows up in Command-Tab like any app. Close
@@ -65,8 +68,9 @@ uninstalling touches.
 
 The setup window shows three steps:
 
-- **Docker**: found and running, or what to do. On Windows, *Set up Docker for me* does it (see
-  below), and a Docker Desktop that isn't running is started.
+- **Docker**: found and running, or what to do. *Set up Docker for me* does it (see below), and
+  a Docker Desktop that isn't running is started (on a Mac, OrbStack or Rancher Desktop too, when
+  the `docker` command is theirs).
 - **Sandbox image**: pulled once per version from `ghcr.io/hanneshapke/cedar-sandbox`. Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
   tool.
@@ -89,6 +93,37 @@ admin token, so Settings works without typing anything.
 When a response finishes, the app can tell you with a **desktop notification**: in Notification
 Center on a Mac, as a toast on Windows. Clicking it opens the conversation. The app sets this
 method up in the chat's Settings → Notifications on its first start, unless another was chosen.
+
+### Setting Docker up on a Mac
+
+When no `docker` command is found, the Docker step offers **Set up Docker for me**. It runs these
+steps and shows each one on the page:
+
+1. **Checks the Mac.** Docker Desktop runs its containers in a virtual machine, so the Mac must
+   support Apple's Hypervisor framework (`sysctl kern.hv_support`); Macs from before 2010 and Macs
+   inside a VM don't, and the page says so instead of installing anything.
+2. **Downloads Docker Desktop** (about 600 MB, Apple Silicon or Intel to match the Mac, even when
+   Cedar runs under Rosetta) from `desktop.docker.com` into the temp folder.
+3. **Asks for an administrator's password once** (on a Mac where you aren't an administrator, an
+   administrator types theirs). Then, as root, it copies the disk image into a folder under
+   `/private/var/tmp` that only root can write to, mounts it, checks that `Docker.app` is signed
+   by Docker Inc (Developer ID team `9BNSXJN65R`), and runs Docker's own `install
+   --accept-license --user=<you>`. That copies Docker Desktop into Applications and does the
+   privileged setup its first start would otherwise ask for.
+4. **Starts Docker Desktop**, waits for it, and carries on with the sandbox image. Nothing needs
+   a restart or a new login.
+
+The same terms apply as on Windows (below): `--accept-license` accepts the Docker Subscription
+Service Agreement for you, and the page says so before you click.
+
+The elevated part is one shell script, run with `osascript`'s `do shell script … with
+administrator privileges`. It goes in as an argument rather than a file, so nothing can change it
+between Cedar writing it and macOS running it. Its progress, any error and the installer's output
+go to `docker-setup.log` in the logs folder.
+
+A Docker that is installed but won't start isn't reinstalled: it may be OrbStack or Colima. Cedar
+starts the app the `docker` command comes from (Docker Desktop, OrbStack, Rancher Desktop) and
+waits for it; start Colima yourself (`colima start`) and click *Check again*.
 
 ### Setting Docker up on Windows
 
@@ -162,7 +197,9 @@ Let's Encrypt certificate for the computer's tailnet name and proxies
 `https://<computer>.<tailnet>.ts.net` to the chat. Only devices on your tailnet can reach it, and
 both servers stay on loopback.
 
-1. Install Tailscale on the computer and log in.
+1. Install Tailscale on the computer and log in. While it isn't installed, the section offers
+   **Set up Tailscale for me** (see [Installing Tailscale from the setup
+   page](#installing-tailscale-from-the-setup-page)); or install it yourself:
    - **macOS**: from [tailscale.com](https://tailscale.com/download/mac) or the Mac App Store.
      The app finds the CLI that Tailscale's *Install CLI* puts in `/usr/local/bin`, Homebrew's,
      or the binary inside `/Applications/Tailscale.app`.
@@ -179,6 +216,27 @@ both servers stay on loopback.
    the camera at the code the setup page shows after *Show QR code*; the app fills in the address
    and token and tests the connection. Tap **Save**. Or type them in: *Copy address* and *Copy
    access token* put them on the clipboard.
+
+### Installing Tailscale from the setup page
+
+*Set up Tailscale for me* does step 1 up to the login, the same way the Docker setup works:
+
+- **macOS**: downloads Tailscale's standalone app (`Tailscale-latest-macos.pkg`, the variant
+  Tailscale recommends) from `pkgs.tailscale.com`. After one administrator password, as root, it
+  copies the package into a folder only root can write to, checks with `pkgutil
+  --check-signature` that it carries a Developer ID Installer signature from Tailscale's team
+  (`W5364U7YZB`), and installs it with `installer -pkg … -target /`.
+- **Windows**: looks up the current MSI for the PC's processor (x64 or Arm64) in Tailscale's
+  package list (`pkgs.tailscale.com/stable/?mode=json&os=windows`) and downloads it. After one UAC
+  prompt it copies it into a folder under `C:\Windows\Temp` that only administrators can write
+  to, checks that it is signed by Tailscale Inc, and runs `msiexec /i … /quiet /norestart`. The
+  elevated script is saved as `tailscale-setup.ps1` in the logs folder and checked against its
+  hash before it runs, as for Docker.
+
+Then Cedar opens Tailscale, and the page lists what is left, which only you can do: allow
+Tailscale's VPN configuration on a Mac, log in from its menu bar (tray) icon, and turn on MagicDNS
+and HTTPS Certificates (step 2). Progress and errors go to `tailscale-setup.log` in the logs
+folder.
 
 The QR code holds `cedar://connect?server=<address>&token=<access token>` (made in
 `../pairing/src/connect.rs`, shared with the chat; the iOS app reads it in `ConnectionCode.swift`, the Android app the same
@@ -409,7 +467,7 @@ One-time setup:
 | --- | --- |
 | "No docker command was found" | Docker Desktop, OrbStack, Colima, or Rancher Desktop isn't installed, or its CLI isn't in `/usr/local/bin`, `/opt/homebrew/bin`, `~/.orbstack/bin`, `~/.rd/bin`, or `/Applications/Docker.app/Contents/Resources/bin`. |
 | No notification appears | Allow notifications for Cedar in System Settings → Notifications. |
-| iPhone, iPad & Android: "Tailscale is not installed" | Install it from tailscale.com or the Mac App Store. Running it from the menu bar is not enough if the CLI is somewhere else: choose *Install CLI* in Tailscale's settings to put `tailscale` in `/usr/local/bin`. |
+| iPhone, iPad & Android: "Tailscale is not installed" | Click *Set up Tailscale for me*, or install it from tailscale.com or the Mac App Store. Running it from the menu bar is not enough if the CLI is somewhere else: choose *Install CLI* in Tailscale's settings to put `tailscale` in `/usr/local/bin`. |
 
 ### Windows
 
@@ -424,5 +482,5 @@ One-time setup:
 | The sandbox image won't start, or Docker says "image operating system "linux" cannot be used on this platform" | Docker Desktop is set to Windows containers. Right-click its tray icon and choose *Switch to Linux containers*; the WSL 2 backend is the default. |
 | No notification appears | Allow notifications for Cedar in Settings → System → Notifications, and check that Do Not Disturb is off. Toasts only show for the installed app (from the MSI), not for `cargo tauri dev`. |
 | Cedar's tray icon is missing | Windows may hide it under the ^ arrow in the notification area; drag it onto the taskbar, or turn it on in Settings → Personalization → Taskbar → Other system tray icons. |
-| iPhone, iPad & Android: "Tailscale is not installed" | Install it from tailscale.com/download/windows; the app looks for `C:\Program Files\Tailscale\tailscale.exe`. |
+| iPhone, iPad & Android: "Tailscale is not installed" | Click *Set up Tailscale for me*, or install it from tailscale.com/download/windows; the app looks for `C:\Program Files\Tailscale\tailscale.exe`. |
 | `cedar.exe` or `cedar-chat.exe` still running after Cedar is gone | They stop within a few seconds once Cedar ends, however it ends; if one stays, its log says why. End it in Task Manager and start Cedar again. |

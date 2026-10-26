@@ -26,7 +26,11 @@ If vLLM runs on another machine, skip step 2 and register its address instead of
 
 To try the stack without installing anything, `scripts/cedar-stack.sh` builds it and runs vLLM,
 cedar, and cedar-chat in a tmux session from the checkout, with settings in `.env` (see
-`scripts/cedar-stack.sh --help`). Nothing restarts that session after a crash or a reboot, so for
+`scripts/cedar-stack.sh --help`). Before it starts, it checks Docker and Tailscale and offers to
+fix what is missing: install Docker Engine (get.docker.com) or Tailscale (tailscale.com/install.sh),
+start Docker, add you to the `docker` group, or log in to Tailscale. It shows each command and runs
+it only when you answer yes (`INSTALL_DEPS=yes` or `no` in `.env` answers for you; without a
+terminal it installs nothing). Nothing restarts that session after a crash or a reboot, so for
 a server that should stay up, follow the steps below.
 
 ## 1. Prepare the Spark
@@ -421,7 +425,8 @@ you whenever Tailscale is logged in: it serves the port from `CHAT_BIND_ADDR`, p
 to `cedar-chat` as `CHAT_PUBLIC_URL`, prints it, and turns serving off again on `--down`. Set `TAILSCALE_SERVE=off`
 in `.env` to skip it, `TAILSCALE_SERVE=on` to fail when it can't serve, or `TAILSCALE_HTTPS_PORT`
 to use another tailnet port than 443. If it fails with "access denied", let your user manage
-Tailscale once with `sudo tailscale set --operator=$USER`. For step 5, `scripts/cedar-stack.sh --pair`
+Tailscale once with `sudo tailscale set --operator=$USER` (the script does this when it logs you
+in itself). For step 5, `scripts/cedar-stack.sh --pair`
 prints the QR code (the tailnet address, or `CHAT_PUBLIC_URL` when it is HTTPS, and
 `CHAT_ACCESS_TOKEN` from `.env`); install `qrencode` for it, or it prints the link instead.
 
