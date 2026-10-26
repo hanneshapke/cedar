@@ -175,7 +175,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' },
         { v: 'other', t: 'Another provider', s: 'any OpenAI-compatible API' },
       ] },
-    { id: 'mobile', label: 'Do you want to reach your assistant from your phone?', hint: 'Chat with Cedar from anywhere; the phone app talks to this computer.',
+    { id: 'mobile', label: 'Do you want to reach your assistant from your phone?', hint: 'Chat with Cedar from anywhere; the phone app talks to your personal Cedar AI Assistant.',
       opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No', s: 'this computer only' }] },
     { id: 'phone', label: 'Which phone do you have?', hint: 'Cedar has an app for each.', when: (s) => s.mobile === 'yes',
       opts: [{ v: 'iphone', t: 'iPhone', s: 'or iPad' }, { v: 'android', t: 'Android' }] },
