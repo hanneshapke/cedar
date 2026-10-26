@@ -5,8 +5,9 @@
 #
 # Run it by hand (Actions -> IPA -> Run workflow) for an IPA of the current commit, kept as the
 # run's `ipa-ios` artifact; release.yml calls it with the release's merge commit and attaches the
-# IPA to the GitHub Release. The version is MARKETING_VERSION in the project, which release.yml
-# checks against the release. No secrets are needed.
+# IPA and its source metadata (Cedar-<version>-ios.source.json) to the GitHub Release, from which
+# pages.yml builds the SideStore source. The version is MARKETING_VERSION in the project, which
+# release.yml checks against the release. No secrets are needed.
 name: IPA
 on:
   workflow_dispatch:
@@ -72,6 +73,20 @@ jobs:
           size=$(stat -f %z "../dist/$ipa")
           sha256=$(shasum -a 256 "../dist/$ipa" | cut -d' ' -f1)
           md5=$(md5 -q "../dist/$ipa")
+          # The build's half of its entry in the SideStore source (docs/sidestore/README.md): the
+          # Pages build reads this file from each release, so the source states exactly what the
+          # IPA holds, which SideStore checks on install.
+          plutil -convert json -o build/Info.json "$plist"
+          jq --arg size "$size" --arg sha256 "$sha256" '{
+              bundleIdentifier: .CFBundleIdentifier,
+              version: .CFBundleShortVersionString,
+              buildVersion: .CFBundleVersion,
+              minOSVersion: .MinimumOSVersion,
+              size: ($size | tonumber),
+              sha256: $sha256,
+              privacy: with_entries(select(.key | test("^NS.*UsageDescription$")))
+            }' build/Info.json > "../dist/Cedar-$version-ios.source.json"
+          cat "../dist/Cedar-$version-ios.source.json"
           ls -l ../dist
           # What a SideStore/AltStore source entry for this build needs.
           {
@@ -91,5 +106,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ipa-ios
-          path: dist/*.ipa
+          path: |
+            dist/*.ipa
+            dist/*.source.json
           if-no-files-found: error

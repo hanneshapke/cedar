@@ -1,0 +1,24 @@
+{
+  "name": "Cedar",
+  "identifier": "dev.cedar.source",
+  "subtitle": "The Cedar app for iPhone and iPad",
+  "description": "The Cedar iOS app, for sideloading with SideStore or AltStore. Cedar runs AI agents on your own computer; the app is its chat on the phone.",
+  "iconURL": "sidestore/icon.png",
+  "website": "",
+  "tintColor": "#2D6A3E",
+  "featuredApps": ["dev.cedar.Cedar"],
+  "apps": [
+    {
+      "name": "Cedar",
+      "bundleIdentifier": "dev.cedar.Cedar",
+      "developerName": "Hannes Hapke",
+      "subtitle": "Chat with the agents on your own Cedar server",
+      "localizedDescription": "Cedar runs LLM agents on your own computer against your own model server, each run's tools in their own sandbox. This app is its chat on the iPhone and iPad: your conversations, replies streaming in as the agent works, plans and tool calls to approve, clarifying questions as forms, charts, maps, recipes and stock cards drawn natively, attachments, starred chats and scheduled agents.\n\nIt needs a Cedar server (cedar-chat) the phone can reach over HTTPS, for example through Tailscale. Pair by scanning the QR code under Settings → Phone in the chat, the Cedar desktop app's iPhone & iPad page, or `scripts/cedar-stack.sh --pair`.\n\nSideloaded, the app has no iPhone push notifications: it carries no push entitlement, which free Apple IDs can't have. Everything else works as in the TestFlight build. With a free Apple ID, SideStore refreshes the app every 7 days.\n\nOpen source under the Apache 2.0 license: https://github.com/hanneshapke/cedar",
+      "iconURL": "sidestore/icon.png",
+      "tintColor": "#2D6A3E",
+      "category": "developer",
+      "screenshots": ["screenshots/mobile.png", "shots/ios.png"]
+    }
+  ],
+  "news": []
+}
