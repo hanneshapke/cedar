@@ -14,10 +14,15 @@ const IPHONE: &str = "iphone";
 const SETUP: &str = "setup";
 const RESTART: &str = "restart";
 const LOGS: &str = "logs";
+const UPDATE: &str = "update";
 const QUIT: &str = "quit";
+
+/// The menu's update item, which [`show_update`] relabels.
+struct UpdateItem(MenuItem<tauri::Wry>);
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
+    let update = item(UPDATE, "Check for Updates…")?;
     let menu = Menu::with_items(
         app,
         &[
@@ -29,6 +34,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &item(SETUP, "Model Server & Setup…")?,
             &item(RESTART, "Restart Services")?,
             &item(LOGS, "Open Logs Folder")?,
+            &update,
             &PredefinedMenuItem::separator(app)?,
             &item(QUIT, "Quit Cedar")?,
         ],
@@ -62,7 +68,24 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+    app.manage(UpdateItem(update));
     Ok(())
+}
+
+/// "Update to Cedar 0.2.0…" once a newer release is known, so it can be found with the window
+/// closed; the window's banner then asks before installing.
+pub fn show_update(app: &AppHandle, s: &crate::update::UpdateStatus) {
+    let Some(item) = app.try_state::<UpdateItem>() else {
+        return;
+    };
+    let (text, enabled) = match (s.state, &s.version) {
+        ("downloading" | "installing", _) => ("Installing the Update…".to_string(), false),
+        ("checking", _) => ("Checking for Updates…".to_string(), false),
+        (_, Some(v)) => (format!("Update to Cedar {v}…"), true),
+        _ => ("Check for Updates…".to_string(), s.enabled),
+    };
+    let _ = item.0.set_text(text);
+    let _ = item.0.set_enabled(enabled);
 }
 
 fn handle(app: &AppHandle, id: &str) {
@@ -73,6 +96,18 @@ fn handle(app: &AppHandle, id: &str) {
         COPY_TOKEN => copy_to_clipboard(&state.config().secrets.chat_access_token),
         SETUP | IPHONE => crate::window::show_setup(app),
         LOGS => open::that(&state.paths.logs).map_err(Into::into),
+        UPDATE => {
+            if state.update().version.is_none() {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::update::check(&app).await {
+                        eprintln!("checking for updates: {e:#}");
+                    }
+                });
+            }
+            // The banner (on the chat or the setup page) says what was found and asks.
+            crate::window::show(app)
+        }
         RESTART => {
             tauri::async_runtime::spawn(app::restart(app.clone()));
             Ok(())

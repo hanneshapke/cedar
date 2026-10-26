@@ -15,7 +15,8 @@
 #   7. ios      the iOS app archived, signed and uploaded to TestFlight (testflight.yml); App Store
 #               apps can't be attached to a GitHub Release, so TestFlight is where it is published
 #   8. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG, MSI,
-#               APK and Linux tarballs
+#               APK and Linux tarballs, the desktop app's update bundles and their signatures, and
+#               latest.json, which installed desktop apps check for updates (desktop/src/update.rs)
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the
@@ -29,6 +30,13 @@
 #   ASC_ISSUER_ID               its issuer id
 #   ASC_KEY_P8                  the contents of its AuthKey_<id>.p8
 # The API key is the one testflight.yml uploads with (App Manager role; Developer is enough here).
+#
+# The dmg and msi jobs also sign the desktop app's updates (see desktop/README.md, "Updates"):
+#   TAURI_SIGNING_PRIVATE_KEY           the updater's private key (`cargo tauri signer generate`)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
+# and build its public half into the app from a repository variable (Settings -> Secrets and
+# variables -> Actions -> Variables), as installed apps check every update against it:
+#   CEDAR_UPDATER_PUBKEY                the contents of the generated .pub file
 #
 # The apk job signs with these (required to publish; a manual run without them builds unsigned):
 #   ANDROID_KEYSTORE            the release keystore (.jks) as base64. Keep the same key forever:
@@ -248,12 +256,16 @@ jobs:
       APPLE_API_KEY: ${{ secrets.ASC_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.ASC_ISSUER_ID }}
       ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      # Signs the update bundle; the public key is built into the app, which checks updates with it.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      CEDAR_UPDATER_PUBKEY: ${{ vars.CEDAR_UPDATER_PUBKEY }}
     steps:
       - name: Signing and notarization secrets are set
         # Without them tauri-bundler only warns and ships an unsigned app, so check up front.
         run: |
           missing=
-          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY APPLE_API_ISSUER ASC_KEY_P8; do
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY APPLE_API_ISSUER ASC_KEY_P8 TAURI_SIGNING_PRIVATE_KEY CEDAR_UPDATER_PUBKEY; do
             eval "val=\${$v:-}"
             [ -n "$val" ] || missing="$missing $v"
           done
@@ -299,9 +311,11 @@ jobs:
       - name: Install the Tauri CLI
         run: cargo binstall -y --locked tauri-cli --version '^2'
 
-      - name: Build, sign, and notarize Cedar.app, then pack the DMG
+      - name: Build, sign, and notarize Cedar.app, then pack the DMG and the update bundle
+        # tauri.release.conf.json turns on the update bundle: Cedar.app.tar.gz, signed (.sig) with
+        # the updater key, made from the signed, notarized and stapled app.
         working-directory: desktop
-        run: cargo tauri build --ci --target ${{ matrix.target }} --bundles dmg
+        run: cargo tauri build --ci --target ${{ matrix.target }} --bundles app,dmg --config tauri.release.conf.json
 
       - name: Notarize and staple the DMG itself
         # tauri-bundler notarizes and staples the .app inside; the DMG gets its own ticket so
@@ -326,10 +340,28 @@ jobs:
           done
           spctl -a -t open --context context:primary-signature -vv "$dmg" || echo "::warning::spctl did not accept $dmg on this runner; check it on a Mac after the release"
 
+      - name: Name the update bundle, and check the app in it is stapled
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          dir=desktop/target/${{ matrix.target }}/release/bundle/macos
+          bundle="dist/Cedar-$VERSION-$ARCH.app.tar.gz"
+          mv "$dir/Cedar.app.tar.gz" "$bundle"
+          mv "$dir/Cedar.app.tar.gz.sig" "$bundle.sig"
+          check=$(mktemp -d)
+          tar -xzf "$bundle" -C "$check"
+          xcrun stapler validate "$check/Cedar.app" || { echo "::error::the app in $bundle carries no notarization ticket"; exit 1; }
+          ls -l dist
+
       - uses: actions/upload-artifact@v4
         with:
           name: dmg-${{ matrix.arch }}
-          path: dist/*.dmg
+          path: |
+            dist/*.dmg
+            dist/*.app.tar.gz
+            dist/*.app.tar.gz.sig
           if-no-files-found: error
 
   msi:
@@ -339,7 +371,16 @@ jobs:
     runs-on: windows-latest
     env:
       TARGET: x86_64-pc-windows-msvc
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      CEDAR_UPDATER_PUBKEY: ${{ vars.CEDAR_UPDATER_PUBKEY }}
     steps:
+      - name: The updater key is set
+        run: |
+          foreach ($v in 'TAURI_SIGNING_PRIVATE_KEY', 'CEDAR_UPDATER_PUBKEY') {
+            if (-not [Environment]::GetEnvironmentVariable($v)) { throw "missing repository secret or variable $v (see .github/workflows/release.yml)" }
+          }
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.verify.outputs.sha }}
@@ -375,8 +416,9 @@ jobs:
         run: cargo binstall -y --locked tauri-cli --version '^2'
 
       - name: Build Cedar.exe and pack the MSI
+        # tauri.release.conf.json also signs the MSI for the updater (.msi.sig).
         working-directory: desktop
-        run: cargo tauri build --ci --target $env:TARGET --bundles msi
+        run: cargo tauri build --ci --target $env:TARGET --bundles msi --config tauri.release.conf.json
 
       - name: Check that no executable needs the Visual C++ Redistributable
         run: |
@@ -405,12 +447,15 @@ jobs:
           if ($built.Count -ne 1) { throw "expected one MSI, found $($built.Count)" }
           New-Item -ItemType Directory -Force dist | Out-Null
           Move-Item $built.FullName "dist/Cedar-$env:VERSION-x64.msi"
+          Move-Item "$($built.FullName).sig" "dist/Cedar-$env:VERSION-x64.msi.sig"
           Get-ChildItem dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: msi-x64
-          path: dist/*.msi
+          path: |
+            dist/*.msi
+            dist/*.msi.sig
           if-no-files-found: error
 
   apk:
@@ -527,6 +572,9 @@ jobs:
           mkdir -p "dist/$name"
           install -m 0755 target/release/cedar target/release/cedar-chat "dist/$name/"
           install -m 0644 LICENSE NOTICE README.md DEPLOYMENT.md "dist/$name/"
+          # The one-click updater DEPLOYMENT.md's "Updates" sets up.
+          install -m 0755 scripts/cedar-update.sh "dist/$name/cedar-update"
+          install -m 0644 scripts/systemd/cedar-update.path scripts/systemd/cedar-update.service "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           tar -tzvf "dist/$name.tar.gz"
 
@@ -580,6 +628,30 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: The desktop app's update manifest
+        # What installed desktop apps read (releases/latest/download/latest.json, in
+        # tauri.conf.json): the version, and per platform the update bundle and its signature.
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          base="https://github.com/$REPO/releases/download/v$VERSION"
+          mac="Cedar-$VERSION-apple-silicon.app.tar.gz"
+          win="Cedar-$VERSION-x64.msi"
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "https://github.com/$REPO/releases/tag/v$VERSION" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg mac_url "$base/$mac" --rawfile mac_sig "$mac.sig" \
+            --arg win_url "$base/$win" --rawfile win_sig "$win.sig" \
+            '{version: $version, notes: $notes, pub_date: $date, platforms: {
+                "darwin-aarch64": {url: $mac_url, signature: ($mac_sig | rtrimstr("\n"))},
+                "windows-x86_64": {url: $win_url, signature: ($win_sig | rtrimstr("\n"))}
+              }}' > latest.json
+          cat latest.json
+
       - name: Checksums
         working-directory: dist
         run: sha256sum *.dmg *.msi *.apk *.tar.gz | tee checksums.txt
@@ -629,11 +701,21 @@ jobs:
               tar -xzf Cedar-$VERSION-linux-x64.tar.gz
               sudo install -m 0755 Cedar-$VERSION-linux-x64/cedar Cedar-$VERSION-linux-x64/cedar-chat /usr/local/bin/
 
+          The chat shows a banner when a newer release is out. With the \`cedar-update\`
+          unit from the tarball set up (DEPLOYMENT.md, "Updates"), its *Update* button installs it;
+          \`sudo ./cedar-update\` does the same from a shell.
+
           Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
+
+          ## Updating
+
+          The Mac and Windows apps check for new releases themselves and offer them in a banner;
+          *Update* downloads the release, checks its signature, and restarts Cedar on it.
           EOF
           gh release create "v$VERSION" \
             --target "$SHA" \
             --title "Cedar $VERSION" \
             --notes "$(cat notes.md)" \
             --generate-notes \
-            dist/*.dmg dist/*.msi dist/*.apk dist/*.tar.gz dist/checksums.txt
+            dist/*.dmg dist/*.msi dist/*.apk dist/*.tar.gz dist/checksums.txt \
+            dist/*.sig dist/latest.json

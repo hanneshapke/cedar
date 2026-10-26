@@ -51,6 +51,9 @@ struct FakeCedar {
     answers: Mutex<Vec<(String, Value)>>,
     /// The fake Google token endpoint: every form it received. Each gets a new access token.
     google_tokens: Mutex<Vec<HashMap<String, String>>>,
+    /// The fake GitHub "latest release": its tag (no release while unset), and how often it was asked.
+    release_tag: Mutex<Option<String>>,
+    release_lookups: Mutex<u32>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -186,6 +189,29 @@ async fn apns_service(State(s): State<Shared>, Path(token): Path<String>, header
 }
 
 /// The fake Google OAuth token endpoint: trades any assertion for `access-N`.
+/// GitHub's `releases/latest`, with an ETag that `If-None-Match` is answered with 304 for.
+async fn latest_release(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    *s.release_lookups.lock().unwrap() += 1;
+    if headers.get("user-agent").is_none() {
+        return (StatusCode::FORBIDDEN, "GitHub wants a User-Agent").into_response();
+    }
+    let Some(tag) = s.release_tag.lock().unwrap().clone() else {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "Not Found");
+    };
+    let etag = format!("\"{tag}\"");
+    if headers.get("if-none-match").and_then(|v| v.to_str().ok()) == Some(etag.as_str()) {
+        return StatusCode::NOT_MODIFIED.into_response();
+    }
+    let v = tag.trim_start_matches('v');
+    let asset = |name: String| json!({ "name": name, "browser_download_url": format!("https://example.invalid/{tag}/{name}") });
+    let body = json!({
+        "tag_name": tag, "html_url": format!("https://example.invalid/releases/{tag}"), "published_at": "2026-10-20T10:00:00Z",
+        "draft": false, "prerelease": false,
+        "assets": [asset(format!("Cedar-{v}-linux-x64.tar.gz")), asset(format!("Cedar-{v}-linux-arm64.tar.gz")), asset("checksums.txt".into())],
+    });
+    ([("etag", etag)], Json(body)).into_response()
+}
+
 async fn google_token(State(s): State<Shared>, axum::Form(form): axum::Form<HashMap<String, String>>) -> axum::response::Response {
     let mut forms = s.google_tokens.lock().unwrap();
     forms.push(form);
@@ -497,6 +523,7 @@ impl Harness {
             .route("/apns/3/device/{token}", post(apns_service))
             .route("/fcm/v1/projects/{project}/{action}", post(fcm_service))
             .route("/google/token", post(google_token))
+            .route("/github/releases/latest", get(latest_release))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -506,6 +533,7 @@ impl Harness {
         let apns_url = format!("{url}/apns");
         let fcm_url = format!("{url}/fcm");
         let google_token_url = format!("{url}/google/token");
+        let update_url = format!("{url}/github/releases/latest");
         let mut env: HashMap<String, String> = [
             ("CEDAR_URL", url.as_str()),
             ("CEDAR_API_KEY", CEDAR_KEY),
@@ -513,6 +541,7 @@ impl Harness {
             ("CHAT_APNS_URL", apns_url.as_str()),
             ("CHAT_FCM_URL", fcm_url.as_str()),
             ("CHAT_GOOGLE_TOKEN_URL", google_token_url.as_str()),
+            ("CHAT_UPDATE_URL", update_url.as_str()),
         ]
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -2717,4 +2746,95 @@ async fn community_tools_pass_through_to_cedar_with_checked_names() {
         .collect();
     assert_eq!(calls, ["install_glucose", "secret_glucose_TOKEN"]);
     assert_eq!(h.cedar.admin_calls.lock().unwrap()[0].1, accept);
+}
+
+// -- updates ------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_newer_release_is_offered_and_handed_to_the_updater() {
+    let dir = std::env::temp_dir().join(format!("cedar-chat-update-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let h = Harness::new(&[("CHAT_ADMIN_TOKEN", "adm"), ("CHAT_UPDATE_DIR", dir.to_str().unwrap())]).await;
+    let current = env!("CARGO_PKG_VERSION");
+
+    // Nothing known yet: no banner, nothing to install.
+    let (status, body) = h.json(Method::GET, "/api/update", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["current"], current);
+    assert_eq!(body["available"], false);
+    assert_eq!(body["can_install"], true);
+    assert_eq!(body["install"]["state"], "idle");
+    assert_eq!(admin_call(&h, Method::POST, "/api/update", Some("adm"), None).await.0, StatusCode::CONFLICT);
+
+    // The same release as this build is not an update.
+    *h.cedar.release_tag.lock().unwrap() = Some(format!("v{current}"));
+    let (_, body) = h.json(Method::POST, "/api/update/check", None).await;
+    assert_eq!(body["latest"]["version"], current);
+    assert_eq!(body["available"], false);
+    assert!(body["commands"].is_null());
+
+    // A newer one is. "Check now" right after the last check answers from memory.
+    *h.cedar.release_tag.lock().unwrap() = Some("v999.0.0".into());
+    let (_, body) = h.json(Method::POST, "/api/update/check", None).await;
+    assert_eq!(body["available"], false);
+    assert_eq!(*h.cedar.release_lookups.lock().unwrap(), 1);
+    cedar_chat::update::check(&h.state, true).await.unwrap();
+    let (_, body) = h.json(Method::GET, "/api/update", None).await;
+    assert_eq!(body["available"], true);
+    assert_eq!(body["latest"]["version"], "999.0.0");
+    assert_eq!(body["latest"]["notes_url"], "https://example.invalid/releases/v999.0.0");
+    assert_eq!(body["commands"], "sudo cedar-update 999.0.0");
+    // Asked again, GitHub says it is unchanged (304) and the release is kept.
+    cedar_chat::update::check(&h.state, true).await.unwrap();
+    assert_eq!(h.json(Method::GET, "/api/update", None).await.1["latest"]["version"], "999.0.0");
+
+    // Only an admin starts the install, and then the request is waiting for the unit.
+    assert_eq!(admin_call(&h, Method::POST, "/api/update", None, None).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(admin_call(&h, Method::POST, "/api/update", Some("wrong"), None).await.0, StatusCode::FORBIDDEN);
+    let (status, body) = admin_call(&h, Method::POST, "/api/update", Some("adm"), None).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(body["install"]["state"], "requested");
+    assert_eq!(body["install"]["version"], "999.0.0");
+    let request: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("request")).unwrap()).unwrap();
+    assert_eq!(request["version"], "999.0.0");
+    assert_eq!(admin_call(&h, Method::POST, "/api/update", Some("adm"), None).await.0, StatusCode::CONFLICT);
+
+    // The unit takes the request and reports its progress; a failure can be tried again.
+    std::fs::remove_file(dir.join("request")).unwrap();
+    std::fs::write(dir.join("status.json"), r#"{"state":"verifying","version":"999.0.0"}"#).unwrap();
+    assert_eq!(h.json(Method::GET, "/api/update", None).await.1["install"]["state"], "verifying");
+    assert_eq!(admin_call(&h, Method::POST, "/api/update", Some("adm"), None).await.0, StatusCode::CONFLICT);
+    std::fs::write(dir.join("status.json"), r#"{"state":"failed","version":"999.0.0","detail":"checksum mismatch"}"#).unwrap();
+    let (_, body) = h.json(Method::GET, "/api/update", None).await;
+    assert_eq!((body["install"]["state"].as_str(), body["install"]["detail"].as_str()), (Some("failed"), Some("checksum mismatch")));
+    assert_eq!(admin_call(&h, Method::POST, "/api/update", Some("adm"), None).await.0, StatusCode::ACCEPTED);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn without_the_updater_the_banner_shows_the_commands() {
+    let h = Harness::new(&[("CHAT_ADMIN_TOKEN", "adm")]).await;
+    *h.cedar.release_tag.lock().unwrap() = Some("v999.0.0".into());
+    cedar_chat::update::check(&h.state, true).await.unwrap();
+    let (_, body) = h.json(Method::GET, "/api/update", None).await;
+    assert_eq!(body["available"], true);
+    assert_eq!(body["can_install"], false);
+    if cfg!(target_os = "linux") && matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+        let commands = body["commands"].as_str().unwrap();
+        assert!(commands.contains("sha256sum -c --ignore-missing checksums.txt"), "{commands}");
+        assert!(commands.contains("sudo systemctl restart cedar cedar-chat"), "{commands}");
+    }
+    let (status, body) = admin_call(&h, Method::POST, "/api/update", Some("adm"), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(body["error"]["message"].as_str().unwrap().contains("CHAT_UPDATE_DIR"));
+}
+
+#[tokio::test]
+async fn the_update_status_needs_the_access_token() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "tok")]).await;
+    assert_eq!(h.call(Method::GET, "/api/update", None, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(h.call(Method::GET, "/api/update", Some("tok"), None).await.0, StatusCode::OK);
+    let (status, page) = h.call(Method::GET, "/update.js", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(page.contains("cedarUpdate"));
 }

@@ -17,6 +17,7 @@ mod proc;
 mod supervisor;
 mod tailscale;
 mod tray;
+mod update;
 mod window;
 mod winsetup;
 
@@ -35,6 +36,7 @@ fn main() {
         }
     }));
     builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // A menu bar app until its window is shown: window::present switches to a regular
             // app (Dock icon, Command-Tab) and closing the window switches back.
@@ -53,6 +55,7 @@ fn main() {
             tray::build(&handle)?;
             window::create(&handle, &cfg)?;
             notify::start(handle.clone());
+            update::start(handle.clone());
             tauri::async_runtime::spawn(app::bootstrap(handle));
             Ok(())
         })
@@ -72,6 +75,10 @@ fn main() {
             commands::set_share,
             commands::copy_share_url,
             commands::share_qr,
+            commands::check_for_updates,
+            commands::install_update,
+            commands::dismiss_update,
+            commands::set_check_updates,
         ])
         .build(tauri::generate_context!())
         .expect("Cedar could not start")

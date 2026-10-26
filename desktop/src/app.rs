@@ -8,6 +8,7 @@ use crate::models;
 use crate::paths::Paths;
 use crate::supervisor::{ServiceState, Supervisor};
 use crate::tailscale;
+use crate::update::UpdateStatus;
 use crate::window;
 use anyhow::Result;
 use serde::Serialize;
@@ -85,6 +86,8 @@ pub struct AppState {
     served_port: Mutex<Option<u16>>,
     /// The `CHAT_PUBLIC_URL` the running chat was started with.
     started_public_url: Mutex<Option<String>>,
+    /// Whether a newer release is out, and how far installing it got (see update.rs).
+    update: Mutex<UpdateStatus>,
     pub supervisor: Supervisor,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
@@ -116,6 +119,8 @@ pub struct Status {
     pub logs_dir: String,
     pub config_path: String,
     pub sandbox_image: String,
+    pub update: UpdateStatus,
+    pub check_updates: bool,
 }
 
 impl AppState {
@@ -132,6 +137,7 @@ impl AppState {
             share: Mutex::new(ShareStatus::Off),
             served_port: Mutex::new(None),
             started_public_url: Mutex::new(None),
+            update: Mutex::new(UpdateStatus::default()),
             bootstrap: tokio::sync::Mutex::new(()),
         }
     }
@@ -168,6 +174,17 @@ impl AppState {
 
     pub fn docker_setup(&self) -> SetupStatus {
         self.docker_setup.lock().unwrap().clone()
+    }
+
+    pub fn update(&self) -> UpdateStatus {
+        self.update.lock().unwrap().clone()
+    }
+
+    /// Changes the update status and returns it as it is now.
+    pub fn update_status(&self, change: impl FnOnce(&mut UpdateStatus)) -> UpdateStatus {
+        let mut s = self.update.lock().unwrap();
+        change(&mut s);
+        s.clone()
     }
 
     fn set_images(&self, s: ImagesStatus) {
@@ -260,6 +277,8 @@ impl AppState {
             logs_dir: self.paths.logs.to_string_lossy().into_owned(),
             config_path: self.paths.config().to_string_lossy().into_owned(),
             sandbox_image: cfg.sandbox_image(),
+            update: self.update(),
+            check_updates: cfg.check_updates,
         }
     }
 

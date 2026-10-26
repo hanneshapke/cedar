@@ -289,6 +289,8 @@ impl Runner {
             ("CHAT_ADMIN_TOKEN", cfg.secrets.chat_admin_token.clone()),
             ("PATH", self.docker.path_env.clone()),
             ("CEDAR_EXIT_ON_STDIN_EOF", "1".to_string()),
+            // The app updates itself, servers and all (update.rs); the chat's banner shows its state.
+            ("CHAT_UPDATE_CHECK", "off".to_string()),
             ("RUST_LOG", "info,sqlx=warn".to_string()),
         ]
         .into_iter()

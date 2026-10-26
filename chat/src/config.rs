@@ -36,6 +36,14 @@ pub struct Config {
     /// The tailscale CLI Settings -> Phone asks about Tailscale, when it isn't in the usual places
     /// (or, in tests, a fake).
     pub tailscale_cli: Option<String>,
+    /// Whether to look for a newer release every few hours (`CHAT_UPDATE_CHECK`, on by default;
+    /// the desktop app turns it off, it updates itself).
+    pub update_check: bool,
+    /// Where the latest release is looked up; overridable so tests can point at a mock.
+    pub update_url: String,
+    /// The directory the root `cedar-update` unit watches (see `update`); without it the page
+    /// only shows how to update by hand.
+    pub update_dir: Option<std::path::PathBuf>,
 }
 
 impl Config {
@@ -76,6 +84,13 @@ impl Config {
                 .map(|u| u.trim().to_string())
                 .unwrap_or_else(|| crate::channels::GOOGLE_TOKEN_URL.into()),
             tailscale_cli: get("CHAT_TAILSCALE_CLI").map(|p| p.trim().to_string()),
+            update_check: match get("CHAT_UPDATE_CHECK").as_deref().map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+                None | Some("on" | "true" | "1" | "yes") => true,
+                Some("off" | "false" | "0" | "no") => false,
+                Some(other) => bail!("CHAT_UPDATE_CHECK must be on or off, not {other:?}"),
+            },
+            update_url: get("CHAT_UPDATE_URL").map(|u| u.trim().to_string()).unwrap_or_else(|| crate::update::DEFAULT_URL.into()),
+            update_dir: get("CHAT_UPDATE_DIR").map(|d| std::path::PathBuf::from(d.trim())),
         };
         if cfg.history_max_bytes > 60_000 {
             // cedar rejects prompts over 100 KB; leave room for the new message itself.
@@ -89,7 +104,7 @@ impl Config {
                 bail!("CHAT_APNS_URL must start with http:// or https://");
             }
         }
-        for (name, u) in [("CHAT_FCM_URL", &cfg.fcm_url), ("CHAT_GOOGLE_TOKEN_URL", &cfg.google_token_url)] {
+        for (name, u) in [("CHAT_FCM_URL", &cfg.fcm_url), ("CHAT_GOOGLE_TOKEN_URL", &cfg.google_token_url), ("CHAT_UPDATE_URL", &cfg.update_url)] {
             if !(u.starts_with("http://") || u.starts_with("https://")) {
                 bail!("{name} must start with http:// or https://");
             }
@@ -134,5 +149,18 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_FCM_URL", "http://127.0.0.1:1/fcm/"), ("CHAT_GOOGLE_TOKEN_URL", "http://127.0.0.1:1/token")])).unwrap();
         assert_eq!((cfg.fcm_url.as_str(), cfg.google_token_url.as_str()), ("http://127.0.0.1:1/fcm", "http://127.0.0.1:1/token"));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_FCM_URL", "fcm.example")])).is_err());
+    }
+
+    #[test]
+    fn update_settings() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k")])).unwrap();
+        assert!(cfg.update_check);
+        assert_eq!(cfg.update_url, crate::update::DEFAULT_URL);
+        assert!(cfg.update_dir.is_none());
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_CHECK", "OFF"), ("CHAT_UPDATE_DIR", "/var/lib/cedar/update")])).unwrap();
+        assert!(!cfg.update_check);
+        assert_eq!(cfg.update_dir.as_deref(), Some(std::path::Path::new("/var/lib/cedar/update")));
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_CHECK", "sometimes")])).is_err());
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_URL", "api.github.com")])).is_err());
     }
 }

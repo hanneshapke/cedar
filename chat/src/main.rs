@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use cedar_chat::api::{self, AppState};
 use cedar_chat::config::Config;
-use cedar_chat::{notify, schedule};
+use cedar_chat::{notify, schedule, update};
 use cedar_chat::store::Store;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -14,6 +14,11 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // For scripts/cedar-update.sh, which compares the installed version with the release's.
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("cedar-chat {}", update::VERSION);
+        return Ok(());
+    }
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")))
         .init();
@@ -33,6 +38,8 @@ async fn main() -> Result<()> {
     // Finished runs are learned from cedar's event stream, so a response that ends while no
     // tab is open is still marked unread and announced.
     let notifier = notify::start(state.clone(), stop.clone());
+    // A newer release, for the page's banner (see update.rs).
+    let updates = update::start(state.clone(), stop.clone());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await.with_context(|| format!("binding {bind_addr}"))?;
     tracing::info!("open http://{bind_addr}");
@@ -53,6 +60,7 @@ async fn main() -> Result<()> {
         tracing::warn!("the scheduler was still starting runs at shutdown");
     }
     let _ = tokio::time::timeout(Duration::from_secs(2), notifier).await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), updates).await;
     Ok(())
 }
 

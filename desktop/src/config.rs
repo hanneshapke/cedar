@@ -31,6 +31,10 @@ pub struct Config {
     pub tailscale_share: bool,
     /// The tailnet port it is served on; 443 gives an address without a port.
     pub tailscale_https_port: u16,
+    /// Look for a newer release every few hours (see update.rs).
+    pub check_updates: bool,
+    /// The release whose banner was dismissed; a later one shows again.
+    pub dismissed_update: String,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
@@ -67,6 +71,8 @@ impl Default for Config {
             browser: false,
             tailscale_share: false,
             tailscale_https_port: 443,
+            check_updates: true,
+            dismissed_update: String::new(),
             cedar_env: BTreeMap::new(),
             chat_env: BTreeMap::new(),
             secrets: Secrets::default(),
@@ -199,6 +205,7 @@ mod tests {
         assert_eq!(cfg.chat_port, 13000);
         assert!(!cfg.tailscale_share);
         assert_eq!(cfg.tailscale_https_port, 443);
+        assert!(cfg.check_updates);
         assert_eq!(cfg.other["future_setting"], 1);
         let back = serde_json::to_value(&cfg).unwrap();
         assert_eq!(back["future_setting"], 1);
