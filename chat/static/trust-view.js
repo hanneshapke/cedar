@@ -7,7 +7,8 @@
 // sends none of the new events (see chat/REDESIGN.md) simply shows none of these blocks.
 //
 // Events this module understands (all optional):
-//   plan               { steps: [{id, title}], editable: bool }        -> plan.element
+//   plan               { steps: [{id, title}], editable: bool,
+//                        origin?: 'tool' (Cedar chose to plan, mid-run) } -> plan.element
 //   plan.updated       { steps }                                       -> plan.replace
 //   assistant.reasoning{ turn, text, duration_ms? }                    -> reasoning.element
 //   approval.required  { id, tool, input, reason, scope? }             -> approval.element
@@ -36,7 +37,12 @@ const cedarTrust = (() => {
       .map((s, i) => (typeof s === 'string' ? { id: String(i + 1), title: s } : s))
       .filter((s) => s && typeof s.title === 'string' && s.title.trim())
       .map((s, i) => ({ id: String(s.id ?? i + 1), title: s.title.trim() }));
-    return out.length ? { steps: out, editable: data?.editable !== false } : null;
+    return out.length ? { steps: out, editable: data?.editable !== false, origin: data?.origin || null } : null;
+  }
+
+  /** What a plan waiting on the reader says: one Cedar chose to make (`propose_plan`) comes mid-run. */
+  function awaitingNote(plan) {
+    return plan?.origin === 'tool' ? 'Cedar planned this. Change anything, then go on.' : 'Change anything, then start.';
   }
 
   /**
@@ -48,7 +54,7 @@ const cedarTrust = (() => {
     const el = h('section', 'cedar-plan');
     el.dataset.state = awaiting ? 'awaiting' : 'running';
     const head = h('header', 'cedar-plan-head');
-    head.append(h('span', 'cedar-plan-label', 'Plan'), h('span', 'cedar-plan-note', note || (awaiting ? 'Change anything, then start.' : '')));
+    head.append(h('span', 'cedar-plan-label', 'Plan'), h('span', 'cedar-plan-note', note || (awaiting ? awaitingNote(plan) : '')));
     const count = h('span', 'cedar-plan-count', '');
     head.append(count);
     el.append(head);
@@ -87,7 +93,7 @@ const cedarTrust = (() => {
         list.append(li);
         li.querySelector('input').focus();
       });
-      const start = h('button', 'cedar-plan-start', 'Looks good, start');
+      const start = h('button', 'cedar-plan-start', plan.origin === 'tool' ? 'Looks good, go on' : 'Looks good, start');
       start.type = 'button';
       start.addEventListener('click', async () => {
         const steps = [...list.querySelectorAll('.cedar-plan-step')]
@@ -351,7 +357,7 @@ const cedarTrust = (() => {
   }
 
   return {
-    plan: { parse: parsePlan, element: planElement },
+    plan: { parse: parsePlan, element: planElement, awaitingNote },
     approval: { element: approvalElement, settle },
     reasoning: { element: reasoningElement },
     sources: { collect: collectSources, element: sourcesElement, cite },

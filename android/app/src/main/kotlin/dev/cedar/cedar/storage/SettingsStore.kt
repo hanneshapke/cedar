@@ -25,6 +25,7 @@ class SettingsStore(context: Context) {
         accessToken = prefs.getString(ACCESS_TOKEN, null)?.let(TokenCipher::decrypt) ?: "",
         model = prefs.getString(MODEL, "") ?: "",
         reasoning = prefs.getString(REASONING, "") ?: "",
+        plan = prefs.getString(PLAN, "") ?: "",
     )
 
     fun save(settings: ServerSettings) {
@@ -33,6 +34,7 @@ class SettingsStore(context: Context) {
             .putString(SERVER_URL, settings.serverURL.trim())
             .putString(MODEL, settings.model.trim())
             .putString(REASONING, settings.reasoning.trim())
+            .putString(PLAN, settings.plan.trim())
             .apply { if (token.isEmpty()) remove(ACCESS_TOKEN) else putString(ACCESS_TOKEN, TokenCipher.encrypt(token)) }
             .apply()
     }
@@ -49,6 +51,7 @@ class SettingsStore(context: Context) {
         const val ACCESS_TOKEN = "accessToken"
         const val MODEL = "model"
         const val REASONING = "reasoning"
+        const val PLAN = "plan"
     }
 }
 

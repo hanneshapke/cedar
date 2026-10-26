@@ -1024,6 +1024,8 @@ struct MessageBody {
     reasoning: Option<String>,
     /// PDFs for any model; images for one registered as accepting them.
     attachments: Option<Vec<Attachment>>,
+    /// Whether the run plans: `off`, `on`, `auto` or `tool`. Absent: the plan setting from Settings.
+    plan: Option<String>,
 }
 
 /// The files sent with a message: checked the way cedar checks them (count, name, type, base64,
@@ -1160,6 +1162,7 @@ async fn send_message(
     // The model and level go to cedar as given: it checks them against its registry.
     let requested = blank_is_none(body.model.as_deref());
     let reasoning = blank_is_none(body.reasoning.as_deref());
+    let plan = clean_plan(body.plan)?;
     // Whether the model takes them is cedar's call (its registry says), relayed as it answers.
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
     let prefs = state.store.preferences().await?;
@@ -1172,7 +1175,7 @@ async fn send_message(
     // Someone is reading along, so the run may ask: agree to its plan, approve a risky call.
     let options = |parent| RunOptions {
         attachments: Some(&attachments),
-        plan: Some(settings.plan.as_deref().unwrap_or(DEFAULT_PLAN)),
+        plan: Some(plan.as_deref().or(settings.plan.as_deref()).unwrap_or(DEFAULT_PLAN)),
         interactive: true,
         ..settings.options(parent)
     };
@@ -1218,6 +1221,16 @@ pub struct RunSettings {
 
 /// What a message's run does about a plan when Settings doesn't say.
 const DEFAULT_PLAN: &str = "auto";
+
+/// A plan setting as cedar takes it: `off`, `on`, `auto` (for longer requests) or `tool` (when the
+/// model judges a request needs one). Blank is `None`.
+fn clean_plan(plan: Option<String>) -> Result<Option<String>, AppError> {
+    let plan = plan.map(|p| p.trim().to_ascii_lowercase()).filter(|p| !p.is_empty());
+    if plan.as_deref().is_some_and(|p| !matches!(p, "off" | "on" | "auto" | "tool")) {
+        return Err(AppError::BadRequest("plan must be off, on, auto or tool".into()));
+    }
+    Ok(plan)
+}
 
 impl RunSettings {
     /// `model`, `reasoning` and `tools` win over the defaults. A default model that is no longer
@@ -1303,10 +1316,7 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
         return Err(AppError::BadRequest(format!("max_turns must be between 1 and {MAX_TURNS}")));
     }
     let (model, _) = clean_model_choice(&state, body.model.as_deref(), None).await?;
-    let plan = body.plan.map(|p| p.trim().to_ascii_lowercase()).filter(|p| !p.is_empty());
-    if plan.as_deref().is_some_and(|p| !matches!(p, "off" | "on" | "auto")) {
-        return Err(AppError::BadRequest("plan must be off, on or auto".into()));
-    }
+    let plan = clean_plan(body.plan)?;
     let prefs = Preferences {
         tools: clean_tools(&state, body.tools).await?,
         model,

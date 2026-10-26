@@ -251,7 +251,7 @@ pub struct Preferences {
     pub model: Option<String>,
     pub system: Option<String>,
     pub max_turns: Option<u32>,
-    /// Whether a message's run plans before it starts: `off`, `on` or `auto`. `None` is `auto`.
+    /// Whether a message's run plans: `off`, `on`, `auto` or `tool`. `None` is `auto`.
     #[serde(default)]
     pub plan: Option<String>,
 }

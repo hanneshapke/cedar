@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Sandboxes are paused when a conversation goes idle.** A completed run now keeps its sandbox container for the conversation's next turn instead of removing it, so processes it started and packages it installed outside `/workspace` are still there. After `sandbox_idle_minutes` without a new turn (10 by default, 0–1440) the container is paused with `docker pause`, and the next message resumes it. Set it under Settings → Server → *Pause when idle*, or with `PUT /v1/admin/settings`. Kept containers are removed with their workspace and when cedar stops. `PUT /v1/admin/settings` now leaves out fields unchanged instead of resetting them.
-
+- **Cedar decides when to plan.** A new plan mode, `tool` (*When Cedar thinks it helps* in Settings → Plans), offers the model a `propose_plan` tool instead of planning every longer prompt: Cedar proposes steps only for requests that take several steps or tools, or that would be costly to get wrong, and waits for your go-ahead partway through the response, where you can still change them. Such a plan is marked as Cedar's in the chat, the desktop apps and the iOS and Android apps, and the phone apps get a Plans setting of their own for the messages you send from them.
 - **A personal assistant by default.** The default system prompt (used when `SYSTEM_PROMPT` isn't set) now frames Cedar as a personal AI assistant instead of a coding agent: it answers first, asks clarifying questions when the answer would change what it does, writes a short plan before complex tasks and carries it out (following one already agreed with `PLAN`), checks before anything it can't undo, and keeps your information private (#83).
 
 ## 0.1.6

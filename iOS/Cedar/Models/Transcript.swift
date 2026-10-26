@@ -146,13 +146,17 @@ struct PlanStep: Hashable, Sendable {
     let title: String
 }
 
-/// The steps the agent proposed before starting (`plan`), and whether it waits for them to be
-/// agreed.
+/// The steps the agent proposed (`plan`), and whether it waits for them to be agreed: before it
+/// starts, or mid-run when it chose to plan with `propose_plan` (`origin` "tool").
 struct Plan: Hashable, Sendable {
     var steps: [PlanStep]
     let editable: Bool
     var awaiting: Bool
     var by: String?
+    var origin: String?
+
+    /// Cedar chose to make this plan, partway through its work.
+    var isProposed: Bool { origin == "tool" }
 
     static func parseSteps(_ value: JSONValue?) -> [PlanStep] {
         guard case .array(let items)? = value else { return [] }
@@ -223,7 +227,7 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
             }
         case "plan":
             let plan = Plan(steps: Plan.parseSteps(data["steps"]), editable: data["editable"]?.boolValue ?? false,
-                            awaiting: data["awaiting"]?.boolValue ?? false)
+                            awaiting: data["awaiting"]?.boolValue ?? false, origin: data["origin"]?.stringValue)
             items.append(.plan(id: event.seq, plan))
         case "plan.updated":
             guard let index = items.lastIndex(where: { if case .plan = $0 { return true } else { return false } }),

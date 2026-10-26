@@ -367,7 +367,7 @@ pub struct RunOptions<'a> {
     pub parent: Option<Uuid>,
     /// Images (for a multimodal model) and PDFs (for any) to send with the prompt.
     pub attachments: Option<&'a [Attachment]>,
-    /// Plan before starting: `off`, `on` or `auto`. `None` leaves it to cedar.
+    /// Whether the run plans: `off`, `on`, `auto` or `tool`. `None` leaves it to cedar.
     pub plan: Option<&'a str>,
     /// Someone is there to answer: the run waits for its plan to be agreed and for risky calls
     /// to be approved. Off for scheduled runs.

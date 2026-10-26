@@ -146,6 +146,8 @@ struct ChatClient: Sendable {
         var reasoning: String?
         /// PDFs for any model; images for one registered as accepting them.
         var attachments: [Upload]?
+        /// `off`, `on`, `auto` or `tool`; absent leaves it to the server's Settings.
+        var plan: String?
 
         struct Upload: Encodable {
             var name: String

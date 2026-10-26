@@ -33,7 +33,8 @@ pub struct Step {
 /// Whether a run in `mode` plans before answering `prompt`.
 pub fn wanted(mode: PlanMode, prompt: &str) -> bool {
     match mode {
-        PlanMode::Off => false,
+        // In `tool` mode the model plans when it judges a request needs it, with [`TOOL`].
+        PlanMode::Off | PlanMode::Tool => false,
         PlanMode::On => true,
         PlanMode::Auto => prompt.split_whitespace().count() >= AUTO_MIN_WORDS,
     }
@@ -140,6 +141,80 @@ pub fn parse_answer(body: &Value) -> Result<Vec<Step>, String> {
     Ok(steps)
 }
 
+/// The tool a run in `tool` mode plans with, when the model judges the request needs a plan. It
+/// is handled by the agent loop, which shows the plan as a `plan` event and, in an interactive
+/// run, waits for the user to agree to it, as for the plan made before a run starts.
+pub const TOOL: &str = "propose_plan";
+
+/// What the system prompt gets when the run offers [`TOOL`].
+pub const TOOL_NOTE: &str = "For a request that takes several steps or tools, or that would be \
+    costly to get wrong, first call propose_plan with the steps, then work through them; the user \
+    may change them first. Use it instead of writing the plan out, at most once per request, and \
+    not for questions or quick tasks.";
+
+/// What the model is told when it calls [`TOOL`] a second time in a run.
+pub const TOOL_AGAIN: &str = "There is already a plan for this request. Follow it; if a step turns \
+    out to be impossible or unnecessary, say so briefly and go on.";
+
+pub fn tool_definition() -> Value {
+    json!({
+        "name": TOOL,
+        "description": "Propose a plan before working on a request that takes several steps or \
+            tools, or that would be costly to get wrong. The plan is shown to the user, who may \
+            change, reorder, add or remove steps; the result is the plan to follow. Don't use it \
+            for questions or quick tasks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array", "minItems": 2, "maxItems": 7,
+                    "description": "2 to 7 steps, in order. Each is one short imperative line (at \
+                        most 12 words) saying what will be done, e.g. \"Find 2025 market-share figures\".",
+                    "items": { "type": "string" }
+                }
+            },
+            "required": ["steps"]
+        }
+    })
+}
+
+/// The steps of a [`TOOL`] call: 2 to 7 one-line titles.
+pub fn parse_tool_input(input: &Value) -> Result<Vec<Step>, String> {
+    let steps = parse_answer(input)?;
+    if steps.len() < 2 || steps.len() > 7 {
+        return Err(format!("give 2 to 7 steps, got {}", steps.len()));
+    }
+    // The model's ids are not shown to anyone, so number the steps as the planning call does.
+    Ok(steps
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| Step {
+            id: (i + 1).to_string(),
+            title: s.title,
+        })
+        .collect())
+}
+
+/// What the model reads back from a [`TOOL`] call: the plan to follow, and who settled it (`user`,
+/// `timeout`, or `None` when nobody was asked).
+pub fn tool_result(steps: &[Step], by: Option<&str>) -> String {
+    let list: Vec<String> = steps
+        .iter()
+        .enumerate()
+        .map(|(i, s)| format!("{}. {}", i + 1, s.title))
+        .collect();
+    let how = match by {
+        Some("user") => "The user agreed to this plan (with any changes they made)",
+        Some(_) => "The user didn't answer in time, so this plan stands as proposed",
+        None => "The plan is shown to the user",
+    };
+    format!(
+        "{how}. Work through it in order now; if a step turns out to be impossible or \
+         unnecessary, say so briefly and go on.\n{}",
+        list.join("\n")
+    )
+}
+
 /// What the system prompt gets for the rest of the run.
 pub fn note(steps: &[Step]) -> String {
     let list: Vec<String> = steps
@@ -168,6 +243,7 @@ mod tests {
         ));
         assert!(wanted(PlanMode::On, "hi"));
         assert!(!wanted(PlanMode::Off, &"word ".repeat(50)));
+        assert!(!wanted(PlanMode::Tool, &"word ".repeat(50)));
     }
 
     #[test]
@@ -245,5 +321,49 @@ mod tests {
             },
         ]);
         assert!(note.ends_with("\n1. A\n2. B"));
+    }
+
+    #[test]
+    fn a_proposed_plan_is_checked_and_numbered() {
+        let steps = parse_tool_input(&json!({ "steps": [" Search ", { "id": "x", "title": "Write" }] })).unwrap();
+        assert_eq!(
+            steps,
+            [
+                Step {
+                    id: "1".into(),
+                    title: "Search".into()
+                },
+                Step {
+                    id: "2".into(),
+                    title: "Write".into()
+                },
+            ]
+        );
+        assert!(parse_tool_input(&json!({ "steps": ["only one"] }))
+            .unwrap_err()
+            .contains("2 to 7 steps, got 1"));
+        let eight: Vec<String> = (1..=8).map(|i| format!("s{i}")).collect();
+        assert!(parse_tool_input(&json!({ "steps": eight })).is_err());
+        assert!(parse_tool_input(&json!({ "steps": "a, b" })).is_err());
+    }
+
+    #[test]
+    fn the_tool_result_says_who_settled_the_plan() {
+        let steps = [
+            Step {
+                id: "1".into(),
+                title: "A".into(),
+            },
+            Step {
+                id: "2".into(),
+                title: "B".into(),
+            },
+        ];
+        let agreed = tool_result(&steps, Some("user"));
+        assert!(agreed.starts_with("The user agreed"), "{agreed}");
+        assert!(agreed.ends_with("\n1. A\n2. B"), "{agreed}");
+        assert!(tool_result(&steps, Some("timeout")).contains("didn't answer in time"));
+        assert!(tool_result(&steps, None).starts_with("The plan is shown"));
+        assert_eq!(tool_definition()["name"], TOOL);
     }
 }

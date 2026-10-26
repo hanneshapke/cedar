@@ -186,7 +186,7 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 | Type | `data` |
 | --- | --- |
 | `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{network, memory, cpus}` |
-| `plan` | `steps` (`[{id, title}]`), `editable`, `awaiting` (see [Plans and approvals](#plans-and-approvals)) |
+| `plan` | `steps` (`[{id, title}]`), `editable`, `awaiting`, and `origin: "tool"` for a plan the model proposed with `propose_plan` (see [Plans and approvals](#plans-and-approvals)) |
 | `plan.updated` | `steps`, `by` (`user`, or `timeout` when no answer came) |
 | `assistant.reasoning` | `turn`, `text`, `duration_ms`, `done`: the model's reasoning, when its server returns it (`reasoning_content` or `reasoning`). Not kept in the conversation |
 | `assistant.text` | `turn`, `text` |
@@ -216,6 +216,14 @@ default comes from `PLAN`, which is `off`), cedar first makes one model call wit
 breaks the prompt into 3–7 steps, and sends them as a `plan` event. The steps then go into the
 system prompt for the rest of the run. If the reply holds no usable plan, or the call fails, the
 run goes on without one.
+
+**Plans the model proposes.** With `"plan": "tool"`, no plan is made up front. Instead the run
+offers the model a `propose_plan` tool (`{"steps": [...]}`, 2 to 7 one-line steps), and the
+system prompt asks it to use it for requests that take several steps or tools, or that would be
+costly to get wrong, and not for questions or quick tasks. A call sends the steps as a `plan`
+event with `origin: "tool"` (no `tool.call` or `tool.result`), and the tool result is the plan
+to follow. It works like the plan made up front: an interactive run waits on it mid-run, the
+same way, and a second call in the same run is refused, so a request gets at most one plan.
 
 **Interactive runs.** `"interactive": true` says the client will answer while the run goes. Then:
 
@@ -409,7 +417,7 @@ Settings come from environment variables. The important ones:
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
-| `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first; see [Plans and approvals](#plans-and-approvals)) |
+| `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first, `tool` to let the model propose a plan when it judges a request needs one; see [Plans and approvals](#plans-and-approvals)) |
 | `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `downloads`, `installs`, `deletes`, `network`, `community`) |
 | `APPROVAL_TIMEOUT_SECS` | 300 (how long an interactive run waits for its plan to be agreed or a call to be approved) |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |

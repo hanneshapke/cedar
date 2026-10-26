@@ -130,13 +130,20 @@ data class Approval(
 
 data class PlanStep(val id: String, val title: String)
 
-/** The steps the agent proposed before starting (`plan`), and whether it waits for them to be agreed. */
+/**
+ * The steps the agent proposed (`plan`), and whether it waits for them to be agreed: before it
+ * starts, or mid-run when it chose to plan with `propose_plan` (`origin` "tool").
+ */
 data class Plan(
     val steps: List<PlanStep>,
     val editable: Boolean,
     val awaiting: Boolean,
     val by: String? = null,
+    val origin: String? = null,
 ) {
+    /** Cedar chose to make this plan, partway through its work. */
+    val isProposed: Boolean get() = origin == "tool"
+
     companion object {
         fun parseSteps(value: JsonElement?): List<PlanStep> {
             val items = value.arr ?: return emptyList()
@@ -209,7 +216,12 @@ data class TurnTranscript(
                 if (text.isNullOrEmpty()) next else next.copy(items = items + TranscriptItem.Text(event.seq, text))
             }
             "plan" -> {
-                val plan = Plan(Plan.parseSteps(data["steps"]), data["editable"].bool ?: false, data["awaiting"].bool ?: false)
+                val plan = Plan(
+                    Plan.parseSteps(data["steps"]),
+                    data["editable"].bool ?: false,
+                    data["awaiting"].bool ?: false,
+                    origin = data["origin"].str,
+                )
                 next.copy(items = items + TranscriptItem.PlanItem(event.seq, plan))
             }
             "plan.updated" -> {
