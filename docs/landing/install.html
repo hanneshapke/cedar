@@ -103,6 +103,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     <a href="./#private">Private by design</a>
     <a href="./#apps">Mac, Windows, Linux &amp; phones</a>
     <a href="./#compare">Compared</a>
+    <a href="models.html">Models</a>
     <a href="install.html" aria-current="page">Install</a>
     <a class="dl" id="header-dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
   </nav>
@@ -132,7 +133,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
 <footer class="site-footer">
   <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
-  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
 </footer>
 
 <script>
@@ -372,7 +373,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const inSetup = s.os === 'linux'
       ? '<p class="note">You\'ll register it in the chat\'s <strong>Settings → Server</strong> in a later step.</p>'
       : `<p class="note">You'll pick it in Cedar's setup window in a later step: ${modelChoice(s)}.</p>`;
-    const toolsNote = '<p class="note">Whatever you pick, it must support <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower.</p>';
+    const toolsNote = '<p class="note">Whatever you pick, it must support <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower. Not sure which one? The <a href="models.html">model guide</a> suggests one for your hardware.</p>';
 
     if (s.host === 'no') return providerStep(s, inSetup);
     if (s.host === 'yes') {
@@ -393,6 +394,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       ${s.os === 'windows' ? code('# your graphics card and its memory\nGet-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM\n# total memory\n(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB', 'PowerShell')
         : s.os === 'linux' ? code('free -h                 # memory\nnvidia-smi              # NVIDIA GPU and its memory, if any\nrocm-smi --showmeminfo vram   # AMD GPU, if any', 'Terminal')
         : code("system_profiler SPHardwareDataType | grep -E 'Chip|Memory'", 'Terminal')}
+      <p class="note">The <a href="models.html">model guide</a> shows which models fit each of these.</p>
       <p>One of those? Choose <strong>Yes</strong> above. A laptop with 8 or 16 GB can run a small model, but it will be slow and miss steps; choose <strong>No</strong> and use a token provider instead. You can switch later, per conversation.</p>`, 'optional');
   }
 
@@ -410,7 +412,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     return step(`Get a key from ${p.name}`, `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
       <ol><li>Copy the key somewhere safe; it's shown once.</li><li>Check it works and see which models you can use:${check}</li></ol>
       ${where}
-      <p class="note">Pick a model that supports tool calling; a large one (DeepSeek, Qwen3 235B, GLM, gpt-oss 120B) does best. Cedar keeps the key encrypted and never puts it inside a sealed box.${p.docs ? ` More in <a href="${p.docs}">${p.name}'s docs</a>.` : ''}</p>`);
+      <p class="note">Pick a model that supports tool calling; a large one (DeepSeek, GLM, Kimi, Qwen) does best, and the <a href="models.html?where=factory">model guide</a> suggests some. Cedar keeps the key encrypted and never puts it inside a sealed box.${p.docs ? ` More in <a href="${p.docs}">${p.name}'s docs</a>.` : ''}</p>`);
   }
 
   function ollamaStep(s, shell, inSetup, toolsNote) {

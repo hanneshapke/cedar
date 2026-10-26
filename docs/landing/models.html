@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choose a model for Cedar</title>
+<meta name="description" content="Answer a few questions and see which open AI models suit Cedar on your hardware: an M4 or M5 Mac, an AMD Ryzen AI Max, an NVIDIA DGX Spark, or a token provider.">
+<link rel="icon" href="docs/assets/cedar-mark.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fbf4ea;--ink:#231f1b;--muted:#4f4740;--faint:#8a7f73;--line:#f0dcc8;--accent:#e5553a;--accent-dark:#c23f26;--amber:#f2a21c;--green:#3a5f4b;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-dark)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#f6e9da;padding:1px 6px;border-radius:6px}
+.wrap{max-width:1000px;margin:0 auto;padding:0 28px}
+/* Header and footer: the same as the landing page's (index.html) */
+html{scroll-padding-top:96px}
+.site-header-bar{position:sticky;top:0;z-index:50;background:rgba(251,244,234,.86);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid rgba(240,220,200,.7)}
+.site-header{max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink)}
+.brand span{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em}
+.site-header nav{display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap}
+.site-header nav a{color:var(--ink)}.site-header nav a:hover,.site-header nav a[aria-current]{color:var(--accent)}
+.site-header nav a.dl{background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s}
+.site-header nav a.dl:hover{background:var(--accent);color:var(--bg);transform:translateY(-2px)}
+@media (max-width:720px){html{scroll-padding-top:120px}.site-header-bar header{padding:12px 16px;gap:8px}.site-header-bar nav{flex-wrap:nowrap;gap:18px;width:100%;overflow-x:auto;white-space:nowrap;scrollbar-width:none;padding:4px 0}.site-header-bar nav::-webkit-scrollbar{display:none}}
+.site-footer{max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--faint);border-top:1px solid var(--line)}
+.site-footer span{display:flex;align-items:center;gap:8px}
+.site-footer .links{gap:20px;flex-wrap:wrap}
+.site-footer .links a{color:var(--ink)}.site-footer .links a:hover{color:var(--accent)}
+.back{display:inline-block;margin:6px 0 18px;font-weight:600;font-size:15px}
+.eyebrow{font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--green)}
+h1{margin:10px 0 12px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(36px,5.4vw,60px);line-height:1;letter-spacing:-.03em}
+.lede{margin:0;font-size:18px;line-height:1.5;color:var(--muted);max-width:640px}
+
+/* The question matrix */
+.picker{margin:36px 0 0;background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden}
+.q{display:grid;grid-template-columns:230px 1fr;border-top:1px solid var(--line)}
+.q:first-child{border-top:0}
+.q-label{padding:18px 20px;background:#fdf8f2;font-weight:600;font-size:15px;line-height:1.35;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.q-label small{font-weight:400;color:var(--faint);font-size:13px}
+.q-opts{padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.opt{font:inherit;font-size:15px;font-weight:600;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;transition:background .15s,border-color .15s,transform .15s;text-align:center;line-height:1.2}
+.opt:hover{border-color:var(--accent);transform:translateY(-1px)}
+.opt:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.opt[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.opt small{display:block;font-weight:400;font-size:12px;opacity:.75;margin-top:3px}
+@media (max-width:720px){.q{grid-template-columns:1fr}.q-label{padding:14px 16px 6px;background:none}.q-opts{padding:6px 12px 14px}}
+
+.share{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 2px 0;font-size:14px;color:var(--faint)}
+.share button{font:inherit;font-size:14px;font-weight:600;background:none;border:0;color:var(--accent);cursor:pointer;padding:0}
+/* The suggestions */
+.summary{margin:48px 0 18px;display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600;background:#fff;border:1px solid var(--line)}
+.chip.done{background:#e2ede6;border-color:#bdd4c5;color:var(--green)}
+.chip.todo{background:#fde7dc;border-color:#f6c2ad;color:#8a2d18}
+h2.section{margin:40px 0 14px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em}
+.models{display:grid;gap:16px}
+.model{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px 26px;animation:popin .35s ease both}
+.model.top{border:2px solid var(--ink)}
+.model-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+.model h3{margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.01em}
+.model .by{font-size:14px;color:var(--faint)}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.badge{font-size:12px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:999px;background:#f6e9da;color:var(--muted)}
+.badge.pick{background:var(--ink);color:var(--bg)}
+.badge.img{background:#e2ede6;color:var(--green)}
+.badge.txt{background:#fdf0d8;color:#7a4c00}
+.model p{margin:8px 0;font-size:16px;line-height:1.55;color:var(--muted)}
+.model p strong{color:var(--ink);font-weight:600}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 18px;margin:12px 0 6px;font-size:14px}
+.facts div{display:flex;flex-direction:column;gap:2px}
+.facts span{color:var(--faint);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+ol.setup{margin:0;padding-left:22px;font-size:16px;line-height:1.55;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px 26px 22px 46px}
+ol.setup li{margin:8px 0}
+ol.setup strong{color:var(--ink);font-weight:600}
+.empty{background:var(--card);border:1px dashed var(--line);border-radius:22px;padding:24px 26px;color:var(--muted);font-size:16px;line-height:1.55}
+.explain{background:#fdf8f2;border-left:4px solid var(--amber);border-radius:0 12px 12px 0;padding:12px 16px;margin:10px 0;font-size:16px;line-height:1.55;color:var(--muted)}
+.explain b{color:var(--ink)}
+.note{font-size:14px;color:var(--faint)}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:11px 20px;border-radius:999px;font-weight:600;font-size:15px;margin:6px 8px 6px 0;transition:transform .2s}
+.btn:hover{color:#fff;transform:translateY(-2px)}
+.code{position:relative;margin:10px 0}
+.code pre{margin:0;background:var(--ink);color:#f3e9dc;border-radius:14px;padding:16px 18px;padding-right:76px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.6;overflow-x:auto;white-space:pre}
+.code pre .c{color:#a89a8b}
+.code button{position:absolute;top:10px;right:10px;font:inherit;font-size:12px;font-weight:600;background:rgba(255,255,255,.1);color:#f3e9dc;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:5px 10px;cursor:pointer}
+.code button:hover{background:rgba(255,255,255,.2)}
+.code .shell{position:absolute;top:-9px;left:14px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--amber);color:var(--ink);border-radius:6px;padding:1px 7px}
+.help{margin:56px 0 48px;display:flex;flex-wrap:wrap;gap:12px 24px;font-size:15px;color:var(--faint)}
+@keyframes popin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.model{animation:none}.opt,.btn{transition:none}}
+</style>
+</head>
+<body>
+<div class="site-header-bar">
+<header class="site-header">
+  <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
+  <nav>
+    <a href="./#does">What it does</a>
+    <a href="./#private">Private by design</a>
+    <a href="./#apps">Mac, Windows, Linux &amp; phones</a>
+    <a href="./#compare">Compared</a>
+    <a href="models.html" aria-current="page">Models</a>
+    <a href="install.html">Install</a>
+    <a class="dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
+  </nav>
+</header>
+</div>
+<div class="wrap">
+  <main>
+    <a class="back" href="./">← Back to the Cedar home page</a><br>
+    <span class="eyebrow">Model guide</span>
+    <h1>Pick the brain for Cedar.</h1>
+    <p class="lede">Cedar works with any open model that can call tools. Which one suits you depends on what you give it, and where it runs: on your own hardware, or at a token factory that runs it for you. Pick an answer in each row; the suggestions below change as you go.</p>
+
+    <section class="picker" id="picker" aria-label="Your situation"></section>
+    <div class="share"><span>This page's address now holds your answers.</span><button type="button" id="copy-link">Copy link</button><button type="button" id="reset">Start over</button></div>
+
+    <div class="summary" id="summary" aria-live="polite"></div>
+    <div id="result"></div>
+    <p class="note" style="margin-top:28px">Suggestions as of October 2026. New models come out every few weeks; sizes are for 4-bit downloads, and the memory needed grows with the length of the conversation. Every model here can call tools, which is how Cedar acts. Check a model's card before you rely on it.</p>
+  </main>
+
+  <div class="help">
+    <span>Next:</span>
+    <a href="install.html">Install guide</a>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a>
+    <a href="https://github.com/hanneshapke/cedar/discussions">Ask in Discussions</a>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="install.html">Install guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+</footer>
+
+<script>
+(() => {
+  // Each question: its id in the address (?input=images&where=here&hw=mac...), and the answers.
+  // A question's `when` hides it until it applies; an answer's `hw` limits it to that hardware.
+  const QUESTIONS = [
+    { id: 'input', label: 'What will you give it?', hint: 'Every model reads text and PDFs (Cedar reads their text). Photos and screenshots need a model that sees.',
+      opts: [{ v: 'text', t: 'Text', s: 'messages, files, PDFs' }, { v: 'images', t: 'Text and images', s: 'photos, screenshots, scans' }] },
+    { id: 'where', label: 'Where should the model run?', hint: 'Cedar and the model can be on the same computer, or the model on a box of yours nearby.',
+      opts: [
+        { v: 'here', t: 'On this computer', s: 'next to Cedar' }, { v: 'box', t: 'On another machine', s: 'mine, over the network' },
+        { v: 'factory', t: 'At a token factory', s: 'pay per token' },
+      ] },
+    { id: 'hw', label: 'What will run it?', hint: 'Models need lots of memory the chip can read fast. These have it.', when: (s) => s.where && s.where !== 'factory',
+      opts: [
+        { v: 'mac', t: 'Mac with M4 or M5', s: 'Pro, Max, Ultra' }, { v: 'ryzen', t: 'AMD Ryzen AI Max', s: '"Strix Halo"' },
+        { v: 'spark', t: 'NVIDIA DGX Spark', s: 'or another GB10' }, { v: 'other', t: 'Something else' },
+      ] },
+    { id: 'mem', label: 'How much memory?', hint: 'Mac: Apple menu → About This Mac. The model has to fit, with room to spare.', when: (s) => s.where !== 'factory' && ['mac', 'ryzen', 'spark'].includes(s.hw),
+      opts: [
+        { v: '24', t: '16–24 GB', hw: ['mac'] }, { v: '48', t: '32–48 GB', hw: ['mac'] },
+        { v: '96', t: '64–96 GB', hw: ['mac'] }, { v: '128', t: '128 GB or more', hw: ['mac'] },
+        { v: '64', t: '64 GB', hw: ['ryzen'] }, { v: '128', t: '128 GB', hw: ['ryzen'] },
+        { v: '128', t: 'One Spark', s: '128 GB', hw: ['spark'] }, { v: '256', t: 'Two Sparks', s: 'linked, 256 GB', hw: ['spark'] },
+      ] },
+  ];
+  const DEFAULTS = { input: '', where: '', hw: '', mem: '' };
+  const state = readState();
+
+  function readState() {
+    const q = new URLSearchParams(location.search);
+    const s = { ...DEFAULTS };
+    for (const question of QUESTIONS) {
+      const v = q.get(question.id);
+      if (v && question.opts.some((o) => o.v === v)) s[question.id] = v;
+    }
+    if (s.mem && !optsFor(QUESTIONS[3], s).some((o) => o.v === s.mem)) s.mem = '';
+    return s;
+  }
+  function optsFor(q, s) { return q.opts.filter((o) => !o.hw || o.hw.includes(s.hw)); }
+  const shown = (q) => !q.when || q.when(state);
+
+  function writeState() {
+    const q = new URLSearchParams();
+    for (const question of QUESTIONS) if (state[question.id] && shown(question)) q.set(question.id, state[question.id]);
+    const qs = q.toString();
+    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  }
+
+  // ---------- the models ----------
+  // Open-weight models that call tools well, as of October 2026. `gb`: a 4-bit download; `ollama`:
+  // its tag; `lms`: what to search for in LM Studio; `hf`: the Hugging Face repository vLLM serves,
+  // where we are sure of it; `recipe`: its page on the vLLM recipes site.
+  const MODELS = {
+    'qwen3.6-35b': { name: 'Qwen3.6 35B-A3B', by: 'Alibaba Qwen · April 2026', images: true, arch: '35B, 3B active per word (mixture of experts)', gb: 23,
+      ollama: 'qwen3.6:35b-a3b', lms: 'Qwen3.6 35B A3B', hf: 'Qwen/Qwen3.6-35B-A3B',
+      why: 'The all-rounder for 32 GB and up. Only a small part of it works on each word, so it is quick even where memory is slow, and it reads images and video frames.' },
+    'qwen3.6-27b': { name: 'Qwen3.6 27B', by: 'Alibaba Qwen · April 2026', images: true, arch: '27B dense', gb: 17,
+      ollama: 'qwen3.6:27b', lms: 'Qwen3.6 27B', hf: 'Qwen/Qwen3.6-27B',
+      why: 'Smarter for its size than the 35B-A3B, but every part works on every word, so it is slower. Best on a Mac with a Max or Ultra chip, whose memory is fast.' },
+    'gemma4-26b': { name: 'Gemma 4 26B-A4B', by: 'Google · April 2026', images: true, arch: '26B, 4B active per word (mixture of experts)', gb: 18,
+      ollama: 'gemma4:26b', lms: 'Gemma 4 26B',
+      why: 'Google\'s quick model with vision: a good second opinion to Qwen at the same size.' },
+    'gemma4-31b': { name: 'Gemma 4 31B', by: 'Google · April 2026', images: true, arch: '31B dense', gb: 20,
+      ollama: 'gemma4:31b', lms: 'Gemma 4 31B',
+      why: 'Google\'s largest Gemma, with vision. Slower than the 26B-A4B, a little more careful.' },
+    'gemma4-e4b': { name: 'Gemma 4 E4B', by: 'Google · April 2026', images: true, arch: 'about 4B, built for laptops and phones', gb: 10,
+      ollama: 'gemma4:e4b', lms: 'Gemma 4 E4B',
+      why: 'Fits a 16 GB Mac and sees images. Small models miss steps in longer tasks, so expect to steer it.' },
+    'gpt-oss-20b': { name: 'gpt-oss 20B', by: 'OpenAI · August 2025', images: false, arch: '21B, 3.6B active per word (mixture of experts)', gb: 14,
+      ollama: 'gpt-oss:20b', lms: 'gpt-oss 20B', hf: 'openai/gpt-oss-20b',
+      why: 'Reliable with tools for its size, and fits 24 GB. Text only.' },
+    'gpt-oss-120b': { name: 'gpt-oss 120B', by: 'OpenAI · August 2025', images: false, arch: '117B, 5.1B active per word (mixture of experts)', gb: 65,
+      ollama: 'gpt-oss:120b', lms: 'gpt-oss 120B', hf: 'openai/gpt-oss-120b', vllmFlags: '--tool-call-parser openai --enable-auto-tool-choice',
+      why: 'The proven pick for 128 GB machines: steady with tools, and around 50 words a second on a DGX Spark or a Ryzen AI Max. Text only.' },
+    'qwen3.5-122b': { name: 'Qwen3.5 122B-A10B', by: 'Alibaba Qwen · February 2026', images: true, arch: '122B, 10B active per word (mixture of experts)', gb: 81,
+      ollama: 'qwen3.5:122b', lms: 'Qwen3.5 122B A10B', hf: 'Qwen/Qwen3.5-122B-A10B',
+      why: 'The biggest model with vision that fits one 128 GB machine. Smarter than the 35B models, at about half their speed (some 40 words a second on a DGX Spark with vLLM).' },
+    'mistral-small-4': { name: 'Mistral Small 4', by: 'Mistral · March 2026', images: true, arch: '119B, 6B active per word (mixture of experts)', gb: 70,
+      lms: 'Mistral Small 4',
+      why: 'Apache 2.0, with vision and a switch for how hard it thinks. A strong alternative to Qwen3.5 122B on 128 GB.' },
+    'deepseek-v4-flash': { name: 'DeepSeek V4 Flash', by: 'DeepSeek · April 2026', images: false, arch: '284B, 13B active per word (mixture of experts)', gb: 160,
+      hf: 'deepseek-ai/DeepSeek-V4-Flash', recipe: 'https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash',
+      why: 'The model Cedar is built around. Too big for one Spark (about 160 GB); two linked Sparks serve it with vLLM.' },
+  };
+
+  // At a token factory: names as they appear in the providers' catalogs; Cedar's List models shows
+  // the exact id. `at`: who serves it (October 2026).
+  const HOSTED = {
+    'deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', by: 'DeepSeek · September 2026', images: true, at: ['Doubleword', 'Baseten'],
+      why: 'Fast, cheap, a million-token memory, and it sees images natively. The best place to start.' },
+    'glm-5.3': { name: 'GLM 5.3', by: 'Z.ai', images: false, at: ['Doubleword', 'Baseten'],
+      why: 'One of the strongest open models at multi-step agent work. Use it for text.' },
+    'kimi-k2.6': { name: 'Kimi K2.6', by: 'Moonshot · April 2026', images: true, at: ['Doubleword'],
+      why: 'A trillion-parameter model with vision, good at long tasks. Check which providers list it.' },
+    'deepseek-v4-pro': { name: 'DeepSeek V4 Pro', by: 'DeepSeek', images: false, at: ['Doubleword', 'Baseten'],
+      why: 'Flash\'s bigger sibling, for the hardest tasks. Slower and pricier.' },
+    'qwen3.6-35b-hosted': { name: 'Qwen3.6 35B-A3B', by: 'Alibaba Qwen · April 2026', images: true, at: ['Doubleword'],
+      why: 'The cheapest model with vision here, the same one you could later run yourself on 32 GB.' },
+    'gemma4-31b-hosted': { name: 'Gemma 4 31B', by: 'Google · April 2026', images: true, at: ['Doubleword'],
+      why: 'Google\'s largest Gemma, with vision.' },
+  };
+  const PROVIDERS = {
+    Doubleword: { addr: 'https://api.doubleword.ai/v1', site: 'https://docs.doubleword.ai/inference-api/models', install: 'install.html?host=no&provider=doubleword' },
+    Baseten: { addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co/library/', install: 'install.html?host=no&provider=baseten' },
+  };
+
+  // [top pick, alternatives...] for each machine, memory and input.
+  const PICKS = {
+    'mac:24': { text: ['gpt-oss-20b', 'gemma4-e4b'], images: ['gemma4-e4b'] },
+    'mac:48': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'qwen3.6-27b'], images: ['qwen3.6-35b', 'gemma4-26b', 'qwen3.6-27b'] },
+    'mac:96': { text: ['qwen3.6-35b', 'qwen3.6-27b', 'gpt-oss-120b'], images: ['qwen3.6-35b', 'qwen3.6-27b', 'gemma4-31b'] },
+    'mac:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'mistral-small-4', 'qwen3.6-35b'] },
+    'ryzen:64': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'gemma4-26b'], images: ['qwen3.6-35b', 'gemma4-26b'] },
+    'ryzen:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'qwen3.6-35b', 'mistral-small-4'] },
+    'spark:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'mistral-small-4', 'qwen3.6-35b'] },
+    'spark:256': { text: ['deepseek-v4-flash', 'gpt-oss-120b'], images: ['qwen3.5-122b', 'mistral-small-4'] },
+  };
+  const HOSTED_PICKS = { text: ['deepseek-v4.1-flash', 'glm-5.3', 'kimi-k2.6', 'deepseek-v4-pro'], images: ['deepseek-v4.1-flash', 'kimi-k2.6', 'qwen3.6-35b-hosted', 'gemma4-31b-hosted'] };
+
+  // Notes on a machine's memory, shown above its suggestions.
+  const HW_NOTES = {
+    'mac:24': 'macOS lets the GPU use about two thirds to three quarters of the memory, so 16–24 GB leaves room for small models only. They answer, but miss steps in longer tasks; a token factory does much better.',
+    'mac:96': 'gpt-oss 120B needs the 96 GB model: on 64 GB it does not fit next to macOS.',
+    'ryzen:64': 'Give the GPU as much memory as you can: on Windows, AMD Software → Performance → Variable Graphics Memory; on Linux, the amdgpu GTT size. Its memory is slower than a Mac Max\'s, so models that work with a small part of themselves per word (mixture of experts) run much faster than dense ones.',
+    'ryzen:128': 'Give the GPU about 96 GB: on Windows, AMD Software → Performance → Variable Graphics Memory; on Linux, the amdgpu GTT size. Prefer mixture-of-experts models: dense ones of the same size run several times slower here.',
+    'spark:256': 'Two Sparks linked with their ConnectX cable share the model with vLLM (tensor parallel). NVIDIA\'s playbooks cover the setup.',
+  };
+
+  // ---------- rendering ----------
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  function code(text, shell) {
+    const html = text.split('\n').map((l) => /^\s*#/.test(l) ? `<span class="c">${esc(l)}</span>` : esc(l)).join('\n');
+    return `<div class="code">${shell ? `<span class="shell">${esc(shell)}</span>` : ''}<pre>${html}</pre><button type="button" data-copy>Copy</button></div>`;
+  }
+  const badge = (text, cls) => `<span class="badge${cls ? ' ' + cls : ''}">${text}</span>`;
+  const sees = (m) => (m.images ? badge('Text + images', 'img') : badge('Text', 'txt'));
+
+  function renderPicker() {
+    document.getElementById('picker').innerHTML = QUESTIONS.map((q) => {
+      if (!shown(q)) return '';
+      return `<div class="q" role="group" aria-labelledby="q-${q.id}">
+        <div class="q-label" id="q-${q.id}">${esc(q.label)}<small>${esc(q.hint)}</small></div>
+        <div class="q-opts">${optsFor(q, state).map((o) => `<button type="button" class="opt" data-q="${q.id}" data-v="${o.v}" aria-pressed="${state[q.id] === o.v}">${esc(o.t)}${o.s ? `<small>${esc(o.s)}</small>` : ''}</button>`).join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderSummary() {
+    const s = state, chips = [];
+    if (s.input) chips.push(`<span class="chip">${s.input === 'images' ? 'Text and images' : 'Text'}</span>`);
+    if (s.where === 'factory') chips.push('<span class="chip">Token factory</span>');
+    if (s.where === 'here') chips.push('<span class="chip">On this computer</span>');
+    if (s.where === 'box') chips.push('<span class="chip">On another machine</span>');
+    const hw = { mac: 'M4/M5 Mac', ryzen: 'Ryzen AI Max', spark: 'DGX Spark', other: 'Other hardware' }[s.hw];
+    if (hw && s.where !== 'factory') chips.push(`<span class="chip done">${hw}${s.mem ? ' · ' + (s.mem === '256' ? 'two Sparks' : (optsFor(QUESTIONS[3], s).find((o) => o.v === s.mem) || {}).t) : ''}</span>`);
+    document.getElementById('summary').innerHTML = chips.join('');
+  }
+
+  // How to get a model running, for the machine it runs on.
+  function getIt(m, s) {
+    const shell = s.hw === 'ryzen' ? 'Terminal or PowerShell' : 'Terminal';
+    const lines = [];
+    if (m.ollama) lines.push(`<p><strong>Ollama:</strong></p>${code(`ollama pull ${m.ollama}\nollama run ${m.ollama} "say hi"    # a quick test`, shell)}`);
+    else if (s.hw !== 'spark') lines.push('<p class="note">Not in Ollama\'s library yet; use LM Studio.</p>');
+    if (m.lms) lines.push(`<p><strong>LM Studio:</strong> in <em>Discover</em>, search for <code>${esc(m.lms)}</code>${s.hw === 'mac' ? ' and prefer the MLX build' : ''}.</p>`);
+    if (s.hw === 'spark') {
+      const what = m.hf ? `<code>${esc(m.hf)}</code>` : esc(m.name);
+      const recipe = m.recipe ? `the <a href="${m.recipe}">vLLM recipes</a>` : `the <a href="https://recipes.vllm.ai">vLLM recipes</a>`;
+      lines.push(`<p><strong>vLLM</strong> (fastest on a Spark): serve ${what} with tool calling on${m.vllmFlags ? ` (<code>${esc(m.vllmFlags)}</code>)` : ''}; ${recipe} list the flags, and NVIDIA's <a href="https://build.nvidia.com/spark/vllm">Spark playbook</a> the container.</p>`);
+    }
+    return lines.join('');
+  }
+
+  function modelCard(m, top, s) {
+    const facts = [
+      `<div><span>Size</span>${esc(m.arch)}</div>`,
+      `<div><span>Download</span>about ${m.gb} GB</div>`,
+    ].join('');
+    return `<article class="model${top ? ' top' : ''}">
+      <div class="model-head"><h3>${esc(m.name)}</h3><span class="by">${esc(m.by)}</span></div>
+      <div class="badges">${top ? badge('Top pick', 'pick') : ''}${sees(m)}</div>
+      <p>${m.why}</p>
+      <div class="facts">${facts}</div>
+      ${getIt(m, s)}
+    </article>`;
+  }
+
+  function hostedCard(m, top) {
+    const at = m.at.map((p) => `<a href="${PROVIDERS[p].site}">${p}</a>`).join(' and ');
+    return `<article class="model${top ? ' top' : ''}">
+      <div class="model-head"><h3>${esc(m.name)}</h3><span class="by">${esc(m.by)}</span></div>
+      <div class="badges">${top ? badge('Top pick', 'pick') : ''}${sees(m)}</div>
+      <p>${m.why}</p>
+      <p class="note">Served by ${at}.</p>
+    </article>`;
+  }
+
+  function setupSteps(s, list) {
+    const images = s.input === 'images';
+    const tick = images ? '<li>Cedar sends images only to a model that takes them: in the chat, open <strong>Settings → Models</strong>, open the model and tick <strong>Accepts images</strong>.</li>' : '';
+    if (s.where === 'factory') {
+      return `<ol class="setup">
+        <li>Get an API key from <a href="${PROVIDERS.Doubleword.install}">Doubleword</a> or <a href="${PROVIDERS.Baseten.install}">Baseten</a>; the install guide shows how. Your prompts, and the files Cedar sends to the model, go to that company.</li>
+        <li>In Cedar's setup window (or the chat's <strong>Settings → Server</strong> on Linux), type the address: <code>${PROVIDERS.Doubleword.addr}</code> or <code>${PROVIDERS.Baseten.addr}</code>, and paste the key.</li>
+        <li>Click <strong>List models</strong> and choose the one you picked here. Doubleword is built around batch work: choose a model it lists with a realtime price, since Cedar answers as you chat.</li>
+        ${tick}
+      </ol>`;
+    }
+    const remote = s.where === 'box';
+    const serve = s.hw === 'spark' ? 'vllm' : 'ollama';
+    const port = serve === 'vllm' ? 8000 : 11434;
+    const listen = remote
+      ? (serve === 'vllm'
+        ? '<li>Start vLLM with <code>--host 0.0.0.0</code> so the other computer can reach it.</li>'
+        : `<li>Let Ollama listen on the network, not just on the machine itself:${code(s.hw === 'mac' ? 'launchctl setenv OLLAMA_HOST 0.0.0.0\n# then quit Ollama from the menu bar and open it again' : s.hw === 'ryzen' ? 'setx OLLAMA_HOST 0.0.0.0\n# Windows; then quit Ollama from the tray and start it again\n# Linux: sudo systemctl edit ollama, add Environment="OLLAMA_HOST=0.0.0.0", restart' : 'sudo systemctl edit ollama\n#   [Service]\n#   Environment="OLLAMA_HOST=0.0.0.0"\nsudo systemctl restart ollama', 'On the model\'s machine')}</li>`)
+      : '';
+    const addr = remote ? `http://&lt;that machine&gt;:${port}/v1` : `http://127.0.0.1:${port}/v1`;
+    const install = `install.html?host=yes&serve=${serve}`;
+    return `<ol class="setup">
+      <li>Install ${serve === 'vllm' ? 'vLLM' : 'Ollama (or LM Studio)'} and the model on ${remote ? 'the model\'s machine' : 'this computer'}: the <a href="${install}">install guide</a> has the steps, including the longer context Cedar needs.</li>
+      ${listen}
+      <li>In Cedar's setup window, use the address <code>${addr}</code>${remote ? '. Across the internet, put both machines on <a href="https://tailscale.com">Tailscale</a> and use the model machine\'s tailnet name' : ''}. Click <strong>List models</strong> and choose ${list.length ? esc(list[0].name) : 'it'}.</li>
+      ${tick}
+    </ol>`;
+  }
+
+  function renderResult() {
+    const s = state;
+    const out = document.getElementById('result');
+    if (!s.input || !s.where) {
+      out.innerHTML = '<div class="empty">Answer the first two questions, and suggestions appear here.</div>';
+      return;
+    }
+    if (s.where === 'factory') {
+      const ids = HOSTED_PICKS[s.input];
+      const list = ids.map((id) => HOSTED[id]);
+      out.innerHTML = `<div class="explain"><b>A token factory</b> runs open models in its data center and bills per token, roughly per word read and written. Nothing to install and no big computer; the trade-off is that your prompts go to that company.</div>
+        <h2 class="section">Suggested models</h2><div class="models">${list.map((m, i) => hostedCard(m, i === 0)).join('')}</div>
+        <h2 class="section">Set it up</h2>${setupSteps(s, list)}`;
+      return;
+    }
+    if (!s.hw) { out.innerHTML = '<div class="empty">Pick what will run the model.</div>'; return; }
+    if (s.hw === 'other') {
+      out.innerHTML = `<div class="explain"><b>Other hardware</b> works when it has enough fast memory: a graphics card with 16 GB or more runs <code>gpt-oss:20b</code> or, with images, <code>gemma4:26b</code> or <code>qwen3.6:27b</code> (24 GB is better). A laptop with 8–16 GB of ordinary memory runs only small models, slowly; a token factory serves Cedar much better there.</div>
+        <p><a class="btn" href="?input=${s.input}&where=factory">See token factory models</a></p>`;
+      return;
+    }
+    if (!s.mem) { out.innerHTML = '<div class="empty">Pick how much memory it has.</div>'; return; }
+    const key = `${s.hw}:${s.mem}`;
+    const list = (PICKS[key] || { text: [], images: [] })[s.input].map((id) => MODELS[id]);
+    const note = HW_NOTES[key] ? `<div class="explain">${HW_NOTES[key]}</div>` : '';
+    out.innerHTML = `${note}<h2 class="section">Suggested models</h2><div class="models">${list.map((m, i) => modelCard(m, i === 0, s)).join('')}</div>
+      <h2 class="section">Set it up</h2>${setupSteps(s, list)}`;
+  }
+
+  function render() {
+    renderPicker();
+    renderSummary();
+    renderResult();
+  }
+
+  // ---------- events ----------
+  document.getElementById('picker').addEventListener('click', (e) => {
+    const b = e.target.closest('.opt');
+    if (!b) return;
+    const { q, v } = b.dataset;
+    state[q] = v;
+    if (q === 'hw') state.mem = '';
+    writeState();
+    render();
+  });
+
+  document.getElementById('result').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const text = b.parentElement.querySelector('pre').innerText;
+    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select & copy'; }
+    setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+  });
+
+  document.getElementById('copy-link').addEventListener('click', async (e) => {
+    try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Link copied'; }
+    catch { e.target.textContent = 'Copy it from the address bar'; }
+    setTimeout(() => { e.target.textContent = 'Copy link'; }, 1600);
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    Object.assign(state, DEFAULTS);
+    writeState();
+    render();
+  });
+
+  writeState();
+  render();
+})();
+</script>
+</body>
+</html>
