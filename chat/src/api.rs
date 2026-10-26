@@ -1428,14 +1428,16 @@ async fn put_model(
     Ok(Json(state.cedar.set_model(&id, &body).await?))
 }
 
-/// cedar's server-wide settings (`{max_image_side, defaults}`): the longer side attached images
-/// are downscaled to.
+/// cedar's server-wide settings (`{max_image_side, sandbox_idle_minutes, defaults}`): the longer
+/// side attached images are downscaled to, and how long an idle conversation's sandbox runs
+/// before it is paused.
 async fn get_server_settings(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     Ok(Json(state.cedar.server_settings().await?))
 }
 
-/// Change cedar's server-wide settings; the body (`{max_image_side}`) goes through as it is.
+/// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?}`)
+/// goes through as it is.
 async fn put_server_settings(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     if !body.is_object() {

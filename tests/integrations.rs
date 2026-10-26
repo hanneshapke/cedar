@@ -801,7 +801,11 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
         settings,
         json!({
             "max_image_side": null,
-            "defaults": { "max_image_side": 1568, "min_max_image_side": 256, "max_max_image_side": 8192 },
+            "sandbox_idle_minutes": null,
+            "defaults": {
+                "max_image_side": 1568, "min_max_image_side": 256, "max_max_image_side": 8192,
+                "sandbox_idle_minutes": 10, "max_sandbox_idle_minutes": 1440,
+            },
         })
     );
     let put = |side: Value| app.json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(json!({ "max_image_side": side })));
@@ -843,6 +847,33 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
     assert_eq!(body["max_image_side"], Value::Null);
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
     assert_eq!(defaults["attachments"]["max_image_side"], 1568);
+}
+
+#[tokio::test]
+async fn an_admin_sets_how_long_an_idle_sandbox_keeps_running() {
+    let app = TestApp::with_env(vec![], &admin_env(&[])).await;
+    let put = |body: Value| app.json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(body));
+    let (status, body) = put(json!({ "sandbox_idle_minutes": 5000 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["error"]["message"].as_str().unwrap().contains("sandbox_idle_minutes"));
+    // Nothing is saved when any field is refused.
+    let (status, body) = put(json!({ "max_image_side": 512, "sandbox_idle_minutes": 5000 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(app.get("/v1/admin/settings", KEY_B).await.1["max_image_side"], Value::Null);
+
+    let (status, body) = put(json!({ "sandbox_idle_minutes": 30, "max_image_side": 512 })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!((body["sandbox_idle_minutes"].clone(), body["max_image_side"].clone()), (json!(30), json!(512)));
+    assert_eq!(cedar::manager::idle_minutes(&app.state.store).await.unwrap(), 30);
+
+    // A field left out keeps its value; `null` goes back to the default.
+    let (_, body) = put(json!({ "max_image_side": null })).await;
+    assert_eq!((body["sandbox_idle_minutes"].clone(), body["max_image_side"].clone()), (json!(30), Value::Null));
+    let (_, body) = put(json!({ "sandbox_idle_minutes": 0 })).await;
+    assert_eq!(body["sandbox_idle_minutes"], 0, "0 pauses as soon as a turn ends");
+    let (_, body) = put(json!({ "sandbox_idle_minutes": null })).await;
+    assert_eq!(body["sandbox_idle_minutes"], Value::Null);
+    assert_eq!(cedar::manager::idle_minutes(&app.state.store).await.unwrap(), 10);
 }
 
 #[derive(Default)]

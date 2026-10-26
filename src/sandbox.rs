@@ -8,6 +8,7 @@ use crate::config::SandboxConfig;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -107,6 +108,14 @@ pub trait Sandbox: Send + Sync {
         _max_output: usize,
     ) -> Result<ExecOutput> {
         bail!("personal tools need the Docker sandbox")
+    }
+    /// Freeze the environment's processes while its conversation is idle, keeping it (and what
+    /// runs in it) for the next run. Best effort: failures are logged, not returned.
+    async fn pause(&self) {}
+    /// Make a kept environment usable again, unfreezing it if it was paused. Fails if it is gone,
+    /// so the caller can start a new one instead.
+    async fn resume(&self) -> Result<()> {
+        Ok(())
     }
     /// Stop and remove the execution environment, keeping the workspace for a later continuation.
     /// Best effort and idempotent: failures are logged, not returned.
@@ -578,6 +587,17 @@ pub struct DockerSandbox {
     cfg: SandboxConfig,
     run_id: Uuid,
     workspace_id: Uuid,
+    /// `docker pause` succeeded and no `docker unpause` has since.
+    paused: AtomicBool,
+}
+
+impl DockerSandbox {
+    async fn unpause(&self) -> Result<()> {
+        let args = vec!["unpause".to_string(), self.container.clone()];
+        docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
+        self.paused.store(false, Ordering::SeqCst);
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -764,7 +784,40 @@ impl Sandbox for DockerSandbox {
         }
     }
 
+    async fn pause(&self) {
+        let args = vec!["pause".to_string(), self.container.clone()];
+        match docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
+            Ok(_) => self.paused.store(true, Ordering::SeqCst),
+            Err(e) => {
+                tracing::warn!(error = %e, container = %self.container, "pausing sandbox container failed")
+            }
+        }
+    }
+
+    async fn resume(&self) -> Result<()> {
+        let inspect = [
+            "container",
+            "inspect",
+            "--format",
+            "{{.State.Status}}",
+            &self.container,
+        ]
+        .map(String::from);
+        let status = docker_checked(&self.docker, &inspect, DOCKER_CALL_TIMEOUT).await?;
+        match status.trim() {
+            "running" => Ok(()),
+            "paused" => self.unpause().await,
+            other => bail!("sandbox container {} is {other}", self.container),
+        }
+    }
+
     async fn destroy(&self) {
+        // Some Docker versions refuse to kill a paused container.
+        if self.paused.load(Ordering::SeqCst) {
+            if let Err(e) = self.unpause().await {
+                tracing::warn!(error = %e, container = %self.container, "unpausing sandbox container failed");
+            }
+        }
         // Only the container: the workspace volume outlives the run so it can be continued.
         let args = vec!["rm".to_string(), "-f".into(), self.container.clone()];
         if let Err(e) = docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
@@ -847,6 +900,7 @@ impl SandboxFactory for DockerSandboxFactory {
             cfg: self.cfg.clone(),
             run_id,
             workspace_id,
+            paused: AtomicBool::new(false),
         };
         let started: Result<()> = async {
             // Creating a volume that already exists is a no-op, which is what a continuation wants.
@@ -879,6 +933,25 @@ impl SandboxFactory for DockerSandboxFactory {
         let ps = ["ps", "-aq", "--filter", &Self::label_filter()].map(String::from);
         let ids = docker_checked(&self.docker, &ps, DOCKER_CALL_TIMEOUT).await?;
         let ids: Vec<String> = ids.split_whitespace().map(String::from).collect();
+        // Sandboxes kept paused for an idle conversation; unpaused first, as `destroy` does.
+        let paused = [
+            "ps",
+            "-q",
+            "--filter",
+            &Self::label_filter(),
+            "--filter",
+            "status=paused",
+        ]
+        .map(String::from);
+        let paused = docker_checked(&self.docker, &paused, DOCKER_CALL_TIMEOUT).await?;
+        let paused: Vec<String> = paused.split_whitespace().map(String::from).collect();
+        if !paused.is_empty() {
+            let mut args = vec!["unpause".to_string()];
+            args.extend(paused);
+            if let Err(e) = docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
+                tracing::warn!(error = %e, "unpausing leftover sandboxes failed");
+            }
+        }
         if !ids.is_empty() {
             let mut args = vec!["rm".to_string(), "-f".into()];
             args.extend(ids.iter().cloned());

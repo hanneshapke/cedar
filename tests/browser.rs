@@ -59,7 +59,6 @@ async fn one_browser_serves_the_whole_run_and_is_removed_with_it() {
         ]
     );
     assert_eq!(*app.browsers.destroyed.lock().unwrap(), [run_id]);
-    assert!(app.factory.all_destroyed());
 
     let page = tool_result(&app, 2);
     assert!(page.get("is_error").is_none(), "{page}");

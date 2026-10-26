@@ -138,6 +138,12 @@ pub struct FakeSandbox {
     /// The workspace files the listing of changes reports.
     pub changed: Mutex<Vec<String>>,
     pub destroyed: AtomicBool,
+    /// Paused for an idle conversation, and not resumed since.
+    pub paused: AtomicBool,
+    /// How many times it was resumed for a later run.
+    pub resumes: AtomicUsize,
+    /// Make `resume` fail, as for a container that is gone.
+    pub gone: AtomicBool,
     /// The personal tool calls, in order.
     pub tool_calls: Mutex<Vec<ToolCallRecord>>,
 }
@@ -286,6 +292,19 @@ impl Sandbox for FakeSandbox {
             exit_code: Some(0),
             ..Default::default()
         })
+    }
+
+    async fn pause(&self) {
+        self.paused.store(true, Ordering::SeqCst);
+    }
+
+    async fn resume(&self) -> Result<()> {
+        if self.gone.load(Ordering::SeqCst) || self.destroyed.load(Ordering::SeqCst) {
+            return Err(anyhow!("no such container"));
+        }
+        self.paused.store(false, Ordering::SeqCst);
+        self.resumes.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 
     async fn destroy(&self) {

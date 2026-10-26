@@ -524,7 +524,7 @@ const cedarSettings = (() => {
     const models = await modelsBlock(status);
     const modelsBlockEl = block('Models', models.wrap);
     modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
-    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('Google account', googleRow(status)), block('Attachments', await imageSizeRow()));
+    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('Google account', googleRow(status)), block('Attachments', await imageSizeRow()), block('Sandbox', await sandboxIdleRow()));
     const tools = await personalToolsBlock();
     if (tools) parts.push(block('Personal tools', tools));
     const market = await marketplaceBlock();
@@ -1112,8 +1112,40 @@ const cedarSettings = (() => {
   }
 
   /** cedar's max image size: attached images with a longer side are scaled down to it. */
-  async function imageSizeRow() {
-    const { row, main, side } = integrationRow('Max image size', 'Attached images with a longer side than this are scaled down before they reach the model, to save prompt space. One setting for every conversation.');
+  function imageSizeRow() {
+    return serverSettingRow({
+      title: 'Max image size',
+      desc: 'Attached images with a longer side than this are scaled down before they reach the model, to save prompt space. One setting for every conversation.',
+      key: 'max_image_side',
+      unit: 'px',
+      label: 'Max image size in pixels',
+      range: (d) => [d.min_max_image_side ?? 256, d.max_max_image_side ?? 8192],
+      fallback: 1568,
+      shown: (n) => `${n} px`,
+      saved: (n) => `Images are now scaled down to ${n} px`,
+    });
+  }
+
+  /** How long a conversation's sandbox keeps running after a turn before cedar pauses it. */
+  function sandboxIdleRow() {
+    const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
+    return serverSettingRow({
+      title: 'Pause when idle',
+      desc: "A conversation keeps its sandbox between turns, so what it installed and left running is still there. After this many minutes without a new message the sandbox is paused, and the next message resumes it. 0 pauses it as soon as a reply is done.",
+      key: 'sandbox_idle_minutes',
+      unit: 'min',
+      label: 'Minutes before an idle sandbox is paused',
+      range: (d) => [0, d.max_sandbox_idle_minutes ?? 1440],
+      fallback: 10,
+      shown: (n) => (n === 0 ? 'Right away' : minutes(n)),
+      saved: (n) => (n === 0 ? 'Sandboxes are now paused as soon as a reply is done' : `Sandboxes are now paused after ${minutes(n)} idle`),
+    });
+  }
+
+  /** A number in cedar's server-wide settings (`/integrations/settings`), saved on its own: the
+   * other settings are left out of the request, so they keep their values. Empty is the default. */
+  async function serverSettingRow(o) {
+    const { row, main, side } = integrationRow(o.title, o.desc);
     let settings;
     try {
       settings = await adminApi('GET', '/integrations/settings');
@@ -1123,31 +1155,34 @@ const cedarSettings = (() => {
       return row;
     }
     const d = settings.defaults || {};
+    const fallback = d[o.key] ?? o.fallback;
+    const [min, max] = o.range(d);
     const form = el('form', 'cedar-set-inline');
     const input = el('input');
     input.type = 'number';
-    input.min = String(d.min_max_image_side ?? 256);
-    input.max = String(d.max_max_image_side ?? 8192);
+    input.min = String(min);
+    input.max = String(max);
     input.step = '1';
-    input.placeholder = `${d.max_image_side ?? 1568} (default)`;
-    input.value = settings.max_image_side ?? '';
-    input.setAttribute('aria-label', 'Max image size in pixels');
+    input.placeholder = `${fallback} (default)`;
+    input.value = settings[o.key] ?? '';
+    input.setAttribute('aria-label', o.label);
     const saveBtn = button('Save', () => form.requestSubmit(), 'primary');
-    form.append(input, el('span', '', 'px'), saveBtn);
+    form.append(input, el('span', '', o.unit), saveBtn);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!input.reportValidity()) return;
       saveBtn.disabled = true;
       try {
-        const saved = await adminApi('PUT', '/integrations/settings', { max_image_side: input.value ? Number(input.value) : null });
-        deps.toast(`Images are now scaled down to ${saved.max_image_side ?? d.max_image_side ?? 1568} px`);
+        const saved = await adminApi('PUT', '/integrations/settings', { [o.key]: input.value ? Number(input.value) : null });
+        deps.toast(o.saved(saved[o.key] ?? fallback));
         renderIntegrations();
       } catch (err) {
         saveBtn.disabled = false;
         deps.toast(err.message);
       }
     });
-    side.append(badge(settings.max_image_side ? `${settings.max_image_side} px` : 'Default', 'ok'));
+    const value = settings[o.key];
+    side.append(badge(value != null ? o.shown(value) : 'Default', 'ok'));
     main.append(form);
     return row;
   }

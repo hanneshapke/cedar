@@ -19,7 +19,7 @@ outside the app:
 ```
 Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080 ──▶ model server (yours)
                           │       ▲                      │
-                          └── window (WKWebView / WebView2) ──▶ docker run … (one container per run)
+                          └── window (WKWebView / WebView2) ──▶ docker run … (one container per conversation)
 ```
 
 ## Installing

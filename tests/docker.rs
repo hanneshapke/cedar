@@ -54,6 +54,38 @@ const SECOND: Duration = Duration::from_secs(1);
 
 #[tokio::test]
 #[ignore = "needs Docker and the cedar-sandbox image"]
+async fn a_paused_sandbox_resumes_with_its_processes_and_can_still_be_destroyed() {
+    let (f, id, sb) = sandbox().await;
+    let name = format!("cedar-run-{id}");
+    let out = sb
+        .exec("sleep 300 >/dev/null 2>&1 & echo $! > /tmp/bg", 10 * SECOND, 1000)
+        .await
+        .unwrap();
+    assert_eq!(out.exit_code, Some(0));
+    sb.pause().await;
+    assert_eq!(docker(&["inspect", "-f", "{{.State.Status}}", &name]), "paused");
+    sb.resume().await.unwrap();
+    assert_eq!(docker(&["inspect", "-f", "{{.State.Status}}", &name]), "running");
+    let out = sb
+        .exec("kill -0 \"$(cat /tmp/bg)\" && echo alive", 10 * SECOND, 1000)
+        .await
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "alive",
+        "the background process lived on"
+    );
+    sb.resume().await.expect("resuming a running sandbox is a no-op");
+
+    // Paused again, it is still removed, and then can't be resumed.
+    sb.pause().await;
+    teardown(&f, id, &sb).await;
+    assert_eq!(docker(&["ps", "-aq", "--filter", &format!("name={name}")]), "");
+    assert!(sb.resume().await.is_err());
+}
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
 async fn exec_captures_output_exit_code_and_working_directory() {
     let (f, id, sb) = sandbox().await;
     let out = sb
@@ -255,13 +287,15 @@ async fn destroy_removes_the_container_but_keeps_the_workspace_and_is_idempotent
 #[tokio::test]
 #[ignore = "needs Docker and the cedar-sandbox image"]
 async fn orphaned_sandboxes_are_swept_and_health_checks_pass() {
-    let (factory, id, _sb) = sandbox().await;
+    let (factory, id, sb) = sandbox().await;
     factory
         .health()
         .await
         .expect("daemon reachable and image present");
 
-    // Simulates a crash: the sandbox is never destroyed by its owner.
+    // Simulates a crash: the sandbox, kept paused for an idle conversation, is never destroyed
+    // by its owner.
+    sb.pause().await;
     assert!(factory.cleanup_orphans().await.unwrap() >= 1);
     assert_eq!(
         docker(&[

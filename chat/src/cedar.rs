@@ -164,12 +164,13 @@ impl CedarClient {
         admin(self.json(req).await)
     }
 
-    /// cedar's server-wide settings: `{max_image_side, defaults}`.
+    /// cedar's server-wide settings: `{max_image_side, sandbox_idle_minutes, defaults}`.
     pub async fn server_settings(&self) -> Result<Value, AppError> {
         admin(self.json(self.http.get(self.url("/admin/settings"))).await)
     }
 
-    /// Change cedar's server-wide settings. `body` is cedar's `{max_image_side}`, passed through.
+    /// Change cedar's server-wide settings. `body` is cedar's `{max_image_side?,
+    /// sandbox_idle_minutes?}`, passed through.
     pub async fn set_server_settings(&self, body: &Value) -> Result<Value, AppError> {
         let req = self.http.put(self.url("/admin/settings")).json(body);
         admin(self.json(req).await)
