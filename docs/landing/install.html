@@ -62,6 +62,8 @@ ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;g
 .step::before{content:counter(step);width:44px;height:44px;border-radius:12px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;grid-row:span 2}
 .step.ok::before{content:"✓";background:var(--green)}
 .step.optional::before{background:var(--amber);color:var(--ink)}
+.step.final{border:2px solid var(--ink)}
+.step.final::before{content:"↓";background:var(--ink)}
 .step h2{margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.01em;line-height:1.2;align-self:center}
 .step h2 .tag{font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#fdf0d8;color:#7a4c00;vertical-align:4px;margin-left:8px}
 .body{grid-column:2;font-size:16px;line-height:1.55;color:var(--muted);min-width:0}
@@ -173,11 +175,15 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' },
         { v: 'other', t: 'Another provider', s: 'any OpenAI-compatible API' },
       ] },
-    { id: 'tailscale', label: 'Do you have Tailscale installed?', hint: 'Only needed for the iPhone and Android apps.',
+    { id: 'mobile', label: 'Do you want to reach your assistant from your phone?', hint: 'Chat with Cedar from anywhere; the phone app talks to your personal Cedar AI Assistant.',
+      opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No', s: 'this computer only' }] },
+    { id: 'phone', label: 'Which phone do you have?', hint: 'Cedar has an app for each.', when: (s) => s.mobile === 'yes',
+      opts: [{ v: 'iphone', t: 'iPhone', s: 'or iPad' }, { v: 'android', t: 'Android' }] },
+    { id: 'tailscale', label: 'Do you have Tailscale installed?', hint: 'It links your phone to this computer privately.', when: (s) => s.mobile === 'yes',
       opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what it is' }] },
   ];
 
-  const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', tailscale: '' };
+  const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', mobile: '', phone: detectPhone(), tailscale: '' };
   const state = readState();
 
   function detectOs() {
@@ -185,6 +191,14 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     if (/Windows/i.test(ua)) return 'windows';
     if (/Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua)) return 'mac';
     if (/Linux/i.test(ua) && !/Android/i.test(ua)) return 'linux';
+    return '';
+  }
+
+  // On a phone, guess which one; the answer only shows once "reach it from your phone" is Yes.
+  function detectPhone() {
+    const ua = navigator.userAgent;
+    if (/iPhone|iPad/i.test(ua)) return 'iphone';
+    if (/Android/i.test(ua)) return 'android';
     return '';
   }
 
@@ -246,7 +260,9 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     if (s.host === 'yes' && s.serve) chips.push(`<span class="chip done">Your own model · ${SERVERS[s.serve].name}</span>`);
     if (s.host === 'no' && s.provider) chips.push(`<span class="chip done">Hosted model · ${s.provider === 'other' ? 'another provider' : PROVIDERS[s.provider].name}</span>`);
     if (s.host === 'unknown') chips.push('<span class="chip todo">Check your hardware</span>');
-    if (s.tailscale) chips.push(s.tailscale === 'yes' ? '<span class="chip done">Tailscale ready</span>' : '<span class="chip skip">Tailscale optional</span>');
+    if (s.mobile === 'no') chips.push('<span class="chip skip">No phone app</span>');
+    if (s.mobile === 'yes' && s.phone) chips.push(`<span class="chip">${s.phone === 'iphone' ? 'iPhone' : 'Android'} app</span>`);
+    if (s.mobile === 'yes' && s.tailscale) chips.push(s.tailscale === 'yes' ? '<span class="chip done">Tailscale ready</span>' : '<span class="chip todo">Tailscale to install</span>');
     document.getElementById('summary').innerHTML = chips.join('');
   }
 
@@ -280,9 +296,33 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
   // ---------- the steps ----------
   function buildSteps(s) {
-    if (s.os === 'mac') return macSteps(s);
-    if (s.os === 'windows') return windowsSteps(s);
-    return linuxSteps(s);
+    const steps = s.os === 'mac' ? macSteps(s) : s.os === 'windows' ? windowsSteps(s) : linuxSteps(s);
+    if (s.mobile !== 'no') steps.push(phoneStep(s));
+    steps.push(downloadStep(s));
+    return steps;
+  }
+
+  // The Linux archive's address; it follows the release's naming even before GitHub answers.
+  function linuxUrl(arch) {
+    return release['linux-' + arch] || `${REPO}/releases/download/v${release.ver}/Cedar-${release.ver}-linux-${arch}.tar.gz`;
+  }
+
+  // Every flow ends here: the build that matches the answers, and the phone app if one was asked for.
+  function downloadStep(s) {
+    const arch = s.arch === 'arm64' ? 'arm64' : 'x64';
+    const desktop = {
+      mac: s.arch === 'x64'
+        ? `<p>${btn(DESKTOP + '#on-a-mac', 'Build guide for Intel Macs')}</p><p class="note">There is no ready-made Intel build; the guide shows how to build it.</p>`
+        : `<p>${btn(release.dmg || RELEASES, 'Cedar for Mac (Apple silicon, .dmg)')}</p>`,
+      windows: `<p>${btn(release.msi || RELEASES, `Cedar for Windows (${s.arch === 'arm64' ? 'x64, runs on Arm' : 'x64'}, .msi)`)}</p>`,
+      linux: `<p>${btn(linuxUrl(arch), `Cedar ${esc(release.ver)} for Linux (${arch}, .tar.gz)`)}</p>`,
+    }[s.os];
+    const phone = s.mobile !== 'yes' ? ''
+      : s.phone === 'iphone' ? `<p>${btn(REPO + '/discussions/51', 'Cedar for iPhone (TestFlight invite)')}</p>`
+      : s.phone === 'android' ? `<p>${btn(release.apk || RELEASES, 'Cedar for Android (.apk)')}</p>`
+      : `<p>${btn(REPO + '/discussions/51', 'iPhone (TestFlight)', true)}${btn(release.apk || RELEASES, 'Android (.apk)', true)}</p>`;
+    return step('Your downloads', `<p>The build that matches your answers${s.mobile === 'yes' ? ', and the app for your phone' : ''}:</p>${desktop}${phone}
+      <p class="note">Something else? Every build is on the <a href="${RELEASES}">latest release page</a>.</p>`, 'final');
   }
 
   const WHAT_IS_DOCKER = explain('<b>What is Docker?</b> A free program that runs small, sealed Linux boxes (containers) on your computer. Cedar does every chat\'s work inside one, so the commands it runs can\'t see your documents, photos or the rest of your system. You install it once and never have to touch it again.');
@@ -412,21 +452,29 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   }
 
   function phoneStep(s) {
-    const tagged = s.tailscale === 'yes' ? 'ok' : 'optional';
-    const intro = s.tailscale === 'unknown' ? WHAT_IS_TAILSCALE : (s.tailscale ? '' : '<p class="note">Answer <em>Do you have Tailscale installed?</em> above to tailor this step. Skip it if you won\'t use a phone.</p>');
+    const wanted = s.mobile === 'yes';
+    const kind = !wanted ? 'optional' : s.tailscale === 'yes' ? 'ok' : '';
+    const ask = !wanted ? '<p class="note">Answer <em>Do you want to reach your assistant from your phone?</em> above to tailor this step. Skip it if you won\'t use a phone.</p>'
+      : !s.tailscale ? '<p class="note">Answer <em>Do you have Tailscale installed?</em> above to tailor this step.</p>' : '';
+    const intro = (s.tailscale === 'unknown' ? WHAT_IS_TAILSCALE : '') + ask;
     const install = {
       mac: `<p>Install Tailscale from <a href="https://tailscale.com/download/mac">tailscale.com</a> or the Mac App Store, open it and log in. Then, in Tailscale's settings, choose <strong>Install CLI</strong> so Cedar can find the <code>tailscale</code> command.</p>`,
       windows: `<p>Install Tailscale from <a href="https://tailscale.com/download/windows">tailscale.com</a>, open it and log in.</p>`,
       linux: code('curl -fsSL https://tailscale.com/install.sh | sh\nsudo tailscale up', 'Terminal'),
     }[s.os];
     const dns = '<li>In the Tailscale <a href="https://login.tailscale.com/admin/dns">admin console\'s DNS page</a>, turn on <strong>MagicDNS</strong> and <strong>HTTPS Certificates</strong>.</li>';
-    const phone = `<li>Install Tailscale on the phone and log in to the same account. Then get Cedar: <a href="${REPO}/discussions/51">TestFlight invite</a> for iPhone, or the <a href="${release.apk || RELEASES}">Android APK</a>.</li>`;
+    const app = {
+      iphone: `Install Tailscale from the App Store on your iPhone and log in to the same account. Then get Cedar through the <a href="${REPO}/discussions/51">TestFlight invite</a>.`,
+      android: `Install Tailscale from Google Play on your Android phone and log in to the same account. Then install the <a href="${release.apk || RELEASES}">Cedar APK</a> (allow installs from your browser when asked).`,
+    }[wanted && s.phone] || `Install Tailscale on the phone and log in to the same account. Then get Cedar: <a href="${REPO}/discussions/51">TestFlight invite</a> for iPhone, or the <a href="${release.apk || RELEASES}">Android APK</a>.`;
+    const phone = `<li>${app}</li>`;
     const share = s.os === 'linux'
       ? `<li>Share the chat on your tailnet and tell it its address:${code('sudo tailscale serve --bg --https=443 http://127.0.0.1:3000\nURL=https://$(tailscale status --json | jq -r \'.Self.DNSName | rtrimstr(".")\')\necho "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env\nsudo systemctl restart cedar-chat', 'Terminal')}</li>
          <li>In the chat, open <strong>Settings → Phone</strong> and scan the QR code with the Cedar app (Settings → <strong>Scan QR Code</strong>).</li>`
       : `<li>In Cedar, choose <strong>Phone Access…</strong> from the ${s.os === 'mac' ? 'menu bar' : 'tray'} menu and tick <strong>Share with the phone apps over Tailscale</strong>. Cedar restarts once.</li>
          <li>Click <strong>Show QR code</strong>, then in the Cedar app tap Settings → <strong>Scan QR Code</strong>. Done.</li>`;
-    return step('Pair your phone', `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">Only your own devices on your tailnet can reach Cedar. More in the <a href="${s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad'}">phone guide</a>.</p>`, tagged, s.tailscale === 'yes' ? '' : 'Optional');
+    const title = { iphone: 'Pair your iPhone', android: 'Pair your Android phone' }[wanted && s.phone] || 'Pair your phone';
+    return step(title, `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">Only your own devices on your tailnet can reach Cedar. More in the <a href="${s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad'}">phone guide</a>.</p>`, kind, wanted ? '' : 'Optional');
   }
 
   function macSteps(s) {
@@ -448,7 +496,6 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     steps.push(step('Open Cedar and follow the setup', `<p>A tree appears in your menu bar and the setup window opens with three checks:</p>
       <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
       <p>The window turns into the chat. Give it a task.</p>`));
-    steps.push(phoneStep(s));
     return steps;
   }
 
@@ -472,7 +519,6 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     steps.push(step('Finish the setup', `<p>Cedar's icon sits in the tray (it may be under the <strong>^</strong> arrow) and the setup window shows three checks:</p>
       <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
       <p>The window turns into the chat. Give it a task.</p>`));
-    steps.push(phoneStep(s));
     return steps;
   }
 
@@ -502,7 +548,6 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     steps.push(step('Open the chat and add your model', `<p>On this machine, open <code>http://localhost:3000</code>. From a laptop, tunnel to it first:</p>
       ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', 'Laptop')}
       <p>Enter the <strong>chat access token</strong>. Then go to <strong>Settings → Server</strong>, unlock it with the <strong>admin token</strong>, add your model server (<code>${esc(modelAddress(s))}</code>${s.host === 'no' ? ' with your API key' : s.serve === 'vllm' ? ', or your GPU box\'s address' : ''}), click <strong>List models</strong>, choose one and save. Give it a task.</p>`));
-    steps.push(phoneStep(s));
     return steps;
   }
 
