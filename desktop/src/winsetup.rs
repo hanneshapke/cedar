@@ -11,6 +11,7 @@
 
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use crate::dockersetup::{last_tagged, ERROR};
 use std::path::Path;
 
 /// `wsl --install` and the WSL 2 backend need Windows 10 version 2004 or newer.
@@ -29,9 +30,6 @@ const EXIT_RESTART: i32 = 11;
 const EXIT_CHANGED: i32 = 2;
 /// `ERROR_CANCELLED`: the user chose No in the UAC prompt.
 const EXIT_DECLINED: i32 = 1223;
-
-const STEP: &str = "STEP: ";
-const ERROR: &str = "ERROR: ";
 
 /// What the PC has, from [`MACHINE_SCRIPT`].
 #[derive(serde::Deserialize, Debug, PartialEq)]
@@ -97,16 +95,6 @@ fn outcome(code: Option<i32>, log: &str, stderr: &str) -> Outcome {
                 }),
         ),
     }
-}
-
-/// The text of the last log line that starts with `tag`. PowerShell may start the file with a
-/// byte order mark.
-fn last_tagged(log: &str, tag: &str) -> Option<String> {
-    log.lines()
-        .rev()
-        .map(|l| l.trim_start_matches('\u{feff}').trim())
-        .find_map(|l| l.strip_prefix(tag))
-        .map(str::to_string)
 }
 
 /// A PowerShell string literal. Single-quoted strings expand nothing; a quote is doubled, and
@@ -243,18 +231,6 @@ fn launcher(powershell: &Path, encoded: &str) -> String {
     )
 }
 
-fn progress(got: u64, total: Option<u64>) -> String {
-    let mb = |b: u64| b / 1_000_000;
-    match total {
-        Some(total) => format!(
-            "Downloading Docker Desktop: {} of {} MB",
-            mb(got),
-            mb(total)
-        ),
-        None => format!("Downloading Docker Desktop: {} MB", mb(got)),
-    }
-}
-
 #[cfg(windows)]
 pub use windows::{install, restart};
 
@@ -262,14 +238,12 @@ pub use windows::{install, restart};
 mod windows {
     use super::*;
     use crate::app::{AppState, SetupStatus};
-    use crate::{docker, proc};
+    use crate::{docker, dockersetup, proc};
     use anyhow::{bail, Context, Result};
-    use futures_util::StreamExt;
     use std::path::PathBuf;
     use std::process::Stdio;
     use std::time::Duration;
     use tauri::{AppHandle, Manager};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn system32(exe: &str) -> PathBuf {
         let root = std::env::var_os("SystemRoot")
@@ -389,66 +363,13 @@ mod windows {
             .with_context(|| format!("reading what this PC has: {}", text.trim()))
     }
 
-    /// The Docker Desktop installer, in the user's temp folder. One downloaded by an earlier try
-    /// that failed is used again if it is complete.
     async fn download_installer(state: &AppState, arm64: bool) -> Result<PathBuf> {
         let url = if arm64 {
             INSTALLER_ARM64
         } else {
             INSTALLER_X64
         };
-        let dir = std::env::temp_dir().join("cedar-docker-setup");
-        tokio::fs::create_dir_all(&dir)
-            .await
-            .with_context(|| format!("creating {}", dir.display()))?;
-        let dest = dir.join("Docker Desktop Installer.exe");
-
-        state.set_docker_setup(SetupStatus::Running(progress(0, None)));
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(30))
-            .build()?;
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-            .context("downloading Docker Desktop; check the internet connection")?;
-        let total = resp.content_length();
-        if let (Some(total), Ok(meta)) = (total, tokio::fs::metadata(&dest).await) {
-            if meta.len() == total {
-                return Ok(dest);
-            }
-        }
-
-        let part = dir.join("Docker Desktop Installer.exe.part");
-        let mut file = tokio::fs::File::create(&part)
-            .await
-            .with_context(|| format!("creating {}", part.display()))?;
-        let mut stream = resp.bytes_stream();
-        let mut got = 0u64;
-        let mut shown = 0u64;
-        loop {
-            let chunk = match tokio::time::timeout(Duration::from_secs(60), stream.next()).await {
-                Err(_) => {
-                    bail!("the Docker Desktop download stalled; check the connection and try again")
-                }
-                Ok(None) => break,
-                Ok(Some(chunk)) => chunk.context("downloading Docker Desktop")?,
-            };
-            file.write_all(&chunk).await?;
-            got += chunk.len() as u64;
-            if got - shown >= 5_000_000 {
-                shown = got;
-                state.set_docker_setup(SetupStatus::Running(progress(got, total)));
-            }
-        }
-        file.flush().await?;
-        drop(file);
-        if total.is_some_and(|t| t != got) {
-            bail!("the Docker Desktop download was cut off; try again");
-        }
-        tokio::fs::rename(&part, &dest).await?;
-        Ok(dest)
+        dockersetup::download(state, url, "Docker Desktop Installer.exe").await
     }
 
     /// The exit code of the elevated `command`, and what went wrong if it never ran. The
@@ -459,7 +380,7 @@ mod windows {
         log: &Path,
     ) -> Result<(Option<i32>, String)> {
         let ps = powershell();
-        let mut child = proc::command(&ps)
+        let child = proc::command(&ps)
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -474,29 +395,7 @@ mod windows {
             .kill_on_drop(true)
             .spawn()
             .with_context(|| format!("running {}", ps.display()))?;
-        let mut stderr = child.stderr.take().expect("piped");
-        let errors = tokio::spawn(async move {
-            let mut text = String::new();
-            let _ = stderr.read_to_string(&mut text).await;
-            text
-        });
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(60 * 60);
-        let status = loop {
-            tokio::select! {
-                status = child.wait() => break status?,
-                _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                    let step = std::fs::read_to_string(log).ok().and_then(|t| last_tagged(&t, STEP));
-                    if let Some(step) = step {
-                        state.set_docker_setup(SetupStatus::Running(step));
-                    }
-                    if tokio::time::Instant::now() > deadline {
-                        let _ = child.kill().await;
-                        bail!("setting up Docker took more than an hour; docker-setup.log in the logs folder says how far it got");
-                    }
-                }
-            }
-        };
-        Ok((status.code(), errors.await.unwrap_or_default()))
+        dockersetup::follow(state, child, log).await
     }
 
     /// Starts Cedar once at the next sign-in, so the setup carries on by itself after the
@@ -595,11 +494,6 @@ mod tests {
             Outcome::Failed("no access".into())
         );
         assert!(matches!(outcome(None, "", ""), Outcome::Failed(m) if m.contains("none")));
-        assert_eq!(last_tagged(log, STEP).as_deref(), Some("Installing"));
-        assert_eq!(
-            last_tagged("\u{feff}STEP: one\n", STEP).as_deref(),
-            Some("one")
-        );
     }
 
     #[test]
@@ -656,15 +550,6 @@ mod tests {
         assert!(!l.contains('"'));
         assert!(l.contains("-EncodedCommand QUJD'"));
         assert!(l.contains("exit 1223"));
-    }
-
-    #[test]
-    fn download_progress() {
-        assert_eq!(
-            progress(123_456_789, Some(600_000_000)),
-            "Downloading Docker Desktop: 123 of 600 MB"
-        );
-        assert_eq!(progress(0, None), "Downloading Docker Desktop: 0 MB");
     }
 
     /// PowerShell's own parser accepts every script Cedar runs, and the PC check reads back.

@@ -8,9 +8,10 @@ outside the app:
 - **Docker.** Each agent run's tools execute in a container, so Docker must be installed and
   running: Docker Desktop, OrbStack, Colima, or Rancher Desktop on a Mac; Docker Desktop (with
   its WSL 2 backend) or Rancher Desktop on Windows. The sandbox is a Linux image either way. The
-  app finds the `docker` command in the usual places and tells you when it can't. On Windows it
-  can also install WSL 2 and Docker Desktop itself (see [Setting Docker up on
-  Windows](#setting-docker-up-on-windows)), and it starts Docker Desktop when it isn't running.
+  app finds the `docker` command in the usual places and tells you when it can't. It can also
+  install Docker Desktop itself (see [Setting Docker up on a Mac](#setting-docker-up-on-a-mac)
+  and [on Windows](#setting-docker-up-on-windows), where it turns on WSL 2 too), and it starts
+  Docker Desktop (on a Mac, the app the `docker` command comes from) when it isn't running.
 - **The model server.** vLLM doesn't run on macOS or Windows, so the app asks for the address of
   any OpenAI-compatible server with tool calling: Ollama or LM Studio on the same computer, or a
   vLLM on another machine (a DGX Spark over Tailscale, say). It lists the server's models and you
@@ -30,7 +31,9 @@ Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080
    [releases page](https://github.com/hanneshapke/cedar/releases), open it, and drag Cedar to
    Applications. Releases are built for Apple Silicon only; on an Intel Mac, build it yourself
    (see below). The app is signed and notarized, so it opens without warnings.
-2. Start Docker Desktop (or OrbStack, Colima).
+2. If you already use Docker Desktop, OrbStack, Colima or Rancher Desktop, keep it. If not,
+   Cedar's setup window can install Docker Desktop for you in step 3 (see [Setting Docker up on
+   a Mac](#setting-docker-up-on-a-mac)); it asks for an administrator's password once.
 3. Open Cedar. A tree appears in the menu bar and the setup window opens (see
    [Setting it up](#setting-it-up)).
 4. While the window is open Cedar has a Dock icon and shows up in Command-Tab like any app. Close
@@ -65,8 +68,9 @@ uninstalling touches.
 
 The setup window shows three steps:
 
-- **Docker**: found and running, or what to do. On Windows, *Set up Docker for me* does it (see
-  below), and a Docker Desktop that isn't running is started.
+- **Docker**: found and running, or what to do. *Set up Docker for me* does it (see below), and
+  a Docker Desktop that isn't running is started (on a Mac, OrbStack or Rancher Desktop too, when
+  the `docker` command is theirs).
 - **Sandbox image**: pulled once per version from `ghcr.io/hanneshapke/cedar-sandbox`. Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
   tool.
@@ -89,6 +93,37 @@ admin token, so Settings works without typing anything.
 When a response finishes, the app can tell you with a **desktop notification**: in Notification
 Center on a Mac, as a toast on Windows. Clicking it opens the conversation. The app sets this
 method up in the chat's Settings → Notifications on its first start, unless another was chosen.
+
+### Setting Docker up on a Mac
+
+When no `docker` command is found, the Docker step offers **Set up Docker for me**. It runs these
+steps and shows each one on the page:
+
+1. **Checks the Mac.** Docker Desktop runs its containers in a virtual machine, so the Mac must
+   support Apple's Hypervisor framework (`sysctl kern.hv_support`); Macs from before 2010 and Macs
+   inside a VM don't, and the page says so instead of installing anything.
+2. **Downloads Docker Desktop** (about 600 MB, Apple Silicon or Intel to match the Mac, even when
+   Cedar runs under Rosetta) from `desktop.docker.com` into the temp folder.
+3. **Asks for an administrator's password once** (on a Mac where you aren't an administrator, an
+   administrator types theirs). Then, as root, it copies the disk image into a folder under
+   `/private/var/tmp` that only root can write to, mounts it, checks that `Docker.app` is signed
+   by Docker Inc (Developer ID team `9BNSXJN65R`), and runs Docker's own `install
+   --accept-license --user=<you>`. That copies Docker Desktop into Applications and does the
+   privileged setup its first start would otherwise ask for.
+4. **Starts Docker Desktop**, waits for it, and carries on with the sandbox image. Nothing needs
+   a restart or a new login.
+
+The same terms apply as on Windows (below): `--accept-license` accepts the Docker Subscription
+Service Agreement for you, and the page says so before you click.
+
+The elevated part is one shell script, run with `osascript`'s `do shell script … with
+administrator privileges`. It goes in as an argument rather than a file, so nothing can change it
+between Cedar writing it and macOS running it. Its progress, any error and the installer's output
+go to `docker-setup.log` in the logs folder.
+
+A Docker that is installed but won't start isn't reinstalled: it may be OrbStack or Colima. Cedar
+starts the app the `docker` command comes from (Docker Desktop, OrbStack, Rancher Desktop) and
+waits for it; start Colima yourself (`colima start`) and click *Check again*.
 
 ### Setting Docker up on Windows
 

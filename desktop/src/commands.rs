@@ -19,21 +19,25 @@ pub fn recheck(app: AppHandle) {
     tauri::async_runtime::spawn(app::bootstrap(app));
 }
 
-/// Sets up WSL 2 and Docker Desktop (Windows only); the page follows along in `docker_setup`.
+/// Sets Docker up: WSL 2 and Docker Desktop on Windows, Docker Desktop on a Mac. The page follows
+/// along in `docker_setup`.
 #[tauri::command]
 pub fn install_docker(app: AppHandle) -> Result<(), String> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         if !app.state::<AppState>().begin_docker_setup() {
             return Err("Docker is already being set up".into());
         }
+        #[cfg(windows)]
         tauri::async_runtime::spawn(crate::winsetup::install(app));
+        #[cfg(target_os = "macos")]
+        tauri::async_runtime::spawn(crate::macsetup::install(app));
         Ok(())
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = app;
-        Err("Cedar sets Docker up only on Windows".into())
+        Err("Cedar sets Docker up only on Windows and macOS".into())
     }
 }
 

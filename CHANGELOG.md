@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Cedar for macOS sets Docker up itself**, like the Windows app. When no Docker is found, the setup page offers *Set up Docker for me*: it checks that the Mac can run virtual machines, downloads Docker Desktop for its chip, and after one administrator password checks that the app is signed by Docker and installs it with Docker's own `install --accept-license`, so its first start asks for nothing. Cedar then starts it and carries on. A Docker that isn't answering is now started on a Mac too: Docker Desktop, OrbStack or Rancher Desktop, whichever the `docker` command belongs to. The download and progress code is shared with the Windows setup (`desktop/src/dockersetup.rs`).
+
 ## 0.1.8
 
 - **Update banner.** When a newer release is out, the chat shows a banner with its release notes and an *Update* button. The Mac and Windows app checks the release's signed `latest.json` every six hours (tauri-plugin-updater) and installs the update itself: it downloads the new app or MSI, checks its signature against the key built into the app, stops the servers and restarts on the new version; the tray menu offers it too, and the setup page has an *Updates* section to check now or turn the checks off. On Linux the chat looks up the latest GitHub Release (`GET /api/update`; `CHAT_UPDATE_CHECK=off` turns it off) and, with the new root `cedar-update` unit set up (DEPLOYMENT.md, "Updates"), an admin's *Update* installs it: the tarball is checked against `checksums.txt`, both binaries are replaced and restarted, and the old ones come back if cedar doesn't start. Without it the banner shows the commands. `cedar --version` and `cedar-chat --version` print the version. (#94)

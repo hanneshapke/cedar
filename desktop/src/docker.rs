@@ -1,7 +1,8 @@
 //! Finding and driving the `docker` CLI from an app that Finder started without the user's PATH.
 //! Docker Desktop, OrbStack, Colima (via Homebrew), and Rancher Desktop all provide the CLI on a
 //! Mac; Docker Desktop and Rancher Desktop on Windows. The app only needs the daemon running and
-//! the images present, cedar does the rest.
+//! the images present, cedar does the rest. When the daemon isn't running, the app it comes with
+//! is started.
 
 use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
@@ -105,8 +106,7 @@ pub fn path_env(bin: Option<&Path>) -> String {
         .unwrap_or_default()
 }
 
-/// Docker Desktop's own program, to start when the daemon isn't answering. Only on Windows: on a
-/// Mac the user picks among several apps that provide Docker, and starts the one they use.
+/// Docker Desktop's own program on Windows, if it is installed.
 #[cfg(windows)]
 pub fn desktop_app() -> Option<PathBuf> {
     let app =
@@ -119,10 +119,43 @@ pub fn desktop_app() -> Option<PathBuf> {
     None
 }
 
-/// Starts a GUI program and leaves it running after the app quits.
+/// The app to start when the daemon isn't answering. On Windows that is Docker Desktop. On a Mac
+/// it is the app `cli` comes from (Docker Desktop, OrbStack, Rancher Desktop), so the one the user
+/// chose is started; a CLI outside an app (Colima's, from Homebrew) has none.
+pub fn provider_app(cli: &DockerCli) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        app_bundle(&std::fs::canonicalize(&cli.bin).ok()?)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = cli;
+        desktop_app()
+    }
+}
+
+/// The outermost `.app` bundle `path` is in: `/usr/local/bin/docker` links into
+/// `/Applications/Docker.app/Contents/Resources/bin`, `~/.orbstack/bin/docker` into
+/// `/Applications/OrbStack.app`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn app_bundle(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("app")))
+        .last()
+        .map(Path::to_path_buf)
+}
+
+/// Starts a GUI program (on a Mac, an app bundle) and leaves it running after the app quits.
 pub fn launch(program: &Path) -> Result<()> {
-    proc::std_command(program)
-        .stdin(Stdio::null())
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut cmd = proc::std_command("/usr/bin/open");
+        cmd.arg(program);
+        cmd
+    };
+    #[cfg(not(target_os = "macos"))]
+    let mut cmd = proc::std_command(program);
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -252,5 +285,23 @@ mod tests {
         assert_eq!(dirs[0], "/opt/homebrew/bin");
         assert_eq!(dirs.iter().filter(|d| **d == "/opt/homebrew/bin").count(), 1);
         assert!(dirs.contains(&"/usr/bin"));
+    }
+
+    #[test]
+    fn app_bundles() {
+        assert_eq!(
+            app_bundle(Path::new("/Applications/Docker.app/Contents/Resources/bin/docker")),
+            Some(PathBuf::from("/Applications/Docker.app"))
+        );
+        assert_eq!(
+            app_bundle(Path::new(
+                "/Applications/OrbStack.app/Contents/MacOS/Helper.app/Contents/xbin/docker"
+            )),
+            Some(PathBuf::from("/Applications/OrbStack.app"))
+        );
+        assert_eq!(
+            app_bundle(Path::new("/opt/homebrew/Cellar/docker/27.3.1/bin/docker")),
+            None
+        );
     }
 }

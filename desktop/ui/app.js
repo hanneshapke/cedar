@@ -19,11 +19,18 @@ const PLATFORM = {
     computer: 'this Mac',
     dockerApps: 'Docker Desktop, OrbStack, or Colima',
     dockerStart: 'Start Docker Desktop (or OrbStack, Colima)',
+    dockerStarting: 'Starting Docker…',
+    setupIntro: 'Cedar can set Docker up for you. It downloads Docker Desktop for this Mac’s chip (about 600 MB) and installs it into Applications. macOS asks once for an administrator’s password; then Cedar starts Docker Desktop and carries on.',
+    // Only offered when no Docker is found: one that won't start may be OrbStack or Colima.
+    setupWhenNotRunning: false,
   },
   windows: {
     computer: 'this PC',
     dockerApps: 'Docker Desktop (with the WSL 2 backend) or Rancher Desktop',
     dockerStart: 'Start Docker Desktop (or Rancher Desktop)',
+    dockerStarting: 'Starting Docker Desktop…',
+    setupIntro: 'Cedar can set Docker up for you. It turns on WSL 2 (the Windows Subsystem for Linux), then downloads and installs Docker Desktop (about 600 MB). Windows asks once whether Cedar may make changes, and you may need to restart or sign out at the end; Cedar opens again by itself afterwards and finishes.',
+    setupWhenNotRunning: true,
   },
 };
 
@@ -49,7 +56,7 @@ function render(s) {
     dockerHelp.classList.remove('hidden');
   } else if (d.state === 'starting') {
     dot($('docker-dot'), 'busy');
-    $('docker-text').textContent = 'Starting Docker Desktop… The first start after installing it takes a minute or two.';
+    $('docker-text').textContent = p.dockerStarting + ' The first start after installing it takes a minute or two.';
   } else if (d.state === 'not_running') {
     dot($('docker-dot'), 'warn');
     $('docker-text').textContent = 'Docker is installed but not answering. ' + p.dockerStart + ' and check again. ' + d.detail;
@@ -58,7 +65,7 @@ function render(s) {
     $('docker-text').textContent = d.detail;
   }
 
-  renderDockerSetup(s);
+  renderDockerSetup(s, p);
 
   // Images
   const i = s.images;
@@ -191,15 +198,17 @@ function renderUpdate(s) {
   $('updates-text').textContent = text;
 }
 
-// Setting Docker up from here (Windows only): offered while Docker is missing or won't start, and
-// shown until it has finished.
-function renderDockerSetup(s) {
+// Setting Docker up from here (Windows and macOS): offered while Docker is missing (on Windows,
+// also while it won't start), and shown until it has finished.
+function renderDockerSetup(s, p) {
   const st = s.docker_setup;
   const d = s.docker;
   const inProgress = st.state !== 'idle' && st.state !== 'failed';
-  const show = s.docker_setup_available && (inProgress || st.state === 'failed' || d.state === 'missing' || d.state === 'not_running');
+  const wanted = d.state === 'missing' || (p.setupWhenNotRunning && d.state === 'not_running');
+  const show = s.docker_setup_available && (inProgress || st.state === 'failed' || wanted);
   $('docker-setup').classList.toggle('hidden', !show);
   if (!show) return;
+  $('docker-setup-intro').textContent = p.setupIntro;
   const install = $('docker-install');
   const finish = $('docker-finish');
   const text = $('docker-setup-text');

@@ -10,6 +10,8 @@ mod app;
 mod commands;
 mod config;
 mod docker;
+mod dockersetup;
+mod macsetup;
 mod models;
 mod notify;
 mod paths;

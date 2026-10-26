@@ -37,7 +37,7 @@ pub enum ImagesStatus {
     Failed(String),
 }
 
-/// Setting Docker up from the setup page (Windows only, see winsetup.rs).
+/// Setting Docker up from the setup page (Windows and macOS, see winsetup.rs and macsetup.rs).
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
 pub enum SetupStatus {
@@ -101,7 +101,7 @@ pub struct Status {
     pub platform: &'static str,
     pub docker: DockerStatus,
     pub docker_setup: SetupStatus,
-    /// The page offers to set Docker up (on Windows).
+    /// The page offers to set Docker up (on Windows and macOS).
     pub docker_setup_available: bool,
     pub images: ImagesStatus,
     pub services: ServiceState,
@@ -261,7 +261,7 @@ impl AppState {
             platform: std::env::consts::OS,
             docker: self.docker.lock().unwrap().clone(),
             docker_setup: self.docker_setup(),
-            docker_setup_available: cfg!(windows),
+            docker_setup_available: cfg!(any(windows, target_os = "macos")),
             images: self.images.lock().unwrap().clone(),
             services: self.supervisor.state(),
             model: self.model.lock().unwrap().clone(),
@@ -391,11 +391,11 @@ pub async fn bootstrap(app: AppHandle) {
     }
 }
 
-/// Starts Docker Desktop when its daemon doesn't answer (on Windows, where it doesn't start with
-/// the PC unless asked to) and waits for it, or `None` if there is nothing to start. Not while
-/// the setup is installing it or waiting for the restart it needs.
+/// Starts Docker Desktop (on a Mac, whichever app the CLI comes from) when its daemon doesn't
+/// answer, and waits for it, or `None` if there is nothing to start. Not while the setup is
+/// installing it or waiting for the restart it needs.
 async fn start_docker_desktop(state: &AppState, cli: &DockerCli) -> Option<Result<String>> {
-    let desktop = docker::desktop_app()?;
+    let desktop = docker::provider_app(cli)?;
     if !matches!(
         state.docker_setup(),
         SetupStatus::Idle | SetupStatus::Failed(_)
@@ -403,11 +403,11 @@ async fn start_docker_desktop(state: &AppState, cli: &DockerCli) -> Option<Resul
         return None;
     }
     if let Err(e) = docker::launch(&desktop) {
-        eprintln!("starting Docker Desktop: {e:#}");
+        eprintln!("starting {}: {e:#}", desktop.display());
         return None;
     }
     state.set_docker(DockerStatus::Starting);
-    // Its first start after installing sets up its WSL distribution, which takes a while.
+    // Its first start after installing sets up its WSL distribution or VM, which takes a while.
     Some(cli.wait_until_answering(Duration::from_secs(240)).await)
 }
 
