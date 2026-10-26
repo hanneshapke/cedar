@@ -134,16 +134,26 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
       ] },
     { id: 'docker', label: 'Do you have Docker installed?', hint: 'Cedar runs every chat in a sealed Docker box.',
       opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what Docker is' }] },
-    { id: 'model', label: 'Do you have an AI model running?', hint: 'Cedar brings the hands; the model is the brain.',
+    { id: 'host', label: 'Can you run an AI model yourself?', hint: 'It takes lots of fast memory: an M4 or M5 Mac with 32 GB or more, a DGX Spark, an AMD Ryzen AI Max (Strix Halo), or a GPU with 16 GB or more.',
       opts: [
-        { v: 'ollama', t: 'Ollama' }, { v: 'lmstudio', t: 'LM Studio' },
-        { v: 'server', t: 'vLLM or another server' }, { v: 'none', t: 'Not yet' },
+        { v: 'yes', t: 'Yes', s: 'on this or another machine' }, { v: 'no', t: 'No', s: 'use a token provider' },
+        { v: 'unknown', t: 'Not sure' },
+      ] },
+    { id: 'serve', label: 'How do you want to serve it?', hint: 'Ollama is the easiest. LM Studio has a window. vLLM is fastest on a Linux GPU box.', when: (s) => s.host === 'yes',
+      opts: [
+        { v: 'ollama', t: 'Ollama', s: 'simplest, any computer' }, { v: 'lmstudio', t: 'LM Studio', s: 'an app with a window' },
+        { v: 'vllm', t: 'vLLM', s: 'Linux, NVIDIA or AMD GPU' },
+      ] },
+    { id: 'provider', label: 'Which token provider?', hint: 'They run open models in their data center and charge per token.', when: (s) => s.host === 'no',
+      opts: [
+        { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' },
+        { v: 'other', t: 'Another provider', s: 'any OpenAI-compatible API' },
       ] },
     { id: 'tailscale', label: 'Do you have Tailscale installed?', hint: 'Only needed for the iPhone and Android apps.',
       opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what it is' }] },
   ];
 
-  const DEFAULTS = { os: detectOs(), arch: '', docker: '', model: '', tailscale: '' };
+  const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', tailscale: '' };
   const state = readState();
 
   function detectOs() {
@@ -171,9 +181,11 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
     return '';
   }
 
+  const shown = (q) => !q.when || q.when(state);
+
   function writeState() {
     const q = new URLSearchParams();
-    for (const { id } of QUESTIONS) if (state[id]) q.set(id, state[id]);
+    for (const question of QUESTIONS) if (state[question.id] && shown(question)) q.set(question.id, state[question.id]);
     const qs = q.toString();
     history.replaceState(null, '', qs ? '?' + qs : location.pathname);
   }
@@ -193,7 +205,7 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
     const picker = document.getElementById('picker');
     picker.innerHTML = QUESTIONS.map((q) => {
       const opts = q.opts.filter((o) => !o.os || o.os.includes(state.os));
-      if (q.id === 'arch' && !state.os) return '';
+      if ((q.id === 'arch' && !state.os) || !shown(q)) return '';
       return `<div class="q" role="group" aria-labelledby="q-${q.id}">
         <div class="q-label" id="q-${q.id}">${esc(q.label)}<small>${esc(q.hint)}</small></div>
         <div class="q-opts">${opts.map((o) => `<button type="button" class="opt" data-q="${q.id}" data-v="${o.v}" aria-pressed="${state[q.id] === o.v}">${esc(o.t)}${o.s ? `<small>${esc(o.s)}</small>` : ''}</button>`).join('')}</div>
@@ -207,7 +219,9 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
     const name = { mac: 'macOS', windows: 'Windows', linux: 'Linux' }[s.os];
     if (name) chips.push(`<span class="chip">${name} · ${s.arch === 'arm64' ? (s.os === 'mac' ? 'Apple silicon' : s.os === 'windows' ? 'Arm' : 'arm64') : (s.os === 'mac' ? 'Intel' : 'x64')}</span>`);
     if (s.docker) chips.push(s.docker === 'yes' ? '<span class="chip done">Docker ready</span>' : '<span class="chip todo">Docker to install</span>');
-    if (s.model) chips.push(s.model === 'none' ? '<span class="chip todo">Model to install</span>' : '<span class="chip done">Model ready</span>');
+    if (s.host === 'yes' && s.serve) chips.push(`<span class="chip done">Your own model · ${SERVERS[s.serve].name}</span>`);
+    if (s.host === 'no' && s.provider) chips.push(`<span class="chip done">Hosted model · ${s.provider === 'other' ? 'another provider' : PROVIDERS[s.provider].name}</span>`);
+    if (s.host === 'unknown') chips.push('<span class="chip todo">Check your hardware</span>');
     if (s.tailscale) chips.push(s.tailscale === 'yes' ? '<span class="chip done">Tailscale ready</span>' : '<span class="chip skip">Tailscale optional</span>');
     document.getElementById('summary').innerHTML = chips.join('');
   }
@@ -238,37 +252,127 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
   const WHAT_IS_DOCKER = explain('<b>What is Docker?</b> A free program that runs small, sealed Linux boxes (containers) on your computer. Cedar does every chat\'s work inside one, so the commands it runs can\'t see your documents, photos or the rest of your system. You install it once and never have to touch it again.');
   const WHAT_IS_TAILSCALE = explain('<b>What is Tailscale?</b> A free app that links your own devices into a private network, wherever they are. Cedar uses it so your phone can reach the computer at home securely, without opening anything to the internet. <b>You only need it for the iPhone or Android app</b>; skip this step if you\'ll use Cedar on this computer only.');
 
-  function modelStep(s) {
-    const local = s.os === 'linux' ? 'this machine' : 'your Mac or PC';
-    const listModels = '<p>Then, in Cedar\'s setup, choose the preset (or type the address), click <strong>List models</strong>, pick one and <strong>Save</strong>.</p>';
-    const toolsNote = '<p class="note">Pick a model that supports <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower; an 8B model needs about 8 GB of free memory.</p>';
-    const ollamaInstall = {
-      mac: code('brew install ollama          # or download the app from ollama.com\nollama serve &               # the app starts this for you\nollama pull qwen3:8b', 'Terminal'),
-      windows: `<p>${btn('https://ollama.com/download/windows', 'Download Ollama for Windows')}</p>` + code('ollama pull qwen3:8b', 'PowerShell'),
-      linux: code('curl -fsSL https://ollama.com/install.sh | sh\nollama pull qwen3:8b', 'Terminal'),
-    }[s.os];
-    const lmAddr = 'http://127.0.0.1:1234/v1';
-    const olAddr = 'http://127.0.0.1:11434/v1';
+  // Where Cedar finds each kind of model server, and what the setup window calls it.
+  const SERVERS = {
+    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1', pick: 'the <strong>Ollama</strong> preset' },
+    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1', pick: 'the <strong>LM Studio</strong> preset' },
+    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1', pick: 'the <strong>vLLM</strong> preset (or your GPU box\'s address)' },
+  };
+  const PROVIDERS = {
+    doubleword: { name: 'Doubleword', addr: 'https://api.doubleword.ai/v1', site: 'https://www.doubleword.ai', keys: 'https://app.doubleword.ai', docs: 'https://docs.doubleword.ai/inference-api/using-the-platform',
+      keyHow: 'Sign up, open <strong>API Keys</strong> in the Doubleword console and create one. You can give it a spending cap.' },
+    baseten: { name: 'Baseten', addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co', keys: 'https://app.baseten.co/settings/api_keys', docs: 'https://docs.baseten.co/development/model-apis/overview',
+      keyHow: 'Sign up, then create an API key under <strong>Settings → API keys</strong>. Cedar uses Baseten\'s <em>Model APIs</em>, where every model supports tool calling.' },
+    other: { name: 'your provider', addr: 'https://<provider>/v1', docs: '',
+      keyHow: 'Any provider with an OpenAI-compatible <code>/v1/chat/completions</code> API and tool calling works. Create an API key in its console and find its base URL in its docs.' },
+  };
 
-    switch (s.model) {
-      case 'ollama':
-        return step('Check your model in Ollama', `<p>Make sure a model with tool calling is pulled, for example:</p>${code('ollama list\nollama pull qwen3:8b      # if you have none yet', s.os === 'windows' ? 'PowerShell' : 'Terminal')}<p>Cedar reaches Ollama at <code>${olAddr}</code>.</p>${s.os === 'linux' ? '' : listModels}`, 'ok');
-      case 'lmstudio':
-        return step('Start LM Studio\'s server', `<p>In LM Studio, download a model that supports tool use, then open the <strong>Developer</strong> tab and switch <strong>Start server</strong> on. Cedar reaches it at <code>${lmAddr}</code>.</p>${s.os === 'linux' ? '' : listModels}`, 'ok');
-      case 'server':
-        return step('Point Cedar at your server', `<p>Any OpenAI-compatible server with tool calling works: vLLM, llama.cpp, a hosted API you trust. You'll need its address <em>including</em> the API path (usually ending in <code>/v1</code>) and, if it asks for one, an API key.</p>
-          <p>For vLLM, start it with tool calling on, or the model's tool calls come back as plain text and Cedar can't act. For DeepSeek V4:</p>
-          ${code('vllm serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code \\\n  --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \\\n  --enable-auto-tool-choice --reasoning-parser deepseek_v4\n\n# check the name it serves\ncurl -s localhost:8000/v1/models', 'GPU server')}
-          <p class="note">A server on another machine must be reachable from ${local}, for example over Tailscale. ${s.os === 'linux' ? '' : 'In Cedar\'s setup, type the address, click <strong>List models</strong>, choose one and <strong>Save</strong>.'}</p>`, 'ok');
-      case 'none':
-      default: {
-        const intro = s.model === 'none' ? '' : '<p class="note">Answer <em>Do you have an AI model running?</em> above to tailor this step.</p>';
-        if (s.os === 'linux') {
-          return step('Install a model', `${intro}<p>On a machine with a big NVIDIA GPU (a DGX Spark, say), serve one with <strong>vLLM</strong>: follow the <a href="https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash">vLLM recipe</a> and turn on its tool-call flags (see the <a href="${LINUX}#2-make-sure-vllm-is-ready-for-cedar">Linux guide</a>). Otherwise, <strong>Ollama</strong> is the easiest start:</p>${ollamaInstall}<p>Cedar reaches Ollama at <code>${olAddr}</code>.</p>${toolsNote}`);
-        }
-        return step('Install a model', `${intro}<p>The easiest way to put an AI model on ${local} is <strong>Ollama</strong> (or <a href="https://lmstudio.ai">LM Studio</a>, if you prefer an app with a window).</p>${ollamaInstall}<p>Cedar has a preset for both, so you won't need to type an address.</p>${toolsNote}`);
-      }
+  // What to choose in the setup window's model step (Mac and Windows) for the answers given.
+  function modelChoice(s) {
+    if (s.host === 'yes' && s.serve) return `pick ${SERVERS[s.serve].pick}`;
+    if (s.host === 'no' && s.provider) return `type <code>${esc(PROVIDERS[s.provider].addr)}</code> as the address, paste your API key`;
+    return 'pick your model server\'s preset (or type its address)';
+  }
+
+  // The address the Linux chat's Settings → Server is given.
+  function modelAddress(s) {
+    if (s.host === 'no') return PROVIDERS[s.provider || 'other'].addr;
+    return SERVERS[s.serve || 'ollama'].addr;
+  }
+
+  const WHAT_IS_A_PROVIDER = explain('<b>What is a token provider?</b> A company that runs open AI models in its data center and lets you use them over the internet, billed per token (roughly, per word read and written). Nothing to install, and no big computer needed. The trade-off: <b>your prompts, and the file contents Cedar sends to the model, go to that company</b>. Cedar itself, your conversations and the sealed boxes still stay on your machine.');
+
+  function modelStep(s) {
+    const shell = s.os === 'windows' ? 'PowerShell' : 'Terminal';
+    const inSetup = s.os === 'linux'
+      ? '<p class="note">You\'ll register it in the chat\'s <strong>Settings → Server</strong> in a later step.</p>'
+      : `<p class="note">You'll pick it in Cedar's setup window in a later step: ${modelChoice(s)}.</p>`;
+    const toolsNote = '<p class="note">Whatever you pick, it must support <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower.</p>';
+
+    if (s.host === 'no') return providerStep(s, inSetup);
+    if (s.host === 'yes') {
+      if (s.serve === 'ollama') return ollamaStep(s, shell, inSetup, toolsNote);
+      if (s.serve === 'lmstudio') return lmStudioStep(s, inSetup, toolsNote);
+      if (s.serve === 'vllm') return vllmStep(s, inSetup);
+      return step('Choose how to serve your model', '<p>Pick <strong>Ollama</strong>, <strong>LM Studio</strong> or <strong>vLLM</strong> above. Not sure? Ollama is the easiest start on any computer; vLLM gets the most out of a Linux box with an NVIDIA or AMD GPU, like a DGX Spark.</p>', 'optional');
     }
+    // Not sure, or not answered yet.
+    return step('Can your computer run a model?', `${s.host ? '' : '<p class="note">Answer <em>Can you run an AI model yourself?</em> above to tailor this step.</p>'}
+      <p>Models that are good at using tools are big, and they need to fit in memory the chip can use quickly. These machines run one well:</p>
+      <ul>
+        <li><strong>A Mac with an M4 or M5 chip and 32 GB of memory or more</strong> (64 GB+ for the larger models). Check under Apple menu → <em>About This Mac</em>.</li>
+        <li><strong>An NVIDIA DGX Spark</strong> (128 GB), the machine Cedar is built on.</li>
+        <li><strong>A PC with an AMD Ryzen AI Max</strong> ("Strix Halo", for example the Framework Desktop) with 64 or 128 GB.</li>
+        <li><strong>A PC with an NVIDIA or AMD graphics card with 16 GB or more</strong> of video memory (24 GB+ is better).</li>
+      </ul>
+      ${s.os === 'windows' ? code('# your graphics card and its memory\nGet-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM\n# total memory\n(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB', 'PowerShell')
+        : s.os === 'linux' ? code('free -h                 # memory\nnvidia-smi              # NVIDIA GPU and its memory, if any\nrocm-smi --showmeminfo vram   # AMD GPU, if any', 'Terminal')
+        : code("system_profiler SPHardwareDataType | grep -E 'Chip|Memory'", 'Terminal')}
+      <p>One of those? Choose <strong>Yes</strong> above. A laptop with 8 or 16 GB can run a small model, but it will be slow and miss steps; choose <strong>No</strong> and use a token provider instead. You can switch later, per conversation.</p>`, 'optional');
+  }
+
+  function providerStep(s, inSetup) {
+    if (!s.provider) {
+      return step('Pick a token provider', `${WHAT_IS_A_PROVIDER}<p>Choose one above. <a href="https://www.doubleword.ai">Doubleword</a> and <a href="https://www.baseten.co">Baseten</a> both serve open models like DeepSeek, Qwen, GLM and gpt-oss over an OpenAI-compatible API, which is all Cedar needs.</p>`, 'optional');
+    }
+    const p = PROVIDERS[s.provider];
+    const keyLink = p.keys ? `<p>${btn(p.keys, `Get a ${p.name} API key`)}</p>` : '';
+    const check = code(`# check the key, and see the model names you can use\ncurl -s ${p.addr}/models -H "Authorization: Bearer <your API key>"`, s.os === 'windows' ? 'PowerShell' : 'Terminal')
+      .replace('curl -s', s.os === 'windows' ? 'curl.exe -s' : 'curl -s');
+    const where = s.os === 'linux'
+      ? `<p>In a later step you'll add it in the chat's <strong>Settings → Server</strong>: address <code>${esc(p.addr)}</code>, your API key, then <strong>List models</strong>.</p>`
+      : `<p>In Cedar's setup window, in the <strong>Model server</strong> step, type the address <code>${esc(p.addr)}</code>, paste the key into <strong>API key</strong>, click <strong>List models</strong> and choose one.</p>`;
+    return step(`Get a key from ${p.name}`, `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
+      <ol><li>Copy the key somewhere safe; it's shown once.</li><li>Check it works and see which models you can use:${check}</li></ol>
+      ${where}
+      <p class="note">Pick a model that supports tool calling; a large one (DeepSeek, Qwen3 235B, GLM, gpt-oss 120B) does best. Cedar keeps the key encrypted and never puts it inside a sealed box.${p.docs ? ` More in <a href="${p.docs}">${p.name}'s docs</a>.` : ''}</p>`);
+  }
+
+  function ollamaStep(s, shell, inSetup, toolsNote) {
+    const install = {
+      mac: `<p>${btn('https://ollama.com/download/mac', 'Download Ollama for Mac')}</p><p>Or with Homebrew: <code>brew install ollama</code>. Open the app once; it runs in the menu bar.</p>`,
+      windows: `<p>${btn('https://ollama.com/download/windows', 'Download Ollama for Windows')}</p><p>Run the installer. Ollama starts in the tray. On an AMD Ryzen AI Max or Radeon card it uses the GPU on its own.</p>`,
+      linux: code('curl -fsSL https://ollama.com/install.sh | sh\nsystemctl status ollama --no-pager   # it runs as a service', 'Terminal'),
+    }[s.os];
+    const ctx = s.os === 'windows'
+      ? code('setx OLLAMA_CONTEXT_LENGTH 32768\n# then quit Ollama from the tray and start it again', 'PowerShell')
+      : s.os === 'linux'
+        ? code('sudo systemctl edit ollama\n# add these two lines, save, then:\n#   [Service]\n#   Environment="OLLAMA_CONTEXT_LENGTH=32768"\nsudo systemctl restart ollama', 'Terminal')
+        : code('launchctl setenv OLLAMA_CONTEXT_LENGTH 32768\n# then quit Ollama from the menu bar and open it again', 'Terminal');
+    return step('Install Ollama and a model', `${install}
+      <p>Pull a model that fits your memory:</p>
+      ${code('# 16-24 GB\nollama pull qwen3:8b\n# 32-48 GB\nollama pull qwen3:30b\n# 64 GB and more: Spark, Ryzen AI Max, a big Mac\nollama pull gpt-oss:120b\n\nollama run qwen3:8b "say hi"    # a quick test', shell)}
+      <p>Cedar's tasks need a long memory of the conversation, longer than Ollama's default. Raise it once:</p>${ctx}
+      <p>Cedar reaches Ollama at <code>${SERVERS.ollama.addr}</code>.</p>${inSetup}${toolsNote}`);
+  }
+
+  function lmStudioStep(s, inSetup, toolsNote) {
+    const note = { mac: 'On Apple silicon, prefer <strong>MLX</strong> models: they run fastest.', windows: 'On an AMD Ryzen AI Max or Radeon card, LM Studio uses the Vulkan or ROCm runtime; check it under <em>Settings → Runtime</em>.', linux: 'On Linux it ships as an AppImage; make it executable and run it.' }[s.os];
+    return step('Install LM Studio and start its server', `<p>${btn('https://lmstudio.ai/download', 'Download LM Studio')}</p>
+      <ol>
+        <li>Open LM Studio and go to <strong>Discover</strong>. Search for a model with tool use (the hammer icon), for example <strong>Qwen3 30B A3B</strong> on 32 GB, or <strong>gpt-oss 120B</strong> on 64 GB and more, and download it. ${note}</li>
+        <li>Open the <strong>Developer</strong> tab, load the model and set its <strong>context length</strong> to at least 32768.</li>
+        <li>Switch <strong>Status: Running</strong> on. Or from a terminal:${code('lms server start\nlms ls          # the models you have', s.os === 'windows' ? 'PowerShell' : 'Terminal')}</li>
+      </ol>
+      <p>Cedar reaches LM Studio at <code>${SERVERS.lmstudio.addr}</code>.</p>${inSetup}${toolsNote}`);
+  }
+
+  function vllmStep(s, inSetup) {
+    const remote = s.os !== 'linux'
+      ? explain('<b>vLLM runs on Linux</b> with an NVIDIA or AMD GPU, so it lives on a separate box (a DGX Spark, a GPU server) and Cedar on this computer talks to it over your network. Run the commands below on that box, with <code>--host 0.0.0.0</code> so it listens on the network, and use <code>http://&lt;box&gt;:8000/v1</code> as the address. Tailscale is the easy way to reach it safely from anywhere.')
+      : '';
+    return step('Serve a model with vLLM', `${remote}
+      <p>Start vLLM with <strong>tool calling on</strong>, or the model's tool calls come back as plain text and Cedar can't act. The flags depend on the model; for DeepSeek V4, the model Cedar is built around:</p>
+      <details open><summary>NVIDIA GPU, DGX Spark</summary>
+      ${code(`docker run --gpus all --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  vllm/vllm-openai:latest \\\n  deepseek-ai/DeepSeek-V4-Flash --trust-remote-code \\\n  --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \\\n  --enable-auto-tool-choice --reasoning-parser deepseek_v4${s.os !== 'linux' ? ' \\\n  --host 0.0.0.0' : ''}`, 'GPU box')}
+      <p class="note">On a DGX Spark, NVIDIA's <a href="https://build.nvidia.com/spark/vllm">vLLM playbook</a> has the container built for its GB10 chip.</p></details>
+      <details><summary>AMD GPU (Instinct, Radeon, Ryzen AI Max)</summary>
+      ${code(`docker run --device=/dev/kfd --device=/dev/dri --group-add video \\\n  --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  rocm/vllm:latest \\\n  vllm serve <model> --enable-auto-tool-choice --tool-call-parser <parser>${s.os !== 'linux' ? ' --host 0.0.0.0' : ''}`, 'GPU box')}
+      <p class="note">AMD's <a href="https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/inference/vllm.html">vLLM guide</a> picks the right image for your GPU and ROCm version.</p></details>
+      <details><summary>Another model</summary><p>Any model with a tool-call parser works; the <a href="https://docs.vllm.ai/en/latest/features/tool_calling.html">vLLM tool calling docs</a> list them. For example <code>openai/gpt-oss-120b</code> with <code>--tool-call-parser openai</code>, or Qwen3 with <code>--tool-call-parser hermes</code>. The <a href="https://recipes.vllm.ai">vLLM recipes</a> have the flags per model.</p></details>
+      <p>Then check which model name it serves:</p>
+      ${code(`curl -s localhost:8000/v1/models | jq -r '.data[].id'`, 'GPU box')}
+      <p class="note">The <a href="${LINUX}#2-make-sure-vllm-is-ready-for-cedar">Linux guide</a> has a one-line tool-calling test.</p>${inSetup}`);
   }
 
   function phoneStep(s) {
@@ -306,7 +410,7 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
       steps.push(step('Download Cedar for Mac', `<p>${btn(release.dmg || RELEASES, 'Download for Mac')}</p><p>Open the <code>.dmg</code> and drag Cedar to Applications. It's signed and notarized, so it opens without warnings.</p>`));
     }
     steps.push(step('Open Cedar and follow the setup', `<p>A tree appears in your menu bar and the setup window opens with three checks:</p>
-      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: pick ${s.model === 'lmstudio' ? 'the LM Studio preset' : s.model === 'server' ? 'your server' : 'the Ollama preset'}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
+      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
       <p>The window turns into the chat. Give it a task.</p>`));
     steps.push(phoneStep(s));
     return steps;
@@ -330,7 +434,7 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
         <p class="note">Docker Desktop is free for personal use, education and small businesses. Rather do it by hand? Run <code>wsl --install</code> as administrator, restart, then install <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>.</p>`));
     }
     steps.push(step('Finish the setup', `<p>Cedar's icon sits in the tray (it may be under the <strong>^</strong> arrow) and the setup window shows three checks:</p>
-      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: pick ${s.model === 'lmstudio' ? 'the LM Studio preset' : s.model === 'server' ? 'your server' : 'the Ollama preset'}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
+      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
       <p>The window turns into the chat. Give it a task.</p>`));
     steps.push(phoneStep(s));
     return steps;
@@ -359,10 +463,9 @@ footer{margin:64px 0 48px;padding-top:24px;border-top:1px solid var(--line);disp
       ${code(`sudo tee /etc/systemd/system/cedar.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar agent server\nAfter=network-online.target docker.service\nWants=network-online.target\nRequires=docker.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/cedar.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=30\n\n[Install]\nWantedBy=multi-user.target\nEOF\n\nsudo tee /etc/systemd/system/cedar-chat.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar chat UI\nAfter=network-online.target cedar.service\nWants=cedar.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/chat.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar-chat\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\nEOF`, 'Terminal')}
       </details>
       ${code('sudo systemctl daemon-reload\nsudo systemctl enable --now cedar cedar-chat\ncurl -s -o /dev/null -w \'%{http_code}\\n\' http://127.0.0.1:8080/readyz   # 200', 'Terminal')}`));
-    const preset = s.model === 'ollama' || s.model === 'none' ? 'http://127.0.0.1:11434/v1' : s.model === 'lmstudio' ? 'http://127.0.0.1:1234/v1' : 'http://127.0.0.1:8000/v1';
     steps.push(step('Open the chat and add your model', `<p>On this machine, open <code>http://localhost:3000</code>. From a laptop, tunnel to it first:</p>
       ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', 'Laptop')}
-      <p>Enter the <strong>chat access token</strong>. Then go to <strong>Settings → Server</strong>, unlock it with the <strong>admin token</strong>, add your model server (<code>${preset}</code>${s.model === 'server' ? ', or wherever yours listens' : ''}), click <strong>List models</strong>, choose one and save. Give it a task.</p>`));
+      <p>Enter the <strong>chat access token</strong>. Then go to <strong>Settings → Server</strong>, unlock it with the <strong>admin token</strong>, add your model server (<code>${esc(modelAddress(s))}</code>${s.host === 'no' ? ' with your API key' : s.serve === 'vllm' ? ', or your GPU box\'s address' : ''}), click <strong>List models</strong>, choose one and save. Give it a task.</p>`));
     steps.push(phoneStep(s));
     return steps;
   }
