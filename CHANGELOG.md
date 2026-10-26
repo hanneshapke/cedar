@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **Cedar for macOS sets Docker up itself**, like the Windows app. When no Docker is found, the setup page offers *Set up Docker for me*: it checks that the Mac can run virtual machines, downloads Docker Desktop for its chip, and after one administrator password checks that the app is signed by Docker and installs it with Docker's own `install --accept-license`, so its first start asks for nothing. Cedar then starts it and carries on. A Docker that isn't answering is now started on a Mac too: Docker Desktop, OrbStack or Rancher Desktop, whichever the `docker` command belongs to. The download and progress code is shared with the Windows setup (`desktop/src/dockersetup.rs`).
+- **Cedar for macOS sets Docker up itself**, like the Windows app. When no Docker is found, the setup page offers *Set up Docker for me*: it checks that the Mac can run virtual machines, downloads Docker Desktop for its chip, and after one administrator password checks that the app is signed by Docker and installs it with Docker's own `install --accept-license`, so its first start asks for nothing. Cedar then starts it and carries on. A Docker that isn't answering is now started on a Mac too: Docker Desktop, OrbStack or Rancher Desktop, whichever the `docker` command belongs to. The download and progress code is shared with the Windows setup (`desktop/src/installer.rs`).
+- **Cedar installs Tailscale too**, on macOS and Windows. When Tailscale isn't installed, the phone-sharing section offers *Set up Tailscale for me*: it downloads Tailscale's own installer (the standalone Mac app, or the MSI for the PC's processor), checks that it is signed by Tailscale, installs it after the same one permission prompt, and opens it. The page then lists what is left: logging in, and turning on MagicDNS and HTTPS Certificates.
 
 ## 0.1.8
 

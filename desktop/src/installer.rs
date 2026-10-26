@@ -1,10 +1,10 @@
-//! What setting Docker up from the setup page takes on both Windows (winsetup.rs) and the Mac
-//! (macsetup.rs): downloading Docker Desktop with its progress on the page, and following the part
-//! that runs with administrator rights through the `STEP:` and `ERROR:` lines it writes to its log.
+//! What installing other programs from the setup page (Docker Desktop: winsetup.rs, macsetup.rs;
+//! Tailscale: tssetup.rs) takes on both Windows and the Mac: downloading the installer with its
+//! progress on the page, and following the part that runs with administrator rights through the
+//! `STEP:` and `ERROR:` lines it writes to its log.
 
 #![cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 
-use crate::app::{AppState, SetupStatus};
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
@@ -24,28 +24,31 @@ pub fn last_tagged(log: &str, tag: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub fn progress(got: u64, total: Option<u64>) -> String {
+pub fn progress(what: &str, got: u64, total: Option<u64>) -> String {
     let mb = |b: u64| b / 1_000_000;
     match total {
-        Some(total) => format!(
-            "Downloading Docker Desktop: {} of {} MB",
-            mb(got),
-            mb(total)
-        ),
-        None => format!("Downloading Docker Desktop: {} MB", mb(got)),
+        Some(total) => format!("Downloading {what}: {} of {} MB", mb(got), mb(total)),
+        None => format!("Downloading {what}: {} MB", mb(got)),
     }
 }
 
-/// Docker Desktop's installer from `url`, saved as `name` in the user's temp folder. One
-/// downloaded by an earlier try that failed is used again if it is complete.
-pub async fn download(state: &AppState, url: &str, name: &str) -> Result<PathBuf> {
-    let dir = std::env::temp_dir().join("cedar-docker-setup");
+/// The installer of `what` (Docker Desktop, Tailscale) from `url`, saved as `name` in a folder of
+/// its own in the user's temp folder, with the progress going to `on_progress`. One downloaded by
+/// an earlier try that failed is used again if it is complete.
+pub async fn download(
+    what: &str,
+    url: &str,
+    name: &str,
+    on_progress: impl Fn(String),
+) -> Result<PathBuf> {
+    let folder = format!("cedar-{}-setup", what.to_lowercase().replace(' ', "-"));
+    let dir = std::env::temp_dir().join(folder);
     tokio::fs::create_dir_all(&dir)
         .await
         .with_context(|| format!("creating {}", dir.display()))?;
     let dest = dir.join(name);
 
-    state.set_docker_setup(SetupStatus::Running(progress(0, None)));
+    on_progress(progress(what, 0, None));
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(30))
         .build()?;
@@ -54,7 +57,7 @@ pub async fn download(state: &AppState, url: &str, name: &str) -> Result<PathBuf
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .context("downloading Docker Desktop; check the internet connection")?;
+        .with_context(|| format!("downloading {what}; check the internet connection"))?;
     let total = resp.content_length();
     if let (Some(total), Ok(meta)) = (total, tokio::fs::metadata(&dest).await) {
         if meta.len() == total {
@@ -72,33 +75,33 @@ pub async fn download(state: &AppState, url: &str, name: &str) -> Result<PathBuf
     loop {
         let chunk = match tokio::time::timeout(Duration::from_secs(60), stream.next()).await {
             Err(_) => {
-                bail!("the Docker Desktop download stalled; check the connection and try again")
+                bail!("the {what} download stalled; check the connection and try again")
             }
             Ok(None) => break,
-            Ok(Some(chunk)) => chunk.context("downloading Docker Desktop")?,
+            Ok(Some(chunk)) => chunk.with_context(|| format!("downloading {what}"))?,
         };
         file.write_all(&chunk).await?;
         got += chunk.len() as u64;
         if got - shown >= 5_000_000 {
             shown = got;
-            state.set_docker_setup(SetupStatus::Running(progress(got, total)));
+            on_progress(progress(what, got, total));
         }
     }
     file.flush().await?;
     drop(file);
     if total.is_some_and(|t| t != got) {
-        bail!("the Docker Desktop download was cut off; try again");
+        bail!("the {what} download was cut off; try again");
     }
     tokio::fs::rename(&part, &dest).await?;
     Ok(dest)
 }
 
-/// Waits for `child`, the elevated part, showing the last `STEP:` line in `log` on the page while
+/// Waits for `child`, the elevated part, handing the last `STEP:` line in `log` to `on_step` while
 /// it runs. Its exit code and what it wrote to stderr (which must be piped).
 pub async fn follow(
-    state: &AppState,
     mut child: tokio::process::Child,
     log: &Path,
+    on_step: impl Fn(String),
 ) -> Result<(Option<i32>, String)> {
     let mut stderr = child.stderr.take().expect("piped");
     let errors = tokio::spawn(async move {
@@ -113,11 +116,11 @@ pub async fn follow(
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
                 let step = std::fs::read_to_string(log).ok().and_then(|t| last_tagged(&t, STEP));
                 if let Some(step) = step {
-                    state.set_docker_setup(SetupStatus::Running(step));
+                    on_step(step);
                 }
                 if tokio::time::Instant::now() > deadline {
                     let _ = child.kill().await;
-                    bail!("setting up Docker took more than an hour; docker-setup.log in the logs folder says how far it got");
+                    bail!("the installation took more than an hour; {} in the logs folder says how far it got", log.file_name().unwrap_or_default().to_string_lossy());
                 }
             }
         }
@@ -147,9 +150,9 @@ mod tests {
     #[test]
     fn download_progress() {
         assert_eq!(
-            progress(123_456_789, Some(600_000_000)),
+            progress("Docker Desktop", 123_456_789, Some(600_000_000)),
             "Downloading Docker Desktop: 123 of 600 MB"
         );
-        assert_eq!(progress(0, None), "Downloading Docker Desktop: 0 MB");
+        assert_eq!(progress("Tailscale", 0, None), "Downloading Tailscale: 0 MB");
     }
 }

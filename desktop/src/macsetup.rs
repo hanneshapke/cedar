@@ -12,7 +12,7 @@
 
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
-use crate::dockersetup::{last_tagged, ERROR};
+use crate::installer::{last_tagged, ERROR};
 use std::path::Path;
 
 const DMG_ARM64: &str = "https://desktop.docker.com/mac/main/arm64/Docker.dmg";
@@ -59,11 +59,15 @@ enum Outcome {
 
 /// `osascript` exits with 1 on any error and says which on stderr: `(-128)` is the password
 /// prompt being cancelled.
+pub fn declined(stderr: &str) -> bool {
+    stderr.contains("(-128)") || stderr.contains("User canceled")
+}
+
 fn outcome(code: Option<i32>, log: &str, stderr: &str) -> Outcome {
     if code == Some(0) {
         return Outcome::Done;
     }
-    if stderr.contains("(-128)") || stderr.contains("User canceled") {
+    if declined(stderr) {
         return Outcome::Declined;
     }
     Outcome::Failed(
@@ -81,7 +85,7 @@ fn outcome(code: Option<i32>, log: &str, stderr: &str) -> Outcome {
 
 /// A shell word: single quotes expand nothing, and a quote ends them, is escaped, and opens them
 /// again.
-fn sh_quote(s: &str) -> String {
+pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
@@ -138,14 +142,19 @@ const APPLESCRIPT: [&str; 3] = [
 
 const PROMPT: &str = "Cedar wants to install Docker Desktop.";
 
+/// What the page says while macOS waits for the password.
+pub const WAITING_FOR_PASSWORD: &str =
+    "Waiting for permission: macOS asks for an administrator's name and password so Cedar can \
+     install it.";
+
 #[cfg(target_os = "macos")]
-pub use mac::install;
+pub use mac::{install, run_as_admin};
 
 #[cfg(target_os = "macos")]
 mod mac {
     use super::*;
     use crate::app::{AppState, SetupStatus};
-    use crate::{dockersetup, proc};
+    use crate::{installer, proc};
     use anyhow::{bail, Context, Result};
     use std::process::Stdio;
     use std::time::Duration;
@@ -176,28 +185,19 @@ mod mac {
         }
         let user = current_user().await?;
         let url = if machine.arm64 { DMG_ARM64 } else { DMG_X64 };
-        let dmg = dockersetup::download(state, url, "Docker.dmg").await?;
+        let dmg = installer::download("Docker Desktop", url, "Docker.dmg", |p| {
+            state.set_docker_setup(SetupStatus::Running(p))
+        })
+        .await?;
 
-        state.set_docker_setup(SetupStatus::Running(
-            "Waiting for permission: macOS asks for an administrator's name and password so \
-             Cedar can install Docker Desktop."
-                .into(),
-        ));
+        state.set_docker_setup(SetupStatus::Running(WAITING_FOR_PASSWORD.into()));
         let log = state.paths.logs.join("docker-setup.log");
-        std::fs::write(&log, "").with_context(|| format!("creating {}", log.display()))?;
         let script = elevated_script(&log, &dmg, &user);
-        let child = proc::command("/usr/bin/osascript")
-            .args(APPLESCRIPT.iter().flat_map(|line| ["-e", *line]))
-            .arg(&script)
-            .arg(PROMPT)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .context("running osascript")?;
-        let (code, stderr) = dockersetup::follow(state, child, &log).await?;
-        let log_text = std::fs::read_to_string(&log).unwrap_or_default();
+        let (code, stderr, log_text) =
+            run_as_admin(&state.paths.logs, "docker-setup", &script, PROMPT, |step| {
+                state.set_docker_setup(SetupStatus::Running(step))
+            })
+            .await?;
 
         let result = outcome(code, &log_text, &stderr);
         // Kept after a failure, so trying again doesn't download it again.
@@ -216,6 +216,34 @@ mod mac {
             ),
             Outcome::Failed(why) => SetupStatus::Failed(why),
         })
+    }
+
+    /// Runs `script` with `/bin/sh` as root, after macOS asks for an administrator's password
+    /// once with `prompt`. The script writes its `STEP:` and `ERROR:` lines to `<name>.log` in
+    /// `logs` (emptied first), and each step goes to `on_step` while it runs. `osascript`'s exit
+    /// code, its stderr, and the log.
+    pub async fn run_as_admin(
+        logs: &Path,
+        name: &str,
+        script: &str,
+        prompt: &str,
+        on_step: impl Fn(String),
+    ) -> Result<(Option<i32>, String, String)> {
+        let log = logs.join(format!("{name}.log"));
+        std::fs::write(&log, "").with_context(|| format!("creating {}", log.display()))?;
+        let child = proc::command("/usr/bin/osascript")
+            .args(APPLESCRIPT.iter().flat_map(|line| ["-e", *line]))
+            .arg(script)
+            .arg(prompt)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .context("running osascript")?;
+        let (code, stderr) = installer::follow(child, &log, on_step).await?;
+        let log_text = std::fs::read_to_string(&log).unwrap_or_default();
+        Ok((code, stderr, log_text))
     }
 
     /// `sysctl -n name`, or nothing if it has no such value.

@@ -10,7 +10,7 @@ mod app;
 mod commands;
 mod config;
 mod docker;
-mod dockersetup;
+mod installer;
 mod macsetup;
 mod models;
 mod notify;
@@ -19,6 +19,7 @@ mod proc;
 mod supervisor;
 mod tailscale;
 mod tray;
+mod tssetup;
 mod update;
 mod window;
 mod winsetup;
@@ -66,6 +67,7 @@ fn main() {
             commands::recheck,
             commands::install_docker,
             commands::finish_docker_setup,
+            commands::install_tailscale,
             commands::list_models,
             commands::save_model_server,
             commands::set_browser,

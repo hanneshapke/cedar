@@ -197,7 +197,9 @@ Let's Encrypt certificate for the computer's tailnet name and proxies
 `https://<computer>.<tailnet>.ts.net` to the chat. Only devices on your tailnet can reach it, and
 both servers stay on loopback.
 
-1. Install Tailscale on the computer and log in.
+1. Install Tailscale on the computer and log in. While it isn't installed, the section offers
+   **Set up Tailscale for me** (see [Installing Tailscale from the setup
+   page](#installing-tailscale-from-the-setup-page)); or install it yourself:
    - **macOS**: from [tailscale.com](https://tailscale.com/download/mac) or the Mac App Store.
      The app finds the CLI that Tailscale's *Install CLI* puts in `/usr/local/bin`, Homebrew's,
      or the binary inside `/Applications/Tailscale.app`.
@@ -214,6 +216,27 @@ both servers stay on loopback.
    the camera at the code the setup page shows after *Show QR code*; the app fills in the address
    and token and tests the connection. Tap **Save**. Or type them in: *Copy address* and *Copy
    access token* put them on the clipboard.
+
+### Installing Tailscale from the setup page
+
+*Set up Tailscale for me* does step 1 up to the login, the same way the Docker setup works:
+
+- **macOS**: downloads Tailscale's standalone app (`Tailscale-latest-macos.pkg`, the variant
+  Tailscale recommends) from `pkgs.tailscale.com`. After one administrator password, as root, it
+  copies the package into a folder only root can write to, checks with `pkgutil
+  --check-signature` that it carries a Developer ID Installer signature from Tailscale's team
+  (`W5364U7YZB`), and installs it with `installer -pkg … -target /`.
+- **Windows**: looks up the current MSI for the PC's processor (x64 or Arm64) in Tailscale's
+  package list (`pkgs.tailscale.com/stable/?mode=json&os=windows`) and downloads it. After one UAC
+  prompt it copies it into a folder under `C:\Windows\Temp` that only administrators can write
+  to, checks that it is signed by Tailscale Inc, and runs `msiexec /i … /quiet /norestart`. The
+  elevated script is saved as `tailscale-setup.ps1` in the logs folder and checked against its
+  hash before it runs, as for Docker.
+
+Then Cedar opens Tailscale, and the page lists what is left, which only you can do: allow
+Tailscale's VPN configuration on a Mac, log in from its menu bar (tray) icon, and turn on MagicDNS
+and HTTPS Certificates (step 2). Progress and errors go to `tailscale-setup.log` in the logs
+folder.
 
 The QR code holds `cedar://connect?server=<address>&token=<access token>` (made in
 `../pairing/src/connect.rs`, shared with the chat; the iOS app reads it in `ConnectionCode.swift`, the Android app the same
@@ -444,7 +467,7 @@ One-time setup:
 | --- | --- |
 | "No docker command was found" | Docker Desktop, OrbStack, Colima, or Rancher Desktop isn't installed, or its CLI isn't in `/usr/local/bin`, `/opt/homebrew/bin`, `~/.orbstack/bin`, `~/.rd/bin`, or `/Applications/Docker.app/Contents/Resources/bin`. |
 | No notification appears | Allow notifications for Cedar in System Settings → Notifications. |
-| iPhone, iPad & Android: "Tailscale is not installed" | Install it from tailscale.com or the Mac App Store. Running it from the menu bar is not enough if the CLI is somewhere else: choose *Install CLI* in Tailscale's settings to put `tailscale` in `/usr/local/bin`. |
+| iPhone, iPad & Android: "Tailscale is not installed" | Click *Set up Tailscale for me*, or install it from tailscale.com or the Mac App Store. Running it from the menu bar is not enough if the CLI is somewhere else: choose *Install CLI* in Tailscale's settings to put `tailscale` in `/usr/local/bin`. |
 
 ### Windows
 
@@ -459,5 +482,5 @@ One-time setup:
 | The sandbox image won't start, or Docker says "image operating system "linux" cannot be used on this platform" | Docker Desktop is set to Windows containers. Right-click its tray icon and choose *Switch to Linux containers*; the WSL 2 backend is the default. |
 | No notification appears | Allow notifications for Cedar in Settings → System → Notifications, and check that Do Not Disturb is off. Toasts only show for the installed app (from the MSI), not for `cargo tauri dev`. |
 | Cedar's tray icon is missing | Windows may hide it under the ^ arrow in the notification area; drag it onto the taskbar, or turn it on in Settings → Personalization → Taskbar → Other system tray icons. |
-| iPhone, iPad & Android: "Tailscale is not installed" | Install it from tailscale.com/download/windows; the app looks for `C:\Program Files\Tailscale\tailscale.exe`. |
+| iPhone, iPad & Android: "Tailscale is not installed" | Click *Set up Tailscale for me*, or install it from tailscale.com/download/windows; the app looks for `C:\Program Files\Tailscale\tailscale.exe`. |
 | `cedar.exe` or `cedar-chat.exe` still running after Cedar is gone | They stop within a few seconds once Cedar ends, however it ends; if one stays, its log says why. End it in Task Manager and start Cedar again. |

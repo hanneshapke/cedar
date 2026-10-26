@@ -11,7 +11,7 @@
 
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use crate::dockersetup::{last_tagged, ERROR};
+use crate::installer::{last_tagged, ERROR};
 use std::path::Path;
 
 /// `wsl --install` and the WSL 2 backend need Windows 10 version 2004 or newer.
@@ -25,11 +25,11 @@ const INSTALLER_ARM64: &str =
 /// The elevated script's exit codes besides 0 (done, nothing more to do) and 1 (failed, the
 /// reason on an `ERROR:` line in the log).
 const EXIT_SIGN_OUT: i32 = 10;
-const EXIT_RESTART: i32 = 11;
+pub const EXIT_RESTART: i32 = 11;
 /// The script file no longer had the hash it was written with.
-const EXIT_CHANGED: i32 = 2;
+pub const EXIT_CHANGED: i32 = 2;
 /// `ERROR_CANCELLED`: the user chose No in the UAC prompt.
-const EXIT_DECLINED: i32 = 1223;
+pub const EXIT_DECLINED: i32 = 1223;
 
 /// What the PC has, from [`MACHINE_SCRIPT`].
 #[derive(serde::Deserialize, Debug, PartialEq)]
@@ -99,7 +99,7 @@ fn outcome(code: Option<i32>, log: &str, stderr: &str) -> Outcome {
 
 /// A PowerShell string literal. Single-quoted strings expand nothing; a quote is doubled, and
 /// PowerShell takes the typographic single quotes for quotes too.
-fn ps_quote(s: &str) -> String {
+pub fn ps_quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('\'');
     for c in s.chars() {
@@ -113,7 +113,7 @@ fn ps_quote(s: &str) -> String {
 }
 
 /// What `-EncodedCommand` takes: the script as UTF-16LE, base64-encoded.
-fn encode(script: &str) -> String {
+pub fn encode(script: &str) -> String {
     use base64::Engine;
     let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -191,6 +191,11 @@ if ($signOut) { exit 10 }
 exit 0
 "#;
 
+/// What the page says while Windows waits for the UAC prompt to be answered.
+pub const WAITING_FOR_PERMISSION: &str =
+    "Waiting for permission: Windows asks whether Cedar may make changes to this PC. Choose Yes. \
+     If no prompt appears, click the flashing shield in the taskbar.";
+
 fn elevated_script(log: &Path, installer: Option<&Path>, user: &str) -> String {
     let installer = installer
         .map(|p| p.display().to_string())
@@ -232,13 +237,13 @@ fn launcher(powershell: &Path, encoded: &str) -> String {
 }
 
 #[cfg(windows)]
-pub use windows::{install, restart};
+pub use windows::{install, machine_is_arm64, restart, run_elevated_script};
 
 #[cfg(windows)]
 mod windows {
     use super::*;
     use crate::app::{AppState, SetupStatus};
-    use crate::{docker, dockersetup, proc};
+    use crate::{docker, installer, proc};
     use anyhow::{bail, Context, Result};
     use std::path::PathBuf;
     use std::process::Stdio;
@@ -290,20 +295,14 @@ mod windows {
             None => Some(download_installer(state, machine.arm64).await?),
         };
 
-        state.set_docker_setup(SetupStatus::Running(
-            "Waiting for permission: Windows asks whether Cedar may make changes to this PC. \
-             Choose Yes. If no prompt appears, click the flashing shield in the taskbar."
-                .into(),
-        ));
+        state.set_docker_setup(SetupStatus::Running(WAITING_FOR_PERMISSION.into()));
         let log = state.paths.logs.join("docker-setup.log");
-        std::fs::write(&log, "").with_context(|| format!("creating {}", log.display()))?;
         let script = elevated_script(&log, installer.as_deref(), &current_user());
-        let script_path = state.paths.logs.join("docker-setup.ps1");
-        std::fs::write(&script_path, &script)
-            .with_context(|| format!("writing {}", script_path.display()))?;
-        let elevated = stub(&script_path, &sha256_hex(&script));
-        let (code, stderr) = run_elevated(state, &elevated, &log).await?;
-        let log_text = std::fs::read_to_string(&log).unwrap_or_default();
+        let (code, stderr, log_text) =
+            run_elevated_script(&state.paths.logs, "docker-setup", &script, |step| {
+                state.set_docker_setup(SetupStatus::Running(step))
+            })
+            .await?;
 
         let result = outcome(code, &log_text, &stderr);
         // Kept after a failure, so trying again doesn't download it again.
@@ -330,6 +329,11 @@ mod windows {
             ),
             Outcome::Failed(why) => SetupStatus::Failed(why),
         })
+    }
+
+    /// Whether this PC has an Arm processor, even when Cedar runs emulated as x64.
+    pub async fn machine_is_arm64() -> Result<bool> {
+        Ok(machine().await?.arm64)
     }
 
     async fn machine() -> Result<Machine> {
@@ -369,16 +373,29 @@ mod windows {
         } else {
             INSTALLER_X64
         };
-        dockersetup::download(state, url, "Docker Desktop Installer.exe").await
+        installer::download("Docker Desktop", url, "Docker Desktop Installer.exe", |p| {
+            state.set_docker_setup(SetupStatus::Running(p))
+        })
+        .await
     }
 
-    /// The exit code of the elevated `command`, and what went wrong if it never ran. The
-    /// `STEP:` lines in `log` are shown on the page while it runs.
-    async fn run_elevated(
-        state: &AppState,
-        command: &str,
-        log: &Path,
-    ) -> Result<(Option<i32>, String)> {
+    /// Runs `script` elevated, after one UAC prompt: saved as `<name>.ps1` in `logs` so the user
+    /// can read what ran, and run only if it still has the hash it was written with. The script
+    /// writes its `STEP:` and `ERROR:` lines to `<name>.log` there (emptied first), and each step
+    /// goes to `on_step` while it runs. Its exit code, what went wrong if it never ran, and the
+    /// log.
+    pub async fn run_elevated_script(
+        logs: &Path,
+        name: &str,
+        script: &str,
+        on_step: impl Fn(String),
+    ) -> Result<(Option<i32>, String, String)> {
+        let log = logs.join(format!("{name}.log"));
+        std::fs::write(&log, "").with_context(|| format!("creating {}", log.display()))?;
+        let script_path = logs.join(format!("{name}.ps1"));
+        std::fs::write(&script_path, script)
+            .with_context(|| format!("writing {}", script_path.display()))?;
+        let command = stub(&script_path, &sha256_hex(script));
         let ps = powershell();
         let child = proc::command(&ps)
             .args([
@@ -388,14 +405,16 @@ mod windows {
                 "Bypass",
                 "-Command",
             ])
-            .arg(launcher(&ps, &encode(command)))
+            .arg(launcher(&ps, &encode(&command)))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .with_context(|| format!("running {}", ps.display()))?;
-        dockersetup::follow(state, child, log).await
+        let (code, stderr) = installer::follow(child, &log, on_step).await?;
+        let log_text = std::fs::read_to_string(&log).unwrap_or_default();
+        Ok((code, stderr, log_text))
     }
 
     /// Starts Cedar once at the next sign-in, so the setup carries on by itself after the

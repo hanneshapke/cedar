@@ -41,6 +41,24 @@ pub fn install_docker(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Installs Tailscale (Windows and macOS); the page follows along in `tailscale_setup`.
+#[tauri::command]
+pub fn install_tailscale(app: AppHandle) -> Result<(), String> {
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        if !app.state::<AppState>().begin_tailscale_setup() {
+            return Err("Tailscale is already being installed".into());
+        }
+        tauri::async_runtime::spawn(crate::tssetup::install(app));
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = app;
+        Err("Cedar installs Tailscale only on Windows and macOS".into())
+    }
+}
+
 /// Restarts the PC or signs out to finish the Docker setup, and only when it asks for that.
 #[tauri::command]
 pub fn finish_docker_setup(state: State<'_, AppState>) -> Result<(), String> {
