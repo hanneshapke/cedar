@@ -255,7 +255,8 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
       <pre style="margin:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.7;color:#fbf4ea"><span style="color:#8a7f73"># download and install (on arm64, swap in linux-arm64)</span>
 V={{ ver }}
 F=Cedar-$V-linux-x64
-curl -fLO https://github.com/hanneshapke/cedar/releases/download/v$V/$F.tar.gz
+U=https://github.com/hanneshapke/cedar/releases/download
+curl -fLO $U/v$V/$F.tar.gz
 tar -xzf $F.tar.gz
 sudo install $F/cedar* /usr/local/bin/
 
