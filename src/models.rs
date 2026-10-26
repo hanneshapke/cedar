@@ -112,7 +112,8 @@ pub struct NewRun {
 }
 
 /// Whether a run makes a plan before it starts: always, never, or for prompts long enough to
-/// need one (see [`crate::plan::wanted`]).
+/// need one (see [`crate::plan::wanted`]); or, in `tool` mode, whether the model may propose one
+/// with `propose_plan` when it judges the request needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanMode {
@@ -120,6 +121,7 @@ pub enum PlanMode {
     Off,
     On,
     Auto,
+    Tool,
 }
 
 impl PlanMode {
@@ -128,6 +130,7 @@ impl PlanMode {
             PlanMode::Off => "off",
             PlanMode::On => "on",
             PlanMode::Auto => "auto",
+            PlanMode::Tool => "tool",
         }
     }
 
@@ -136,6 +139,7 @@ impl PlanMode {
             "off" => PlanMode::Off,
             "on" => PlanMode::On,
             "auto" => PlanMode::Auto,
+            "tool" => PlanMode::Tool,
             _ => return None,
         })
     }
@@ -352,7 +356,8 @@ pub struct CreateRunRequest {
     /// Signs those notifications (`X-Cedar-Signature`). Only with `callback_url`; absent for a
     /// continuation keeps the parent's.
     pub callback_secret: Option<String>,
-    /// Plan before starting: `on`, `off` or `auto`. Absent: the server's `PLAN` setting.
+    /// Whether the run plans: `on`, `off`, `auto`, or `tool` (the model may propose a plan with
+    /// `propose_plan`). Absent: the server's `PLAN` setting.
     pub plan: Option<PlanMode>,
     /// The client will answer the run's questions while it goes: agree to its plan
     /// (`POST /v1/runs/{id}/plan`) and approve risky tool calls

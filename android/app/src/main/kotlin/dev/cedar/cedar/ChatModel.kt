@@ -272,6 +272,7 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
                 content = text,
                 model = settings.model.ifEmpty { null },
                 reasoning = settings.reasoning.ifEmpty { null },
+                plan = settings.plan.ifEmpty { null },
                 attachments = files.takeIf { it.isNotEmpty() }?.map {
                     ChatClient.SendMessage.Upload(it.name, it.mediaType, Base64.encodeToString(it.data, Base64.NO_WRAP))
                 },

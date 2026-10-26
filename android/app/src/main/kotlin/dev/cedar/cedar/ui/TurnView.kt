@@ -258,8 +258,10 @@ private fun PlanView(plan: Plan, canAgree: Boolean, agree: () -> Unit) {
         PanelTitle(
             Icons.AutoMirrored.Outlined.ListAlt,
             when {
+                plan.awaiting && plan.isProposed -> "Cedar planned this, waiting for your go-ahead"
                 plan.awaiting -> "Plan, waiting for your go-ahead"
                 plan.by == "timeout" -> "Plan (followed as proposed)"
+                plan.isProposed -> "Cedar's plan"
                 else -> "Plan"
             },
         )
@@ -271,7 +273,9 @@ private fun PlanView(plan: Plan, canAgree: Boolean, agree: () -> Unit) {
             }
         }
         if (plan.awaiting && canAgree) {
-            Button(onClick = { sent = true; agree() }, enabled = !sent) { Text(if (sent) "Sent" else "Go ahead") }
+            Button(onClick = { sent = true; agree() }, enabled = !sent) {
+                Text(if (sent) "Sent" else if (plan.isProposed) "Go on" else "Go ahead")
+            }
         }
     }
 }

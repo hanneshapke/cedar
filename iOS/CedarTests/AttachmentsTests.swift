@@ -54,5 +54,10 @@ final class AttachmentsTests: XCTestCase {
 
         let plain = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ChatClient.SendMessage(content: "hi"))) as? [String: Any]
         XCTAssertNil(plain?["attachments"])
+        // No plan mode means the server's Settings decide, so none is sent.
+        XCTAssertNil(plain?["plan"])
+        let planned = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ChatClient.SendMessage(content: "hi", plan: "tool"))) as? [String: Any]
+        XCTAssertEqual(planned?["plan"] as? String, "tool")
+        XCTAssertEqual(ServerSettings.planModes.map(\.id), ["", "tool", "auto", "on", "off"])
     }
 }

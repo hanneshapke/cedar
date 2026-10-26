@@ -71,6 +71,25 @@ final class TranscriptTests: XCTestCase {
         XCTAssertNil(Questions.parse("not json"))
     }
 
+    func testAPlanCedarProposesMidRunWaitsLikeAnyOther() throws {
+        var transcript = TurnTranscript(turn: turn())
+        transcript.apply(event(1, "assistant.text", .object(["turn": .number(1), "text": .string("Let me plan this.")])))
+        transcript.apply(event(2, "plan", .object([
+            "steps": .array([.object(["id": .string("1"), "title": .string("Search")]), .object(["id": .string("2"), "title": .string("Write")])]),
+            "editable": .bool(true), "awaiting": .bool(true), "origin": .string("tool"),
+        ])))
+        XCTAssertEqual(transcript.awaitingPlan?.isProposed, true)
+        transcript.apply(event(3, "plan.updated", .object(["steps": .array([.string("Search")]), "by": .string("timeout")])))
+        guard case .plan(_, let plan) = transcript.items[1] else { return XCTFail("the plan comes after what Cedar said first") }
+        XCTAssertTrue(plan.isProposed)
+        XCTAssertFalse(plan.awaiting)
+        XCTAssertEqual(plan.by, "timeout")
+
+        var before = TurnTranscript(turn: turn())
+        before.apply(event(1, "plan", .object(["steps": .array([.string("A"), .string("B")]), "awaiting": .bool(true)])))
+        XCTAssertEqual(before.awaitingPlan?.isProposed, false)
+    }
+
     func testPlansAndApprovalsWait() throws {
         var transcript = TurnTranscript(turn: turn())
         transcript.apply(event(1, "run.started", .object([:])))

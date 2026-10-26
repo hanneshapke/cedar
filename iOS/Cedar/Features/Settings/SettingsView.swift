@@ -86,6 +86,18 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Plan", selection: $draft.plan) {
+                        ForEach(ServerSettings.planModes) { mode in
+                            Text(mode.label).tag(mode.id)
+                        }
+                    }
+                } header: {
+                    Text("Plans")
+                } footer: {
+                    Text("Cedar shows its steps and waits for your go-ahead; you can stop it there. With \u{201C}When Cedar thinks it helps\u{201D}, it decides which requests need a plan, so quick questions get none.")
+                }
+
+                Section {
                     Button("Allow Notifications") {
                         Task {
                             await PushRegistrar.shared?.requestAuthorization()

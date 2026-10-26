@@ -7,7 +7,7 @@ use crate::browser::BrowserSession;
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmRouter, MessageRequest};
-use crate::models::{event, Run, Usage, DEFAULT_MAX_TOKENS};
+use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
@@ -101,8 +101,16 @@ pub async fn run_agent(
         _ = tool_set.connect_remote(env.tool_timeout) => {}
     }
     let tools = tool_set.select(run.tools.as_deref());
-    let tool_defs = tools.definitions();
+    let mut tool_defs = tools.definitions();
     let mut note = tools.environment_note(&env.sandbox_network);
+    // In `tool` mode the model decides whether a request needs a plan.
+    let offers_plan = run.plan == PlanMode::Tool;
+    if offers_plan {
+        tool_defs.push(plan::tool_definition());
+        note.push(' ');
+        note.push_str(plan::TOOL_NOTE);
+    }
+    let mut planned = false;
     if ["web_search", "fetch_url", "download_file"]
         .iter()
         .any(|t| tools.get(t).is_some())
@@ -220,6 +228,12 @@ pub async fn run_agent(
                 let mut results = Vec::with_capacity(tool_calls.len());
                 let mut asked = Vec::new();
                 for block in tool_calls {
+                    if offers_plan && block["name"] == plan::TOOL {
+                        let result =
+                            propose_plan(env, run, &mut planned, events, cancel, block).await?;
+                        results.push(result);
+                        continue;
+                    }
                     let result =
                         execute_tool_call(env, run, &tools, &ctx, &mut sources, events, cancel, block)
                             .await?;
@@ -406,24 +420,41 @@ async fn make_plan(
         tracing::info!(run_id = %run.id, "the planning call gave no usable plan");
         return Ok(None);
     };
+    let (steps, _) = settle_plan(env, run, steps, None, events, cancel).await?;
+    Ok(Some(steps))
+}
 
+/// Show `steps` as a `plan` event and, in an interactive run, wait for the user to agree to them.
+/// Returns the steps to follow and who settled them (`user` or `timeout`; `None` when nobody was
+/// asked). `origin` marks a plan the model proposed with [`plan::TOOL`].
+async fn settle_plan(
+    env: &AgentEnv,
+    run: &Run,
+    steps: Vec<plan::Step>,
+    origin: Option<&str>,
+    events: &Emitter,
+    cancel: &CancellationToken,
+) -> Result<(Vec<plan::Step>, Option<&'static str>), AgentError> {
+    let shown = |awaiting: bool| {
+        let mut data = json!({ "steps": steps, "editable": awaiting, "awaiting": awaiting });
+        if let Some(origin) = origin {
+            data["origin"] = json!(origin);
+        }
+        data
+    };
     if !run.interactive {
-        events
-            .emit(event::PLAN, json!({ "steps": steps, "editable": false, "awaiting": false }))
-            .await?;
-        return Ok(Some(steps));
+        events.emit(event::PLAN, shown(false)).await?;
+        return Ok((steps, None));
     }
     let rx = env.waits.register(run.id, "plan");
-    events
-        .emit(event::PLAN, json!({ "steps": steps, "editable": true, "awaiting": true }))
-        .await?;
+    events.emit(event::PLAN, shown(true)).await?;
     match env.waits.wait(run.id, "plan", rx, env.approval_timeout, cancel).await {
         Answer::Cancelled => Err(AgentError::Cancelled),
         Answer::TimedOut => {
             events
                 .emit(event::PLAN_UPDATED, json!({ "steps": steps, "by": "timeout" }))
                 .await?;
-            Ok(Some(steps))
+            Ok((steps, Some("timeout")))
         }
         Answer::Given(answer) => {
             // The API checked the steps before handing them over.
@@ -431,9 +462,38 @@ async fn make_plan(
             events
                 .emit(event::PLAN_UPDATED, json!({ "steps": agreed, "by": "user" }))
                 .await?;
-            Ok(Some(agreed))
+            Ok((agreed, Some("user")))
         }
     }
+}
+
+/// Handle a [`plan::TOOL`] call: show the plan (and wait for it in an interactive run) and return
+/// the `tool_result` block, with the plan to follow or why there is none.
+async fn propose_plan(
+    env: &AgentEnv,
+    run: &Run,
+    planned: &mut bool,
+    events: &Emitter,
+    cancel: &CancellationToken,
+    block: &Value,
+) -> Result<Value, AgentError> {
+    let id = block["id"].as_str().unwrap_or_default();
+    let outcome = if *planned {
+        Err(plan::TOOL_AGAIN.to_string())
+    } else {
+        plan::parse_tool_input(&block["input"])
+    };
+    let content = match outcome {
+        Ok(steps) => {
+            *planned = true;
+            let (steps, by) = settle_plan(env, run, steps, Some("tool"), events, cancel).await?;
+            plan::tool_result(&steps, by)
+        }
+        Err(message) => {
+            return Ok(json!({ "type": "tool_result", "tool_use_id": id, "content": message, "is_error": true }))
+        }
+    };
+    Ok(json!({ "type": "tool_result", "tool_use_id": id, "content": content }))
 }
 
 /// What the model is told when a call it asked for was not approved.

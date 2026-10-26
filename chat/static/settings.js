@@ -364,13 +364,13 @@ const cedarSettings = (() => {
     turns.addEventListener('input', () => { draft.max_turns = turns.value ? Number(turns.value) : null; dirty(); });
     fields.append(field('Max turns per message', turns));
     const plan = el('select');
-    for (const [value, label] of [['auto', 'For longer requests'], ['on', 'Always'], ['off', 'Never']]) plan.append(new Option(label, value));
+    for (const [value, label] of [['auto', 'For longer requests'], ['tool', 'When Cedar thinks it helps'], ['on', 'Always'], ['off', 'Never']]) plan.append(new Option(label, value));
     plan.value = draft.plan || 'auto';
     plan.addEventListener('change', () => { draft.plan = plan.value; dirty(); });
-    fields.append(field('Plan before starting', plan));
+    fields.append(field('Plans', plan));
     parts.push(fields);
     const notes = el('div', 'cedar-set-field-notes');
-    notes.append(el('div', 'cedar-set-field-note', 'Plan before starting: Cedar proposes its steps first and waits until you start it; you can edit them.'));
+    notes.append(el('div', 'cedar-set-field-note', 'Plans: Cedar proposes its steps and waits until you go ahead; you can edit them. With "When Cedar thinks it helps", Cedar decides which requests need a plan, so quick questions get none.'));
     parts.push(notes);
 
     // The system prompt: read as a document, edited as one. Without a saved prompt it shows

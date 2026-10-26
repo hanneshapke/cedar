@@ -1570,6 +1570,19 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
     assert_eq!(second["plan"], "off");
     assert!(second["parent_id"].is_string());
 
+    // A message can choose its own plan mode (the phone apps' setting); a made-up one is refused.
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "third", "plan": " Tool " }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["plan"], "tool");
+    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "fourth", "plan": "maybe" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, prefs) = h.json(Method::PUT, "/api/settings", Some(json!({ "plan": "tool" }))).await;
+    assert_eq!(status, StatusCode::OK, "{prefs}");
+    assert_eq!(prefs["plan"], "tool");
+    let (status, _) = h.json(Method::PUT, "/api/settings", Some(json!({ "plan": "off" }))).await;
+    assert_eq!(status, StatusCode::OK);
+
     // The conversation's own tools win; an explicit model too.
     let (status, conv) =
         h.json(Method::PUT, &format!("/api/conversations/{cid}/tools"), Some(json!({ "tools": ["gmail_search_threads"] }))).await;

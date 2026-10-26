@@ -826,7 +826,7 @@ function showPlan(view, data, awaiting) {
   const waits = awaiting && !view.done && ACTIVE.has(view.turn.status);
   const el = cedarTrust.plan.element(plan, {
     awaiting: waits,
-    note: waits ? 'Change anything, then start.' : data.by === 'user' ? 'Agreed' : data.by === 'timeout' ? 'No answer, so Cedar went ahead' : '',
+    note: waits ? cedarTrust.plan.awaitingNote(plan) : data.by === 'user' ? 'Agreed' : data.by === 'timeout' ? 'No answer, so Cedar went ahead' : '',
     onApprove: (steps) => approvePlan(view, steps),
   });
   if (view.planEl) view.planEl.replaceWith(el); else placeNote(view, el);

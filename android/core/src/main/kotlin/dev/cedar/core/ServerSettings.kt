@@ -15,6 +15,8 @@ data class ServerSettings(
     val model: String = "",
     /** The reasoning level to ask for, or empty for the model's default. */
     val reasoning: String = "",
+    /** Whether messages' runs plan (one of [PLAN_MODES]), or empty for the server's Settings. */
+    val plan: String = "",
 ) {
     val isConfigured: Boolean get() = serverURL.isNotBlank()
 
@@ -46,3 +48,16 @@ data class ServerSettings(
             "tailscale serve gives it: https://<machine>.<tailnet>.ts.net (no port)."
     }
 }
+
+/**
+ * The plan modes a message can ask for, with their labels: Cedar decides (`tool`, it proposes a
+ * plan with `propose_plan` when a request needs one), for longer requests, always, or never.
+ * The empty mode leaves it to the server's Settings.
+ */
+val PLAN_MODES: List<Pair<String, String>> = listOf(
+    "" to "Server setting",
+    "tool" to "When Cedar thinks it helps",
+    "auto" to "For longer requests",
+    "on" to "Always",
+    "off" to "Never",
+)

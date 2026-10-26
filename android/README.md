@@ -27,6 +27,9 @@ The same as the iOS app:
   press. Creating and editing schedules is done on the web
 - Replies stream in as the agent works: the model's reasoning (folded), text, tool calls with
   their input, output, duration and sources, token usage and cost; a stop button cancels
+- A Plans setting for your messages: the server's, when Cedar thinks it helps, for longer
+  requests, always, or never; a plan Cedar chose to make partway through (`propose_plan`) is
+  marked as such
 - Clarifying questions (`ask_user`) as a form; plans to agree to and tool calls to allow or deny
 - The agent's images under the reply, with the Android share sheet
 - Cards drawn natively: charts (legend that hides series, touch to read values, the data as a

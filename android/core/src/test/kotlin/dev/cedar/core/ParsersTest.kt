@@ -177,5 +177,10 @@ class AttachmentsTest {
         assertEquals(j("""[{"name":"a.pdf","media_type":"application/pdf","data":"JVBERg=="}]"""), json["attachments"])
         val plain = CedarJson.encodeToJsonElement(ChatClient.SendMessage.serializer(), ChatClient.SendMessage("hi"))
         assertNull(plain["attachments"])
+        // No plan mode means the server's Settings decide, so none is sent.
+        assertNull(plain["plan"])
+        val planned = CedarJson.encodeToJsonElement(ChatClient.SendMessage.serializer(), ChatClient.SendMessage("hi", plan = "tool"))
+        assertEquals(j("\"tool\""), planned["plan"])
+        assertEquals(listOf("", "tool", "auto", "on", "off"), PLAN_MODES.map { it.first })
     }
 }
