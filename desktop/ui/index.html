@@ -67,6 +67,10 @@
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   footer a { color: inherit; }
+  .update { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border-color: var(--accent); }
+  .update.hidden { display: none; }
+  .update .grow { flex: 1; min-width: 220px; }
+  .update a { color: inherit; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -74,6 +78,16 @@
   <h1>Cedar</h1>
   <span class="version" id="version"></span>
 </header>
+
+<section id="update" class="update hidden">
+  <div class="grow">
+    <strong id="update-title"></strong>
+    <p id="update-text" class="muted"></p>
+  </div>
+  <a id="update-notes" href="#" target="_blank" rel="noreferrer">Release notes</a>
+  <button class="primary" id="update-install">Update</button>
+  <button id="update-dismiss">Dismiss</button>
+</section>
 
 <section id="docker">
   <h2><span class="dot" id="docker-dot"></span>Docker</h2>
@@ -170,6 +184,17 @@
     <button class="hidden" id="share-retry">Try again</button>
   </div>
   <p id="share-error" class="error"></p>
+</section>
+
+<section id="updates">
+  <h2>Updates</h2>
+  <p id="updates-text" class="muted"></p>
+  <div class="row">
+    <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
+      <input type="checkbox" id="updates-toggle"> Check for updates automatically
+    </label>
+    <button id="updates-check">Check now</button>
+  </div>
 </section>
 
 <footer>Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.</footer>

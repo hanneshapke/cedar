@@ -1,0 +1,17 @@
+/* The update banner (update.js), shared by every UI: a bar over the top of the page, drawn with
+   the variables each UI defines, like notify.css. */
+
+.cedar-update { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; width: max-content; max-width: calc(100vw - 32px); padding: 8px 10px 8px 14px; border: 1px solid var(--line, rgba(128, 128, 128, .3)); border-radius: 10px; background: var(--sheet, #fff); color: var(--ink, inherit); box-shadow: 0 4px 18px rgba(40, 30, 10, .14); font-size: 13px; }
+.cedar-update[hidden] { display: none; }
+.cedar-update-text { min-width: 0; }
+.cedar-update-text strong { font-weight: 600; }
+.cedar-update-err { color: #c0392b; }
+.cedar-update-link { color: inherit; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }
+.cedar-update-go, .cedar-update-close { padding: 4px 10px; border: 1px solid var(--line, rgba(128, 128, 128, .3)); border-radius: 7px; background: none; color: inherit; font: inherit; font-size: 12.5px; cursor: pointer; }
+.cedar-update-go { border-color: var(--accent, #2f6f4e); background: var(--accent, #2f6f4e); color: #fff; font-weight: 500; }
+.cedar-update-close { color: var(--muted, inherit); }
+.cedar-update-dialog { width: min(560px, calc(100vw - 32px)); }
+.cedar-update-dialog h3 { margin-top: 0; }
+.cedar-update-commands { overflow-x: auto; padding: 10px 12px; border-radius: 8px; background: var(--wash, rgba(128, 128, 128, .1)); font-size: 12px; line-height: 1.5; white-space: pre; }
+.cedar-update-input { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 7px 10px; border: 1px solid var(--line, rgba(128, 128, 128, .3)); border-radius: 7px; background: var(--paper, transparent); color: inherit; font: inherit; }
+@media (max-width: 600px) { .cedar-update { top: 6px; } }

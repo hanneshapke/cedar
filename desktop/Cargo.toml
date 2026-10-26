@@ -29,6 +29,8 @@ serde_json = "1"
 # The hash the elevated Docker setup checks its script against (src/winsetup.rs).
 sha2 = "0.10"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# Checks the latest release's latest.json, verifies its signature, installs it (src/update.rs).
+tauri-plugin-updater = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "sync", "io-util", "fs", "net"] }
 tokio-util = "0.7"
 url = "2"

@@ -1,0 +1,14 @@
+# Installs the release the chat asked for (scripts/cedar-update.sh, as /usr/local/sbin/cedar-update):
+# download, check against checksums.txt, install into /usr/local/bin, restart cedar and cedar-chat.
+# Started by cedar-update.path; runs as root because the binaries and the services are root's.
+[Unit]
+Description=Install a Cedar update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cedar-update
+TimeoutStartSec=15min
+PrivateTmp=yes
+NoNewPrivileges=yes

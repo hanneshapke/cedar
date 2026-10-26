@@ -4,11 +4,15 @@ use crate::app::AppState;
 use crate::config::Config;
 use crate::supervisor::ServiceState;
 use anyhow::{anyhow, Context, Result};
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use url::Url;
 
 pub const MAIN: &str = "main";
+
+/// Where the chat's update banner (update.js) sends the window for Update and Dismiss: never
+/// loaded, the window catches it (see [`create`]). The chat page has no other way to reach the app.
+const UPDATE_PATH: &str = "/__cedar-app/update/";
 
 /// The setup page's own URL, where Tauri serves `ui/index.html`: `tauri://localhost` on a Mac,
 /// `http://tauri.localhost` on Windows. Not read back from the window after it is built: on
@@ -29,6 +33,8 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
         &cfg.secrets.chat_access_token,
         &cfg.secrets.chat_admin_token,
     );
+    let chat = cfg.chat_url();
+    let handle = app.clone();
     let win = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Cedar")
         .inner_size(1120.0, 780.0)
@@ -39,6 +45,19 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
                 eprintln!("opening {url}: {e:#}");
             }
             NewWindowResponse::Deny
+        })
+        .on_navigation(move |url| match update_action(url, &chat) {
+            Some(action) => {
+                banner_action(&handle, action);
+                false
+            }
+            None => true,
+        })
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                let status = webview.app_handle().state::<AppState>().update();
+                push_update(webview.app_handle(), &status);
+            }
         })
         .build()
         .context("creating the window")?;
@@ -71,6 +90,59 @@ fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
          window.sessionStorage.setItem('cedar-chat-admin', {admin});\n      \
          window.__CEDAR_DESKTOP_APP__ = true;\n    }}\n  }} catch (e) {{}}\n}})();"
     )
+}
+
+#[derive(Debug, PartialEq)]
+enum UpdateAction {
+    Install,
+    Dismiss,
+}
+
+/// The banner's Update or Dismiss, when `url` is the chat's address for it.
+fn update_action(url: &Url, chat: &str) -> Option<UpdateAction> {
+    if url.origin().ascii_serialization() != chat {
+        return None;
+    }
+    match url.path().strip_prefix(UPDATE_PATH)? {
+        "install" => Some(UpdateAction::Install),
+        "dismiss" => Some(UpdateAction::Dismiss),
+        _ => None,
+    }
+}
+
+fn banner_action(app: &AppHandle, action: UpdateAction) {
+    match action {
+        // Only does something while a newer release is known; it is the genuine, signed one.
+        UpdateAction::Install => {
+            tauri::async_runtime::spawn(crate::update::install(app.clone()));
+        }
+        UpdateAction::Dismiss => {
+            if let Err(e) = crate::update::dismiss(app) {
+                eprintln!("dismissing the update: {e:#}");
+            }
+        }
+    }
+}
+
+/// Tells the chat page's banner what the updater knows, when the window shows the chat. The
+/// setup page asks for it itself (`get_status`).
+pub fn push_update(app: &AppHandle, status: &crate::update::UpdateStatus) {
+    let Ok(win) = main_window(app) else {
+        return;
+    };
+    let chat = app.state::<AppState>().config().chat_url();
+    let on_chat = win
+        .url()
+        .map(|u| u.origin().ascii_serialization() == chat)
+        .unwrap_or(false);
+    if !on_chat {
+        return;
+    }
+    let json = crate::update::for_chat(status).to_string();
+    // `cedarUpdate` is a top-level `const` of update.js, not a property of window.
+    let _ = win.eval(format!(
+        "if (typeof cedarUpdate !== 'undefined') cedarUpdate.fromApp({json});"
+    ));
 }
 
 fn main_window(app: &AppHandle) -> Result<WebviewWindow> {
@@ -171,6 +243,18 @@ mod tests {
         ] {
             assert!(open_web_link(&Url::parse(url).unwrap()).is_err(), "{url}");
         }
+    }
+
+    #[test]
+    fn only_the_chats_update_addresses_reach_the_app() {
+        let chat = "http://127.0.0.1:13000";
+        let at = |u: &str| update_action(&Url::parse(u).unwrap(), chat);
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), Some(UpdateAction::Install));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/dismiss?x=1"), Some(UpdateAction::Dismiss));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/other"), None);
+        assert_eq!(at("http://127.0.0.1:13000/"), None);
+        assert_eq!(at("http://127.0.0.1:13001/__cedar-app/update/install"), None);
+        assert_eq!(at("https://example.com/__cedar-app/update/install"), None);
     }
 
     #[test]

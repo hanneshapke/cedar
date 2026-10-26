@@ -8,6 +8,7 @@ use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
 use crate::notify;
 use crate::pairing;
+use crate::update;
 use crate::store::{AttachmentInfo, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, StarredConversation, Store, Turn};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use chrono::Utc;
@@ -107,6 +108,8 @@ const STAR_CSS: &str = include_str!("../static/star.css");
 /// the push subscription; both UIs load it.
 const NOTIFY_JS: &str = include_str!("../static/notify.js");
 const NOTIFY_CSS: &str = include_str!("../static/notify.css");
+const UPDATE_JS: &str = include_str!("../static/update.js");
+const UPDATE_CSS: &str = include_str!("../static/update.css");
 /// The Phone page of Settings: the QR code and token the iOS and Android apps connect with; every UI loads it.
 const PAIRING_JS: &str = include_str!("../static/pairing.js");
 /// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
@@ -209,6 +212,8 @@ pub struct AppState {
     pub apns: Arc<channels::Apns>,
     /// The Google access token FCM (Android push) is sent with (`channels`).
     pub fcm: Arc<channels::Fcm>,
+    /// The latest release, as the update check last found it (`update`).
+    pub updates: Arc<update::Updates>,
     /// Cancelled when the server begins to shut down. Ends the event streams, which would
     /// otherwise hold the graceful shutdown open for as long as a client stays connected.
     pub shutdown: CancellationToken,
@@ -223,7 +228,7 @@ impl AppState {
         let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), shutdown: CancellationToken::new() })
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new() })
     }
 }
 
@@ -260,6 +265,8 @@ pub fn router(state: AppState) -> Router {
         .route("/schedules/{id}/run", post(run_schedule_now))
         .route("/settings", get(get_settings).put(put_settings))
         .route("/pairing", get(get_pairing))
+        .route("/update", get(get_update).post(install_update))
+        .route("/update/check", post(check_update))
         .route("/tools", get(list_tools))
         .route("/models", get(list_models))
         .route("/integrations", get(get_integrations))
@@ -318,6 +325,8 @@ pub fn router(state: AppState) -> Router {
         .route("/star.css", get(|| async { asset(CSS, STAR_CSS) }))
         .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
         .route("/notify.css", get(|| async { asset(CSS, NOTIFY_CSS) }))
+        .route("/update.js", get(|| async { asset(JS, UPDATE_JS) }))
+        .route("/update.css", get(|| async { asset(CSS, UPDATE_CSS) }))
         .route("/pairing.js", get(|| async { asset(JS, PAIRING_JS) }))
         .route("/sw.js", get(|| async { asset(JS, SW_JS) }))
         .route("/trust-view.js", get(|| async { asset(JS, TRUST_VIEW_JS) }))
@@ -447,6 +456,35 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
 /// whether Tailscale is ready to serve the chat to them (see `pairing`).
 async fn get_pairing(State(state): State<AppState>) -> Json<pairing::Pairing> {
     Json(pairing::pairing(&state).await)
+}
+
+// -- updates --------------------------------------------------------------------------------
+
+/// The update banner: this version, the latest release, and how far an install got.
+async fn get_update(State(state): State<AppState>) -> Json<update::Status> {
+    Json(update::status(&state, state.admin_digest.is_some()))
+}
+
+/// "Check now": looks the latest release up (at most once a minute) and answers like `GET`.
+async fn check_update(State(state): State<AppState>) -> Json<update::Status> {
+    if let Err(e) = update::check(&state, false).await {
+        tracing::warn!(error = %format!("{e:#}"), "update check failed");
+    }
+    Json(update::status(&state, state.admin_digest.is_some()))
+}
+
+/// The banner's Update: hands the latest release to the root `cedar-update` unit (admin only).
+async fn install_update(State(state): State<AppState>, headers: HeaderMap) -> Result<(StatusCode, Json<update::Status>), AppError> {
+    if state.admin_digest.is_none() {
+        return Err(AppError::Forbidden("updates are installed by hand here (CHAT_ADMIN_TOKEN is not set)".into()));
+    }
+    require_admin(&state, &headers)?;
+    match update::request_install(&state) {
+        Ok(_) => Ok((StatusCode::ACCEPTED, Json(update::status(&state, true)))),
+        Err(e @ update::RequestError::NotSetUp) => Err(AppError::Forbidden(e.to_string())),
+        Err(e @ (update::RequestError::NothingNewer | update::RequestError::Running)) => Err(AppError::Conflict(e.to_string())),
+        Err(update::RequestError::Io(e)) => Err(AppError::Internal(anyhow::anyhow!(e))),
+    }
 }
 
 // -- conversations --------------------------------------------------------------------------

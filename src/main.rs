@@ -17,6 +17,11 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // For scripts/cedar-update.sh, which compares the installed version with the release's.
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("cedar {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),

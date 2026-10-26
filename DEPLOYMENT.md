@@ -445,6 +445,46 @@ sudo systemctl restart cedar cedar-chat
 Restarting `cedar` ends any run in progress (it is marked `failed`), so do it when nothing is
 working. Finished conversations are kept.
 
+### Updates
+
+The chat checks GitHub for a newer release every six hours and shows a banner when there is one
+(`CHAT_UPDATE_CHECK=off` in `chat.env` turns that off). Without more setup its *How to update*
+shows the commands to run. To have its **Update** button install the release, set up the
+`cedar-update` unit once. It runs as root, because the binaries and the services are root's,
+and only when the chat asks: an admin's *Update* writes the requested version to
+`/var/lib/cedar/update/request`, a systemd path unit starts `cedar-update`, which downloads that
+release's tarball and `checksums.txt` from GitHub, checks the tarball against it, installs
+`cedar` and `cedar-chat` (keeping the old ones as `*.prev`), restarts both services, and puts the
+old binaries back if cedar doesn't come up healthy. The banner shows each step. From the
+unpacked release tarball (or `scripts/` in a checkout, where the script is `cedar-update.sh`):
+
+```sh
+sudo install -m 0755 cedar-update /usr/local/sbin/cedar-update
+sudo install -m 0644 cedar-update.path cedar-update.service /etc/systemd/system/
+sudo install -d -o cedar -g cedar -m 0750 /var/lib/cedar/update
+echo "CHAT_UPDATE_DIR=/var/lib/cedar/update" | sudo tee -a /etc/cedar/chat.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now cedar-update.path
+sudo systemctl restart cedar-chat
+```
+
+The chat only passes a version on; the unit checks it is a release version newer than the one
+installed and builds the download address itself. It needs `curl` and outbound HTTPS to
+`github.com`. Starting an update from the page needs the admin token (`CHAT_ADMIN_TOKEN`).
+The same works from a shell:
+
+```sh
+sudo cedar-update --check    # installed and latest version
+sudo cedar-update            # install the latest release
+sudo cedar-update 0.1.9      # install that one (--force to go back to an older one)
+journalctl -u cedar-update   # what the last run did
+```
+
+The sandbox image is left alone, since step 3 builds it from `sandbox/`. To use the published
+one instead, put `CEDAR_UPDATE_PULL_IMAGE=1` in `/etc/cedar/update.env`: the unit then pulls
+`ghcr.io/hanneshapke/cedar-sandbox:<version>` and tags it `cedar-sandbox` (or
+`CEDAR_SANDBOX_IMAGE`) before restarting.
+
 **Backups.** State is two SQLite files in `/var/lib/cedar/`: `cedar.db` (runs, conversations,
 events) and `cedar-chat.db` (the chat sidebar). Both use WAL, so copy them with SQLite rather
 than `cp`:

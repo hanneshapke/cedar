@@ -244,9 +244,33 @@ Server) or set `PRODUCTS=off` on cedar to remove the tool.
 | `CHAT_FCM_URL` | `https://fcm.googleapis.com` | Where Android pushes through Firebase go (`…/v1/projects/{project}/messages:send`; for tests) |
 | `CHAT_GOOGLE_TOKEN_URL` | `https://oauth2.googleapis.com/token` | Where the Firebase service account's signed assertion is traded for an access token (for tests) |
 | `CHAT_TAILSCALE_CLI` | found | The `tailscale` CLI that Settings → Phone asks about Tailscale, when it isn't in the usual places or on `PATH` |
+| `CHAT_UPDATE_CHECK` | `on` | Look up the latest GitHub Release a minute after the start and every six hours, and show a banner when it is newer (see [Updates](#updates)). `off` makes no requests to GitHub. The desktop app sets it `off`, it updates itself |
+| `CHAT_UPDATE_DIR` | unset | The directory the root `cedar-update` unit watches (`/var/lib/cedar/update` in [DEPLOYMENT.md](../DEPLOYMENT.md#updates)). When set, an admin's *Update* in the banner installs the release; otherwise the banner shows the commands to run |
+| `CHAT_UPDATE_URL` | `https://api.github.com/repos/hanneshapke/cedar/releases/latest` | Where the latest release is looked up (for tests) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
+
+## Updates
+
+When a release newer than this cedar-chat is out, every UI shows a banner at the top with its
+release notes, **Update** and **Dismiss** (dismissed for that version, in that browser). The
+check is a `GET` of GitHub's latest-release API, with the ETag of the last answer so an unchanged
+release costs nothing; it sends nothing about this server but its version in the User-Agent.
+
+What *Update* does depends on where the chat runs:
+
+- **Linux under systemd, with the `cedar-update` unit** ([DEPLOYMENT.md](../DEPLOYMENT.md#updates)):
+  it asks for the admin token if the tab doesn't have it, writes `{"version": …}` to
+  `$CHAT_UPDATE_DIR/request`, and the root unit downloads the release's tarball for this CPU and
+  `checksums.txt` from GitHub, checks the tarball against it, installs both binaries, restarts
+  both services, and puts the old binaries back if cedar doesn't come up. The banner follows its
+  progress (`status.json` in the same directory) and reloads the page once the new version
+  answers. Restarting ends a response that is still running, and the banner says so before it
+  starts.
+- **Linux without it**, or built from source: *How to update* shows the commands to run.
+- **The Mac and Windows app**: the app updates itself (see
+  [desktop/README.md](../desktop/README.md#updates)) and drives this banner.
 
 ## How conversations map onto cedar
 
@@ -507,6 +531,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/config` | `{auth_required, admin_enabled}` |
+| `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
+| `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
+| `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
 | `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations a schedule created are left out |
 | `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
 | `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen` |

@@ -127,6 +127,31 @@ signature and running it. Its progress and any error go to `docker-setup.log` in
 
 <a id="using-it-from-an-iphone-or-ipad"></a>
 
+## Updates
+
+A minute after it starts and then every six hours, Cedar asks the latest GitHub Release whether
+there is a newer version (its `latest.json`). When there is, a banner says so at the top of the
+chat and of the setup page, and the menu bar (tray) menu offers *Update to Cedar <version>…*.
+**Update**:
+
+1. downloads the release's update bundle (the app from the DMG on a Mac, the MSI on Windows) and
+   checks its signature against the key built into this app; a bundle that isn't signed by the
+   release workflow, or that is signed for another version than `latest.json` claims, is refused,
+2. stops the servers (a response still running is stopped, which the banner says before you
+   click),
+3. installs it: on a Mac the app in Applications is replaced and Cedar starts again; on Windows
+   the MSI runs with a progress bar, asks for administrator rights like the first install, and
+   starts Cedar again when it is done.
+
+Settings and conversations are kept, as with any upgrade. **Dismiss** hides the banner until a
+later release is out. The setup page's *Updates* section checks now, and turns the checks off
+(`check_updates` in `config.json`). Builds made without the release workflow's key (`cargo tauri
+dev`, a build of your own) don't check at all.
+
+The chat page in the window gets no access to the app: its banner only shows what the app tells
+it, and its buttons send the window to `/__cedar-app/update/install` or `…/dismiss` on the chat's
+own address, which the window catches instead of loading (`src/window.rs`).
+
 ## Using it from an iPhone, iPad or Android phone
 
 The [iOS app](../iOS/README.md) and the Android app connect over HTTPS only, so the setup page's
@@ -225,6 +250,8 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "browser": false,
   "tailscale_share": false,
   "tailscale_https_port": 443,
+  "check_updates": true,
+  "dismissed_update": "",
   "cedar_env": { "SANDBOX_NETWORK": "bridge", "RUN_TIMEOUT_SECS": "1800" },
   "chat_env": {},
   "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…", "chat_admin_token": "…" }
@@ -322,7 +349,9 @@ pull request from a branch named `release/<version>` is merged into `main`:
 3. The workflow checks the versions match the branch and the tag is free, runs the tests, builds
    and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>` and `cedar-browser:<version>` for
    amd64 and arm64 (and `:latest`), builds the Apple Silicon DMG and the x64 MSI, and creates
-   the GitHub Release `v<version>` with them and a `checksums.txt`.
+   the GitHub Release `v<version>` with them, a `checksums.txt`, the signed update bundles
+   (`Cedar-<version>-apple-silicon.app.tar.gz` and the MSI, each with a `.sig`) and
+   `latest.json`, which installed apps read to find the update (see [Updates](#updates)).
 
 *Run workflow* in the Actions tab builds everything for a version from the current commit as
 artifacts, without a tag or release, to try the pipeline. The images are pushed under that
@@ -337,6 +366,15 @@ One-time setup:
   App Store Connect API key the iOS TestFlight upload uses: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and
   `ASC_KEY_P8` (see [the iOS README](../iOS/README.md#testflight)). The dmg job fails up front if
   any is missing.
+- **Updater key.** Generate it once on your computer with `cargo tauri signer generate -w
+  ~/.tauri/cedar-updater.key` (with a password), then add the private key's contents as the
+  secret `TAURI_SIGNING_PRIVATE_KEY`, the password as `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and
+  the public key (the `.pub` file's contents) as the repository **variable**
+  `CEDAR_UPDATER_PUBKEY` (Settings → Secrets and variables → Actions → Variables). The release
+  builds the public key into the app and signs every update with the private one; the dmg and
+  msi jobs fail up front without them. Keep the key safe and never change it: installed apps
+  only accept updates signed with it, so a new key means everyone installs the next release by
+  hand.
 - **Windows signing.** Not set up yet: the MSI and `Cedar.exe` ship unsigned, so SmartScreen
   warns on first run (see [Installing](#windows)). Signing needs an Authenticode certificate or
   Azure Trusted Signing; Tauri signs during `cargo tauri build` once `bundle.windows` in

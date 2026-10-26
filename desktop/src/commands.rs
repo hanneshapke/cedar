@@ -145,3 +145,26 @@ pub fn open_logs(state: State<'_, AppState>) -> Result<(), String> {
 pub fn copy_token(state: State<'_, AppState>) -> Result<(), String> {
     crate::tray::copy_to_clipboard(&state.config().secrets.chat_access_token).map_err(fail)
 }
+
+/// "Check now" on the setup page.
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle) -> Result<(), String> {
+    crate::update::check(&app).await.map_err(fail)
+}
+
+/// The banner's Update: downloads and installs the newer release, then restarts into it.
+#[tauri::command]
+pub fn install_update(app: AppHandle) {
+    tauri::async_runtime::spawn(crate::update::install(app));
+}
+
+/// Hides the banner until a later release than this one is out.
+#[tauri::command]
+pub fn dismiss_update(app: AppHandle) -> Result<(), String> {
+    crate::update::dismiss(&app).map_err(fail)
+}
+
+#[tauri::command]
+pub fn set_check_updates(app: AppHandle, enabled: bool) -> Result<(), String> {
+    crate::update::set_enabled(&app, enabled).map_err(fail)
+}

@@ -154,6 +154,41 @@ function render(s) {
 
   $('open-chat').disabled = !running;
   $('open-browser').disabled = !running;
+
+  renderUpdate(s);
+}
+
+// A newer release (see src/update.rs): the banner at the top, and the Updates section.
+function renderUpdate(s) {
+  const u = s.update;
+  const busy = u.state === 'downloading' || u.state === 'installing';
+  const show = Boolean(u.version) && (busy || u.state === 'failed' || !u.dismissed);
+  $('update').classList.toggle('hidden', !show);
+  if (show) {
+    $('update-title').textContent = busy ? 'Updating to Cedar ' + u.version : 'Cedar ' + u.version + ' is available';
+    $('update-text').className = u.state === 'failed' ? 'error' : 'muted';
+    $('update-text').textContent = busy
+      ? (u.detail || 'Working…')
+      : u.state === 'failed'
+        ? 'The update failed: ' + u.detail
+        : 'You have ' + u.current + '. Updating restarts Cedar, which stops a response that is still running.';
+    $('update-notes').href = u.notes_url || '#';
+    $('update-install').textContent = u.state === 'failed' ? 'Try again' : 'Update';
+    $('update-install').disabled = busy;
+    $('update-dismiss').classList.toggle('hidden', busy);
+  }
+
+  const toggle = $('updates-toggle');
+  if (document.activeElement !== toggle) toggle.checked = s.check_updates;
+  $('updates-check').disabled = !u.enabled || u.state === 'checking' || busy;
+  let text;
+  if (!u.enabled && s.check_updates) text = 'This build of Cedar ' + u.current + ' doesn’t update itself; releases from the releases page do.';
+  else if (!s.check_updates) text = 'Cedar ' + u.current + '. Automatic checks are off.';
+  else if (u.state === 'checking') text = 'Cedar ' + u.current + '. Checking…';
+  else if (u.version) text = 'Cedar ' + u.current + '. Cedar ' + u.version + ' is available.';
+  else if (u.detail) text = 'Cedar ' + u.current + '. The last check failed: ' + u.detail;
+  else text = 'Cedar ' + u.current + '. Cedar looks for a newer release every few hours.';
+  $('updates-text').textContent = text;
 }
 
 // Setting Docker up from here (Windows only): offered while Docker is missing or won't start, and
@@ -318,6 +353,16 @@ document.addEventListener('click', (ev) => {
   if (!a || !/^https?:\/\//i.test(a.href)) return;
   ev.preventDefault();
   invoke('open_url', { url: a.href }).catch((e) => alert(e));
+});
+$('update-install').addEventListener('click', () => invoke('install_update').then(refresh).catch((e) => alert(e)));
+$('update-dismiss').addEventListener('click', () => invoke('dismiss_update').then(refresh).catch((e) => alert(e)));
+$('updates-check').addEventListener('click', () => {
+  // The result shows on the next refresh; a failure is in the section's text.
+  invoke('check_for_updates').catch(() => {}).finally(refresh);
+  setTimeout(refresh, 100);
+});
+$('updates-toggle').addEventListener('change', (ev) => {
+  invoke('set_check_updates', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
 });
 $('open-logs').addEventListener('click', () => invoke('open_logs').catch((e) => alert(e)));
 

@@ -14,3 +14,4 @@ pub mod pairing;
 pub mod prompt;
 pub mod schedule;
 pub mod store;
+pub mod update;

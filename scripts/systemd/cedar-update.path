@@ -1,0 +1,11 @@
+# Starts cedar-update.service when the chat's Update button asks for a release (it writes
+# /var/lib/cedar/update/request). See DEPLOYMENT.md, "Updates".
+[Unit]
+Description=Watch for Cedar update requests from the chat
+
+[Path]
+PathExists=/var/lib/cedar/update/request
+Unit=cedar-update.service
+
+[Install]
+WantedBy=multi-user.target
