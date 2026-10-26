@@ -39,7 +39,8 @@ impl Tool for AskUser {
          checkboxes with multi_select when several may apply; the user can always answer in their \
          own words instead, so don't add an \"Other\" choice. Ask up to 4 questions in one call. \
          The run ends after this call, and the answers come back as the user's next message. Don't \
-         ask about what you can find out yourself or reasonably assume."
+         ask about what you can find out yourself or reasonably assume, and don't use it to show a \
+         plan or to ask whether to go ahead with one: ask about the choice itself."
     }
 
     fn schema(&self) -> Value {

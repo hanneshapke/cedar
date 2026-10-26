@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **A personal assistant by default.** The default system prompt (used when `SYSTEM_PROMPT` isn't set) now frames Cedar as a personal AI assistant instead of a coding agent: it answers first, asks clarifying questions when the answer would change what it does, writes a short plan before complex tasks (and follows one already agreed with `PLAN`), checks before anything it can't undo, and keeps your information private (#83).
+- **A personal assistant by default.** The default system prompt (used when `SYSTEM_PROMPT` isn't set) now frames Cedar as a personal AI assistant instead of a coding agent: it answers first, asks clarifying questions when the answer would change what it does, writes a short plan before complex tasks and carries it out (following one already agreed with `PLAN`), checks before anything it can't undo, and keeps your information private (#83).
 
 ## 0.1.6
 
