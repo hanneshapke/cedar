@@ -105,7 +105,7 @@ pub struct ServerModelsQuery {
 }
 
 /// Tells an explicit `null` (`Some(None)`) apart from an absent field (`None`, via `default`).
-fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+pub(crate) fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,

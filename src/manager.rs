@@ -1,5 +1,12 @@
 //! Owns the lifecycle of runs inside this process: queueing, cancellation, timeouts, and making
-//! sure every run ends in exactly one terminal state with its sandbox (and browser) destroyed.
+//! sure every run ends in exactly one terminal state with its browser destroyed and its sandbox
+//! destroyed or kept.
+//!
+//! A run that completes keeps its sandbox for the next run in its workspace (the conversation's
+//! next turn), so what it left running and installed is still there. Once the conversation has
+//! been idle for the `sandbox_idle_minutes` setting (an admin sets it with
+//! `PUT /v1/admin/settings`), the sandbox is paused; the next run resumes it. It is destroyed with
+//! its workspace, when the server stops, or when a run that used it doesn't complete.
 
 use crate::agent::{run_agent, AgentEnv, AgentError, Completion};
 use crate::browser::{BrowserFactory, BrowserSession};
@@ -8,6 +15,7 @@ use crate::models::{event, Run, RunStatus};
 use crate::sandbox::{Sandbox, SandboxFactory};
 use crate::store::{Finish, Store};
 use anyhow::Result;
+use futures_util::future::join_all;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +28,65 @@ use uuid::Uuid;
 
 /// Where a run's sandbox is parked once created, so cleanup doesn't depend on the run task finishing.
 type SandboxSlot = Arc<Mutex<Option<Arc<dyn Sandbox>>>>;
+
+/// How long a conversation's sandbox keeps running after a turn when no admin has said.
+pub const DEFAULT_IDLE_MINUTES: u32 = 10;
+/// The most `sandbox_idle_minutes` accepts: a day.
+pub const MAX_IDLE_MINUTES: u32 = 24 * 60;
+/// Where the setting is saved in the settings table.
+const IDLE_SETTING: &str = "sandbox_idle_minutes";
+
+/// The saved `sandbox_idle_minutes`, or `None` when it is the default.
+pub async fn saved_idle_minutes(store: &Store) -> Result<Option<u32>> {
+    let value = store.setting(IDLE_SETTING).await?;
+    Ok(value
+        .and_then(|v| v.as_u64())
+        .and_then(|n| u32::try_from(n).ok()))
+}
+
+/// How long, in minutes, a sandbox is kept running after its run before it is paused.
+pub async fn idle_minutes(store: &Store) -> Result<u32> {
+    Ok(saved_idle_minutes(store)
+        .await?
+        .unwrap_or(DEFAULT_IDLE_MINUTES))
+}
+
+/// Whether `minutes` is in the range `sandbox_idle_minutes` accepts; the error says what is.
+pub fn check_idle_minutes(minutes: u32) -> Result<(), String> {
+    if minutes <= MAX_IDLE_MINUTES {
+        Ok(())
+    } else {
+        Err(format!(
+            "sandbox_idle_minutes must be between 0 and {MAX_IDLE_MINUTES}"
+        ))
+    }
+}
+
+/// Save `sandbox_idle_minutes` (see [`check_idle_minutes`]), or go back to the default with
+/// `None`. It applies from the next run that ends.
+pub async fn set_idle_minutes(store: &Store, minutes: Option<u32>) -> Result<()> {
+    store
+        .set_setting(IDLE_SETTING, minutes.map(|n| json!(n)).as_ref())
+        .await
+}
+
+/// A completed run's sandbox, kept for the next run in its workspace.
+struct Parked {
+    sandbox: Arc<dyn Sandbox>,
+    /// Cancels the pending pause.
+    stop: CancellationToken,
+    /// Pauses the sandbox once the idle time is up.
+    pausing: tokio::task::JoinHandle<()>,
+}
+
+impl Parked {
+    /// Cancel the pending pause, or wait for one already under way, and hand the sandbox back.
+    async fn take(self) -> Arc<dyn Sandbox> {
+        self.stop.cancel();
+        let _ = self.pausing.await;
+        self.sandbox
+    }
+}
 
 #[derive(Clone)]
 pub struct RunManager(Arc<Inner>);
@@ -40,6 +107,8 @@ struct Inner {
     shutting_down: AtomicBool,
     /// Stops background housekeeping on shutdown.
     stop: CancellationToken,
+    /// Sandboxes kept for their workspace's next run, by workspace.
+    parked: Mutex<HashMap<Uuid, Parked>>,
 }
 
 impl RunManager {
@@ -64,6 +133,7 @@ impl RunManager {
             tracker: TaskTracker::new(),
             shutting_down: AtomicBool::new(false),
             stop: CancellationToken::new(),
+            parked: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -119,8 +189,13 @@ impl RunManager {
         Ok(())
     }
 
-    /// Delete a workspace's files. Failures are logged; startup recovery retries them.
+    /// Delete a workspace's files, and the sandbox kept for it. Failures are logged; startup
+    /// recovery retries them.
     pub async fn remove_workspace(&self, workspace_id: Uuid) {
+        // A container that still mounts the volume would keep it from being removed.
+        if let Some(sandbox) = self.0.unpark(workspace_id).await {
+            sandbox.destroy().await;
+        }
         if let Err(e) = self.0.sandboxes.remove_workspace(workspace_id).await {
             tracing::warn!(%workspace_id, error = %format!("{e:#}"), "could not remove workspace");
         }
@@ -194,7 +269,8 @@ impl RunManager {
         }
     }
 
-    /// Second phase: wait (up to `grace`) for run tasks to finish recording their final state.
+    /// Second phase: wait (up to `grace`) for run tasks to finish recording their final state,
+    /// then destroy the sandboxes kept for idle conversations.
     pub async fn drain(&self, grace: Duration) {
         self.0.tracker.close();
         if tokio::time::timeout(grace, self.0.tracker.wait())
@@ -203,6 +279,13 @@ impl RunManager {
         {
             tracing::warn!("runs were still finishing after the shutdown grace period");
         }
+        let parked = std::mem::take(&mut *self.0.parked.lock().unwrap());
+        join_all(
+            parked
+                .into_values()
+                .map(|p| async move { p.take().await.destroy().await }),
+        )
+        .await;
     }
 }
 
@@ -235,7 +318,13 @@ impl Inner {
         };
         let leftover = sandbox.lock().unwrap().take();
         if let Some(sandbox) = leftover {
-            sandbox.destroy().await;
+            // Kept before the run is finalized, so a continuation (which can only be created
+            // once it is) finds it. Shutdown destroys whatever is kept once runs have drained.
+            if outcome.is_ok() && !self.shutting_down.load(Ordering::SeqCst) {
+                self.park(run.workspace_id, sandbox).await;
+            } else {
+                sandbox.destroy().await;
+            }
         }
         if let Some(browser) = browser {
             browser.destroy().await;
@@ -277,7 +366,11 @@ impl Inner {
             .await?;
 
         // Parked in `slot` so `execute` can destroy it whichever way this function ends.
-        let sandbox = match self.sandboxes.create(run.id, run.workspace_id).await {
+        let sandbox = match self.resume(run).await {
+            Some(sandbox) => Ok(sandbox),
+            None => self.sandboxes.create(run.id, run.workspace_id).await,
+        };
+        let sandbox = match sandbox {
             Ok(sandbox) => sandbox,
             Err(e) => {
                 // The detail (daemon socket paths, image names, ...) is for operators, not API clients.
@@ -307,6 +400,59 @@ impl Inner {
                         )));
                     }
                 }
+            }
+        }
+    }
+
+    /// Keep a completed run's sandbox for the next run in `workspace_id`, and pause it once that
+    /// hasn't come for the `sandbox_idle_minutes` setting.
+    async fn park(&self, workspace_id: Uuid, sandbox: Arc<dyn Sandbox>) {
+        let minutes = idle_minutes(&self.store).await.unwrap_or_else(|e| {
+            tracing::warn!(error = %format!("{e:#}"), "could not read sandbox_idle_minutes; using the default");
+            DEFAULT_IDLE_MINUTES
+        });
+        let idle = Duration::from_secs(u64::from(minutes) * 60);
+        let stop = CancellationToken::new();
+        let pausing = {
+            let (sandbox, stop) = (sandbox.clone(), stop.clone());
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = stop.cancelled() => {}
+                    _ = tokio::time::sleep(idle) => {
+                        sandbox.pause().await;
+                        tracing::info!(%workspace_id, "paused an idle sandbox");
+                    }
+                }
+            })
+        };
+        let parked = Parked {
+            sandbox,
+            stop,
+            pausing,
+        };
+        // A workspace has one run at a time, so there is no other; but never leak one.
+        let replaced = self.parked.lock().unwrap().insert(workspace_id, parked);
+        if let Some(old) = replaced {
+            old.take().await.destroy().await;
+        }
+    }
+
+    /// Take back the sandbox kept for `workspace_id`, if there is one.
+    async fn unpark(&self, workspace_id: Uuid) -> Option<Arc<dyn Sandbox>> {
+        let parked = self.parked.lock().unwrap().remove(&workspace_id)?;
+        Some(parked.take().await)
+    }
+
+    /// The sandbox kept for the run's workspace, resumed; `None` if there is none or it can't be
+    /// resumed, so a new one is started on the same workspace.
+    async fn resume(&self, run: &Run) -> Option<Arc<dyn Sandbox>> {
+        let sandbox = self.unpark(run.workspace_id).await?;
+        match sandbox.resume().await {
+            Ok(()) => Some(sandbox),
+            Err(e) => {
+                tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not resume the kept sandbox; starting a new one");
+                sandbox.destroy().await;
+                None
             }
         }
     }

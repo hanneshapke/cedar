@@ -7,12 +7,12 @@ A backend service in Rust for running LLM agents against any OpenAI-compatible s
 ## How it works
 
 1. `POST /v1/runs` stores a `queued` run and returns `202`.
-2. When a slot is free (`MAX_CONCURRENT_RUNS`), the run starts: cedar creates a sandbox container for it and runs the agent loop.
+2. When a slot is free (`MAX_CONCURRENT_RUNS`), the run starts: cedar creates a sandbox container for it (or resumes the one its conversation kept, see [Continuing a run](#continuing-a-run)) and runs the agent loop.
 3. The loop sends the conversation, system prompt, and tool definitions to the LLM server's chat-completions API. The reply is scanned for content blocks:
    - `text` is collected as the answer.
    - `tool_use` (a tool call) is executed in the run's sandbox and the result is sent back as a `tool_result`. Errors are returned to the model with `is_error: true` so it can recover.
 4. If the stop reason is `tool_use`, go back to step 3. Otherwise the run is `completed` with the text of the last turn.
-5. The sandbox is destroyed and the run ends in exactly one terminal state: `completed`, `failed`, or `cancelled`.
+5. The run ends in exactly one terminal state: `completed`, `failed`, or `cancelled`. A completed run's sandbox is kept for the conversation's next run; otherwise it is destroyed.
 
 Runs, the full conversation, and an append-only event log are stored in SQLite. A run gives up with `failed` after `max_turns` round trips (capped by `MAX_TURNS_CAP`) or `RUN_TIMEOUT_SECS` of wall-clock time.
 
@@ -76,7 +76,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
-| `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, today `{"max_image_side"}`: the longer side, in pixels, attached images are downscaled to (256–8192; `null` for the default, 1568). Returns `{max_image_side, defaults}`. See [Attachments](#attachments). |
+| `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
 | `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
@@ -316,8 +316,13 @@ curl -s localhost:8080/v1/runs -H "Authorization: Bearer devkey" \
 - The new run starts with a copy of the parent's messages, including its tool calls, and appends
   the new prompt. If the parent stopped in the middle of a tool call, that call gets an error
   result so the conversation stays valid.
-- It mounts the parent's workspace, so files under `/workspace` are kept. Each run still gets a
-  new container, so running processes are not.
+- It mounts the parent's workspace, so files under `/workspace` are kept. If the parent
+  completed, the continuation also gets the parent's container back, so processes it left running
+  and anything it installed outside `/workspace` are still there. That container keeps running for
+  `sandbox_idle_minutes` (10 unless an admin sets it with `PUT /v1/admin/settings`, 0–1440) after
+  the run ends, and is then paused (`docker pause`: its processes are frozen and use no CPU). The
+  continuation resumes it. If the parent failed or was cancelled, or its container can't be
+  resumed, the continuation gets a new container on the same workspace.
 - The model, its reasoning level and the system prompt come from the parent unless the request sets them. A continuation of a run whose model has since been removed from the registry is refused until the request names another.
 - A run can be continued once, and only after it has finished, so a chain of runs is a straight
   line and never shares a workspace with a run that is still going. To keep going, continue from
@@ -327,7 +332,8 @@ curl -s localhost:8080/v1/runs -H "Authorization: Bearer devkey" \
 Workspaces are kept for `WORKSPACE_TTL_SECS` (default 86400) after their last run ends, then
 removed. A continuation of a run whose workspace has expired still gets the conversation, but
 starts with an empty workspace, and the model is told so. Deleting the last run that uses a
-workspace removes it straight away.
+workspace removes it straight away. A kept container goes with its workspace, and is removed when
+cedar stops.
 
 ## Workspace files
 
@@ -825,7 +831,7 @@ The `definition()` method builds the tool definition for the LLM client, so you 
 
 The agent runs arbitrary commands, so isolation is the point of the design:
 
-- Each run gets its own container, created at the start and removed at the end, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Containers run as a non-root user with all capabilities dropped, `no-new-privileges`, and memory, CPU, and process limits. Networking is off (`SANDBOX_NETWORK=none`) unless you change it.
+- Each conversation gets its own container, created by its first run and kept (paused once idle) for its continuations until its workspace goes or cedar stops, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Containers run as a non-root user with all capabilities dropped, `no-new-privileges`, and memory, CPU, and process limits. Networking is off (`SANDBOX_NETWORK=none`) unless you change it.
 - Every file and command operation goes through `docker exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
 - Model servers' API keys and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
 - With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. With `plan_trip` enabled, a trip's start, destination, and time go to the transit planner and the driving router (Transitous and the OSRM demo server by default). Set `WEATHER=off`, `MAPS=off`, and `TRANSIT=off` if that is not acceptable.

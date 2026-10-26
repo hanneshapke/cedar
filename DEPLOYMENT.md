@@ -10,7 +10,7 @@ see the [desktop app](desktop/README.md): one DMG or MSI, no systemd.
 laptop browser ──SSH tunnel───────────┐
 phones / any device ───Tailscale HTTPS┴─▶ cedar-chat :3000 ──▶ cedar :8080 ──▶ vLLM :8000 (DeepSeek V4)
                                                                      │
-                                                                     └──▶ one Docker container per run (the agent's tools)
+                                                                     └──▶ one Docker container per conversation (the agent's tools)
 ```
 
 | Service | What it is | Listens on | Started by |

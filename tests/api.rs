@@ -110,7 +110,7 @@ async fn a_run_executes_tools_and_completes() {
     assert!(run["started_at"].is_string() && run["finished_at"].is_string());
     assert_eq!(run["error"], Value::Null);
 
-    // The sandbox ran the command and was torn down afterwards.
+    // The sandbox ran the command, and is kept running for the conversation's next turn.
     let commands = app.factory.sandbox(0).commands.lock().unwrap().clone();
     assert_eq!(commands.len(), 3, "{commands:?}");
     assert!(
@@ -124,7 +124,12 @@ async fn a_run_executes_tools_and_completes() {
         "{}",
         commands[2]
     );
-    assert!(app.factory.all_destroyed());
+    let sandbox = app.factory.sandbox(0);
+    assert!(!sandbox.destroyed.load(Ordering::SeqCst));
+    assert!(
+        !sandbox.paused.load(Ordering::SeqCst),
+        "paused only after the idle time"
+    );
 
     // The tool result went back to the model, tied to the tool_use id.
     let last = app.llm.requests()[1]["messages"]
@@ -1288,6 +1293,90 @@ async fn continuing_a_run_that_died_mid_tool_call_answers_the_dangling_call() {
     );
 }
 
+/// Wait until `done` holds, or fail the test.
+async fn eventually(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..200 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting until {what}");
+}
+
+#[tokio::test]
+async fn an_idle_conversations_sandbox_is_paused_and_resumed_by_the_next_turn() {
+    let app = TestApp::new(vec![
+        Step::Reply(text("one")),
+        Step::Reply(text("two")),
+        Step::Reply(text("three")),
+    ])
+    .await;
+    cedar::manager::set_idle_minutes(&app.state.store, Some(0))
+        .await
+        .unwrap();
+    let first = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &id_of(&first), "completed").await;
+    let sandbox = app.factory.sandbox(0);
+    eventually("the sandbox is paused", || {
+        sandbox.paused.load(Ordering::SeqCst)
+    })
+    .await;
+    assert!(!sandbox.destroyed.load(Ordering::SeqCst));
+
+    // The next turn picks the same sandbox back up instead of starting another.
+    let second = app
+        .create_run_with(KEY_A, json!({ "prompt": "2", "parent_id": first["id"] }))
+        .await;
+    app.wait_status(KEY_A, &id_of(&second), "completed").await;
+    assert_eq!(app.factory.created.lock().unwrap().len(), 1);
+    assert_eq!(sandbox.resumes.load(Ordering::SeqCst), 1);
+    eventually("the sandbox is paused again", || {
+        sandbox.paused.load(Ordering::SeqCst)
+    })
+    .await;
+
+    // A sandbox that can't be resumed is replaced by a new one on the same workspace.
+    sandbox.gone.store(true, Ordering::SeqCst);
+    let third = app
+        .create_run_with(KEY_A, json!({ "prompt": "3", "parent_id": second["id"] }))
+        .await;
+    let run = app.wait_status(KEY_A, &id_of(&third), "completed").await;
+    assert_eq!(run["final_text"], "three");
+    assert_eq!(run["workspace_reused"], true);
+    assert_eq!(app.factory.created.lock().unwrap().len(), 2);
+    assert!(sandbox.destroyed.load(Ordering::SeqCst));
+
+    // Removing the workspace takes its kept sandbox with it.
+    let workspace: uuid::Uuid = first["workspace_id"].as_str().unwrap().parse().unwrap();
+    app.state.manager.remove_workspace(workspace).await;
+    assert!(app.factory.all_destroyed());
+}
+
+#[tokio::test]
+async fn a_run_that_does_not_complete_does_not_keep_its_sandbox() {
+    let app = TestApp::new(vec![Step::Error("LLM API error 500: down"), Step::Reply(text("ok"))]).await;
+    let first = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &id_of(&first), "failed").await;
+    assert!(app.factory.sandbox(0).destroyed.load(Ordering::SeqCst));
+    let second = app
+        .create_run_with(KEY_A, json!({ "prompt": "2", "parent_id": first["id"] }))
+        .await;
+    app.wait_status(KEY_A, &id_of(&second), "completed").await;
+    assert_eq!(app.factory.created.lock().unwrap().len(), 2, "a new one");
+}
+
+#[tokio::test]
+async fn shutdown_destroys_the_sandboxes_kept_for_idle_conversations() {
+    let app = TestApp::new(vec![Step::Reply(text("one"))]).await;
+    let id = id_of(&app.create_run(KEY_A, "1").await);
+    app.wait_status(KEY_A, &id, "completed").await;
+    assert!(!app.factory.all_destroyed());
+    app.state.manager.begin_shutdown();
+    app.state.manager.drain(Duration::from_secs(5)).await;
+    assert!(app.factory.all_destroyed());
+}
+
 #[tokio::test]
 async fn idle_workspaces_expire_and_continuations_then_start_fresh() {
     let app = TestApp::new(vec![Step::Reply(text("one")), Step::Reply(text("two"))]).await;
@@ -1305,6 +1394,7 @@ async fn idle_workspaces_expire_and_continuations_then_start_fresh() {
     );
     let workspace: uuid::Uuid = first["workspace_id"].as_str().unwrap().parse().unwrap();
     assert_eq!(*app.factory.removed_workspaces.lock().unwrap(), [workspace]);
+    assert!(app.factory.all_destroyed(), "the kept sandbox went with it");
 
     let second = app
         .create_run_with(KEY_A, json!({ "prompt": "2", "parent_id": first["id"] }))

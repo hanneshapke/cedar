@@ -10,7 +10,7 @@ use crate::events::EventHub;
 use crate::images;
 use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
-use crate::manager::RunManager;
+use crate::manager::{self, RunManager};
 use crate::marketplace::{InstallRequest, Marketplace};
 use crate::models::{
     Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
@@ -590,21 +590,29 @@ async fn get_integrations(
     Ok(Json(state.integrations.status().await?))
 }
 
-/// The server-wide settings an admin can change (`GET`/`PUT /v1/admin/settings`).
+/// The server-wide settings an admin can change (`GET`/`PUT /v1/admin/settings`). A field left
+/// out keeps its value; `null` goes back to the default.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SettingsBody {
-    /// The longer side, in pixels, attached images are downscaled to; `null` for the default.
-    max_image_side: Option<u32>,
+    /// The longer side, in pixels, attached images are downscaled to.
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    max_image_side: Option<Option<u32>>,
+    /// How many minutes a conversation's sandbox keeps running after a turn before it is paused.
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    sandbox_idle_minutes: Option<Option<u32>>,
 }
 
 async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> {
     Ok(json!({
         "max_image_side": images::saved_max_side(&state.store).await?,
+        "sandbox_idle_minutes": manager::saved_idle_minutes(&state.store).await?,
         "defaults": {
             "max_image_side": images::DEFAULT_MAX_SIDE,
             "min_max_image_side": images::MIN_MAX_SIDE,
             "max_max_image_side": images::MAX_MAX_SIDE,
+            "sandbox_idle_minutes": manager::DEFAULT_IDLE_MINUTES,
+            "max_sandbox_idle_minutes": manager::MAX_IDLE_MINUTES,
         },
     }))
 }
@@ -623,10 +631,19 @@ async fn put_settings(
     ApiJson(body): ApiJson<SettingsBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
-    if let Some(side) = body.max_image_side {
+    // Everything is checked before anything is saved.
+    if let Some(Some(side)) = body.max_image_side {
         images::check_max_side(side).map_err(AppError::BadRequest)?;
     }
-    images::set_max_side(&state.store, body.max_image_side).await?;
+    if let Some(Some(minutes)) = body.sandbox_idle_minutes {
+        manager::check_idle_minutes(minutes).map_err(AppError::BadRequest)?;
+    }
+    if let Some(side) = body.max_image_side {
+        images::set_max_side(&state.store, side).await?;
+    }
+    if let Some(minutes) = body.sandbox_idle_minutes {
+        manager::set_idle_minutes(&state.store, minutes).await?;
+    }
     Ok(Json(settings_json(&state).await?))
 }
 
