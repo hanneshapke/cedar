@@ -6,6 +6,12 @@
 # This runs the stack on one machine you are logged in to. Nothing restarts it after a crash or a
 # reboot; for a long-running server use the systemd setup in DEPLOYMENT.md.
 #
+# Before it starts, it checks Docker and (unless TAILSCALE_SERVE=off) Tailscale. On Linux it offers
+# to fix what is missing, showing each command and running it only when you answer yes: install
+# Docker Engine (get.docker.com), start it, let your user run it, install Tailscale
+# (tailscale.com/install.sh) and log in. Without a terminal it installs nothing and says what to
+# run. On a Mac it says what to install (or use the Cedar app, which sets Docker up itself).
+#
 #   scripts/cedar-stack.sh            build, start everything, attach
 #   scripts/cedar-stack.sh --no-build skip cargo and docker builds
 #   scripts/cedar-stack.sh --restart  kill the existing session first
@@ -27,6 +33,8 @@
 #   TAILSCALE_SERVE    auto (default: serve if tailscale is logged in), on (fail if it can't), off
 #   TAILSCALE_HTTPS_PORT
 #                      the tailnet HTTPS port to serve the chat UI on (default: 443)
+#   INSTALL_DEPS       ask (default): offer to install or fix Docker and Tailscale; yes: do it
+#                      without asking; no: only say what is missing
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -52,6 +60,143 @@ load_env() {
         auto|on|off) ;;
         *) die "TAILSCALE_SERVE must be auto, on, or off (got '$TAILSCALE_SERVE')" ;;
     esac
+    INSTALL_DEPS=${INSTALL_DEPS:-ask}
+    case $INSTALL_DEPS in
+        ask|yes|no) ;;
+        *) die "INSTALL_DEPS must be ask, yes, or no (got '$INSTALL_DEPS')" ;;
+    esac
+}
+
+# --- Docker and Tailscale ------------------------------------------------------------------
+
+# ask <question> <y|n>: true if the answer is yes; the second argument is the answer to Enter.
+# INSTALL_DEPS=yes or no answers instead, and without a terminal the answer is no.
+ask() {
+    case $INSTALL_DEPS in
+        yes) echo "$1 (INSTALL_DEPS=yes)"; return 0 ;;
+        no) return 1 ;;
+    esac
+    [[ -t 0 ]] || return 1
+    local hint='[Y/n]' reply
+    [[ $2 == n ]] && hint='[y/N]'
+    read -r -p "$1 $hint " reply || return 1
+    [[ ${reply:-$2} == [Yy]* ]]
+}
+
+# as_root <command...>: run it as root, through sudo unless the script already is root. The
+# command is shown first.
+as_root() {
+    echo "+ $*" >&2
+    if (( EUID == 0 )); then
+        "$@"
+    else
+        command -v sudo >/dev/null || die "this needs root and sudo is not installed; run as root: $*"
+        sudo "$@"
+    fi
+}
+
+# run_installer <url>: download an install script and run it as root.
+run_installer() {
+    local script
+    script=$(mktemp)
+    echo "==> downloading $1"
+    curl -fsSL "$1" -o "$script" || { rm -f "$script"; die "could not download $1"; }
+    as_root sh "$script" || { rm -f "$script"; die "$1 failed (see above)"; }
+    rm -f "$script"
+}
+
+# ensure_docker <no_vllm> <args...>: a docker CLI, a daemon that answers, and permission to use
+# it; offers to install or fix each on Linux. After adding the user to the docker group it runs
+# the script again under `sg docker`, so the new group counts without logging in again.
+ensure_docker() {
+    local no_vllm=$1
+    shift
+    local linux=0
+    [[ $(uname -s) == Linux ]] && linux=1
+    if ! command -v docker >/dev/null; then
+        (( linux )) || die "docker is not installed. Install Docker Desktop (brew install --cask docker) or OrbStack and start it, or use the Cedar app, which sets Docker up itself."
+        echo "Docker is not installed. Docker's script installs Docker Engine and the compose plugin:"
+        echo "  curl -fsSL https://get.docker.com | sudo sh"
+        ask "Install Docker Engine now?" y || die "docker is not installed; install it with the command above"
+        run_installer https://get.docker.com
+        command -v docker >/dev/null || die "docker is still not on PATH after installing it"
+    fi
+
+    local err me
+    me=$(id -un)
+    if ! err=$(docker info --format '{{.ServerVersion}}' 2>&1 >/dev/null); then
+        if [[ $err == *"permission denied"* ]] && (( linux && EUID != 0 )); then
+            [[ -n ${CEDAR_STACK_SG:-} ]] && die "docker still says permission denied in the docker group: $err"
+            if ! id -nG "$me" | tr ' ' '\n' | grep -qx docker; then
+                echo "Your user ($me) may not use Docker yet: it is not in the docker group."
+                ask "Add $me to the docker group?" y || die "add yourself to the docker group (sudo usermod -aG docker $me), log out and in, and run this again"
+                as_root usermod -aG docker "$me"
+            fi
+            echo "==> carrying on in the docker group (sg docker); new logins pick it up by themselves"
+            CEDAR_STACK_SG=1 exec sg docker -c "$(printf '%q ' "$SELF" "$@")"
+        elif (( linux )) && command -v systemctl >/dev/null; then
+            echo "Docker is installed but its daemon is not answering: $err"
+            ask "Start it (and start it at boot)?" y || die "start Docker: sudo systemctl enable --now docker"
+            as_root systemctl enable --now docker
+            local i
+            for i in $(seq 20); do
+                docker info >/dev/null 2>&1 && break
+                (( i == 20 )) && die "Docker did not start; check: sudo systemctl status docker"
+                sleep 1
+            done
+            # The daemon may answer now and still refuse this user.
+            ensure_docker "$no_vllm" "$@"
+            return
+        elif (( linux )); then
+            die "Docker is installed but not answering: $err. Start its daemon (dockerd) and run this again."
+        else
+            die "Docker is installed but not answering: $err. Start Docker Desktop (or OrbStack, Colima) and run this again."
+        fi
+    fi
+
+    if [[ -n ${VLLM_COMPOSE_FILE:-} ]] && (( ! no_vllm )) && ! docker compose version >/dev/null 2>&1; then
+        die "VLLM_COMPOSE_FILE is set but 'docker compose' is missing; install the compose plugin (sudo apt install docker-compose-plugin)"
+    fi
+}
+
+# skip_tailscale: carry on without Tailscale, unless TAILSCALE_SERVE=on needs it.
+skip_tailscale() {
+    [[ $TAILSCALE_SERVE == on ]] && die "TAILSCALE_SERVE=on needs Tailscale installed and logged in"
+    echo "Carrying on without Tailscale; the phone apps can't reach the chat. Set TAILSCALE_SERVE=off in $ENV_FILE to stop this question." >&2
+}
+
+# ensure_tailscale: unless TAILSCALE_SERVE=off, Tailscale installed and logged in, for the phone
+# apps; offers to install it and log in on Linux. With TAILSCALE_SERVE=auto it is optional, so
+# saying no carries on without it.
+ensure_tailscale() {
+    [[ $TAILSCALE_SERVE == off ]] && return 0
+    local default=n
+    [[ $TAILSCALE_SERVE == on ]] && default=y
+
+    if ! command -v tailscale >/dev/null; then
+        if [[ $(uname -s) != Linux ]]; then
+            echo "Tailscale is not installed; get it from https://tailscale.com/download" >&2
+            skip_tailscale
+            return 0
+        fi
+        echo "Tailscale is not installed. It serves the chat to the iOS and Android apps over HTTPS, on your"
+        echo "tailnet only. Tailscale's script installs it:"
+        echo "  curl -fsSL https://tailscale.com/install.sh | sudo sh"
+        ask "Install Tailscale now?" "$default" || { skip_tailscale; return 0; }
+        run_installer https://tailscale.com/install.sh
+        command -v tailscale >/dev/null || die "tailscale is still not on PATH after installing it"
+    fi
+
+    tailscale_ready && return 0
+    echo "Tailscale is installed but this machine is not logged in to a tailnet."
+    echo "  sudo tailscale up       (prints a link to log in with)"
+    ask "Log in now?" "$default" || { skip_tailscale; return 0; }
+    as_root tailscale up || die "tailscale up failed (see above)"
+    # So `tailscale serve` (and --down) work without sudo.
+    (( EUID == 0 )) || as_root tailscale set --operator="$(id -un)" ||
+        echo "warning: could not let $(id -un) manage tailscale; tailscale serve may need sudo" >&2
+    echo "Logged in. For the phone apps, also turn on MagicDNS and HTTPS Certificates at"
+    echo "https://login.tailscale.com/admin/dns"
 }
 
 # --- tailscale serve -----------------------------------------------------------------------
@@ -184,6 +329,8 @@ CHAT_BIND_ADDR=127.0.0.1:3000
 CHAT_ACCESS_TOKEN=$token
 # auto: serve over Tailscale if it is logged in; on: fail if it can't; off: never.
 TAILSCALE_SERVE=auto
+# ask: offer to install or fix Docker and Tailscale; yes: do it without asking; no: only say so.
+INSTALL_DEPS=ask
 # TAILSCALE_HTTPS_PORT=443
 
 # vLLM: the compose file that runs it. Leave empty if you start vLLM yourself.
@@ -279,7 +426,7 @@ main() {
     fi
     (( with_vllm )) && die "--with-vllm only applies to --down"
 
-    for cmd in cargo docker tmux curl jq openssl; do
+    for cmd in cargo tmux curl jq openssl; do
         command -v "$cmd" >/dev/null || die "$cmd is not installed"
     done
     # cedar-chat's Web Push encryption links OpenSSL; catch missing headers before a long build.
@@ -288,6 +435,8 @@ main() {
     fi
     [[ -f $ENV_FILE ]] || create_env
     load_env
+    ensure_docker "$no_vllm" "$@"
+    ensure_tailscale
 
     local ts_url
     ts_url=$(serve_start)
