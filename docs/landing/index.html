@@ -49,7 +49,7 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
     <a href="#private" style="color:#231f1b" style-hover="color:#e5553a">Private by design</a>
     <a href="#apps" style="color:#231f1b" style-hover="color:#e5553a">Mac, Windows, Linux &amp; phones</a>
     <a href="#compare" style="color:#231f1b" style-hover="color:#e5553a">Compared</a>
-    <a href="install.html" style="color:#231f1b" style-hover="color:#e5553a">Install</a>
+    <a href="install.html" style="border:2px solid #231f1b;color:#231f1b;padding:8px 16px;border-radius:999px;font-weight:600;transition:transform .2s,border-color .2s,color .2s" style-hover="border-color:#e5553a;color:#e5553a;transform:translateY(-2px)">Install guide</a>
     <a href="{{ dl.href }}" style="background:#231f1b;color:#fbf4ea;padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s" style-hover="background:#e5553a;color:#fbf4ea;transform:translateY(-2px)">{{ dl.label }}</a>
   </nav>
 </header>
@@ -61,10 +61,13 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
     <p style="margin:0;font-size:19px;line-height:1.5;color:#4f4740;max-width:520px;text-wrap:pretty">Give Cedar a task: research, documents, trips, your finances. It plans the work, does it in a sealed box, and shows you where every answer came from. Nothing leaves your computer unless you say so.</p>
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
       <a href="{{ dl.href }}" style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;box-shadow:0 10px 30px rgba(229,85,58,.35);transition:transform .2s,box-shadow .2s" style-hover="transform:translateY(-3px);box-shadow:0 16px 36px rgba(229,85,58,.42);color:#fff">{{ dl.label }}</a>
-      <sc-if value="{{ dl.invite }}" hint-placeholder-val="{{ true }}"><a href="#phone" style="display:inline-flex;align-items:center;gap:8px;padding:15px 22px;border-radius:999px;font-weight:600;font-size:16px;border:2px solid #231f1b;color:#231f1b;transition:transform .2s" style-hover="transform:translateY(-3px);border-color:#e5553a;color:#e5553a">iPhone &amp; Android apps</a></sc-if>
-      <a href="#apps" style="font-weight:600;font-size:16px">{{ dl.other }}</a>
+      <a href="install.html" style="display:inline-flex;align-items:center;gap:8px;padding:15px 22px;border-radius:999px;font-weight:600;font-size:16px;border:2px solid #231f1b;color:#231f1b;transition:transform .2s" style-hover="transform:translateY(-3px);border-color:#e5553a;color:#e5553a">Step-by-step install guide</a>
     </div>
-    <span style="font-size:13px;color:#8a7f73">Mac app for Apple silicon · Windows app for x64 · Linux for x64 and arm64 · iPhone and Android · Apache 2.0 · built in the open on GitHub · <a href="install.html" style="font-weight:600">Not sure what you need? Find your install path →</a></span>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-size:15px">
+      <sc-if value="{{ dl.invite }}" hint-placeholder-val="{{ true }}"><a href="#phone" style="font-weight:600">iPhone &amp; Android apps →</a></sc-if>
+      <a href="#apps" style="font-weight:600">{{ dl.other }}</a>
+    </div>
+    <span style="font-size:13px;color:#8a7f73">Mac app for Apple silicon · Windows app for x64 · Linux for x64 and arm64 · iPhone and Android · Apache 2.0 · built in the open on GitHub</span>
   </div>
 
   <div style="position:relative;animation:riseIn 1s .15s cubic-bezier(.2,.8,.2,1) both">
@@ -250,7 +253,7 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
           <a href="{{ linuxArmHref }}" style="background:#fbf4ea;color:#231f1b;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#231f1b">Download for arm64</a>
         </div>
         <span style="font-size:13px;line-height:1.45;color:#a89d90">For Ubuntu 22.04, Debian 12 and newer. arm64 is the one for a DGX Spark. Rather build it yourself? <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#fbf4ea">scripts/cedar-stack.sh</code> builds from source and starts it all.</span>
-        <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff">Read the Linux guide →</a>
+        <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="install.html?os=linux" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff">Step-by-step install guide →</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff">Read the Linux guide →</a></span>
       </div>
       <pre style="margin:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.7;color:#fbf4ea"><span style="color:#8a7f73"># download and install (on arm64, swap in linux-arm64)</span>
 V={{ ver }}
@@ -334,8 +337,16 @@ sudo install $F/cedar* /usr/local/bin/
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a">Setup</span>
     <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Three things, then you're talking.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">On a Mac or a Windows PC, Cedar needs two free helpers, and the app walks you through both the first time it opens. On Linux, it's the same three steps from a terminal; the <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a> has the details.</p>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">Cedar needs a sealed box to work in, a model to think with, and itself. The <a href="install.html" style="font-weight:600">install guide</a> puts the steps in order for your computer, whether Docker is already there, and whether you run the model at home or use a provider.</p>
   </div>
+  <a data-reveal href="install.html" style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:20px 32px;align-items:center;background:#231f1b;color:#fbf4ea;border-radius:28px;padding:clamp(26px,4vw,40px);position:relative;overflow:hidden;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-4px);box-shadow:0 24px 50px rgba(60,30,10,.25);color:#fbf4ea">
+    <div style="display:flex;flex-direction:column;gap:10px;flex:1 1 420px;min-width:0">
+      <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#f2a21c">Install guide</span>
+      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(26px,3.4vw,38px);line-height:1.05;letter-spacing:-.02em">Five questions. Your exact steps.</span>
+      <span style="font-size:16px;line-height:1.5;color:#d9cfc2;max-width:620px">Mac, Windows or Linux? Docker or not? Ollama, LM Studio, vLLM, or a provider like Doubleword or Baseten? Pick your answers and copy the commands. Share the link with whoever helps you set it up.</span>
+    </div>
+    <span style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;white-space:nowrap;justify-self:start">Find your install path →</span>
+  </a>
   <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#f2a21c">1</span>
@@ -345,7 +356,7 @@ sudo install $F/cedar* /usr/local/bin/
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#e5553a">2</span>
       <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Install a model</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Ollama or LM Studio put an AI model on your Mac or PC in minutes. On a Linux GPU box, run vLLM. Already have a server elsewhere? Use that.</p>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Ollama or LM Studio put an AI model on your Mac or PC in minutes. On a Linux GPU box, run vLLM. No big computer? Use a provider like Doubleword or Baseten.</p>
     </div>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#3a5f4b">3</span>
@@ -355,7 +366,6 @@ sudo install $F/cedar* /usr/local/bin/
   </div>
   <div data-reveal style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
     <a href="{{ dl.href }}" style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;box-shadow:0 10px 30px rgba(229,85,58,.35);transition:transform .2s" style-hover="transform:translateY(-3px);color:#fff">{{ dl.label }}</a>
-    <a href="install.html" style="font-weight:600;font-size:16px">Step-by-step install guide →</a>
     <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" style="font-weight:600;font-size:16px">Mac &amp; Windows setup guide →</a>
     <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="font-weight:600;font-size:16px">Linux guide →</a>
   </div>
