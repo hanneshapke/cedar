@@ -1,15 +1,16 @@
 name: Android
 
 # Builds the Android app and runs its tests on a Linux runner, for every change to `android/` (a
-# push or a pull request) and on request. The plain-Kotlin `core` module's unit tests (the /api
+# pull request, or a push to main) and on request. The plain-Kotlin `core` module's unit tests (the /api
 # types, the transcript reducer, the SSE parser, Markdown, cards, attachments, the client) run
 # first, then Android lint and a debug APK, which is kept as an artifact for a week.
 #
 # A build without the ANDROID_GOOGLE_SERVICES_JSON secret (a fork's pull request, say) leaves FCM
 # out and still passes; the app then offers ntfy (UnifiedPush) only. The signed release APK is built
-# by release.yml; the release-apk job below builds it with the same secrets on every push, to test them.
+# by release.yml; the release-apk job below builds it with the same secrets on every push to main, to test them.
 on:
   push:
+    branches: [main]
     paths: ["android/**", ".github/workflows/android.yml"]
   pull_request:
     paths: ["android/**", ".github/workflows/android.yml"]
@@ -86,7 +87,7 @@ jobs:
 
   # The release APK, signed with the repository's release key, the way release.yml builds it: a
   # check that the ANDROID_KEYSTORE* secrets work before a release needs them. Runs on pushes to
-  # this repository (secrets aren't given to pull requests from forks) and on request; without the
+  # main (secrets aren't given to pull requests from forks) and on request; without the
   # secrets it says so and stops. The APK is kept as an artifact for a week.
   release-apk:
     needs: build-and-test
