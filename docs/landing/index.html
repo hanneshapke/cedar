@@ -44,6 +44,7 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
 <header style="max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;flex-wrap:wrap">
   <a href="#" style="display:flex;align-items:center;gap:10px;color:#231f1b"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em">Cedar</span></a>
   <nav style="display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap">
+    <a href="#new" style="color:#231f1b" style-hover="color:#e5553a">What's new</a>
     <a href="#does" style="color:#231f1b" style-hover="color:#e5553a">What it does</a>
     <a href="#private" style="color:#231f1b" style-hover="color:#e5553a">Private by design</a>
     <a href="#apps" style="color:#231f1b" style-hover="color:#e5553a">Mac, Windows, Linux &amp; phones</a>
@@ -101,6 +102,31 @@ a{color:#e5553a;text-decoration:none}a:hover{color:#c23f26}
     </sc-for>
   </div>
 </div>
+
+<section id="new" data-screen-label="What's new" style="max-width:1160px;margin:0 auto;padding:90px 28px 0;display:flex;flex-direction:column;gap:40px;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#3a5f4b">What's new in 0.1.7</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em">Plans when it counts.<br>Keeps your place.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty">On every app: Mac, Windows, Linux, iPhone and Android. The <a href="https://github.com/hanneshapke/cedar/blob/main/CHANGELOG.md">changelog</a> has the details.</p>
+  </div>
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <span style="width:44px;height:44px;border-radius:12px;background:#e5553a"></span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Plans when it helps</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Pick <em>When Cedar thinks it helps</em> under Settings → Plans, and Cedar decides which tasks need one. For a trip or a sourced report it proposes the steps and waits for your go-ahead; quick questions just get an answer.</p>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <span style="width:44px;height:44px;border-radius:50%;background:#f2a21c"></span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Picks up where you left off</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">A chat keeps its sealed box between messages, so what Cedar installed or started is still there next time. After ten quiet minutes the box is paused, and your next message wakes it.</p>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <span style="width:44px;height:44px;border-radius:12px 12px 12px 22px;background:#3a5f4b"></span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">A personal assistant first</h3>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">Out of the box, Cedar answers first, asks when your answer would change what it does, checks before anything it can't undo, and keeps what it learns about you to itself.</p>
+    </div>
+  </div>
+</section>
 
 <section id="does" data-screen-label="What it does" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:72px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
@@ -313,7 +339,7 @@ sudo install $F/cedar* /usr/local/bin/
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#f2a21c">1</span>
       <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em">Install Docker Desktop</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">It builds the sealed boxes each task runs in. Free, one download. OrbStack works too on a Mac, Rancher Desktop on Windows. On Linux, Docker Engine.</p>
+      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740">It builds the sealed boxes your chats run in. Free, one download. OrbStack works too on a Mac, Rancher Desktop on Windows. On Linux, Docker Engine.</p>
     </div>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#e5553a">2</span>
