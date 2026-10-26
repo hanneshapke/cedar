@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Cedar</title>
+<meta name="description" content="Answer a few questions and get the install steps for Cedar on your Mac, Windows PC or Linux machine.">
+<link rel="icon" href="docs/assets/cedar-mark.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fbf4ea;--ink:#231f1b;--muted:#4f4740;--faint:#8a7f73;--line:#f0dcc8;--accent:#e5553a;--accent-dark:#c23f26;--amber:#f2a21c;--green:#3a5f4b;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-dark)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#f6e9da;padding:1px 6px;border-radius:6px}
+.wrap{max-width:1000px;margin:0 auto;padding:0 28px}
+/* Header and footer: the same as the landing page's (index.html) */
+.site-header{max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink)}
+.brand span{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em}
+.site-header nav{display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap}
+.site-header nav a{color:var(--ink)}.site-header nav a:hover,.site-header nav a[aria-current]{color:var(--accent)}
+.site-header nav a.dl{background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s}
+.site-header nav a.dl:hover{background:var(--accent);color:var(--bg);transform:translateY(-2px)}
+.site-footer{max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--faint);border-top:1px solid var(--line)}
+.site-footer span{display:flex;align-items:center;gap:8px}
+.site-footer .links{gap:20px;flex-wrap:wrap}
+.site-footer .links a{color:var(--ink)}.site-footer .links a:hover{color:var(--accent)}
+.back{display:inline-block;margin:6px 0 18px;font-weight:600;font-size:15px}
+.eyebrow{font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--green)}
+h1{margin:10px 0 12px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(36px,5.4vw,60px);line-height:1;letter-spacing:-.03em}
+.lede{margin:0;font-size:18px;line-height:1.5;color:var(--muted);max-width:640px}
+
+/* The question matrix */
+.picker{margin:36px 0 0;background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden}
+.q{display:grid;grid-template-columns:230px 1fr;border-top:1px solid var(--line)}
+.q:first-child{border-top:0}
+.q-label{padding:18px 20px;background:#fdf8f2;font-weight:600;font-size:15px;line-height:1.35;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.q-label small{font-weight:400;color:var(--faint);font-size:13px}
+.q-opts{padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.opt{font:inherit;font-size:15px;font-weight:600;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;transition:background .15s,border-color .15s,transform .15s;text-align:center;line-height:1.2}
+.opt:hover{border-color:var(--accent);transform:translateY(-1px)}
+.opt:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.opt[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.opt small{display:block;font-weight:400;font-size:12px;opacity:.75;margin-top:3px}
+@media (max-width:720px){.q{grid-template-columns:1fr}.q-label{padding:14px 16px 6px;background:none}.q-opts{padding:6px 12px 14px}}
+
+.share{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 2px 0;font-size:14px;color:var(--faint)}
+.share button{font:inherit;font-size:14px;font-weight:600;background:none;border:0;color:var(--accent);cursor:pointer;padding:0}
+
+/* The generated steps */
+.summary{margin:48px 0 18px;display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600;background:#fff;border:1px solid var(--line)}
+.chip.todo{background:#fde7dc;border-color:#f6c2ad;color:#8a2d18}
+.chip.done{background:#e2ede6;border-color:#bdd4c5;color:var(--green)}
+.chip.skip{color:var(--faint)}
+ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:18px;counter-reset:step}
+.step{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:26px 28px;display:grid;grid-template-columns:44px 1fr;gap:6px 18px;counter-increment:step;animation:popin .35s ease both}
+.step::before{content:counter(step);width:44px;height:44px;border-radius:12px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;grid-row:span 2}
+.step.ok::before{content:"✓";background:var(--green)}
+.step.optional::before{background:var(--amber);color:var(--ink)}
+.step h2{margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.01em;line-height:1.2;align-self:center}
+.step h2 .tag{font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#fdf0d8;color:#7a4c00;vertical-align:4px;margin-left:8px}
+.body{grid-column:2;font-size:16px;line-height:1.55;color:var(--muted);min-width:0}
+.body p{margin:8px 0}
+.body ul,.body ol{margin:8px 0;padding-left:22px}
+.body li{margin:4px 0}
+/* A code block inside a list item lines up with the step's other code blocks, not the item text */
+.body li .code{margin-left:-22px}
+.body strong{color:var(--ink);font-weight:600}
+@media (max-width:560px){.step{grid-template-columns:1fr;padding:22px 18px}.step::before{grid-row:auto}.body{grid-column:1}}
+.explain{background:#fdf8f2;border-left:4px solid var(--amber);border-radius:0 12px 12px 0;padding:12px 16px;margin:10px 0}
+.explain b{color:var(--ink)}
+.note{font-size:14px;color:var(--faint)}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:11px 20px;border-radius:999px;font-weight:600;font-size:15px;margin:6px 8px 6px 0;transition:transform .2s}
+.btn:hover{color:#fff;transform:translateY(-2px)}
+.btn.ghost{background:none;border:2px solid var(--ink);color:var(--ink)}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.code{position:relative;margin:10px 0}
+.code pre{margin:0;background:var(--ink);color:#f3e9dc;border-radius:14px;padding:16px 18px;padding-right:76px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.6;overflow-x:auto;white-space:pre}
+.code pre .c{color:#a89a8b}
+.code button{position:absolute;top:10px;right:10px;font:inherit;font-size:12px;font-weight:600;background:rgba(255,255,255,.1);color:#f3e9dc;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:5px 10px;cursor:pointer}
+.code button:hover{background:rgba(255,255,255,.2)}
+.code .shell{position:absolute;top:-9px;left:14px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--amber);color:var(--ink);border-radius:6px;padding:1px 7px}
+details{margin:10px 0}
+summary{cursor:pointer;font-weight:600;color:var(--ink)}
+.help{margin:56px 0 48px;display:flex;flex-wrap:wrap;gap:12px 24px;font-size:15px;color:var(--faint)}
+@keyframes popin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.step{animation:none}.opt,.btn{transition:none}}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
+  <nav>
+    <a href="./#new">What's new</a>
+    <a href="./#does">What it does</a>
+    <a href="./#private">Private by design</a>
+    <a href="./#apps">Mac, Windows, Linux &amp; phones</a>
+    <a href="./#compare">Compared</a>
+    <a href="install.html" aria-current="page">Install</a>
+    <a class="dl" id="header-dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
+  </nav>
+</header>
+<div class="wrap">
+  <main>
+    <a class="back" href="./">← Back to the Cedar home page</a><br>
+    <span class="eyebrow">Install guide</span>
+    <h1>Your path to Cedar.</h1>
+    <p class="lede">Tell us what you're working with, and we'll put the steps in order for you. Pick an answer in each row; the steps below change as you go, and the page address remembers your answers so you can share them.</p>
+
+    <section class="picker" id="picker" aria-label="Your setup"></section>
+    <div class="share"><span id="share-hint">This page's address now holds your answers.</span><button type="button" id="copy-link">Copy link</button><button type="button" id="reset">Start over</button></div>
+
+    <div class="summary" id="summary" aria-live="polite"></div>
+    <ol class="steps" id="steps"></ol>
+  </main>
+
+  <div class="help">
+    <span>Stuck?</span>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md#troubleshooting">Mac &amp; Windows troubleshooting</a>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md#troubleshooting">Linux troubleshooting</a>
+    <a href="https://github.com/hanneshapke/cedar/discussions">Ask in Discussions</a>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+</footer>
+
+<script>
+(() => {
+  const REPO = 'https://github.com/hanneshapke/cedar';
+  const RELEASES = REPO + '/releases/latest';
+  const DESKTOP = REPO + '/blob/main/desktop/README.md';
+  const LINUX = REPO + '/blob/main/DEPLOYMENT.md';
+  // Filled in from GitHub once the latest release answers; until then the buttons go to the releases page.
+  const release = { ver: '0.1.7', dmg: '', msi: '', apk: '', 'linux-x64': '', 'linux-arm64': '' };
+
+  // Each question: its id in the address (?os=mac&arch=arm64&docker=no...), and the answers.
+  // An answer's `os` limits it to some systems; a question's `when` hides it for others.
+  const QUESTIONS = [
+    { id: 'os', label: 'Which computer will run Cedar?', hint: 'The one that does the work. Phones pair with it later.',
+      opts: [{ v: 'mac', t: 'macOS' }, { v: 'windows', t: 'Windows' }, { v: 'linux', t: 'Linux' }] },
+    { id: 'arch', label: 'What kind of chip?', hint: 'Mac: Apple menu → About This Mac. Windows: Settings → System → About.',
+      opts: [
+        { v: 'arm64', t: 'Apple silicon', s: 'M1, M2, M3, M4…', os: ['mac'] },
+        { v: 'x64', t: 'Intel', os: ['mac'] },
+        { v: 'x64', t: 'x64', s: 'Intel or AMD', os: ['windows', 'linux'] },
+        { v: 'arm64', t: 'Arm', s: 'Snapdragon, Surface', os: ['windows'] },
+        { v: 'arm64', t: 'arm64', s: 'DGX Spark, Ampere, Pi', os: ['linux'] },
+      ] },
+    { id: 'docker', label: 'Do you have Docker installed?', hint: 'Cedar runs every chat in a sealed Docker box.',
+      opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what Docker is' }] },
+    { id: 'host', label: 'Can you run an AI model yourself?', hint: 'It takes lots of fast memory: an M4 or M5 Mac with 32 GB or more, a DGX Spark, an AMD Ryzen AI Max (Strix Halo), or a GPU with 16 GB or more.',
+      opts: [
+        { v: 'yes', t: 'Yes', s: 'on this or another machine' }, { v: 'no', t: 'No', s: 'use a token provider' },
+        { v: 'unknown', t: 'Not sure' },
+      ] },
+    { id: 'serve', label: 'How do you want to serve it?', hint: 'Ollama is the easiest. LM Studio has a window. vLLM is fastest on a Linux GPU box.', when: (s) => s.host === 'yes',
+      opts: [
+        { v: 'ollama', t: 'Ollama', s: 'simplest, any computer' }, { v: 'lmstudio', t: 'LM Studio', s: 'an app with a window' },
+        { v: 'vllm', t: 'vLLM', s: 'Linux, NVIDIA or AMD GPU' },
+      ] },
+    { id: 'provider', label: 'Which token provider?', hint: 'They run open models in their data center and charge per token.', when: (s) => s.host === 'no',
+      opts: [
+        { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' },
+        { v: 'other', t: 'Another provider', s: 'any OpenAI-compatible API' },
+      ] },
+    { id: 'tailscale', label: 'Do you have Tailscale installed?', hint: 'Only needed for the iPhone and Android apps.',
+      opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what it is' }] },
+  ];
+
+  const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', tailscale: '' };
+  const state = readState();
+
+  function detectOs() {
+    const ua = navigator.userAgent;
+    if (/Windows/i.test(ua)) return 'windows';
+    if (/Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua)) return 'mac';
+    if (/Linux/i.test(ua) && !/Android/i.test(ua)) return 'linux';
+    return '';
+  }
+
+  function readState() {
+    const q = new URLSearchParams(location.search);
+    const s = { ...DEFAULTS };
+    for (const question of QUESTIONS) {
+      const v = q.get(question.id);
+      if (v && question.opts.some((o) => o.v === v)) s[question.id] = v;
+    }
+    if (!s.arch) s.arch = defaultArch(s.os);
+    return s;
+  }
+
+  function defaultArch(os) {
+    if (os === 'mac') return 'arm64';
+    if (os === 'windows' || os === 'linux') return 'x64';
+    return '';
+  }
+
+  const shown = (q) => !q.when || q.when(state);
+
+  function writeState() {
+    const q = new URLSearchParams();
+    for (const question of QUESTIONS) if (state[question.id] && shown(question)) q.set(question.id, state[question.id]);
+    const qs = q.toString();
+    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  }
+
+  // ---------- rendering helpers ----------
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  // A code block. Lines starting with # are shown as comments; `shell` labels the terminal to use.
+  function code(text, shell) {
+    const html = text.split('\n').map((l) => /^\s*#/.test(l) ? `<span class="c">${esc(l)}</span>` : esc(l)).join('\n');
+    return `<div class="code">${shell ? `<span class="shell">${esc(shell)}</span>` : ''}<pre>${html}</pre><button type="button" data-copy>Copy</button></div>`;
+  }
+  const explain = (html) => `<div class="explain">${html}</div>`;
+  const btn = (href, label, ghost) => `<a class="btn${ghost ? ' ghost' : ''}" href="${esc(href)}">${label}</a>`;
+  const step = (title, body, kind, tag) => ({ title, body, kind, tag });
+
+  function renderPicker() {
+    const picker = document.getElementById('picker');
+    picker.innerHTML = QUESTIONS.map((q) => {
+      const opts = q.opts.filter((o) => !o.os || o.os.includes(state.os));
+      if ((q.id === 'arch' && !state.os) || !shown(q)) return '';
+      return `<div class="q" role="group" aria-labelledby="q-${q.id}">
+        <div class="q-label" id="q-${q.id}">${esc(q.label)}<small>${esc(q.hint)}</small></div>
+        <div class="q-opts">${opts.map((o) => `<button type="button" class="opt" data-q="${q.id}" data-v="${o.v}" aria-pressed="${state[q.id] === o.v}">${esc(o.t)}${o.s ? `<small>${esc(o.s)}</small>` : ''}</button>`).join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderSummary() {
+    const s = state;
+    const chips = [];
+    const name = { mac: 'macOS', windows: 'Windows', linux: 'Linux' }[s.os];
+    if (name) chips.push(`<span class="chip">${name} · ${s.arch === 'arm64' ? (s.os === 'mac' ? 'Apple silicon' : s.os === 'windows' ? 'Arm' : 'arm64') : (s.os === 'mac' ? 'Intel' : 'x64')}</span>`);
+    if (s.docker) chips.push(s.docker === 'yes' ? '<span class="chip done">Docker ready</span>' : '<span class="chip todo">Docker to install</span>');
+    if (s.host === 'yes' && s.serve) chips.push(`<span class="chip done">Your own model · ${SERVERS[s.serve].name}</span>`);
+    if (s.host === 'no' && s.provider) chips.push(`<span class="chip done">Hosted model · ${s.provider === 'other' ? 'another provider' : PROVIDERS[s.provider].name}</span>`);
+    if (s.host === 'unknown') chips.push('<span class="chip todo">Check your hardware</span>');
+    if (s.tailscale) chips.push(s.tailscale === 'yes' ? '<span class="chip done">Tailscale ready</span>' : '<span class="chip skip">Tailscale optional</span>');
+    document.getElementById('summary').innerHTML = chips.join('');
+  }
+
+  function renderSteps() {
+    const list = document.getElementById('steps');
+    if (!state.os) {
+      list.innerHTML = `<li class="step optional"><h2>Start with your computer</h2><div class="body"><p>Pick macOS, Windows or Linux above, and the steps appear here.</p></div></li>`;
+      return;
+    }
+    const steps = buildSteps(state);
+    list.innerHTML = steps.map((st) => `<li class="step${st.kind ? ' ' + st.kind : ''}"><h2>${st.title}${st.tag ? `<span class="tag">${esc(st.tag)}</span>` : ''}</h2><div class="body">${st.body}</div></li>`).join('');
+  }
+
+  function renderDownload() {
+    const dl = {
+      mac: ['Download for Mac', release.dmg], windows: ['Download for Windows', release.msi],
+      linux: ['Download for Linux', release[state.arch === 'arm64' ? 'linux-arm64' : 'linux-x64']],
+    }[state.os] || ['Download Cedar', ''];
+    const a = document.getElementById('header-dl');
+    a.textContent = dl[0];
+    a.href = dl[1] || RELEASES;
+    if (release.apk) document.getElementById('footer-apk').href = release.apk;
+  }
+
+  function render() {
+    renderDownload();
+    renderPicker();
+    renderSummary();
+    renderSteps();
+  }
+
+  // ---------- the steps ----------
+  function buildSteps(s) {
+    if (s.os === 'mac') return macSteps(s);
+    if (s.os === 'windows') return windowsSteps(s);
+    return linuxSteps(s);
+  }
+
+  const WHAT_IS_DOCKER = explain('<b>What is Docker?</b> A free program that runs small, sealed Linux boxes (containers) on your computer. Cedar does every chat\'s work inside one, so the commands it runs can\'t see your documents, photos or the rest of your system. You install it once and never have to touch it again.');
+  const WHAT_IS_TAILSCALE = explain('<b>What is Tailscale?</b> A free app that links your own devices into a private network, wherever they are. Cedar uses it so your phone can reach the computer at home securely, without opening anything to the internet. <b>You only need it for the iPhone or Android app</b>; skip this step if you\'ll use Cedar on this computer only.');
+
+  // Where Cedar finds each kind of model server, and what the setup window calls it.
+  const SERVERS = {
+    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1', pick: 'the <strong>Ollama</strong> preset' },
+    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1', pick: 'the <strong>LM Studio</strong> preset' },
+    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1', pick: 'the <strong>vLLM</strong> preset (or your GPU box\'s address)' },
+  };
+  const PROVIDERS = {
+    doubleword: { name: 'Doubleword', addr: 'https://api.doubleword.ai/v1', site: 'https://www.doubleword.ai', keys: 'https://app.doubleword.ai', docs: 'https://docs.doubleword.ai/inference-api/using-the-platform',
+      keyHow: 'Sign up, open <strong>API Keys</strong> in the Doubleword console and create one. You can give it a spending cap.' },
+    baseten: { name: 'Baseten', addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co', keys: 'https://app.baseten.co/settings/api_keys', docs: 'https://docs.baseten.co/development/model-apis/overview',
+      keyHow: 'Sign up, then create an API key under <strong>Settings → API keys</strong>. Cedar uses Baseten\'s <em>Model APIs</em>, where every model supports tool calling.' },
+    other: { name: 'your provider', addr: 'https://<provider>/v1', docs: '',
+      keyHow: 'Any provider with an OpenAI-compatible <code>/v1/chat/completions</code> API and tool calling works. Create an API key in its console and find its base URL in its docs.' },
+  };
+
+  // What to choose in the setup window's model step (Mac and Windows) for the answers given.
+  function modelChoice(s) {
+    if (s.host === 'yes' && s.serve) return `pick ${SERVERS[s.serve].pick}`;
+    if (s.host === 'no' && s.provider) return `type <code>${esc(PROVIDERS[s.provider].addr)}</code> as the address, paste your API key`;
+    return 'pick your model server\'s preset (or type its address)';
+  }
+
+  // The address the Linux chat's Settings → Server is given.
+  function modelAddress(s) {
+    if (s.host === 'no') return PROVIDERS[s.provider || 'other'].addr;
+    return SERVERS[s.serve || 'ollama'].addr;
+  }
+
+  const WHAT_IS_A_PROVIDER = explain('<b>What is a token provider?</b> A company that runs open AI models in its data center and lets you use them over the internet, billed per token (roughly, per word read and written). Nothing to install, and no big computer needed. The trade-off: <b>your prompts, and the file contents Cedar sends to the model, go to that company</b>. Cedar itself, your conversations and the sealed boxes still stay on your machine.');
+
+  function modelStep(s) {
+    const shell = s.os === 'windows' ? 'PowerShell' : 'Terminal';
+    const inSetup = s.os === 'linux'
+      ? '<p class="note">You\'ll register it in the chat\'s <strong>Settings → Server</strong> in a later step.</p>'
+      : `<p class="note">You'll pick it in Cedar's setup window in a later step: ${modelChoice(s)}.</p>`;
+    const toolsNote = '<p class="note">Whatever you pick, it must support <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower.</p>';
+
+    if (s.host === 'no') return providerStep(s, inSetup);
+    if (s.host === 'yes') {
+      if (s.serve === 'ollama') return ollamaStep(s, shell, inSetup, toolsNote);
+      if (s.serve === 'lmstudio') return lmStudioStep(s, inSetup, toolsNote);
+      if (s.serve === 'vllm') return vllmStep(s, inSetup);
+      return step('Choose how to serve your model', '<p>Pick <strong>Ollama</strong>, <strong>LM Studio</strong> or <strong>vLLM</strong> above. Not sure? Ollama is the easiest start on any computer; vLLM gets the most out of a Linux box with an NVIDIA or AMD GPU, like a DGX Spark.</p>', 'optional');
+    }
+    // Not sure, or not answered yet.
+    return step('Can your computer run a model?', `${s.host ? '' : '<p class="note">Answer <em>Can you run an AI model yourself?</em> above to tailor this step.</p>'}
+      <p>Models that are good at using tools are big, and they need to fit in memory the chip can use quickly. These machines run one well:</p>
+      <ul>
+        <li><strong>A Mac with an M4 or M5 chip and 32 GB of memory or more</strong> (64 GB+ for the larger models). Check under Apple menu → <em>About This Mac</em>.</li>
+        <li><strong>An NVIDIA DGX Spark</strong> (128 GB), the machine Cedar is built on.</li>
+        <li><strong>A PC with an AMD Ryzen AI Max</strong> ("Strix Halo", for example the Framework Desktop) with 64 or 128 GB.</li>
+        <li><strong>A PC with an NVIDIA or AMD graphics card with 16 GB or more</strong> of video memory (24 GB+ is better).</li>
+      </ul>
+      ${s.os === 'windows' ? code('# your graphics card and its memory\nGet-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM\n# total memory\n(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB', 'PowerShell')
+        : s.os === 'linux' ? code('free -h                 # memory\nnvidia-smi              # NVIDIA GPU and its memory, if any\nrocm-smi --showmeminfo vram   # AMD GPU, if any', 'Terminal')
+        : code("system_profiler SPHardwareDataType | grep -E 'Chip|Memory'", 'Terminal')}
+      <p>One of those? Choose <strong>Yes</strong> above. A laptop with 8 or 16 GB can run a small model, but it will be slow and miss steps; choose <strong>No</strong> and use a token provider instead. You can switch later, per conversation.</p>`, 'optional');
+  }
+
+  function providerStep(s, inSetup) {
+    if (!s.provider) {
+      return step('Pick a token provider', `${WHAT_IS_A_PROVIDER}<p>Choose one above. <a href="https://www.doubleword.ai">Doubleword</a> and <a href="https://www.baseten.co">Baseten</a> both serve open models like DeepSeek, Qwen, GLM and gpt-oss over an OpenAI-compatible API, which is all Cedar needs.</p>`, 'optional');
+    }
+    const p = PROVIDERS[s.provider];
+    const keyLink = p.keys ? `<p>${btn(p.keys, `Get a ${p.name} API key`)}</p>` : '';
+    const check = code(`# check the key, and see the model names you can use\ncurl -s ${p.addr}/models -H "Authorization: Bearer <your API key>"`, s.os === 'windows' ? 'PowerShell' : 'Terminal')
+      .replace('curl -s', s.os === 'windows' ? 'curl.exe -s' : 'curl -s');
+    const where = s.os === 'linux'
+      ? `<p>In a later step you'll add it in the chat's <strong>Settings → Server</strong>: address <code>${esc(p.addr)}</code>, your API key, then <strong>List models</strong>.</p>`
+      : `<p>In Cedar's setup window, in the <strong>Model server</strong> step, type the address <code>${esc(p.addr)}</code>, paste the key into <strong>API key</strong>, click <strong>List models</strong> and choose one.</p>`;
+    return step(`Get a key from ${p.name}`, `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
+      <ol><li>Copy the key somewhere safe; it's shown once.</li><li>Check it works and see which models you can use:${check}</li></ol>
+      ${where}
+      <p class="note">Pick a model that supports tool calling; a large one (DeepSeek, Qwen3 235B, GLM, gpt-oss 120B) does best. Cedar keeps the key encrypted and never puts it inside a sealed box.${p.docs ? ` More in <a href="${p.docs}">${p.name}'s docs</a>.` : ''}</p>`);
+  }
+
+  function ollamaStep(s, shell, inSetup, toolsNote) {
+    const install = {
+      mac: `<p>${btn('https://ollama.com/download/mac', 'Download Ollama for Mac')}</p><p>Or with Homebrew: <code>brew install ollama</code>. Open the app once; it runs in the menu bar.</p>`,
+      windows: `<p>${btn('https://ollama.com/download/windows', 'Download Ollama for Windows')}</p><p>Run the installer. Ollama starts in the tray. On an AMD Ryzen AI Max or Radeon card it uses the GPU on its own.</p>`,
+      linux: code('curl -fsSL https://ollama.com/install.sh | sh\nsystemctl status ollama --no-pager   # it runs as a service', 'Terminal'),
+    }[s.os];
+    const ctx = s.os === 'windows'
+      ? code('setx OLLAMA_CONTEXT_LENGTH 32768\n# then quit Ollama from the tray and start it again', 'PowerShell')
+      : s.os === 'linux'
+        ? code('sudo systemctl edit ollama\n# add these two lines, save, then:\n#   [Service]\n#   Environment="OLLAMA_CONTEXT_LENGTH=32768"\nsudo systemctl restart ollama', 'Terminal')
+        : code('launchctl setenv OLLAMA_CONTEXT_LENGTH 32768\n# then quit Ollama from the menu bar and open it again', 'Terminal');
+    return step('Install Ollama and a model', `${install}
+      <p>Pull a model that fits your memory:</p>
+      ${code('# 16-24 GB\nollama pull qwen3:8b\n# 32-48 GB\nollama pull qwen3:30b\n# 64 GB and more: Spark, Ryzen AI Max, a big Mac\nollama pull gpt-oss:120b\n\nollama run qwen3:8b "say hi"    # a quick test', shell)}
+      <p>Cedar's tasks need a long memory of the conversation, longer than Ollama's default. Raise it once:</p>${ctx}
+      <p>Cedar reaches Ollama at <code>${SERVERS.ollama.addr}</code>.</p>${inSetup}${toolsNote}`);
+  }
+
+  function lmStudioStep(s, inSetup, toolsNote) {
+    const note = { mac: 'On Apple silicon, prefer <strong>MLX</strong> models: they run fastest.', windows: 'On an AMD Ryzen AI Max or Radeon card, LM Studio uses the Vulkan or ROCm runtime; check it under <em>Settings → Runtime</em>.', linux: 'On Linux it ships as an AppImage; make it executable and run it.' }[s.os];
+    return step('Install LM Studio and start its server', `<p>${btn('https://lmstudio.ai/download', 'Download LM Studio')}</p>
+      <ol>
+        <li>Open LM Studio and go to <strong>Discover</strong>. Search for a model with tool use (the hammer icon), for example <strong>Qwen3 30B A3B</strong> on 32 GB, or <strong>gpt-oss 120B</strong> on 64 GB and more, and download it. ${note}</li>
+        <li>Open the <strong>Developer</strong> tab, load the model and set its <strong>context length</strong> to at least 32768.</li>
+        <li>Switch <strong>Status: Running</strong> on. Or from a terminal:${code('lms server start\nlms ls          # the models you have', s.os === 'windows' ? 'PowerShell' : 'Terminal')}</li>
+      </ol>
+      <p>Cedar reaches LM Studio at <code>${SERVERS.lmstudio.addr}</code>.</p>${inSetup}${toolsNote}`);
+  }
+
+  function vllmStep(s, inSetup) {
+    const remote = s.os !== 'linux'
+      ? explain('<b>vLLM runs on Linux</b> with an NVIDIA or AMD GPU, so it lives on a separate box (a DGX Spark, a GPU server) and Cedar on this computer talks to it over your network. Run the commands below on that box, with <code>--host 0.0.0.0</code> so it listens on the network, and use <code>http://&lt;box&gt;:8000/v1</code> as the address. Tailscale is the easy way to reach it safely from anywhere.')
+      : '';
+    return step('Serve a model with vLLM', `${remote}
+      <p>Start vLLM with <strong>tool calling on</strong>, or the model's tool calls come back as plain text and Cedar can't act. The flags depend on the model; for DeepSeek V4, the model Cedar is built around:</p>
+      <details open><summary>NVIDIA GPU, DGX Spark</summary>
+      ${code(`docker run --gpus all --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  vllm/vllm-openai:latest \\\n  deepseek-ai/DeepSeek-V4-Flash --trust-remote-code \\\n  --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \\\n  --enable-auto-tool-choice --reasoning-parser deepseek_v4${s.os !== 'linux' ? ' \\\n  --host 0.0.0.0' : ''}`, 'GPU box')}
+      <p class="note">On a DGX Spark, NVIDIA's <a href="https://build.nvidia.com/spark/vllm">vLLM playbook</a> has the container built for its GB10 chip.</p></details>
+      <details><summary>AMD GPU (Instinct, Radeon, Ryzen AI Max)</summary>
+      ${code(`docker run --device=/dev/kfd --device=/dev/dri --group-add video \\\n  --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  rocm/vllm:latest \\\n  vllm serve <model> --enable-auto-tool-choice --tool-call-parser <parser>${s.os !== 'linux' ? ' --host 0.0.0.0' : ''}`, 'GPU box')}
+      <p class="note">AMD's <a href="https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/inference/vllm.html">vLLM guide</a> picks the right image for your GPU and ROCm version.</p></details>
+      <details><summary>Another model</summary><p>Any model with a tool-call parser works; the <a href="https://docs.vllm.ai/en/latest/features/tool_calling.html">vLLM tool calling docs</a> list them. For example <code>openai/gpt-oss-120b</code> with <code>--tool-call-parser openai</code>, or Qwen3 with <code>--tool-call-parser hermes</code>. The <a href="https://recipes.vllm.ai">vLLM recipes</a> have the flags per model.</p></details>
+      <p>Then check which model name it serves:</p>
+      ${code(`curl -s localhost:8000/v1/models | jq -r '.data[].id'`, 'GPU box')}
+      <p class="note">The <a href="${LINUX}#2-make-sure-vllm-is-ready-for-cedar">Linux guide</a> has a one-line tool-calling test.</p>${inSetup}`);
+  }
+
+  function phoneStep(s) {
+    const tagged = s.tailscale === 'yes' ? 'ok' : 'optional';
+    const intro = s.tailscale === 'unknown' ? WHAT_IS_TAILSCALE : (s.tailscale ? '' : '<p class="note">Answer <em>Do you have Tailscale installed?</em> above to tailor this step. Skip it if you won\'t use a phone.</p>');
+    const install = {
+      mac: `<p>Install Tailscale from <a href="https://tailscale.com/download/mac">tailscale.com</a> or the Mac App Store, open it and log in. Then, in Tailscale's settings, choose <strong>Install CLI</strong> so Cedar can find the <code>tailscale</code> command.</p>`,
+      windows: `<p>Install Tailscale from <a href="https://tailscale.com/download/windows">tailscale.com</a>, open it and log in.</p>`,
+      linux: code('curl -fsSL https://tailscale.com/install.sh | sh\nsudo tailscale up', 'Terminal'),
+    }[s.os];
+    const dns = '<li>In the Tailscale <a href="https://login.tailscale.com/admin/dns">admin console\'s DNS page</a>, turn on <strong>MagicDNS</strong> and <strong>HTTPS Certificates</strong>.</li>';
+    const phone = `<li>Install Tailscale on the phone and log in to the same account. Then get Cedar: <a href="${REPO}/discussions/51">TestFlight invite</a> for iPhone, or the <a href="${release.apk || RELEASES}">Android APK</a>.</li>`;
+    const share = s.os === 'linux'
+      ? `<li>Share the chat on your tailnet and tell it its address:${code('sudo tailscale serve --bg --https=443 http://127.0.0.1:3000\nURL=https://$(tailscale status --json | jq -r \'.Self.DNSName | rtrimstr(".")\')\necho "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env\nsudo systemctl restart cedar-chat', 'Terminal')}</li>
+         <li>In the chat, open <strong>Settings → Phone</strong> and scan the QR code with the Cedar app (Settings → <strong>Scan QR Code</strong>).</li>`
+      : `<li>In Cedar, choose <strong>Phone Access…</strong> from the ${s.os === 'mac' ? 'menu bar' : 'tray'} menu and tick <strong>Share with the phone apps over Tailscale</strong>. Cedar restarts once.</li>
+         <li>Click <strong>Show QR code</strong>, then in the Cedar app tap Settings → <strong>Scan QR Code</strong>. Done.</li>`;
+    return step('Pair your phone', `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">Only your own devices on your tailnet can reach Cedar. More in the <a href="${s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad'}">phone guide</a>.</p>`, tagged, s.tailscale === 'yes' ? '' : 'Optional');
+  }
+
+  function macSteps(s) {
+    const steps = [];
+    if (s.docker === 'yes') {
+      steps.push(step('Make sure Docker is running', `<p>Docker Desktop, OrbStack, Colima and Rancher Desktop all work. Start it, then check it answers:</p>${code("docker info --format '{{.ServerVersion}}'   # prints a version number", 'Terminal')}`, 'ok'));
+    } else {
+      steps.push(step('Install Docker', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p><strong>Docker Desktop</strong> is free for personal use and the most common choice. <strong>OrbStack</strong> is a lighter alternative for Macs.</p>
+        <p>${btn('https://www.docker.com/products/docker-desktop/', 'Get Docker Desktop')}${btn('https://orbstack.dev', 'Or OrbStack', true)}</p>
+        <p>Or with Homebrew:</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}
+        <p>Open it once so it finishes setting up, and leave it running.</p>`));
+    }
+    steps.push(modelStep(s));
+    if (s.arch === 'x64') {
+      steps.push(step('Build Cedar for your Intel Mac', `<p>Releases are built for Apple silicon only, so on an Intel Mac you build the app yourself. It needs Xcode's command line tools and Rust; the <a href="${DESKTOP}#on-a-mac">Mac build guide</a> has the commands.</p>${btn(DESKTOP + '#on-a-mac', 'Mac build guide')}`));
+    } else {
+      steps.push(step('Download Cedar for Mac', `<p>${btn(release.dmg || RELEASES, 'Download for Mac')}</p><p>Open the <code>.dmg</code> and drag Cedar to Applications. It's signed and notarized, so it opens without warnings.</p>`));
+    }
+    steps.push(step('Open Cedar and follow the setup', `<p>A tree appears in your menu bar and the setup window opens with three checks:</p>
+      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
+      <p>The window turns into the chat. Give it a task.</p>`));
+    steps.push(phoneStep(s));
+    return steps;
+  }
+
+  function windowsSteps(s) {
+    const steps = [];
+    const armNote = s.arch === 'arm64' ? '<p class="note">Releases are built for x64; Windows on Arm runs them emulated.</p>' : '';
+    const installCedar = step('Download and install Cedar for Windows', `<p>${btn(release.msi || RELEASES, 'Download for Windows')}</p><p>Run the <code>.msi</code> (it needs administrator rights once). It isn't code-signed yet, so Windows warns the first time: choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>${armNote}`);
+
+    if (s.docker === 'yes') {
+      steps.push(step('Make sure Docker is running', `<p>Docker Desktop (with its default WSL 2 backend) or Rancher Desktop both work. Start it, then check it answers:</p>${code("docker info --format '{{.ServerVersion}}'", 'PowerShell')}<p class="note">If Docker Desktop is installed but not running, Cedar starts it for you.</p>`, 'ok'));
+      steps.push(modelStep(s));
+      steps.push(installCedar);
+    } else {
+      // Cedar's own setup window installs WSL 2 and Docker Desktop, so Cedar comes first here.
+      steps.push(modelStep(s));
+      steps.push(installCedar);
+      steps.push(step('Let Cedar set up Docker for you', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>Open Cedar from the Start Menu. In the setup window's Docker step, click <strong>Set up Docker for me</strong>. Cedar:</p>
+        <ol><li>checks your PC (Windows 10 version 2004 or newer, virtualization on),</li><li>downloads Docker Desktop (about 600 MB),</li><li>turns on WSL 2 and installs Docker Desktop, asking for administrator rights once,</li><li>asks you to restart; after you sign in again it picks up where it left off.</li></ol>
+        <p class="note">Docker Desktop is free for personal use, education and small businesses. Rather do it by hand? Run <code>wsl --install</code> as administrator, restart, then install <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>.</p>`));
+    }
+    steps.push(step('Finish the setup', `<p>Cedar's icon sits in the tray (it may be under the <strong>^</strong> arrow) and the setup window shows three checks:</p>
+      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
+      <p>The window turns into the chat. Give it a task.</p>`));
+    steps.push(phoneStep(s));
+    return steps;
+  }
+
+  function linuxSteps(s) {
+    const steps = [];
+    const arch = s.arch === 'arm64' ? 'arm64' : 'x64';
+    const V = release.ver;
+    if (s.docker === 'yes') {
+      steps.push(step('Make sure Docker works for your user', `${code("docker info --format '{{.ServerVersion}}'   # prints a version number\n\n# \"permission denied\"? add yourself to the docker group, then log out and back in\nsudo usermod -aG docker \"$USER\"", 'Terminal')}`, 'ok'));
+    } else {
+      steps.push(step('Install Docker Engine', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>On a server you want <strong>Docker Engine</strong> (no desktop app needed). Docker's script sets it up on Ubuntu, Debian and most others:</p>
+        ${code('curl -fsSL https://get.docker.com | sh\nsudo usermod -aG docker "$USER"   # then log out and back in\ndocker info --format \'{{.ServerVersion}}\'', 'Terminal')}
+        <p class="note">Prefer your distribution's packages? See <a href="https://docs.docker.com/engine/install/">Docker's install docs</a>.</p>`));
+    }
+    steps.push(modelStep(s));
+    steps.push(step(`Install Cedar for Linux (${arch})`, `<p>Cedar is two programs: <code>cedar</code> runs the agents, <code>cedar-chat</code> serves the chat page. For Ubuntu 22.04, Debian 12 and newer.</p>
+      ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nU=https://github.com/hanneshapke/cedar/releases/download\ncurl -fLO $U/v$V/$F.tar.gz\ntar -xzf $F.tar.gz\nsudo install -m 0755 $F/cedar $F/cedar-chat /usr/local/bin/\n\n# the sealed box the agent's tools run in\ndocker pull ghcr.io/hanneshapke/cedar-sandbox:$V\ndocker tag ghcr.io/hanneshapke/cedar-sandbox:$V cedar-sandbox:latest`, 'Terminal')}
+      <p class="note">${arch === 'arm64' ? 'This is the one for a DGX Spark. ' : ''}Rather build from source? <code>scripts/cedar-stack.sh</code> in the repo builds everything and starts it in tmux.</p>`));
+    steps.push(step('Configure Cedar', `<p>Create a service user and the two settings files. Keep the two tokens it prints.</p>
+      ${code(`sudo useradd --system --create-home --home-dir /var/lib/cedar \\\n  --shell /usr/sbin/nologin --groups docker cedar\n\nCEDAR_KEY=$(openssl rand -hex 24)\nCHAT_TOKEN=$(openssl rand -hex 24)\nADMIN_TOKEN=$(openssl rand -hex 24)\nSECRET_KEY=$(openssl rand -hex 32)\nsudo install -d -m 0755 /etc/cedar\n\nsudo tee /etc/cedar/cedar.env >/dev/null <<EOF\nCEDAR_API_KEYS=$CEDAR_KEY\nCEDAR_ADMIN_KEYS=$CEDAR_KEY\nCEDAR_SECRET_KEY=$SECRET_KEY\nBIND_ADDR=127.0.0.1:8080\nDATABASE_URL=sqlite:///var/lib/cedar/cedar.db\nEOF\n\nsudo tee /etc/cedar/chat.env >/dev/null <<EOF\nCEDAR_URL=http://127.0.0.1:8080\nCEDAR_API_KEY=$CEDAR_KEY\nCHAT_BIND_ADDR=127.0.0.1:3000\nCHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db\nCHAT_ACCESS_TOKEN=$CHAT_TOKEN\nCHAT_ADMIN_TOKEN=$ADMIN_TOKEN\nEOF\n\nsudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env\necho "Chat access token: $CHAT_TOKEN"\necho "Admin token:       $ADMIN_TOKEN"`, 'Terminal')}
+      <p class="note">Every setting (web search, timeouts, how many runs at once) is in the <a href="${LINUX}#4-configure">Linux guide</a>.</p>`));
+    steps.push(step('Run it under systemd', `<p>So both programs start at boot and come back after a crash.</p>
+      <details><summary>Show the two service files</summary>
+      ${code(`sudo tee /etc/systemd/system/cedar.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar agent server\nAfter=network-online.target docker.service\nWants=network-online.target\nRequires=docker.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/cedar.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=30\n\n[Install]\nWantedBy=multi-user.target\nEOF\n\nsudo tee /etc/systemd/system/cedar-chat.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar chat UI\nAfter=network-online.target cedar.service\nWants=cedar.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/chat.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar-chat\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\nEOF`, 'Terminal')}
+      </details>
+      ${code('sudo systemctl daemon-reload\nsudo systemctl enable --now cedar cedar-chat\ncurl -s -o /dev/null -w \'%{http_code}\\n\' http://127.0.0.1:8080/readyz   # 200', 'Terminal')}`));
+    steps.push(step('Open the chat and add your model', `<p>On this machine, open <code>http://localhost:3000</code>. From a laptop, tunnel to it first:</p>
+      ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', 'Laptop')}
+      <p>Enter the <strong>chat access token</strong>. Then go to <strong>Settings → Server</strong>, unlock it with the <strong>admin token</strong>, add your model server (<code>${esc(modelAddress(s))}</code>${s.host === 'no' ? ' with your API key' : s.serve === 'vllm' ? ', or your GPU box\'s address' : ''}), click <strong>List models</strong>, choose one and save. Give it a task.</p>`));
+    steps.push(phoneStep(s));
+    return steps;
+  }
+
+  // ---------- events ----------
+  document.getElementById('picker').addEventListener('click', (e) => {
+    const b = e.target.closest('.opt');
+    if (!b) return;
+    const { q, v } = b.dataset;
+    state[q] = v;
+    if (q === 'os') state.arch = defaultArch(v);
+    writeState();
+    render();
+  });
+
+  document.getElementById('steps').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const text = b.parentElement.querySelector('pre').innerText;
+    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select & copy'; }
+    setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+  });
+
+  document.getElementById('copy-link').addEventListener('click', async (e) => {
+    try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Link copied'; }
+    catch { e.target.textContent = 'Copy it from the address bar'; }
+    setTimeout(() => { e.target.textContent = 'Copy link'; }, 1600);
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    Object.assign(state, DEFAULTS, { arch: defaultArch(DEFAULTS.os) });
+    writeState();
+    render();
+  });
+
+  writeState();
+  render();
+
+  // The installers' names carry the version, so ask GitHub for the latest release's files.
+  fetch('https://api.github.com/repos/hanneshapke/cedar/releases/latest')
+    .then((r) => (r.ok ? r.json() : Promise.reject()))
+    .then((rel) => {
+      for (const a of rel.assets || []) {
+        const n = a.name, u = a.browser_download_url;
+        if (n.endsWith('.dmg')) release.dmg = u;
+        else if (n.endsWith('.msi')) release.msi = u;
+        else if (n.endsWith('.apk')) release.apk = u;
+        else if (n.endsWith('-linux-x64.tar.gz')) release['linux-x64'] = u;
+        else if (n.endsWith('-linux-arm64.tar.gz')) release['linux-arm64'] = u;
+      }
+      if (release['linux-x64'] && rel.tag_name) release.ver = rel.tag_name.replace(/^v/, '');
+      renderSteps();
+      renderDownload();
+    })
+    .catch(() => { /* offline or rate limited: keep the releases page */ });
+})();
+</script>
+</body>
+</html>
