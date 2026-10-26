@@ -18,6 +18,8 @@ cedar is self-hosted. The apps talk only to the cedar server **you** run and pai
 
 To find out whether a newer version is out, the Mac and Windows app and the web chat ask GitHub, where cedar's releases are published, every few hours. The request carries the installed version and nothing about you or your conversations; GitHub sees it like any visit to a public page. The setup page (desktop) or `CHAT_UPDATE_CHECK=off` (chat server) turns it off.
 
+Only when you click *Set up Docker for me* or *Set up Tailscale for me*, the Mac and Windows app downloads that program's installer from its maker (Docker Desktop from desktop.docker.com, Tailscale from pkgs.tailscale.com) and installs it. Like any download, the request carries nothing about you or your conversations. `scripts/cedar-stack.sh` does the same on Linux (get.docker.com, tailscale.com) when you answer yes. Docker and Tailscale are then governed by their own privacy policies.
+
 Anything you choose to connect cedar to (for example your LLM server, or a third-party tool you install from the community registry) is governed by that service's own privacy policy, not by us.
 
 ## Device permissions
