@@ -26,15 +26,20 @@ object AppLocales {
         Option("fr-BE", "Français (Belgique)"),
         Option("fr-CH", "Français (Suisse)"),
         Option("fr-CA", "Français (Canada)"),
+        Option("es-ES", "Español (España)"),
+        Option("es-MX", "Español (México)"),
+        Option("es-419", "Español (Latinoamérica)"),
+        Option("es-US", "Español (Estados Unidos)"),
     )
 
     /** The languages the app is translated into; English is the source and the fallback. */
-    val LANGUAGES: Set<String> = setOf("en", "de", "fr")
+    val LANGUAGES: Set<String> = setOf("en", "de", "fr", "es")
     const val FALLBACK = "en"
 
     /**
      * `tag` as a language and an optional region with their usual case (`de_ch` and `DE-CH` are
-     * `de-CH`), or `null` when it is empty or names no language. Scripts and extensions are dropped.
+     * `de-CH`; a numeric region stays, so `es_419` is `es-419`), or `null` when it is empty or names
+     * no language. Scripts and extensions are dropped.
      */
     fun normalize(tag: String?): String? {
         val raw = tag?.trim()?.replace('_', '-')?.takeIf { it.isNotEmpty() } ?: return null
@@ -50,13 +55,21 @@ object AppLocales {
     }
 
     /**
+     * The option for a language's regions that aren't offered, where it isn't the language's first
+     * option: Spanish outside Spain, Mexico and the US is Latin American Spanish.
+     */
+    private val OTHER_REGIONS: Map<String, String> = mapOf("es" to "es-419")
+
+    /**
      * The option to preselect for someone who hasn't chosen yet: the device's locale when it is
-     * offered, else the first offered one in the device's language, else English.
+     * offered, else the language's option for other regions ([OTHER_REGIONS]) or its first offered
+     * one, else English.
      */
     fun suggested(device: Locale): String {
         val tag = normalize(device.toLanguageTag())
         OPTIONS.firstOrNull { it.tag == tag }?.let { return it.tag }
         val language = tag?.substringBefore('-')
+        OTHER_REGIONS[language]?.let { return it }
         return OPTIONS.firstOrNull { it.language == language }?.tag ?: FALLBACK
     }
 

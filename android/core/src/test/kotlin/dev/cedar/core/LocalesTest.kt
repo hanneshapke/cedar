@@ -14,6 +14,10 @@ class LocalesTest {
         assertEquals("de-CH", AppLocales.normalize(" DE-CH "))
         assertEquals("en", AppLocales.normalize("EN"))
         assertEquals("fr-CA", AppLocales.normalize("fr-Latn-CA"))
+        // A UN M.49 region (Latin America) is kept as it is.
+        assertEquals("es-419", AppLocales.normalize("es-419"))
+        assertEquals("es-419", AppLocales.normalize("ES_419"))
+        assertEquals("es-MX", AppLocales.normalize("es_mx"))
         assertNull(AppLocales.normalize(""))
         assertNull(AppLocales.normalize(null))
         assertNull(AppLocales.normalize("12"))
@@ -22,11 +26,15 @@ class LocalesTest {
     @Test
     fun offersEachLocaleInItsOwnLanguage() {
         assertEquals(
-            listOf("en", "en-US", "en-GB", "de-DE", "de-AT", "de-CH", "fr-FR", "fr-BE", "fr-CH", "fr-CA"),
+            listOf("en", "en-US", "en-GB", "de-DE", "de-AT", "de-CH", "fr-FR", "fr-BE", "fr-CH", "fr-CA",
+                "es-ES", "es-MX", "es-419", "es-US"),
             AppLocales.OPTIONS.map { it.tag },
         )
         assertEquals("Deutsch (Österreich)", AppLocales.option("de_AT")?.label)
-        assertNull(AppLocales.option("es-ES"))
+        assertEquals("Español (Latinoamérica)", AppLocales.option("es_419")?.label)
+        assertEquals("Español (España)", AppLocales.option("es-ES")?.label)
+        assertNull(AppLocales.option("es-AR"))
+        assertNull(AppLocales.option("it-IT"))
         // Every tag is already in its normal form, so a stored choice reads back as itself.
         AppLocales.OPTIONS.forEach { assertEquals(it.tag, AppLocales.normalize(it.tag)) }
     }
@@ -39,7 +47,15 @@ class LocalesTest {
         assertEquals("de-DE", AppLocales.suggested(Locale.forLanguageTag("de-LU")))
         assertEquals("fr-FR", AppLocales.suggested(Locale.forLanguageTag("fr")))
         assertEquals("en", AppLocales.suggested(Locale.forLanguageTag("en-AU")))
-        assertEquals("en", AppLocales.suggested(Locale.forLanguageTag("es-ES")))
+        assertEquals("es-ES", AppLocales.suggested(Locale.forLanguageTag("es-ES")))
+        assertEquals("es-MX", AppLocales.suggested(Locale.forLanguageTag("es-MX")))
+        assertEquals("es-US", AppLocales.suggested(Locale.forLanguageTag("es-US")))
+        assertEquals("es-419", AppLocales.suggested(Locale.forLanguageTag("es-419")))
+        // Spanish from anywhere else, or with no region, is Latin American Spanish.
+        assertEquals("es-419", AppLocales.suggested(Locale.forLanguageTag("es-AR")))
+        assertEquals("es-419", AppLocales.suggested(Locale.forLanguageTag("es-CO")))
+        assertEquals("es-419", AppLocales.suggested(Locale.forLanguageTag("es")))
+        assertEquals("en", AppLocales.suggested(Locale.forLanguageTag("it-IT")))
     }
 
     @Test
@@ -51,7 +67,10 @@ class LocalesTest {
         assertEquals("de-LU", AppLocales.effective("", Locale.forLanguageTag("de-LU")))
         assertEquals("fr", AppLocales.effective(null, Locale.FRENCH))
         assertEquals("en-AU", AppLocales.effective(null, Locale.forLanguageTag("en-AU")))
-        assertEquals("en", AppLocales.effective(null, Locale.forLanguageTag("es-ES")))
+        assertEquals("es-ES", AppLocales.effective(null, Locale.forLanguageTag("es-ES")))
+        assertEquals("es-AR", AppLocales.effective(null, Locale.forLanguageTag("es-AR")))
+        assertEquals("es-419", AppLocales.effective("es-419", Locale.GERMANY))
+        assertEquals("en", AppLocales.effective(null, Locale.forLanguageTag("it-IT")))
         assertEquals("en", AppLocales.effective(null, Locale.ROOT))
     }
 

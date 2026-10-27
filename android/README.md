@@ -46,7 +46,7 @@ The same as the iOS app:
   or `scripts/cedar-stack.sh --pair` shows, or by opening a `cedar://connect` link
 - Phone layout, and list and chat side by side on tablets, foldables and in landscape; light and
   dark theme
-- English, German and French (see [Languages](#languages))
+- English, German, French and Spanish (see [Languages](#languages))
 
 ## Requirements
 
@@ -75,20 +75,24 @@ app's preferences.
 
 ## Languages
 
-The app speaks English, German (informal *du*; Swiss German writes *ss* for *ß*) and French (formal
-*vous*), following [the glossary](../docs/i18n-glossary.md). The language is the first thing a new
+The app speaks English, German (informal *du*; Swiss German writes *ss* for *ß*), French (formal
+*vous*) and Spanish (informal *tú*; neutral Latin American, with Spain's own words where they
+clearly differ), following [the glossary](../docs/i18n-glossary.md). The language is the first thing a new
 install asks, with the phone's preselected when the app speaks it; **Settings → Language** changes it
 at once, or sets it to **Automatic** to follow the phone. On Android 13 and newer it is also the
 app's language in the system settings (`res/xml/locales_config.xml`).
 
 Each message carries the locale (`"locale": "de-CH"`; for Automatic the phone's when it is English,
-German or French, else `en`), so the agent answers in it, and the app tells the server
+German, French or Spanish, else `en`), so the agent answers in it, and the app tells the server
 (`PUT /api/settings/locale`, once connected) so that scheduled runs and notifications follow it too.
 Dates, times, numbers and prices are written the locale's way.
 
 The text is in `app/src/main/res/values*/strings.xml`: `values` is English and the source,
-`values-de` and `values-fr` the translations, and `values-de-rCH` holds only the German strings with
-an *ß*, written with *ss*. A new string goes into all three; product names, the server's messages
+`values-de`, `values-fr` and `values-es` the translations, `values-de-rCH` holds only the German
+strings with an *ß*, written with *ss*, and `values-es-rES` only the Spanish strings Spain words
+differently (*móvil* for *celular*, *coche* for *auto*). Spanish is offered for Spain, Mexico, Latin
+America (`es-419`) and the US; a phone set to another Spanish region gets `es-419` preselected. A
+new string goes into all four; product names, the server's messages
 and the model's text are not translated. The locale logic (the offered locales, the effective one,
 the request body) is in `core` (`Locales.kt`) and tested there. The app is an `AppCompatActivity` so
 that `AppCompatDelegate.setApplicationLocales` can switch it; before Android 13 AppCompat stores the
@@ -184,7 +188,7 @@ You can also open `android/` in Android Studio and run the `app` configuration.
 | `app/…/push/` | `PushManager` (FCM or UnifiedPush, registration with the server), the two services, and `Notifier`, which fetches the text and shows the notification |
 | `app/…/storage/` | Settings, with the token encrypted by an Android Keystore key |
 | `app/…/Language.kt`, `ui/Text.kt` | The app's language (AppCompat per-app locales) and the app's words for what `core` names by key |
-| `app/src/main/res/values*/` | The strings: English (source), German, French, Swiss German (ß → ss) |
+| `app/src/main/res/values*/` | The strings: English (source), German, French, Spanish, Swiss German (ß → ss), Spain's Spanish (only where it differs) |
 | `build-apk.sh` | Build an APK locally |
 
 ## How it talks to the server

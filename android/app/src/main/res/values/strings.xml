@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The app's text in English, the source. Translations: values-de, values-fr, values-de-rCH (generated). -->
+<!-- The app's text in English, the source. Translations: values-de, values-fr, values-es, values-de-rCH (generated), values-es-rES (Spain's words only). -->
 <resources>
     <string name="app_name" translatable="false">Cedar</string>
     <string name="brand" translatable="false">cedar</string>
@@ -7,7 +7,7 @@
     <string name="channel_responses">Responses</string>
     <string name="channel_responses_description">A response finished while you were away</string>
     <string name="language_title">Choose your language</string>
-    <string name="language_subtitle">Sprache wählen · Choisissez votre langue</string>
+    <string name="language_subtitle">Sprache wählen · Choisissez votre langue · Elige tu idioma</string>
     <string name="language_continue">Continue</string>
     <string name="language">Language</string>
     <string name="language_automatic">Automatic</string>

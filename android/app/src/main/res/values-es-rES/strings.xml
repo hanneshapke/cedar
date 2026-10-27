@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spanish as written in Spain: only the strings where it clearly differs from the neutral Latin
+     American text in values-es (móvil for celular, coche for auto, VTC for a ride-hailing car, añadir, raciones). -->
+<resources>
+    <string name="error_not_configured">Añade tu servidor cedar-chat en Configuración.</string>
+    <string name="scan_not_cedar">Ese código QR no es un código de conexión de Cedar. Escanea el que aparece en Configuración → Móvil en el chat, en la app de escritorio o el de cedar-stack.sh --pair.</string>
+    <string name="scan_prompt">Escanea el código QR en Configuración → Móvil en el chat</string>
+    <string name="server_footnote">La dirección del servidor cedar-chat (donde abres la interfaz web) y su CHAT_ACCESS_TOKEN, si está definido. La app solo se conecta por HTTPS: sirve el chat con tailscale serve, que la app de escritorio de Cedar y scripts/cedar-stack.sh hacen por ti, y luego escanea el código QR en Configuración → Móvil en el chat. El token se guarda cifrado en este móvil; la clave propia de cedar se queda en el servidor.</string>
+    <string name="notifications_footnote">Las notificaciones push vienen del servidor: elige las push de Android en Configuración → Notificaciones en la interfaz web. FCM necesita ahí la clave de la cuenta de servicio de Firebase; ntfy no necesita nada. Este móvil se registra solo, y una notificación push solo indica qué conversación terminó: el texto se obtiene de tu servidor.</string>
+    <string name="trip_drive">Coche</string>
+    <string name="trip_rideshare">VTC</string>
+    <string name="trip_take_drive">Ve en coche: %1$s</string>
+    <string name="trip_take_rideshare">Pide un VTC: %1$s</string>
+    <string name="recipe_serves">Raciones</string>
+</resources>
