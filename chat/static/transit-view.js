@@ -19,7 +19,15 @@ const cedarTransit = (() => {
   const MAX_LEGS = 30;
   const MAX_POINTS = 2000;
   const MODES = new Set(['transit', 'walk', 'drive', 'rideshare']);
-  const MODE_LABEL = { transit: 'Transit', walk: 'Walk', drive: 'Drive', rideshare: 'Rideshare' };
+  const MODE_LABEL = {
+    transit: 'transit.mode.transit', walk: 'transit.mode.walk', drive: 'transit.mode.drive', rideshare: 'transit.mode.rideshare',
+  };
+  /** The recommendation's line, per mode. */
+  const TAKE = {
+    transit: 'transit.take.transit', walk: 'transit.take.walk', drive: 'transit.take.drive', rideshare: 'transit.take.rideshare',
+  };
+  /** The one step of a trip without legs, per mode. */
+  const GO_TO = { walk: 'transit.goTo.walk', drive: 'transit.goTo.drive', rideshare: 'transit.goTo.rideshare' };
   // Leg modes as MOTIS names them (lowercased), grouped by the icon and word they get.
   const LEG_KIND = {
     walk: 'walk', bike: 'bike', rental: 'bike', car: 'drive', car_parking: 'drive', odm: 'drive', flex: 'bus',
@@ -29,8 +37,9 @@ const cedarTransit = (() => {
     regional_rail: 'train', regional_fast_rail: 'train',
   };
   const KIND_LABEL = {
-    walk: 'Walk', bike: 'Bike', drive: 'Drive', bus: 'Bus', tram: 'Tram', subway: 'Subway',
-    ferry: 'Ferry', plane: 'Flight', train: 'Train', other: 'Ride',
+    walk: 'transit.kind.walk', bike: 'transit.kind.bike', drive: 'transit.kind.drive', bus: 'transit.kind.bus',
+    tram: 'transit.kind.tram', subway: 'transit.kind.subway', ferry: 'transit.kind.ferry', plane: 'transit.kind.plane',
+    train: 'transit.kind.train', other: 'transit.kind.other',
   };
   // 24×24 icons, stroked with currentColor. Constant markup, never built from the result.
   const ICONS = {
@@ -161,7 +170,7 @@ const cedarTransit = (() => {
       .map((u) => ({ mode: u.mode, reason: str(u.reason) }));
     let timeZone;
     try {
-      if (str(data.time_zone)) timeZone = new Intl.DateTimeFormat([], { timeZone: data.time_zone }).resolvedOptions().timeZone;
+      if (str(data.time_zone)) timeZone = new Intl.DateTimeFormat(cedarI18n.locale, { timeZone: data.time_zone }).resolvedOptions().timeZone;
     } catch { /* an unknown zone: the viewer's is used */ }
     return {
       title: str(data.title), from, to, timeZone,
@@ -174,16 +183,30 @@ const cedarTransit = (() => {
   // -- formatting -----------------------------------------------------------------------------
 
   /** `d` as a time of day in the trip's time zone when the planner gave one, else the viewer's. */
-  const clock = (spec, d, opts = {}) => d.toLocaleString([], { hour: 'numeric', minute: '2-digit', timeZone: spec.timeZone, ...opts });
+  const clock = (spec, d, opts = {}) => d.toLocaleString(cedarI18n.locale, { hour: 'numeric', minute: '2-digit', timeZone: spec.timeZone, ...opts });
   function duration(min) {
-    if (min < 60) return `${min} min`;
+    if (min < 60) return tr('transit.min', { min });
     const h = Math.floor(min / 60); const m = min % 60;
-    return m ? `${h} h ${m} min` : `${h} h`;
+    return m ? tr('transit.hMin', { h, min: m }) : tr('transit.h', { h });
   }
-  const distance = (o) => (o.km !== null ? `${o.km} km` : o.meters !== null ? (o.meters >= 1000 ? `${(o.meters / 1000).toFixed(1)} km` : `${Math.round(o.meters)} m`) : '');
+  /** `meters` as "850 m" or, from a kilometer on, "1.2 km" (with the locale's decimal sign). */
+  const meters = (m) => (m >= 1000
+    ? `${cedarI18n.number(m / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`
+    : `${cedarI18n.number(Math.round(m))} m`);
+  const distance = (o) => (o.km !== null ? `${cedarI18n.number(o.km)} km` : o.meters !== null ? meters(o.meters) : '');
   function money(cost) {
-    const sym = cost.currency === 'USD' ? '$' : cost.currency === 'EUR' ? '€' : cost.currency === 'GBP' ? '£' : `${cost.currency} `;
-    return cost.low === cost.high ? `~${sym}${cost.low}` : `~${sym}${cost.low}–${cost.high}`;
+    let price;
+    try {
+      const whole = Number.isInteger(cost.low) && Number.isInteger(cost.high);
+      const fmt = new Intl.NumberFormat(cedarI18n.locale, {
+        style: 'currency', currency: cost.currency, minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2,
+      });
+      price = cost.low === cost.high ? fmt.format(cost.low) : fmt.formatRange(cost.low, cost.high);
+    } catch {
+      // A currency code Intl doesn't know: the code and the plain numbers.
+      price = `${cost.currency} ${cedarI18n.number(cost.low)}${cost.low === cost.high ? '' : `–${cedarI18n.number(cost.high)}`}`;
+    }
+    return tr('transit.about', { price });
   }
   /** Black or white, whichever reads better on `hex`. */
   function ink(hex) {
@@ -205,8 +228,8 @@ const cedarTransit = (() => {
     const out = [];
     if (o.depart && o.arrive) out.push(`${clock(spec, o.depart)} – ${clock(spec, o.arrive)}`);
     if (o.mode === 'transit') {
-      if (o.transfers !== null) out.push(o.transfers === 0 ? 'direct' : `${o.transfers} transfer${o.transfers === 1 ? '' : 's'}`);
-      if (o.walkMinutes) out.push(`${o.walkMinutes} min walk`);
+      if (o.transfers !== null) out.push(o.transfers === 0 ? tr('transit.direct') : tr('transit.transfers', { count: o.transfers }));
+      if (o.walkMinutes) out.push(tr('transit.walkMin', { min: o.walkMinutes }));
     } else {
       const d = distance(o);
       if (d) out.push(d);
@@ -299,29 +322,28 @@ const cedarTransit = (() => {
       return li;
     };
     if (o.mode !== 'transit' || !o.legs.length) {
-      const verb = { walk: 'Walk', drive: 'Drive', rideshare: 'Ride' }[o.mode] || 'Go';
-      list.append(step(o.mode, null, `${verb} to ${spec.to.label}`, [duration(o.minutes), distance(o), o.note].filter(Boolean).join(' · '), o.depart));
+      list.append(step(o.mode, null, tr(GO_TO[o.mode] || 'transit.goTo.other', { place: spec.to.label }), [duration(o.minutes), distance(o), o.note].filter(Boolean).join(' · '), o.depart));
     } else {
       o.legs.forEach((l, i) => {
         const to = l.to && l.to !== 'END' ? l.to : spec.to.label;
         if (l.kind === 'walk') {
-          const far = l.meters !== null ? ` · ${l.meters >= 1000 ? `${(l.meters / 1000).toFixed(1)} km` : `${l.meters} m`}` : '';
-          list.append(step('walk', null, `Walk to ${to}`, `${duration(l.minutes)}${far}`, l.depart));
+          const far = l.meters !== null ? ` · ${meters(l.meters)}` : '';
+          list.append(step('walk', null, tr('transit.goTo.walk', { place: to }), `${duration(l.minutes)}${far}`, l.depart));
           return;
         }
         const from = l.from && l.from !== 'START' ? l.from : spec.from.label;
-        const towards = l.headsign ? ` towards ${l.headsign}` : '';
+        const kind = tr(KIND_LABEL[l.kind]);
         const lineEl = badge(l);
-        const li = step('ride', lineEl, `${KIND_LABEL[l.kind]}${towards}`,
-          [`${from} → ${to}`, l.stops ? `${l.stops} stop${l.stops === 1 ? '' : 's'}` : '', duration(l.minutes), l.agency].filter(Boolean).join(' · '),
+        const li = step('ride', lineEl, l.headsign ? tr('transit.towards', { line: kind, headsign: l.headsign }) : kind,
+          [`${from} → ${to}`, l.stops ? tr('transit.stops', { count: l.stops }) : '', duration(l.minutes), l.agency].filter(Boolean).join(' · '),
           l.depart);
         if (l.color) li.style.setProperty('--leg', l.color);
         list.append(li);
-        if (i === o.legs.length - 1 && l.arrive) list.append(step('end', null, `Arrive at ${to}`, '', l.arrive));
+        if (i === o.legs.length - 1 && l.arrive) list.append(step('end', null, tr('transit.arriveAt', { place: to }), '', l.arrive));
       });
     }
     const last = o.legs[o.legs.length - 1];
-    if ((o.mode !== 'transit' || last?.kind === 'walk') && o.arrive) list.append(step('end', null, `Arrive at ${spec.to.label}`, '', o.arrive));
+    if ((o.mode !== 'transit' || last?.kind === 'walk') && o.arrive) list.append(step('end', null, tr('transit.arriveAt', { place: spec.to.label }), '', o.arrive));
     return list;
   }
 
@@ -332,9 +354,9 @@ const cedarTransit = (() => {
     ico.append(icon(o.mode));
     const main = el('span', 'cedar-trip-option-main');
     const name = el('span', 'cedar-trip-option-name');
-    name.append(el('span', '', MODE_LABEL[o.mode]));
-    if (o === spec.recommended) name.append(el('span', 'cedar-trip-tag rec', 'Recommended'));
-    if (o === fastest && o !== spec.recommended) name.append(el('span', 'cedar-trip-tag', 'Fastest'));
+    name.append(el('span', '', tr(MODE_LABEL[o.mode])));
+    if (o === spec.recommended) name.append(el('span', 'cedar-trip-tag rec', tr('transit.recommended')));
+    if (o === fastest && o !== spec.recommended) name.append(el('span', 'cedar-trip-tag', tr('transit.fastest')));
     main.append(name);
     if (o.mode === 'transit' && o.legs.some((l) => l.kind !== 'walk')) {
       const chain = el('span', 'cedar-trip-chain');
@@ -356,12 +378,12 @@ const cedarTransit = (() => {
     const card = el('div', 'cedar-trip');
     card.setAttribute('role', 'group');
     const route = `${spec.from.label} → ${spec.to.label}`;
-    card.setAttribute('aria-label', spec.title || `Trip from ${spec.from.label} to ${spec.to.label}`);
+    card.setAttribute('aria-label', spec.title || tr('transit.aria', { from: spec.from.label, to: spec.to.label }));
 
     const head = el('div', 'cedar-trip-head');
     head.append(el('div', 'cedar-trip-title', spec.title || route));
-    const when = spec.arriveBy ? `Arrive by ${clock(spec, spec.arriveBy, { weekday: 'short' })}`
-      : spec.departAt ? `Leave ${clock(spec, spec.departAt, { weekday: 'short' })}` : 'Leaving now';
+    const when = spec.arriveBy ? tr('transit.arriveBy', { time: clock(spec, spec.arriveBy, { weekday: 'short' }) })
+      : spec.departAt ? tr('transit.leave', { time: clock(spec, spec.departAt, { weekday: 'short' }) }) : tr('transit.leavingNow');
     head.append(el('div', 'cedar-trip-sub', spec.title ? `${route} · ${when}` : when));
     card.append(head);
 
@@ -370,7 +392,7 @@ const cedarTransit = (() => {
       const ico = el('span', 'cedar-trip-mode');
       ico.append(icon(spec.recommended.mode));
       const text = el('div', '');
-      text.append(el('strong', '', `Take ${MODE_LABEL[spec.recommended.mode].toLowerCase()}: ${duration(spec.recommended.minutes)}`));
+      text.append(el('strong', '', tr(TAKE[spec.recommended.mode], { duration: duration(spec.recommended.minutes) })));
       if (spec.reason) text.append(el('div', 'cedar-trip-reason', spec.reason));
       rec.append(ico, text);
       card.append(rec);
@@ -378,7 +400,7 @@ const cedarTransit = (() => {
 
     const frame = el('div', 'cedar-map-frame cedar-trip-frame');
     const canvas = el('div', 'cedar-map-canvas');
-    const status = el('div', 'cedar-map-status', 'Loading map…');
+    const status = el('div', 'cedar-map-status', tr('map.loading'));
     frame.append(canvas, status);
     const note = el('div', 'cedar-map-note');
     note.hidden = true;
@@ -408,7 +430,7 @@ const cedarTransit = (() => {
 
     const foot = el('div', 'cedar-trip-foot');
     for (const u of spec.unavailable) {
-      foot.append(el('div', '', `${MODE_LABEL[u.mode]}: ${u.reason || 'not available'}`));
+      foot.append(el('div', '', tr('transit.unavailable', { mode: tr(MODE_LABEL[u.mode]), reason: u.reason || tr('transit.notAvailable') })));
     }
     if (spec.attribution) foot.append(el('div', 'cedar-trip-attr', spec.attribution));
     if (foot.childElementCount) card.append(foot);
@@ -417,13 +439,13 @@ const cedarTransit = (() => {
       .then((L) => {
         status.remove();
         showOnMap = draw(L, canvas, spec, () => {
-          note.textContent = 'The map tiles could not be loaded. The options are listed below.';
+          note.textContent = tr('transit.tilesFailed');
           note.hidden = false;
         });
         showOnMap(current);
       })
       .catch((e) => {
-        status.textContent = e?.message || 'Could not draw the map.';
+        status.textContent = e?.message || tr('map.drawFailed');
         status.classList.add('failed');
       });
     return card;

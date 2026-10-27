@@ -51,7 +51,7 @@ const cedarRecipe = (() => {
     const image = img && https(img.url)
       ? { url: img.url, pageUrl: https(img.page_url), title: str(img.title), source: str(img.source) || 'Wikimedia' }
       : null;
-    const meta = [['Prep', data.prep_time], ['Cook', data.cook_time], ['Total', data.total_time], ['Serves', data.servings]]
+    const meta = [[tr('recipe.prep'), data.prep_time], [tr('recipe.cook'), data.cook_time], [tr('recipe.total'), data.total_time], [tr('recipe.serves'), data.servings]]
       .map(([label, v]) => [label, str(v)])
       .filter(([, v]) => v);
     return { title, description: str(data.description, MAX_LONG), meta, ingredients, steps, tips, image };
@@ -72,7 +72,7 @@ const cedarRecipe = (() => {
     }
     head.classList.add('has-photo');
     const img = el('img', 'cedar-recipe-photo');
-    img.alt = spec.image.title ? `Photo: ${spec.image.title}` : `Photo of ${spec.title}`;
+    img.alt = spec.image.title ? tr('recipe.photo', { name: spec.image.title }) : tr('recipe.photoOf', { title: spec.title });
     img.decoding = 'async';
     img.referrerPolicy = 'no-referrer';
     img.addEventListener('load', () => head.classList.add('loaded'));
@@ -83,12 +83,12 @@ const cedarRecipe = (() => {
     });
     img.src = spec.image.url;
     const credit = el(spec.image.pageUrl ? 'a' : 'span', 'cedar-recipe-credit');
-    credit.textContent = `Photo: ${spec.image.source}`;
+    credit.textContent = tr('recipe.photo', { name: spec.image.source });
     if (spec.image.pageUrl) {
       credit.href = spec.image.pageUrl;
       credit.target = '_blank';
       credit.rel = 'noopener noreferrer';
-      credit.title = spec.image.title ? `${spec.image.title} on ${spec.image.source}` : spec.image.source;
+      credit.title = spec.image.title ? tr('recipe.photoOn', { title: spec.image.title, source: spec.image.source }) : spec.image.source;
     }
     head.append(img, title, credit);
     return head;
@@ -96,7 +96,7 @@ const cedarRecipe = (() => {
 
   function ingredientList(spec) {
     const section = el('section', 'cedar-recipe-section');
-    const heading = el('div', 'cedar-recipe-label', 'Ingredients');
+    const heading = el('div', 'cedar-recipe-label', tr('recipe.ingredients'));
     const list = el('ul', 'cedar-recipe-ingredients');
     for (const ing of spec.ingredients) {
       const li = el('li');
@@ -124,7 +124,7 @@ const cedarRecipe = (() => {
     const top = el('div', 'cedar-recipe-label');
     const progress = el('span', 'cedar-recipe-progress');
     progress.setAttribute('aria-live', 'polite');
-    top.append(el('span', '', 'Steps'), progress);
+    top.append(el('span', '', tr('recipe.steps')), progress);
     const list = el('ol', 'cedar-recipe-steps');
     const done = spec.steps.map(() => false);
     const items = spec.steps.map((step, i) => {
@@ -169,13 +169,13 @@ const cedarRecipe = (() => {
         li.classList.toggle('done', done[i]);
         li.classList.toggle('current', i === current);
         node.setAttribute('aria-pressed', String(done[i]));
-        node.setAttribute('aria-label', `Step ${i + 1}: ${done[i] ? 'done, mark as not done' : 'mark as done'}`);
+        node.setAttribute('aria-label', tr(done[i] ? 'recipe.stepDone' : 'recipe.stepMark', { n: i + 1 }));
         if (i === current) li.setAttribute('aria-current', 'step');
         else li.removeAttribute('aria-current');
       });
       const count = done.filter(Boolean).length;
-      progress.textContent = count ? `${count} of ${done.length} done` : `${done.length} step${done.length === 1 ? '' : 's'}`;
-      next.textContent = current < 0 ? 'All done. Start over' : current === done.length - 1 ? 'Finish' : `Done with step ${current + 1}`;
+      progress.textContent = count ? tr('recipe.progress', { done: count, total: done.length }) : tr('recipe.stepCount', { count: done.length });
+      next.textContent = current < 0 ? tr('recipe.startOver') : current === done.length - 1 ? tr('recipe.finish') : tr('recipe.doneWith', { n: current + 1 });
       next.classList.toggle('finished', current < 0);
     }
     update();
@@ -187,7 +187,7 @@ const cedarRecipe = (() => {
   function element(spec) {
     const card = el('div', 'cedar-recipe');
     card.setAttribute('role', 'group');
-    card.setAttribute('aria-label', `Recipe: ${spec.title}`);
+    card.setAttribute('aria-label', tr('recipe.aria', { title: spec.title }));
     card.append(header(spec));
 
     if (spec.meta.length) {
@@ -207,7 +207,7 @@ const cedarRecipe = (() => {
 
     if (spec.tips.length) {
       const tips = el('section', 'cedar-recipe-tips');
-      tips.append(el('div', 'cedar-recipe-label', spec.tips.length === 1 ? 'Tip' : 'Tips'));
+      tips.append(el('div', 'cedar-recipe-label', tr('recipe.tips', { count: spec.tips.length })));
       const list = el('ul');
       for (const t of spec.tips) list.append(el('li', '', t));
       tips.append(list);

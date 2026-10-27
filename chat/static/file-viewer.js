@@ -52,11 +52,11 @@ const cedarViewer = (() => {
   }
 
   /** A "View" button for `path`, or null when it isn't a file the viewer can show. */
-  function viewButton(path, { label = 'View', primary = false, icon } = {}) {
+  function viewButton(path, { label = tr('files.view'), primary = false, icon } = {}) {
     if (!deps || !kind(path)) return null;
     const b = button(label, () => open(path), icon);
     if (primary) b.classList.add('primary');
-    b.title = `View ${path}`;
+    b.title = tr('files.viewPath', { path });
     return b;
   }
 
@@ -67,9 +67,9 @@ const cedarViewer = (() => {
     const title = el('h3', 'viewer-title');
     title.id = 'viewer-title';
     const actions = el('div', 'viewer-actions');
-    const openTab = button('Open in new tab', openInNewTab);
-    const download = button('Download', (e) => current && deps.download(current.path, e.currentTarget));
-    const close = button('Close', () => hide());
+    const openTab = button(tr('files.openTab'), openInNewTab);
+    const download = button(tr('files.download'), (e) => current && deps.download(current.path, e.currentTarget));
+    const close = button(tr('files.close'), () => hide());
     actions.append(openTab, download, close);
     head.append(title, actions);
     const body = el('div', 'viewer-body');
@@ -116,12 +116,12 @@ const cedarViewer = (() => {
   }
 
   async function showMarkdown(res, id) {
-    const tooLarge = () => setMessage('This file is too large to preview. Download it instead.');
+    const tooLarge = () => setMessage(tr('files.tooLarge'));
     if (Number(res.headers.get('Content-Length')) > MAX_MARKDOWN_BYTES) return tooLarge();
     const text = await res.text();
     if (id !== request) return;
     if (text.length > MAX_MARKDOWN_BYTES) return tooLarge();
-    if (!text.trim()) return setMessage('This file is empty.');
+    if (!text.trim()) return setMessage(tr('files.empty'));
     const page = el('div', 'md');
     page.innerHTML = deps.renderMarkdown(text);
     if (typeof cedarImages !== 'undefined') cedarImages.hydrate(page);
@@ -129,7 +129,7 @@ const cedarViewer = (() => {
   }
 
   async function showImage(res, id, name, path) {
-    const tooLarge = () => setMessage('This image is too large to preview. Download it instead.');
+    const tooLarge = () => setMessage(tr('files.imageTooLarge'));
     if (Number(res.headers.get('Content-Length')) > MAX_IMAGE_BYTES) return tooLarge();
     const bytes = await res.arrayBuffer();
     if (id !== request) return;
@@ -141,7 +141,7 @@ const cedarViewer = (() => {
     fileUrl = URL.createObjectURL(fileBlob);
     const img = el('img', 'viewer-image');
     img.alt = name;
-    img.addEventListener('error', () => { if (id === request) setMessage('This file is not a valid image. You can still download it.'); });
+    img.addEventListener('error', () => { if (id === request) setMessage(tr('files.badImage')); });
     img.src = fileUrl;
     setBody(img, 'image');
     // A tab of its own would run an SVG's scripts with this page's origin, so only raster images get one.
@@ -153,13 +153,13 @@ const cedarViewer = (() => {
     if (id !== request) return;
     // A PDF starts with "%PDF-" within its first KiB. Anything else is not shown, whatever its name.
     const start = new TextDecoder('latin1').decode(new Uint8Array(bytes, 0, Math.min(1024, bytes.byteLength)));
-    if (!start.includes('%PDF-')) return setMessage('This file is not a valid PDF. You can still download it.');
+    if (!start.includes('%PDF-')) return setMessage(tr('files.badPdf'));
     // The type is forced, so the browser's PDF viewer handles the bytes and never an HTML/SVG
     // document with a .pdf name. The frame must not be sandboxed: Chrome's PDF viewer refuses that.
     fileBlob = new Blob([bytes], { type: 'application/pdf' });
     fileUrl = URL.createObjectURL(fileBlob);
     const frame = el('iframe', 'viewer-pdf');
-    frame.title = `PDF: ${name}`;
+    frame.title = tr('files.pdfTitle', { name });
     frame.src = fileUrl;
     setBody(frame, 'pdf');
     ui.openTab.hidden = false;
@@ -175,7 +175,7 @@ const cedarViewer = (() => {
     current = { path, kind: k };
     ui.title.textContent = name;
     ui.title.title = path;
-    setMessage('Loading…');
+    setMessage(tr('files.loading'));
     if (!ui.dialog.open) ui.dialog.showModal();
     try {
       const res = await deps.fetchFile(path);
@@ -184,7 +184,7 @@ const cedarViewer = (() => {
       else if (k === 'image') await showImage(res, id, name, path);
       else await showMarkdown(res, id);
     } catch (e) {
-      if (id === request) setMessage(e?.message || 'Could not load the file.');
+      if (id === request) setMessage(e?.message || tr('files.loadFailed'));
     }
   }
 

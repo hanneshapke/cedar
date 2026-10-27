@@ -20,9 +20,14 @@
 const cedarChart = (() => {
   const KINDS = ['line', 'bar', 'barh', 'area', 'scatter', 'pie', 'histogram'];
   const KIND_NAMES = {
-    line: 'Line chart', bar: 'Bar chart', barh: 'Bar chart', area: 'Area chart',
-    scatter: 'Scatter plot', pie: 'Pie chart', histogram: 'Histogram',
+    line: 'chart.kind.line', bar: 'chart.kind.bar', barh: 'chart.kind.bar', area: 'chart.kind.area',
+    scatter: 'chart.kind.scatter', pie: 'chart.kind.pie', histogram: 'chart.kind.histogram',
   };
+  /** The kinds that stack, stacked. */
+  const STACKED_NAMES = {
+    bar: 'chart.stacked.bar', barh: 'chart.stacked.bar', area: 'chart.stacked.area', histogram: 'chart.stacked.histogram',
+  };
+  const kindName = (kind) => tr(KIND_NAMES[kind]);
   const MAX_SERIES = 20;
   const MAX_VALUES = 100000;
   const SLOTS = 8; // the categorical palette; series past it are drawn in the neutral "other" grey
@@ -68,7 +73,7 @@ const cedarChart = (() => {
     for (const [i, s] of input.series.slice(0, MAX_SERIES).entries()) {
       if (!s || !Array.isArray(s.values) || !s.values.length) return null;
       if (s.values.some((v) => v !== null && num(v) === null)) return null;
-      series.push({ name: str(s.name, 80) || `Series ${i + 1}`, named: Boolean(str(s.name)), values: s.values.slice(0, MAX_VALUES).map(num), slot: i });
+      series.push({ name: str(s.name, 80) || tr('chart.seriesN', { n: i + 1 }), named: Boolean(str(s.name)), values: s.values.slice(0, MAX_VALUES).map(num), slot: i });
     }
     let labels = [];
     if (kind !== 'histogram') {
@@ -122,27 +127,33 @@ const cedarChart = (() => {
   // -- numbers ---------------------------------------------------------------------------------
 
   const trimZeros = (s) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s);
+  /** The locale's decimal sign in place of the point. */
+  const DECIMAL = (1.5).toLocaleString(cedarI18n.locale).replace(/\d/g, '') || '.';
+  const decimal = (s) => s.replace('.', DECIMAL);
 
-  /** A short number for an axis: 1.2K, 3.4M, 0.25. */
+  /** A short number for an axis: 1.2K, 3.4M, 0.25 (the suffixes and decimal sign the locale's). */
   function compact(v, step = Math.abs(v)) {
     const a = Math.abs(v);
-    for (const [div, suffix] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
-      if (a >= div && (a >= 1e4 || suffix !== 'K')) {
+    for (const [div, key] of [[1e12, 'chart.trillions'], [1e9, 'chart.billions'], [1e6, 'chart.millions'], [1e3, 'chart.thousands']]) {
+      if (a >= div && (a >= 1e4 || div !== 1e3)) {
         const digits = Math.max(0, Math.min(2, -Math.floor(Math.log10((step || a) / div))));
-        return `${v < 0 ? '−' : ''}${trimZeros((a / div).toFixed(digits))}${suffix}`;
+        return `${v < 0 ? '−' : ''}${tr(key, { n: decimal(trimZeros((a / div).toFixed(digits))) })}`;
       }
     }
     const digits = step > 0 ? Math.max(0, Math.min(6, -Math.floor(Math.log10(step)))) : 2;
     const s = trimZeros(a.toFixed(digits));
-    return `${v < 0 && s !== '0' ? '−' : ''}${s}`;
+    return `${v < 0 && s !== '0' ? '−' : ''}${decimal(s)}`;
   }
+
+  /** A share (0–1) as a percentage with one decimal. */
+  const share = (x) => x.toLocaleString(cedarI18n.locale, { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   /** A number as it reads in a tooltip or table. */
   function full(v) {
     if (v === null || v === undefined) return '–';
     const a = Math.abs(v);
     const digits = a >= 1000 ? 0 : a >= 100 ? 1 : a >= 1 ? 2 : a === 0 ? 0 : 4;
-    return v.toLocaleString(undefined, { maximumFractionDigits: digits }).replace(/^-/, '−');
+    return v.toLocaleString(cedarI18n.locale, { maximumFractionDigits: digits }).replace(/^-/, '−');
   }
 
   const labelText = (l) => (typeof l === 'number' ? full(l) : l);
@@ -317,7 +328,7 @@ const cedarChart = (() => {
     // stylesheet's `height: auto` and shrinks the plot to a speck.
     root.style.width = `${width}px`;
     root.setAttribute('role', 'img');
-    root.setAttribute('aria-label', `${spec.title || KIND_NAMES[kind]}: ${data.map((s) => s.name).join(', ')}. Hover or use the arrow keys for values; the data is also in the table below.`);
+    root.setAttribute('aria-label', tr('chart.plotAria', { title: spec.title || kindName(kind), series: data.map((s) => s.name).join(', ') }));
     root.setAttribute('tabindex', '0');
 
     // Grid and axes.
@@ -563,7 +574,7 @@ const cedarChart = (() => {
     function showIndex(i) {
       cursor = Math.max(0, Math.min(n - 1, i));
       const at = xs[cursor];
-      tip.replaceChildren(el('div', 'when', `${catTitle ? `${catTitle}: ` : ''}${fmtCat(cursor)}`));
+      tip.replaceChildren(el('div', 'when', catTitle ? tr('chart.tipTitle', { label: catTitle, value: fmtCat(cursor) }) : fmtCat(cursor)));
       let total = 0;
       data.forEach((s) => {
         const val = s.values[cursor];
@@ -572,7 +583,7 @@ const cedarChart = (() => {
       });
       if (stacked && data.length > 1) {
         const t = el('div', 'row total');
-        t.append(el('span', 'who', 'Total'), el('strong', '', full(total)));
+        t.append(el('span', 'who', tr('chart.total')), el('strong', '', full(total)));
         tip.append(t);
       }
       if (barLike) {
@@ -681,7 +692,7 @@ const cedarChart = (() => {
       const kept = new Set(sorted.slice(0, MAX_SLICES - 1));
       const rest = slices.filter((s) => !kept.has(s));
       slices = slices.filter((s) => kept.has(s)).map((s, i) => ({ ...s, slot: i }));
-      slices.push({ name: `Other (${rest.length})`, value: rest.reduce((a, s) => a + s.value, 0), slot: SLOTS });
+      slices.push({ name: tr('chart.other', { count: rest.length }), value: rest.reduce((a, s) => a + s.value, 0), slot: SLOTS });
     }
     const total = slices.reduce((a, s) => a + s.value, 0);
     const stack = width < 460;
@@ -694,7 +705,7 @@ const cedarChart = (() => {
     const root = svg('svg', { viewBox: `0 0 ${size} ${size}`, width: size, height: size, class: `cedar-chart-svg${animate ? ' enter' : ''}` });
     root.style.width = `${size}px`; // as in drawPlot, for WebKit
     root.setAttribute('role', 'img');
-    root.setAttribute('aria-label', `${spec.title || 'Pie chart'}: ${slices.map((s) => `${s.name} ${((s.value / total) * 100).toFixed(1)}%`).join(', ')}`);
+    root.setAttribute('aria-label', tr('chart.pieAria', { title: spec.title || kindName('pie'), slices: slices.map((s) => `${s.name} ${share(s.value / total)}`).join(', ') }));
     root.setAttribute('tabindex', '0');
     const centerValue = svg('text', { x: c, y: c + 2, class: 'pie-total', 'text-anchor': 'middle' });
     const centerLabel = svg('text', { x: c, y: c + 20, class: 'pie-sub', 'text-anchor': 'middle' });
@@ -704,11 +715,12 @@ const cedarChart = (() => {
 
     let a0 = -Math.PI / 2;
     for (const s of slices) {
-      const share = s.value / total;
-      const a1 = a0 + share * Math.PI * 2;
+      const part = s.value / total;
+      const shareText = share(part);
+      const a1 = a0 + part * Math.PI * 2;
       const pt = (rad, a) => `${(c + rad * Math.cos(a)).toFixed(2)},${(c + rad * Math.sin(a)).toFixed(2)}`;
       let d;
-      if (share >= 0.9999) {
+      if (part >= 0.9999) {
         d = `M${pt(r, a0)}A${r},${r} 0 1 1 ${pt(r, a0 + Math.PI)}A${r},${r} 0 1 1 ${pt(r, a0)}M${pt(inner, a0)}A${inner},${inner} 0 1 0 ${pt(inner, a0 + Math.PI)}A${inner},${inner} 0 1 0 ${pt(inner, a0)}Z`;
       } else {
         const large = a1 - a0 > Math.PI ? 1 : 0;
@@ -718,7 +730,7 @@ const cedarChart = (() => {
       root.append(arc);
       arcs.push(arc);
       const li = el('li', slotClass(s.slot));
-      li.append(el('span', 'swatch'), el('span', 'name', s.name), el('span', 'val', full(s.value)), el('span', 'pct', `${(share * 100).toFixed(1)}%`));
+      li.append(el('span', 'swatch'), el('span', 'name', s.name), el('span', 'val', full(s.value)), el('span', 'pct', shareText));
       list.append(li);
       rows.push(li);
       a0 = a1;
@@ -730,7 +742,7 @@ const cedarChart = (() => {
       cursor = (i + slices.length) % slices.length;
       arcs.forEach((a, k) => a.classList.toggle('dim', k !== cursor));
       rows.forEach((r2, k) => r2.classList.toggle('on', k === cursor));
-      centerValue.textContent = `${((slices[cursor].value / total) * 100).toFixed(1)}%`;
+      centerValue.textContent = share(slices[cursor].value / total);
       centerLabel.textContent = clip(slices[cursor].name, inner * 1.6, 11);
     }
     function reset() {
@@ -738,7 +750,7 @@ const cedarChart = (() => {
       arcs.forEach((a) => a.classList.remove('dim'));
       rows.forEach((r2) => r2.classList.remove('on'));
       centerValue.textContent = compact(total, total / 100);
-      centerLabel.textContent = 'Total';
+      centerLabel.textContent = tr('chart.total');
     }
     reset();
     arcs.forEach((a, i) => {
@@ -766,7 +778,7 @@ const cedarChart = (() => {
   function table(spec, note) {
     const box = el('details', 'cedar-chart-data');
     const summary = el('summary');
-    summary.append(el('span', 'label', 'Data'));
+    summary.append(el('span', 'label', tr('chart.data')));
     if (note) summary.append(el('span', 'saved', note));
     box.append(summary);
     box.addEventListener('toggle', () => {
@@ -776,30 +788,30 @@ const cedarChart = (() => {
       let rows;
       if (spec.kind === 'histogram') {
         const hist = histogram(spec);
-        head.append(el('th', '', spec.xLabel || 'Bin'), ...spec.series.map((s) => el('th', '', s.name)));
+        head.append(el('th', '', spec.xLabel || tr('chart.bin')), ...spec.series.map((s) => el('th', '', s.name)));
         rows = hist ? hist.counts[0].map((_, i) => [`${full(hist.edges[i])} – ${full(hist.edges[i + 1])}`, ...hist.counts.map((c) => c[i])]) : [];
       } else {
-        head.append(el('th', '', (spec.kind === 'barh' ? spec.yLabel : spec.xLabel) || (spec.kind === 'pie' ? 'Slice' : '')), ...spec.series.map((s) => el('th', '', s.named || spec.series.length > 1 ? s.name : (spec.kind === 'barh' ? spec.xLabel : spec.yLabel) || 'Value')));
+        head.append(el('th', '', (spec.kind === 'barh' ? spec.yLabel : spec.xLabel) || (spec.kind === 'pie' ? tr('chart.slice') : '')), ...spec.series.map((s) => el('th', '', s.named || spec.series.length > 1 ? s.name : (spec.kind === 'barh' ? spec.xLabel : spec.yLabel) || tr('chart.value'))));
         rows = spec.labels.map((l, i) => [labelText(l), ...spec.series.map((s) => s.values[i])]);
         if (spec.kind === 'pie') {
           const total = spec.series[0].values.reduce((a, v) => a + (v || 0), 0);
-          head.append(el('th', '', 'Share'));
-          rows = rows.map((r) => [...r, `${((r[1] / total) * 100).toFixed(1)}%`]);
+          head.append(el('th', '', tr('chart.share')));
+          rows = rows.map((r) => [...r, share(r[1] / total)]);
         }
       }
       const thead = el('thead');
       thead.append(head);
       const tbody = el('tbody');
       for (const r of rows.slice(0, MAX_TABLE_ROWS)) {
-        const tr = el('tr');
-        r.forEach((cell, k) => tr.append(el(k ? 'td' : 'th', '', typeof cell === 'number' || cell === null ? full(cell) : cell)));
-        tbody.append(tr);
+        const row = el('tr');
+        r.forEach((cell, k) => row.append(el(k ? 'td' : 'th', '', typeof cell === 'number' || cell === null ? full(cell) : cell)));
+        tbody.append(row);
       }
       tbl.append(thead, tbody);
       const scroll = el('div', 'scroll');
       scroll.append(tbl);
       box.append(scroll);
-      if (rows.length > MAX_TABLE_ROWS) box.append(el('p', 'note', `First ${MAX_TABLE_ROWS} of ${rows.length.toLocaleString()} rows; the saved file has them all.`));
+      if (rows.length > MAX_TABLE_ROWS) box.append(el('p', 'note', tr('chart.firstRows', { shown: MAX_TABLE_ROWS, count: rows.length })));
     });
     return box;
   }
@@ -809,21 +821,24 @@ const cedarChart = (() => {
   function element(spec) {
     const card = el('div', 'cedar-chart');
     card.setAttribute('role', 'group');
-    card.setAttribute('aria-label', spec.title || KIND_NAMES[spec.kind]);
+    card.setAttribute('aria-label', spec.title || kindName(spec.kind));
 
     const head = el('div', 'cedar-chart-head');
     const icon = el('span', 'cedar-chart-icon');
     icon.innerHTML = spec.kind === 'pie' ? PIE_ICON : ICON;
     const titles = el('div', 'titles');
-    const title = el('div', 'cedar-chart-title', spec.title || KIND_NAMES[spec.kind]);
+    const title = el('div', 'cedar-chart-title', spec.title || kindName(spec.kind));
     title.setAttribute('role', 'heading');
     title.setAttribute('aria-level', '3');
     // The kind, unless it is already the title.
-    const sub = spec.title ? [spec.stacked ? `Stacked ${KIND_NAMES[spec.kind].toLowerCase()}` : KIND_NAMES[spec.kind]] : [];
-    if (spec.log) sub.push('log scale');
-    if (spec.kind === 'histogram') sub.push(`${spec.series.reduce((a, s) => a + s.values.filter((v) => v !== null).length, 0).toLocaleString()} samples`);
-    else if (spec.kind === 'pie') sub.push(`${spec.labels.length} slices`);
-    else sub.push(`${spec.labels.length.toLocaleString()} ${spec.kind === 'scatter' ? 'points' : 'values'}${spec.series.length > 1 ? ` × ${spec.series.length} series` : ''}`);
+    const sub = spec.title ? [spec.stacked ? tr(STACKED_NAMES[spec.kind]) : kindName(spec.kind)] : [];
+    if (spec.log) sub.push(tr('chart.logScale'));
+    if (spec.kind === 'histogram') sub.push(tr('chart.samples', { count: spec.series.reduce((a, s) => a + s.values.filter((v) => v !== null).length, 0) }));
+    else if (spec.kind === 'pie') sub.push(tr('chart.slices', { count: spec.labels.length }));
+    else {
+      const count = tr(spec.kind === 'scatter' ? 'chart.points' : 'chart.values', { count: spec.labels.length });
+      sub.push(spec.series.length > 1 ? `${count} ${tr('chart.bySeries', { count: spec.series.length })}` : count);
+    }
     titles.append(title, el('div', 'cedar-chart-sub', sub.join(' · ')));
     head.append(icon, titles);
     card.append(head);
@@ -834,12 +849,12 @@ const cedarChart = (() => {
     const wantsLegend = spec.kind !== 'pie' && (spec.series.length > 1 || spec.series[0].named);
     if (wantsLegend) {
       legend.setAttribute('role', 'group');
-      legend.setAttribute('aria-label', 'Series');
+      legend.setAttribute('aria-label', tr('chart.series'));
       for (const s of spec.series) {
         const b = el('button', 'item');
         b.type = 'button';
         b.setAttribute('aria-pressed', 'true');
-        b.title = spec.series.length > 1 ? `Show or hide ${s.name}` : s.name;
+        b.title = spec.series.length > 1 ? tr('chart.toggle', { name: s.name }) : s.name;
         b.append(el('span', `key ${slotClass(s.slot)}${spec.kind === 'line' || spec.kind === 'scatter' ? ' line' : ''}`), el('span', 'name', s.name));
         if (spec.series.length > 1) {
           b.addEventListener('click', () => {
@@ -874,8 +889,8 @@ const cedarChart = (() => {
 
     const foot = el('div', 'cedar-chart-foot');
     const notes = [];
-    if (spec.thinned) notes.push('Long series are thinned here');
-    if (spec.path) notes.push(`Saved as ${spec.path.split('/').pop()}`);
+    if (spec.thinned) notes.push(tr('chart.thinned'));
+    if (spec.path) notes.push(tr('chart.savedAs', { file: spec.path.split('/').pop() }));
     foot.append(table(spec, notes.join(' · ')));
     card.append(foot);
     return card;
@@ -912,10 +927,10 @@ const cedarChart = (() => {
   }
 
   /** The rest of a tool's output, folded under its charts. */
-  function report(text, label = 'Full report') {
+  function report(text, label = tr('chart.fullReport')) {
     const box = el('details', 'cedar-chart-report');
     box.append(el('summary', '', label));
-    box.append(el('pre', '', text || '(no other output)'));
+    box.append(el('pre', '', text || tr('chart.noOtherOutput')));
     return box;
   }
 

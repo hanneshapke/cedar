@@ -60,8 +60,8 @@ const cedarClarify = (() => {
     const lines = spec.questions.map((q, i) => {
       const { chosen, own } = answers[i];
       const parts = [...chosen];
-      if (own) parts.push(chosen.length || q.options.length ? `Other: ${own}` : own);
-      const answer = parts.length ? parts.join(', ') : 'No preference';
+      if (own) parts.push(chosen.length || q.options.length ? tr('clarify.otherAnswer', { text: own }) : own);
+      const answer = parts.length ? parts.join(', ') : tr('clarify.noPreference');
       return spec.questions.length === 1 ? `${q.question}\n${answer}` : `${i + 1}. ${q.question}\n${answer}`;
     });
     return lines.join('\n\n');
@@ -78,7 +78,7 @@ const cedarClarify = (() => {
     const type = q.multi ? 'checkbox' : 'radio';
     const boxes = [];
     if (q.options.length) {
-      field.append(el('div', 'cedar-clarify-hint', q.multi ? 'Choose any that apply' : 'Choose one'));
+      field.append(el('div', 'cedar-clarify-hint', tr(q.multi ? 'clarify.chooseAny' : 'clarify.chooseOne')));
       const list = el('div', 'cedar-clarify-options');
       for (const o of q.options) {
         const row = el('label', 'cedar-clarify-opt');
@@ -105,12 +105,12 @@ const cedarClarify = (() => {
       other = el('input');
       other.type = type;
       other.name = name;
-      other.setAttribute('aria-label', 'Other');
+      other.setAttribute('aria-label', tr('clarify.other'));
       own = el('input', 'cedar-clarify-own');
       own.type = 'text';
       own.maxLength = 1000;
-      own.placeholder = 'Other: write your own answer';
-      own.setAttribute('aria-label', `Your own answer to: ${q.question}`);
+      own.placeholder = tr('clarify.otherPlaceholder');
+      own.setAttribute('aria-label', tr('clarify.ownAria', { question: q.question }));
       own.addEventListener('input', () => { other.checked = own.value.trim() !== ''; field.dispatchEvent(new Event('change', { bubbles: true })); });
       other.addEventListener('change', () => { if (other.checked && !own.value.trim()) own.focus(); });
       row.append(other, own);
@@ -120,7 +120,7 @@ const cedarClarify = (() => {
       own = el('textarea', 'cedar-clarify-own');
       own.rows = 2;
       own.maxLength = 2000;
-      own.placeholder = 'Your answer';
+      own.placeholder = tr('clarify.yourAnswer');
       own.setAttribute('aria-label', q.question);
       field.append(own);
     }
@@ -146,7 +146,7 @@ const cedarClarify = (() => {
     const root = el('div', 'cedar-clarify');
     const head = el('div', 'cedar-clarify-head');
     head.append(
-      el('span', 'cedar-clarify-title', spec.questions.length === 1 ? 'A question for you' : `${spec.questions.length} questions for you`),
+      el('span', 'cedar-clarify-title', tr('clarify.title', { count: spec.questions.length })),
       el('span', 'cedar-clarify-state', ''),
     );
     const form = el('form', 'cedar-clarify-form');
@@ -154,9 +154,9 @@ const cedarClarify = (() => {
     for (const f of fields) form.append(f.field);
 
     const foot = el('div', 'cedar-clarify-foot');
-    const send = el('button', 'cedar-clarify-send', 'Send answer');
+    const send = el('button', 'cedar-clarify-send', tr('clarify.send'));
     send.type = 'submit';
-    foot.append(send, el('span', 'cedar-clarify-alt', 'or reply in the message box'));
+    foot.append(send, el('span', 'cedar-clarify-alt', tr('clarify.alt')));
     form.append(foot);
     root.append(head, form);
 
@@ -177,10 +177,10 @@ const cedarClarify = (() => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (root.classList.contains('answered') || !onSubmit || !any()) return;
-      close(root, 'Sending…');
+      close(root, tr('clarify.sending'));
       try {
         await onSubmit(answerText(spec, answers()));
-        close(root, 'Answered');
+        close(root, tr('clarify.answered'));
       } catch {
         // The app has said what went wrong; the answers stay so they can be sent again.
         root.classList.remove('answered');
@@ -190,14 +190,14 @@ const cedarClarify = (() => {
       }
     });
 
-    if (answered || !onSubmit) close(root, 'Answered');
+    if (answered || !onSubmit) close(root, tr('clarify.answered'));
     else sync();
     return root;
   }
 
   /** Close the open forms under `root`: a later message has answered them. */
   function settle(root) {
-    for (const form of root.querySelectorAll('.cedar-clarify:not(.answered)')) close(form, 'Answered');
+    for (const form of root.querySelectorAll('.cedar-clarify:not(.answered)')) close(form, tr('clarify.answered'));
   }
 
   return { parse, element, settle, answerText };

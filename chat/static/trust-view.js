@@ -42,7 +42,7 @@ const cedarTrust = (() => {
 
   /** What a plan waiting on the reader says: one Cedar chose to make (`propose_plan`) comes mid-run. */
   function awaitingNote(plan) {
-    return plan?.origin === 'tool' ? 'Cedar planned this. Change anything, then go on.' : 'Change anything, then start.';
+    return tr(plan?.origin === 'tool' ? 'trust.plan.noteTool' : 'trust.plan.note');
   }
 
   /**
@@ -54,7 +54,7 @@ const cedarTrust = (() => {
     const el = h('section', 'cedar-plan');
     el.dataset.state = awaiting ? 'awaiting' : 'running';
     const head = h('header', 'cedar-plan-head');
-    head.append(h('span', 'cedar-plan-label', 'Plan'), h('span', 'cedar-plan-note', note || (awaiting ? awaitingNote(plan) : '')));
+    head.append(h('span', 'cedar-plan-label', tr('trust.plan.label')), h('span', 'cedar-plan-note', note || (awaiting ? awaitingNote(plan) : '')));
     const count = h('span', 'cedar-plan-count', '');
     head.append(count);
     el.append(head);
@@ -67,14 +67,14 @@ const cedarTrust = (() => {
       const mark = h('span', 'cedar-plan-mark');
       mark.innerHTML = CHECK;
       const title = h(awaiting ? 'input' : 'span', 'cedar-plan-title');
-      if (awaiting) { title.value = step.title; title.setAttribute('aria-label', `Step ${step.id}`); }
+      if (awaiting) { title.value = step.title; title.setAttribute('aria-label', tr('trust.plan.step', { id: step.id })); }
       else title.textContent = step.title;
       const meta = h('span', 'cedar-plan-meta', '');
       li.append(mark, title, meta);
       if (awaiting) {
         const del = h('button', 'cedar-plan-remove', '');
         del.type = 'button';
-        del.title = 'Remove this step';
+        del.title = tr('trust.plan.remove');
         del.innerHTML = svg('M6 6l12 12M18 6L6 18');
         del.addEventListener('click', () => { li.remove(); rows.delete(step.id); });
         li.append(del);
@@ -85,7 +85,7 @@ const cedarTrust = (() => {
     for (const step of plan.steps) list.append(row(step));
     if (awaiting) {
       const acts = h('div', 'cedar-plan-actions');
-      const add = h('button', 'cedar-plan-add', 'Add a step');
+      const add = h('button', 'cedar-plan-add', tr('trust.plan.add'));
       add.type = 'button';
       add.addEventListener('click', () => {
         const id = String(Date.now());
@@ -93,7 +93,7 @@ const cedarTrust = (() => {
         list.append(li);
         li.querySelector('input').focus();
       });
-      const start = h('button', 'cedar-plan-start', plan.origin === 'tool' ? 'Looks good, go on' : 'Looks good, start');
+      const start = h('button', 'cedar-plan-start', tr(plan.origin === 'tool' ? 'trust.plan.goOn' : 'trust.plan.start'));
       start.type = 'button';
       start.addEventListener('click', async () => {
         const steps = [...list.querySelectorAll('.cedar-plan-step')]
@@ -115,15 +115,15 @@ const cedarTrust = (() => {
         if (state === 'running') { r.calls++; r.li.dataset.state = 'running'; }
         else if (state === 'done') { r.li.dataset.state = 'done'; }
         else if (state === 'error') { r.li.dataset.state = 'error'; }
-        r.meta.textContent = r.calls ? `${r.calls} call${r.calls === 1 ? '' : 's'}` : '';
+        r.meta.textContent = r.calls ? tr('trust.plan.calls', { count: r.calls }) : '';
         const done = [...rows.values()].filter((x) => x.li.dataset.state === 'done').length;
-        count.textContent = `${done} / ${rows.size} done`;
+        count.textContent = tr('trust.plan.done', { done, total: rows.size });
       },
       /** The run is over: anything still running is done (or failed). */
       finish(ok) {
         for (const r of rows.values()) if (r.li.dataset.state !== 'done') r.li.dataset.state = ok ? 'done' : 'error';
         const done = [...rows.values()].filter((x) => x.li.dataset.state === 'done').length;
-        count.textContent = `${done} / ${rows.size} done`;
+        count.textContent = tr('trust.plan.done', { done, total: rows.size });
       },
       setNote(text) { head.querySelector('.cedar-plan-note').textContent = text; },
     };
@@ -133,20 +133,20 @@ const cedarTrust = (() => {
   // -- approvals -----------------------------------------------------------------------------
 
   const APPROVAL_KINDS = {
-    download_file: { what: 'download from the web', scope: (i) => host(i.url) },
-    bash: { what: 'run a command that changes the sandbox', scope: () => null },
-    write_file: { what: 'overwrite a file', scope: () => null },
-    fetch_url: { what: 'reach the web', scope: (i) => host(i.url) },
+    download_file: { what: 'trust.what.download', scope: (i) => host(i.url) },
+    bash: { what: 'trust.what.bash', scope: () => null },
+    write_file: { what: 'trust.what.overwrite', scope: () => null },
+    fetch_url: { what: 'trust.what.web', scope: (i) => host(i.url) },
   };
   function host(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return null; } }
   // What cedar's approval rules (`approval.required.rule`) are about.
   const RULE_WHAT = {
-    email: 'send or change email',
-    downloads: 'download from the web',
-    installs: 'install packages',
-    deletes: 'delete files',
-    network: 'run code with internet access',
-    community: 'run a community tool',
+    email: 'trust.what.email',
+    downloads: 'trust.what.download',
+    installs: 'trust.what.installs',
+    deletes: 'trust.what.deletes',
+    network: 'trust.what.network',
+    community: 'trust.what.community',
   };
 
   /**
@@ -154,14 +154,15 @@ const cedarTrust = (() => {
    * returns a promise; the card settles when it resolves. `spec`: {id, tool, input, reason, scope}.
    */
   function approvalElement(spec, { onDecide } = {}) {
-    const kind = APPROVAL_KINDS[spec.tool] || { what: `use ${spec.tool}`, scope: () => null };
-    const what = RULE_WHAT[spec.rule] || kind.what;
+    const kind = APPROVAL_KINDS[spec.tool] || { what: '', scope: () => null };
+    const whatKey = RULE_WHAT[spec.rule] || kind.what;
+    const what = whatKey ? tr(whatKey) : tr('trust.what.use', { tool: spec.tool });
     // A cedar that names the rule also says what "always" would cover; none means ask every time.
     const scope = spec.rule ? spec.scope : spec.scope || kind.scope(spec.input || {});
     const el = h('section', 'cedar-approval');
     el.dataset.state = 'pending';
     const head = h('header', 'cedar-approval-head');
-    head.append(h('span', 'cedar-approval-label', 'Needs your OK'), h('span', 'cedar-approval-what', `· ${what}`));
+    head.append(h('span', 'cedar-approval-label', tr('trust.approval.label')), h('span', 'cedar-approval-what', `· ${what}`));
     el.append(head);
     const body = h('div', 'cedar-approval-body');
     body.textContent = spec.reason || describe(spec);
@@ -176,9 +177,9 @@ const cedarTrust = (() => {
       });
       return b;
     };
-    acts.append(button('Allow once', 'allow', true));
-    if (scope) acts.append(button(`Always for ${scope}`, 'allow_always'));
-    acts.append(button('Skip', 'deny'));
+    acts.append(button(tr('trust.approval.allowOnce'), 'allow', true));
+    if (scope) acts.append(button(tr('trust.approval.always', { scope }), 'allow_always'));
+    acts.append(button(tr('trust.approval.skip'), 'deny'));
     el.append(acts);
     return el;
   }
@@ -186,21 +187,23 @@ const cedarTrust = (() => {
   function describe(spec) {
     const i = spec.input || {};
     switch (spec.tool) {
-      case 'download_file': return `${i.url || 'a file'}${i.path ? ` → ${i.path}` : ''}`;
-      case 'write_file': return `${i.path || 'a file'} already exists in the workspace.`;
+      case 'download_file': return `${i.url || tr('trust.aFile')}${i.path ? ` → ${i.path}` : ''}`;
+      case 'write_file': return tr('trust.fileExists', { path: i.path || tr('trust.aFile') });
       case 'bash': return i.command || '';
       default: return JSON.stringify(i);
     }
   }
 
-  const DECISIONS = { allow: 'Allowed', allow_always: 'Allowed, always', deny: 'Skipped', timeout: 'Timed out' };
+  const DECISIONS = {
+    allow: 'trust.decision.allow', allow_always: 'trust.decision.always', deny: 'trust.decision.deny', timeout: 'trust.decision.timeout',
+  };
   /** Replace the buttons with what was decided and when. */
   function settle(el, decision, at) {
     el.dataset.state = decision === 'deny' || decision === 'timeout' ? 'denied' : 'allowed';
     const acts = el.querySelector('.cedar-approval-actions');
     acts.textContent = '';
-    const time = new Date(at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    acts.append(h('span', 'cedar-approval-decision', `${DECISIONS[decision] || decision} · ${time}`));
+    const time = new Date(at || Date.now()).toLocaleTimeString(cedarI18n.locale, { hour: '2-digit', minute: '2-digit' });
+    acts.append(h('span', 'cedar-approval-decision', `${DECISIONS[decision] ? tr(DECISIONS[decision]) : decision} · ${time}`));
   }
 
   // -- reasoning -----------------------------------------------------------------------------
@@ -211,13 +214,13 @@ const cedarTrust = (() => {
     const sum = h('summary', '');
     sum.innerHTML = `${CHEVRON}<span></span>`;
     const secs = typeof durationMs === 'number' ? Math.max(1, Math.round(durationMs / 1000)) : null;
-    sum.lastChild.textContent = secs ? `Thought for ${secs} s` : 'Thinking';
+    sum.lastChild.textContent = secs ? tr('trust.thoughtFor', { s: secs }) : tr('trust.thinking');
     const body = h('div', 'cedar-reasoning-body');
     body.textContent = text || '';
     el.append(sum, body);
     el.cedarReasoning = {
       append(more) { body.textContent += more; },
-      done(ms) { const s = Math.max(1, Math.round((ms || 0) / 1000)); sum.lastChild.textContent = `Thought for ${s} s`; },
+      done(ms) { const s = Math.max(1, Math.round((ms || 0) / 1000)); sum.lastChild.textContent = tr('trust.thoughtFor', { s }); },
     };
     return el;
   }
@@ -330,7 +333,7 @@ const cedarTrust = (() => {
         title.addEventListener('click', () => onOpen?.(s));
       }
       body.append(title);
-      const meta = [s.host, s.kind === 'file' ? 'saved to the workspace' : s.kind === 'document' ? 'workspace file' : s.age].filter(Boolean).join(' · ');
+      const meta = [s.host, s.kind === 'file' ? tr('trust.source.saved') : s.kind === 'document' ? tr('trust.source.workspaceFile') : s.age].filter(Boolean).join(' · ');
       if (meta) body.append(h('span', 'cedar-source-meta', meta));
       li.append(body);
       el.append(li);
@@ -342,17 +345,22 @@ const cedarTrust = (() => {
 
   /** "6,412 in · 918 out · ≈ $0.004" (the cost only when the server sends one). */
   function costText(usage) {
-    const parts = [`${(usage.input || 0).toLocaleString()} in`, `${(usage.output || 0).toLocaleString()} out`];
-    if (typeof usage.cost_usd === 'number') parts.push(`≈ $${usage.cost_usd < 0.01 ? usage.cost_usd.toFixed(4) : usage.cost_usd.toFixed(2)}`);
+    const parts = [tr('trust.cost.in', { n: usage.input || 0 }), tr('trust.cost.out', { n: usage.output || 0 })];
+    if (typeof usage.cost_usd === 'number') {
+      const digits = usage.cost_usd < 0.01 ? 4 : 2;
+      parts.push(`≈ ${usage.cost_usd.toLocaleString(cedarI18n.locale, {
+        style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits,
+      })}`);
+    }
     return parts.join(' · ');
   }
 
   /** "Ran in an isolated container · network off" from run.started, or the generic line. */
   function sandboxText(started, approvals) {
     const s = started?.sandbox;
-    const parts = ['Ran in an isolated container'];
-    if (s?.network) parts.push(s.network === 'none' ? 'network off' : `network: ${s.network}`);
-    if (approvals) parts.push(`${approvals} approval${approvals === 1 ? '' : 's'} by you`);
+    const parts = [tr('trust.sandbox.ran')];
+    if (s?.network) parts.push(s.network === 'none' ? tr('trust.sandbox.networkOff') : tr('trust.sandbox.network', { mode: s.network }));
+    if (approvals) parts.push(tr('trust.sandbox.approvals', { count: approvals }));
     return parts.join(' · ');
   }
 
