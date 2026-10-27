@@ -1,5 +1,13 @@
 {
   "summary": "Cheapest US price for a prescription: generic vs brand, Cost Plus Drugs, NADAC pharmacy cost, your copay",
   "category": "health",
-  "reviewed": true
+  "reviewed": true,
+  "translations": {
+    "de": {
+      "summary": "Günstigster US-Preis für ein Rezept: Generikum vs. Marke, Cost Plus Drugs, NADAC-Apothekenpreis, deine Zuzahlung"
+    },
+    "fr": {
+      "summary": "Prix le plus bas aux États-Unis pour une ordonnance : générique ou marque, Cost Plus Drugs, NADAC, votre quote-part"
+    }
+  }
 }

@@ -1,4 +1,12 @@
 {
   "summary": "Search arXiv papers by topic, author, category and date, or fetch them by id, with abstracts and PDFs",
-  "category": "productivity"
+  "category": "productivity",
+  "translations": {
+    "de": {
+      "summary": "arXiv-Artikel nach Thema, Autor, Kategorie und Datum suchen oder per ID abrufen, mit Abstracts und PDFs"
+    },
+    "fr": {
+      "summary": "Recherchez des articles arXiv par sujet, auteur, catégorie et date, ou par identifiant, avec résumés et PDF"
+    }
+  }
 }

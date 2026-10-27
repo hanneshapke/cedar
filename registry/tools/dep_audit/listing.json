@@ -1,4 +1,12 @@
 {
   "summary": "Check Python and npm dependencies for known vulnerabilities (OSV.dev) and outdated releases",
-  "category": "developer"
+  "category": "developer",
+  "translations": {
+    "de": {
+      "summary": "Python- und npm-Abhängigkeiten auf bekannte Schwachstellen (OSV.dev) und veraltete Versionen prüfen"
+    },
+    "fr": {
+      "summary": "Vérifiez les dépendances Python et npm : vulnérabilités connues (OSV.dev) et versions obsolètes"
+    }
+  }
 }

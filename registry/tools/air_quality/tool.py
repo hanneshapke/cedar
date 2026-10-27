@@ -12,6 +12,7 @@ Exit non-zero with a message on stderr to report an error; the model sees it as 
 error and can try again differently.
 """
 import json
+import os
 import sys
 import urllib.error
 import urllib.parse
@@ -57,6 +58,51 @@ POLLEN = {  # variable: (label, upper bounds of low, moderate, high)
 }
 POLLEN_LEVELS = ["low", "moderate", "high", "very high"]
 UV = [(2, "low"), (5, "moderate"), (7, "high"), (10, "very high"), (float("inf"), "extreme")]
+# Text the user sees in the charts, by CEDAR_LANGUAGE. The report itself stays English for the model.
+STRINGS = {
+    "en": {"name_us": "US AQI", "name_european": "European AQI", "forecast": "{name} forecast",
+           "good": "good", "pollen_title": "Daily peak pollen", "pollen_unit": "grains/m³",
+           "alder": "alder", "birch": "birch", "olive": "olive", "grass": "grass", "mugwort": "mugwort",
+           "ragweed": "ragweed", "day": "{a} {d:02d} {b}", "hour": "{a} {t}"},
+    "de": {"name_us": "US-AQI", "name_european": "Europäischer AQI", "forecast": "{name}: Prognose",
+           "good": "gut", "pollen_title": "Pollen: Tageshöchstwerte", "pollen_unit": "Pollenkörner/m³",
+           "alder": "Erle", "birch": "Birke", "olive": "Olive", "grass": "Gräser", "mugwort": "Beifuß",
+           "ragweed": "Ambrosia", "day": "{a}, {d}. {b}", "hour": "{a} {t}"},
+    "fr": {"name_us": "IQA américain", "name_european": "IQA européen", "forecast": "Prévision de l'{name}",
+           "good": "bon", "pollen_title": "Pic quotidien de pollen", "pollen_unit": "grains/m³",
+           "alder": "aulne", "birch": "bouleau", "olive": "olivier", "grass": "graminées", "mugwort": "armoise",
+           "ragweed": "ambroisie", "day": "{a} {d} {b}", "hour": "{a} {t}"},
+}
+WEEKDAYS = {"en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            "de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]}
+MONTHS = {"en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+          "de": ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
+          "fr": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]}
+
+
+def language():
+    """The user's language from CEDAR_LANGUAGE (older servers don't set it: English)."""
+    lang = (os.environ.get("CEDAR_LANGUAGE") or "").strip().lower().split("-")[0]
+    return lang if lang in STRINGS else "en"
+
+
+def tr(key, **values):
+    """A chart string in the user's language; Swiss German (de-CH) writes ss for ß."""
+    lang = language()
+    text = STRINGS[lang].get(key, STRINGS["en"][key])
+    if lang == "de" and (os.environ.get("CEDAR_LOCALE") or "").replace("_", "-").lower().startswith("de-ch"):
+        text = text.replace("ß", "ss")
+    return text.format(**values)
+
+
+def day_label(d):
+    lang = language()
+    return tr("day", a=WEEKDAYS[lang][d.weekday()], d=d.day, b=MONTHS[lang][d.month - 1])
+
+
+def hour_label(t):
+    return tr("hour", a=WEEKDAYS[language()][t.weekday()], t=f"{t:%H:%M}")
 
 
 def whole(value, default, low, high):
@@ -258,16 +304,16 @@ def spans(times):
 def charts(rows, standard, place):
     out = []
     key = f"{standard}_aqi"
-    name = "US AQI" if standard == "us" else "European AQI"
+    name = tr(f"name_{standard}")
     points = [r for r in rows if r.get(key) is not None]
     if points:
         step = 1 if len(points) <= 96 else 2
         points = points[::step]
         good = BANDS[standard][0][0]
-        out.append({"kind": "line", "title": f"{name} forecast" + (f", {place}" if place else ""),
-                    "labels": [f"{r['time']:%a %H:%M}" for r in points],
+        out.append({"kind": "line", "title": tr("forecast", name=name) + (f", {place}" if place else ""),
+                    "labels": [hour_label(r["time"]) for r in points],
                     "series": [{"name": name, "values": [round(r[key]) for r in points]}],
-                    "y_label": name, "band": {"from": 0, "to": good, "label": BANDS[standard][0][1]}})
+                    "y_label": name, "band": {"from": 0, "to": good, "label": tr("good")}})
     days = {}
     for r in rows:
         days.setdefault(r["time"].date(), []).append(r)
@@ -275,10 +321,10 @@ def charts(rows, standard, place):
     for v in POLLEN:
         peaks = [max((h[v] for h in hours if h.get(v) is not None), default=None) for hours in days.values()]
         if any(peaks):
-            series.append({"name": POLLEN[v][0], "values": [None if p is None else round(p) for p in peaks]})
+            series.append({"name": tr(POLLEN[v][0]), "values": [None if p is None else round(p) for p in peaks]})
     if series:
-        out.append({"kind": "bar", "title": "Daily peak pollen", "labels": [f"{d:%a %d %b}" for d in days],
-                    "series": series, "y_label": "grains/m³"})
+        out.append({"kind": "bar", "title": tr("pollen_title"), "labels": [day_label(d) for d in days],
+                    "series": series, "y_label": tr("pollen_unit")})
     return ["[chart] " + json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]
 
 

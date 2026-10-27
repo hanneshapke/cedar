@@ -13,6 +13,7 @@ Exit non-zero with a message on stderr to report an error; the model sees it as 
 error and can try again differently.
 """
 import json
+import os
 import re
 import statistics
 import sys
@@ -46,6 +47,45 @@ FORM_WORDS = {  # what people say: the words RxNorm uses in dose forms
     "injection": ["injecti", "prefilled syringe", "auto-injector", "pen injector"], "pen": ["pen injector"],
     "drops": ["drops", "ophthalmic"], "chewable": ["chewable"], "odt": ["disintegrating"],
 }
+# Text the user sees in the chart, by CEDAR_LANGUAGE. The report itself stays English for the model.
+STRINGS = {
+    "en": {"title": "{base}, {quantity} units", "x_label": "USD (* what pharmacies pay, not a price you can pay)",
+           "nadac": "Pharmacy cost, {kind} (NADAC)", "generic": "generic", "brand": "brand",
+           "estimate": "Cost Plus Drugs (estimate)", "copay": "Your insurance copay", "quote": "a quote"},
+    "de": {"title": "{base}, {quantity} Einheiten",
+           "x_label": "USD (* was Apotheken zahlen, kein Preis, den du zahlen kannst)",
+           "nadac": "Apothekeneinkauf, {kind} (NADAC)", "generic": "Generikum", "brand": "Markenpräparat",
+           "estimate": "Cost Plus Drugs (Schätzung)", "copay": "Deine Zuzahlung (Versicherung)",
+           "quote": "ein Angebot"},
+    "fr": {"title": "{base}, {quantity} unités",
+           "x_label": "USD (* ce que paient les pharmacies, pas un prix que vous pouvez payer)",
+           "nadac": "Coût pour la pharmacie, {kind} (NADAC)", "generic": "générique", "brand": "princeps",
+           "estimate": "Cost Plus Drugs (estimation)", "copay": "Votre quote-part d'assurance",
+           "quote": "un devis"},
+}
+# The English names this tool gives its own price sources, for the chart's labels.
+OWN_SOURCES = {"Pharmacy cost, generic (NADAC)": ("nadac", "generic"),
+               "Pharmacy cost, brand (NADAC)": ("nadac", "brand"),
+               "Cost Plus Drugs (estimate)": ("estimate", None),
+               "Your insurance copay": ("copay", None), "a quote": ("quote", None)}
+
+
+def tr(key, **values):
+    """A chart string in CEDAR_LANGUAGE (English when unset); Swiss German (de-CH) writes ss for ß."""
+    lang = (os.environ.get("CEDAR_LANGUAGE") or "").strip().lower().split("-")[0]
+    lang = lang if lang in STRINGS else "en"
+    text = STRINGS[lang].get(key, STRINGS["en"][key])
+    if lang == "de" and (os.environ.get("CEDAR_LOCALE") or "").replace("_", "-").lower().startswith("de-ch"):
+        text = text.replace("ß", "ss")
+    return text.format(**values)
+
+
+def source_label(source):
+    """A price source's name for the chart: this tool's own in the user's language, the user's as given."""
+    key, kind = OWN_SOURCES.get(source, (None, None))
+    if key is None:
+        return source
+    return tr(key, kind=tr(kind)) if kind else tr(key)
 
 
 class SourceError(Exception):
@@ -450,10 +490,10 @@ def report(base, ingredient, generic, asked_brand, quantity, offers, failed):
 
     lines = []
     if len(offers) > 1:
-        lines.append({"kind": "barh", "title": f"{base}, {quantity} units",
-                      "labels": [o["source"] + (" *" if not o["buyable"] else "") for o in offers],
+        lines.append({"kind": "barh", "title": tr("title", base=base, quantity=quantity),
+                      "labels": [source_label(o["source"]) + (" *" if not o["buyable"] else "") for o in offers],
                       "series": [{"name": "USD", "values": [o["price"] for o in offers]}],
-                      "x_label": "USD (* what pharmacies pay, not a price you can pay)"})
+                      "x_label": tr("x_label")})
     for c in lines:
         out.append("")
         out.append("[chart] " + json.dumps(c, separators=(",", ":"), ensure_ascii=False))
