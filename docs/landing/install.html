@@ -133,7 +133,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
 <footer class="site-footer">
   <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
-  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a href="./#iphone-private">iPhone, privately</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
 </footer>
 
 <script>
@@ -142,8 +142,12 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const RELEASES = REPO + '/releases/latest';
   const DESKTOP = REPO + '/blob/main/desktop/README.md';
   const LINUX = REPO + '/blob/main/DEPLOYMENT.md';
+  const TESTFLIGHT = REPO + '/discussions/51';
+  // The SideStore source this site publishes (docs/sidestore), and the link that adds it in SideStore.
+  const SOURCE = new URL('sidestore.json', location.href).href;
+  const ADD_SOURCE = 'sidestore://source?url=' + encodeURIComponent(SOURCE);
   // Filled in from GitHub once the latest release answers; until then the buttons go to the releases page.
-  const release = { ver: '0.1.9', dmg: '', msi: '', apk: '', 'linux-x64': '', 'linux-arm64': '' };
+  const release = { ver: '0.1.9', dmg: '', msi: '', apk: '', ipa: '', 'linux-x64': '', 'linux-arm64': '' };
   // The first release whose setup window installs Docker on a Mac, and Tailscale on a Mac and
   // Windows (CHANGELOG.md). Until the latest release is at least this one, the steps say to
   // install them by hand. An Intel Mac builds from main, so it has them already.
@@ -189,11 +193,13 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No', s: 'this computer only' }] },
     { id: 'phone', label: 'Which phone do you have?', hint: 'Cedar has an app for each.', when: (s) => s.mobile === 'yes',
       opts: [{ v: 'iphone', t: 'iPhone', s: 'or iPad' }, { v: 'android', t: 'Android' }] },
+    { id: 'ios', label: 'How do you want to install the iPhone app?', hint: 'TestFlight is Apple\'s beta app and needs an invite. Privately, you install it yourself with SideStore and your own Apple ID.', when: (s) => s.mobile === 'yes' && s.phone === 'iphone',
+      opts: [{ v: 'testflight', t: 'TestFlight', s: 'ask for an invite' }, { v: 'sidestore', t: 'Privately', s: 'SideStore, no invite' }] },
     { id: 'tailscale', label: 'Do you have Tailscale installed?', hint: 'It links your phone to this computer privately.', when: (s) => s.mobile === 'yes',
       opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what it is' }] },
   ];
 
-  const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', mobile: '', phone: detectPhone(), tailscale: '' };
+  const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', mobile: '', phone: detectPhone(), ios: '', tailscale: '' };
   const state = readState();
 
   function detectOs() {
@@ -271,7 +277,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     if (s.host === 'no' && s.provider) chips.push(`<span class="chip done">Hosted model · ${s.provider === 'other' ? 'another provider' : PROVIDERS[s.provider].name}</span>`);
     if (s.host === 'unknown') chips.push('<span class="chip todo">Check your hardware</span>');
     if (s.mobile === 'no') chips.push('<span class="chip skip">No phone app</span>');
-    if (s.mobile === 'yes' && s.phone) chips.push(`<span class="chip">${s.phone === 'iphone' ? 'iPhone' : 'Android'} app</span>`);
+    if (s.mobile === 'yes' && s.phone) chips.push(`<span class="chip">${s.phone === 'iphone' ? 'iPhone' : 'Android'} app${s.phone === 'iphone' && s.ios ? (s.ios === 'sidestore' ? ' · SideStore' : ' · TestFlight') : ''}</span>`);
     if (s.mobile === 'yes' && s.tailscale) chips.push(s.tailscale === 'yes' ? '<span class="chip done">Tailscale ready</span>' : '<span class="chip todo">Tailscale to install</span>');
     document.getElementById('summary').innerHTML = chips.join('');
   }
@@ -307,6 +313,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   // ---------- the steps ----------
   function buildSteps(s) {
     const steps = s.os === 'mac' ? macSteps(s) : s.os === 'windows' ? windowsSteps(s) : linuxSteps(s);
+    if (sideloads(s)) steps.push(sideStoreStep(s));
     if (s.mobile !== 'no') steps.push(phoneStep(s));
     steps.push(downloadStep(s));
     return steps;
@@ -328,9 +335,11 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       linux: `<p>${btn(linuxUrl(arch), `Cedar ${esc(release.ver)} for Linux (${arch}, .tar.gz)`)}</p>`,
     }[s.os];
     const phone = s.mobile !== 'yes' ? ''
-      : s.phone === 'iphone' ? `<p>${btn(REPO + '/discussions/51', 'Cedar for iPhone (TestFlight invite)')}</p>`
+      : sideloads(s) ? `<p>${btn(ADD_SOURCE, 'Cedar for iPhone (add to SideStore)')}${btn(release.ipa || RELEASES, 'Or the .ipa', true)}</p>`
+      : s.phone === 'iphone' && s.ios === 'testflight' ? `<p>${btn(TESTFLIGHT, 'Cedar for iPhone (TestFlight invite)')}</p>`
+      : s.phone === 'iphone' ? `<p>${btn(TESTFLIGHT, 'iPhone (TestFlight invite)')}${btn(release.ipa || RELEASES, 'iPhone, privately (.ipa)', true)}</p>`
       : s.phone === 'android' ? `<p>${btn(release.apk || RELEASES, 'Cedar for Android (.apk)')}</p>`
-      : `<p>${btn(REPO + '/discussions/51', 'iPhone (TestFlight)', true)}${btn(release.apk || RELEASES, 'Android (.apk)', true)}</p>`;
+      : `<p>${btn(TESTFLIGHT, 'iPhone (TestFlight)', true)}${btn(release.ipa || RELEASES, 'iPhone (.ipa)', true)}${btn(release.apk || RELEASES, 'Android (.apk)', true)}</p>`;
     return step('Your downloads', `<p>The build that matches your answers${s.mobile === 'yes' ? ', and the app for your phone' : ''}:</p>${desktop}${phone}
       <p class="note">Something else? Every build is on the <a href="${RELEASES}">latest release page</a>.</p>`, 'final');
   }
@@ -481,9 +490,11 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     }[s.os];
     const dns = '<li>In the Tailscale <a href="https://login.tailscale.com/admin/dns">admin console\'s DNS page</a>, turn on <strong>MagicDNS</strong> and <strong>HTTPS Certificates</strong>.</li>';
     const app = {
-      iphone: `Install Tailscale from the App Store on your iPhone and log in to the same account. Then get Cedar through the <a href="${REPO}/discussions/51">TestFlight invite</a>.`,
+      iphone: sideloads(s)
+        ? 'Install Tailscale from the App Store on your iPhone and log in to the same account. Cedar itself you installed with SideStore in the step above.'
+        : `Install Tailscale from the App Store on your iPhone and log in to the same account. Then get Cedar through the <a href="${TESTFLIGHT}">TestFlight invite</a>${s.ios ? '' : ', or install it privately with SideStore (choose <em>Privately</em> above)'}.`,
       android: `Install Tailscale from Google Play on your Android phone and log in to the same account. Then install the <a href="${release.apk || RELEASES}">Cedar APK</a> (allow installs from your browser when asked).`,
-    }[wanted && s.phone] || `Install Tailscale on the phone and log in to the same account. Then get Cedar: <a href="${REPO}/discussions/51">TestFlight invite</a> for iPhone, or the <a href="${release.apk || RELEASES}">Android APK</a>.`;
+    }[wanted && s.phone] || `Install Tailscale on the phone and log in to the same account. Then get Cedar: <a href="${TESTFLIGHT}">TestFlight invite</a> or the <a href="${release.ipa || RELEASES}">.ipa</a> for iPhone, or the <a href="${release.apk || RELEASES}">Android APK</a>.`;
     const phone = `<li>${app}</li>`;
     const share = s.os === 'linux'
       ? `<li>Share the chat on your tailnet and tell it its address:${code('sudo tailscale serve --bg --https=443 http://127.0.0.1:3000\nURL=https://$(tailscale status --json | jq -r \'.Self.DNSName | rtrimstr(".")\')\necho "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env\nsudo systemctl restart cedar-chat', 'Terminal')}</li>
@@ -492,6 +503,21 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
          <li>Click <strong>Show QR code</strong>, then in the Cedar app tap Settings → <strong>Scan QR Code</strong>. Done.</li>`;
     const title = { iphone: 'Pair your iPhone', android: 'Pair your Android phone' }[wanted && s.phone] || 'Pair your phone';
     return step(title, `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">Only your own devices on your tailnet can reach Cedar. More in the <a href="${s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad'}">phone guide</a>.</p>`, kind, wanted ? '' : 'Optional');
+  }
+
+  // The iPhone app without TestFlight: SideStore signs it on the phone with the user's own Apple ID.
+  const sideloads = (s) => s.mobile === 'yes' && s.phone === 'iphone' && s.ios === 'sidestore';
+
+  function sideStoreStep(s) {
+    return step('Install Cedar on your iPhone with SideStore', `<p>Private and without an invite: you install the app yourself, and it never goes through TestFlight or asks for your email address. <a href="https://sidestore.io">SideStore</a> is a free, open source app store that signs Cedar on your iPhone with your own Apple ID; a free one is enough.</p>
+      <ol>
+        <li>Install SideStore once, following the <a href="https://sidestore.io">guide on sidestore.io</a>. It takes a computer for the first install only.</li>
+        <li>On the iPhone, add Cedar's source to SideStore: tap the button below, or in SideStore go to <strong>Sources → +</strong> and paste the address.${code(SOURCE)}
+          <p>${btn(ADD_SOURCE, 'Add to SideStore')}</p></li>
+        <li>In the source, tap <strong>Cedar</strong>, then <strong>Free</strong> to install it. SideStore offers each new release as an update.</li>
+      </ol>
+      <p class="note">Rather install the file yourself? Download <a href="${release.ipa || RELEASES}">the .ipa</a> on the iPhone and open it with SideStore (<strong>My Apps → +</strong>).</p>
+      ${explain('<b>What is different?</b> The app is the same, with one exception: no push notifications, since an app signed with your own Apple ID can\'t have them. With a free Apple ID the app must be refreshed every 7 days; SideStore does it in the background or when you tap <strong>Refresh</strong>. It needs iOS 17 or newer.')}`);
   }
 
   // The Mac and Windows apps update themselves (desktop/README.md, "Updates"); a self-built one doesn't.
@@ -626,6 +652,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         if (n.endsWith('.dmg')) release.dmg = u;
         else if (n.endsWith('.msi')) release.msi = u;
         else if (n.endsWith('.apk')) release.apk = u;
+        else if (n.endsWith('-ios.ipa')) release.ipa = u;
         else if (n.endsWith('-linux-x64.tar.gz')) release['linux-x64'] = u;
         else if (n.endsWith('-linux-arm64.tar.gz')) release['linux-arm64'] = u;
       }

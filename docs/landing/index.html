@@ -255,8 +255,11 @@ sudo install $F/cedar* /usr/local/bin/
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px">
           <div style="background:rgba(251,244,234,.55);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:10px">
             <span style="font-weight:700;font-size:16px">iPhone &amp; iPad</span>
-            <span style="font-size:14.5px;line-height:1.4">On TestFlight, invite only for now. iOS 17 or newer.</span>
-            <a href="https://github.com/hanneshapke/cedar/discussions/51" style="align-self:flex-start;background:#231f1b;color:#fbf4ea;padding:10px 16px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fbf4ea">Request an invite</a>
+            <span style="font-size:14.5px;line-height:1.4">On TestFlight with an invite, or privately with SideStore and your own Apple ID. iOS 17 or newer.</span>
+            <span style="display:flex;gap:8px;flex-wrap:wrap">
+              <a href="https://github.com/hanneshapke/cedar/discussions/51" style="align-self:flex-start;background:#231f1b;color:#fbf4ea;padding:10px 16px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fbf4ea">Request an invite</a>
+              <a href="#iphone-private" style="align-self:flex-start;border:2px solid #231f1b;color:#231f1b;padding:8px 14px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#231f1b">Install privately</a>
+            </span>
           </div>
           <div style="background:rgba(251,244,234,.55);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:10px">
             <span style="font-weight:700;font-size:16px">Android</span>
@@ -276,6 +279,18 @@ sudo install $F/cedar* /usr/local/bin/
         <img src="shots/pairing.png" alt="Cedar for Mac showing the QR code that pairs the iPhone app" style="width:88%;height:auto;display:block;border-radius:14px;box-shadow:0 16px 40px rgba(60,20,0,.25);align-self:center;margin-bottom:24px">
         <img src="shots/ios.png" alt="Cedar for iPhone showing flower shops on an Apple Maps card" style="position:absolute;right:0;bottom:-40px;width:42%;max-width:220px;height:auto;display:block;border-radius:32px;box-shadow:0 30px 60px rgba(60,20,0,.35);animation:floaty 8s ease-in-out infinite">
       </div>
+    </div>
+    <div id="iphone-private" style="background:#fff;border:1px solid #f0dcc8;border-radius:28px;padding:28px 32px;display:flex;flex-direction:column;gap:16px;scroll-margin-top:90px">
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.02em">The iPhone app, privately</h3>
+      <p style="margin:0;font-size:16.5px;line-height:1.5;color:#4f4740;text-wrap:pretty">No invite, and no email address to share: install Cedar yourself with <a href="https://sidestore.io">SideStore</a>, a free, open source app store that signs it on your iPhone with your own Apple ID. A free Apple ID is enough.</p>
+      <ol style="margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px;font-size:16px;line-height:1.5">
+        <li>Install SideStore once, following the <a href="https://sidestore.io">guide on sidestore.io</a>. Only this first install needs a computer.</li>
+        <li>On the iPhone, add Cedar's source: tap <a href="{{ addSourceHref }}" style="font-weight:600">Add to SideStore</a>, or in SideStore go to <strong>Sources → +</strong> and paste <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;background:#fbf4ea;padding:2px 6px;border-radius:6px;word-break:break-all">{{ sourceUrl }}</code></li>
+        <li>Tap <strong>Cedar</strong>, then <strong>Free</strong> to install it. SideStore offers each new release as an update.</li>
+        <li>Pair it with your computer as above: scan the QR code from Settings → <strong>Scan QR Code</strong>.</li>
+      </ol>
+      <p style="margin:0;font-size:15px;line-height:1.5;color:#4f4740;text-wrap:pretty">Rather install the file yourself? Download <a href="{{ ipaHref }}" style="font-weight:600">the .ipa</a> on the iPhone and open it with SideStore (<strong>My Apps → +</strong>). The app is the same as on TestFlight except for push notifications, which an app signed with your own Apple ID can't have. With a free Apple ID, SideStore refreshes it every 7 days.</p>
+      <a href="install.html?mobile=yes&amp;phone=iphone&amp;ios=sidestore" style="font-weight:600;font-size:16px">Step-by-step install guide →</a>
     </div>
   </div>
 </section>
@@ -354,13 +369,13 @@ sudo install $F/cedar* /usr/local/bin/
 
 <footer style="max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:#8a7f73;border-top:1px solid #f0dcc8;position:relative">
   <span style="display:flex;align-items:center;gap:8px"><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:#231f1b">@hanneshapke</a> and contributors</span>
-  <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar" style="color:#231f1b">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b">iPhone invite</a><a href="{{ apkHref }}" style="color:#231f1b">Android app</a><a href="install.html" style="color:#231f1b">Install guide</a><a href="models.html" style="color:#231f1b">Model guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" style="color:#231f1b">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="color:#231f1b">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="color:#231f1b">For developers</a></span>
+  <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar" style="color:#231f1b">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b">iPhone invite</a><a href="#iphone-private" style="color:#231f1b">iPhone, privately</a><a href="{{ apkHref }}" style="color:#231f1b">Android app</a><a href="install.html" style="color:#231f1b">Install guide</a><a href="models.html" style="color:#231f1b">Model guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" style="color:#231f1b">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="color:#231f1b">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="color:#231f1b">For developers</a></span>
 </footer>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;demoSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero demo&quot;}}">
 class Component extends DCLogic {
-  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', apk: '', linuxX64: '', linuxArm: '', ver: '', cmp: 'openclaw' };
+  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', apk: '', ipa: '', linuxX64: '', linuxArm: '', ver: '', cmp: 'openclaw' };
   prompt = 'Compare the three largest EV battery makers and write a sourced report';
   plan = [
     { title: 'Search for the latest market figures', note: '14 sources' },
@@ -451,7 +466,7 @@ class Component extends DCLogic {
       const find = (ext) => (assets.find((a) => a.name.endsWith(ext)) || {}).browser_download_url || '';
       const linuxX64 = find('-linux-x64.tar.gz');
       this.setState({
-        dmg: find('.dmg'), msi: find('.msi'), apk: find('-android.apk'),
+        dmg: find('.dmg'), msi: find('.msi'), apk: find('-android.apk'), ipa: find('-ios.ipa'),
         linuxX64, linuxArm: find('-linux-arm64.tar.gz'),
         // The install commands name this version, so only one that has the Linux files.
         ver: linuxX64 ? (release.tag_name || '').replace(/^v/, '') : '',
@@ -466,7 +481,8 @@ class Component extends DCLogic {
       case 'windows': return { label: 'Download for Windows', href: msi || releases, other: 'Mac or Linux? →', invite: true };
       case 'linux': return { label: 'Download for Linux', href: '#linux', other: 'Mac or Windows? →', invite: true };
       case 'android': return { label: 'Get the Android app', href: apk || releases, other: 'Cedar for your computer →', invite: false };
-      case 'ios': return { label: 'Get the iPhone app', href: 'https://github.com/hanneshapke/cedar/discussions/51', other: 'Cedar for your computer →', invite: false };
+      // TestFlight or privately with SideStore: the phone section offers both.
+      case 'ios': return { label: 'Get the iPhone app', href: '#phone', other: 'Cedar for your computer →', invite: false };
       default: return { label: 'Download Cedar', href: '#apps', other: 'Mac, Windows or Linux →', invite: true };
     }
   }
@@ -502,6 +518,10 @@ class Component extends DCLogic {
       macHref: this.state.dmg || 'https://github.com/hanneshapke/cedar/releases/latest',
       winHref: this.state.msi || 'https://github.com/hanneshapke/cedar/releases/latest',
       apkHref: this.state.apk || 'https://github.com/hanneshapke/cedar/releases/latest',
+      ipaHref: this.state.ipa || 'https://github.com/hanneshapke/cedar/releases/latest',
+      // The SideStore source this site publishes (docs/sidestore), and the link that adds it in SideStore.
+      sourceUrl: new URL('sidestore.json', location.href).href,
+      addSourceHref: 'sidestore://source?url=' + encodeURIComponent(new URL('sidestore.json', location.href).href),
       linuxX64Href: this.state.linuxX64 || 'https://github.com/hanneshapke/cedar/releases/latest',
       linuxArmHref: this.state.linuxArm || 'https://github.com/hanneshapke/cedar/releases/latest',
       // The newest release with Linux builds, until GitHub says which is latest.
