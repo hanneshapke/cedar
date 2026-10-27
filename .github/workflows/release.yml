@@ -313,11 +313,21 @@ jobs:
       - name: Install the Tauri CLI
         run: cargo binstall -y --locked tauri-cli --version '^2'
 
+      - name: Hand the updater's public key to the Tauri CLI
+        # After signing the update bundle, the CLI checks the signature against
+        # plugins.updater.pubkey, which tauri.conf.json leaves empty (the key lives in a variable).
+        run: |
+          set -eu
+          conf="$RUNNER_TEMP/updater-pubkey.conf.json"
+          jq -n --arg key "$(printf '%s' "$CEDAR_UPDATER_PUBKEY" | tr -d '[:space:]')" \
+            '{plugins: {updater: {pubkey: $key}}}' > "$conf"
+          echo "UPDATER_PUBKEY_CONF=$conf" >> "$GITHUB_ENV"
+
       - name: Build, sign, and notarize Cedar.app, then pack the DMG and the update bundle
         # tauri.release.conf.json turns on the update bundle: Cedar.app.tar.gz, signed (.sig) with
         # the updater key, made from the signed, notarized and stapled app.
         working-directory: desktop
-        run: cargo tauri build --ci --target ${{ matrix.target }} --bundles app,dmg --config tauri.release.conf.json
+        run: cargo tauri build --ci --target ${{ matrix.target }} --bundles app,dmg --config tauri.release.conf.json --config "$UPDATER_PUBKEY_CONF"
 
       - name: Notarize and staple the DMG itself
         # tauri-bundler notarizes and staples the .app inside; the DMG gets its own ticket so
@@ -417,10 +427,19 @@ jobs:
       - name: Install the Tauri CLI
         run: cargo binstall -y --locked tauri-cli --version '^2'
 
+      - name: Hand the updater's public key to the Tauri CLI
+        # After signing the MSI, the CLI checks the signature against plugins.updater.pubkey,
+        # which tauri.conf.json leaves empty (the key lives in a variable).
+        run: |
+          $conf = Join-Path $env:RUNNER_TEMP 'updater-pubkey.conf.json'
+          $key = $env:CEDAR_UPDATER_PUBKEY -replace '\s', ''
+          @{ plugins = @{ updater = @{ pubkey = $key } } } | ConvertTo-Json -Depth 5 | Set-Content -Path $conf -Encoding utf8NoBOM
+          "UPDATER_PUBKEY_CONF=$conf" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build Cedar.exe and pack the MSI
         # tauri.release.conf.json also signs the MSI for the updater (.msi.sig).
         working-directory: desktop
-        run: cargo tauri build --ci --target $env:TARGET --bundles msi --config tauri.release.conf.json
+        run: cargo tauri build --ci --target $env:TARGET --bundles msi --config tauri.release.conf.json --config $env:UPDATER_PUBKEY_CONF
 
       - name: Check that no executable needs the Visual C++ Redistributable
         run: |
