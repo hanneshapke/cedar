@@ -8,6 +8,9 @@
 - **A model guide.** The website's new model page (`docs/landing/models.html`) suggests models for Cedar from a few answers: text or text and images, on this computer, another machine of yours or a token factory, and the hardware (M4/M5 Mac, AMD Ryzen AI Max, DGX Spark) with its memory. It names a top pick and alternatives (Qwen3.6, Qwen3.5 122B, Gemma 4, gpt-oss, Mistral Small 4, DeepSeek V4 Flash; DeepSeek V4.1 Flash, GLM 5.3 and Kimi K2.6 at Doubleword or Baseten), how to get each, and how to set it up in Cedar (#96).
 - Website: the install guide lets Cedar set up Docker on a Mac and Tailscale on a Mac or PC, and no longer asks for Tailscale's *Install CLI*, which Cedar never needed. The landing page's setup steps follow the new order (pick a model, install Cedar, let Cedar set up the rest), and its *What's new* section is gone (#96).
 - [PRIVACY.md](PRIVACY.md) says what the Docker and Tailscale setups download, and from where.
+- **The iPhone app without TestFlight.** Each release also builds the iOS app as an unsigned IPA, attached to the GitHub Release and listed in a SideStore source (`docs/sidestore`), so it can be sideloaded with SideStore or AltStore (#98). The landing and install pages offer both ways to install it: TestFlight or privately (#99).
+- **Registry: `drug_prices`**, the cheapest US price for a prescription: generic vs brand, Cost Plus Drugs, the NADAC pharmacy cost and your copay (#100).
+- Release: the Mac and Windows builds sign their update bundles again; the Tauri CLI now gets the updater's public key it checks them against. 0.1.8 never got published because of this, so its changes ship with 0.1.9 (#102).
 
 ## 0.1.8
 
