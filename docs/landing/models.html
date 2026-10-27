@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./i18n.js"></script>
+<script src="./i18n/common.js"></script>
+<script src="./i18n/models.js"></script>
 <title>Choose a model for Cedar</title>
-<meta name="description" content="Answer a few questions and see which open AI models suit Cedar on your hardware: an M4 or M5 Mac, an AMD Ryzen AI Max, an NVIDIA DGX Spark, or a token provider.">
+<meta name="description" data-i18n-attr="content:models.meta.description" content="Answer a few questions and see which open AI models suit Cedar on your hardware: an M4 or M5 Mac, an AMD Ryzen AI Max, an NVIDIA DGX Spark, or a token provider.">
 <link rel="icon" href="docs/assets/cedar-mark.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
@@ -23,6 +26,10 @@ html{scroll-padding-top:96px}
 .site-header nav{display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap}
 .site-header nav a{color:var(--ink)}.site-header nav a:hover,.site-header nav a[aria-current]{color:var(--accent)}
 .site-header nav a.dl{background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s}
+/* The language links: in the header on phones only (on wider screens the nav fills the row), always in the footer */
+.site-header .lang{display:none;margin-left:auto;font-size:13px;color:var(--faint);white-space:nowrap}
+.site-header .lang a{color:var(--muted)}
+@media (max-width:720px){.site-header .lang{display:inline}}
 .site-header nav a.dl:hover{background:var(--accent);color:var(--bg);transform:translateY(-2px)}
 @media (max-width:720px){html{scroll-padding-top:120px}.site-header-bar header{padding:12px 16px;gap:8px}.site-header-bar nav{flex-wrap:nowrap;gap:18px;width:100%;overflow-x:auto;white-space:nowrap;scrollbar-width:none;padding:4px 0}.site-header-bar nav::-webkit-scrollbar{display:none}}
 .site-footer{max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--faint);border-top:1px solid var(--line)}
@@ -96,71 +103,76 @@ ol.setup strong{color:var(--ink);font-weight:600}
 <div class="site-header-bar">
 <header class="site-header">
   <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
+  <span class="lang" data-lang-switch></span>
   <nav>
-    <a href="./#does">What it does</a>
-    <a href="./#private">Private by design</a>
-    <a href="./#apps">Mac, Windows, Linux &amp; phones</a>
-    <a href="./#compare">Compared</a>
-    <a href="models.html" aria-current="page">Models</a>
-    <a href="install.html">Install</a>
-    <a class="dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
+    <a href="./#does" data-i18n="models.nav.does">What it does</a>
+    <a href="./#private" data-i18n="models.nav.private">Private by design</a>
+    <a href="./#apps" data-i18n="models.nav.apps">Mac, Windows, Linux &amp; phones</a>
+    <a href="./#compare" data-i18n="models.nav.compare">Compared</a>
+    <a href="models.html" aria-current="page" data-i18n="models.nav.models">Models</a>
+    <a href="install.html" data-i18n="models.nav.install">Install</a>
+    <a class="dl" href="https://github.com/hanneshapke/cedar/releases/latest" data-i18n="models.nav.download">Download Cedar</a>
   </nav>
 </header>
 </div>
 <div class="wrap">
   <main>
-    <a class="back" href="./">← Back to the Cedar home page</a><br>
-    <span class="eyebrow">Model guide</span>
-    <h1>Pick the brain for Cedar.</h1>
-    <p class="lede">Cedar works with any open model that can call tools. Which one suits you depends on what you give it, and where it runs: on your own hardware, or at a token factory that runs it for you. Pick an answer in each row; the suggestions below change as you go.</p>
+    <a class="back" href="./" data-i18n="models.back">← Back to the Cedar home page</a><br>
+    <span class="eyebrow" data-i18n="models.eyebrow">Model guide</span>
+    <h1 data-i18n="models.title">Pick the brain for Cedar.</h1>
+    <p class="lede" data-i18n="models.lede">Cedar works with any open model that can call tools. Which one suits you depends on what you give it, and where it runs: on your own hardware, or at a token factory that runs it for you. Pick an answer in each row; the suggestions below change as you go.</p>
 
-    <section class="picker" id="picker" aria-label="Your situation"></section>
-    <div class="share"><span>This page's address now holds your answers.</span><button type="button" id="copy-link">Copy link</button><button type="button" id="reset">Start over</button></div>
+    <section class="picker" id="picker" aria-label="Your situation" data-i18n-attr="aria-label:models.picker.label"></section>
+    <div class="share"><span data-i18n="models.share.note">This page's address now holds your answers.</span><button type="button" id="copy-link" data-i18n="models.share.copyLink">Copy link</button><button type="button" id="reset" data-i18n="models.share.reset">Start over</button></div>
 
     <div class="summary" id="summary" aria-live="polite"></div>
     <div id="result"></div>
-    <p class="note" style="margin-top:28px">Suggestions as of October 2026. New models come out every few weeks; sizes are for 4-bit downloads, and the memory needed grows with the length of the conversation. Every model here can call tools, which is how Cedar acts. Check a model's card before you rely on it.</p>
+    <p class="note" style="margin-top:28px" data-i18n="models.note">Suggestions as of October 2026. New models come out every few weeks; sizes are for 4-bit downloads, and the memory needed grows with the length of the conversation. Every model here can call tools, which is how Cedar acts. Check a model's card before you rely on it.</p>
   </main>
 
   <div class="help">
-    <span>Next:</span>
-    <a href="install.html">Install guide</a>
-    <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a>
-    <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a>
-    <a href="https://github.com/hanneshapke/cedar/discussions">Ask in Discussions</a>
+    <span data-i18n="models.help.next">Next:</span>
+    <a href="install.html" data-i18n="models.help.install">Install guide</a>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" data-i18n="models.help.desktop">Mac &amp; Windows guide</a>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" data-i18n="models.help.linux">Linux guide</a>
+    <a href="https://github.com/hanneshapke/cedar/discussions" data-i18n="models.help.discussions">Ask in Discussions</a>
   </div>
 </div>
 
 <footer class="site-footer">
-  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
-  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="install.html">Install guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt=""><span style="display:contents" data-i18n-html="models.footer.credit">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span></span>
+  <span data-lang-switch></span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="install.html" data-i18n="models.help.install">Install guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" data-i18n="models.help.desktop">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" data-i18n="models.help.linux">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" data-i18n="models.footer.developers">For developers</a></span>
 </footer>
 
 <script>
 (() => {
   // Each question: its id in the address (?input=images&where=here&hw=mac...), and the answers.
   // A question's `when` hides it until it applies; an answer's `hw` limits it to that hardware.
+  // The words are in i18n/models.js: models.q.<id>.label and .hint, and each answer's
+  // models.opt.<id>.<k> (and .sub when `s` is set).
   const QUESTIONS = [
-    { id: 'input', label: 'What will you give it?', hint: 'Every model reads text and PDFs (Cedar reads their text). Photos and screenshots need a model that sees.',
-      opts: [{ v: 'text', t: 'Text', s: 'messages, files, PDFs' }, { v: 'images', t: 'Text and images', s: 'photos, screenshots, scans' }] },
-    { id: 'where', label: 'Where should the model run?', hint: 'Cedar and the model can be on the same computer, or the model on a box of yours nearby.',
+    { id: 'input',
+      opts: [{ v: 'text', k: 'text', s: true }, { v: 'images', k: 'images', s: true }] },
+    { id: 'where',
       opts: [
-        { v: 'here', t: 'On this computer', s: 'next to Cedar' }, { v: 'box', t: 'On another machine', s: 'mine, over the network' },
-        { v: 'factory', t: 'At a token factory', s: 'pay per token' },
+        { v: 'here', k: 'here', s: true }, { v: 'box', k: 'box', s: true },
+        { v: 'factory', k: 'factory', s: true },
       ] },
-    { id: 'hw', label: 'What will run it?', hint: 'Models need lots of memory the chip can read fast. These have it.', when: (s) => s.where && s.where !== 'factory',
+    { id: 'hw', when: (s) => s.where && s.where !== 'factory',
       opts: [
-        { v: 'mac', t: 'Mac with M4 or M5', s: 'Pro, Max, Ultra' }, { v: 'ryzen', t: 'AMD Ryzen AI Max', s: '"Strix Halo"' },
-        { v: 'spark', t: 'NVIDIA DGX Spark', s: 'or another GB10' }, { v: 'other', t: 'Something else' },
+        { v: 'mac', k: 'mac', s: true }, { v: 'ryzen', k: 'ryzen', s: true },
+        { v: 'spark', k: 'spark', s: true }, { v: 'other', k: 'other' },
       ] },
-    { id: 'mem', label: 'How much memory?', hint: 'Mac: Apple menu → About This Mac. The model has to fit, with room to spare.', when: (s) => s.where !== 'factory' && ['mac', 'ryzen', 'spark'].includes(s.hw),
+    { id: 'mem', when: (s) => s.where !== 'factory' && ['mac', 'ryzen', 'spark'].includes(s.hw),
       opts: [
-        { v: '24', t: '16–24 GB', hw: ['mac'] }, { v: '48', t: '32–48 GB', hw: ['mac'] },
-        { v: '96', t: '64–96 GB', hw: ['mac'] }, { v: '128', t: '128 GB or more', hw: ['mac'] },
-        { v: '64', t: '64 GB', hw: ['ryzen'] }, { v: '128', t: '128 GB', hw: ['ryzen'] },
-        { v: '128', t: 'One Spark', s: '128 GB', hw: ['spark'] }, { v: '256', t: 'Two Sparks', s: 'linked, 256 GB', hw: ['spark'] },
+        { v: '24', k: 'mac24', hw: ['mac'] }, { v: '48', k: 'mac48', hw: ['mac'] },
+        { v: '96', k: 'mac96', hw: ['mac'] }, { v: '128', k: 'mac128', hw: ['mac'] },
+        { v: '64', k: 'ryzen64', hw: ['ryzen'] }, { v: '128', k: 'ryzen128', hw: ['ryzen'] },
+        { v: '128', k: 'spark128', s: true, hw: ['spark'] }, { v: '256', k: 'spark256', s: true, hw: ['spark'] },
       ] },
   ];
+  const optText = (q, o) => tr(`models.opt.${q.id}.${o.k}`);
   const DEFAULTS = { input: '', where: '', hw: '', mem: '' };
   const state = readState();
 
@@ -177,66 +189,63 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function optsFor(q, s) { return q.opts.filter((o) => !o.hw || o.hw.includes(s.hw)); }
   const shown = (q) => !q.when || q.when(state);
 
+  // ?lang= stays in the address, so a copied link opens in the same language.
+  const lang = new URLSearchParams(location.search).get('lang');
   function writeState() {
     const q = new URLSearchParams();
     for (const question of QUESTIONS) if (state[question.id] && shown(question)) q.set(question.id, state[question.id]);
+    if (lang) q.set('lang', lang);
     const qs = q.toString();
     history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+    // The language links carry the answers too.
+    for (const a of document.querySelectorAll('[data-lang-switch] a[hreflang]')) {
+      const url = new URL(location.href);
+      url.searchParams.set('lang', a.hreflang);
+      a.href = url.search + url.hash;
+    }
   }
 
   // ---------- the models ----------
   // Open-weight models that call tools well, as of October 2026. `gb`: a 4-bit download; `ollama`:
   // its tag; `lms`: what to search for in LM Studio; `hf`: the Hugging Face repository vLLM serves,
-  // where we are sure of it; `recipe`: its page on the vLLM recipes site.
+  // where we are sure of it; `recipe`: its page on the vLLM recipes site. `total`/`active`: billions
+  // of parameters (`active` for mixture of experts); `date`: when it came out. Each model's "why"
+  // is models.why.<id> in i18n/models.js.
   const MODELS = {
-    'qwen3.6-35b': { name: 'Qwen3.6 35B-A3B', by: 'Alibaba Qwen · April 2026', images: true, arch: '35B, 3B active per word (mixture of experts)', gb: 23,
-      ollama: 'qwen3.6:35b-a3b', lms: 'Qwen3.6 35B A3B', hf: 'Qwen/Qwen3.6-35B-A3B',
-      why: 'The all-rounder for 32 GB and up. Only a small part of it works on each word, so it is quick even where memory is slow, and it reads images and video frames.' },
-    'qwen3.6-27b': { name: 'Qwen3.6 27B', by: 'Alibaba Qwen · April 2026', images: true, arch: '27B dense', gb: 17,
-      ollama: 'qwen3.6:27b', lms: 'Qwen3.6 27B', hf: 'Qwen/Qwen3.6-27B',
-      why: 'Smarter for its size than the 35B-A3B, but every part works on every word, so it is slower. Best on a Mac with a Max or Ultra chip, whose memory is fast.' },
-    'gemma4-26b': { name: 'Gemma 4 26B-A4B', by: 'Google · April 2026', images: true, arch: '26B, 4B active per word (mixture of experts)', gb: 18,
-      ollama: 'gemma4:26b', lms: 'Gemma 4 26B',
-      why: 'Google\'s quick model with vision: a good second opinion to Qwen at the same size.' },
-    'gemma4-31b': { name: 'Gemma 4 31B', by: 'Google · April 2026', images: true, arch: '31B dense', gb: 20,
-      ollama: 'gemma4:31b', lms: 'Gemma 4 31B',
-      why: 'Google\'s largest Gemma, with vision. Slower than the 26B-A4B, a little more careful.' },
-    'gemma4-e4b': { name: 'Gemma 4 E4B', by: 'Google · April 2026', images: true, arch: 'about 4B, built for laptops and phones', gb: 10,
-      ollama: 'gemma4:e4b', lms: 'Gemma 4 E4B',
-      why: 'Fits a 16 GB Mac and sees images. Small models miss steps in longer tasks, so expect to steer it.' },
-    'gpt-oss-20b': { name: 'gpt-oss 20B', by: 'OpenAI · August 2025', images: false, arch: '21B, 3.6B active per word (mixture of experts)', gb: 14,
-      ollama: 'gpt-oss:20b', lms: 'gpt-oss 20B', hf: 'openai/gpt-oss-20b',
-      why: 'Reliable with tools for its size, and fits 24 GB. Text only.' },
-    'gpt-oss-120b': { name: 'gpt-oss 120B', by: 'OpenAI · August 2025', images: false, arch: '117B, 5.1B active per word (mixture of experts)', gb: 65,
-      ollama: 'gpt-oss:120b', lms: 'gpt-oss 120B', hf: 'openai/gpt-oss-120b', vllmFlags: '--tool-call-parser openai --enable-auto-tool-choice',
-      why: 'The proven pick for 128 GB machines: steady with tools, and around 50 words a second on a DGX Spark or a Ryzen AI Max. Text only.' },
-    'qwen3.5-122b': { name: 'Qwen3.5 122B-A10B', by: 'Alibaba Qwen · February 2026', images: true, arch: '122B, 10B active per word (mixture of experts)', gb: 81,
-      ollama: 'qwen3.5:122b', lms: 'Qwen3.5 122B A10B', hf: 'Qwen/Qwen3.5-122B-A10B',
-      why: 'The biggest model with vision that fits one 128 GB machine. Smarter than the 35B models, at about half their speed (some 40 words a second on a DGX Spark with vLLM).' },
-    'mistral-small-4': { name: 'Mistral Small 4', by: 'Mistral · March 2026', images: true, arch: '119B, 6B active per word (mixture of experts)', gb: 70,
-      lms: 'Mistral Small 4',
-      why: 'Apache 2.0, with vision and a switch for how hard it thinks. A strong alternative to Qwen3.5 122B on 128 GB.' },
-    'deepseek-v4-flash': { name: 'DeepSeek V4 Flash', by: 'DeepSeek · April 2026', images: false, arch: '284B, 13B active per word (mixture of experts)', gb: 160,
-      hf: 'deepseek-ai/DeepSeek-V4-Flash', recipe: 'https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash',
-      why: 'The model Cedar is built around. Too big for one Spark (about 160 GB); two linked Sparks serve it with vLLM.' },
+    'qwen3.6-35b': { name: 'Qwen3.6 35B-A3B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 35, active: 3, gb: 23,
+      ollama: 'qwen3.6:35b-a3b', lms: 'Qwen3.6 35B A3B', hf: 'Qwen/Qwen3.6-35B-A3B' },
+    'qwen3.6-27b': { name: 'Qwen3.6 27B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 27, gb: 17,
+      ollama: 'qwen3.6:27b', lms: 'Qwen3.6 27B', hf: 'Qwen/Qwen3.6-27B' },
+    'gemma4-26b': { name: 'Gemma 4 26B-A4B', org: 'Google', date: '2026-04', images: true, total: 26, active: 4, gb: 18,
+      ollama: 'gemma4:26b', lms: 'Gemma 4 26B' },
+    'gemma4-31b': { name: 'Gemma 4 31B', org: 'Google', date: '2026-04', images: true, total: 31, gb: 20,
+      ollama: 'gemma4:31b', lms: 'Gemma 4 31B' },
+    'gemma4-e4b': { name: 'Gemma 4 E4B', org: 'Google', date: '2026-04', images: true, arch: 'models.arch.gemma4-e4b', gb: 10,
+      ollama: 'gemma4:e4b', lms: 'Gemma 4 E4B' },
+    'gpt-oss-20b': { name: 'gpt-oss 20B', org: 'OpenAI', date: '2025-08', images: false, total: 21, active: 3.6, gb: 14,
+      ollama: 'gpt-oss:20b', lms: 'gpt-oss 20B', hf: 'openai/gpt-oss-20b' },
+    'gpt-oss-120b': { name: 'gpt-oss 120B', org: 'OpenAI', date: '2025-08', images: false, total: 117, active: 5.1, gb: 65,
+      ollama: 'gpt-oss:120b', lms: 'gpt-oss 120B', hf: 'openai/gpt-oss-120b', vllmFlags: '--tool-call-parser openai --enable-auto-tool-choice' },
+    'qwen3.5-122b': { name: 'Qwen3.5 122B-A10B', org: 'Alibaba Qwen', date: '2026-02', images: true, total: 122, active: 10, gb: 81,
+      ollama: 'qwen3.5:122b', lms: 'Qwen3.5 122B A10B', hf: 'Qwen/Qwen3.5-122B-A10B' },
+    'mistral-small-4': { name: 'Mistral Small 4', org: 'Mistral', date: '2026-03', images: true, total: 119, active: 6, gb: 70,
+      lms: 'Mistral Small 4' },
+    'deepseek-v4-flash': { name: 'DeepSeek V4 Flash', org: 'DeepSeek', date: '2026-04', images: false, total: 284, active: 13, gb: 160,
+      hf: 'deepseek-ai/DeepSeek-V4-Flash', recipe: 'https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash' },
   };
+  for (const [id, m] of Object.entries(MODELS)) m.why = `models.why.${id}`;
 
   // At a token factory: names as they appear in the providers' catalogs; Cedar's List models shows
-  // the exact id. `at`: who serves it (October 2026).
+  // the exact id. `at`: who serves it (October 2026). The "why" is models.hosted.<id>.
   const HOSTED = {
-    'deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', by: 'DeepSeek · September 2026', images: true, at: ['Doubleword', 'Baseten'],
-      why: 'Fast, cheap, a million-token memory, and it sees images natively. The best place to start.' },
-    'glm-5.3': { name: 'GLM 5.3', by: 'Z.ai', images: false, at: ['Doubleword', 'Baseten'],
-      why: 'One of the strongest open models at multi-step agent work. Use it for text.' },
-    'kimi-k2.6': { name: 'Kimi K2.6', by: 'Moonshot · April 2026', images: true, at: ['Doubleword'],
-      why: 'A trillion-parameter model with vision, good at long tasks. Check which providers list it.' },
-    'deepseek-v4-pro': { name: 'DeepSeek V4 Pro', by: 'DeepSeek', images: false, at: ['Doubleword', 'Baseten'],
-      why: 'Flash\'s bigger sibling, for the hardest tasks. Slower and pricier.' },
-    'qwen3.6-35b-hosted': { name: 'Qwen3.6 35B-A3B', by: 'Alibaba Qwen · April 2026', images: true, at: ['Doubleword'],
-      why: 'The cheapest model with vision here, the same one you could later run yourself on 32 GB.' },
-    'gemma4-31b-hosted': { name: 'Gemma 4 31B', by: 'Google · April 2026', images: true, at: ['Doubleword'],
-      why: 'Google\'s largest Gemma, with vision.' },
+    'deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', org: 'DeepSeek', date: '2026-09', images: true, at: ['Doubleword', 'Baseten'] },
+    'glm-5.3': { name: 'GLM 5.3', org: 'Z.ai', images: false, at: ['Doubleword', 'Baseten'] },
+    'kimi-k2.6': { name: 'Kimi K2.6', org: 'Moonshot', date: '2026-04', images: true, at: ['Doubleword'] },
+    'deepseek-v4-pro': { name: 'DeepSeek V4 Pro', org: 'DeepSeek', images: false, at: ['Doubleword', 'Baseten'] },
+    'qwen3.6-35b-hosted': { name: 'Qwen3.6 35B-A3B', org: 'Alibaba Qwen', date: '2026-04', images: true, at: ['Doubleword'] },
+    'gemma4-31b-hosted': { name: 'Gemma 4 31B', org: 'Google', date: '2026-04', images: true, at: ['Doubleword'] },
   };
+  for (const [id, m] of Object.entries(HOSTED)) m.why = `models.hosted.${id}`;
   const PROVIDERS = {
     Doubleword: { addr: 'https://api.doubleword.ai/v1', site: 'https://docs.doubleword.ai/inference-api/models', install: 'install.html?host=no&provider=doubleword' },
     Baseten: { addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co/library/', install: 'install.html?host=no&provider=baseten' },
@@ -255,109 +264,125 @@ ol.setup strong{color:var(--ink);font-weight:600}
   };
   const HOSTED_PICKS = { text: ['deepseek-v4.1-flash', 'glm-5.3', 'kimi-k2.6', 'deepseek-v4-pro'], images: ['deepseek-v4.1-flash', 'kimi-k2.6', 'qwen3.6-35b-hosted', 'gemma4-31b-hosted'] };
 
-  // Notes on a machine's memory, shown above its suggestions.
-  const HW_NOTES = {
-    'mac:24': 'macOS lets the GPU use about two thirds to three quarters of the memory, so 16–24 GB leaves room for small models only. They answer, but miss steps in longer tasks; a token factory does much better.',
-    'mac:96': 'gpt-oss 120B needs the 96 GB model: on 64 GB it does not fit next to macOS.',
-    'ryzen:64': 'Give the GPU as much memory as you can: on Windows, AMD Software → Performance → Variable Graphics Memory; on Linux, the amdgpu GTT size. Its memory is slower than a Mac Max\'s, so models that work with a small part of themselves per word (mixture of experts) run much faster than dense ones.',
-    'ryzen:128': 'Give the GPU about 96 GB: on Windows, AMD Software → Performance → Variable Graphics Memory; on Linux, the amdgpu GTT size. Prefer mixture-of-experts models: dense ones of the same size run several times slower here.',
-    'spark:256': 'Two Sparks linked with their ConnectX cable share the model with vLLM (tensor parallel). NVIDIA\'s playbooks cover the setup.',
-  };
+  // Machines with a note on their memory (models.hwnote.<hw>.<mem>), shown above the suggestions.
+  const HW_NOTES = ['mac:24', 'mac:96', 'ryzen:64', 'ryzen:128', 'spark:256'];
 
   // ---------- rendering ----------
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   function code(text, shell) {
     const html = text.split('\n').map((l) => /^\s*#/.test(l) ? `<span class="c">${esc(l)}</span>` : esc(l)).join('\n');
-    return `<div class="code">${shell ? `<span class="shell">${esc(shell)}</span>` : ''}<pre>${html}</pre><button type="button" data-copy>Copy</button></div>`;
+    return `<div class="code">${shell ? `<span class="shell">${esc(shell)}</span>` : ''}<pre>${html}</pre><button type="button" data-copy>${esc(tr('models.copy'))}</button></div>`;
   }
-  const badge = (text, cls) => `<span class="badge${cls ? ' ' + cls : ''}">${text}</span>`;
-  const sees = (m) => (m.images ? badge('Text + images', 'img') : badge('Text', 'txt'));
+  const badge = (text, cls) => `<span class="badge${cls ? ' ' + cls : ''}">${esc(text)}</span>`;
+  const sees = (m) => (m.images ? badge(tr('models.badge.images'), 'img') : badge(tr('models.badge.text'), 'txt'));
+  const month = new Intl.DateTimeFormat(cedarSite.locale, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const by = (m) => {
+    if (!m.date) return m.org;
+    const [y, mo] = m.date.split('-').map(Number);
+    return `${m.org} · ${month.format(Date.UTC(y, mo - 1, 1))}`;
+  };
+  const arch = (m) => m.arch ? tr(m.arch)
+    : m.active ? tr('models.arch.moe', { total: m.total, active: m.active }) : tr('models.arch.dense', { total: m.total });
+  const and = new Intl.ListFormat(cedarSite.locale, { type: 'conjunction' });
 
   function renderPicker() {
     document.getElementById('picker').innerHTML = QUESTIONS.map((q) => {
       if (!shown(q)) return '';
       return `<div class="q" role="group" aria-labelledby="q-${q.id}">
-        <div class="q-label" id="q-${q.id}">${esc(q.label)}<small>${esc(q.hint)}</small></div>
-        <div class="q-opts">${optsFor(q, state).map((o) => `<button type="button" class="opt" data-q="${q.id}" data-v="${o.v}" aria-pressed="${state[q.id] === o.v}">${esc(o.t)}${o.s ? `<small>${esc(o.s)}</small>` : ''}</button>`).join('')}</div>
+        <div class="q-label" id="q-${q.id}">${esc(tr(`models.q.${q.id}.label`))}<small>${esc(tr(`models.q.${q.id}.hint`))}</small></div>
+        <div class="q-opts">${optsFor(q, state).map((o) => `<button type="button" class="opt" data-q="${q.id}" data-v="${o.v}" aria-pressed="${state[q.id] === o.v}">${esc(optText(q, o))}${o.s ? `<small>${esc(tr(`models.opt.${q.id}.${o.k}.sub`))}</small>` : ''}</button>`).join('')}</div>
       </div>`;
     }).join('');
   }
 
   function renderSummary() {
     const s = state, chips = [];
-    if (s.input) chips.push(`<span class="chip">${s.input === 'images' ? 'Text and images' : 'Text'}</span>`);
-    if (s.where === 'factory') chips.push('<span class="chip">Token factory</span>');
-    if (s.where === 'here') chips.push('<span class="chip">On this computer</span>');
-    if (s.where === 'box') chips.push('<span class="chip">On another machine</span>');
-    const hw = { mac: 'M4/M5 Mac', ryzen: 'Ryzen AI Max', spark: 'DGX Spark', other: 'Other hardware' }[s.hw];
-    if (hw && s.where !== 'factory') chips.push(`<span class="chip done">${hw}${s.mem ? ' · ' + (s.mem === '256' ? 'two Sparks' : (optsFor(QUESTIONS[3], s).find((o) => o.v === s.mem) || {}).t) : ''}</span>`);
+    const chip = (text, cls) => chips.push(`<span class="chip${cls ? ' ' + cls : ''}">${esc(text)}</span>`);
+    if (s.input) chip(tr(s.input === 'images' ? 'models.opt.input.images' : 'models.opt.input.text'));
+    if (s.where === 'factory') chip(tr('models.chip.factory'));
+    if (s.where === 'here') chip(tr('models.opt.where.here'));
+    if (s.where === 'box') chip(tr('models.opt.where.box'));
+    const hw = { mac: 'M4/M5 Mac', ryzen: 'Ryzen AI Max', spark: 'DGX Spark', other: tr('models.chip.other') }[s.hw];
+    if (hw && s.where !== 'factory') {
+      const opt = optsFor(QUESTIONS[3], s).find((o) => o.v === s.mem);
+      chip(`${hw}${s.mem ? ' · ' + (s.mem === '256' ? tr('models.chip.twoSparks') : opt ? optText(QUESTIONS[3], opt) : undefined) : ''}`, 'done');
+    }
     document.getElementById('summary').innerHTML = chips.join('');
   }
 
   // How to get a model running, for the machine it runs on.
   function getIt(m, s) {
-    const shell = s.hw === 'ryzen' ? 'Terminal or PowerShell' : 'Terminal';
+    const shell = tr(s.hw === 'ryzen' ? 'models.shell.terminalPowerShell' : 'models.shell.terminal');
     const lines = [];
-    if (m.ollama) lines.push(`<p><strong>Ollama:</strong></p>${code(`ollama pull ${m.ollama}\nollama run ${m.ollama} "say hi"    # a quick test`, shell)}`);
-    else if (s.hw !== 'spark') lines.push('<p class="note">Not in Ollama\'s library yet; use LM Studio.</p>');
-    if (m.lms) lines.push(`<p><strong>LM Studio:</strong> in <em>Discover</em>, search for <code>${esc(m.lms)}</code>${s.hw === 'mac' ? ' and prefer the MLX build' : ''}.</p>`);
+    if (m.ollama) lines.push(`<p>${tr('models.get.ollama')}</p>${code(`ollama pull ${m.ollama}\nollama run ${m.ollama} "say hi"    # ${tr('models.get.quickTest')}`, shell)}`);
+    else if (s.hw !== 'spark') lines.push(`<p class="note">${tr('models.get.noOllama')}</p>`);
+    if (m.lms) lines.push(`<p>${tr(s.hw === 'mac' ? 'models.get.lmsMac' : 'models.get.lms', { name: esc(m.lms) })}</p>`);
     if (s.hw === 'spark') {
-      const what = m.hf ? `<code>${esc(m.hf)}</code>` : esc(m.name);
-      const recipe = m.recipe ? `the <a href="${m.recipe}">vLLM recipes</a>` : `the <a href="https://recipes.vllm.ai">vLLM recipes</a>`;
-      lines.push(`<p><strong>vLLM</strong> (fastest on a Spark): serve ${what} with tool calling on${m.vllmFlags ? ` (<code>${esc(m.vllmFlags)}</code>)` : ''}; ${recipe} list the flags, and NVIDIA's <a href="https://build.nvidia.com/spark/vllm">Spark playbook</a> the container.</p>`);
+      lines.push(`<p>${tr('models.get.vllm', {
+        what: m.hf ? `<code>${esc(m.hf)}</code>` : esc(m.name),
+        flags: m.vllmFlags ? ` (<code>${esc(m.vllmFlags)}</code>)` : '',
+        recipe: m.recipe || 'https://recipes.vllm.ai',
+      })}</p>`);
     }
     return lines.join('');
   }
 
   function modelCard(m, top, s) {
     const facts = [
-      `<div><span>Size</span>${esc(m.arch)}</div>`,
-      `<div><span>Download</span>about ${m.gb} GB</div>`,
+      `<div><span>${esc(tr('models.fact.size'))}</span>${esc(arch(m))}</div>`,
+      `<div><span>${esc(tr('models.fact.download'))}</span>${esc(tr('models.fact.about', { gb: m.gb }))}</div>`,
     ].join('');
     return `<article class="model${top ? ' top' : ''}">
-      <div class="model-head"><h3>${esc(m.name)}</h3><span class="by">${esc(m.by)}</span></div>
-      <div class="badges">${top ? badge('Top pick', 'pick') : ''}${sees(m)}</div>
-      <p>${m.why}</p>
+      <div class="model-head"><h3>${esc(m.name)}</h3><span class="by">${esc(by(m))}</span></div>
+      <div class="badges">${top ? badge(tr('models.badge.top'), 'pick') : ''}${sees(m)}</div>
+      <p>${tr(m.why)}</p>
       <div class="facts">${facts}</div>
       ${getIt(m, s)}
     </article>`;
   }
 
   function hostedCard(m, top) {
-    const at = m.at.map((p) => `<a href="${PROVIDERS[p].site}">${p}</a>`).join(' and ');
+    const at = and.format(m.at.map((p) => `<a href="${PROVIDERS[p].site}">${p}</a>`));
     return `<article class="model${top ? ' top' : ''}">
-      <div class="model-head"><h3>${esc(m.name)}</h3><span class="by">${esc(m.by)}</span></div>
-      <div class="badges">${top ? badge('Top pick', 'pick') : ''}${sees(m)}</div>
-      <p>${m.why}</p>
-      <p class="note">Served by ${at}.</p>
+      <div class="model-head"><h3>${esc(m.name)}</h3><span class="by">${esc(by(m))}</span></div>
+      <div class="badges">${top ? badge(tr('models.badge.top'), 'pick') : ''}${sees(m)}</div>
+      <p>${tr(m.why)}</p>
+      <p class="note">${tr('models.servedBy', { at })}</p>
     </article>`;
   }
 
   function setupSteps(s, list) {
     const images = s.input === 'images';
-    const tick = images ? '<li>Cedar sends images only to a model that takes them: in the chat, open <strong>Settings → Models</strong>, open the model and tick <strong>Accepts images</strong>.</li>' : '';
+    const tick = images ? `<li>${tr('models.setup.tick')}</li>` : '';
     if (s.where === 'factory') {
       return `<ol class="setup">
-        <li>Get an API key from <a href="${PROVIDERS.Doubleword.install}">Doubleword</a> or <a href="${PROVIDERS.Baseten.install}">Baseten</a>; the install guide shows how. Your prompts, and the files Cedar sends to the model, go to that company.</li>
-        <li>In Cedar's setup window (or the chat's <strong>Settings → Server</strong> on Linux), type the address: <code>${PROVIDERS.Doubleword.addr}</code> or <code>${PROVIDERS.Baseten.addr}</code>, and paste the key.</li>
-        <li>Click <strong>List models</strong> and choose the one you picked here. Doubleword is built around batch work: choose a model it lists with a realtime price, since Cedar answers as you chat.</li>
+        <li>${tr('models.setup.factory.key', { dwInstall: PROVIDERS.Doubleword.install, btInstall: PROVIDERS.Baseten.install })}</li>
+        <li>${tr('models.setup.factory.address', { dwAddr: PROVIDERS.Doubleword.addr, btAddr: PROVIDERS.Baseten.addr })}</li>
+        <li>${tr('models.setup.factory.list')}</li>
         ${tick}
       </ol>`;
     }
     const remote = s.where === 'box';
     const serve = s.hw === 'spark' ? 'vllm' : 'ollama';
     const port = serve === 'vllm' ? 8000 : 11434;
+    const ollamaHost = s.hw === 'mac'
+      ? `launchctl setenv OLLAMA_HOST 0.0.0.0\n# ${tr('models.code.macRestart')}`
+      : s.hw === 'ryzen'
+        ? `setx OLLAMA_HOST 0.0.0.0\n# ${tr('models.code.winRestart')}\n# ${tr('models.code.linuxRestart')}`
+        : 'sudo systemctl edit ollama\n#   [Service]\n#   Environment="OLLAMA_HOST=0.0.0.0"\nsudo systemctl restart ollama';
     const listen = remote
       ? (serve === 'vllm'
-        ? '<li>Start vLLM with <code>--host 0.0.0.0</code> so the other computer can reach it.</li>'
-        : `<li>Let Ollama listen on the network, not just on the machine itself:${code(s.hw === 'mac' ? 'launchctl setenv OLLAMA_HOST 0.0.0.0\n# then quit Ollama from the menu bar and open it again' : s.hw === 'ryzen' ? 'setx OLLAMA_HOST 0.0.0.0\n# Windows; then quit Ollama from the tray and start it again\n# Linux: sudo systemctl edit ollama, add Environment="OLLAMA_HOST=0.0.0.0", restart' : 'sudo systemctl edit ollama\n#   [Service]\n#   Environment="OLLAMA_HOST=0.0.0.0"\nsudo systemctl restart ollama', 'On the model\'s machine')}</li>`)
+        ? `<li>${tr('models.setup.listenVllm')}</li>`
+        : `<li>${tr('models.setup.listenOllama')}${code(ollamaHost, tr('models.shell.modelMachine'))}</li>`)
       : '';
-    const addr = remote ? `http://&lt;that machine&gt;:${port}/v1` : `http://127.0.0.1:${port}/v1`;
+    const addr = remote ? `http://&lt;${esc(tr('models.setup.thatMachine'))}&gt;:${port}/v1` : `http://127.0.0.1:${port}/v1`;
     const install = `install.html?host=yes&serve=${serve}`;
+    const what = serve === 'vllm' ? 'vLLM' : tr('models.setup.ollamaOrLms');
+    const model = list.length ? esc(list[0].name) : tr('models.setup.it');
     return `<ol class="setup">
-      <li>Install ${serve === 'vllm' ? 'vLLM' : 'Ollama (or LM Studio)'} and the model on ${remote ? 'the model\'s machine' : 'this computer'}: the <a href="${install}">install guide</a> has the steps, including the longer context Cedar needs.</li>
+      <li>${tr(remote ? 'models.setup.installRemote' : 'models.setup.installHere', { what, install })}</li>
       ${listen}
-      <li>In Cedar's setup window, use the address <code>${addr}</code>${remote ? '. Across the internet, put both machines on <a href="https://tailscale.com">Tailscale</a> and use the model machine\'s tailnet name' : ''}. Click <strong>List models</strong> and choose ${list.length ? esc(list[0].name) : 'it'}.</li>
+      <li>${tr(remote ? 'models.setup.addrRemote' : 'models.setup.addrHere', { addr, model })}</li>
       ${tick}
     </ol>`;
   }
@@ -365,30 +390,29 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function renderResult() {
     const s = state;
     const out = document.getElementById('result');
-    if (!s.input || !s.where) {
-      out.innerHTML = '<div class="empty">Answer the first two questions, and suggestions appear here.</div>';
-      return;
-    }
+    const empty = (key) => { out.innerHTML = `<div class="empty">${tr(key)}</div>`; };
+    const heading = (key) => `<h2 class="section">${tr(key)}</h2>`;
+    if (!s.input || !s.where) { empty('models.result.answerFirst'); return; }
     if (s.where === 'factory') {
       const ids = HOSTED_PICKS[s.input];
       const list = ids.map((id) => HOSTED[id]);
-      out.innerHTML = `<div class="explain"><b>A token factory</b> runs open models in its data center and bills per token, roughly per word read and written. Nothing to install and no big computer; the trade-off is that your prompts go to that company.</div>
-        <h2 class="section">Suggested models</h2><div class="models">${list.map((m, i) => hostedCard(m, i === 0)).join('')}</div>
-        <h2 class="section">Set it up</h2>${setupSteps(s, list)}`;
+      out.innerHTML = `<div class="explain">${tr('models.result.factoryExplain')}</div>
+        ${heading('models.result.suggested')}<div class="models">${list.map((m, i) => hostedCard(m, i === 0)).join('')}</div>
+        ${heading('models.result.setUp')}${setupSteps(s, list)}`;
       return;
     }
-    if (!s.hw) { out.innerHTML = '<div class="empty">Pick what will run the model.</div>'; return; }
+    if (!s.hw) { empty('models.result.pickHw'); return; }
     if (s.hw === 'other') {
-      out.innerHTML = `<div class="explain"><b>Other hardware</b> works when it has enough fast memory: a graphics card with 16 GB or more runs <code>gpt-oss:20b</code> or, with images, <code>gemma4:26b</code> or <code>qwen3.6:27b</code> (24 GB is better). A laptop with 8–16 GB of ordinary memory runs only small models, slowly; a token factory serves Cedar much better there.</div>
-        <p><a class="btn" href="?input=${s.input}&where=factory">See token factory models</a></p>`;
+      out.innerHTML = `<div class="explain">${tr('models.result.otherExplain')}</div>
+        <p><a class="btn" href="?input=${s.input}&where=factory${lang ? '&lang=' + encodeURIComponent(lang) : ''}">${tr('models.result.seeFactory')}</a></p>`;
       return;
     }
-    if (!s.mem) { out.innerHTML = '<div class="empty">Pick how much memory it has.</div>'; return; }
+    if (!s.mem) { empty('models.result.pickMem'); return; }
     const key = `${s.hw}:${s.mem}`;
     const list = (PICKS[key] || { text: [], images: [] })[s.input].map((id) => MODELS[id]);
-    const note = HW_NOTES[key] ? `<div class="explain">${HW_NOTES[key]}</div>` : '';
-    out.innerHTML = `${note}<h2 class="section">Suggested models</h2><div class="models">${list.map((m, i) => modelCard(m, i === 0, s)).join('')}</div>
-      <h2 class="section">Set it up</h2>${setupSteps(s, list)}`;
+    const note = HW_NOTES.includes(key) ? `<div class="explain">${tr(`models.hwnote.${s.hw}.${s.mem}`)}</div>` : '';
+    out.innerHTML = `${note}${heading('models.result.suggested')}<div class="models">${list.map((m, i) => modelCard(m, i === 0, s)).join('')}</div>
+      ${heading('models.result.setUp')}${setupSteps(s, list)}`;
   }
 
   function render() {
@@ -412,15 +436,15 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const b = e.target.closest('[data-copy]');
     if (!b) return;
     const text = b.parentElement.querySelector('pre').innerText;
-    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
-    catch { b.textContent = 'Select & copy'; }
-    setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+    try { await navigator.clipboard.writeText(text); b.textContent = tr('models.copied'); }
+    catch { b.textContent = tr('models.copySelect'); }
+    setTimeout(() => { b.textContent = tr('models.copy'); }, 1600);
   });
 
   document.getElementById('copy-link').addEventListener('click', async (e) => {
-    try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Link copied'; }
-    catch { e.target.textContent = 'Copy it from the address bar'; }
-    setTimeout(() => { e.target.textContent = 'Copy link'; }, 1600);
+    try { await navigator.clipboard.writeText(location.href); e.target.textContent = tr('models.share.linkCopied'); }
+    catch { e.target.textContent = tr('models.share.copyFailed'); }
+    setTimeout(() => { e.target.textContent = tr('models.share.copyLink'); }, 1600);
   });
 
   document.getElementById('reset').addEventListener('click', () => {
