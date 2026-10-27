@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Check the web chat's translations (chat/static/i18n/*.js) and the desktop app's (desktop/ui/strings.js): every key is in English, German and
-// French, the {placeholders} and plural forms match, and every key the pages use exists.
+// Check the translations of the web chat (chat/static/i18n/*.js), the desktop app
+// (desktop/ui/strings.js) and the website (docs/landing/i18n/*.js): every key is in English,
+// German and French, the {placeholders} and plural forms match, and every key the pages use exists.
 //
 //   node scripts/check-i18n.js
 //
@@ -15,13 +16,14 @@ const root = path.resolve(__dirname, '..');
 const LANGS = ['en', 'de', 'fr'];
 const problems = [];
 
-/** Load catalog files the way the pages do, with a stub cedarI18n.add. */
+/** Load catalog files the way the pages do, with a stub cedarI18n.add (cedarSite.add on the website). */
 function loadCatalogs(files) {
   const merged = { en: {}, de: {}, fr: {} };
   const origin = {};
   for (const file of files) {
     const added = [];
-    const context = { cedarI18n: { add: (c) => added.push(c) } };
+    const stub = { add: (c) => added.push(c) };
+    const context = { cedarI18n: stub, cedarSite: stub };
     vm.runInNewContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
     for (const catalog of added) {
       for (const lang of Object.keys(catalog)) {
@@ -80,11 +82,13 @@ function checkUses(sources, en) {
   for (const file of sources) {
     const text = fs.readFileSync(file, 'utf8');
     const used = [
-      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*'([^'$]+)'/g)].map((m) => m[1]),
-      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*"([^"$]+)"/g)].map((m) => m[1]),
-      ...[...text.matchAll(/data-i18n="([^"]+)"/g)].map((m) => m[1]),
+      // A literal followed by + is a prefix the code completes at run time.
+      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*'([^'$]+)'(?!\s*\+)/g)].map((m) => m[1]),
+      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*"([^"$]+)"(?!\s*\+)/g)].map((m) => m[1]),
+      ...[...text.matchAll(/data-i18n(?:-html)?="([^"]+)"/g)].map((m) => m[1]),
       ...[...text.matchAll(/data-i18n-attr="([^"]+)"/g)].flatMap((m) => m[1].split(';').map((p) => (p.split(':')[1] || '').trim())),
-    ].filter(Boolean);
+    // A key that ends in '.' is a prefix the code completes at run time.
+    ].filter((k) => k && !k.endsWith('.'));
     for (const key of new Set(used)) {
       if (en[key] === undefined) problems.push(`${rel(file)}: uses ${key}, which no catalog defines`);
     }
@@ -112,9 +116,21 @@ const desktop = loadCatalogs([path.join(desktopUi, 'strings.js')]);
 checkCatalogs(desktop);
 checkUses(walk(desktopUi, (p) => /\.(js|html)$/.test(p) && !['i18n.js', 'strings.js'].includes(path.basename(p))), desktop.merged.en);
 
+// The website (docs/landing): each page loads i18n/common.js and its own i18n/<page>.js, so each
+// is checked on its own (they may each define page.title).
+const landing = path.join(root, 'docs', 'landing');
+let siteKeys = 0;
+for (const page of fs.readdirSync(landing).filter((f) => f.endsWith('.html'))) {
+  const own = path.join(landing, 'i18n', page.replace(/\.html$/, '.js'));
+  const site = loadCatalogs([path.join(landing, 'i18n', 'common.js'), ...(fs.existsSync(own) ? [own] : [])]);
+  checkCatalogs(site);
+  checkUses([path.join(landing, page)], site.merged.en);
+  siteKeys += Object.keys(site.merged.en).length;
+}
+
 if (problems.length) {
   console.error(problems.join('\n'));
   console.error(`\n${problems.length} problem(s) in the translations`);
   process.exit(1);
 }
-console.log(`translations ok: ${Object.keys(chat.merged.en).length} web chat keys in ${chatCatalogs.length} catalogs, ${Object.keys(desktop.merged.en).length} desktop keys`);
+console.log(`translations ok: ${Object.keys(chat.merged.en).length} web chat keys in ${chatCatalogs.length} catalogs, ${Object.keys(desktop.merged.en).length} desktop keys, ${siteKeys} website keys`);
