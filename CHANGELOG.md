@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Registry: new tool `dataiku`, a cedar version of [Dataiku Headless](https://github.com/dataiku/dataiku-headless) with Dataiku's own Python client. It inspects a DSS instance's projects, datasets (schema, size, sample rows, or all rows as CSV in the workspace), recipes, scenarios and jobs; builds a dataset or runs a scenario and follows it for up to four minutes; and hands changes inside a project to Cobuild, Dataiku's agent. Cobuild keeps its conversation in DSS, so each call stands alone: the conversation id and a pending deletion confirmation or question come back in the result for the next call, and the model is told to ask the user before approving a deletion. Cobuild only inspects unless the call sets `allow_edit`; the optional secret `DKU_READ_ONLY` turns off builds, scenario runs and Cobuild changes altogether. It needs `DKU_DSS_URL` and a personal `DKU_API_KEY`, and declares `*.dataiku.io` and `*.dataiku.com`; a self-hosted instance needs its host added in a local copy.
+
 ## 0.2.0
 
 - **Cedar speaks German and French.** The web chat (all four interfaces), the Mac and Windows app, and the iPhone and Android apps are translated, with regional variants: Deutsch (Deutschland, Österreich, Schweiz), Français (France, Belgique, Suisse, Canada), and English (United States, United Kingdom). Picking the language is the first step on a new browser, app install or phone, and Settings → Language changes it at any time (*Automatic* follows the device). Dates, numbers, units and prices follow the region, and Swiss German writes ss for ß. German says *du*, French *vous* (#111).
