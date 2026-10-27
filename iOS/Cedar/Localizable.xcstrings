@@ -1,19 +1,19 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ Port %lld may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port)." : {
+    "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port)." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ Port %lld liefert vermutlich unverschlüsseltes HTTP. Verwende die HTTPS-Adresse von tailscale serve, z. B. https://<machine>.<tailnet>.ts.net (ohne Port)."
+            "value" : "%@ Port %@ liefert vermutlich unverschlüsseltes HTTP. Verwende die HTTPS-Adresse von tailscale serve, z. B. https://<machine>.<tailnet>.ts.net (ohne Port)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ Le port %lld sert peut-être du HTTP non chiffré. Utilisez l'adresse HTTPS de tailscale serve, par ex. https://<machine>.<tailnet>.ts.net (sans port)."
+            "value" : "%@ Le port %@ sert peut-être du HTTP non chiffré. Utilisez l'adresse HTTPS de tailscale serve, par ex. https://<machine>.<tailnet>.ts.net (sans port)."
           }
         }
       }

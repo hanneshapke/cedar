@@ -356,9 +356,10 @@ struct ChatClient: Sendable {
               let port = baseURL.port, port != 443 else {
             return .unreachable(error.localizedDescription)
         }
+        // The port goes in as text: a number would get the locale's grouping ("3,000").
         return .unreachable(L10n.format(
-            "%@ Port %lld may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port).",
-            error.localizedDescription, port))
+            "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port).",
+            error.localizedDescription, String(port)))
     }
 
     static func error(status: Int, body: Data) -> ChatError {
