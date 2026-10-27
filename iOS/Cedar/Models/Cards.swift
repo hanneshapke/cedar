@@ -181,10 +181,20 @@ struct TripCard: Hashable, Sendable {
 
         var label: String {
             switch self {
-            case .transit: return "Transit"
-            case .walk: return "Walk"
-            case .drive: return "Drive"
-            case .rideshare: return "Rideshare"
+            case .transit: return L10n.string("Transit")
+            case .walk: return L10n.string("Walk")
+            case .drive: return L10n.string("Drive")
+            case .rideshare: return L10n.string("Rideshare")
+            }
+        }
+
+        /// The recommendation's headline, "Take transit: 25 min", for a trip of `duration`.
+        func take(_ duration: String) -> String {
+            switch self {
+            case .transit: return L10n.format("Take transit: %@", duration)
+            case .walk: return L10n.format("Take walk: %@", duration)
+            case .drive: return L10n.format("Take drive: %@", duration)
+            case .rideshare: return L10n.format("Take rideshare: %@", duration)
             }
         }
     }
@@ -211,16 +221,16 @@ struct TripCard: Hashable, Sendable {
 
         var label: String {
             switch self {
-            case .walk: return "Walk"
-            case .bike: return "Bike"
-            case .drive: return "Drive"
-            case .bus: return "Bus"
-            case .tram: return "Tram"
-            case .subway: return "Subway"
-            case .ferry: return "Ferry"
-            case .plane: return "Flight"
-            case .train: return "Train"
-            case .other: return "Ride"
+            case .walk: return L10n.string("Walk")
+            case .bike: return L10n.string("Bike")
+            case .drive: return L10n.string("Drive")
+            case .bus: return L10n.string("Bus")
+            case .tram: return L10n.string("Tram")
+            case .subway: return L10n.string("Subway")
+            case .ferry: return L10n.string("Ferry")
+            case .plane: return L10n.string("Flight")
+            case .train: return L10n.string("Train")
+            case .other: return L10n.string("Ride")
             }
         }
     }
@@ -406,7 +416,7 @@ struct StocksCard: Hashable, Sendable {
 
     enum Call: String, Hashable, Sendable {
         case buy, hold, sell
-        var label: String { rawValue.capitalized }
+        var label: String { L10n.string(rawValue.capitalized) }
     }
 
     struct Factor: Hashable, Sendable {
@@ -592,12 +602,12 @@ struct ProductsCard: Hashable, Sendable {
 
         var label: String {
             switch self {
-            case .excellent: return "Excellent"
-            case .good: return "Good"
-            case .mixed: return "Mixed"
-            case .poor: return "Poor"
-            case .few: return "Few reviews"
-            case .unreviewed: return "No rating"
+            case .excellent: return L10n.string("Excellent")
+            case .good: return L10n.string("Good")
+            case .mixed: return L10n.string("Mixed")
+            case .poor: return L10n.string("Poor")
+            case .few: return L10n.string("Few reviews")
+            case .unreviewed: return L10n.string("No rating")
             }
         }
     }
@@ -692,7 +702,7 @@ struct ProductsCard: Hashable, Sendable {
     let pages: Int?
     let productsFound: Int?
     let asOf: Date?
-    /// How the options are ordered, in words.
+    /// How the options are ordered, in words (English, the key of its translation).
     let sort: String?
     /// The model's recommendation, when it weighed the options.
     let summary: String?
@@ -700,7 +710,8 @@ struct ProductsCard: Hashable, Sendable {
     let options: [Product]
     /// The rest of the search, which comparable options may point at.
     let others: [Product]
-    /// The badges each option has.
+    /// The badges each option has: the picks' in English, the keys of their translations, or the
+    /// result's own.
     let badges: [String: [String]]
     let sources: [Int: Source]
     let disclaimer: String?
@@ -751,8 +762,8 @@ struct ProductsCard: Hashable, Sendable {
         }
         let considered = value["considered"]
         return ProductsCard(
-            query: CardParse.text(value["query"], max: 160) ?? "Products",
-            store: CardParse.text(value["store"], max: 60) ?? "the store",
+            query: CardParse.text(value["query"], max: 160) ?? L10n.string("Products"),
+            store: CardParse.text(value["store"], max: 60) ?? L10n.string("the store"),
             currency: currencyCode(value["currency"]) ?? "USD",
             total: max(options.count + others.count, Int(CardParse.amount(value["total"], max: 1e9) ?? 0)),
             pages: CardParse.amount(considered?["pages"], max: 1e6).map { Int($0) },
@@ -831,12 +842,22 @@ struct ChartCard: Hashable, Sendable {
 
         var name: String {
             switch self {
-            case .line: return "Line chart"
-            case .bar, .barh: return "Bar chart"
-            case .area: return "Area chart"
-            case .scatter: return "Scatter plot"
-            case .pie: return "Pie chart"
-            case .histogram: return "Histogram"
+            case .line: return L10n.string("Line chart")
+            case .bar, .barh: return L10n.string("Bar chart")
+            case .area: return L10n.string("Area chart")
+            case .scatter: return L10n.string("Scatter plot")
+            case .pie: return L10n.string("Pie chart")
+            case .histogram: return L10n.string("Histogram")
+            }
+        }
+
+        /// The name of a stacked chart of this kind (only bars, areas and histograms stack).
+        var stackedName: String {
+            switch self {
+            case .bar, .barh: return L10n.string("Stacked bar chart")
+            case .area: return L10n.string("Stacked area chart")
+            case .histogram: return L10n.string("Stacked histogram")
+            case .line, .scatter, .pie: return name
             }
         }
     }
@@ -911,7 +932,7 @@ struct ChartCard: Hashable, Sendable {
                 values.append(n)
             }
             let name = CardParse.text(s["name"], max: 80)
-            series.append(Series(name: name ?? "Series \(i + 1)", named: name != nil, values: values))
+            series.append(Series(name: name ?? L10n.format("Series %lld", i + 1), named: name != nil, values: values))
         }
         var labels: [Label] = []
         if kind != .histogram {
@@ -1011,6 +1032,6 @@ struct ChartCard: Hashable, Sendable {
     static func format(_ v: Double) -> String {
         let a = abs(v)
         let digits = a >= 1000 ? 0 : a >= 100 ? 1 : a >= 1 ? 2 : a == 0 ? 0 : 4
-        return v.formatted(.number.precision(.fractionLength(0...digits)))
+        return v.formatted(.number.precision(.fractionLength(0...digits)).locale(L10n.locale))
     }
 }

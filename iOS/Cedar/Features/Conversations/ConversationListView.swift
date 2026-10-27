@@ -63,7 +63,7 @@ struct ConversationListView: View {
                 }
             }
         }
-        .navigationTitle("cedar")
+        .navigationTitle(Text(verbatim: "cedar"))
         .refreshable { await app.refresh() }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -250,12 +250,12 @@ private struct ConversationRow: View {
                 }
                 HStack(spacing: 6) {
                     if conversation.scheduleId != nil {
-                        Label(conversation.scheduleTitle ?? "Scheduled", systemImage: "clock")
+                        Label(conversation.scheduleTitle ?? L10n.string("Scheduled"), systemImage: "clock")
                             .labelStyle(.titleAndIcon)
                             .lineLimit(1)
-                        Text("·")
+                        Text(verbatim: "·")
                     }
-                    Text(conversation.updatedAt, format: .relative(presentation: .named))
+                    Text(conversation.updatedAt, format: .relative(presentation: .named).locale(L10n.locale))
                     if conversation.needsAnswer {
                         Text("Needs answer")
                             .font(.caption2.weight(.semibold))
@@ -267,7 +267,7 @@ private struct ConversationRow: View {
                         Text("Unread")
                     }
                     if let model = conversation.model, !model.isEmpty {
-                        Text("· \(model)")
+                        Text(verbatim: "· \(model)")
                             .lineLimit(1)
                     }
                 }
@@ -276,7 +276,8 @@ private struct ConversationRow: View {
             }
         }
         .padding(.vertical, 2)
-        .accessibilityLabel([title, starred ? "starred" : nil, conversation.unread ? "unread" : nil].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([title, starred ? L10n.string("starred") : nil, conversation.unread ? L10n.string("unread") : nil]
+            .compactMap { $0 }.joined(separator: ", "))
     }
 }
 

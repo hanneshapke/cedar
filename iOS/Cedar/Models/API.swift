@@ -88,7 +88,7 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
     /// The title cedar-chat gave it (the first message), or a placeholder.
     var displayTitle: String {
         let t = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? "New chat" : t
+        return t.isEmpty ? L10n.string("New chat") : t
     }
 }
 
@@ -251,15 +251,15 @@ struct Schedule: Decodable, Identifiable, Hashable, Sendable {
     var cadence: String {
         let when: String
         switch frequency {
-        case "daily": when = "Daily"
-        case "weekdays": when = "Weekdays"
+        case "daily": when = L10n.string("Daily")
+        case "weekdays": when = L10n.string("Weekdays")
         case "weekly":
             let names = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"]
-            when = weekday.flatMap { names.indices.contains($0) ? names[$0] : nil } ?? "Weekly"
+            when = L10n.string(weekday.flatMap { names.indices.contains($0) ? names[$0] : nil } ?? "Weekly")
         default: when = frequency.capitalized
         }
         let zone = timezone == TimeZone.current.identifier ? "" : " (\(timezone))"
-        return "\(when) at \(timeOfDay)\(zone)"
+        return L10n.format("%@ at %@", when, timeOfDay) + zone
     }
 }
 

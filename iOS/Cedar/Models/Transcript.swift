@@ -136,8 +136,8 @@ struct Approval: Identifiable, Hashable, Sendable {
 
     /// What "always" would remember: the host, the packages.
     var alwaysLabel: String {
-        if let scope, !scope.isEmpty { return "Always for \(scope)" }
-        return "Always"
+        if let scope, !scope.isEmpty { return L10n.format("Always for %@", scope) }
+        return L10n.string("Always")
     }
 }
 
@@ -393,7 +393,8 @@ enum WorkspaceImages {
 }
 
 /// The text that answers clarifying questions, as the web UI composes it (`clarify-view.js`):
-/// each question, then what was chosen and written, so the model sees both.
+/// each question, then what was chosen and written, so the model sees both. Its own words are in
+/// the interface language, as the message is the user's.
 enum ClarifyAnswer {
     struct Answer: Hashable, Sendable {
         var chosen: [String] = []
@@ -406,9 +407,9 @@ enum ClarifyAnswer {
             var parts = answer.chosen
             let own = answer.own.trimmingCharacters(in: .whitespacesAndNewlines)
             if !own.isEmpty {
-                parts.append(answer.chosen.isEmpty && q.options.isEmpty ? own : "Other: \(own)")
+                parts.append(answer.chosen.isEmpty && q.options.isEmpty ? own : L10n.labeled(L10n.string("Other"), own))
             }
-            let text = parts.isEmpty ? "No preference" : parts.joined(separator: ", ")
+            let text = parts.isEmpty ? L10n.string("No preference") : parts.joined(separator: ", ")
             return questions.questions.count == 1 ? "\(q.question)\n\(text)" : "\(index + 1). \(q.question)\n\(text)"
         }
         return lines.joined(separator: "\n\n")

@@ -29,7 +29,7 @@ struct TripCardView: View {
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Take \(rec.mode.label.lowercased()): \(TripStyle.duration(rec.minutes))")
+                        Text(rec.mode.take(TripStyle.duration(rec.minutes)))
                             .font(.subheadline.weight(.semibold))
                         if let reason = card.reason {
                             Text(reason).font(.caption).foregroundStyle(.secondary)
@@ -42,8 +42,8 @@ struct TripCardView: View {
             }
 
             CardMap(title: card.title ?? route) {
-                Marker(card.from.label, monogram: Text("A"), coordinate: card.from.location).tint(.green)
-                Marker(card.to.label, monogram: Text("B"), coordinate: card.to.location).tint(.red)
+                Marker(card.from.label, monogram: Text(verbatim: "A"), coordinate: card.from.location).tint(.green)
+                Marker(card.to.label, monogram: Text(verbatim: "B"), coordinate: card.to.location).tint(.red)
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     MapPolyline(coordinates: line.points.map(\.location))
                         .stroke(line.color, style: StrokeStyle(lineWidth: line.walk ? 3 : 5, lineCap: .round,
@@ -63,7 +63,7 @@ struct TripCardView: View {
             if !card.unavailable.isEmpty || card.attribution != nil {
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(card.unavailable, id: \.self) { u in
-                        Text("\(u.mode.label): \(u.reason ?? "not available")")
+                        Text(L10n.labeled(u.mode.label, u.reason ?? L10n.string("not available")))
                     }
                     if let attribution = card.attribution {
                         Text(attribution).foregroundStyle(.tertiary)
@@ -77,9 +77,9 @@ struct TripCardView: View {
     }
 
     private var when: String {
-        if let arriveBy = card.arriveBy { return "Arrive by \(TripStyle.clock(arriveBy, in: card, weekday: true))" }
-        if let departAt = card.departAt { return "Leave \(TripStyle.clock(departAt, in: card, weekday: true))" }
-        return "Leaving now"
+        if let arriveBy = card.arriveBy { return L10n.format("Arrive by %@", TripStyle.clock(arriveBy, in: card, weekday: true)) }
+        if let departAt = card.departAt { return L10n.format("Leave %@", TripStyle.clock(departAt, in: card, weekday: true)) }
+        return L10n.string("Leaving now")
     }
 
     // MARK: The map
@@ -164,7 +164,7 @@ struct TripCardView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private func tag(_ text: String, prominent: Bool) -> some View {
+    private func tag(_ text: LocalizedStringKey, prominent: Bool) -> some View {
         Text(text)
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 6)
@@ -257,31 +257,31 @@ private struct TripSteps: View {
         let o = option
         var out: [Step] = []
         if o.mode != .transit || o.legs.isEmpty {
-            let verb = [TripCard.Mode.walk: "Walk", .drive: "Drive", .rideshare: "Ride"][o.mode] ?? "Go"
+            let goTo = [TripCard.Mode.walk: "Walk to %@", .drive: "Drive to %@", .rideshare: "Ride to %@"][o.mode] ?? "Go to %@"
             let sub = [TripStyle.duration(o.minutes), TripStyle.distance(km: o.km, meters: o.meters), o.note]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-            out.append(Step(kind: o.mode == .walk ? .walk : .other, main: "\(verb) to \(card.to.label)", sub: sub, at: o.depart))
+            out.append(Step(kind: o.mode == .walk ? .walk : .other, main: L10n.format(goTo, card.to.label), sub: sub, at: o.depart))
         } else {
             for (index, leg) in o.legs.enumerated() {
                 let to = leg.to.flatMap { $0 == "END" ? nil : $0 } ?? card.to.label
                 if leg.kind == .walk {
                     let far = TripStyle.distance(km: nil, meters: leg.meters).map { " · \($0)" } ?? ""
-                    out.append(Step(kind: .walk, main: "Walk to \(to)", sub: "\(TripStyle.duration(leg.minutes))\(far)", at: leg.depart))
+                    out.append(Step(kind: .walk, main: L10n.format("Walk to %@", to), sub: "\(TripStyle.duration(leg.minutes))\(far)", at: leg.depart))
                     continue
                 }
                 let from = leg.from.flatMap { $0 == "START" ? nil : $0 } ?? card.from.label
-                let towards = leg.headsign.map { " towards \($0)" } ?? ""
-                let stops = leg.stops.flatMap { $0 > 0 ? "\($0) stop\($0 == 1 ? "" : "s")" : nil }
+                let stops = leg.stops.flatMap { $0 > 0 ? L10n.format($0 == 1 ? "%lld stop" : "%lld stops", $0) : nil }
                 let sub = ["\(from) → \(to)", stops, TripStyle.duration(leg.minutes), leg.agency]
                     .compactMap { $0 }.joined(separator: " · ")
-                out.append(Step(kind: .ride, leg: leg, main: "\(leg.kind.label)\(towards)", sub: sub, at: leg.depart))
+                let main = leg.headsign.map { L10n.format("%@ towards %@", leg.kind.label, $0) } ?? leg.kind.label
+                out.append(Step(kind: .ride, leg: leg, main: main, sub: sub, at: leg.depart))
                 if index == o.legs.count - 1, let arrive = leg.arrive {
-                    out.append(Step(kind: .end, main: "Arrive at \(to)", at: arrive))
+                    out.append(Step(kind: .end, main: L10n.format("Arrive at %@", to), at: arrive))
                 }
             }
         }
         if o.mode != .transit || o.legs.last?.kind == .walk, let arrive = o.arrive {
-            out.append(Step(kind: .end, main: "Arrive at \(card.to.label)", at: arrive))
+            out.append(Step(kind: .end, main: L10n.format("Arrive at %@", card.to.label), at: arrive))
         }
         return out
     }
@@ -320,21 +320,33 @@ enum TripStyle {
     }
 
     static func distance(km: Double?, meters: Double?) -> String? {
-        if let km { return "\(km.formatted(.number.precision(.fractionLength(0...1)))) km" }
+        if let km { return "\(km.formatted(.number.precision(.fractionLength(0...1)).locale(L10n.locale))) km" }
         guard let meters else { return nil }
-        return meters >= 1000 ? String(format: "%.1f km", meters / 1000) : "\(Int(meters.rounded())) m"
+        return meters >= 1000
+            ? "\((meters / 1000).formatted(.number.precision(.fractionLength(1)).grouping(.never).locale(L10n.locale))) km"
+            : "\(Int(meters.rounded())) m"
     }
 
+    /// An estimate, "~$15–22": the symbol before the numbers in English, as the locale has it otherwise.
     static func money(_ cost: TripCard.Cost) -> String {
+        let locale = L10n.locale
+        let number = FloatingPointFormatStyle<Double>(locale: locale).precision(.fractionLength(0...2))
+        if locale.language.languageCode?.identifier != "en" {
+            let currency = FloatingPointFormatStyle<Double>.Currency(code: cost.currency, locale: locale).precision(.fractionLength(0...2))
+            return cost.low == cost.high
+                ? "~\(cost.low.formatted(currency))"
+                : "~\(cost.low.formatted(number))–\(cost.high.formatted(currency))"
+        }
         let symbol = ["USD": "$", "EUR": "€", "GBP": "£"][cost.currency] ?? "\(cost.currency) "
-        let low = cost.low.formatted(.number.precision(.fractionLength(0...2)))
-        let high = cost.high.formatted(.number.precision(.fractionLength(0...2)))
+        let low = cost.low.formatted(number)
+        let high = cost.high.formatted(number)
         return cost.low == cost.high ? "~\(symbol)\(low)" : "~\(symbol)\(low)–\(high)"
     }
 
     /// A time of day in the trip's time zone when the planner gave one, else the phone's.
     static func clock(_ date: Date, in card: TripCard, weekday: Bool = false) -> String {
         var style = Date.FormatStyle(date: .omitted, time: .shortened)
+        style.locale = L10n.locale
         style.timeZone = card.timeZone ?? .current
         return date.formatted(weekday ? style.weekday(.abbreviated) : style)
     }
@@ -347,9 +359,9 @@ enum TripStyle {
         }
         if o.mode == .transit {
             if let transfers = o.transfers {
-                out.append(transfers == 0 ? "direct" : "\(transfers) transfer\(transfers == 1 ? "" : "s")")
+                out.append(transfers == 0 ? L10n.string("direct") : L10n.format(transfers == 1 ? "%lld transfer" : "%lld transfers", transfers))
             }
-            if let walk = o.walkMinutes, walk > 0 { out.append("\(walk) min walk") }
+            if let walk = o.walkMinutes, walk > 0 { out.append(L10n.format("%lld min walk", walk)) }
         } else if let distance = distance(km: o.km, meters: o.meters) {
             out.append(distance)
         }

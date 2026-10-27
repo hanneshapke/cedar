@@ -81,6 +81,8 @@ final class AppModel {
             selection = nil
             inboxUnread = 0
             PushRegistrar.shared?.serverChanged(from: old, to: new)
+            // A new server doesn't know the language yet.
+            if LanguageStore.shared.hasChosen { localePending = true }
         }
         start()
     }
@@ -89,6 +91,45 @@ final class AppModel {
     func start() {
         Task { await refresh() }
         startNotices()
+        syncLocale()
+    }
+
+    // MARK: Language
+
+    /// Picks the interface language (`nil` follows the device), on first launch or in Settings,
+    /// and tells the server.
+    func chooseLanguage(_ tag: String?) {
+        let first = !LanguageStore.shared.hasChosen
+        LanguageStore.shared.choose(tag)
+        localePending = true
+        syncLocale()
+        // Asking for notifications waited for the language to be picked.
+        if first, settings.isConfigured {
+            Task { await PushRegistrar.shared?.requestAuthorization() }
+        }
+    }
+
+    /// Whether the server has yet to hear the language picked, kept across launches.
+    private var localePending: Bool {
+        get { UserDefaults.standard.bool(forKey: "localePending") }
+        set { UserDefaults.standard.set(newValue, forKey: "localePending") }
+    }
+
+    /// Sends the picked language to the server (`PUT /api/settings/locale`), for its scheduled runs
+    /// and notifications. Not fatal when it fails: it is sent again on the next launch or change of
+    /// server, and messages carry the language anyway.
+    private func syncLocale() {
+        guard localePending, LanguageStore.shared.hasChosen, let client else { return }
+        let tag = LanguageStore.shared.chosenTag
+        Task {
+            do {
+                try await client.setLocale(tag)
+                // A later pick sends its own.
+                if LanguageStore.shared.chosenTag == tag { localePending = false }
+            } catch {
+                print("could not send the language: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: Conversations

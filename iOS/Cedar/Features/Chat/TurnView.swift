@@ -65,12 +65,12 @@ private struct StatusFooter: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         case .failed:
-            Label(turn.turn.error ?? "The run failed.", systemImage: "exclamationmark.triangle.fill")
+            Label(turn.turn.error ?? L10n.string("The run failed."), systemImage: "exclamationmark.triangle.fill")
                 .font(.footnote)
                 .foregroundStyle(.red)
                 .textSelection(.enabled)
         case .cancelled:
-            Label(turn.cancelReason.map { "Stopped: \($0)" } ?? "Stopped", systemImage: "stop.circle")
+            Label(turn.cancelReason.map { L10n.format("Stopped: %@", $0) } ?? L10n.string("Stopped"), systemImage: "stop.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         case .completed:
@@ -88,10 +88,10 @@ private struct StatusFooter: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Copy answer")
                 if turn.usage != .zero {
-                    Text("\(turn.usage.inputTokens.formatted()) in · \(turn.usage.outputTokens.formatted()) out")
+                    Text("\(turn.usage.inputTokens.formatted(.number.locale(L10n.locale))) in · \(turn.usage.outputTokens.formatted(.number.locale(L10n.locale))) out")
                 }
                 if let cost = turn.usage.costUSD {
-                    Text(cost, format: .currency(code: "USD").precision(.fractionLength(cost < 0.01 ? 4 : 2)))
+                    Text(cost, format: .currency(code: "USD").precision(.fractionLength(cost < 0.01 ? 4 : 2)).locale(L10n.locale))
                 }
                 if turn.turn.needsAnswer {
                     Label("Needs your answer", systemImage: "questionmark.bubble")
@@ -127,8 +127,8 @@ private struct ReasoningView: View {
     }
 
     private var title: String {
-        guard let ms = durationMs, ms > 0 else { return "Thought it through" }
-        return "Thought for \(Duration.milliseconds(ms).formatted(.units(allowed: [.seconds], width: .abbreviated)))"
+        guard let ms = durationMs, ms > 0 else { return L10n.string("Thought it through") }
+        return L10n.format("Thought for %@", Duration.milliseconds(ms).formatted(.units(allowed: [.seconds], width: .abbreviated).locale(L10n.locale)))
     }
 }
 
@@ -140,9 +140,11 @@ private struct PlanView: View {
     @State private var sent = false
 
     private var title: String {
-        if plan.awaiting { return plan.isProposed ? "Cedar planned this, waiting for your go-ahead" : "Plan, waiting for your go-ahead" }
-        if plan.by == "timeout" { return "Plan (followed as proposed)" }
-        return plan.isProposed ? "Cedar's plan" : "Plan"
+        if plan.awaiting {
+            return L10n.string(plan.isProposed ? "Cedar planned this, waiting for your go-ahead" : "Plan, waiting for your go-ahead")
+        }
+        if plan.by == "timeout" { return L10n.string("Plan (followed as proposed)") }
+        return L10n.string(plan.isProposed ? "Cedar's plan" : "Plan")
     }
 
     var body: some View {
@@ -151,7 +153,7 @@ private struct PlanView: View {
                 .font(.subheadline.weight(.medium))
             ForEach(Array(plan.steps.enumerated()), id: \.offset) { offset, step in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(offset + 1).")
+                    Text(verbatim: "\(offset + 1).")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                     Text(step.title)
@@ -225,10 +227,10 @@ private struct ApprovalView: View {
 
     private var decisionText: String {
         switch approval.decision {
-        case "allow": return "Allowed"
-        case "allow_always": return "Allowed, and remembered"
-        case "deny": return "Denied"
-        case "timeout": return "No answer in time; not done"
+        case "allow": return L10n.string("Allowed")
+        case "allow_always": return L10n.string("Allowed, and remembered")
+        case "deny": return L10n.string("Denied")
+        case "timeout": return L10n.string("No answer in time; not done")
         default: return approval.decision ?? ""
         }
     }
@@ -360,23 +362,23 @@ struct ToolCallView: View {
                     // A chart that can't be drawn is still shown as the picture it saved.
                     if call.isCard, call.name != "generate_chart", call.isFinished, !call.isError, call.card == nil, let webURL {
                         Link(destination: webURL) {
-                            Label("Open the \(cardKind) on the web", systemImage: "safari")
+                            Label(openOnTheWeb, systemImage: "safari")
                                 .font(.subheadline)
                         }
                     }
-                    CodeBox(label: "Input", text: inputText)
+                    CodeBox(label: L10n.string("Input"), text: inputText)
                     if let output = call.output {
                         // Charts the tool printed are drawn under it, so they're left out here.
                         let text = call.charts.isEmpty ? output : ChartCard.inOutput(output).text
-                        CodeBox(label: call.isError ? "Error" : "Output",
-                                text: text.isEmpty ? "(no output)" : text,
+                        CodeBox(label: L10n.string(call.isError ? "Error" : "Output"),
+                                text: text.isEmpty ? L10n.string("(no output)") : text,
                                 isError: call.isError)
                     }
                     if !call.sources.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(call.sources, id: \.n) { source in
                                 if let url = URL(string: source.url) {
-                                    Link("[\(source.n)] \(source.title ?? source.url)", destination: url)
+                                    Link("[\(source.n)] \(source.title ?? source.url)" as String, destination: url)
                                         .font(.caption)
                                         .lineLimit(1)
                                 }
@@ -384,7 +386,7 @@ struct ToolCallView: View {
                         }
                     }
                     if let ms = call.durationMs {
-                        Text(Duration.milliseconds(ms).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))
+                        Text(Duration.milliseconds(ms).formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated).locale(L10n.locale)))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -418,15 +420,16 @@ struct ToolCallView: View {
         }
     }
 
-    private var cardKind: String {
+    /// "Open the map on the web", for a card that couldn't be drawn.
+    private var openOnTheWeb: String {
         switch call.name {
-        case "show_map": return "map"
-        case "show_recipe": return "recipe"
-        case "plan_trip": return "route"
-        case "compare_stocks": return "comparison"
-        case "search_products": return "products"
-        case "generate_chart": return "chart"
-        default: return "result"
+        case "show_map": return L10n.string("Open the map on the web")
+        case "show_recipe": return L10n.string("Open the recipe on the web")
+        case "plan_trip": return L10n.string("Open the route on the web")
+        case "compare_stocks": return L10n.string("Open the comparison on the web")
+        case "search_products": return L10n.string("Open the products on the web")
+        case "generate_chart": return L10n.string("Open the chart on the web")
+        default: return L10n.string("Open the result on the web")
         }
     }
 
@@ -498,6 +501,6 @@ struct CodeBox: View {
 
     private var displayText: String {
         guard text.count > Self.displayLimit else { return text }
-        return String(text.prefix(Self.displayLimit)) + "\n… (\(text.count - Self.displayLimit) more characters)"
+        return String(text.prefix(Self.displayLimit)) + "\n… " + L10n.format("(%lld more characters)", text.count - Self.displayLimit)
     }
 }

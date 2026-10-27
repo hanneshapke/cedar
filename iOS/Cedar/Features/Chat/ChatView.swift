@@ -101,7 +101,7 @@ struct ChatView: View {
         if let id = chat.conversationId, let conversation = app.conversation(id: id) {
             return app.title(for: conversation)
         }
-        return chat.turns.first.map { firstLine($0.prompt) } ?? "New Chat"
+        return chat.turns.first.map { firstLine($0.prompt) } ?? L10n.string("New Chat")
     }
 
     private var webURL: URL? {
@@ -110,7 +110,7 @@ struct ChatView: View {
     }
 
     private func firstLine(_ text: String) -> String {
-        let line = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "New Chat"
+        let line = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? L10n.string("New Chat")
         return line.count > 80 ? String(line.prefix(80)) + "…" : line
     }
 

@@ -20,6 +20,19 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    // Applies at once, without Save.
+                    Picker("Language", selection: language) {
+                        Text("Automatic").tag("")
+                        ForEach(AppLanguage.all) { language in
+                            Text(verbatim: language.name).tag(language.tag)
+                        }
+                    }
+                    .pickerStyle(.navigationLink)
+                } footer: {
+                    Text("Automatic follows this device's language. Scheduled runs and notifications use the language too.")
+                }
+
+                Section {
                     TextField(ServerSettings.defaultServerURL, text: $draft.serverURL)
                         .keyboardType(.URL)
                         .textContentType(.URL)
@@ -88,7 +101,7 @@ struct SettingsView: View {
                 Section {
                     Picker("Plan", selection: $draft.plan) {
                         ForEach(ServerSettings.planModes) { mode in
-                            Text(mode.label).tag(mode.id)
+                            Text(L10n.string(mode.label)).tag(mode.id)
                         }
                     }
                 } header: {
@@ -101,7 +114,7 @@ struct SettingsView: View {
                     Button("Allow Notifications") {
                         Task {
                             await PushRegistrar.shared?.requestAuthorization()
-                            pushStatus = "If notifications are allowed, this phone is registered with the server the next time it starts a response."
+                            pushStatus = L10n.string("If notifications are allowed, this phone is registered with the server the next time it starts a response.")
                         }
                     }
                     if let pushStatus {
@@ -157,6 +170,14 @@ struct SettingsView: View {
             }
         }
         .interactiveDismissDisabled(!app.settings.isConfigured)
+    }
+
+    /// The picked language's tag, or empty for automatic.
+    private var language: Binding<String> {
+        Binding(
+            get: { LanguageStore.shared.chosenTag ?? "" },
+            set: { app.chooseLanguage($0.isEmpty ? nil : $0) }
+        )
     }
 
     private var selectedModel: ModelInfo? {

@@ -18,7 +18,7 @@ struct RecipeCardView: View {
                     HStack(spacing: 6) {
                         ForEach(card.facts, id: \.self) { fact in
                             HStack(spacing: 4) {
-                                Text(fact.label).foregroundStyle(.secondary)
+                                Text(L10n.string(fact.label)).foregroundStyle(.secondary)
                                 Text(fact.value).fontWeight(.medium)
                             }
                             .font(.caption)
@@ -118,7 +118,7 @@ struct RecipeCardView: View {
                             .foregroundStyle(checked ? Color.accentColor : .secondary)
                         Group {
                             if let quantity = ingredient.quantity {
-                                Text(quantity).fontWeight(.semibold) + Text(" ") + Text(ingredient.item)
+                                Text(quantity).fontWeight(.semibold) + Text(verbatim: " ") + Text(ingredient.item)
                             } else {
                                 Text(ingredient.item)
                             }
@@ -144,7 +144,7 @@ struct RecipeCardView: View {
             HStack {
                 CardLabel("Steps")
                 Spacer()
-                Text(done.isEmpty ? "\(card.steps.count) step\(card.steps.count == 1 ? "" : "s")" : "\(done.count) of \(card.steps.count) done")
+                Text(progress)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -163,9 +163,16 @@ struct RecipeCardView: View {
         }
     }
 
+    /// How many steps there are, or how many are done.
+    private var progress: LocalizedStringKey {
+        let count = card.steps.count
+        if !done.isEmpty { return "\(done.count) of \(count) done" }
+        return count == 1 ? "\(count) step" : "\(count) steps"
+    }
+
     private var nextLabel: String {
-        guard let current else { return "All done. Start over" }
-        return current == card.steps.count - 1 ? "Finish" : "Done with step \(current + 1)"
+        guard let current else { return L10n.string("All done. Start over") }
+        return current == card.steps.count - 1 ? L10n.string("Finish") : L10n.format("Done with step %lld", current + 1)
     }
 
     private func stepRow(index: Int, step: RecipeCard.Step) -> some View {
@@ -183,14 +190,14 @@ struct RecipeCardView: View {
                     if isDone {
                         Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white)
                     } else {
-                        Text("\(index + 1)").font(.caption.weight(.bold))
+                        Text(verbatim: "\(index + 1)").font(.caption.weight(.bold))
                             .foregroundStyle(isCurrent ? Color.accentColor : .secondary)
                     }
                 }
                 .frame(width: 26, height: 26)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Step \(index + 1): \(isDone ? "done, mark as not done" : "mark as done")")
+            .accessibilityLabel(isDone ? "Step \(index + 1): done, mark as not done" : "Step \(index + 1): mark as done")
             VStack(alignment: .leading, spacing: 3) {
                 if step.title != nil || step.duration != nil {
                     HStack(spacing: 8) {

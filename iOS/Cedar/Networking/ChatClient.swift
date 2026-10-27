@@ -10,12 +10,13 @@ enum ChatError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "Add your cedar-chat server in Settings."
-        case .invalidURL: return "The server URL is not valid."
-        case .unreachable(let detail): return "Could not reach cedar-chat: \(detail)"
-        case .unauthorized: return "cedar-chat wants an access token, or rejected this one. Check Settings."
+        case .notConfigured: return L10n.string("Add your cedar-chat server in Settings.")
+        case .invalidURL: return L10n.string("The server URL is not valid.")
+        case .unreachable(let detail): return L10n.format("Could not reach cedar-chat: %@", detail)
+        case .unauthorized: return L10n.string("cedar-chat wants an access token, or rejected this one. Check Settings.")
+        // The server's own messages are for developers and stay in English.
         case .api(_, _, let message): return message
-        case .badResponse(let detail): return "Unexpected response from cedar-chat: \(detail)"
+        case .badResponse(let detail): return L10n.format("Unexpected response from cedar-chat: %@", detail)
         }
     }
 
@@ -148,6 +149,8 @@ struct ChatClient: Sendable {
         var attachments: [Upload]?
         /// `off`, `on`, `auto` or `tool`; absent leaves it to the server's Settings.
         var plan: String?
+        /// The interface language (`de-CH`), which the reply is written in.
+        var locale: String?
 
         struct Upload: Encodable {
             var name: String
@@ -211,6 +214,33 @@ struct ChatClient: Sendable {
     func fileRequest(conversationId: String, path: String) -> URLRequest {
         // `makeRequest` appends each segment as a path component, which percent-encodes it.
         makeRequest("api/conversations/\(conversationId)/files/\(path)")
+    }
+
+    // MARK: Settings
+
+    /// `PUT /api/settings/locale`: a tag, or `null` to follow the server's default.
+    struct LocaleSetting: Encodable {
+        var locale: String?
+
+        enum CodingKeys: String, CodingKey {
+            case locale
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            // `null` is sent rather than left out: it clears the setting.
+            if let locale {
+                try container.encode(locale, forKey: .locale)
+            } else {
+                try container.encodeNil(forKey: .locale)
+            }
+        }
+    }
+
+    /// Tells the server the interface language, for what it writes on its own: scheduled runs and
+    /// notifications.
+    func setLocale(_ tag: String?) async throws {
+        _ = try await send(makeRequest("api/settings/locale", method: "PUT", json: LocaleSetting(locale: tag)))
     }
 
     // MARK: Push
@@ -326,9 +356,9 @@ struct ChatClient: Sendable {
               let port = baseURL.port, port != 443 else {
             return .unreachable(error.localizedDescription)
         }
-        return .unreachable(
-            "\(error.localizedDescription) Port \(port) may serve plain HTTP. Use the HTTPS address "
-                + "from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port).")
+        return .unreachable(L10n.format(
+            "%@ Port %lld may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port).",
+            error.localizedDescription, port))
     }
 
     static func error(status: Int, body: Data) -> ChatError {
@@ -343,6 +373,6 @@ struct ChatClient: Sendable {
         if let envelope = try? JSONDecoder().decode(Envelope.self, from: body) {
             return .api(status: status, code: envelope.error.code, message: envelope.error.message)
         }
-        return .api(status: status, code: "http_\(status)", message: "cedar-chat returned HTTP \(status)")
+        return .api(status: status, code: "http_\(status)", message: L10n.format("cedar-chat returned HTTP %lld", status))
     }
 }
