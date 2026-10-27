@@ -132,6 +132,32 @@
       }
     },
     {
+      "name": "electricity_de",
+      "version": "1.0.0",
+      "summary": "German electricity tariffs for your postal code: fixed, green, dynamic and default supply, with providers",
+      "category": "home",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/electricity_de",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "geocoding-api.open-meteo.com",
+          "api.energy-charts.info",
+          "api.awattar.de"
+        ],
+        "secrets": [],
+        "pip": [],
+        "health_data": false
+      },
+      "base_url": "tools/electricity_de/",
+      "files": {
+        "rates.json": "ace1c40616eefd57d86e05eee4364ca931ec75bb1803c2fec3c2f041fc6e2e3d",
+        "tool.json": "7f117d2b818139fc53c6278dc9e57a1de2883430d8f51b1fd906fbdb968d7d6d",
+        "tool.py": "7e82a0ec4e48bb211920d0eb305dd2590fac965de076660b72419b1ab7266776"
+      },
+      "reviewed": false
+    },
+    {
       "name": "tandem_glucose",
       "version": "1.2.0",
       "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",
