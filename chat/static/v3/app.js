@@ -40,7 +40,7 @@ const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
 const SPLIT_KEY = 'cedar-chat-v2-talk-width';
 const DOC_RE = /\.(md|markdown|txt)$/i;
-const NO_MODELS = 'No model is registered yet: an admin adds one under Settings → Model server & API keys.';
+const NO_MODELS = () => tr('v3.noModels');
 const narrow = matchMedia('(max-width: 800px)');
 
 const state = {
@@ -102,16 +102,17 @@ async function copyText(text, button) {
     await navigator.clipboard.writeText(text);
     if (button) {
       const old = button.textContent;
-      button.textContent = 'Copied';
+      button.textContent = tr('v3.copied');
       setTimeout(() => { button.textContent = old; }, 1500);
     }
   } catch {
-    toast('Could not copy to the clipboard');
+    toast(tr('v3.copyFailed'));
   }
 }
 
-const fmtMs = (ms) => (typeof ms !== 'number' ? '' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
-const fmtTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const fmtMs = (ms) => (typeof ms !== 'number' ? '' : ms < 1000 ? `${cedarI18n.number(ms)} ms`
+  : `${cedarI18n.number(ms / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`);
+const fmtTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString(cedarI18n.locale, { hour: '2-digit', minute: '2-digit' });
 
 /** Whether a scrolling element is at (or within `slack` of) its end: the reader is following along. */
 const nearEnd = (el, slack = 160) => el.scrollHeight - el.scrollTop - el.clientHeight < slack;
@@ -161,7 +162,7 @@ function splitRow(line) {
 }
 function codeBlock(code, lang) {
   return `<div class="code"><div class="code-head"><span>${escapeHtml(lang || 'text')}</span>` +
-    `<button type="button" class="copy-btn" data-copy-code>Copy</button></div>` +
+    `<button type="button" class="copy-btn" data-copy-code>${escapeHtml(tr('v3.copy'))}</button></div>` +
     `<pre><code>${escapeHtml(code)}</code></pre></div>`;
 }
 function parseList(lines, start) {
@@ -247,8 +248,8 @@ function askToken(rejected) {
   if (!tokenPrompt) {
     tokenPrompt = new Promise((resolve) => {
       els.tokenMessage.textContent = rejected
-        ? 'That token was not accepted. Enter the access token for this server.'
-        : 'This server requires an access token.';
+        ? tr('v3.token.rejected')
+        : tr('v3.token.required');
       els.tokenInput.value = '';
       els.tokenForm.onsubmit = () => {
         memoryToken = els.tokenInput.value.trim();
@@ -270,7 +271,7 @@ async function api(method, path, body) {
   if (res.status === 401) { await askToken(true); return api(method, path, body); }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error?.message || `Request failed (${res.status})`);
+  if (!res.ok) throw new Error(data?.error?.message || tr('v3.requestFailed', { status: String(res.status) }));
   return data;
 }
 
@@ -288,31 +289,42 @@ function workspacePath(path) {
 const firstLine = (s) => String(s || '').split('\n').find((l) => l.trim()) || '';
 
 // How each tool reads as a step ("Ran ls" / "Running ls") and in a card's title, and what its
-// one-line subject is. `code` marks a subject that is code. Tools not listed fall back to their name.
+// one-line subject is. `doing` and `did` are catalog keys of phrases around a {subject}, since
+// German and French put the subject elsewhere in the sentence. `code` marks a subject that is code.
+// Tools not listed fall back to their name.
 const TOOLS = {
-  web_search: { doing: 'Searching', did: 'Searched', subject: (i) => `“${i.query || ''}”`, icon: 'search' },
-  bash: { doing: 'Running', did: 'Ran', subject: (i) => `$ ${firstLine(i.command)}`, code: true, icon: 'terminal' },
-  run_python: { doing: 'Running', did: 'Ran', subject: (i) => firstLine(i.code), code: true, icon: 'python' },
-  read_file: { doing: 'Reading', did: 'Read', subject: (i) => i.path, icon: 'file' },
-  read_document: { doing: 'Reading', did: 'Read', subject: (i) => i.path, icon: 'file' },
-  fetch_url: { doing: 'Fetching', did: 'Fetched', subject: (i) => i.url, icon: 'globe' },
-  download_file: { doing: 'Downloading', did: 'Downloaded', subject: (i) => (i.path ? `${i.url} → ${i.path}` : i.url), icon: 'download' },
-  write_file: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path, icon: 'doc' },
-  generate_pdf: { doing: 'Writing', did: 'Wrote', subject: (i) => i.path, icon: 'doc' },
-  generate_chart: { doing: 'Drawing', did: 'Drew', subject: (i) => i.path, icon: 'chart' },
+  web_search: { doing: 'v3.tool.searching', did: 'v3.tool.searched', subject: (i) => tr('v3.quoted', { text: i.query || '' }), icon: 'search' },
+  bash: { doing: 'v3.tool.running', did: 'v3.tool.ran', subject: (i) => `$ ${firstLine(i.command)}`, code: true, icon: 'terminal' },
+  run_python: { doing: 'v3.tool.running', did: 'v3.tool.ran', subject: (i) => firstLine(i.code), code: true, icon: 'python' },
+  read_file: { doing: 'v3.tool.reading', did: 'v3.tool.read', subject: (i) => i.path, icon: 'file' },
+  read_document: { doing: 'v3.tool.reading', did: 'v3.tool.read', subject: (i) => i.path, icon: 'file' },
+  fetch_url: { doing: 'v3.tool.fetching', did: 'v3.tool.fetched', subject: (i) => i.url, icon: 'globe' },
+  download_file: { doing: 'v3.tool.downloading', did: 'v3.tool.downloaded', subject: (i) => (i.path ? `${i.url} → ${i.path}` : i.url), icon: 'download' },
+  write_file: { doing: 'v3.tool.writing', did: 'v3.tool.wrote', subject: (i) => i.path, icon: 'doc' },
+  generate_pdf: { doing: 'v3.tool.writing', did: 'v3.tool.wrote', subject: (i) => i.path, icon: 'doc' },
+  generate_chart: { doing: 'v3.tool.drawing', did: 'v3.tool.drew', subject: (i) => i.path, icon: 'chart' },
   weather_forecast: {
-    doing: 'Checking the weather for',
-    did: 'Checked the weather for',
+    doing: 'v3.tool.checkingWeather',
+    did: 'v3.tool.checkedWeather',
     subject: (i) => i.location || (i.latitude != null ? `${i.latitude}, ${i.longitude}` : ''),
     icon: 'weather',
   },
-  show_map: { doing: 'Mapping', did: 'Mapped', subject: (i) => mapSubject(i), icon: 'map' },
-  show_recipe: { doing: 'Writing up', did: 'Wrote up', subject: (i) => i.title, icon: 'recipe' },
-  plan_trip: { doing: 'Planning', did: 'Planned', subject: (i) => tripSubject(i), icon: 'trip' },
-  compare_stocks: { doing: 'Looking up', did: 'Looked up', subject: (i) => stocksSubject(i), icon: 'stocks' },
-  search_products: { doing: 'Shopping for', did: 'Shopped for', subject: (i) => (typeof i.query === 'string' ? i.query : ''), icon: 'shop' },
-  ask_user: { doing: 'Asking', did: 'Asked', subject: (i) => questionsSubject(i), icon: 'question' },
+  show_map: { doing: 'v3.tool.mapping', did: 'v3.tool.mapped', subject: (i) => mapSubject(i), icon: 'map' },
+  show_recipe: { doing: 'v3.tool.writingUp', did: 'v3.tool.wroteUp', subject: (i) => i.title, icon: 'recipe' },
+  plan_trip: { doing: 'v3.tool.planning', did: 'v3.tool.planned', subject: (i) => tripSubject(i), icon: 'trip' },
+  compare_stocks: { doing: 'v3.tool.lookingUp', did: 'v3.tool.lookedUp', subject: (i) => stocksSubject(i), icon: 'stocks' },
+  search_products: { doing: 'v3.tool.shopping', did: 'v3.tool.shopped', subject: (i) => (typeof i.query === 'string' ? i.query : ''), icon: 'shop' },
+  ask_user: { doing: 'v3.tool.asking', did: 'v3.tool.asked', subject: (i) => questionsSubject(i), icon: 'question' },
 };
+
+/** A step phrase (`key`, e.g. "Ran {subject}") as HTML around `subjectHtml`. */
+function phraseHtml(key, subjectHtml) {
+  const [before, after = ''] = tr(key, { subject: '\u0000' }).split('\u0000');
+  return `${escapeHtml(before)}${subjectHtml}${escapeHtml(after)}`.trim();
+}
+
+/** The same as plain text. */
+const phraseText = (key, subject) => (subject ? tr(key, { subject }) : tr(key, { subject: '' }).replace(/\s{2,}/g, ' ')).trim();
 
 const ICONS = {
   search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
@@ -365,13 +377,13 @@ function mapSubject(input) {
 const FILE_TOOLS = new Set(['write_file', 'generate_pdf', 'generate_chart', 'download_file']);
 // Tools whose result is drawn as a widget (map-view.js and friends), which keeps state once built.
 const WIDGETS = {
-  show_map: { lib: () => cedarMap, waiting: 'locating…', count: (s) => `${s.markers.length} place${s.markers.length === 1 ? '' : 's'}` },
-  show_recipe: { lib: () => cedarRecipe, waiting: 'finding a photo…', count: (s) => `${s.steps.length} step${s.steps.length === 1 ? '' : 's'}` },
-  plan_trip: { lib: () => cedarTransit, waiting: 'finding routes…', count: (s) => `${s.options.length} way${s.options.length === 1 ? '' : 's'} to go` },
-  compare_stocks: { lib: () => cedarStocks, waiting: 'reading prices and news…', count: (s) => (s.stocks.length === 1 ? '1 stock' : `${s.stocks.length} stocks compared`) },
-  search_products: { lib: () => cedarProducts, waiting: 'searching the store…', count: (s) => `${s.options.length} option${s.options.length === 1 ? '' : 's'}` },
+  show_map: { lib: () => cedarMap, waiting: 'v3.widget.locating', count: (s) => tr('v3.count.places', { count: s.markers.length }) },
+  show_recipe: { lib: () => cedarRecipe, waiting: 'v3.widget.findingPhoto', count: (s) => tr('v3.count.steps', { count: s.steps.length }) },
+  plan_trip: { lib: () => cedarTransit, waiting: 'v3.widget.findingRoutes', count: (s) => tr('v3.count.ways', { count: s.options.length }) },
+  compare_stocks: { lib: () => cedarStocks, waiting: 'v3.widget.readingPrices', count: (s) => tr('v3.count.stocks', { count: s.stocks.length }) },
+  search_products: { lib: () => cedarProducts, waiting: 'v3.widget.searchingStore', count: (s) => tr('v3.count.options', { count: s.options.length }) },
   // Drawn from the call's data rather than its output, which only says where the picture went.
-  generate_chart: { lib: () => cedarChart, waiting: 'drawing…', count: () => 'saved' },
+  generate_chart: { lib: () => cedarChart, waiting: 'v3.widget.drawing', count: () => tr('v3.saved') },
 };
 
 const subjectOf = (tool) => (TOOLS[tool.name]?.subject(tool.input || {}) || '').trim();
@@ -379,17 +391,17 @@ const subjectOf = (tool) => (TOOLS[tool.name]?.subject(tool.input || {}) || '').
 /** "Ran <code>$ ls</code>", "Searching “x”", or the bare tool name: HTML for a step or card title. */
 function toolHtml(tool, done) {
   const spec = TOOLS[tool.name];
-  if (!spec) return done ? escapeHtml(tool.name) : `Running ${escapeHtml(tool.name)}`;
+  if (!spec) return done ? escapeHtml(tool.name) : phraseHtml('v3.tool.running', escapeHtml(tool.name));
   const subject = subjectOf(tool);
   const subjectHtml = spec.code ? `<code>${escapeHtml(subject)}</code>` : escapeHtml(subject);
-  return `${done ? spec.did : spec.doing} ${subjectHtml}`.trim();
+  return phraseHtml(done ? spec.did : spec.doing, subjectHtml);
 }
 
 /** The same, as plain text, for the header's status and tooltips. */
 function toolText(tool, done) {
   const spec = TOOLS[tool.name];
-  if (!spec) return done ? tool.name : `Running ${tool.name}`;
-  return `${done ? spec.did : spec.doing} ${subjectOf(tool)}`.trim();
+  if (!spec) return done ? tool.name : phraseText('v3.tool.running', tool.name);
+  return phraseText(done ? spec.did : spec.doing, subjectOf(tool));
 }
 
 /** A tool call that produces a document: a Markdown/text file, or a PDF made from Markdown. */
@@ -424,9 +436,9 @@ function linkHtml(url, label) {
 // -- the stage: one card per tool call -----------------------------------------------------------
 
 function downloadLink(path, primary) {
-  const b = h('button', `copy-btn${primary ? ' primary' : ''}`, 'Download');
+  const b = h('button', `copy-btn${primary ? ' primary' : ''}`, escapeHtml(tr('v3.download')));
   b.type = 'button';
-  b.title = `Download ${path}`;
+  b.title = tr('v3.downloadPath', { path });
   b.addEventListener('click', () => downloadFile(path, b));
   return b;
 }
@@ -464,13 +476,13 @@ function ensureGroup(view) {
   group.dataset.turn = view.turn.id;
   const n = state.order.indexOf(view.turn.id) + 1;
   const head = h('div', 'turn-head');
-  head.append(t('span', 'n', `Turn ${n}`), t('span', 'q', firstLine(view.turn.prompt).slice(0, 160)), t('span', 't', fmtTime(view.turn.created_at)));
+  head.append(t('span', 'n', tr('v3.turn', { n })), t('span', 'q', firstLine(view.turn.prompt).slice(0, 160)), t('span', 't', fmtTime(view.turn.created_at)));
   head.querySelector('.q').title = view.turn.prompt;
   group.append(head);
   const grid = h('div', 'turn-grid');
   const cards = h('div', 'turn-cards');
   const sources = h('aside', 'turn-sources');
-  sources.setAttribute('aria-label', 'Sources');
+  sources.setAttribute('aria-label', tr('v3.sources'));
   grid.append(cards, sources);
   group.append(grid);
   view.cardsEl = cards;
@@ -545,7 +557,7 @@ function fillCharts(tool, card) {
   card.classList.add('widget'); // laid out like the other widget cards
   tool.chartEls ??= charts.map((spec) => cedarChart.element(spec));
   tool.reportEl ??= cedarChart.report(text);
-  const meta = t('span', '', `${charts.length} chart${charts.length === 1 ? '' : 's'} · ${fmtMs(tool.duration_ms)}`);
+  const meta = t('span', '', `${tr('v3.count.charts', { count: charts.length })} · ${fmtMs(tool.duration_ms)}`);
   card.append(cardHead(TOOLS[tool.name]?.icon || 'chart', toolHtml(tool, true), { meta }));
   const body = h('div', 'card-body');
   body.append(...tool.chartEls, tool.reportEl);
@@ -556,20 +568,20 @@ function fillDocument(tool, card, done) {
   const path = String(tool.input.path);
   const name = path.split('/').pop();
   const content = String(tool.input.content ?? '');
-  const size = tool.name === 'generate_pdf' ? 'PDF' : `${new Blob([content]).size.toLocaleString()} B`;
+  const size = tool.name === 'generate_pdf' ? 'PDF' : tr('v3.size.bytes', { n: new Blob([content]).size });
   card.classList.toggle('drafting', !done);
-  const copy = h('button', 'copy-btn', 'Copy');
+  const copy = h('button', 'copy-btn', escapeHtml(tr('v3.copy')));
   copy.type = 'button';
   copy.addEventListener('click', () => copyText(content, copy));
   const actions = [copy];
   const rel = done && workspacePath(path);
   if (rel) {
     // The card shows a PDF's Markdown source; the finished PDF opens in the viewer.
-    const view = tool.name === 'generate_pdf' ? cedarViewer.viewButton(rel, { label: 'View PDF' }) : null;
+    const view = tool.name === 'generate_pdf' ? cedarViewer.viewButton(rel, { label: tr('v3.viewPdf') }) : null;
     if (view) actions.push(view);
     actions.push(downloadLink(rel, true));
   }
-  const meta = done ? t('span', '', `${fmtMs(tool.duration_ms)} · ${size}`) : spinnerMeta('being written…');
+  const meta = done ? t('span', '', `${fmtMs(tool.duration_ms)} · ${size}`) : spinnerMeta(tr('v3.beingWritten'));
   card.append(cardHead('doc', escapeHtml(name), { meta, actions }));
   const body = h('div', 'card-body');
   if (/\.txt$/i.test(path)) body.append(t('pre', 'plain', content));
@@ -585,7 +597,7 @@ function fillWidget(tool, card, done) {
   const w = WIDGETS[tool.name];
   const spec = done ? w.lib().parse(tool.output, tool.input) : null;
   const iconName = TOOLS[tool.name].icon;
-  if (!done) { card.append(cardHead(iconName, toolHtml(tool, false), { meta: spinnerMeta(w.waiting) })); return; }
+  if (!done) { card.append(cardHead(iconName, toolHtml(tool, false), { meta: spinnerMeta(tr(w.waiting)) })); return; }
   // A file the widget can't draw is still a saved file.
   if (!spec && FILE_TOOLS.has(tool.name)) { fillFile(tool, card, done); return; }
   if (!spec) {
@@ -623,7 +635,7 @@ function fillFile(tool, card, done) {
     if (view) actions.push(view);
     actions.push(downloadLink(rel));
   }
-  const meta = done ? t('span', '', `saved · ${fmtMs(tool.duration_ms)}`) : spinnerMeta('saving…');
+  const meta = done ? t('span', '', `${tr('v3.saved')} · ${fmtMs(tool.duration_ms)}`) : spinnerMeta(tr('v3.saving'));
   card.append(cardHead(TOOLS[tool.name].icon, toolHtml(tool, done), { meta, actions }));
 }
 
@@ -635,8 +647,8 @@ function fillTrace(tool, card, done) {
   const err = done && tool.is_error;
   const body = h('div', 'card-body');
   let meta;
-  if (!done) meta = spinnerMeta('running');
-  else if (err) meta = t('span', '', 'failed');
+  if (!done) meta = spinnerMeta(tr('v3.running'));
+  else if (err) meta = t('span', '', tr('v3.failed'));
   else meta = t('span', '', fmtMs(tool.duration_ms));
   let title = toolHtml(tool, done);
 
@@ -644,7 +656,7 @@ function fillTrace(tool, card, done) {
     case 'web_search': {
       const results = done && !err ? parseSearchResults(tool.output) : [];
       if (results.length) {
-        meta = t('span', '', `${results.length} result${results.length === 1 ? '' : 's'} · ${fmtMs(tool.duration_ms)}`);
+        meta = t('span', '', `${tr('v3.count.results', { count: results.length })} · ${fmtMs(tool.duration_ms)}`);
         const list = h('div', 'results');
         for (const r of results) {
           const item = h('div', 'result');
@@ -654,22 +666,22 @@ function fillTrace(tool, card, done) {
           list.append(item);
         }
         body.append(list);
-      } else if (done) body.append(outputBlock(String(tool.output).trim() || 'No results.'));
+      } else if (done) body.append(outputBlock(String(tool.output).trim() || tr('v3.noResults')));
       break;
     }
     case 'bash': {
       const command = String(input.command || '');
-      if (command.includes('\n')) body.append(outputBlock(command, 'command', 'cmd'));
-      if (done) body.append(outputBlock(String(tool.output).trim() || '(no output)', command.includes('\n') ? 'output' : ''));
+      if (command.includes('\n')) body.append(outputBlock(command, tr('v3.label.command'), 'cmd'));
+      if (done) body.append(outputBlock(String(tool.output).trim() || tr('v3.noOutput'), command.includes('\n') ? tr('v3.label.output') : ''));
       break;
     }
     case 'run_python': {
-      body.append(outputBlock(String(input.code || ''), 'code', 'cmd'));
-      if (done) body.append(outputBlock(String(tool.output).trim() || '(no output)', 'output'));
+      body.append(outputBlock(String(input.code || ''), tr('v3.label.code'), 'cmd'));
+      if (done) body.append(outputBlock(String(tool.output).trim() || tr('v3.noOutput'), tr('v3.label.output')));
       break;
     }
     case 'fetch_url':
-      title = `${done ? 'Fetched' : 'Fetching'} ${linkHtml(String(input.url || ''))}`;
+      title = phraseHtml(done ? 'v3.tool.fetched' : 'v3.tool.fetching', linkHtml(String(input.url || '')));
       if (done) body.append(outputBlock(String(tool.output)));
       break;
     case 'read_file':
@@ -684,9 +696,9 @@ function fillTrace(tool, card, done) {
         if (done) body.append(outputBlock(String(tool.output)));
       } else {
         // A tool this page doesn't know yet: still show what it was given and what it returned.
-        if (!spec) title = `${done ? '' : 'Running '}<code>${escapeHtml(tool.name)}</code>`;
-        body.append(outputBlock(JSON.stringify(input, null, 2), 'input', 'cmd'));
-        if (done) body.append(outputBlock(String(tool.output).trim() || '(no output)', 'output'));
+        if (!spec) title = done ? `<code>${escapeHtml(tool.name)}</code>` : phraseHtml('v3.tool.running', `<code>${escapeHtml(tool.name)}</code>`);
+        body.append(outputBlock(JSON.stringify(input, null, 2), tr('v3.label.input'), 'cmd'));
+        if (done) body.append(outputBlock(String(tool.output).trim() || tr('v3.noOutput'), tr('v3.label.output')));
       }
   }
   card.append(cardHead(iconName, title, { meta, chevron: true }));
@@ -709,7 +721,7 @@ function bindTrace(tool, card) {
 function figuresCard(figures) {
   const card = h('article', 'card figures');
   const n = figures.filter((f) => f.classList?.contains('cedar-image')).length;
-  card.append(cardHead('image', n === 1 ? 'Image' : `${n} images`, { meta: t('span', '', 'from this response') }));
+  card.append(cardHead('image', escapeHtml(tr('v3.count.images', { count: n })), { meta: t('span', '', tr('v3.fromResponse')) }));
   const body = h('div', 'card-body');
   body.append(...figures);
   card.append(body);
@@ -762,13 +774,13 @@ function addTurn(turn) {
   };
   state.views.set(turn.id, view);
   state.order.push(turn.id);
-  const user = note('user', `You · ${fmtTime(turn.created_at)}`);
+  const user = note('user', escapeHtml(tr('v3.you', { time: fmtTime(turn.created_at) })));
   if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
   user.lastChild.append(document.createTextNode(turn.prompt));
   cedarClarify.settle(els.notes); // this message answers any question still open above it
   els.notes.append(user);
   view.workingEl = h('div', 'working');
-  view.workingEl.append(h('span', 'spinner'), h('span', '', 'Thinking'));
+  view.workingEl.append(h('span', 'spinner'), t('span', '', tr('v3.thinking')));
   els.notes.append(view.workingEl);
   if (ACTIVE.has(turn.status)) state.activeTurn = view;
   updateChrome();
@@ -791,7 +803,7 @@ function placeNote(view, el) {
  *  the step row above it already names the tool. */
 function setWorking(view, text) {
   view.doing = text;
-  if (view.workingEl) view.workingEl.lastChild.textContent = text === 'Thinking' ? 'Thinking' : 'Working';
+  if (view.workingEl) view.workingEl.lastChild.textContent = text === tr('v3.thinking') ? tr('v3.thinking') : tr('v3.working');
 }
 
 /** A step row for a tool call, in the conversation, that jumps to its card. */
@@ -800,10 +812,10 @@ function addStep(view, tool) {
     const work = h('div', 'work live');
     const sum = h('button', 'work-sum');
     sum.type = 'button';
-    sum.append(h('span', 'work-text'), h('span', 'work-toggle', 'Hide'));
+    sum.append(h('span', 'work-text'), t('span', 'work-toggle', tr('v3.hide')));
     sum.addEventListener('click', () => {
       work.classList.toggle('open');
-      sum.lastChild.textContent = work.classList.contains('open') || work.classList.contains('live') ? 'Hide' : 'Show';
+      sum.lastChild.textContent = work.classList.contains('open') || work.classList.contains('live') ? tr('v3.hide') : tr('v3.show');
     });
     const steps = h('div', 'steps');
     work.append(sum, steps);
@@ -831,8 +843,8 @@ function fillStep(tool) {
   const done = tool.output !== undefined;
   row.className = `step ${!done ? 'running' : tool.is_error ? 'err' : 'done'}`;
   row.querySelector('.what').innerHTML = toolHtml(tool, done);
-  row.querySelector('.ms').textContent = !done ? '…' : tool.is_error ? 'failed' : fmtMs(tool.duration_ms);
-  const where = cardKind(tool) === 'none' ? '' : ' · click to see the result';
+  row.querySelector('.ms').textContent = !done ? '…' : tool.is_error ? tr('v3.failed') : fmtMs(tool.duration_ms);
+  const where = cardKind(tool) === 'none' ? '' : ` · ${tr('v3.clickToSee')}`;
   row.title = toolText(tool, done) + where;
   if (tool.work) updateWork(tool.work);
 }
@@ -842,17 +854,17 @@ function updateWork(work) {
   const tools = work.cedarTools;
   const running = tools.find((tool) => tool.output === undefined);
   const text = work.querySelector('.work-text');
-  if (running) { text.textContent = `Step ${tools.length} · ${toolText(running, false)}`; return; }
+  if (running) { text.textContent = tr('v3.work.step', { n: tools.length, doing: toolText(running, false) }); return; }
   const n = (names) => tools.filter((tool) => names.includes(tool.name)).length;
-  const times = (k, one, many) => (k === 0 ? '' : k === 1 ? `${one}` : `${many.replace('N', String(k))}`);
+  const times = (k, key) => (k === 0 ? '' : tr(key, { count: k }));
   const parts = [
-    times(n(['web_search']), 'searched once', 'searched N times'),
-    times(n(['fetch_url', 'download_file', 'read_file', 'read_document']), 'read 1 page or file', 'read N pages or files'),
-    times(n(['bash', 'run_python']), 'ran 1 command', 'ran N commands'),
-    times(n(['write_file', 'generate_pdf', 'generate_chart']), 'wrote 1 file', 'wrote N files'),
-    times(tools.filter((tool) => tool.is_error).length, '1 failed', 'N failed'),
+    times(n(['web_search']), 'v3.work.searched'),
+    times(n(['fetch_url', 'download_file', 'read_file', 'read_document']), 'v3.work.read'),
+    times(n(['bash', 'run_python']), 'v3.work.ran'),
+    times(n(['write_file', 'generate_pdf', 'generate_chart']), 'v3.work.wrote'),
+    times(tools.filter((tool) => tool.is_error).length, 'v3.count.failed'),
   ].filter(Boolean);
-  text.textContent = `Worked through ${tools.length} step${tools.length === 1 ? '' : 's'}${parts.length ? ` · ${parts.join(', ')}` : ''}`;
+  text.textContent = `${tr('v3.work.summary', { count: tools.length })}${parts.length ? ` · ${parts.join(', ')}` : ''}`;
 }
 
 /** The run is over: the folds close (a failure stays open, since it is worth reading). */
@@ -861,7 +873,7 @@ function settleWork(view) {
     work.classList.remove('live');
     const failed = work.cedarTools.some((tool) => tool.is_error);
     work.classList.toggle('open', failed);
-    work.querySelector('.work-toggle').textContent = failed ? 'Hide' : 'Show';
+    work.querySelector('.work-toggle').textContent = failed ? tr('v3.hide') : tr('v3.show');
     updateWork(work);
   }
 }
@@ -878,13 +890,13 @@ function showPlan(view, data, awaiting) {
   view.plan = plan;
   const el = cedarTrust.plan.element(plan, {
     awaiting: awaiting && !view.done,
-    note: awaiting ? cedarTrust.plan.awaitingNote(plan) : 'Agreed',
+    note: awaiting ? cedarTrust.plan.awaitingNote(plan) : tr('v3.plan.agreed'),
     onApprove: (steps) => approvePlan(view, steps),
   });
   if (view.planEl) view.planEl.replaceWith(el); else placeNote(view, el);
   view.planEl = el;
   view.stepsEl = null;
-  if (awaiting && !view.done) setWorking(view, 'Waiting for your go on the plan');
+  if (awaiting && !view.done) setWorking(view, tr('v3.waitingPlan'));
 }
 
 async function approvePlan(view, steps) {
@@ -892,8 +904,8 @@ async function approvePlan(view, steps) {
     await api('POST', `/turns/${view.turn.id}/plan`, { steps });
   } catch (e) { toast(e.message); throw e; }
   showPlan(view, { steps }, false);
-  view.planEl.cedarPlan.setNote('Agreed, with your changes');
-  setWorking(view, 'Thinking');
+  view.planEl.cedarPlan.setNote(tr('v3.plan.agreedChanges'));
+  setWorking(view, tr('v3.thinking'));
 }
 
 /** A risky call waits on the reader: the card with Allow once / Always / Skip. */
@@ -904,13 +916,13 @@ function showApproval(view, d) {
       try { await api('POST', `/turns/${view.turn.id}/approvals/${encodeURIComponent(spec.id)}`, { decision }); }
       catch (e) { toast(e.message); throw e; }
       if (decision !== 'deny') view.approvalsGranted++;
-      setWorking(view, 'Thinking');
+      setWorking(view, tr('v3.thinking'));
     },
   });
   view.approvals.set(String(d.id), el);
   placeNote(view, el);
   view.stepsEl = null;
-  setWorking(view, 'Waiting for your OK');
+  setWorking(view, tr('v3.waitingOk'));
 }
 
 /** Cedar's reasoning, folded; text for the same stretch of thinking is appended to one fold. */
@@ -933,17 +945,17 @@ function renderSources(view) {
   aside.textContent = '';
   const sources = view.sources = sourcesOf(view);
   if (sources.length) {
-    aside.append(t('div', 'label', `Sources · ${sources.length}`));
+    aside.append(t('div', 'label', tr('v3.sourcesCount', { count: sources.length })));
     aside.append(cedarTrust.sources.element(sources, { onOpen: (s) => s.path && downloadFile(workspacePath(s.path)) }));
   }
   const files = [...new Set(view.tools.filter((tool) => FILE_TOOLS.has(tool.name) && tool.output !== undefined && !tool.is_error).map((tool) => workspacePath(tool.input?.path)).filter(Boolean))];
   if (files.length) {
-    aside.append(t('div', 'label', 'Workspace'));
+    aside.append(t('div', 'label', tr('v3.workspace')));
     const list = h('div', 'files');
     for (const path of files) {
       const b = t('button', '', path);
       b.type = 'button';
-      b.title = `Download ${path}`;
+      b.title = tr('v3.downloadPath', { path });
       b.addEventListener('click', () => downloadFile(path, b));
       list.append(b);
     }
@@ -970,7 +982,7 @@ async function followEvents(view) {
       if (res.status === 401) { await askToken(true); continue; }
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        const err = new Error(data?.error?.message || `Could not load this response (${res.status})`);
+        const err = new Error(data?.error?.message || tr('v3.loadResponseFailed', { status: String(res.status) }));
         err.fatal = res.status < 500;
         throw err;
       }
@@ -1024,7 +1036,7 @@ function applyEvent(view, event) {
         cedarTrust.approval.settle(el, d.decision, event.created_at);
         if (d.decision !== 'deny' && d.decision !== 'timeout') view.approvalsGranted++;
       }
-      setWorking(view, 'Thinking');
+      setWorking(view, tr('v3.thinking'));
       break;
     }
     case 'assistant.text': {
@@ -1035,7 +1047,7 @@ function applyEvent(view, event) {
       view.textNotes.push(n);
       placeNote(view, n);
       view.stepsEl = null; // the next tool call starts a new run of steps, after this note
-      setWorking(view, 'Thinking');
+      setWorking(view, tr('v3.thinking'));
       break;
     }
     case 'tool.call': {
@@ -1067,7 +1079,7 @@ function applyEvent(view, event) {
         const spec = tool.name === 'ask_user' && !tool.is_error && cedarClarify.parse(tool.output);
         if (spec) {
           const answered = state.order[state.order.length - 1] !== view.turn.id;
-          const n = note('clarify', 'Cedar asks', '');
+          const n = note('clarify', escapeHtml(tr('v3.cedarAsks')), '');
           n.lastChild.append(cedarClarify.element(spec, { answered, onSubmit: answerQuestions }));
           placeNote(view, n);
           view.stepsEl = null;
@@ -1080,7 +1092,7 @@ function applyEvent(view, event) {
           }
         }
       }
-      setWorking(view, 'Thinking');
+      setWorking(view, tr('v3.thinking'));
       break;
     }
     case 'usage':
@@ -1097,8 +1109,7 @@ function applyEvent(view, event) {
 }
 
 /** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
-const CUT_OFF =
-  "The reply was cut off at the model's output limit. A model that thinks before answering can use all of it before writing any text. An admin can raise it under Settings → Server, as the model's Max tokens per reply.";
+const CUT_OFF = () => tr('v3.cutOff');
 
 function finishTurn(view, event) {
   if (view.done) return;
@@ -1115,14 +1126,14 @@ function finishTurn(view, event) {
   if (figures.length) placeCard(view, figuresCard(figures));
   if (event.type === 'run.failed') {
     const n = note('error', '');
-    n.lastChild.textContent = d.error || 'Something went wrong.';
+    n.lastChild.textContent = d.error || tr('v3.somethingWrong');
     put(n);
   } else if (event.type === 'run.cancelled') {
-    put(note('muted', '', d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.'));
+    put(note('muted', '', escapeHtml(d.reason === 'server shutting down' ? tr('v3.stoppedShutdown') : tr('v3.stopped'))));
   } else if (d.stop_reason === 'max_tokens') {
-    put(note('error', '', CUT_OFF));
+    put(note('error', '', escapeHtml(CUT_OFF())));
   } else if (!view.texts.length && d.stop_reason !== 'ask_user') {
-    put(note('muted', '', 'No text in this response.'));
+    put(note('muted', '', escapeHtml(tr('v3.noText'))));
   }
   for (const tool of view.tools) {
     if (tool.output === undefined) { Object.assign(tool, { output: '', is_error: true }); fillStep(tool); fillCard(tool); }
@@ -1165,21 +1176,21 @@ function updateChrome() {
   const busy = Boolean(state.activeTurn);
   const latest = state.views.get(state.order[state.order.length - 1]);
   els.app.classList.toggle('empty', !c);
-  els.title.textContent = c ? (c.title || 'New chat') : '';
+  els.title.textContent = c ? (c.title || tr('v3.newChat')) : '';
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
   cedarStar.setCurrent(c);
   els.scheduleBtn.hidden = !c || busy || state.sending || !hasCompletedTurn();
   els.stop.hidden = !busy;
-  els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+  els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString(cedarI18n.locale, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
   els.status.className = 'status' + (busy ? ' live' : latest?.lastEvent === 'run.failed' ? ' error' : '');
-  const doing = state.activeTurn?.doing || 'Thinking';
-  els.statusText.textContent = busy ? `Working · ${doing[0].toLowerCase()}${doing.slice(1)}`
-    : latest ? (latest.lastEvent === 'run.failed' ? 'Failed' : latest.lastEvent === 'run.cancelled' ? 'Stopped' : 'Done') : 'Idle';
+  const doing = state.activeTurn?.doing || tr('v3.thinking');
+  els.statusText.textContent = busy ? tr('v3.status.working', { doing: `${doing[0].toLocaleLowerCase(cedarI18n.locale)}${doing.slice(1)}` })
+    : latest ? (latest.lastEvent === 'run.failed' ? tr('v3.status.failed') : latest.lastEvent === 'run.cancelled' ? tr('v3.status.stopped') : tr('v3.status.done')) : tr('v3.status.idle');
   els.send.disabled = state.sending || busy || state.noModels || !els.input.value.trim();
-  els.input.placeholder = state.noModels ? NO_MODELS
-    : busy ? 'Cedar is working. Type a follow-up for when it is done…' : c ? 'Reply or ask for a change…' : 'Describe the task. Attach files if it needs them.';
+  els.input.placeholder = state.noModels ? NO_MODELS()
+    : busy ? tr('v3.placeholder.busy') : c ? tr('v3.placeholder.reply') : tr('v3.placeholder.new');
   const total = { input: 0, output: 0 };
   for (const view of state.views.values()) {
     total.input += view.usage.input; total.output += view.usage.output;
@@ -1282,13 +1293,13 @@ function closeDrawer() {
 /** The welcome screen's rail: the latest conversations, with when they were started. */
 function renderHomeRecents() {
   els.homeRecents.textContent = '';
-  if (!state.conversations.length) { els.homeRecents.append(h('div', 'empty-list', 'Your conversations will be listed here.')); return; }
+  if (!state.conversations.length) { els.homeRecents.append(t('div', 'empty-list', tr('v3.homeEmpty'))); return; }
   for (const c of state.conversations.slice(0, 6)) {
     const a = h('a', 'home-conv');
     a.href = `#/c/${c.id}`;
-    a.append(t('span', 'name', c.title || 'New chat'));
-    const when = c.created_at ? new Date(c.created_at).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) : '';
-    a.append(t('span', 'sub', [c.schedule_id ? 'Scheduled run' : null, when].filter(Boolean).join(' · ')));
+    a.append(t('span', 'name', c.title || tr('v3.newChat')));
+    const when = c.created_at ? new Date(c.created_at).toLocaleDateString(cedarI18n.locale, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+    a.append(t('span', 'sub', [c.schedule_id ? tr('v3.scheduledRun') : null, when].filter(Boolean).join(' · ')));
     els.homeRecents.append(a);
   }
 }
@@ -1296,20 +1307,20 @@ function renderHomeRecents() {
 function renderRecents() {
   renderHomeRecents();
   els.recents.textContent = '';
-  if (!state.conversations.length) { els.recents.append(h('div', 'empty-list', 'No conversations yet')); return; }
+  if (!state.conversations.length) { els.recents.append(t('div', 'empty-list', tr('v3.noConversations'))); return; }
   for (const c of state.conversations) {
     const a = h('a', 'conv');
     a.href = `#/c/${c.id}`;
     if (state.current?.id === c.id) a.classList.add('active');
-    a.append(t('span', 'name', c.title || 'New chat'));
-    a.title = c.title || 'New chat';
+    a.append(t('span', 'name', c.title || tr('v3.newChat')));
+    a.title = c.title || tr('v3.newChat');
     a.classList.toggle('is-unread', Boolean(c.unread));
     if (state.current?.id === c.id && state.activeTurn) a.append(h('span', 'live'));
-    else if (c.needs_answer) a.append(t('span', 'needs', 'Needs answer'));
+    else if (c.needs_answer) a.append(t('span', 'needs', tr('v3.needsAnswer')));
     else if (c.unread) a.append(h('span', 'unread'));
     const del = h('button', 'del', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>');
     del.type = 'button';
-    del.setAttribute('aria-label', `Delete "${c.title || 'New chat'}"`);
+    del.setAttribute('aria-label', tr('v3.deleteNamed', { title: c.title || tr('v3.newChat') }));
     del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteConversation(c); });
     a.append(del);
     els.recents.append(a);
@@ -1418,15 +1429,16 @@ function filesPath(path) {
 }
 
 function formatSize(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  const num = (x, digits) => cedarI18n.number(x, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
+  if (n < 1024) return tr('v3.size.bytes', { n });
+  if (n < 1024 * 1024) return tr('v3.size.kb', { n: num(n / 1024, n < 10 * 1024 ? 1 : 0) });
+  return tr('v3.size.mb', { n: num(n / (1024 * 1024), 1) });
 }
 
 function renderFiles(listing) {
   els.filesList.textContent = '';
   if (!listing.files.length) {
-    els.filesList.append(h('div', 'empty-list', 'No files in the workspace yet.'));
+    els.filesList.append(t('div', 'empty-list', tr('v3.noFiles')));
     return;
   }
   for (const f of listing.files) {
@@ -1444,14 +1456,14 @@ function renderFiles(listing) {
     row.append(downloadLink(f.path));
     els.filesList.append(row);
   }
-  if (listing.truncated) els.filesList.append(h('div', 'empty-list', 'Only the first 1,000 files are shown.'));
+  if (listing.truncated) els.filesList.append(t('div', 'empty-list', tr('v3.filesTruncated', { count: 1000 })));
 }
 
 async function loadFiles() {
   if (!state.current) return;
   const id = state.current.id;
   els.filesList.textContent = '';
-  els.filesList.append(h('div', 'empty-list', 'Loading…'));
+  els.filesList.append(t('div', 'empty-list', tr('v3.loading')));
   try {
     const listing = await api('GET', filesPath());
     if (state.current?.id !== id || !els.filesDialog.open) return;
@@ -1473,10 +1485,10 @@ function openFiles() {
 
 /** Fetch a workspace file with the access token. Returns the ok response, or throws. */
 async function fetchWorkspaceFile(path) {
-  if (!state.current) throw new Error('No conversation is open.');
+  if (!state.current) throw new Error(tr('v3.noConversationOpen'));
   let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
   if (res.status === 401) { await askToken(true); res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() }); }
-  if (!res.ok) { const data = await res.json().catch(() => null); throw new Error(data?.error?.message || `Could not fetch the file (${res.status})`); }
+  if (!res.ok) { const data = await res.json().catch(() => null); throw new Error(data?.error?.message || tr('v3.fetchFileFailed', { status: String(res.status) })); }
   return res;
 }
 
@@ -1507,7 +1519,7 @@ function autosize() {
 /** Send the answers from a question form; throws if they could not be sent, so the form stays open. */
 async function answerQuestions(text) {
   if (state.activeTurn || state.sending) {
-    toast('Wait for the response to finish, or stop it, before answering.');
+    toast(tr('v3.waitBeforeAnswering'));
     throw new Error('busy');
   }
   if (!(await sendMessage(text))) throw new Error('not sent');
@@ -1533,7 +1545,7 @@ async function sendMessage(answer) {
       await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
-    const body = { content };
+    const body = { content, locale: cedarI18n.locale };
     if (els.model.value) body.model = els.model.value;
     if (els.reasoning.value) body.reasoning = els.reasoning.value;
     const attachments = typed ? cedarAttach.payload() : [];
@@ -1569,7 +1581,7 @@ async function stopActive() {
 }
 
 async function deleteConversation(c) {
-  if (!(await cedarConfirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`, { ok: 'Delete' }))) return;
+  if (!(await cedarConfirm(tr('v3.deleteConfirm', { title: c.title || tr('v3.newChat') }), { ok: tr('v3.delete') }))) return;
   try { await api('DELETE', `/conversations/${c.id}`); } catch (e) { toast(e.message); return; }
   state.conversations = state.conversations.filter((x) => x.id !== c.id);
   if (state.current?.id === c.id) location.hash = '#/';
@@ -1628,7 +1640,7 @@ els.examples.addEventListener('click', (e) => {
 });
 {
   const hour = new Date().getHours();
-  els.greeting.textContent = `${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}. What should Cedar take on?`;
+  els.greeting.textContent = tr(hour < 12 ? 'v3.greeting.morning' : hour < 18 ? 'v3.greeting.afternoon' : 'v3.greeting.evening');
 }
 els.drawerClose.addEventListener('click', closeDrawer);
 els.backdrop.addEventListener('click', closeDrawer);
@@ -1649,6 +1661,7 @@ document.addEventListener('keydown', (e) => {
 narrow.addEventListener('change', () => { if (!narrow.matches) { state.unseen = 0; updateTabs(); } });
 
 async function init() {
+  await cedarLanguage.ready; // a new browser is asked for its language before anything else
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown });
@@ -1670,7 +1683,7 @@ async function init() {
   });
   bindSplitter();
   updateTabs();
-  try { state.config = await (await fetch('/api/config')).json(); } catch { toast('Could not reach the server'); }
+  try { state.config = await (await fetch('/api/config')).json(); } catch { toast(tr('v3.unreachable')); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: loadConversations });
   cedarPairing.init({ api, toast });

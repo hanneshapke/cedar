@@ -32,119 +32,119 @@
 <body>
   <div class="app empty" id="app" data-pane="talk">
     <header class="top">
-      <button class="ghost icon" id="chats-btn" type="button" aria-label="Conversations" title="Conversations" aria-expanded="false" aria-controls="drawer">
+      <button class="ghost icon" id="chats-btn" type="button" aria-label="Conversations" title="Conversations" data-i18n-attr="aria-label:v3.conversations; title:v3.conversations" aria-expanded="false" aria-controls="drawer">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
       </button>
-      <a class="brand" href="#/" aria-label="Cedar, new conversation"><picture><source media="(prefers-color-scheme: dark)" srcset="/assets/cedar-mark-on-dark.svg"><img class="mark" src="/assets/cedar-mark.svg" alt="" width="22" height="22"></picture><span class="brand-name">Cedar</span></a>
+      <a class="brand" href="#/" aria-label="Cedar, new conversation" data-i18n-attr="aria-label:v3.brandLabel"><picture><source media="(prefers-color-scheme: dark)" srcset="/assets/cedar-mark-on-dark.svg"><img class="mark" src="/assets/cedar-mark.svg" alt="" width="22" height="22"></picture><span class="brand-name">Cedar</span></a>
       <span class="crumb" aria-hidden="true">/</span>
       <div class="title-wrap">
-        <button class="title" id="title" type="button" title="Rename"></button>
-        <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title">
+        <button class="title" id="title" type="button" title="Rename" data-i18n-attr="title:v3.rename"></button>
+        <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title" data-i18n-attr="aria-label:v3.titleLabel">
       </div>
-      <span class="cedar-sched-badge" id="schedule-badge" hidden>Scheduled run</span>
+      <span class="cedar-sched-badge" id="schedule-badge" hidden data-i18n="v3.scheduledRun">Scheduled run</span>
       <span class="when" id="when"></span>
-      <span class="status pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Idle</span></span>
-      <span class="cost" id="cost" title="Tokens this conversation used, and what they cost where the server knows the price"></span>
+      <span class="status pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text" data-i18n="v3.status.idle">Idle</span></span>
+      <span class="cost" id="cost" title="Tokens this conversation used, and what they cost where the server knows the price" data-i18n-attr="title:v3.costTitle"></span>
       <button class="ghost" id="stop" type="button" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl">Stop</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl" data-i18n="v3.stop">Stop</span>
       </button>
-      <button class="ghost" id="files-btn" type="button" hidden aria-label="Workspace files" title="Workspace files">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl">Files</span>
+      <button class="ghost" id="files-btn" type="button" hidden aria-label="Workspace files" title="Workspace files" data-i18n-attr="aria-label:v3.workspaceFiles; title:v3.workspaceFiles">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl" data-i18n="v3.files">Files</span>
       </button>
-      <button class="ghost" id="star-btn" type="button" data-star-toggle hidden><span class="lbl">Star</span></button>
-      <button class="ghost" id="schedule-btn" type="button" hidden aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Schedule</span>
+      <button class="ghost" id="star-btn" type="button" data-star-toggle hidden><span class="lbl" data-i18n="v3.star">Star</span></button>
+      <button class="ghost" id="schedule-btn" type="button" hidden aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly" data-i18n-attr="aria-label:v3.scheduleAgent; title:v3.scheduleAgentTitle">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl" data-i18n="v3.schedule">Schedule</span>
       </button>
-      <button class="ghost" id="new-chat" type="button" title="New conversation">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New</span>
+      <button class="ghost" id="new-chat" type="button" title="New conversation" data-i18n-attr="title:v3.newConversation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl" data-i18n="v3.new">New</span>
       </button>
-      <button class="ghost icon danger" id="delete-chat" type="button" hidden aria-label="Delete conversation" title="Delete conversation">
+      <button class="ghost icon danger" id="delete-chat" type="button" hidden aria-label="Delete conversation" title="Delete conversation" data-i18n-attr="aria-label:v3.deleteConversation; title:v3.deleteConversation">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
       </button>
-      <button class="ghost icon" id="inbox-btn" type="button" aria-label="Finished responses" title="Finished responses">
+      <button class="ghost icon" id="inbox-btn" type="button" aria-label="Finished responses" title="Finished responses" data-i18n-attr="aria-label:v3.finishedResponses; title:v3.finishedResponses">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>
       </button>
-      <button class="ghost icon" id="settings-btn" type="button" aria-label="Settings" title="Settings">
+      <button class="ghost icon" id="settings-btn" type="button" aria-label="Settings" title="Settings" data-i18n-attr="aria-label:v3.settings; title:v3.settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
       </button>
     </header>
 
     <!-- On a narrow screen the two panes become tabs. -->
-    <div class="tabs" id="tabs" role="tablist" aria-label="Panes">
-      <button class="tab" role="tab" type="button" data-pane="talk" aria-selected="true">Conversation</button>
-      <button class="tab" role="tab" type="button" data-pane="stage" aria-selected="false">Results <span class="badge" id="stage-badge" hidden></span></button>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Panes" data-i18n-attr="aria-label:v3.panes">
+      <button class="tab" role="tab" type="button" data-pane="talk" aria-selected="true" data-i18n="v3.tab.conversation">Conversation</button>
+      <button class="tab" role="tab" type="button" data-pane="stage" aria-selected="false"><span data-i18n="v3.tab.results">Results</span> <span class="badge" id="stage-badge" hidden></span></button>
     </div>
 
-    <section class="talk" id="talk" aria-label="Conversation">
+    <section class="talk" id="talk" aria-label="Conversation" data-i18n-attr="aria-label:v3.tab.conversation">
       <div class="hero" id="hero">
-        <h1 id="greeting">What should Cedar take on?</h1>
-        <p>Cedar plans first, shows you the plan, then works through it in an isolated sandbox. Every claim it makes links back to where it came from.</p>
+        <h1 id="greeting" data-i18n="v3.hero.title">What should Cedar take on?</h1>
+        <p data-i18n="v3.hero.text">Cedar plans first, shows you the plan, then works through it in an isolated sandbox. Every claim it makes links back to where it came from.</p>
       </div>
       <div class="notes" id="notes"></div>
       <footer class="slip">
         <form class="composer" id="composer">
-          <textarea id="input" rows="1" placeholder="What should Cedar take on?" aria-label="Message"></textarea>
+          <textarea id="input" rows="1" placeholder="What should Cedar take on?" aria-label="Message" data-i18n-attr="placeholder:v3.hero.title; aria-label:v3.message"></textarea>
           <div class="composer-row">
-            <select id="model" class="cedar-picker-state" aria-label="Model" hidden></select>
-            <select id="reasoning" class="cedar-picker-state" aria-label="Reasoning level" hidden></select>
+            <select id="model" class="cedar-picker-state" aria-label="Model" data-i18n-attr="aria-label:v3.model" hidden></select>
+            <select id="reasoning" class="cedar-picker-state" aria-label="Reasoning level" data-i18n-attr="aria-label:v3.reasoningLevel" hidden></select>
             <span class="grow"></span>
-            <span class="hint" id="plan-hint">Plan shown before work starts</span>
-            <button class="send" id="send" type="submit" aria-label="Send message" disabled>
+            <span class="hint" id="plan-hint" data-i18n="v3.planHint">Plan shown before work starts</span>
+            <button class="send" id="send" type="submit" aria-label="Send message" data-i18n-attr="aria-label:v3.sendMessage" disabled>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
             </button>
           </div>
         </form>
       </footer>
-      <div class="examples" id="examples" aria-label="Example tasks">
-        <button type="button" class="example" data-prompt="Compare the three largest EV battery makers by 2025 market share. Write a short report with sources and show how their stocks did this year."><span class="kind">Research</span><span>Compare the three largest EV battery makers and write a sourced report</span></button>
-        <button type="button" class="example" data-prompt="Read the attached PDFs and put every invoice line into one spreadsheet, invoices.xlsx, with a totals sheet."><span class="kind">Documents</span><span>Read these PDFs and turn the numbers into one spreadsheet</span></button>
-        <button type="button" class="example" data-prompt="What is the best way from Berlin Hbf to Potsdam tomorrow at 9:00? Show the options on a map."><span class="kind">Plan a trip</span><span>Best way from Berlin Hbf to Potsdam tomorrow at 9, with a map</span></button>
+      <div class="examples" id="examples" aria-label="Example tasks" data-i18n-attr="aria-label:v3.exampleTasks">
+        <button type="button" class="example" data-prompt="Compare the three largest EV battery makers by 2025 market share. Write a short report with sources and show how their stocks did this year." data-i18n-attr="data-prompt:v3.example1.prompt"><span class="kind" data-i18n="v3.example1.kind">Research</span><span data-i18n="v3.example1.text">Compare the three largest EV battery makers and write a sourced report</span></button>
+        <button type="button" class="example" data-prompt="Read the attached PDFs and put every invoice line into one spreadsheet, invoices.xlsx, with a totals sheet." data-i18n-attr="data-prompt:v3.example2.prompt"><span class="kind" data-i18n="v3.example2.kind">Documents</span><span data-i18n="v3.example2.text">Read these PDFs and turn the numbers into one spreadsheet</span></button>
+        <button type="button" class="example" data-prompt="What is the best way from Berlin Hbf to Potsdam tomorrow at 9:00? Show the options on a map." data-i18n-attr="data-prompt:v3.example3.prompt"><span class="kind" data-i18n="v3.example3.kind">Plan a trip</span><span data-i18n="v3.example3.text">Best way from Berlin Hbf to Potsdam tomorrow at 9, with a map</span></button>
       </div>
       <div class="caps" id="caps">
-        <span><strong>Searches and reads the web</strong> · results shown with links</span>
-        <span><strong>Runs code and writes files</strong> · in a container you can inspect</span>
-        <span><strong>Asks before anything risky</strong> · downloads, installs, email</span>
+        <span><strong data-i18n="v3.cap1.title">Searches and reads the web</strong> · <span data-i18n="v3.cap1.text">results shown with links</span></span>
+        <span><strong data-i18n="v3.cap2.title">Runs code and writes files</strong> · <span data-i18n="v3.cap2.text">in a container you can inspect</span></span>
+        <span><strong data-i18n="v3.cap3.title">Asks before anything risky</strong> · <span data-i18n="v3.cap3.text">downloads, installs, email</span></span>
       </div>
-      <aside class="home-recents" id="home-recents-wrap" aria-label="Recent conversations">
-        <div class="home-recents-head"><span class="label">Recent</span><button class="linkish" id="all-chats" type="button">All conversations</button></div>
+      <aside class="home-recents" id="home-recents-wrap" aria-label="Recent conversations" data-i18n-attr="aria-label:v3.recentConversations">
+        <div class="home-recents-head"><span class="label" data-i18n="v3.recent">Recent</span><button class="linkish" id="all-chats" type="button" data-i18n="v3.allConversations">All conversations</button></div>
         <div id="home-recents"></div>
         <div class="cedar-sched-side" data-schedules hidden>
-          <div class="cedar-sched-side-head"><span class="label">Scheduled agents</span><span class="cedar-sched-count"></span></div>
-          <nav class="cedar-sched-links" aria-label="Scheduled agents"></nav>
+          <div class="cedar-sched-side-head"><span class="label" data-i18n="v3.scheduledAgents">Scheduled agents</span><span class="cedar-sched-count"></span></div>
+          <nav class="cedar-sched-links" aria-label="Scheduled agents" data-i18n-attr="aria-label:v3.scheduledAgents"></nav>
         </div>
       </aside>
     </section>
 
-    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the conversation column" title="Drag to resize · double-click to reset" tabindex="0"></div>
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the conversation column" title="Drag to resize · double-click to reset" data-i18n-attr="aria-label:v3.splitter.label; title:v3.splitter.title" tabindex="0"></div>
 
-    <main class="stage" id="stage" aria-label="Results">
+    <main class="stage" id="stage" aria-label="Results" data-i18n-attr="aria-label:v3.tab.results">
       <div class="stage-empty" id="stage-empty">
-        <div class="slot">results land here</div>
-        <p>The report, maps, charts and files Cedar produces appear on this side as it works, with the sources it used beside them.</p>
+        <div class="slot" data-i18n="v3.stage.slot">results land here</div>
+        <p data-i18n="v3.stage.text">The report, maps, charts and files Cedar produces appear on this side as it works, with the sources it used beside them.</p>
       </div>
       <div class="stage-body" id="stage-body"></div>
     </main>
   </div>
 
   <div class="backdrop" id="backdrop" hidden></div>
-  <aside class="drawer" id="drawer" aria-label="Conversations" hidden>
+  <aside class="drawer" id="drawer" aria-label="Conversations" data-i18n-attr="aria-label:v3.conversations" hidden>
     <div class="drawer-head">
-      <h3>Conversations</h3>
-      <button class="ghost icon" id="drawer-close" type="button" aria-label="Close" title="Close">
+      <h3 data-i18n="v3.conversations">Conversations</h3>
+      <button class="ghost icon" id="drawer-close" type="button" aria-label="Close" title="Close" data-i18n-attr="aria-label:v3.close; title:v3.close">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <a class="drawer-new" href="#/" id="drawer-new">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New conversation
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="v3.newConversation">New conversation</span>
     </a>
     <div class="cedar-star-side" id="starred-section" data-starred hidden>
-      <div class="cedar-star-side-head"><span class="label">Starred</span><span class="cedar-star-count"></span></div>
-      <nav class="cedar-star-links" aria-label="Starred conversations"></nav>
+      <div class="cedar-star-side-head"><span class="label" data-i18n="v3.starred">Starred</span><span class="cedar-star-count"></span></div>
+      <nav class="cedar-star-links" aria-label="Starred conversations" data-i18n-attr="aria-label:v3.starredConversations"></nav>
     </div>
     <nav class="recents" id="recents"></nav>
     <div class="cedar-sched-side" id="schedules-section" data-schedules hidden>
-      <div class="cedar-sched-side-head"><span class="label">Scheduled agents</span><span class="cedar-sched-count"></span></div>
-      <nav class="cedar-sched-links" aria-label="Scheduled agents"></nav>
+      <div class="cedar-sched-side-head"><span class="label" data-i18n="v3.scheduledAgents">Scheduled agents</span><span class="cedar-sched-count"></span></div>
+      <nav class="cedar-sched-links" aria-label="Scheduled agents" data-i18n-attr="aria-label:v3.scheduledAgents"></nav>
     </div>
   </aside>
 
@@ -152,64 +152,64 @@
 
   <dialog id="token-dialog">
     <form method="dialog" id="token-form">
-      <h3>Access token</h3>
-      <p id="token-message">This server requires an access token.</p>
-      <input id="token-input" type="password" autocomplete="current-password" required aria-label="Access token">
-      <div class="dialog-actions"><button type="submit" class="primary">Continue</button></div>
+      <h3 data-i18n="v3.token.title">Access token</h3>
+      <p id="token-message" data-i18n="v3.token.required">This server requires an access token.</p>
+      <input id="token-input" type="password" autocomplete="current-password" required aria-label="Access token" data-i18n-attr="aria-label:v3.token.title">
+      <div class="dialog-actions"><button type="submit" class="primary" data-i18n="v3.continue">Continue</button></div>
     </form>
   </dialog>
 
   <dialog id="files-dialog" class="files-dialog" aria-labelledby="files-title">
     <div class="dialog-head">
-      <h3 id="files-title">Workspace files</h3>
-      <button class="ghost icon" id="files-refresh" type="button" aria-label="Refresh" title="Refresh">
+      <h3 id="files-title" data-i18n="v3.workspaceFiles">Workspace files</h3>
+      <button class="ghost icon" id="files-refresh" type="button" aria-label="Refresh" title="Refresh" data-i18n-attr="aria-label:v3.refresh; title:v3.refresh">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
       </button>
-      <button class="ghost icon" id="files-close" type="button" aria-label="Close" title="Close">
+      <button class="ghost icon" id="files-close" type="button" aria-label="Close" title="Close" data-i18n-attr="aria-label:v3.close; title:v3.close">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <p>Files the agent saved under <code>/workspace</code>. They are removed once the workspace expires.</p>
+    <p><span data-i18n="v3.filesNote.before">Files the agent saved under</span> <code>/workspace</code><span data-i18n="v3.filesNote.after">. They are removed once the workspace expires.</span></p>
     <div class="files-list" id="files-list"></div>
   </dialog>
 
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
-    <nav class="settings-nav" aria-label="Settings sections">
-      <h3 id="settings-title">Settings</h3>
+    <nav class="settings-nav" aria-label="Settings sections" data-i18n-attr="aria-label:v3.settingsSections">
+      <h3 id="settings-title" data-i18n="v3.settings">Settings</h3>
       <div class="settings-nav-list" id="settings-nav"></div>
       <div class="settings-nav-foot">
         <button class="settings-nav-item" type="button" data-page="server" id="settings-nav-server">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span class="settings-nav-name">Server</span><span class="settings-nav-tag">ADMIN</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span class="settings-nav-name" data-i18n="v3.server">Server</span><span class="settings-nav-tag">ADMIN</span>
         </button>
-        <p class="settings-nav-note">Models, API keys and the Google account. Needs the admin token.</p>
+        <p class="settings-nav-note" data-i18n="v3.serverNote">Models, API keys and the Google account. Needs the admin token.</p>
       </div>
     </nav>
     <div class="settings-main">
       <div class="settings-page-head">
         <div><div class="settings-page-title" id="settings-page-title"></div><div class="settings-page-desc" id="settings-page-desc"></div></div>
         <div class="settings-page-acts" id="settings-page-acts"></div>
-        <button class="ghost icon" id="settings-close" type="button" aria-label="Close" title="Close">
+        <button class="ghost icon" id="settings-close" type="button" aria-label="Close" title="Close" data-i18n-attr="aria-label:v3.close; title:v3.close">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
       <div class="settings-page-body" id="settings-body">
         <section class="settings-page" data-page="interface" id="interface-section">
-          <div class="ui-choice" role="group" aria-label="Interface">
+          <div class="ui-choice" role="group" aria-label="Interface" data-i18n-attr="aria-label:v3.interface">
             <button class="ui-option" type="button" data-ui="v3" aria-pressed="false">
               <strong>Ledger</strong>
-              <span>Talk on the left, results on the right, with the plan above the thread and the sources beside the report.</span>
+              <span data-i18n="v3.ui.ledger">Talk on the left, results on the right, with the plan above the thread and the sources beside the report.</span>
             </button>
             <button class="ui-option" type="button" data-ui="v4" aria-pressed="false">
               <strong>Dossier</strong>
-              <span>One column. Each turn reads as a brief: plan, work, result, sources.</span>
+              <span data-i18n="v3.ui.dossier">One column. Each turn reads as a brief: plan, work, result, sources.</span>
             </button>
             <button class="ui-option" type="button" data-ui="v2" aria-pressed="false">
-              <strong>Cedar style</strong>
-              <span>The earlier split view: conversation beside a stage of result cards.</span>
+              <strong data-i18n="v3.ui.cedarStyle">Cedar style</strong>
+              <span data-i18n="v3.ui.cedarStyleNote">The earlier split view: conversation beside a stage of result cards.</span>
             </button>
             <button class="ui-option" type="button" data-ui="v1" aria-pressed="false">
-              <strong>Claude style</strong>
-              <span>A familiar chat: conversations in a sidebar, tool calls inline in the thread.</span>
+              <strong data-i18n="v3.ui.claudeStyle">Claude style</strong>
+              <span data-i18n="v3.ui.claudeStyleNote">A familiar chat: conversations in a sidebar, tool calls inline in the thread.</span>
             </button>
           </div>
         </section>
@@ -219,7 +219,7 @@
         <section class="settings-page" data-page="iphone" id="iphone-section" aria-live="polite" hidden></section>
         <section class="settings-page" data-page="server" id="integrations-section" aria-live="polite" hidden></section>
       </div>
-      <div class="settings-foot" id="settings-foot" hidden><span class="cedar-set-status" id="settings-status"></span><button class="primary" id="settings-save" type="button">Save</button></div>
+      <div class="settings-foot" id="settings-foot" hidden><span class="cedar-set-status" id="settings-status"></span><button class="primary" id="settings-save" type="button" data-i18n="v3.save">Save</button></div>
     </div>
   </dialog>
 
