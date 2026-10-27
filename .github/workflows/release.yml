@@ -19,6 +19,7 @@
 #               APK, IPA and Linux tarballs, the desktop app's update bundles and their signatures, and
 #               latest.json, which installed desktop apps check for updates (desktop/src/update.rs);
 #               then run pages.yml, which adds the IPA to the SideStore source (docs/sidestore)
+#               and puts the release on the landing site; merging the pull request alone doesn't
 #
 # Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the

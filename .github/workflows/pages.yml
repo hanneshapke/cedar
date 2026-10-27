@@ -4,6 +4,12 @@ name: Landing page
 # The site also carries sidestore.json, the SideStore/AltStore source for the iOS app, built from
 # docs/sidestore and the IPA of every release (ipa.yml); release.yml runs this workflow after it
 # publishes, so a new version shows up in SideStore. See docs/sidestore/README.md.
+#
+# A release only reaches the site once it is published: merging a release/<version> pull request
+# deploys nothing here (the gate job), and release.yml starts this workflow only after every one
+# of its build jobs has succeeded and the GitHub Release is out. If the release fails, the site
+# stays as it was. The site's version (docs/landing/version.js) is always set to the latest
+# published release, so an unrelated deploy while a release is still building can't show it early.
 on:
   push:
     branches: [main]
@@ -21,7 +27,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Whether this push is the merge of a release pull request, which release.yml deploys once the
+  # release is published. Manual runs (and release.yml's) always deploy.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          deploy=true
+          if [ "$EVENT" = push ]; then
+            head=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at) | .head.ref][0] // ""')
+            case "$head" in
+              release/*)
+                deploy=false
+                echo "::notice::$SHA merges $head; the site updates when release.yml publishes it" ;;
+            esac
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,6 +80,24 @@ jobs:
             echo "::error file=docs/landing/index.html::a ../ path is left in the page, so it would break once published"
             exit 1
           fi
+
+      - name: The version the site shows
+        # The latest published release, not whatever main says: main carries a release's version
+        # from the moment its pull request is merged, before anything is built.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api "repos/$REPO/releases/latest" --jq .tag_name)
+          ver=${tag#v}
+          if ! printf '%s' "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::the latest release's tag '$tag' is not v<major.minor.patch>"; exit 1
+          fi
+          sed -i -E "s/^window\.CEDAR_VERSION = '[^']*';/window.CEDAR_VERSION = '$ver';/" _site/version.js
+          grep -q "^window.CEDAR_VERSION = '$ver';" _site/version.js || {
+            echo "::error file=docs/landing/version.js::no window.CEDAR_VERSION line to set"; exit 1; }
+          echo "site version: $ver (main has $(sed -nE "s/^window\.CEDAR_VERSION = '([^']*)';.*/\1/p" docs/landing/version.js))"
 
       - id: pages
         uses: actions/configure-pages@v5
