@@ -11,7 +11,8 @@
 
 #![cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 
-use crate::installer::{last_tagged, ERROR};
+use crate::i18n::{t, tf};
+use crate::installer::last_error;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
@@ -77,14 +78,11 @@ fn outcome(code: Option<i32>, log: &str, stderr: &str, declined: bool) -> Outcom
         return Outcome::Declined;
     }
     Outcome::Failed(
-        last_tagged(log, ERROR)
+        last_error(log)
             .or_else(|| Some(stderr.trim().to_string()).filter(|s| !s.is_empty()))
             .unwrap_or_else(|| {
-                format!(
-                    "installing Tailscale stopped (exit code {}); tailscale-setup.log in the logs \
-                     folder says how far it got",
-                    code.map_or("none".to_string(), |c| c.to_string())
-                )
+                let code = code.map_or(t("setup.none"), |c| c.to_string());
+                tf("setup.tailscale_stopped", &[("code", &code)])
             }),
     )
 }
@@ -198,28 +196,26 @@ mod platform {
 
         #[cfg(target_os = "macos")]
         let (result, declined_text) = {
-            step(crate::macsetup::WAITING_FOR_PASSWORD.into());
+            step(crate::macsetup::waiting_for_password());
             let script = mac_script(&log, &downloaded);
             let (code, stderr, log_text) = crate::macsetup::run_as_admin(
                 &state.paths.logs,
                 "tailscale-setup",
                 &script,
-                "Cedar wants to install Tailscale.",
+                &t("mac.prompt_tailscale"),
                 &step,
             )
             .await?;
             let declined = crate::macsetup::declined(&stderr);
             (
                 outcome(code, &log_text, &stderr, declined),
-                "macOS did not get an administrator's password, so nothing was installed. Click \
-                 Try again and enter your password; if you aren't an administrator of this Mac, \
-                 one can enter theirs.",
+                t("mac.declined"),
             )
         };
         #[cfg(windows)]
         let (result, declined_text) = {
             use crate::winsetup::{EXIT_CHANGED, EXIT_DECLINED};
-            step(crate::winsetup::WAITING_FOR_PERMISSION.into());
+            step(crate::winsetup::waiting_for_permission());
             let script = windows_script(&log, &downloaded);
             let (code, stderr, log_text) = crate::winsetup::run_elevated_script(
                 &state.paths.logs,
@@ -229,18 +225,13 @@ mod platform {
             )
             .await?;
             let result = if code == Some(EXIT_CHANGED) {
-                Outcome::Failed(
-                    "the setup script was changed before it could run, so it didn't; try again"
-                        .into(),
-                )
+                Outcome::Failed(t("setup.script_changed"))
             } else {
                 outcome(code, &log_text, &stderr, code == Some(EXIT_DECLINED))
             };
             (
                 result,
-                "Windows did not get permission to make changes, so nothing was installed. Click \
-                 Try again and choose Yes; on a work PC, an administrator may have to enter their \
-                 password.",
+                t("win.declined_tailscale"),
             )
         };
 
@@ -257,7 +248,7 @@ mod platform {
                 }
                 SetupStatus::Installed
             }
-            Outcome::Declined => SetupStatus::Failed(declined_text.into()),
+            Outcome::Declined => SetupStatus::Failed(declined_text),
             Outcome::Failed(why) => SetupStatus::Failed(why),
         })
     }
@@ -269,7 +260,7 @@ mod platform {
 
     #[cfg(windows)]
     async fn download(step: &impl Fn(String)) -> Result<PathBuf> {
-        step("Checking this PC".into());
+        step(t("setup.checking_pc"));
         let arm64 = crate::winsetup::machine_is_arm64().await?;
         let index = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(30))
@@ -377,7 +368,7 @@ mod tests {
             .unwrap();
         assert_eq!(run.status.code(), Some(1));
         let text = std::fs::read_to_string(&log).unwrap();
-        assert!(last_tagged(&text, ERROR).is_some(), "{text}");
+        assert!(crate::installer::last_tagged(&text, crate::installer::ERROR).is_some(), "{text}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

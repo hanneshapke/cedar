@@ -3,6 +3,7 @@
 //! left click opens the window and a right click the menu, as tray icons do there.
 
 use crate::app::{self, AppState};
+use crate::i18n::{t, tf};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
@@ -17,26 +18,43 @@ const LOGS: &str = "logs";
 const UPDATE: &str = "update";
 const QUIT: &str = "quit";
 
-/// The menu's update item, which [`show_update`] relabels.
-struct UpdateItem(MenuItem<tauri::Wry>);
+/// The menu's items with the text key of each, to relabel when the language changes, and the
+/// update item, which [`show_update`] relabels as well.
+struct TrayItems {
+    labeled: Vec<(&'static str, MenuItem<tauri::Wry>)>,
+    update: MenuItem<tauri::Wry>,
+}
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
-    let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
-    let update = item(UPDATE, "Check for Updates…")?;
+    let mut labeled = Vec::new();
+    let mut item = |id: &str, key: &'static str| -> tauri::Result<MenuItem<tauri::Wry>> {
+        let it = MenuItem::with_id(app, id, t(key), true, None::<&str>)?;
+        labeled.push((key, it.clone()));
+        Ok(it)
+    };
+    let open = item(OPEN, "tray.open")?;
+    let browser = item(BROWSER, "tray.browser")?;
+    let copy_token = item(COPY_TOKEN, "tray.copy_token")?;
+    let iphone = item(IPHONE, "tray.phone")?;
+    let setup = item(SETUP, "tray.setup")?;
+    let restart = item(RESTART, "tray.restart")?;
+    let logs = item(LOGS, "tray.logs")?;
+    let quit = item(QUIT, "tray.quit")?;
+    let update = MenuItem::with_id(app, UPDATE, t("tray.check_updates"), true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
-            &item(OPEN, "Open Cedar")?,
-            &item(BROWSER, "Open in Browser")?,
-            &item(COPY_TOKEN, "Copy Access Token")?,
-            &item(IPHONE, "Phone Access…")?,
+            &open,
+            &browser,
+            &copy_token,
+            &iphone,
             &PredefinedMenuItem::separator(app)?,
-            &item(SETUP, "Model Server & Setup…")?,
-            &item(RESTART, "Restart Services")?,
-            &item(LOGS, "Open Logs Folder")?,
+            &setup,
+            &restart,
+            &logs,
             &update,
             &PredefinedMenuItem::separator(app)?,
-            &item(QUIT, "Quit Cedar")?,
+            &quit,
         ],
     )?;
     // A template image on a Mac, tinted to the menu bar; Windows draws icons as they are, and a
@@ -68,24 +86,35 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
-    app.manage(UpdateItem(update));
+    app.manage(TrayItems { labeled, update });
     Ok(())
+}
+
+/// Puts the menu into the language just picked (see `commands::set_locale`).
+pub fn relabel(app: &AppHandle) {
+    let Some(items) = app.try_state::<TrayItems>() else {
+        return;
+    };
+    for (key, item) in &items.labeled {
+        let _ = item.set_text(t(key));
+    }
+    show_update(app, &app.state::<AppState>().update());
 }
 
 /// "Update to Cedar 0.2.0…" once a newer release is known, so it can be found with the window
 /// closed; the window's banner then asks before installing.
 pub fn show_update(app: &AppHandle, s: &crate::update::UpdateStatus) {
-    let Some(item) = app.try_state::<UpdateItem>() else {
+    let Some(items) = app.try_state::<TrayItems>() else {
         return;
     };
     let (text, enabled) = match (s.state, &s.version) {
-        ("downloading" | "installing", _) => ("Installing the Update…".to_string(), false),
-        ("checking", _) => ("Checking for Updates…".to_string(), false),
-        (_, Some(v)) => (format!("Update to Cedar {v}…"), true),
-        _ => ("Check for Updates…".to_string(), s.enabled),
+        ("downloading" | "installing", _) => (t("tray.installing_update"), false),
+        ("checking", _) => (t("tray.checking_updates"), false),
+        (_, Some(v)) => (tf("tray.update_to", &[("version", v)]), true),
+        _ => (t("tray.check_updates"), s.enabled),
     };
-    let _ = item.0.set_text(text);
-    let _ = item.0.set_enabled(enabled);
+    let _ = items.update.set_text(text);
+    let _ = items.update.set_enabled(enabled);
 }
 
 fn handle(app: &AppHandle, id: &str) {

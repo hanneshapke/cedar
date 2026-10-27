@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Check the web chat's translations (chat/static/i18n/*.js): every key is in English, German and
+// Check the web chat's translations (chat/static/i18n/*.js) and the desktop app's (desktop/ui/strings.js): every key is in English, German and
 // French, the {placeholders} and plural forms match, and every key the pages use exists.
 //
 //   node scripts/check-i18n.js
@@ -106,9 +106,15 @@ checkCatalogs(chat);
 // i18n.js itself only names keys in its comments.
 checkUses(walk(chatStatic, (p) => /\.(js|html)$/.test(p) && path.basename(p) !== 'i18n.js'), chat.merged.en);
 
+// The desktop app's setup page: its own catalog, in the same format.
+const desktopUi = path.join(root, 'desktop', 'ui');
+const desktop = loadCatalogs([path.join(desktopUi, 'strings.js')]);
+checkCatalogs(desktop);
+checkUses(walk(desktopUi, (p) => /\.(js|html)$/.test(p) && !['i18n.js', 'strings.js'].includes(path.basename(p))), desktop.merged.en);
+
 if (problems.length) {
   console.error(problems.join('\n'));
   console.error(`\n${problems.length} problem(s) in the translations`);
   process.exit(1);
 }
-console.log(`translations ok: ${Object.keys(chat.merged.en).length} keys in ${chatCatalogs.length} catalogs`);
+console.log(`translations ok: ${Object.keys(chat.merged.en).length} web chat keys in ${chatCatalogs.length} catalogs, ${Object.keys(desktop.merged.en).length} desktop keys`);

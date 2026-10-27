@@ -319,6 +319,7 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "tailscale_https_port": 443,
   "check_updates": true,
   "dismissed_update": "",
+  "locale": "de-CH",
   "cedar_env": { "SANDBOX_NETWORK": "bridge", "RUN_TIMEOUT_SECS": "1800" },
   "chat_env": {},
   "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…", "chat_admin_token": "…" }
@@ -329,6 +330,15 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
 [README](../README.md#configuration) or [chat/README.md](../chat/README.md#configuration) can be
 set there. An empty `sandbox_image` or `browser_image` means the published image for this app
 version; set them to use an image you built yourself (`docker build -t cedar-sandbox sandbox/`).
+
+`locale` is the language picked on the setup page, which asks for it first on a first launch and
+has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,
+`fr-FR`, `fr-BE`, `fr-CH` or `fr-CA`, empty until one is picked. The setup page, the tray menu and
+the app's own messages (setup steps, its own errors, the password and permission prompts) follow
+it; what Docker, Tailscale and the installers print stays as they print it. cedar gets it as
+`DEFAULT_LOCALE` (for scheduled agents and their notifications) the next time it starts, unless
+`cedar_env` sets one. The setup page's texts are in `ui/strings.js`, the app's own in
+`src/i18n.rs`; both follow [the glossary](../docs/i18n-glossary.md).
 
 The servers always get `DOCKER_BIN` (the CLI the app found), `CEDAR_EXIT_ON_STDIN_EOF=1` (they
 exit when the app goes away, so nothing is left behind after a crash or when Cedar is ended from

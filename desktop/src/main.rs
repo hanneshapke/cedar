@@ -10,6 +10,7 @@ mod app;
 mod commands;
 mod config;
 mod docker;
+mod i18n;
 mod installer;
 mod macsetup;
 mod models;
@@ -49,6 +50,7 @@ fn main() {
             let handle = app.handle().clone();
             let paths = Paths::resolve(&handle)?;
             let cfg = Config::load_or_create(&paths.config())?;
+            i18n::set_locale(&cfg.locale);
             let exe_dir = std::env::current_exe()?
                 .parent()
                 .ok_or("the executable has no parent directory")?
@@ -83,6 +85,7 @@ fn main() {
             commands::install_update,
             commands::dismiss_update,
             commands::set_check_updates,
+            commands::set_locale,
         ])
         .build(tauri::generate_context!())
         .expect("Cedar could not start")
