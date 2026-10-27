@@ -26,6 +26,18 @@
   font-size: 14px;
   outline: none;
 }
+/* Same chevron box as the Settings dialog's selects, rather than the platform's own picker. */
+.cedar-sched-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 10px 6px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
 .cedar-sched-field textarea { resize: vertical; min-height: 120px; line-height: 1.45; }
 .cedar-sched-field input:focus, .cedar-sched-field textarea:focus, .cedar-sched-field select:focus { border-color: var(--accent); }
 .cedar-sched-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }

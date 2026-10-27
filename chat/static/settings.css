@@ -75,6 +75,21 @@
   font-size: 13.5px;
   outline: none;
 }
+/* Selects drop the platform's own look (which ignores padding and comes out shorter than the
+   inputs beside them) and draw the same box with a chevron, so every picker matches the fields. */
+.settings-dialog select, .cedar-set-menu select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: auto;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 10px 6px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.settings-dialog select:disabled, .cedar-set-menu select:disabled { cursor: default; }
 .cedar-set-field :focus, .cedar-set-unlock input:focus, .cedar-set-inline input:focus, .settings-input:focus { border-color: var(--accent); }
 .cedar-set-note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
 .cedar-set-error { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--error-wash, rgba(200, 60, 40, .1)); color: var(--error, #b63d2b); font-size: 13px; }
@@ -134,12 +149,11 @@
 .cedar-set-prompt, .cedar-set-prompt-edit {
   width: 100%;
   margin: 0;
-  padding: 26px 32px 30px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 7px;
   background: var(--sheet);
-  box-shadow: var(--shadow-doc, 0 2px 4px rgba(40, 30, 10, .06), 0 14px 40px rgba(40, 30, 10, .10));
-  font: 400 17px/1.55 var(--serif);
+  font: 400 13.5px/1.55 var(--sans);
   color: var(--ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -175,7 +189,7 @@
 .cedar-set-endpoint > input:disabled { opacity: .6; }
 .cedar-set-endpoint > select[hidden] { display: none; }
 .cedar-set-server-models { display: flex; gap: 8px; align-items: center; }
-.cedar-set-server-models select { flex: 1 1 auto; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 13.5px; outline: none; }
+.cedar-set-server-models select { flex: 1 1 auto; min-width: 0; padding: 8px 30px 8px 10px; border: 1px solid var(--line); border-radius: 7px; background-color: var(--sheet); color: var(--ink); font: inherit; font-size: 13.5px; outline: none; }
 .cedar-set-server-models select:focus { border-color: var(--accent); }
 .cedar-set-server-models select:disabled { opacity: .6; }
 .cedar-set-server-models > button { flex: none; }
@@ -239,7 +253,6 @@
   .settings-foot { padding: 10px 16px; }
   .settings-page .ui-choice { grid-template-columns: 1fr; }
   .cedar-set-fields { grid-template-columns: 1fr; }
-  .cedar-set-prompt, .cedar-set-prompt-edit { padding: 18px 20px 22px; }
   .cedar-set-single-list { margin-left: 0; }
   .cedar-set-menu { width: calc(100vw - 16px); }
 }
