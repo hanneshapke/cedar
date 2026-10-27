@@ -352,10 +352,11 @@ outside `/workspace` is reported as missing.
 
 ## Languages
 
-The clients (web chat, desktop app, iOS and Android) are in English, German and French, and a run
-can name the user's language and region as a BCP 47 tag: `"locale": "de-CH"` on `POST /v1/runs`.
-`de`, `fr` and `en` are supported with any region (`de-AT`, `fr-CA`, `en-GB`, ...); a tag in another
-language is kept as `en`, and a continuation keeps its parent's locale. `GET /v1/defaults` lists the
+The clients (web chat, desktop app, iOS and Android) and the website are in English, German, French
+and Spanish, and a run can name the user's language and region as a BCP 47 tag: `"locale": "de-CH"`
+on `POST /v1/runs`. `en`, `de`, `fr` and `es` are supported with any region (`de-AT`, `fr-CA`,
+`es-MX`, `es-419`, `en-GB`, ...); a tag in another language is kept as `en`, and a continuation keeps
+its parent's locale. `GET /v1/defaults` lists the
 locales the clients offer.
 
 The system prompt stays in English whatever the locale: models follow English instructions best, and
@@ -364,9 +365,9 @@ plain `en` gets a short directive added to it instead:
 
 - reply in the language the user's message is written in, and in the locale's language when that is
   unclear (a single word, an attachment, a scheduled task);
-- in German address the user informally (*du*), in French formally (*vous*);
+- in German address the user informally (*du*), in French formally (*vous*), in Spanish with *tú*;
 - write dates, times, numbers, units and prices the locale's way (`27.10.2026`, `1'234.5`, `CHF` for
-  `de-CH`), and Swiss German without ß;
+  `de-CH`; `MXN` for `es-MX`), Swiss German without ß, and Spain's words where they differ (*ordenador*);
 - give safety notices in the language of the reply.
 
 Plans and compacted prompts are written in the language of the request. [Personal
