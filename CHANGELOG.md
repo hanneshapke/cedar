@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Registry: new tool `electricity_de`. For a German postal code it estimates the price per kWh, base fee and yearly cost of the cheapest fixed-price offer, certified green power, a dynamic hourly tariff (from live EPEX day-ahead prices via Energy-Charts, or aWATTar when that is down) and default supply (Grundversorgung). Each price is built from the state's grid fee, the town's concession fee, the 2026 levies, electricity tax and VAT; the rates are dated in `rates.json`. It names providers for each type, the cheapest hours ahead, heat-pump (§14a) and car options, and the saving against the user's current tariff. Without a location the model asks for the postal code with `ask_user` first.
 - Registry: `drug_prices` 1.0.1. A drug no open source lists (NADAC has no pharmacy cost for it and Cost Plus Drugs doesn't sell it) now gets an answer with coupon links instead of the error *no source lists this drug. Try again in a little while*, which made the model retry for nothing. Metformin and other much-repackaged generics get prices again: only the first 300 of a drug's package codes were looked up in NADAC, often all repackagers NADAC doesn't price, so NADAC came back empty; every code is now looked up, eight queries at a time. A Cost Plus quote whose `brand_name` names the reference brand of a generic is no longer dropped when RxNorm has a generic.
 
 ## 0.1.10

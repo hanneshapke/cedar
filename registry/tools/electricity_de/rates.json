@@ -1,0 +1,74 @@
+{
+  "as_of": "2026",
+  "sources": [
+    "Levies 2026: netztransparenz.de (KWKG-Umlage, Offshore-Netzumlage, Aufschlag für besondere Netznutzung)",
+    "Grid fees: Monitoringbericht 2025 (BNetzA/Bundeskartellamt) per state, less the 2026 federal transmission subsidy; checked against Verivox and BDEW 2026 averages (about 9.2 ct/kWh net)",
+    "Concession fees: Konzessionsabgabenverordnung §2",
+    "Supply shares: typical 2026 new-customer, green, default-supply and dynamic offers"
+  ],
+  "vat": 0.19,
+  "electricity_tax_ct": 2.05,
+  "levies_ct": {"kwkg": 0.446, "offshore": 0.941, "special_grid_use": 1.559},
+  "grid_fee_ct": {
+    "Baden-Württemberg": 9.6, "Bayern": 8.9, "Berlin": 8.9, "Brandenburg": 8.6, "Bremen": 6.8,
+    "Hamburg": 12.4, "Hessen": 9.6, "Mecklenburg-Vorpommern": 8.3, "Niedersachsen": 8.0,
+    "Nordrhein-Westfalen": 10.2, "Rheinland-Pfalz": 9.7, "Saarland": 10.0, "Sachsen": 9.0,
+    "Sachsen-Anhalt": 8.3, "Schleswig-Holstein": 8.9, "Thüringen": 8.7
+  },
+  "concession_ct": {
+    "tiers": [
+      {"up_to": 25000, "ct": 1.32}, {"up_to": 100000, "ct": 1.59},
+      {"up_to": 500000, "ct": 1.99}, {"up_to": 1000000000, "ct": 2.39}
+    ],
+    "unknown": 1.59,
+    "off_peak": 0.61
+  },
+  "fallback_spot_ct": 9.0,
+  "smart_meter_eur_month": 2.5,
+  "tariff_types": {
+    "fixed": {"label": "Cheapest fixed-price offer", "energy_ct": 8.0, "base_eur_month": 11.0,
+              "note": "New-customer price with a 12-month guarantee, bonuses left out"},
+    "green": {"label": "Certified green power", "energy_ct": 10.0, "base_eur_month": 12.0,
+              "note": "ok-power or Grüner Strom label: the money goes into new renewables"},
+    "dynamic": {"label": "Dynamic hourly tariff", "markup_ct": 2.0, "base_eur_month": 6.0,
+                "note": "Needs a smart meter (iMSys, included above at about 30 €/year; installing one on request costs up to about 100 € once); cheaper the more use you shift to cheap hours"},
+    "default": {"label": "Default supply (Grundversorgung)", "energy_ct": 14.0, "base_eur_month": 14.0,
+                "note": "What you pay without choosing; no minimum term, two weeks' notice"}
+  },
+  "heat_pump": {"energy_ct": 8.5, "base_eur_month": 9.0, "grid_discount": 0.6},
+  "providers": {
+    "fixed": [
+      {"name": "E wie Einfach", "url": "https://www.e-wie-einfach.de"},
+      {"name": "eprimo", "url": "https://www.eprimo.de"},
+      {"name": "Octopus Energy", "url": "https://octopusenergy.de", "note": "12M Fix"},
+      {"name": "Yello", "url": "https://www.yello.de"},
+      {"name": "Vattenfall", "url": "https://www.vattenfall.de"},
+      {"name": "E.ON", "url": "https://www.eon.de"}
+    ],
+    "green": [
+      {"name": "EWS Schönau", "url": "https://www.ews-schoenau.de"},
+      {"name": "Green Planet Energy", "url": "https://green-planet-energy.de"},
+      {"name": "Naturstrom", "url": "https://www.naturstrom.de"},
+      {"name": "Polarstern", "url": "https://www.polarstern-energie.de"},
+      {"name": "Bürgerwerke", "url": "https://buergerwerke.de"}
+    ],
+    "dynamic": [
+      {"name": "Tibber", "url": "https://tibber.com/de"},
+      {"name": "Octopus Energy", "url": "https://octopusenergy.de", "note": "Octopus Dynamic, Intelligent Octopus Go for cars"},
+      {"name": "Rabot Energy", "url": "https://www.rabot-energy.de"},
+      {"name": "Ostrom", "url": "https://www.ostrom.de"},
+      {"name": "1KOMMA5°", "url": "https://1komma5.com", "note": "Dynamic Pulse, with their own hardware"}
+    ]
+  },
+  "comparison_sites": [
+    {"name": "Verivox", "url": "https://www.verivox.de/strom/"},
+    {"name": "Check24", "url": "https://www.check24.de/strom/"}
+  ],
+  "default_suppliers": {
+    "Berlin": "Vattenfall", "Hamburg": "Vattenfall", "München": "Stadtwerke München (SWM)",
+    "Köln": "RheinEnergie", "Frankfurt am Main": "Mainova", "Frankfurt": "Mainova",
+    "Stuttgart": "EnBW", "Düsseldorf": "Stadtwerke Düsseldorf", "Leipzig": "Leipziger Stadtwerke",
+    "Dresden": "SachsenEnergie", "Hannover": "enercity", "Nürnberg": "N-ERGIE", "Bremen": "swb",
+    "Dortmund": "DEW21"
+  }
+}
