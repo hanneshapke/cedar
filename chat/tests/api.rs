@@ -1023,8 +1023,17 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/chart-view.css\""), "{uri} loads the chart styles");
             assert!(page.contains("<script src=\"/models.js\">"), "{uri} loads the model registry script");
             assert!(
-                page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("/settings.js"),
+                page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("src=\"/settings.js\""),
                 "{uri} loads the models before the scripts that fill the pickers from them"
+            );
+            assert!(
+                page.find("src=\"/i18n.js\"") < page.find("src=\"/i18n/common.js\"")
+                    && page.find("src=\"/i18n/common.js\"") < page.find("src=\"/ui-pref.js\""),
+                "{uri} loads the translations before every script that shows text"
+            );
+            assert!(
+                page.find("src=\"/settings-shell.js\"") < page.find("src=\"/language.js\""),
+                "{uri} loads the language picker after the Settings frame it registers with"
             );
             assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
             assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
@@ -1045,7 +1054,7 @@ async fn both_uis_are_served() {
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("<script src=\"/settings-shell.js\">"), "{uri} loads the Settings dialog's frame");
             assert!(
-                page.find("/ui-pref.js") < page.find("/settings-shell.js") && page.find("/settings-shell.js") < page.find("/settings.js"),
+                page.find("/ui-pref.js") < page.find("/settings-shell.js") && page.find("/settings-shell.js") < page.find("src=\"/settings.js\""),
                 "{uri} loads the Settings frame after the UI choice and before the pages that register with it"
             );
             assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in the sidebar");
