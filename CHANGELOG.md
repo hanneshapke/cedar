@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10
+
+- **Install tools from the registry in the Mac and Windows app.** The app now runs cedar with personal tools in `~/.cedar/tools` and the [community tool registry](registry/README.md). Under the tool list in Settings → Tools, *Tool registry* links to the registry on GitHub and lists its tools, with what each one asks for; *Install* copies a tool's files into `~/.cedar/tools/<name>`, checking each against the hash the registry pins, and cedar loads it right away, with no restart. Fix: the *Install* button works again; it read the clicked button only after its confirmation, when the event no longer had it (#101).
+- Release: `scripts/bump-version.sh` sets the version everywhere a release checks it (both `Cargo.toml`s and lock files, the iOS app's `MARKETING_VERSION` and the landing site's `docs/landing/version.js`), and `scripts/check-version.sh` checks them. A pull request from a `release/<version>` branch fails (`release-check.yml`) until they all match (#104).
+- Website: the landing page and install guide show the version from `docs/landing/version.js`, and the site is deployed with a new release only once its GitHub Release is published, so it never offers downloads that aren't there yet (#104, #105).
+
 ## 0.1.9
 
 - **Cedar for macOS sets Docker up itself**, like the Windows app. When no Docker is found, the setup page offers *Set up Docker for me*: it checks that the Mac can run virtual machines, downloads Docker Desktop for its chip, and after one administrator password checks that the app is signed by Docker and installs it with Docker's own `install --accept-license`, so its first start asks for nothing. Cedar then starts it and carries on. A Docker that isn't answering is now started on a Mac too: Docker Desktop, OrbStack or Rancher Desktop, whichever the `docker` command belongs to (#96).
