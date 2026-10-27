@@ -19,6 +19,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
 RXNAV = "https://rxnav.nlm.nih.gov/REST"
@@ -28,8 +29,9 @@ USER_AGENT = "cedar-drug_prices/1.0 (+https://github.com/hanneshapke/cedar/tree/
 PRODUCT_TTYS = ("SCD", "SBD", "GPCK", "BPCK")  # clinical (generic) and branded drugs and packs
 GENERIC_TTYS = ("SCD", "GPCK")
 NADAC_TITLE = re.compile(r"^NADAC \(National Average Drug Acquisition Cost\)\s+(\d{4})$", re.I)
-MAX_NDCS = 300  # per drug; a common generic has a hundred or so
+MAX_NDCS = 3000  # per drug; a much-repackaged generic like metformin has hundreds per strength
 NDC_CHUNK = 60
+NADAC_WORKERS = 8
 # Cost Plus: their cost plus 15%, a $5 pharmacy fee per drug, and $5 shipping per order.
 COST_PLUS_MARKUP, COST_PLUS_FEE, COST_PLUS_SHIPPING = 1.15, 5.0, 5.0
 UNITS = {"mg": "MG", "mcg": "MCG", "µg": "MCG", "ug": "MCG", "g": "G", "ml": "ML", "unit": "UNT",
@@ -212,19 +214,24 @@ def parse_day(text):
     return date.min
 
 
+def nadac_chunk(dataset, ndcs):
+    query = {"conditions": [{"property": "ndc", "value": ndcs, "operator": "in"}],
+             "limit": 500, "keys": True, "schema": False, "count": False,
+             "sorts": [{"property": "as_of_date", "order": "desc"}]}
+    try:
+        data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
+    except SourceError:
+        query.pop("sorts")  # the weekly rows of a year still fit, unsorted, for a few NDCs
+        data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
+    return data.get("results") or []
+
+
 def nadac_rows(dataset, ndcs):
-    rows = []
-    for i in range(0, len(ndcs), NDC_CHUNK):
-        query = {"conditions": [{"property": "ndc", "value": ndcs[i:i + NDC_CHUNK], "operator": "in"}],
-                 "limit": 500, "keys": True, "schema": False, "count": False,
-                 "sorts": [{"property": "as_of_date", "order": "desc"}]}
-        try:
-            data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
-        except SourceError:
-            query.pop("sorts")  # the weekly rows of a year still fit, unsorted, for a few NDCs
-            data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
-        rows.extend(data.get("results") or [])
-    return rows
+    """NADAC's rows for every NDC asked for. Most of a common generic's NDCs are repackagers that
+    NADAC doesn't price, so none can be skipped; the chunks run side by side."""
+    chunks = [ndcs[i:i + NDC_CHUNK] for i in range(0, len(ndcs), NDC_CHUNK)]
+    with ThreadPoolExecutor(NADAC_WORKERS) as pool:
+        return [row for rows in pool.map(lambda c: nadac_chunk(dataset, c), chunks) for row in rows]
 
 
 def nadac_prices(ndcs):
@@ -348,9 +355,8 @@ def build(args):
     offers, failed = [], []
 
     # What pharmacies pay, generic and brand apart.
-    nadac = {"generic": [], "brand": []}
+    nadac, kinds = {"generic": [], "brand": []}, {}
     try:
-        kinds = {}
         for p in versions:
             for ndc in ndcs_of(p["rxcui"]):
                 kinds.setdefault(ndc, "generic" if p["generic"] else "brand")
@@ -370,9 +376,12 @@ def build(args):
                                  f"{'s' if len(rows) > 1 else ''} (median {usd(typical)}), as of "
                                  f"{max(r['_day'] for r in rows):%b %d, %Y}"})
 
-    # Cost Plus Drugs, live, or its published formula on NADAC when the API has nothing.
+    # Cost Plus Drugs, live, or its published formula on NADAC when the API has nothing. Their
+    # brand_name can name the reference brand on a generic, so a brand-looking quote only gives
+    # way to a generic-looking one; it is never dropped for having nothing to give way to.
     try:
-        quotes = [q for q in cost_plus(ingredient, versions[0], quantity) if q["generic"] or not generic]
+        quotes = cost_plus(ingredient, versions[0], quantity)
+        quotes = [q for q in quotes if q["generic"] or not generic] or quotes
     except SourceError as e:
         quotes = []
         failed.append(f"Cost Plus Drugs ({e})")
@@ -406,11 +415,32 @@ def build(args):
             offer["detail"] += f": {usd(price)} for {their_qty}, scaled to {quantity}"
         offers.append(offer)
 
+    if not offers and failed:
+        sys.exit("couldn't get any prices: " + "; ".join(failed) + ". Try again in a little while.")
     if not offers:
-        sys.exit("couldn't get any prices: " + "; ".join(failed or ["no source lists this drug"])
-                 + ". Try again in a little while.")
+        return unlisted(base, ingredient, quantity, len(kinds))
     offers.sort(key=lambda o: o["price"])
     return report(base, ingredient, generic, asked_brand, quantity, offers, failed)
+
+
+def coupon_links(ingredient):
+    name = slug(ingredient.replace(" / ", "-"))
+    return f"https://www.goodrx.com/{name} and https://www.singlecare.com/prescription/{name}"
+
+
+def unlisted(base, ingredient, quantity, ndcs):
+    """Every source answered, and none lists this product: an answer, not an error to retry."""
+    return "\n".join([
+        f"No open price source lists {base}: NADAC has no pharmacy cost for any of the {ndcs} "
+        "package codes RxNorm gives for it, and Cost Plus Drugs had no matching quote. That is "
+        "usual for specialty drugs, drugs given at a clinic, and new brands; for a common generic "
+        "it is unexpected and worth reporting. Asking again won't change it.",
+        f"Compare coupon prices for {quantity} at {coupon_links(ingredient)}, or ask the pharmacy "
+        "for its cash price. For a brand, the maker's savings card or patient assistance program "
+        "is often the cheapest way.",
+        "Informational only: don't change the drug, strength or dose to save money without the "
+        "prescriber or pharmacist.",
+    ])
 
 
 def report(base, ingredient, generic, asked_brand, quantity, offers, failed):
@@ -438,10 +468,9 @@ def report(base, ingredient, generic, asked_brand, quantity, offers, failed):
         dear = [o for o in offers if not o["buyable"] and o["generic"] is False]
         if dear and dear[0]["price"] > pharmacy[0]["price"] * 1.5:
             out.append(f"The brand costs pharmacies {dear[0]['price'] / pharmacy[0]['price']:.0f}x the generic.")
-    name = slug(ingredient.replace(" / ", "-"))
     out.append("")
     out.append("Coupon prices at local pharmacies change daily and were not fetched; compare at "
-               f"https://www.goodrx.com/{name} and https://www.singlecare.com/prescription/{name} before going. "
+               f"{coupon_links(ingredient)} before going. "
                "Cash prices don't count toward an insurance deductible, and a 90-day supply is usually cheaper per pill.")
     if failed:
         out.append("Not available this time: " + "; ".join(failed) + ".")
