@@ -90,6 +90,15 @@ further models to the registry and manages the Brave Search key and the Google a
 runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
 admin token, so Settings works without typing anything.
 
+**Tools from the registry.** The app runs cedar with personal tools in `~/.cedar/tools`
+(`TOOLS_DIR`) and the [community tool registry](../registry/README.md) in this repository
+(`TOOLS_REGISTRY_URL`). Under the tool list in the chat's Settings → Tools, *Tool registry* links
+to the registry on GitHub and lists its tools, with what each one asks for. *Install* copies the
+tool's files from GitHub into `~/.cedar/tools/<name>`, checking each against the hash the
+registry pins. cedar loads it right away, with no restart. A tool you write yourself goes in the
+same folder. `TOOLS_DIR` or `TOOLS_REGISTRY_URL` in `cedar_env` (see the config file) point
+elsewhere.
+
 When a response finishes, the app can tell you with a **desktop notification**: in Notification
 Center on a Mac, as a toast on Windows. Clicking it opens the conversation. The app sets this
 method up in the chat's Settings → Notifications on its first start, unless another was chosen.
