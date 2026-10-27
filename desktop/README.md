@@ -398,12 +398,17 @@ app a menu bar app and allows the loopback HTTP the window uses.
 Releases are built by [`.github/workflows/release.yml`](../.github/workflows/release.yml) when a
 pull request from a branch named `release/<version>` is merged into `main`:
 
-1. Set the version in two places: `[workspace.package] version` in the root `Cargo.toml` (cedar
-   and cedar-chat) and `version` in `desktop/Cargo.toml` (the app, and the image tag it pulls).
+1. Set the version in four places: `[workspace.package] version` in the root `Cargo.toml` (cedar
+   and cedar-chat), `version` in `desktop/Cargo.toml` (the app, and the image tag it pulls),
+   `MARKETING_VERSION` in `iOS/Cedar.xcodeproj` and `window.CEDAR_VERSION` in
+   `docs/landing/version.js` (the version the landing page and install guide show).
+   `scripts/bump-version.sh` sets all four (and the lock files): the next patch version by
+   default, or `minor`, `major` or an exact version. `scripts/check-version.sh <version>` checks them.
    It must be a plain `major.minor.patch` with major and minor up to 255 and patch up to 65535,
    with no pre-release suffix like `-beta`: Windows Installer takes nothing else, and the workflow
    refuses other versions up front.
-2. Open a pull request from `release/<version>` to `main` and merge it.
+2. Open a pull request from `release/<version>` to `main` and merge it. The pull request fails
+   (`release-check.yml`) until all four versions match the branch.
 3. The workflow checks the versions match the branch and the tag is free, runs the tests, builds
    and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>` and `cedar-browser:<version>` for
    amd64 and arm64 (and `:latest`), builds the Apple Silicon DMG and the x64 MSI, and creates

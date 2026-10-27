@@ -136,6 +136,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a href="./#iphone-private">iPhone, privately</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
 </footer>
 
+<script src="./version.js"></script>
 <script>
 (() => {
   const REPO = 'https://github.com/hanneshapke/cedar';
@@ -147,7 +148,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const SOURCE = new URL('sidestore.json', location.href).href;
   const ADD_SOURCE = 'sidestore://source?url=' + encodeURIComponent(SOURCE);
   // Filled in from GitHub once the latest release answers; until then the buttons go to the releases page.
-  const release = { ver: '0.1.9', dmg: '', msi: '', apk: '', ipa: '', 'linux-x64': '', 'linux-arm64': '' };
+  const release = { ver: window.CEDAR_VERSION, dmg: '', msi: '', apk: '', ipa: '', 'linux-x64': '', 'linux-arm64': '' };
   // The first release whose setup window installs Docker on a Mac, and Tailscale on a Mac and
   // Windows (CHANGELOG.md). Until the latest release is at least this one, the steps say to
   // install them by hand. An Intel Mac builds from main, so it has them already.
