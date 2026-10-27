@@ -75,7 +75,7 @@ struct ChartCardView: View {
                 let kept = Set(all.enumerated().sorted { $0.element.1 > $1.element.1 }.prefix(Self.maxSlices - 1).map(\.offset))
                 for (i, s) in all.enumerated() where kept.contains(i) { slices.append(Slice(id: slices.count, name: s.0, value: s.1)) }
                 let rest = all.enumerated().filter { !kept.contains($0.offset) }
-                slices.append(Slice(id: ChartCard.slots, name: "Other (\(rest.count))", value: rest.reduce(0) { $0 + $1.element.1 }))
+                slices.append(Slice(id: ChartCard.slots, name: L10n.format("Other (%lld)", rest.count), value: rest.reduce(0) { $0 + $1.element.1 }))
             } else {
                 slices = all.enumerated().map { Slice(id: $0.offset, name: $0.element.0, value: $0.element.1) }
             }
@@ -112,14 +112,14 @@ struct ChartCardView: View {
 
     private var subtitle: String {
         var parts: [String] = []
-        if card.title != nil { parts.append(card.stacked ? "Stacked \(card.kind.name.lowercased())" : card.kind.name) }
-        if card.log { parts.append("log scale") }
+        if card.title != nil { parts.append(card.stacked ? card.kind.stackedName : card.kind.name) }
+        if card.log { parts.append(L10n.string("log scale")) }
         switch card.kind {
-        case .histogram: parts.append("\(card.series.reduce(0) { $0 + $1.values.compactMap { $0 }.count }) samples")
-        case .pie: parts.append("\(card.labels.count) slices")
+        case .histogram: parts.append(L10n.format("%lld samples", card.series.reduce(0) { $0 + $1.values.compactMap { $0 }.count }))
+        case .pie: parts.append(L10n.format("%lld slices", card.labels.count))
         default:
-            let count = "\(card.labels.count) \(card.kind == .scatter ? "points" : "values")"
-            parts.append(card.series.count > 1 ? "\(count) × \(card.series.count) series" : count)
+            let count = L10n.format(card.kind == .scatter ? "%lld points" : "%lld values", card.labels.count)
+            parts.append(card.series.count > 1 ? L10n.format("%@ × %lld series", count, card.series.count) : count)
         }
         return parts.joined(separator: " · ")
     }
@@ -198,7 +198,7 @@ struct ChartCardView: View {
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                             .annotation(position: .top, alignment: .trailing, spacing: 2) {
                                 if edge == band.to, let label = band.label {
-                                    Text("\(label) \(ChartCard.format(band.from))–\(ChartCard.format(band.to))")
+                                    Text(verbatim: "\(label) \(ChartCard.format(band.from))–\(ChartCard.format(band.to))")
                                         .font(.caption2.weight(.semibold))
                                         .foregroundStyle(.secondary)
                                 }
@@ -410,7 +410,7 @@ struct ChartCardView: View {
                         VStack(spacing: 0) {
                             Text(selected.map { Self.percent($0.value / total) } ?? ChartCard.format(total))
                                 .font(.title3.weight(.bold).monospacedDigit())
-                            Text(selected?.name ?? "Total")
+                            Text(selected?.name ?? L10n.string("Total"))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -421,7 +421,8 @@ struct ChartCardView: View {
                 }
             }
             .frame(height: 200)
-            .accessibilityLabel("\(card.title ?? "Pie chart"): " + slices.map { "\($0.name) \(Self.percent($0.value / total))" }.joined(separator: ", "))
+            .accessibilityLabel(L10n.labeled(card.title ?? card.kind.name,
+                                             slices.map { "\($0.name) \(Self.percent($0.value / total))" }.joined(separator: ", ")))
 
             VStack(spacing: 0) {
                 ForEach(slices) { s in
@@ -446,7 +447,7 @@ struct ChartCardView: View {
     }
 
     private static func percent(_ share: Double) -> String {
-        share.formatted(.percent.precision(.fractionLength(1)))
+        share.formatted(.percent.precision(.fractionLength(1)).locale(L10n.locale))
     }
 
     // MARK: Footer: the data and where the picture was saved
@@ -477,19 +478,19 @@ struct ChartCardView: View {
 
     private var note: String? {
         var notes: [String] = []
-        if card.thinned { notes.append("Long series are thinned here") }
-        if let path = card.path { notes.append("Saved as \((path as NSString).lastPathComponent)") }
+        if card.thinned { notes.append(L10n.string("Long series are thinned here")) }
+        if let path = card.path { notes.append(L10n.format("Saved as %@", (path as NSString).lastPathComponent)) }
         return notes.isEmpty ? nil : notes.joined(separator: " · ")
     }
 
     private var table: some View {
         let header: [String]
         if card.kind == .pie {
-            header = [card.xLabel ?? "Slice", card.yLabel ?? "Value", "Share"]
+            header = [card.xLabel ?? L10n.string("Slice"), card.yLabel ?? L10n.string("Value"), L10n.string("Share")]
         } else {
-            let first = card.kind == .histogram ? (card.xLabel ?? "Bin") : card.kind == .barh ? (card.yLabel ?? "") : (card.xLabel ?? "")
+            let first = card.kind == .histogram ? (card.xLabel ?? L10n.string("Bin")) : card.kind == .barh ? (card.yLabel ?? "") : (card.xLabel ?? "")
             let single = card.series.count == 1 && !card.series[0].named
-            header = [first] + card.series.map { single ? ((card.kind == .barh ? card.xLabel : card.yLabel) ?? "Value") : $0.name }
+            header = [first] + card.series.map { single ? ((card.kind == .barh ? card.xLabel : card.yLabel) ?? L10n.string("Value")) : $0.name }
         }
         let total = card.kind == .pie ? card.series[0].values.reduce(0) { $0 + ($1 ?? 0) } : 0
         let rows = categories.indices.prefix(Self.maxTableRows).map { i -> [String] in
@@ -573,7 +574,7 @@ private struct ValueAxis: ViewModifier {
         AxisMarks(values: .automatic(desiredCount: 5)) { value in
             AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
             AxisValueLabel {
-                if let v = value.as(Double.self) { Text(v.formatted(.number.notation(.compactName))) }
+                if let v = value.as(Double.self) { Text(v.formatted(.number.notation(.compactName).locale(L10n.locale))) }
             }
         }
     }

@@ -5,6 +5,7 @@
 
 #![cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 
+use crate::i18n::tf;
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
@@ -15,7 +16,7 @@ pub const STEP: &str = "STEP: ";
 pub const ERROR: &str = "ERROR: ";
 
 /// The text of the last log line that starts with `tag`. PowerShell may start the file with a
-/// byte order mark.
+/// byte order mark. The scripts write English; see [`last_error`] for the user's language.
 pub fn last_tagged(log: &str, tag: &str) -> Option<String> {
     log.lines()
         .rev()
@@ -24,11 +25,19 @@ pub fn last_tagged(log: &str, tag: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The last `ERROR:` line, in the user's language when it is one of the scripts' own sentences.
+pub fn last_error(log: &str) -> Option<String> {
+    last_tagged(log, ERROR).map(|e| crate::i18n::known(&e))
+}
+
 pub fn progress(what: &str, got: u64, total: Option<u64>) -> String {
-    let mb = |b: u64| b / 1_000_000;
+    let mb = |b: u64| (b / 1_000_000).to_string();
     match total {
-        Some(total) => format!("Downloading {what}: {} of {} MB", mb(got), mb(total)),
-        None => format!("Downloading {what}: {} MB", mb(got)),
+        Some(total) => tf(
+            "setup.downloading_of",
+            &[("what", what), ("got", &mb(got)), ("total", &mb(total))],
+        ),
+        None => tf("setup.downloading", &[("what", what), ("got", &mb(got))]),
     }
 }
 
@@ -57,7 +66,7 @@ pub async fn download(
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .with_context(|| format!("downloading {what}; check the internet connection"))?;
+        .with_context(|| tf("setup.download_failed", &[("what", what)]))?;
     let total = resp.content_length();
     if let (Some(total), Ok(meta)) = (total, tokio::fs::metadata(&dest).await) {
         if meta.len() == total {
@@ -75,7 +84,7 @@ pub async fn download(
     loop {
         let chunk = match tokio::time::timeout(Duration::from_secs(60), stream.next()).await {
             Err(_) => {
-                bail!("the {what} download stalled; check the connection and try again")
+                bail!(tf("setup.download_stalled", &[("what", what)]))
             }
             Ok(None) => break,
             Ok(Some(chunk)) => chunk.with_context(|| format!("downloading {what}"))?,
@@ -90,7 +99,7 @@ pub async fn download(
     file.flush().await?;
     drop(file);
     if total.is_some_and(|t| t != got) {
-        bail!("the {what} download was cut off; try again");
+        bail!(tf("setup.download_cut", &[("what", what)]));
     }
     tokio::fs::rename(&part, &dest).await?;
     Ok(dest)
@@ -116,11 +125,12 @@ pub async fn follow(
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
                 let step = std::fs::read_to_string(log).ok().and_then(|t| last_tagged(&t, STEP));
                 if let Some(step) = step {
-                    on_step(step);
+                    on_step(crate::i18n::known(&step));
                 }
                 if tokio::time::Instant::now() > deadline {
                     let _ = child.kill().await;
-                    bail!("the installation took more than an hour; {} in the logs folder says how far it got", log.file_name().unwrap_or_default().to_string_lossy());
+                    let name = log.file_name().unwrap_or_default().to_string_lossy();
+                    bail!(tf("setup.took_an_hour", &[("log", &name)]));
                 }
             }
         }

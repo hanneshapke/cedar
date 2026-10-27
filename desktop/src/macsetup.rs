@@ -12,7 +12,8 @@
 
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
-use crate::installer::{last_tagged, ERROR};
+use crate::i18n::{t, tf};
+use crate::installer::last_error;
 use std::path::Path;
 
 const DMG_ARM64: &str = "https://desktop.docker.com/mac/main/arm64/Docker.dmg";
@@ -40,12 +41,7 @@ fn sysctl_flag(out: &str) -> bool {
 /// Why this Mac can't run Docker Desktop, if it can't.
 fn blocker(m: &Machine) -> Option<crate::app::SetupStatus> {
     (!m.hypervisor).then(|| {
-        crate::app::SetupStatus::Failed(
-            "This Mac can't run virtual machines (macOS reports no Hypervisor support), and \
-             Docker runs its containers in one. That happens on Macs from before 2010 and inside \
-             a virtual machine. Run Docker on another computer, or use a Mac that supports it."
-                .into(),
-        )
+        crate::app::SetupStatus::Failed(t("mac.no_hypervisor"))
     })
 }
 
@@ -71,14 +67,11 @@ fn outcome(code: Option<i32>, log: &str, stderr: &str) -> Outcome {
         return Outcome::Declined;
     }
     Outcome::Failed(
-        last_tagged(log, ERROR)
+        last_error(log)
             .or_else(|| Some(stderr.trim().to_string()).filter(|s| !s.is_empty()))
             .unwrap_or_else(|| {
-                format!(
-                    "setting up Docker stopped (exit code {}); docker-setup.log in the logs \
-                     folder says how far it got",
-                    code.map_or("none".to_string(), |c| c.to_string())
-                )
+                let code = code.map_or(t("setup.none"), |c| c.to_string());
+                tf("setup.docker_stopped", &[("code", &code)])
             }),
     )
 }
@@ -140,12 +133,10 @@ const APPLESCRIPT: [&str; 3] = [
     "end run",
 ];
 
-const PROMPT: &str = "Cedar wants to install Docker Desktop.";
-
 /// What the page says while macOS waits for the password.
-pub const WAITING_FOR_PASSWORD: &str =
-    "Waiting for permission: macOS asks for an administrator's name and password so Cedar can \
-     install it.";
+pub fn waiting_for_password() -> String {
+    t("mac.waiting_for_password")
+}
 
 #[cfg(target_os = "macos")]
 pub use mac::{install, run_as_admin};
@@ -175,7 +166,7 @@ mod mac {
     }
 
     async fn run(state: &AppState) -> Result<SetupStatus> {
-        state.set_docker_setup(SetupStatus::Running("Checking this Mac".into()));
+        state.set_docker_setup(SetupStatus::Running(t("setup.checking_mac")));
         let machine = Machine {
             arm64: sysctl_flag(&sysctl("hw.optional.arm64").await),
             hypervisor: sysctl_flag(&sysctl("kern.hv_support").await),
@@ -190,11 +181,12 @@ mod mac {
         })
         .await?;
 
-        state.set_docker_setup(SetupStatus::Running(WAITING_FOR_PASSWORD.into()));
+        state.set_docker_setup(SetupStatus::Running(waiting_for_password()));
         let log = state.paths.logs.join("docker-setup.log");
         let script = elevated_script(&log, &dmg, &user);
+        let prompt = t("mac.prompt_docker");
         let (code, stderr, log_text) =
-            run_as_admin(&state.paths.logs, "docker-setup", &script, PROMPT, |step| {
+            run_as_admin(&state.paths.logs, "docker-setup", &script, &prompt, |step| {
                 state.set_docker_setup(SetupStatus::Running(step))
             })
             .await?;
@@ -208,12 +200,7 @@ mod mac {
         }
         Ok(match result {
             Outcome::Done => SetupStatus::Idle,
-            Outcome::Declined => SetupStatus::Failed(
-                "macOS did not get an administrator's password, so nothing was installed. Click \
-                 Try again and enter your password; if you aren't an administrator of this Mac, \
-                 one can enter theirs."
-                    .into(),
-            ),
+            Outcome::Declined => SetupStatus::Failed(t("mac.declined")),
             Outcome::Failed(why) => SetupStatus::Failed(why),
         })
     }
@@ -381,7 +368,7 @@ mod tests {
             .unwrap();
         assert_eq!(run.status.code(), Some(1));
         let text = std::fs::read_to_string(&log).unwrap();
-        assert!(last_tagged(&text, ERROR).is_some(), "{text}");
+        assert!(crate::installer::last_tagged(&text, crate::installer::ERROR).is_some(), "{text}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

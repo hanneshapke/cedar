@@ -39,6 +39,20 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
+    /** The language picked: a tag, "" for Automatic, or null before the user has chosen one. */
+    var language: String?
+        get() = prefs.getString(LANGUAGE, null)
+        set(value) {
+            prefs.edit().apply { if (value == null) remove(LANGUAGE) else putString(LANGUAGE, value) }.apply()
+        }
+
+    /** Whether the server still has to be told the language (`PUT /api/settings/locale`). */
+    var localePending: Boolean
+        get() = prefs.getBoolean(LOCALE_PENDING, false)
+        set(value) {
+            prefs.edit().putBoolean(LOCALE_PENDING, value).apply()
+        }
+
     /** Small values the push registrars keep: the token they last sent, and where to. */
     fun string(key: String): String? = prefs.getString(key, null)
 
@@ -52,6 +66,8 @@ class SettingsStore(context: Context) {
         const val MODEL = "model"
         const val REASONING = "reasoning"
         const val PLAN = "plan"
+        const val LANGUAGE = "language"
+        const val LOCALE_PENDING = "localePending"
     }
 }
 

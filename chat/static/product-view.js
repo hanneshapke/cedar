@@ -36,11 +36,20 @@ const cedarProducts = (() => {
   const MAX_COMPARABLE = 4;
   const MAX_TEXT = 200;
   const MAX_LONG = 600;
-  const VERDICTS = { excellent: 'Excellent', good: 'Good', mixed: 'Mixed', poor: 'Poor', few: 'Few reviews', none: 'No rating' };
-  const CONFIDENCE = { high: 'high confidence', medium: 'medium confidence', low: 'low confidence' };
-  const PICKS = [['top_pick', 'Top pick'], ['best_value', 'Best value'], ['best_rated', 'Best rated'], ['most_popular', 'Most popular']];
+  const VERDICTS = {
+    excellent: 'product.verdict.excellent', good: 'product.verdict.good', mixed: 'product.verdict.mixed',
+    poor: 'product.verdict.poor', few: 'product.verdict.few', none: 'product.verdict.none',
+  };
+  const CONFIDENCE = { high: 'product.confidence.high', medium: 'product.confidence.medium', low: 'product.confidence.low' };
+  const PICKS = [
+    ['top_pick', 'product.pick.topPick'], ['best_value', 'product.pick.bestValue'],
+    ['best_rated', 'product.pick.bestRated'], ['most_popular', 'product.pick.mostPopular'],
+  ];
   const MAX_SOURCES = 40;
-  const SORTS = { best_selling: 'best selling first', rating: 'highest rated first', price_low: 'cheapest first', price_high: 'priciest first' };
+  const SORTS = {
+    best_selling: 'product.sort.bestSelling', rating: 'product.sort.rating',
+    price_low: 'product.sort.priceLow', price_high: 'product.sort.priceHigh',
+  };
   /** How far apart the tiles appear when the card is first shown; product-view.css uses it too. */
   const TILE_STAGGER_MS = 90;
 
@@ -130,7 +139,7 @@ const cedarProducts = (() => {
     const badges = new Map();
     for (const [key, label] of PICKS) {
       const sku = num(picks[key]) !== null ? String(Math.round(picks[key])) : str(picks[key], 40);
-      if (known.has(sku)) badges.set(sku, [...(badges.get(sku) || []), label]);
+      if (known.has(sku)) badges.set(sku, [...(badges.get(sku) || []), tr(label)]);
     }
     // An option that names its own badges (the tool's web search does) keeps exactly those.
     for (const p of options) if (p.badges) badges.set(p.sku, p.badges);
@@ -144,12 +153,13 @@ const cedarProducts = (() => {
       ? { pages: Math.max(0, Math.round(num(data.considered.pages) ?? 0)), products: Math.max(0, Math.round(num(data.considered.products) ?? 0)) }
       : null;
     return {
-      query: str(data.query, 160) || 'Products',
-      store: str(data.store, 60) || 'the store',
+      query: str(data.query, 160) || tr('product.defaultQuery'),
+      store: str(data.store, 60) || tr('product.theStore'),
+      storeNamed: Boolean(str(data.store, 60)),
       currency: str(data.currency, 8) || 'USD',
       total: Math.max(options.length + others.length, Math.round(num(data.total) ?? 0)),
       asOf: Date.parse(str(data.as_of, 40)),
-      sort: SORTS[data.sort] || '',
+      sort: SORTS[data.sort] ? tr(SORTS[data.sort]) : '',
       considered,
       summary: str(data.summary, 800),
       note: str(data.note, 600),
@@ -164,16 +174,20 @@ const cedarProducts = (() => {
 
   // -- formatting ----------------------------------------------------------------------------
 
-  const SYMBOLS = { USD: '$', EUR: '€', GBP: '£', JPY: '¥', CAD: 'C$', AUD: 'A$' };
-
   function money(x, currency) {
     if (x === null) return '–';
-    const n = x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const sym = SYMBOLS[currency];
-    return sym ? `${sym}${n}` : `${n} ${currency}`;
+    const opts = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+    if (/^[A-Z]{3}$/.test(currency)) {
+      try {
+        return x.toLocaleString(cedarI18n.locale, { ...opts, style: 'currency', currency });
+      } catch { /* not a currency code Intl knows: the number and the code */ }
+    }
+    return `${x.toLocaleString(cedarI18n.locale, opts)} ${currency}`;
   }
 
-  const count = (n) => `${n.toLocaleString()} review${n === 1 ? '' : 's'}`;
+  const count = (n) => tr('product.reviews', { count: n });
+  /** A rating such as 4.5, with the locale's decimal sign. */
+  const rating1 = (v) => cedarI18n.number(v, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   /** The currency a product's price is in: its own, else the card's. */
   const cur = (p, spec) => p.currency || spec.currency;
 
@@ -190,7 +204,7 @@ const cedarProducts = (() => {
   function stars(value, small) {
     const wrap = el('span', `cedar-products-stars${small ? ' small' : ''}`);
     wrap.setAttribute('role', 'img');
-    wrap.setAttribute('aria-label', value === null ? 'Not rated' : `${value.toFixed(1)} out of 5 stars`);
+    wrap.setAttribute('aria-label', value === null ? tr('product.notRated') : tr('product.starsAria', { rating: rating1(value) }));
     const base = el('span', 'base');
     base.innerHTML = ICONS.star.repeat(5);
     const fill = el('span', 'fill');
@@ -201,7 +215,7 @@ const cedarProducts = (() => {
   }
 
   function verdictPill(reviews, small) {
-    const pill = el('span', `cedar-products-verdict ${reviews.verdict}${small ? ' small' : ''}`, VERDICTS[reviews.verdict]);
+    const pill = el('span', `cedar-products-verdict ${reviews.verdict}${small ? ' small' : ''}`, tr(VERDICTS[reviews.verdict]));
     pill.title = reviews.summary;
     return pill;
   }
@@ -229,18 +243,18 @@ const cedarProducts = (() => {
   function priceLine(p, currency, big) {
     const row = el('div', `cedar-products-price${big ? ' big' : ''}`);
     if (p.price === null) {
-      row.append(el('span', 'none', 'Price at the store'));
+      row.append(el('span', 'none', tr('product.priceAtStore')));
       return row;
     }
     const now = el('span', `now${p.priceChecked ? '' : ' unchecked'}`, `${p.priceChecked ? '' : '≈ '}${money(p.price, currency)}`);
-    if (!p.priceChecked) now.title = 'From review or search text, not checked on a store page';
+    if (!p.priceChecked) now.title = tr('product.unchecked');
     row.append(now);
     if (p.regularPrice !== null) {
       const was = el('s', 'was', money(p.regularPrice, currency));
-      was.setAttribute('aria-label', `was ${money(p.regularPrice, currency)}`);
+      was.setAttribute('aria-label', tr('product.was', { price: money(p.regularPrice, currency) }));
       row.append(was);
       const pct = p.savingsPct ?? Math.round((1 - p.price / p.regularPrice) * 100);
-      if (pct >= 1) row.append(el('span', 'save', `Save ${Math.round(pct)}%`));
+      if (pct >= 1) row.append(el('span', 'save', tr('product.save', { pct: (Math.round(pct) / 100).toLocaleString(cedarI18n.locale, { style: 'percent' }) })));
     }
     return row;
   }
@@ -266,10 +280,10 @@ const cedarProducts = (() => {
     const r = p.reviews;
     const rating = el('span', 'rating');
     rating.append(stars(r.average, true));
-    if (r.average !== null) rating.append(el('span', 'avg', r.average.toFixed(1)));
-    rating.append(el('span', 'n', r.count ? `(${r.count.toLocaleString()})` : 'no reviews'));
+    if (r.average !== null) rating.append(el('span', 'avg', rating1(r.average)));
+    rating.append(el('span', 'n', r.count ? `(${cedarI18n.number(r.count)})` : tr('product.noReviews')));
     b.append(rating, verdictPill(r, true));
-    b.setAttribute('aria-label', `${p.name}, ${p.price === null ? 'price at the store' : money(p.price, cur(p, spec))}, ${r.average !== null ? `${r.average.toFixed(1)} stars from ${count(r.count)}` : 'no reviews'}${badges.length ? `, ${badges.join(', ')}` : ''}`);
+    b.setAttribute('aria-label', `${p.name}, ${p.price === null ? tr('product.priceAtStoreLower') : money(p.price, cur(p, spec))}, ${r.average !== null ? tr('product.starsFrom', { rating: rating1(r.average), reviews: count(r.count) }) : tr('product.noReviews')}${badges.length ? `, ${badges.join(', ')}` : ''}`);
     return b;
   }
 
@@ -280,12 +294,12 @@ const cedarProducts = (() => {
     const main = el('div', 'main');
     const thumbs = el('div', 'thumbs');
     thumbs.setAttribute('role', 'group');
-    thumbs.setAttribute('aria-label', `Photos of ${p.name}`);
+    thumbs.setAttribute('aria-label', tr('product.photosOf', { name: p.name }));
     const buttons = [];
     let current = 0;
     function show(i) {
       current = (i + p.images.length) % p.images.length;
-      main.replaceChildren(picture(p.images[current], `${p.name}, photo ${current + 1} of ${p.images.length}`, 'ph-main'));
+      main.replaceChildren(picture(p.images[current], tr('product.photoOf', { name: p.name, n: current + 1, total: p.images.length }), 'ph-main'));
       buttons.forEach((b, k) => b.setAttribute('aria-pressed', String(k === current)));
     }
     if (!p.images.length) {
@@ -296,7 +310,7 @@ const cedarProducts = (() => {
     p.images.forEach((url, i) => {
       const b = el('button', 'thumb');
       b.type = 'button';
-      b.setAttribute('aria-label', `Photo ${i + 1}`);
+      b.setAttribute('aria-label', tr('product.photoN', { n: i + 1 }));
       b.append(picture(url, '', 'ph-thumb'));
       b.addEventListener('click', () => show(i));
       b.addEventListener('keydown', (e) => {
@@ -318,20 +332,20 @@ const cedarProducts = (() => {
   function reviewsBlock(p) {
     const r = p.reviews;
     const box = el('section', 'cedar-products-reviews');
-    box.append(el('div', 'cedar-products-label', 'Reviews'));
+    box.append(el('div', 'cedar-products-label', tr('product.reviewsLabel')));
     const head = el('div', 'head');
     head.append(stars(r.average, false));
     if (r.average !== null) {
-      head.append(el('span', 'avg', r.average.toFixed(1)));
-      head.append(el('span', 'n', `from ${count(r.count)}`));
+      head.append(el('span', 'avg', rating1(r.average)));
+      head.append(el('span', 'n', tr('product.fromReviews', { reviews: count(r.count) })));
     } else {
-      head.append(el('span', 'n', 'No customer rating found'));
+      head.append(el('span', 'n', tr('product.noCustomerRating')));
     }
     box.append(head);
     if (r.adjusted !== null && r.count > 0) {
       const bar = el('div', 'bar');
       bar.setAttribute('role', 'img');
-      bar.setAttribute('aria-label', `Adjusted rating ${r.adjusted.toFixed(1)} out of 5`);
+      bar.setAttribute('aria-label', tr('product.adjustedAria', { rating: rating1(r.adjusted) }));
       const track = el('div', 'track');
       const fillEl = el('div', `fill ${r.verdict}`);
       fillEl.style.width = `${(r.adjusted / 5) * 100}%`;
@@ -342,13 +356,13 @@ const cedarProducts = (() => {
         track.append(tick);
       }
       const legend = el('div', 'legend');
-      legend.append(el('span', 'k', 'Adjusted for the number of reviews'), el('strong', 'v', `${r.adjusted.toFixed(1)} / 5`));
+      legend.append(el('span', 'k', tr('product.adjustedNote')), el('strong', 'v', tr('product.outOf5', { rating: rating1(r.adjusted) })));
       bar.append(legend, track);
       box.append(bar);
     }
     const line = el('div', 'verdict-line');
     line.append(verdictPill(r, false));
-    if (r.count > 0) line.append(el('span', 'conf', CONFIDENCE[r.confidence]));
+    if (r.count > 0) line.append(el('span', 'conf', tr(CONFIDENCE[r.confidence])));
     box.append(line);
     if (r.summary && r.average !== null) box.append(el('p', 'summary', r.summary));
     return box;
@@ -363,9 +377,9 @@ const cedarProducts = (() => {
       row.append(c);
     };
     // Only what the store said: a page that doesn't mention stock gets no chip for it.
-    if (p.availability.online !== null) chip(p.availability.online ? 'In stock' : 'Out of stock', p.availability.online);
-    if (p.availability.inStore) chip('In store', true);
-    if (p.availability.freeShipping) chip('Free shipping', true);
+    if (p.availability.online !== null) chip(tr(p.availability.online ? 'product.inStock' : 'product.outOfStock'), p.availability.online);
+    if (p.availability.inStore) chip(tr('product.inStore'), true);
+    if (p.availability.freeShipping) chip(tr('product.freeShipping'), true);
     if (p.condition && !/^new$/i.test(p.condition)) chip(p.condition, false);
     return row.childElementCount ? row : null;
   }
@@ -374,7 +388,7 @@ const cedarProducts = (() => {
     const items = p.comparable.map((s) => spec.bySku.get(s)).filter(Boolean);
     if (!items.length) return null;
     const section = el('section', 'cedar-products-comparable');
-    section.append(el('div', 'cedar-products-label', 'Comparable options'));
+    section.append(el('div', 'cedar-products-label', tr('product.comparable')));
     const strip = el('div', 'strip');
     for (const c of items) {
       const b = el('button', 'mini');
@@ -382,21 +396,21 @@ const cedarProducts = (() => {
       b.append(picture(c.images[0], '', 'ph-mini'));
       const body = el('span', 'body');
       body.append(el('span', 'name', c.name));
-      const price = el('span', 'price', c.price === null ? 'Price at the store' : `${c.priceChecked ? '' : '≈ '}${money(c.price, cur(c, spec))}`);
+      const price = el('span', 'price', c.price === null ? tr('product.priceAtStore') : `${c.priceChecked ? '' : '≈ '}${money(c.price, cur(c, spec))}`);
       if (c.regularPrice !== null) price.append(' ', el('s', 'was', money(c.regularPrice, cur(c, spec))));
       body.append(price);
       const rating = el('span', 'rating');
       rating.append(stars(c.reviews.average, true));
-      rating.append(el('span', 'n', c.reviews.average !== null ? `${c.reviews.average.toFixed(1)} (${c.reviews.count.toLocaleString()})` : 'no reviews'));
+      rating.append(el('span', 'n', c.reviews.average !== null ? `${rating1(c.reviews.average)} (${cedarI18n.number(c.reviews.count)})` : tr('product.noReviews')));
       body.append(rating, verdictPill(c.reviews, true));
       b.append(body);
       // A difference only means something between two prices in the same currency.
       if (c.price !== null && p.price !== null && cur(c, spec) === cur(p, spec)) {
         const diff = c.price - p.price;
         b.append(el('span', `diff ${diff < 0 ? 'less' : diff > 0 ? 'more' : 'same'}`,
-          Math.abs(diff) < 0.005 ? 'same price' : `${money(Math.abs(diff), cur(c, spec))} ${diff < 0 ? 'less' : 'more'}`));
+          Math.abs(diff) < 0.005 ? tr('product.samePrice') : tr(diff < 0 ? 'product.less' : 'product.more', { price: money(Math.abs(diff), cur(c, spec)) })));
       }
-      b.setAttribute('aria-label', `View ${c.name}, ${c.price === null ? 'price at the store' : money(c.price, cur(c, spec))}`);
+      b.setAttribute('aria-label', tr('product.viewAria', { name: c.name, price: c.price === null ? tr('product.priceAtStoreLower') : money(c.price, cur(c, spec)) }));
       b.addEventListener('click', () => select(c.sku, spec.options.some((o) => o.sku === p.sku) ? p.sku : state.from));
       strip.append(b);
     }
@@ -415,7 +429,7 @@ const cedarProducts = (() => {
       const back = el('button', 'cedar-products-back');
       back.type = 'button';
       back.innerHTML = ICONS.back;
-      back.append(`Back to ${spec.bySku.get(state.from).name}`);
+      back.append(tr('product.backTo', { name: spec.bySku.get(state.from).name }));
       back.addEventListener('click', () => select(state.from, null));
       panel.append(back);
     }
@@ -434,7 +448,7 @@ const cedarProducts = (() => {
     name.setAttribute('role', 'heading');
     name.setAttribute('aria-level', '3');
     info.append(name);
-    const sub = [p.brand, p.model ? `Model ${p.model}` : '', p.color].filter(Boolean).join(' · ');
+    const sub = [p.brand, p.model ? tr('product.model', { model: p.model }) : '', p.color].filter(Boolean).join(' · ');
     if (sub) info.append(el('div', 'sub', sub));
     info.append(priceLine(p, cur(p, spec), true));
     const chips = availabilityChips(p);
@@ -445,24 +459,24 @@ const cedarProducts = (() => {
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.referrerPolicy = 'no-referrer';
-      link.append(`View at ${p.store || spec.store}`);
+      link.append(p.store || spec.storeNamed ? tr('product.viewAt', { store: p.store || spec.store }) : tr('product.viewAtStore'));
       link.innerHTML += ICONS.out;
       info.append(link);
     }
     if (p.why || p.bestFor) {
       const why = el('section', 'cedar-products-why');
-      why.append(el('div', 'cedar-products-label', 'Why it fits'));
+      why.append(el('div', 'cedar-products-label', tr('product.whyFits')));
       if (p.why) why.append(el('p', '', p.why));
       if (p.bestFor) {
         const who = el('p', 'for');
-        who.append(el('strong', '', 'Best for: '), p.bestFor);
+        who.append(el('strong', '', tr('product.bestFor')), p.bestFor);
         why.append(who);
       }
       info.append(why);
     }
     if (p.pros.length || p.cons.length) {
       const pc = el('div', 'cedar-products-proscons');
-      for (const [label, items, cls] of [['Pros', p.pros, 'pros'], ['Cons', p.cons, 'cons']]) {
+      for (const [label, items, cls] of [[tr('product.pros'), p.pros, 'pros'], [tr('product.cons'), p.cons, 'cons']]) {
         if (!items.length) continue;
         const col = el('section', cls);
         col.append(el('div', 'cedar-products-label', label));
@@ -477,7 +491,7 @@ const cedarProducts = (() => {
     if (p.description) info.append(el('p', 'cedar-products-desc', p.description));
     if (p.features.length) {
       const f = el('section', 'cedar-products-features');
-      f.append(el('div', 'cedar-products-label', 'Key features'));
+      f.append(el('div', 'cedar-products-label', tr('product.features')));
       const list = el('ul');
       for (const feature of p.features) list.append(el('li', '', feature));
       f.append(list);
@@ -485,7 +499,7 @@ const cedarProducts = (() => {
     }
     if (p.specs.length) {
       const s = el('section', 'cedar-products-specs');
-      s.append(el('div', 'cedar-products-label', 'Specs'));
+      s.append(el('div', 'cedar-products-label', tr('product.specs')));
       const dl = el('dl');
       for (const [k, v] of p.specs) dl.append(el('dt', '', k), el('dd', '', v));
       s.append(dl);
@@ -494,7 +508,7 @@ const cedarProducts = (() => {
     const cited = p.sources.map((n) => [n, spec.sources.get(n)]).filter(([, s]) => s);
     if (cited.length) {
       const src = el('section', 'cedar-products-sources');
-      src.append(el('div', 'cedar-products-label', 'Sources'));
+      src.append(el('div', 'cedar-products-label', tr('product.sources')));
       const ol = el('ol');
       for (const [n, s] of cited) {
         const li = el('li');
@@ -528,7 +542,7 @@ const cedarProducts = (() => {
   function element(spec) {
     const card = el('div', 'cedar-products');
     card.setAttribute('role', 'group');
-    card.setAttribute('aria-label', `Products: ${spec.query}`);
+    card.setAttribute('aria-label', tr('product.aria', { query: spec.query }));
 
     const head = el('div', 'cedar-products-head');
     const icon = el('span', 'cedar-products-icon');
@@ -536,15 +550,19 @@ const cedarProducts = (() => {
     const titles = el('div');
     titles.append(el('div', 'cedar-products-title', spec.query));
     const parts = spec.considered
-      ? [`${spec.options.length} picked from ${spec.considered.products.toLocaleString()} product${spec.considered.products === 1 ? '' : 's'} on ${spec.considered.pages.toLocaleString()} page${spec.considered.pages === 1 ? '' : 's'}`]
-      : [spec.store, `${spec.options.length} of ${spec.total.toLocaleString()} result${spec.total === 1 ? '' : 's'}`];
+      ? [tr('product.pickedFrom', {
+        n: spec.options.length,
+        products: tr('product.products', { count: spec.considered.products }),
+        pages: tr('product.pages', { count: spec.considered.pages }),
+      })]
+      : [spec.store, tr('product.nOfTotal', { n: spec.options.length, count: spec.total })];
     if (spec.sort) parts.push(spec.sort);
     titles.append(el('div', 'cedar-products-sub', parts.join(' · ')));
     head.append(icon, titles);
     card.append(head);
     if (spec.summary) {
       const verdict = el('div', 'cedar-products-summary');
-      verdict.append(el('div', 'cedar-products-label', 'The recommendation'), el('p', '', spec.summary));
+      verdict.append(el('div', 'cedar-products-label', tr('product.recommendation')), el('p', '', spec.summary));
       card.append(verdict);
     }
     if (spec.note) card.append(el('div', 'cedar-products-note', spec.note));
@@ -552,7 +570,7 @@ const cedarProducts = (() => {
     const state = { selected: spec.options[0].sku, from: null };
     const tiles = el('div', 'cedar-products-options');
     tiles.setAttribute('role', 'tablist');
-    tiles.setAttribute('aria-label', 'Options');
+    tiles.setAttribute('aria-label', tr('product.options'));
     const tileEls = spec.options.map((p, i) => tile(p, spec, i));
     tiles.append(...tileEls);
     card.append(tiles);
@@ -584,7 +602,7 @@ const cedarProducts = (() => {
     const foot = el('div', 'cedar-products-foot');
     if (spec.disclaimer) foot.append(el('span', '', spec.disclaimer));
     if (!Number.isNaN(spec.asOf)) {
-      foot.append(el('span', 'when', `As of ${new Date(spec.asOf).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`));
+      foot.append(el('span', 'when', tr('product.asOf', { date: new Date(spec.asOf).toLocaleString(cedarI18n.locale, { dateStyle: 'medium', timeStyle: 'short' }) })));
     }
     card.append(foot);
 

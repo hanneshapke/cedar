@@ -50,17 +50,17 @@ struct OutgoingAttachment: Identifiable, Hashable, Sendable {
 
     /// Why `file` can't join `existing`, or nil when it can.
     static func problem(adding file: OutgoingAttachment, to existing: [OutgoingAttachment], imagesAllowed: Bool) -> String? {
-        if file.isImage && !imagesAllowed { return "\(file.name): this model takes PDFs but not images" }
-        if file.data.isEmpty { return "\(file.name) is empty" }
-        if file.data.count > maxBytes { return "\(file.name) is larger than \(format(maxBytes))" }
-        if existing.count >= maxFiles { return "At most \(maxFiles) files per message" }
+        if file.isImage && !imagesAllowed { return L10n.format("%@: this model takes PDFs but not images", file.name) }
+        if file.data.isEmpty { return L10n.format("%@ is empty", file.name) }
+        if file.data.count > maxBytes { return L10n.format("%@ is larger than %@", file.name, format(maxBytes)) }
+        if existing.count >= maxFiles { return L10n.format("At most %lld files per message", maxFiles) }
         if existing.reduce(0, { $0 + $1.data.count }) + file.data.count > maxTotalBytes {
-            return "The files would add up to more than \(format(maxTotalBytes))"
+            return L10n.format("The files would add up to more than %@", format(maxTotalBytes))
         }
         return nil
     }
 
     static func format(_ bytes: Int) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        Int64(bytes).formatted(.byteCount(style: .file).locale(L10n.locale))
     }
 }

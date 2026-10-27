@@ -9,6 +9,7 @@
 //! Builds without `CEDAR_UPDATER_PUBKEY` (anything but the release workflow's) don't check.
 
 use crate::app::{self, AppState};
+use crate::i18n::{t, tf};
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use std::time::Duration;
@@ -57,10 +58,10 @@ fn notes_url(version: &str) -> String {
 
 /// "12 of 140 MB", for the banner while the download runs.
 fn progress(got: u64, total: Option<u64>) -> String {
-    let mb = |b: u64| b / 1_000_000;
+    let mb = |b: u64| (b / 1_000_000).to_string();
     match total {
-        Some(total) => format!("Downloading: {} of {} MB", mb(got), mb(total)),
-        None => format!("Downloading: {} MB", mb(got)),
+        Some(total) => tf("update.downloading_of", &[("got", &mb(got)), ("total", &mb(total))]),
+        None => tf("update.downloading_mb", &[("got", &mb(got))]),
     }
 }
 
@@ -194,7 +195,7 @@ pub async fn install(app: AppHandle) {
 async fn try_install(app: &AppHandle) -> Result<()> {
     set(app, |s| {
         s.state = "downloading";
-        s.detail = Some("Downloading…".into());
+        s.detail = Some(t("update.downloading"));
     });
     let update = updater(app)?
         .check()
@@ -221,7 +222,7 @@ async fn try_install(app: &AppHandle) -> Result<()> {
 
     set(app, |s| {
         s.state = "installing";
-        s.detail = Some(format!("Installing Cedar {}…", update.version));
+        s.detail = Some(tf("update.installing", &[("version", &update.version)]));
     });
     let state = app.state::<AppState>();
     state.supervisor.stop().await;

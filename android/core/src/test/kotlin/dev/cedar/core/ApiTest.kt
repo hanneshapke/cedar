@@ -39,6 +39,7 @@ class ApiTest {
         assertFalse(detail.turns[1].needsAnswer)
         val now = java.time.Instant.now()
         assertEquals("New chat", Conversation(id = "x", createdAt = now, updatedAt = now).displayTitle)
+        assertEquals("Neuer Chat", Conversation(id = "x", title = " ", createdAt = now, updatedAt = now).titleOr("Neuer Chat"))
     }
 
     @Test
@@ -156,7 +157,11 @@ class ApiTest {
         assertEquals(ChatException.Unreachable("offline"), ChatClient.unreachable(offline, "https://spark.ts.net:3000".toHttpUrl()))
         // Android's network security config refuses cleartext: the error says to use HTTPS.
         val cleartext = UnknownServiceException("CLEARTEXT communication to chat.local not permitted by network security policy")
-        assertEquals(ChatException.Unreachable(ServerSettings.HTTPS_ONLY), ChatClient.unreachable(cleartext, "http://chat.local".toHttpUrl()))
+        assertEquals(
+            ChatException.Unreachable(ServerSettings.HTTPS_ONLY, ChatException.Unreachable.Hint.HttpsOnly),
+            ChatClient.unreachable(cleartext, "http://chat.local".toHttpUrl()),
+        )
+        assertEquals(ChatException.Unreachable.Hint.PlainHttpPort(3000, "handshake failed"), hinted.hint, "the app words the hint itself")
     }
 
     @Test
@@ -178,6 +183,9 @@ class ApiTest {
         assertNull(ServerSettings(serverURL = "https://m.t.ts.net").urlProblem())
         assertEquals(ChatException.InvalidURL.message, ServerSettings(serverURL = "m.t.ts.net").urlProblem())
         assertEquals(ChatException.NotConfigured.message, ServerSettings().urlProblem())
+        assertEquals(ServerSettings.UrlProblem.NOT_HTTPS, ServerSettings(serverURL = "http://127.0.0.1:3000").urlIssue())
+        assertEquals(ServerSettings.UrlProblem.INVALID, ServerSettings(serverURL = "m.t.ts.net").urlIssue())
+        assertEquals(ServerSettings.UrlProblem.NOT_CONFIGURED, ServerSettings().urlIssue())
         assertTrue(ServerSettings("https://a", "t").sameServer(ServerSettings(" https://a ", "t ", model = "m")))
         assertFalse(ServerSettings("https://a", "t").sameServer(ServerSettings("https://a", "u")))
     }

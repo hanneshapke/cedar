@@ -1023,8 +1023,17 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/chart-view.css\""), "{uri} loads the chart styles");
             assert!(page.contains("<script src=\"/models.js\">"), "{uri} loads the model registry script");
             assert!(
-                page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("/settings.js"),
+                page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("src=\"/settings.js\""),
                 "{uri} loads the models before the scripts that fill the pickers from them"
+            );
+            assert!(
+                page.find("src=\"/i18n.js\"") < page.find("src=\"/i18n/common.js\"")
+                    && page.find("src=\"/i18n/common.js\"") < page.find("src=\"/ui-pref.js\""),
+                "{uri} loads the translations before every script that shows text"
+            );
+            assert!(
+                page.find("src=\"/settings-shell.js\"") < page.find("src=\"/language.js\""),
+                "{uri} loads the language picker after the Settings frame it registers with"
             );
             assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
             assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
@@ -1045,7 +1054,7 @@ async fn both_uis_are_served() {
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("<script src=\"/settings-shell.js\">"), "{uri} loads the Settings dialog's frame");
             assert!(
-                page.find("/ui-pref.js") < page.find("/settings-shell.js") && page.find("/settings-shell.js") < page.find("/settings.js"),
+                page.find("/ui-pref.js") < page.find("/settings-shell.js") && page.find("/settings-shell.js") < page.find("src=\"/settings.js\""),
                 "{uri} loads the Settings frame after the UI choice and before the pages that register with it"
             );
             assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in the sidebar");
@@ -1556,6 +1565,42 @@ async fn a_busy_cedar_is_retried_for_an_hour_then_the_slot_is_recorded_as_failed
 // -- settings, tools, integrations ------------------------------------------------------------
 
 #[tokio::test]
+async fn the_language_goes_with_messages_schedules_and_notifications() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("first", "ok").await;
+    let first = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert!(first.get("locale").is_none(), "no language saved: cedar's default");
+
+    // Saving the language keeps the other settings, and other settings keep the language.
+    h.json(Method::PUT, "/api/settings", Some(json!({ "system": "be brief" }))).await;
+    let (status, prefs) = h.json(Method::PUT, "/api/settings/locale", Some(json!({ "locale": " de-CH " }))).await;
+    assert_eq!(status, StatusCode::OK, "{prefs}");
+    assert_eq!((prefs["locale"].as_str(), prefs["system"].as_str()), (Some("de-CH"), Some("be brief")));
+    let (_, prefs) = h.json(Method::PUT, "/api/settings", Some(json!({ "system": "kurz" }))).await;
+    assert_eq!(prefs["locale"], "de-CH");
+    let (status, _) = h.json(Method::PUT, "/api/settings/locale", Some(json!({ "locale": "de CH" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, got) = h.json(Method::GET, "/api/settings", None).await;
+    assert_eq!(got["locale"], "de-CH");
+
+    // A message without a language of its own uses the saved one; with one, its own.
+    let msgs = format!("/api/conversations/{cid}/messages");
+    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "zweite" }))).await;
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["locale"], "de-CH");
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "troisième", "locale": "fr-CA" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["locale"], "fr-CA");
+    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "x", "locale": "-" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // null goes back to cedar's default.
+    let (_, prefs) = h.json(Method::PUT, "/api/settings/locale", Some(json!({ "locale": null }))).await;
+    assert_eq!(prefs["locale"], Value::Null);
+}
+
+#[tokio::test]
 async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
     let h = Harness::new(&[]).await;
 
@@ -1577,7 +1622,7 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{prefs}");
-    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "plan": "off" }));
+    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "plan": "off", "locale": null }));
     let (status, _) = h.json(Method::PUT, "/api/settings", Some(json!({ "plan": "sometimes" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (_, got) = h.json(Method::GET, "/api/settings", None).await;

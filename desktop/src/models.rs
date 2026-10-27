@@ -1,5 +1,6 @@
 //! Asking the model server what it serves, so the user picks a name cedar can use.
 
+use crate::i18n::{t, tf};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -10,19 +11,19 @@ use url::Url;
 pub fn normalize_base_url(raw: &str) -> Result<String> {
     let raw = raw.trim();
     if raw.is_empty() {
-        bail!("enter the model server's address, for example http://127.0.0.1:11434/v1");
+        bail!(t("model.no_address"));
     }
     let with_scheme = if raw.contains("://") {
         raw.to_string()
     } else {
         format!("http://{raw}")
     };
-    let mut url = Url::parse(&with_scheme).map_err(|e| anyhow!("{raw} is not a valid URL: {e}"))?;
+    let mut url = Url::parse(&with_scheme).map_err(|e| anyhow!(tf("model.bad_url", &[("raw", raw), ("error", &e.to_string())])))?;
     if !matches!(url.scheme(), "http" | "https") {
-        bail!("the address must start with http:// or https://");
+        bail!(t("model.bad_scheme"));
     }
     if url.host_str().is_none() {
-        bail!("{raw} has no host");
+        bail!(tf("model.no_host", &[("raw", raw)]));
     }
     url.set_query(None);
     url.set_fragment(None);
@@ -54,23 +55,23 @@ pub async fn list_models(base_url: &str, api_key: &str) -> Result<Vec<String>> {
     let resp = req
         .send()
         .await
-        .with_context(|| format!("could not reach {base}; is the model server running?"))?;
+        .with_context(|| tf("model.unreachable", &[("base", &base)]))?;
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        bail!("{base} rejected the API key ({status})");
+        bail!(tf("model.key_rejected", &[("base", &base), ("status", &status.to_string())]));
     }
     if !status.is_success() {
-        bail!("{base}/models answered {status}; check the address (it usually ends in /v1)");
+        bail!(tf("model.bad_status", &[("base", &base), ("status", &status.to_string())]));
     }
     let list: ModelList = resp
         .json()
         .await
-        .with_context(|| format!("{base}/models did not return an OpenAI-style model list"))?;
+        .with_context(|| tf("model.bad_list", &[("base", &base)]))?;
     let mut ids: Vec<String> = list.data.into_iter().map(|m| m.id).collect();
     ids.sort();
     ids.dedup();
     if ids.is_empty() {
-        bail!("{base} lists no models; load one in the model server first");
+        bail!(tf("model.no_models", &[("base", &base)]));
     }
     Ok(ids)
 }
@@ -116,7 +117,7 @@ pub async fn register(
     let base = normalize_base_url(base_url)?;
     let model = model.trim();
     if model.is_empty() {
-        bail!("pick a model");
+        bail!(t("cmd.pick_model"));
     }
     let client = reqwest::Client::builder()
         // cedar itself gives the model server 20 s to answer.

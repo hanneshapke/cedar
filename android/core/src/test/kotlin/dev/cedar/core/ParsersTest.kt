@@ -162,6 +162,8 @@ class AttachmentsTest {
 
         val full = List(OutgoingAttachment.MAX_FILES) { file("p$it.pdf", "application/pdf", 10) }
         assertEquals("At most 10 files per message", OutgoingAttachment.problem(pdf, full, imagesAllowed = true))
+        assertEquals(OutgoingAttachment.Problem.TooMany(10), OutgoingAttachment.check(pdf, full, imagesAllowed = true))
+        assertEquals(OutgoingAttachment.Problem.ImagesNotAccepted("a.png"), OutgoingAttachment.check(image, emptyList(), imagesAllowed = false))
 
         val big = file("b.pdf", "application/pdf", OutgoingAttachment.MAX_BYTES)
         assertNull(OutgoingAttachment.problem(big, emptyList(), imagesAllowed = true))

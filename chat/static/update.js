@@ -22,11 +22,11 @@ const cedarUpdate = (() => {
   const POLL = 30 * 60 * 1000;
   const POLL_INSTALLING = 3000;
   const STEPS = {
-    requested: 'Waiting for the updater…',
-    downloading: 'Downloading…',
-    verifying: 'Checking the download…',
-    installing: 'Installing…',
-    restarting: 'Restarting Cedar…',
+    requested: 'update.step.requested',
+    downloading: 'update.step.downloading',
+    verifying: 'update.step.verifying',
+    installing: 'update.step.installing',
+    restarting: 'update.step.restarting',
   };
   const inDesktopApp = window.__CEDAR_DESKTOP_APP__ === true;
 
@@ -125,27 +125,27 @@ const cedarUpdate = (() => {
 
     const text = el('span', 'cedar-update-text');
     if (busy) {
-      text.append(el('strong', '', `Updating to Cedar ${version}`), ` · ${status.install.detail || STEPS[step] || 'Working…'}`);
+      text.append(el('strong', '', tr('update.updating', { version })), ` · ${status.install.detail || tr(STEPS[step])}`);
       b.append(text);
       return;
     }
-    text.append(el('strong', '', `Cedar ${version} is available`), ` · you have ${status.current}`);
-    if (failed) text.append(el('span', 'cedar-update-err', ` · The update failed: ${status.install.detail || 'see the logs'}`));
+    text.append(el('strong', '', tr('update.available', { version })), ` · ${tr('update.current', { version: status.current })}`);
+    if (failed) text.append(el('span', 'cedar-update-err', ` · ${tr('update.failed', { detail: status.install.detail || tr('update.seeLogs') })}`));
     b.append(text);
     const notes = status.latest?.notes_url || status.notes_url;
     if (notes) {
-      const a = el('a', 'cedar-update-link', 'Release notes');
+      const a = el('a', 'cedar-update-link', tr('update.notes'));
       a.href = notes;
       a.target = '_blank';
       a.rel = 'noopener';
       b.append(a);
     }
     if (inDesktopApp || status.can_install) {
-      b.append(button(failed ? 'Try again' : 'Update', update, 'cedar-update-go'));
+      b.append(button(failed ? tr('update.tryAgain') : tr('update.update'), update, 'cedar-update-go'));
     } else if (status.commands) {
-      b.append(button('How to update', showCommands, 'cedar-update-go'));
+      b.append(button(tr('update.howTo'), showCommands, 'cedar-update-go'));
     }
-    b.append(button('Dismiss', () => {
+    b.append(button(tr('update.dismiss'), () => {
       if (inDesktopApp) {
         // The app remembers it, for its setup page and the tray too, and pushes the new state.
         window.location.href = '/__cedar-app/update/dismiss';
@@ -159,14 +159,14 @@ const cedarUpdate = (() => {
   // -- updating ----------------------------------------------------------------------------------
 
   async function confirmUpdate(message) {
-    if (typeof cedarConfirm === 'function') return cedarConfirm(message, { ok: 'Update' });
+    if (typeof cedarConfirm === 'function') return cedarConfirm(message, { ok: tr('update.update') });
     return window.confirm(message);
   }
 
   async function update() {
     const version = latestVersion();
     const ok = await confirmUpdate(
-      `Update to Cedar ${version}?\n\nCedar restarts to finish, which stops any response that is still running.`
+      tr('update.confirm', { version })
     );
     if (!ok) return;
     if (inDesktopApp) {
@@ -188,7 +188,7 @@ const cedarUpdate = (() => {
       if (e.status === 403) {
         try { sessionStorage.removeItem(ADMIN_KEY); } catch { /* nothing kept */ }
       }
-      showMessage('The update could not start', e.message);
+      showMessage(tr('update.startFailed'), e.message);
     }
   }
 
@@ -216,7 +216,7 @@ const cedarUpdate = (() => {
   function showMessage(title, message) {
     const dialog = dialogShell(title);
     dialog.append(el('p', '', message));
-    actions(dialog, dialogButton('OK', 'ok', 'primary'));
+    actions(dialog, dialogButton(tr('update.ok'), 'ok', 'primary'));
     document.body.append(dialog);
     dialog.showModal();
   }
@@ -224,14 +224,14 @@ const cedarUpdate = (() => {
   /** The admin token (CHAT_ADMIN_TOKEN), which starting an install needs. */
   function askAdmin() {
     return new Promise((resolve) => {
-      const dialog = dialogShell('Admin token');
-      dialog.append(el('p', '', 'Installing an update needs the admin token (CHAT_ADMIN_TOKEN in /etc/cedar/chat.env).'));
+      const dialog = dialogShell(tr('update.adminTitle'));
+      dialog.append(el('p', '', tr('update.adminText')));
       const input = el('input', 'cedar-update-input');
       input.type = 'password';
       input.autocomplete = 'off';
-      input.placeholder = 'Admin token';
+      input.placeholder = tr('update.adminTitle');
       dialog.append(input);
-      actions(dialog, dialogButton('Cancel', 'cancel', 'ghost'), dialogButton('Update', 'ok', 'primary'));
+      actions(dialog, dialogButton(tr('update.cancel'), 'cancel', 'ghost'), dialogButton(tr('update.update'), 'ok', 'primary'));
       dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok' ? input.value.trim() : ''));
       document.body.append(dialog);
       dialog.showModal();
@@ -240,17 +240,17 @@ const cedarUpdate = (() => {
   }
 
   function showCommands() {
-    const dialog = dialogShell(`Update to Cedar ${latestVersion()}`);
-    dialog.append(el('p', '', 'Run these on the server (DEPLOYMENT.md, "Updates", sets up one-click updates):'));
+    const dialog = dialogShell(tr('update.commandsTitle', { version: latestVersion() }));
+    dialog.append(el('p', '', tr('update.commandsText')));
     const pre = el('pre', 'cedar-update-commands');
     pre.textContent = status.commands;
     dialog.append(pre);
-    const copy = dialogButton('Copy', 'copy', 'ghost');
+    const copy = dialogButton(tr('update.copy'), 'copy', 'ghost');
     copy.addEventListener('click', (e) => {
       e.preventDefault();
-      navigator.clipboard?.writeText(status.commands).then(() => { copy.textContent = 'Copied'; }, () => {});
+      navigator.clipboard?.writeText(status.commands).then(() => { copy.textContent = tr('update.copied'); }, () => {});
     });
-    actions(dialog, copy, dialogButton('Close', 'ok', 'primary'));
+    actions(dialog, copy, dialogButton(tr('update.close'), 'ok', 'primary'));
     document.body.append(dialog);
     dialog.showModal();
   }

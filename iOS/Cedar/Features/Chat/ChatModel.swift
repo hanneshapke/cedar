@@ -83,7 +83,7 @@ final class ChatModel {
             sync(with: detail.turns)
             errorMessage = nil
         } catch let error as ChatError where error.status == 404 {
-            errorMessage = "This conversation no longer exists on the server."
+            errorMessage = L10n.string("This conversation no longer exists on the server.")
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
             // URLSession's cancellation, not a failure: its description is just "cancelled".
@@ -157,7 +157,7 @@ final class ChatModel {
                 } catch let error as ChatError where error.status == 404 {
                     self.update(turnId) {
                         $0.turn.status = .failed
-                        $0.turn.error = "This response no longer exists on the server."
+                        $0.turn.error = L10n.string("This response no longer exists on the server.")
                     }
                     break
                 } catch {
@@ -222,14 +222,14 @@ final class ChatModel {
         for read in readers {
             do {
                 guard let picked = try await read() else {
-                    problems.append("A picked file could not be read")
+                    problems.append(L10n.string("A picked file could not be read"))
                     continue
                 }
                 let (name, type, data) = picked
                 // Re-encoding a photo takes a moment; keep it off the main thread.
                 let file = await Task.detached { OutgoingAttachment.make(name: name, type: type, data: data) }.value
                 guard let file else {
-                    problems.append("\(name): only PNG, JPEG, GIF, WebP and PDF files can be attached")
+                    problems.append(L10n.format("%@: only PNG, JPEG, GIF, WebP and PDF files can be attached", name))
                     continue
                 }
                 if let problem = OutgoingAttachment.problem(adding: file, to: attachments, imagesAllowed: acceptsImages) {
@@ -294,7 +294,9 @@ final class ChatModel {
                 attachments: attachments.isEmpty ? nil : attachments.map {
                     .init(name: $0.name, mediaType: $0.mediaType, data: $0.data.base64EncodedString())
                 },
-                plan: settings.plan.isEmpty ? nil : settings.plan
+                plan: settings.plan.isEmpty ? nil : settings.plan,
+                // The reply comes in the interface language.
+                locale: LanguageStore.shared.effectiveTag
             ))
             turns.append(TurnTranscript(turn: turn))
             follow(turnId: turn.id)

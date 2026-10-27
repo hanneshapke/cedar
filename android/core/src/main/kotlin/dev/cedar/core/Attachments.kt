@@ -20,6 +20,16 @@ class OutgoingAttachment(
     override fun equals(other: Any?) = other is OutgoingAttachment && other.id == id
     override fun hashCode() = id.hashCode()
 
+    /** Why a file can't be attached, for the app to word in the user's language. */
+    sealed interface Problem {
+        /** The model takes PDFs but not images. */
+        data class ImagesNotAccepted(val name: String) : Problem
+        data class Empty(val name: String) : Problem
+        data class TooLarge(val name: String, val limit: Long) : Problem
+        data class TooMany(val limit: Int) : Problem
+        data class TooLargeTogether(val limit: Long) : Problem
+    }
+
     companion object {
         val TYPES = listOf("image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf")
         const val PDF = "application/pdf"
@@ -44,16 +54,27 @@ class OutgoingAttachment(
         }
 
         /** Why `file` can't join `existing`, or null when it can. */
-        fun problem(file: OutgoingAttachment, existing: List<OutgoingAttachment>, imagesAllowed: Boolean): String? {
-            if (file.isImage && !imagesAllowed) return "${file.name}: this model takes PDFs but not images"
-            if (file.data.isEmpty()) return "${file.name} is empty"
-            if (file.data.size > MAX_BYTES) return "${file.name} is larger than ${format(MAX_BYTES.toLong())}"
-            if (existing.size >= MAX_FILES) return "At most $MAX_FILES files per message"
+        fun check(file: OutgoingAttachment, existing: List<OutgoingAttachment>, imagesAllowed: Boolean): Problem? {
+            if (file.isImage && !imagesAllowed) return Problem.ImagesNotAccepted(file.name)
+            if (file.data.isEmpty()) return Problem.Empty(file.name)
+            if (file.data.size > MAX_BYTES) return Problem.TooLarge(file.name, MAX_BYTES.toLong())
+            if (existing.size >= MAX_FILES) return Problem.TooMany(MAX_FILES)
             if (existing.sumOf { it.data.size.toLong() } + file.data.size > MAX_TOTAL_BYTES) {
-                return "The files would add up to more than ${format(MAX_TOTAL_BYTES.toLong())}"
+                return Problem.TooLargeTogether(MAX_TOTAL_BYTES.toLong())
             }
             return null
         }
+
+        /** [check]'s answer in English. */
+        fun problem(file: OutgoingAttachment, existing: List<OutgoingAttachment>, imagesAllowed: Boolean): String? =
+            when (val problem = check(file, existing, imagesAllowed)) {
+                is Problem.ImagesNotAccepted -> "${problem.name}: this model takes PDFs but not images"
+                is Problem.Empty -> "${problem.name} is empty"
+                is Problem.TooLarge -> "${problem.name} is larger than ${format(problem.limit)}"
+                is Problem.TooMany -> "At most ${problem.limit} files per message"
+                is Problem.TooLargeTogether -> "The files would add up to more than ${format(problem.limit)}"
+                null -> null
+            }
 
         /** A size as people read it: "20 MB" (decimal, as Apple's file style counts). */
         fun format(bytes: Long): String = when {

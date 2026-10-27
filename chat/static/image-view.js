@@ -87,18 +87,18 @@ const cedarImages = (() => {
 
   /** A blob: URL for the workspace image `rel`, fetched once per conversation. */
   function load(rel) {
-    if (!deps) return Promise.reject(new Error('Images are not set up.'));
+    if (!deps) return Promise.reject(new Error(tr('image.notSetUp')));
     const mime = type(rel);
-    if (!mime) return Promise.reject(new Error('Not an image.'));
+    if (!mime) return Promise.reject(new Error(tr('image.notImage')));
     let pending = cache.get(rel);
     if (!pending) {
       const gen = generation;
       pending = (async () => {
         const res = await deps.fetchFile(rel);
-        if (Number(res.headers.get('Content-Length')) > MAX_BYTES) throw new Error('This image is too large to show here.');
+        if (Number(res.headers.get('Content-Length')) > MAX_BYTES) throw new Error(tr('image.tooLarge'));
         const bytes = await res.arrayBuffer();
-        if (bytes.byteLength > MAX_BYTES) throw new Error('This image is too large to show here.');
-        if (gen !== generation) throw new Error('The conversation changed.');
+        if (bytes.byteLength > MAX_BYTES) throw new Error(tr('image.tooLarge'));
+        if (gen !== generation) throw new Error(tr('image.conversationChanged'));
         const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
         urls.push(url);
         return url;
@@ -132,7 +132,7 @@ const cedarImages = (() => {
     } catch (e) {
       if (gen !== generation) return;
       figure.classList.add('failed');
-      frame.replaceChildren(el('span', 'cedar-image-note', `${path.split('/').pop()}: ${e?.message || 'could not be shown'}`));
+      frame.replaceChildren(el('span', 'cedar-image-note', tr('image.failed', { name: path.split('/').pop(), reason: e?.message || tr('image.couldNotShow') })));
       return;
     }
     const img = el('img', 'cedar-image-img');
@@ -144,10 +144,10 @@ const cedarImages = (() => {
     });
     img.addEventListener('error', () => {
       figure.classList.add('failed');
-      frame.replaceChildren(el('span', 'cedar-image-note', `${path.split('/').pop()}: the file is not a valid image.`));
+      frame.replaceChildren(el('span', 'cedar-image-note', tr('image.invalid', { name: path.split('/').pop() })));
     });
     if (deps.open) {
-      img.title = `View ${path}`;
+      img.title = tr('image.viewPath', { path });
       img.tabIndex = 0;
       img.setAttribute('role', 'button');
       img.addEventListener('click', () => deps.open(path));
@@ -167,19 +167,19 @@ const cedarImages = (() => {
     const figureEl = el('figure', 'cedar-image');
     if (!rel || !type(rel)) {
       figureEl.classList.add('failed');
-      figureEl.append(el('span', 'cedar-image-note', 'Not a workspace image.'));
+      figureEl.append(el('span', 'cedar-image-note', tr('image.notWorkspace')));
       return figureEl;
     }
     const name = rel.split('/').pop();
     figureEl.cedarImage = { path: rel, alt: alt || name, onLoad };
     const frame = el('div', 'cedar-image-frame');
-    frame.append(el('span', 'cedar-image-note', `Loading ${name}…`));
+    frame.append(el('span', 'cedar-image-note', tr('image.loading', { name })));
     const figcaption = el('figcaption', 'cedar-image-caption');
     figcaption.append(el('bdi', '', caption ?? (alt && alt !== name ? `${alt} · ${name}` : name)));
     figcaption.title = rel;
     const actions = el('span', 'cedar-image-actions');
-    if (deps?.open) actions.append(actionButton('View', `View ${rel}`, () => deps.open(rel)));
-    if (deps?.download) actions.append(actionButton('Download', `Download ${rel}`, (button) => deps.download(rel, button)));
+    if (deps?.open) actions.append(actionButton(tr('image.view'), tr('image.viewPath', { path: rel }), () => deps.open(rel)));
+    if (deps?.download) actions.append(actionButton(tr('image.download'), tr('image.downloadPath', { path: rel }), (button) => deps.download(rel, button)));
     if (actions.childElementCount) figcaption.append(actions);
     figureEl.append(frame, figcaption);
     watch(figureEl);
@@ -224,7 +224,7 @@ const cedarImages = (() => {
     const nodes = images.slice(0, MAX_SHOWN).map((rel) => figure(rel, options));
     if (images.length > MAX_SHOWN) {
       const more = images.length - MAX_SHOWN;
-      nodes.push(el('div', 'cedar-image-more', `${more} more image${more === 1 ? '' : 's'} in the workspace files.`));
+      nodes.push(el('div', 'cedar-image-more', tr('image.more', { count: more })));
     }
     return nodes;
   }

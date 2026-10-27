@@ -15,6 +15,7 @@
 
 use crate::api::AppState;
 use crate::error::AppError;
+use crate::i18n::{self, Lang, Outcome};
 use crate::store::{AndroidDevice, ApnsDevice, PushSubscription, Store};
 use chrono::{DateTime, Utc};
 use jwt_simple::algorithms::{ECDSAP256KeyPairLike, ECDSAP256PublicKeyLike, ES256KeyPair};
@@ -514,6 +515,8 @@ pub struct Message {
     /// The conversation to open, for a client that navigates by id rather than URL. A test
     /// notification has none.
     pub conversation_id: Option<Uuid>,
+    /// The link's label where the channel shows one (Pushover), in the user's language.
+    pub open_label: String,
 }
 
 /// A base64url (no padding) string, as push services and the browser use.
@@ -912,7 +915,7 @@ async fn send_pushover(state: &AppState, pushover: &PushoverSettings, message: &
         ("title", message.title.as_str()),
         ("message", message.body.as_str()),
         ("url", message.url.as_str()),
-        ("url_title", "Open in Cedar"),
+        ("url_title", message.open_label.as_str()),
     ];
     let resp = state
         .http
@@ -1083,26 +1086,29 @@ pub async fn record(store: &Store, method: Method, test: bool, outcome: &Result<
 }
 
 /// The message for a finished turn: what happened, in which conversation, and where to look.
-pub fn message_for(state: &AppState, turn: &crate::store::Turn, title: Option<&str>, scheduled: bool) -> Message {
-    let name = title.unwrap_or("New chat");
+/// It is written in the language of `locale` (the one saved in Settings).
+pub fn message_for(
+    state: &AppState,
+    turn: &crate::store::Turn,
+    title: Option<&str>,
+    scheduled: bool,
+    locale: Option<&str>,
+) -> Message {
     let needs_answer = turn.status == "completed" && turn.stop_reason.as_deref() == Some("ask_user");
-    let what = if needs_answer {
-        "needs your answer"
+    let outcome = if needs_answer {
+        Outcome::NeedsAnswer
     } else if turn.status == "failed" {
-        "failed"
+        Outcome::Failed
     } else {
-        "finished"
+        Outcome::Finished
     };
-    let kind = if scheduled { "A scheduled run" } else { "A response" };
-    let body = match (&turn.error, needs_answer, &turn.final_text) {
-        (Some(error), _, _) => format!("{kind} in \"{name}\" failed: {error}"),
-        (None, true, Some(text)) => format!("Cedar asks in \"{name}\":\n{}", excerpt(text)),
-        (None, _, Some(text)) => format!("{kind} in \"{name}\" finished:\n{}", excerpt(text)),
-        (None, _, None) => format!("{kind} in \"{name}\" {what}."),
-    };
+    let excerpt = turn.final_text.as_deref().map(excerpt);
+    let (title, body) =
+        i18n::turn_message(locale, title, outcome, scheduled, turn.error.as_deref(), excerpt.as_deref());
     Message {
-        title: format!("{name}: {what}"),
+        title,
         body,
+        open_label: Lang::of(locale).open_in_cedar().into(),
         url: format!("{}/#/c/{}", state.cfg.public_url, turn.conversation_id),
         tag: turn.id.to_string(),
         conversation_id: Some(turn.conversation_id),
@@ -1158,7 +1164,8 @@ pub async fn dispatch(state: &AppState, turn_id: Uuid) -> Result<Option<Result<S
     if !wanted(scope, &turn, scheduled) {
         return Ok(None);
     }
-    let message = message_for(state, &turn, conversation.as_ref().and_then(|c| c.title.as_deref()), scheduled);
+    let locale = state.store.preferences().await?.locale;
+    let message = message_for(state, &turn, conversation.as_ref().and_then(|c| c.title.as_deref()), scheduled, locale.as_deref());
     let outcome = send(state, &settings, method, &message).await;
     match &outcome {
         Ok(detail) => tracing::info!(turn_id = %turn.id, method = method.as_str(), detail, "notification sent"),
@@ -1289,7 +1296,7 @@ mod tests {
     #[test]
     fn android_pushes_carry_no_text() {
         let id = Uuid::now_v7();
-        let message = Message { title: "Secret plans: finished".into(), body: "the plan is…".into(), url: "http://x/#/c/1".into(), tag: "t-1".into(), conversation_id: Some(id) };
+        let message = Message { title: "Secret plans: finished".into(), body: "the plan is…".into(), url: "http://x/#/c/1".into(), tag: "t-1".into(), conversation_id: Some(id), open_label: "Open in Cedar".into() };
         assert_eq!(android_payload(&message), json!({ "kind": "turn", "conversation_id": id.to_string(), "tag": "t-1" }));
         let test = Message { conversation_id: None, ..message };
         assert_eq!(android_payload(&test), json!({ "kind": "test", "conversation_id": "", "tag": "t-1" }));

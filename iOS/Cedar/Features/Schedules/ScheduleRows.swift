@@ -162,13 +162,13 @@ private struct ScheduleRow: View {
                         .lineLimit(1)
                     HStack(spacing: 4) {
                         if schedule.enabled {
-                            Text("Next \(schedule.nextRunAt, format: .relative(presentation: .named))")
+                            Text("Next \(schedule.nextRunAt, format: .relative(presentation: .named).locale(L10n.locale))")
                         } else {
                             Label("Paused", systemImage: "pause.circle")
                                 .labelStyle(.titleAndIcon)
                         }
                         if let last = schedule.lastRun {
-                            Text("·")
+                            Text(verbatim: "·")
                             RunOutcomeLabel(outcome: last.outcome)
                         }
                     }
@@ -181,7 +181,7 @@ private struct ScheduleRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(unread ? "Unread" : "")
+        .accessibilityValue(unread ? L10n.string("Unread") : "")
     }
 }
 
@@ -199,7 +199,7 @@ private struct RunRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(run.dueAt, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+                    Text(run.dueAt, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute().locale(L10n.locale))
                         .font(run.unread ? .subheadline.weight(.semibold) : .subheadline)
                     if starred { StarMark() }
                 }

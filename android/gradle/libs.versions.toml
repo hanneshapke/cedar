@@ -6,6 +6,7 @@ serialization = "1.9.0"
 okhttp = "4.12.0"
 composeBom = "2024.12.01"
 activityCompose = "1.9.3"
+appcompat = "1.7.0"
 lifecycle = "2.8.7"
 coreKtx = "1.15.0"
 fragment = "1.8.5"
@@ -29,6 +30,7 @@ junit = { module = "junit:junit", version.ref = "junit" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }

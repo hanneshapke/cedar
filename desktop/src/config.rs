@@ -35,6 +35,10 @@ pub struct Config {
     pub check_updates: bool,
     /// The release whose banner was dismissed; a later one shows again.
     pub dismissed_update: String,
+    /// The language picked on the setup page (`de-CH`, `fr-FR`, ...; see i18n.rs), for the page,
+    /// the tray menu, and cedar's `DEFAULT_LOCALE`. Empty until one is picked: the page then
+    /// asks first.
+    pub locale: String,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
@@ -73,6 +77,7 @@ impl Default for Config {
             tailscale_https_port: 443,
             check_updates: true,
             dismissed_update: String::new(),
+            locale: String::new(),
             cedar_env: BTreeMap::new(),
             chat_env: BTreeMap::new(),
             secrets: Secrets::default(),
@@ -206,6 +211,7 @@ mod tests {
         assert!(!cfg.tailscale_share);
         assert_eq!(cfg.tailscale_https_port, 443);
         assert!(cfg.check_updates);
+        assert_eq!(cfg.locale, "");
         assert_eq!(cfg.other["future_setting"], 1);
         let back = serde_json::to_value(&cfg).unwrap();
         assert_eq!(back["future_setting"], 1);

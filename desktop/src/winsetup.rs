@@ -11,7 +11,8 @@
 
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use crate::installer::{last_tagged, ERROR};
+use crate::i18n::{t, tf};
+use crate::installer::last_error;
 use std::path::Path;
 
 /// `wsl --install` and the WSL 2 backend need Windows 10 version 2004 or newer.
@@ -52,10 +53,9 @@ const MACHINE_SCRIPT: &str = "$cs = Get-CimInstance Win32_ComputerSystem; \
 fn blocker(m: &Machine) -> Option<crate::app::SetupStatus> {
     use crate::app::SetupStatus;
     if m.build < MIN_BUILD {
-        return Some(SetupStatus::Failed(format!(
-            "WSL 2 needs Windows 10 version 2004 (build {MIN_BUILD}) or newer, and this PC runs \
-             build {}. Update Windows in Settings → Windows Update, then try again.",
-            m.build
+        return Some(SetupStatus::Failed(tf(
+            "win.too_old",
+            &[("min", &MIN_BUILD.to_string()), ("build", &m.build.to_string())],
         )));
     }
     if !m.hypervisor && !m.firmware {
@@ -80,18 +80,13 @@ fn outcome(code: Option<i32>, log: &str, stderr: &str) -> Outcome {
         Some(EXIT_SIGN_OUT) => Outcome::SignOut,
         Some(EXIT_RESTART) => Outcome::Restart,
         Some(EXIT_DECLINED) => Outcome::Declined,
-        Some(EXIT_CHANGED) => Outcome::Failed(
-            "the setup script was changed before it could run, so it didn't; try again".into(),
-        ),
+        Some(EXIT_CHANGED) => Outcome::Failed(t("setup.script_changed")),
         _ => Outcome::Failed(
-            last_tagged(log, ERROR)
+            last_error(log)
                 .or_else(|| Some(stderr.trim().to_string()).filter(|s| !s.is_empty()))
                 .unwrap_or_else(|| {
-                    format!(
-                        "setting up Docker stopped (exit code {}); docker-setup.log in the logs \
-                         folder says how far it got",
-                        code.map_or("none".to_string(), |c| c.to_string())
-                    )
+                    let code = code.map_or(t("setup.none"), |c| c.to_string());
+                    tf("setup.docker_stopped", &[("code", &code)])
                 }),
         ),
     }
@@ -192,9 +187,9 @@ exit 0
 "#;
 
 /// What the page says while Windows waits for the UAC prompt to be answered.
-pub const WAITING_FOR_PERMISSION: &str =
-    "Waiting for permission: Windows asks whether Cedar may make changes to this PC. Choose Yes. \
-     If no prompt appears, click the flashing shield in the taskbar.";
+pub fn waiting_for_permission() -> String {
+    t("win.waiting_for_permission")
+}
 
 fn elevated_script(log: &Path, installer: Option<&Path>, user: &str) -> String {
     let installer = installer
@@ -285,7 +280,7 @@ mod windows {
     }
 
     async fn run(state: &AppState) -> Result<SetupStatus> {
-        state.set_docker_setup(SetupStatus::Running("Checking this PC".into()));
+        state.set_docker_setup(SetupStatus::Running(t("setup.checking_pc")));
         let machine = machine().await?;
         if let Some(blocked) = blocker(&machine) {
             return Ok(blocked);
@@ -295,7 +290,7 @@ mod windows {
             None => Some(download_installer(state, machine.arm64).await?),
         };
 
-        state.set_docker_setup(SetupStatus::Running(WAITING_FOR_PERMISSION.into()));
+        state.set_docker_setup(SetupStatus::Running(waiting_for_permission()));
         let log = state.paths.logs.join("docker-setup.log");
         let script = elevated_script(&log, installer.as_deref(), &current_user());
         let (code, stderr, log_text) =
@@ -321,12 +316,7 @@ mod windows {
                 open_again_after_sign_in()?;
                 SetupStatus::NeedsRestart
             }
-            Outcome::Declined => SetupStatus::Failed(
-                "Windows did not get permission to make changes, so nothing was installed. Click \
-                 Set up Docker again and choose Yes; on a work PC, an administrator may have to \
-                 enter their password."
-                    .into(),
-            ),
+            Outcome::Declined => SetupStatus::Failed(t("win.declined_docker")),
             Outcome::Failed(why) => SetupStatus::Failed(why),
         })
     }

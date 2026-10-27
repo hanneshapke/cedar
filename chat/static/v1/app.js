@@ -22,7 +22,7 @@ const els = {
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
 const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
-const NO_MODELS = 'No model is registered yet: an admin adds one under Settings → Model server & API keys.';
+const NO_MODELS = tr('v1.noModels');
 
 const state = {
   config: { auth_required: false },
@@ -94,11 +94,11 @@ async function copyText(text, button) {
     await navigator.clipboard.writeText(text);
     if (button) {
       const old = button.innerHTML;
-      button.innerHTML = `${ICONS.check}Copied`;
+      button.innerHTML = `${ICONS.check}${escapeHtml(tr('v1.copied'))}`;
       setTimeout(() => { button.innerHTML = old; }, 1500);
     }
   } catch {
-    toast('Could not copy to the clipboard');
+    toast(tr('v1.copyFailed'));
   }
 }
 
@@ -152,7 +152,7 @@ function splitRow(line) {
 
 function codeBlock(code, lang) {
   return `<div class="code"><div class="code-head"><span>${escapeHtml(lang || 'text')}</span>` +
-    `<button type="button" class="copy-btn" data-copy-code>${ICONS.copy}Copy</button></div>` +
+    `<button type="button" class="copy-btn" data-copy-code>${ICONS.copy}${escapeHtml(tr('v1.copy'))}</button></div>` +
     `<pre><code>${escapeHtml(code)}</code></pre></div>`;
 }
 
@@ -265,8 +265,8 @@ function askToken(rejected) {
   if (!tokenPrompt) {
     tokenPrompt = new Promise((resolve) => {
       els.tokenMessage.textContent = rejected
-        ? 'That token was not accepted. Enter the access token for this server.'
-        : 'This server requires an access token.';
+        ? tr('v1.token.rejected')
+        : tr('v1.token.required');
       els.tokenInput.value = '';
       els.tokenForm.onsubmit = () => {
         memoryToken = els.tokenInput.value.trim();
@@ -295,7 +295,7 @@ async function api(method, path, body) {
   }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error?.message || `Request failed (${res.status})`);
+  if (!res.ok) throw new Error(data?.error?.message || tr('v1.requestFailed', { status: String(res.status) }));
   return data;
 }
 
@@ -313,7 +313,7 @@ async function loadConversations() {
 function renderSidebar() {
   els.convList.textContent = '';
   if (!state.conversations.length) {
-    els.convList.append(h('div', 'empty-list', 'No conversations yet'));
+    els.convList.append(h('div', 'empty-list', escapeHtml(tr('v1.noConversations'))));
     return;
   }
   for (const c of state.conversations) {
@@ -321,16 +321,16 @@ function renderSidebar() {
     a.href = `#/c/${c.id}`;
     if (state.current?.id === c.id) a.classList.add('active');
     const name = h('span', 'name');
-    name.textContent = c.title || 'New chat';
+    name.textContent = c.title || tr('v1.newChat');
     a.append(name);
     a.classList.toggle('is-unread', Boolean(c.unread));
     if (state.current?.id === c.id && state.activeTurn) a.append(h('span', 'live'));
-    else if (c.needs_answer) a.append(h('span', 'needs', 'Needs answer'));
+    else if (c.needs_answer) a.append(h('span', 'needs', escapeHtml(tr('v1.needsAnswer'))));
     else if (c.unread) a.append(h('span', 'unread'));
     const del = h('button', 'del', ICONS.trash);
     del.type = 'button';
-    del.title = 'Delete';
-    del.setAttribute('aria-label', `Delete ${c.title || 'conversation'}`);
+    del.title = tr('v1.delete');
+    del.setAttribute('aria-label', c.title ? tr('v1.deleteNamed', { title: c.title }) : tr('v1.deleteConversation'));
     del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteConversation(c); });
     a.append(del);
     a.addEventListener('click', () => toggleSidebar(false));
@@ -344,7 +344,7 @@ function toggleSidebar(open) {
 }
 
 async function deleteConversation(c) {
-  if (!(await cedarConfirm(`Delete "${c.title || 'New chat'}"? This cannot be undone.`, { ok: 'Delete' }))) return;
+  if (!(await cedarConfirm(tr('v1.confirmDelete', { title: c.title || tr('v1.newChat') }), { ok: tr('v1.delete') }))) return;
   try {
     await api('DELETE', `/conversations/${c.id}`);
   } catch (e) {
@@ -369,7 +369,7 @@ function resetView() {
 function setHeader() {
   const c = state.current;
   els.main.classList.toggle('empty', !c);
-  els.title.textContent = c ? (c.title || 'New chat') : '';
+  els.title.textContent = c ? (c.title || tr('v1.newChat')) : '';
   els.deleteChat.hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
@@ -403,8 +403,8 @@ function showNewChat() {
   cedarAttach.clear();
   setHeader();
   const hour = new Date().getHours();
-  els.greeting.textContent = hour < 5 ? 'Up late? How can I help?' : hour < 12 ? 'Good morning. How can I help?'
-    : hour < 18 ? 'How can I help you today?' : 'Good evening. How can I help?';
+  els.greeting.textContent = tr(hour < 5 ? 'v1.greeting.night' : hour < 12 ? 'v1.greeting.morning'
+    : hour < 18 ? 'v1.greeting.day' : 'v1.greeting.evening');
   renderSidebar();
   updateComposer();
   els.input.focus();
@@ -500,7 +500,7 @@ function addTurn(turn) {
   bubble.append(document.createTextNode(turn.prompt));
   user.append(bubble);
   const body = h('div', 'assistant');
-  const thinking = h('div', 'thinking', `${ICONS.logo}<span>Thinking…</span>`);
+  const thinking = h('div', 'thinking', `${ICONS.logo}<span>${escapeHtml(tr('v1.thinking'))}</span>`);
   body.append(thinking);
   el.append(user, body);
   cedarClarify.settle(els.thread); // this message answers any question still open above it
@@ -555,7 +555,7 @@ async function followEvents(view) {
       if (res.status === 401) { await askToken(true); continue; }
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        const err = new Error(data?.error?.message || `Could not load this response (${res.status})`);
+        const err = new Error(data?.error?.message || tr('v1.loadResponseFailed', { status: String(res.status) }));
         err.fatal = res.status < 500;
         throw err;
       }
@@ -589,11 +589,11 @@ async function followEvents(view) {
 
 // -- the plan, approvals, reasoning and sources ------------------------------------------------
 
-/** What the indicator under a running reply says. */
-function setThinking(view, text) {
+/** What the indicator under a running reply says: the text of `key` (a v1.thinking or v1.waiting.* key). */
+function setThinking(view, key) {
   const label = view.thinking.querySelector('span');
-  if (label) label.textContent = text;
-  view.thinking.classList.toggle('waiting', text.startsWith('Waiting'));
+  if (label) label.textContent = tr(key);
+  view.thinking.classList.toggle('waiting', key.startsWith('v1.waiting.'));
 }
 
 const sourcesOf = (view) => cedarTrust.sources.collect(view.calls);
@@ -607,15 +607,15 @@ function showPlan(view, data, awaiting) {
   const waits = awaiting && !view.done && ACTIVE.has(view.turn.status);
   const el = cedarTrust.plan.element(plan, {
     awaiting: waits,
-    note: waits ? cedarTrust.plan.awaitingNote(plan) : data.by === 'user' ? 'Agreed' : data.by === 'timeout' ? 'No answer, so Cedar went ahead' : '',
+    note: waits ? cedarTrust.plan.awaitingNote(plan) : data.by === 'user' ? tr('v1.plan.agreed') : data.by === 'timeout' ? tr('v1.plan.timeout') : '',
     onApprove: async (steps) => {
       try { await api('POST', `/turns/${view.turn.id}/plan`, { steps }); } catch (e) { toast(e.message); throw e; }
-      setThinking(view, 'Thinking…');
+      setThinking(view, 'v1.thinking');
     },
   });
   if (view.planEl) view.planEl.replaceWith(el); else place(view, el);
   view.planEl = el;
-  if (waits) setThinking(view, 'Waiting for your go on the plan');
+  if (waits) setThinking(view, 'v1.waiting.plan');
 }
 
 /** A risky call waits on the reader: the card with Allow once / Always / Skip. */
@@ -625,13 +625,13 @@ function showApproval(view, d) {
     onDecide: async (decision) => {
       try { await api('POST', `/turns/${view.turn.id}/approvals/${encodeURIComponent(spec.id)}`, { decision }); }
       catch (e) { toast(e.message); throw e; }
-      setThinking(view, 'Thinking…');
+      setThinking(view, 'v1.thinking');
     },
   });
   if (view.done || !ACTIVE.has(view.turn.status)) el.querySelector('.cedar-approval-actions').hidden = true;
   view.approvals.set(String(d.id), el);
   place(view, el);
-  setThinking(view, 'Waiting for your OK');
+  setThinking(view, 'v1.waiting.approval');
 }
 
 /** Cedar's reasoning, folded; text for the same stretch of thinking is added to one fold. */
@@ -651,7 +651,7 @@ function applyEvent(view, event) {
   switch (event.type) {
     case 'run.started': view.started = d; break;
     case 'plan': showPlan(view, d, d.awaiting === true); break;
-    case 'plan.updated': showPlan(view, d, false); setThinking(view, 'Thinking…'); break;
+    case 'plan.updated': showPlan(view, d, false); setThinking(view, 'v1.thinking'); break;
     case 'assistant.reasoning': showReasoning(view, d); break;
     case 'approval.required': showApproval(view, d); break;
     case 'approval.resolved': {
@@ -661,7 +661,7 @@ function applyEvent(view, event) {
         el.querySelector('.cedar-approval-actions').hidden = false;
       }
       if (d.decision === 'allow' || d.decision === 'allow_always') view.approvalsGranted++;
-      setThinking(view, 'Thinking…');
+      setThinking(view, 'v1.thinking');
       break;
     }
     case 'assistant.text': {
@@ -764,7 +764,7 @@ function toolCall(view, d) {
   else shown = JSON.stringify(input, null, 2);
   const inputPre = h('pre');
   inputPre.textContent = shown;
-  body.append(h('div', 'label', 'Input'), inputPre);
+  body.append(h('div', 'label', escapeHtml(tr('v1.input'))), inputPre);
   details.append(summary, body);
   if (WRITING_TOOLS.includes(d.name) && typeof input.path === 'string') details.dataset.path = input.path;
   details.cedarInput = input; // for the images the result may point at
@@ -779,12 +779,14 @@ function toolResult(view, d) {
   details.classList.add(d.is_error ? 'err' : 'ok');
   details.querySelector('.state').innerHTML = d.is_error ? ICONS.cross : ICONS.check;
   if (typeof d.duration_ms === 'number') {
-    details.querySelector('.meta').textContent = d.duration_ms < 1000 ? `${d.duration_ms} ms` : `${(d.duration_ms / 1000).toFixed(1)} s`;
+    details.querySelector('.meta').textContent = d.duration_ms < 1000
+      ? `${cedarI18n.number(d.duration_ms)} ms`
+      : `${cedarI18n.number(d.duration_ms / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
   }
   const out = h('pre', 'output');
   const text = String(d.output ?? '');
-  out.textContent = text.trim() ? text : '(no output)';
-  const label = h('div', 'label', d.is_error ? 'Error' : 'Output');
+  out.textContent = text.trim() ? text : tr('v1.noOutput');
+  const label = h('div', 'label', escapeHtml(tr(d.is_error ? 'v1.error' : 'v1.output')));
   const written = !d.is_error && workspacePath(details.dataset.path);
   if (written) {
     label.classList.add('with-action');
@@ -814,7 +816,7 @@ function toolResult(view, d) {
   if (!card && !d.is_error) {
     const found = cedarChart.fromOutput(text);
     if (found.charts.length) {
-      out.textContent = found.text || '(no other output)';
+      out.textContent = found.text || tr('v1.noOtherOutput');
       details.after(...found.charts.map((spec) => cedarChart.element(spec)));
       scrollToBottom(false);
     }
@@ -847,8 +849,7 @@ function toolResult(view, d) {
 }
 
 /** Shown when the server stopped the reply at its output limit (`stop_reason: max_tokens`). */
-const CUT_OFF =
-  "The reply was cut off at the model's output limit. A model that thinks before answering can use all of it before writing any text. An admin can raise it under Settings → Server, as the model's Max tokens per reply.";
+const CUT_OFF = tr('v1.cutOff');
 
 function finishTurn(view, event) {
   if (view.done) return;
@@ -859,16 +860,16 @@ function finishTurn(view, event) {
   if (figures.length) view.body.append(...figures);
   if (event.type === 'run.failed') {
     const box = h('div', 'notice error');
-    box.textContent = d.error || 'Something went wrong.';
+    box.textContent = d.error || tr('v1.failed');
     view.body.append(box);
   } else if (event.type === 'run.cancelled') {
     const note = h('div', 'notice muted');
-    note.textContent = d.reason === 'server shutting down' ? 'Stopped: the server shut down.' : 'Stopped.';
+    note.textContent = d.reason === 'server shutting down' ? tr('v1.stoppedShutdown') : tr('v1.stopped');
     view.body.append(note);
   } else if (d.stop_reason === 'max_tokens') {
-    view.body.append(h('div', 'notice error', CUT_OFF));
+    view.body.append(h('div', 'notice error', escapeHtml(CUT_OFF)));
   } else if (!view.texts.length && d.stop_reason !== 'ask_user') {
-    view.body.append(h('div', 'notice muted', 'No text in this response.'));
+    view.body.append(h('div', 'notice muted', escapeHtml(tr('v1.noText'))));
   }
   for (const tool of view.tools.values()) {
     if (tool.classList.contains('running')) {
@@ -886,14 +887,14 @@ function finishTurn(view, event) {
   if (sources.length) {
     for (const md of view.mds) cedarTrust.sources.cite(md, sources);
     const box = h('details', 'sources');
-    box.append(h('summary', '', `${ICONS.globe}<span>Sources · ${sources.length}</span>${ICONS.chevron}`));
+    box.append(h('summary', '', `${ICONS.globe}<span>${escapeHtml(tr('v1.sources', { count: sources.length }))}</span>${ICONS.chevron}`));
     box.append(cedarTrust.sources.element(sources, { onOpen: (s) => s.path && downloadFile(workspacePath(s.path)) }));
     view.body.append(box);
   }
 
   const footer = h('div', 'turn-footer');
   if (view.texts.length) {
-    const copy = h('button', 'copy-btn', `${ICONS.copy}Copy`);
+    const copy = h('button', 'copy-btn', `${ICONS.copy}${escapeHtml(tr('v1.copy'))}`);
     copy.type = 'button';
     copy.addEventListener('click', () => copyText(view.texts.join('\n\n'), copy));
     footer.append(copy);
@@ -931,9 +932,10 @@ function workspacePath(path) {
 }
 
 function formatSize(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  const fixed = (x, digits) => cedarI18n.number(x, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  if (n < 1024) return tr('v1.size.b', { n: fixed(n, 0) });
+  if (n < 1024 * 1024) return tr('v1.size.kb', { n: fixed(n / 1024, n < 10 * 1024 ? 1 : 0) });
+  return tr('v1.size.mb', { n: fixed(n / (1024 * 1024), 1) });
 }
 
 /** API path (without the `/api` prefix) of the conversation's file listing, or of one file. */
@@ -943,9 +945,9 @@ function filesPath(path) {
 }
 
 function downloadButton(path) {
-  const button = h('button', 'copy-btn', `${ICONS.download}Download`);
+  const button = h('button', 'copy-btn', `${ICONS.download}${escapeHtml(tr('v1.download'))}`);
   button.type = 'button';
-  button.title = `Download ${path}`;
+  button.title = tr('v1.downloadNamed', { path });
   button.addEventListener('click', () => downloadFile(path, button));
   return button;
 }
@@ -955,7 +957,7 @@ const viewButton = (path) => cedarViewer.viewButton(path, { icon: ICONS.eye });
 
 /** Fetch a workspace file with the access token. Returns the ok response, or throws. */
 async function fetchWorkspaceFile(path) {
-  if (!state.current) throw new Error('No conversation is open.');
+  if (!state.current) throw new Error(tr('v1.noConversationOpen'));
   let res = await fetch(`/api${filesPath(path)}`, { headers: authHeaders() });
   if (res.status === 401) {
     await askToken(true);
@@ -963,7 +965,7 @@ async function fetchWorkspaceFile(path) {
   }
   if (!res.ok) {
     const data = await res.json().catch(() => null);
-    throw new Error(data?.error?.message || `Could not fetch the file (${res.status})`);
+    throw new Error(data?.error?.message || tr('v1.fetchFileFailed', { status: String(res.status) }));
   }
   return res;
 }
@@ -993,7 +995,7 @@ async function downloadFile(path, button) {
 function renderFiles(listing) {
   els.filesList.textContent = '';
   if (!listing.files.length) {
-    els.filesList.append(h('div', 'empty-list', 'No files in the workspace yet.'));
+    els.filesList.append(h('div', 'empty-list', escapeHtml(tr('v1.files.empty'))));
     return;
   }
   for (const f of listing.files) {
@@ -1011,14 +1013,14 @@ function renderFiles(listing) {
     row.append(downloadButton(f.path));
     els.filesList.append(row);
   }
-  if (listing.truncated) els.filesList.append(h('div', 'empty-list', 'Only the first 1,000 files are shown.'));
+  if (listing.truncated) els.filesList.append(h('div', 'empty-list', escapeHtml(tr('v1.files.truncated', { count: 1000 }))));
 }
 
 async function loadFiles() {
   if (!state.current) return;
   const id = state.current.id;
   els.filesList.textContent = '';
-  els.filesList.append(h('div', 'empty-list', 'Loading…'));
+  els.filesList.append(h('div', 'empty-list', escapeHtml(tr('v1.loading'))));
   try {
     const listing = await api('GET', filesPath());
     if (state.current?.id !== id || !els.filesDialog.open) return;
@@ -1043,10 +1045,10 @@ function openFiles() {
 function updateComposer() {
   const busy = Boolean(state.activeTurn);
   els.send.classList.toggle('stop', busy);
-  els.send.setAttribute('aria-label', busy ? 'Stop response' : 'Send message');
+  els.send.setAttribute('aria-label', tr(busy ? 'v1.stopResponse' : 'v1.send'));
   els.send.disabled = state.sending || state.noModels || (!busy && !els.input.value.trim());
-  els.input.placeholder = state.noModels ? NO_MODELS : state.current ? 'Reply to Cedar…' : 'How can I help you today?';
-  els.hint.textContent = busy ? 'Working… you can stop the response at any time.' : '';
+  els.input.placeholder = state.noModels ? NO_MODELS : tr(state.current ? 'v1.placeholder.reply' : 'v1.greeting.day');
+  els.hint.textContent = busy ? tr('v1.hint.working') : '';
   els.scheduleBtn.hidden = !state.current || busy || state.sending || !hasCompletedTurn();
 }
 
@@ -1070,7 +1072,7 @@ async function stopActive() {
 /** Send the answers from a question form; throws if they could not be sent, so the form stays open. */
 async function answerQuestions(text) {
   if (state.activeTurn || state.sending) {
-    toast('Wait for the response to finish, or stop it, before answering.');
+    toast(tr('v1.answerBusy'));
     throw new Error('busy');
   }
   if (!(await sendMessage(text))) throw new Error('not sent');
@@ -1096,7 +1098,7 @@ async function sendMessage(answer) {
       await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
-    const body = { content };
+    const body = { content, locale: cedarI18n.locale };
     if (els.model.value) body.model = els.model.value;
     if (els.reasoning.value) body.reasoning = els.reasoning.value;
     const attachments = typed ? cedarAttach.payload() : [];
@@ -1198,6 +1200,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  // The language comes first: a new browser is asked for it before anything else.
+  await cedarLanguage.ready;
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown });
@@ -1220,7 +1224,7 @@ async function init() {
     const res = await fetch('/api/config');
     state.config = await res.json();
   } catch {
-    toast('Could not reach the server');
+    toast(tr('v1.unreachable'));
   }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: loadConversations });

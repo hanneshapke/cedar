@@ -60,7 +60,10 @@ data class Conversation(
     @SerialName("updated_at") val updatedAt: Instant,
 ) {
     /** The title cedar-chat gave it (the first message), or a placeholder. */
-    val displayTitle: String get() = title?.trim().orEmpty().ifEmpty { "New chat" }
+    val displayTitle: String get() = titleOr("New chat")
+
+    /** The title cedar-chat gave it, or `placeholder` (the app's, in the user's language). */
+    fun titleOr(placeholder: String): String = title?.trim().orEmpty().ifEmpty { placeholder }
     val isStarred: Boolean get() = starredAt != null
 }
 
@@ -161,9 +164,12 @@ data class Schedule(
             "weekly" -> weekday?.let { names.getOrNull(it) } ?: "Weekly"
             else -> frequency.replaceFirstChar { it.uppercase() }
         }
-        val zone = if (timezone == deviceZone) "" else " ($timezone)"
+        val zone = zoneLabel(deviceZone)?.let { " ($it)" } ?: ""
         return "$whenText at $timeOfDay$zone"
     }
+
+    /** The schedule's time zone, when it isn't this device's. */
+    fun zoneLabel(deviceZone: String = TimeZone.getDefault().id): String? = timezone.takeIf { it != deviceZone }
 }
 
 /**

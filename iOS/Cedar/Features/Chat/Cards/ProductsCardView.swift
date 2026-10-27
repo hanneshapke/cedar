@@ -86,11 +86,19 @@ struct ProductsCardView: View {
     }
 
     private var subtitle: String {
-        var parts = [card.store, "\(card.options.count) of \(card.total.formatted()) result\(card.total == 1 ? "" : "s")"]
+        let count = { (n: Int) in n.formatted(.number.locale(L10n.locale)) }
+        var parts = [card.store, L10n.format(card.total == 1 ? "%lld of %@ result" : "%lld of %@ results", card.options.count, count(card.total))]
         if let found = card.productsFound, let pages = card.pages {
-            parts = ["\(card.options.count) picked from \(found.formatted()) product\(found == 1 ? "" : "s") on \(pages.formatted()) page\(pages == 1 ? "" : "s")"]
+            let key: String
+            switch (found == 1, pages == 1) {
+            case (true, true): key = "%lld picked from %@ product on %@ page"
+            case (true, false): key = "%lld picked from %@ product on %@ pages"
+            case (false, true): key = "%lld picked from %@ products on %@ page"
+            case (false, false): key = "%lld picked from %@ products on %@ pages"
+            }
+            parts = [L10n.format(key, card.options.count, count(found), count(pages))]
         }
-        if let sort = card.sort { parts.append(sort) }
+        if let sort = card.sort { parts.append(L10n.string(sort)) }
         return parts.joined(separator: " · ")
     }
 
@@ -144,12 +152,12 @@ struct ProductsCardView: View {
     private func tileLabel(_ p: ProductsCard.Product) -> String {
         var parts = [p.name, priceText(p)]
         if let average = p.reviews.average {
-            parts.append("\(ProductFormat.rating(average)) stars from \(p.reviews.count.formatted()) reviews")
+            parts.append(L10n.format("%@ stars from %@ reviews", ProductFormat.rating(average), p.reviews.count.formatted(.number.locale(L10n.locale))))
         } else {
-            parts.append("no reviews")
+            parts.append(L10n.string("no reviews"))
         }
         parts.append(p.reviews.verdict.label)
-        parts += card.badges[p.id] ?? []
+        parts += (card.badges[p.id] ?? []).map { L10n.string($0) }
         return parts.joined(separator: ", ")
     }
 
@@ -158,7 +166,7 @@ struct ProductsCardView: View {
     private var detail: some View {
         let p = product
         let badges = card.badges[p.id] ?? []
-        let sub = [p.brand, p.model.map { "Model \($0)" }, p.color].compactMap { $0 }.joined(separator: " · ")
+        let sub = [p.brand, p.model.map { L10n.format("Model %@", $0) }, p.color].compactMap { $0 }.joined(separator: " · ")
         return VStack(alignment: .leading, spacing: 12) {
             if !isOption(p.id), let origin = origin, let from = card.product(origin) {
                 Button {
@@ -265,7 +273,7 @@ struct ProductsCardView: View {
                     ForEach(p.sources, id: \.self) { n in
                         if let source = card.sources[n] {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text("\(n)")
+                                Text(verbatim: "\(n)")
                                     .font(.caption2.monospacedDigit())
                                     .foregroundStyle(.secondary)
                                 if let url = source.url {
@@ -291,7 +299,7 @@ struct ProductsCardView: View {
         }
     }
 
-    private func prosCons(_ title: String, _ items: [String], icon: String, tint: Color) -> some View {
+    private func prosCons(_ title: LocalizedStringKey, _ items: [String], icon: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             CardLabel(title)
             ForEach(items, id: \.self) { item in
@@ -309,8 +317,9 @@ struct ProductsCardView: View {
 
     /// A product's price as text: about, when it comes from text rather than a store page.
     private func priceText(_ p: ProductsCard.Product) -> String {
-        guard let price = p.price else { return "price at the store" }
-        return (p.priceChecked ? "" : "about ") + ProductFormat.money(price, card.currency(of: p))
+        guard let price = p.price else { return L10n.string("price at the store") }
+        let amount = ProductFormat.money(price, card.currency(of: p))
+        return p.priceChecked ? amount : L10n.format("about %@", amount)
     }
 
     /// How much more `c` costs than `p`, when both prices are known and in one currency.
@@ -356,9 +365,9 @@ struct ProductsCardView: View {
     /// Only what the store said: a page that doesn't mention stock gets no chip for it.
     private func chipList(_ p: ProductsCard.Product) -> [Chip] {
         var chips: [Chip] = []
-        if let online = p.online { chips.append(Chip(text: online ? "In stock" : "Out of stock", ok: online)) }
-        if p.inStore == true { chips.append(Chip(text: "In store", ok: true)) }
-        if p.freeShipping == true { chips.append(Chip(text: "Free shipping", ok: true)) }
+        if let online = p.online { chips.append(Chip(text: L10n.string(online ? "In stock" : "Out of stock"), ok: online)) }
+        if p.inStore == true { chips.append(Chip(text: L10n.string("In store"), ok: true)) }
+        if p.freeShipping == true { chips.append(Chip(text: L10n.string("Free shipping"), ok: true)) }
         if let condition = p.condition, condition.lowercased() != "new" { chips.append(Chip(text: condition, ok: false)) }
         return chips
     }
@@ -421,7 +430,7 @@ struct ProductsCardView: View {
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(c.price.map { (c.priceChecked ? "" : "≈ ") + ProductFormat.money($0, card.currency(of: c)) } ?? "Price at the store")
+                    Text(c.price.map { (c.priceChecked ? "" : "≈ ") + ProductFormat.money($0, card.currency(of: c)) } ?? L10n.string("Price at the store"))
                         .font(.caption.weight(.bold))
                         .monospacedDigit()
                     if let diff {
@@ -440,8 +449,8 @@ struct ProductsCardView: View {
     }
 
     private func difference(_ diff: Double, _ currency: String) -> String {
-        if abs(diff) < 0.005 { return "same price" }
-        return "\(ProductFormat.money(abs(diff), currency)) \(diff < 0 ? "less" : "more")"
+        if abs(diff) < 0.005 { return L10n.string("same price") }
+        return L10n.format(diff < 0 ? "%@ less" : "%@ more", ProductFormat.money(abs(diff), currency))
     }
 
     // MARK: Footer
@@ -449,7 +458,7 @@ struct ProductsCardView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 3) {
             if let asOf = card.asOf {
-                Text("As of \(asOf.formatted(date: .abbreviated, time: .shortened))")
+                Text("As of \(asOf.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: L10n.locale)))")
             }
             if let disclaimer = card.disclaimer {
                 Text(disclaimer).foregroundStyle(.tertiary)
@@ -474,7 +483,7 @@ private struct ReviewsPanel: View {
                     Text(ProductFormat.rating(average))
                         .font(.title3.weight(.bold))
                         .monospacedDigit()
-                    Text("from \(reviews.count.formatted()) review\(reviews.count == 1 ? "" : "s")")
+                    Text(reviews.count == 1 ? "from \(count) review" : "from \(count) reviews")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
@@ -488,7 +497,7 @@ private struct ReviewsPanel: View {
                     HStack {
                         Text("Adjusted for the number of reviews").foregroundStyle(.secondary)
                         Spacer(minLength: 6)
-                        Text("\(ProductFormat.rating(adjusted)) / 5")
+                        Text(verbatim: "\(ProductFormat.rating(adjusted)) / 5")
                             .fontWeight(.semibold)
                             .monospacedDigit()
                     }
@@ -502,7 +511,7 @@ private struct ReviewsPanel: View {
             HStack(spacing: 8) {
                 VerdictPill(verdict: reviews.verdict, small: false)
                 if reviews.count > 0 {
-                    Text("\(reviews.confidence) confidence")
+                    Text(confidence)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -516,6 +525,17 @@ private struct ReviewsPanel: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var count: String { reviews.count.formatted(.number.locale(L10n.locale)) }
+
+    /// "high confidence", for the reading's `low`, `medium` or `high`.
+    private var confidence: LocalizedStringKey {
+        switch reviews.confidence {
+        case "high": return "high confidence"
+        case "medium": return "medium confidence"
+        default: return "low confidence"
+        }
     }
 }
 
@@ -594,7 +614,7 @@ private struct PriceLine: View {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text((product.priceChecked ? "" : "≈ ") + amount)
                     .font(large ? .title2.weight(.bold) : .subheadline.weight(.bold))
-                    .accessibilityLabel(product.priceChecked ? amount : "about \(amount)")
+                    .accessibilityLabel(product.priceChecked ? amount : L10n.format("about %@", amount))
                 if let regular = product.regularPrice {
                     Text(ProductFormat.money(regular, currency))
                         .font(large ? .subheadline : .caption2)
@@ -638,7 +658,7 @@ private struct RatingLine: View {
             Stars(value: reviews.average, size: 10)
             if let average = reviews.average {
                 Text(ProductFormat.rating(average)).fontWeight(.semibold)
-                Text("(\(reviews.count.formatted()))").foregroundStyle(.secondary)
+                Text(verbatim: "(\(reviews.count.formatted(.number.locale(L10n.locale))))").foregroundStyle(.secondary)
             } else {
                 Text("No reviews").foregroundStyle(.secondary)
             }
@@ -662,7 +682,7 @@ private struct Stars: View {
         }
         .foregroundStyle(value == nil ? Color.secondary : Color.orange)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(value.map { "\(ProductFormat.rating($0)) out of 5 stars" } ?? "Not rated")
+        .accessibilityLabel(value.map { L10n.format("%@ out of 5 stars", ProductFormat.rating($0)) } ?? L10n.string("Not rated"))
     }
 
     private func symbol(_ i: Int) -> String {
@@ -695,7 +715,8 @@ private struct PickBadge: View {
     let text: String
 
     var body: some View {
-        Text(text.uppercased())
+        // The picks' names are English keys; a result's own badges are shown as they are.
+        Text(L10n.string(text).uppercased(with: L10n.locale))
             .font(.system(size: 9, weight: .bold))
             .tracking(0.3)
             .foregroundStyle(.white)
@@ -709,12 +730,12 @@ private struct PickBadge: View {
 enum ProductFormat {
     /// `x` as a price in `currency`, an ISO code, with cents.
     static func money(_ x: Double, _ currency: String) -> String {
-        x.formatted(.currency(code: currency))
+        x.formatted(.currency(code: currency).locale(L10n.locale))
     }
 
     /// A rating out of 5 with one decimal.
     static func rating(_ x: Double) -> String {
-        x.formatted(.number.precision(.fractionLength(1)))
+        x.formatted(.number.precision(.fractionLength(1)).locale(L10n.locale))
     }
 
     static func color(_ verdict: ProductsCard.Verdict) -> Color {

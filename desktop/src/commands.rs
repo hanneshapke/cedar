@@ -1,6 +1,7 @@
 //! What the setup page may ask the app to do. Nothing here hands the page a server key.
 
 use crate::app::{self, AppState, Status};
+use crate::i18n::{self, t};
 use crate::models;
 use tauri::{AppHandle, Manager, State};
 
@@ -26,7 +27,7 @@ pub fn install_docker(app: AppHandle) -> Result<(), String> {
     #[cfg(any(windows, target_os = "macos"))]
     {
         if !app.state::<AppState>().begin_docker_setup() {
-            return Err("Docker is already being set up".into());
+            return Err(t("cmd.docker_busy"));
         }
         #[cfg(windows)]
         tauri::async_runtime::spawn(crate::winsetup::install(app));
@@ -47,7 +48,7 @@ pub fn install_tailscale(app: AppHandle) -> Result<(), String> {
     #[cfg(any(windows, target_os = "macos"))]
     {
         if !app.state::<AppState>().begin_tailscale_setup() {
-            return Err("Tailscale is already being installed".into());
+            return Err(t("cmd.tailscale_busy"));
         }
         tauri::async_runtime::spawn(crate::tssetup::install(app));
         Ok(())
@@ -65,7 +66,7 @@ pub fn finish_docker_setup(state: State<'_, AppState>) -> Result<(), String> {
     let sign_out = match state.docker_setup() {
         app::SetupStatus::NeedsSignOut => true,
         app::SetupStatus::NeedsRestart => false,
-        _ => return Err("the Docker setup doesn't need a restart".into()),
+        _ => return Err(t("cmd.no_restart")),
     };
     #[cfg(windows)]
     return crate::winsetup::restart(sign_out).map_err(fail);
@@ -92,7 +93,7 @@ pub fn save_model_server(
     let base_url = models::normalize_base_url(&base_url).map_err(fail)?;
     let model = model.trim().to_string();
     if model.is_empty() {
-        return Err("pick a model".into());
+        return Err(t("cmd.pick_model"));
     }
     app.state::<AppState>()
         .update_config(|c| {
@@ -125,7 +126,7 @@ pub async fn set_share(app: AppHandle, enabled: bool) -> Result<(), String> {
 pub fn copy_share_url(state: State<'_, AppState>) -> Result<(), String> {
     let url = state
         .share_url()
-        .ok_or("the chat is not shared on the tailnet")?;
+        .ok_or_else(|| t("cmd.not_shared"))?;
     crate::tray::copy_to_clipboard(&url).map_err(fail)
 }
 
@@ -135,7 +136,7 @@ pub fn copy_share_url(state: State<'_, AppState>) -> Result<(), String> {
 pub fn share_qr(state: State<'_, AppState>) -> Result<String, String> {
     let url = state
         .share_url()
-        .ok_or("the chat is not shared on the tailnet")?;
+        .ok_or_else(|| t("cmd.not_shared"))?;
     let link = cedar_pairing::connect::link(&url, &state.config().secrets.chat_access_token);
     cedar_pairing::connect::qr_svg(&link).map_err(fail)
 }
@@ -189,4 +190,19 @@ pub fn dismiss_update(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn set_check_updates(app: AppHandle, enabled: bool) -> Result<(), String> {
     crate::update::set_enabled(&app, enabled).map_err(fail)
+}
+
+/// The language picked on the setup page (its first step, or its Language menu): saved, and used
+/// from now on for the tray menu and the app's own messages. cedar gets it as `DEFAULT_LOCALE`
+/// the next time it starts; a running one isn't restarted for it.
+#[tauri::command]
+pub fn set_locale(app: AppHandle, locale: String) -> Result<(), String> {
+    let tag = i18n::normalize(&locale)
+        .ok_or_else(|| i18n::tf("cmd.bad_locale", &[("locale", locale.trim())]))?;
+    app.state::<AppState>()
+        .update_config(|c| c.locale = tag.to_string())
+        .map_err(fail)?;
+    i18n::set_locale(tag);
+    crate::tray::relabel(&app);
+    Ok(())
 }

@@ -33,7 +33,14 @@ const cedarStocks = (() => {
   const RANGE_KEYS = { '1mo': '1M', '3mo': '3M', '6mo': '6M', '1y': '1Y', '2y': '2Y', '5y': '5Y' };
   const DAY_MS = 86400000;
   const RETURN_COLS = [['1w', '1W'], ['1m', '1M'], ['3m', '3M'], ['ytd', 'YTD'], ['6m', '6M'], ['1y', '1Y']];
-  const CALLS = { buy: 'Buy', hold: 'Hold', sell: 'Sell' };
+  const CALLS = { buy: 'stock.call.buy', hold: 'stock.call.hold', sell: 'stock.call.sell' };
+  /** The periods' names as shown (the RANGES and RETURN_COLS labels above are their keys). */
+  const PERIOD = {
+    '1W': 'stock.period.1W', '1M': 'stock.period.1M', '3M': 'stock.period.3M', '6M': 'stock.period.6M',
+    '1Y': 'stock.period.1Y', '2Y': 'stock.period.2Y', '5Y': 'stock.period.5Y', YTD: 'stock.period.YTD',
+  };
+  const period = (k) => tr(PERIOD[k]);
+  const CONFIDENCE = { low: 'stock.confidence.low', medium: 'stock.confidence.medium', high: 'stock.confidence.high' };
 
   function el(tag, className, text) {
     const e = document.createElement(tag);
@@ -165,19 +172,26 @@ const cedarStocks = (() => {
 
   // -- formatting ----------------------------------------------------------------------------
 
-  const SYMBOLS = { USD: '$', EUR: '€', GBP: '£', JPY: '¥', INR: '₹', CNY: '¥', KRW: '₩' };
-
   /** `x` in `currency`, with as many decimals as a price the size of `scale` (default `x`) needs. */
   function money(x, currency, scale = x) {
     if (x === null) return '–';
     const digits = Math.abs(scale) >= 1000 ? 0 : Math.abs(scale) >= 1 ? 2 : 4;
-    const n = x.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-    const sym = SYMBOLS[currency];
-    if (sym) return `${sym}${n}`;
+    const opts = { minimumFractionDigits: digits, maximumFractionDigits: digits };
+    // Only an ISO code: Intl would read "GBp" (pence) as pounds.
+    if (/^[A-Z]{3}$/.test(currency)) {
+      try {
+        return x.toLocaleString(cedarI18n.locale, { ...opts, style: 'currency', currency });
+      } catch { /* not a currency code Intl knows: the number and the code */ }
+    }
+    const n = x.toLocaleString(cedarI18n.locale, opts);
     return currency ? `${n} ${currency}` : n;
   }
 
-  const signed = (x, digits = 1) => (x === null ? '–' : `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x).toFixed(digits)}%`);
+  /** `x` percent (not a fraction) written the locale's way, with `min` to `max` decimals. */
+  const percent = (x, min, max = min) => (x / 100).toLocaleString(cedarI18n.locale, {
+    style: 'percent', minimumFractionDigits: min, maximumFractionDigits: max,
+  });
+  const signed = (x, digits = 1) => (x === null ? '–' : `${x > 0 ? '+' : x < 0 ? '−' : ''}${percent(Math.abs(x), digits)}`);
   const direction = (x) => (x === null || Math.abs(x) < 0.005 ? 'flat' : x > 0 ? 'up' : 'down');
 
   function shortDate(ms, span) {
@@ -185,19 +199,19 @@ const cedarStocks = (() => {
     const opts = span > 400 * DAY_MS
       ? { month: 'short', year: '2-digit', timeZone: 'UTC' }
       : { month: 'short', day: 'numeric', timeZone: 'UTC' };
-    return d.toLocaleDateString(undefined, opts);
+    return d.toLocaleDateString(cedarI18n.locale, opts);
   }
 
   function ago(ms) {
     if (Number.isNaN(ms)) return '';
     const mins = Math.round((Date.now() - ms) / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins} min ago`;
+    if (mins < 1) return tr('stock.justNow');
+    if (mins < 60) return tr('stock.minAgo', { count: mins });
     const hours = Math.round(mins / 60);
-    if (hours < 24) return `${hours} h ago`;
+    if (hours < 24) return tr('stock.hoursAgo', { count: hours });
     const days = Math.round(hours / 24);
-    if (days < 14) return `${days} d ago`;
-    return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    if (days < 14) return tr('stock.daysAgo', { count: days });
+    return new Date(ms).toLocaleDateString(cedarI18n.locale, { month: 'short', day: 'numeric' });
   }
 
   const ICONS = {
@@ -210,7 +224,7 @@ const cedarStocks = (() => {
   function verdictPill(rating, small) {
     const pill = el('span', `cedar-stocks-call ${rating.call}${small ? ' small' : ''}`);
     pill.innerHTML = ICONS[rating.call];
-    pill.append(CALLS[rating.call]);
+    pill.append(tr(CALLS[rating.call]));
     return pill;
   }
 
@@ -248,10 +262,10 @@ const cedarStocks = (() => {
     const bar = el('div', 'cedar-stocks-toolbar');
     const ranges = el('div', 'cedar-stocks-seg');
     ranges.setAttribute('role', 'group');
-    ranges.setAttribute('aria-label', 'Chart period');
+    ranges.setAttribute('aria-label', tr('stock.chartPeriod'));
     const modes = el('div', 'cedar-stocks-seg');
     modes.setAttribute('role', 'group');
-    modes.setAttribute('aria-label', 'Chart values');
+    modes.setAttribute('aria-label', tr('stock.chartValues'));
     bar.append(ranges, modes);
 
     const lines = spec.stocks.map((s, i) => ({ key: s.symbol, label: s.symbol, line: s.line, slot: i + 1 }));
@@ -282,9 +296,9 @@ const cedarStocks = (() => {
       group.append(b);
       return b;
     };
-    for (const [k] of offered) button(ranges, k, k === state.range, () => { state.range = k; draw(); });
-    button(modes, '% change', state.mode === 'pct', () => { state.mode = 'pct'; draw(); });
-    button(modes, 'Price', state.mode === 'price', () => { state.mode = 'price'; draw(); });
+    for (const [k] of offered) button(ranges, period(k), k === state.range, () => { state.range = k; draw(); });
+    button(modes, tr('stock.pctChange'), state.mode === 'pct', () => { state.mode = 'pct'; draw(); });
+    button(modes, tr('stock.price'), state.mode === 'price', () => { state.mode = 'price'; draw(); });
 
     let width = 0;
     let animate = true;
@@ -325,13 +339,13 @@ const cedarStocks = (() => {
       const root = svg('svg', { viewBox: `0 0 ${width} ${CHART_HEIGHT}`, width, height: CHART_HEIGHT, class: 'cedar-stocks-svg' });
       root.setAttribute('role', 'img');
       root.setAttribute('aria-label', state.mode === 'pct'
-        ? `Percent change over ${state.range}: ${data.map((d) => `${d.label} ${signed(d.pts[d.pts.length - 1][1])}`).join(', ')}`
-        : `${state.selected} price over ${state.range}`);
+        ? tr('stock.pctAria', { range: period(state.range), values: data.map((d) => `${d.label} ${signed(d.pts[d.pts.length - 1][1])}`).join(', ') })
+        : tr('stock.priceAria', { symbol: state.selected, range: period(state.range) }));
       const grid = svg('g', { class: 'grid' });
       for (const v of yt) {
         grid.append(svg('line', { x1: PAD.left, x2: width - PAD.right, y1: y(v), y2: y(v), class: v === 0 && state.mode === 'pct' ? 'zero' : '' }));
         const label = svg('text', { x: PAD.left - 8, y: y(v) + 4, class: 'axis', 'text-anchor': 'end' });
-        label.textContent = state.mode === 'pct' ? `${v > 0 ? '+' : ''}${+v.toFixed(2)}%` : money(v, stock?.currency || '');
+        label.textContent = state.mode === 'pct' ? `${v > 0 ? '+' : v < 0 ? '-' : ''}${percent(Math.abs(v), 0, 2)}` : money(v, stock?.currency || '');
         grid.append(label);
       }
       const xt = width < 480 ? 3 : 5;
@@ -369,7 +383,7 @@ const cedarStocks = (() => {
         if (over > 0) labels.forEach((l) => { l.y -= over; });
         for (const l of labels) {
           const label = svg('text', { x: width - PAD.right + 8, y: l.y + 4, class: 'end-label' });
-          label.textContent = l.d.slot === 0 && l.d.label.length > 10 ? 'Index' : l.d.label;
+          label.textContent = l.d.slot === 0 && l.d.label.length > 10 ? tr('stock.indexShort') : l.d.label;
           root.append(label);
         }
       }
@@ -394,7 +408,7 @@ const cedarStocks = (() => {
         cross.setAttribute('x1', x(t));
         cross.setAttribute('x2', x(t));
         cross.style.display = '';
-        tip.replaceChildren(el('div', 'when', new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })));
+        tip.replaceChildren(el('div', 'when', new Date(t).toLocaleDateString(cedarI18n.locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })));
         data.forEach((d, k) => {
           const j = at({ t: d.pts.map((p) => p[0]) }, t);
           if (j < 0) { dots[k].style.display = 'none'; return; }
@@ -444,7 +458,7 @@ const cedarStocks = (() => {
         const item = el('span', 'item');
         const change = state.mode === 'pct' ? d.pts[d.pts.length - 1][1] : (d.pts[d.pts.length - 1][1] / d.base - 1) * 100;
         const val = el('span', `chg ${direction(change)}`, signed(change));
-        item.append(el('span', `key s${d.slot}`), el('span', 'name', d.slot === 0 ? `${d.label} (benchmark)` : d.label), val);
+        item.append(el('span', `key s${d.slot}`), el('span', 'name', d.slot === 0 ? tr('stock.benchmarkLabel', { name: d.label }) : d.label), val);
         return item;
       }));
     }
@@ -476,13 +490,13 @@ const cedarStocks = (() => {
     }
     const marker = el('span', `marker ${rating.call}`);
     marker.style.left = pos(rating.score);
-    marker.title = `Score ${rating.score > 0 ? '+' : ''}${rating.score} of ±${rating.max}`;
+    marker.title = tr('stock.scoreOf', { score: `${rating.score > 0 ? '+' : ''}${rating.score}`, max: rating.max });
     track.append(marker);
     const labels = el('div', 'labels');
-    labels.append(el('span', '', 'Sell'), el('span', '', 'Hold'), el('span', '', 'Buy'));
+    labels.append(el('span', '', tr(CALLS.sell)), el('span', '', tr(CALLS.hold)), el('span', '', tr(CALLS.buy)));
     g.append(track, labels);
     g.setAttribute('role', 'img');
-    g.setAttribute('aria-label', `Score ${rating.score} on a scale from −${rating.max} (sell) to +${rating.max} (buy)`);
+    g.setAttribute('aria-label', tr('stock.gaugeAria', { score: rating.score, max: rating.max }));
     return g;
   }
 
@@ -495,8 +509,9 @@ const cedarStocks = (() => {
     const label = el('span', 'n', score > 0 ? `+${score}` : score < 0 ? `−${-score}` : '0');
     const wrap = el('span', 'cedar-stocks-scorewrap');
     wrap.append(bar, label);
-    const word = score >= 2 ? 'strongly for' : score === 1 ? 'for' : score === 0 ? 'neutral' : score === -1 ? 'against' : 'strongly against';
-    wrap.setAttribute('aria-label', `Score ${score}: ${word}`);
+    const word = tr(score >= 2 ? 'stock.strongFor' : score === 1 ? 'stock.for' : score === 0 ? 'stock.neutral'
+      : score === -1 ? 'stock.against' : 'stock.strongAgainst');
+    wrap.setAttribute('aria-label', tr('stock.scoreAria', { score, word }));
     wrap.title = word;
     return wrap;
   }
@@ -531,21 +546,21 @@ const cedarStocks = (() => {
       const conf = el('div', 'conf');
       const meter = el('span', `meter ${r.confidence}`);
       meter.append(el('i'), el('i'), el('i'));
-      conf.append(meter, `${r.confidence[0].toUpperCase()}${r.confidence.slice(1)} confidence`);
+      conf.append(meter, tr(CONFIDENCE[r.confidence]));
       if (r.lean) conf.append(el('span', 'lean', r.lean));
       meta.append(title, conf);
       head.append(meta);
       top.append(head, gauge(r));
       if (r.summary) top.append(el('p', 'summary', r.summary));
     } else {
-      head.append(el('strong', '', stock.symbol), ` ${stock.name}: no rating`);
+      head.append(el('strong', '', stock.symbol), ` ${tr('stock.noRating', { name: stock.name })}`);
       top.append(head);
     }
     panel.append(top);
 
     if (r?.factors.length) {
       const sec = el('section', 'cedar-stocks-why');
-      sec.append(el('div', 'cedar-stocks-label', 'Why: the factors behind the call'));
+      sec.append(el('div', 'cedar-stocks-label', tr('stock.why')));
       const list = el('ol', 'cedar-stocks-factors');
       for (const f of r.factors) {
         const li = el('li', f.score > 0 ? 'for' : f.score < 0 ? 'against' : 'neutral');
@@ -562,7 +577,7 @@ const cedarStocks = (() => {
     }
     if (r?.watch.length) {
       const sec = el('section', 'cedar-stocks-watch');
-      sec.append(el('div', 'cedar-stocks-label', 'What would change the view'));
+      sec.append(el('div', 'cedar-stocks-label', tr('stock.watch')));
       const list = el('ul');
       for (const w of r.watch) list.append(el('li', '', w));
       sec.append(list);
@@ -572,18 +587,18 @@ const cedarStocks = (() => {
     const stats = el('div', 'cedar-stocks-stats');
     const m = (v) => money(v, stock.currency);
     if (stock.low52 !== null && stock.high52 !== null) {
-      stats.append(stat('52-week range', `${m(stock.low52)} – ${m(stock.high52)}`, rangeBar(stock.low52, stock.high52, stock.price)));
+      stats.append(stat(tr('stock.range52'), `${m(stock.low52)} – ${m(stock.high52)}`, rangeBar(stock.low52, stock.high52, stock.price)));
     }
     if (stock.dayLow !== null && stock.dayHigh !== null) {
-      stats.append(stat('Day range', `${m(stock.dayLow)} – ${m(stock.dayHigh)}`, rangeBar(stock.dayLow, stock.dayHigh, stock.price)));
+      stats.append(stat(tr('stock.dayRange'), `${m(stock.dayLow)} – ${m(stock.dayHigh)}`, rangeBar(stock.dayLow, stock.dayHigh, stock.price)));
     }
     const i = stock.ind;
-    if (i.sma50 !== null) stats.append(stat('50-day avg', m(i.sma50)));
-    if (i.sma200 !== null) stats.append(stat('200-day avg', m(i.sma200)));
-    if (i.rsi !== null) stats.append(stat('RSI (14)', i.rsi.toFixed(0)));
-    if (i.vol !== null) stats.append(stat('Volatility', `${i.vol.toFixed(0)}% / yr`));
-    if (i.drawdown !== null) stats.append(stat('Max drawdown (1Y)', signed(i.drawdown)));
-    if (i.beta !== null) stats.append(stat(`Beta vs ${spec.benchmark?.name || 'index'}`, i.beta.toFixed(2)));
+    if (i.sma50 !== null) stats.append(stat(tr('stock.avg50'), m(i.sma50)));
+    if (i.sma200 !== null) stats.append(stat(tr('stock.avg200'), m(i.sma200)));
+    if (i.rsi !== null) stats.append(stat(tr('stock.rsi'), cedarI18n.number(Math.round(i.rsi))));
+    if (i.vol !== null) stats.append(stat(tr('stock.volatility'), tr('stock.perYear', { value: percent(i.vol, 0) })));
+    if (i.drawdown !== null) stats.append(stat(tr('stock.drawdown'), signed(i.drawdown)));
+    if (i.beta !== null) stats.append(stat(tr('stock.beta', { name: spec.benchmark?.name || tr('stock.index') }), cedarI18n.number(i.beta, { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
     if (stats.children.length) panel.append(stats);
     return panel;
   }
@@ -592,29 +607,29 @@ const cedarStocks = (() => {
 
   function returnsTable(spec) {
     const sec = el('section', 'cedar-stocks-returns');
-    sec.append(el('div', 'cedar-stocks-label', 'Returns'));
+    sec.append(el('div', 'cedar-stocks-label', tr('stock.returns')));
     const scroll = el('div', 'scroll');
     const table = el('table');
     const head = el('tr');
     head.append(el('th', '', ''));
-    for (const [, label] of RETURN_COLS) head.append(el('th', '', label));
+    for (const [, label] of RETURN_COLS) head.append(el('th', '', period(label)));
     const thead = el('thead');
     thead.append(head);
     const body = el('tbody');
     spec.stocks.forEach((s, idx) => {
-      const tr = el('tr');
+      const row = el('tr');
       const th = el('th');
       th.scope = 'row';
       th.append(el('span', `key s${idx + 1}`), s.symbol);
-      tr.append(th);
+      row.append(th);
       for (const [k] of RETURN_COLS) {
         const v = s.returns[k];
         const td = el('td', direction(v), signed(v));
         // A tint scaled to the size of the move, capped at ±40%.
         if (v !== null) td.style.setProperty('--mag', String(Math.min(1, Math.abs(v) / 40)));
-        tr.append(td);
+        row.append(td);
       }
-      body.append(tr);
+      body.append(row);
     });
     table.append(thead, body);
     scroll.append(table);
@@ -625,10 +640,10 @@ const cedarStocks = (() => {
   function newsSection(spec) {
     const sec = el('section', 'cedar-stocks-news');
     const top = el('div', 'cedar-stocks-label');
-    top.append(el('span', '', 'News'));
+    top.append(el('span', '', tr('stock.news')));
     sec.append(top);
     if (!spec.news.length) {
-      sec.append(el('p', 'cedar-stocks-note', spec.newsNote || 'No recent headlines.'));
+      sec.append(el('p', 'cedar-stocks-note', spec.newsNote || tr('stock.noNews')));
       return sec;
     }
     const withSymbols = spec.stocks.filter((s) => spec.news.some((n) => n.symbols.includes(s.symbol)));
@@ -671,7 +686,7 @@ const cedarStocks = (() => {
     if (withSymbols.length > 1) {
       const chips = el('div', 'cedar-stocks-chips');
       chips.setAttribute('role', 'group');
-      chips.setAttribute('aria-label', 'Show news for');
+      chips.setAttribute('aria-label', tr('stock.newsFor'));
       const chip = (label, sym) => {
         const b = el('button', '', label);
         b.type = 'button';
@@ -682,7 +697,7 @@ const cedarStocks = (() => {
         });
         chips.append(b);
       };
-      chip('All');
+      chip(tr('stock.all'));
       for (const s of withSymbols) chip(s.symbol, s.symbol);
       top.append(chips);
     }
@@ -697,7 +712,7 @@ const cedarStocks = (() => {
     const card = el('div', 'cedar-stocks');
     card.setAttribute('role', 'group');
     const names = spec.stocks.map((s) => s.symbol);
-    card.setAttribute('aria-label', `Stocks: ${names.join(', ')}`);
+    card.setAttribute('aria-label', tr('stock.aria', { names: names.join(', ') }));
     const state = { selected: spec.stocks[0].symbol };
 
     const head = el('div', 'cedar-stocks-head');
@@ -708,9 +723,9 @@ const cedarStocks = (() => {
     title.setAttribute('role', 'heading');
     title.setAttribute('aria-level', '3');
     const sub = [];
-    if (spec.benchmark) sub.push(`Benchmark: ${spec.benchmark.name}`);
+    if (spec.benchmark) sub.push(tr('stock.benchmark', { name: spec.benchmark.name }));
     if (!Number.isNaN(spec.asOf)) {
-      sub.push(`As of ${new Date(spec.asOf).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`);
+      sub.push(tr('stock.asOf', { date: new Date(spec.asOf).toLocaleString(cedarI18n.locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }));
     }
     titles.append(title, el('div', 'cedar-stocks-sub', sub.join(' · ')));
     head.append(icon, titles);
@@ -719,7 +734,7 @@ const cedarStocks = (() => {
     // Quote tiles: one per symbol; picking one shows its rating (and its price in price mode).
     const tiles = el('div', 'cedar-stocks-tiles');
     tiles.setAttribute('role', 'tablist');
-    tiles.setAttribute('aria-label', 'Symbol');
+    tiles.setAttribute('aria-label', tr('stock.symbol'));
     const ratingHolder = el('div', 'cedar-stocks-rating-holder');
     ratingHolder.setAttribute('role', 'tabpanel');
     const panels = new Map();
@@ -764,8 +779,8 @@ const cedarStocks = (() => {
     card.append(newsSection(spec));
 
     const foot = el('div', 'cedar-stocks-foot');
-    for (const [s, reason] of spec.unavailable) foot.append(el('p', 'cedar-stocks-note', `${s}: ${reason}`));
-    foot.append(el('p', 'disclaimer', `${spec.disclaimer || 'Not financial advice.'} Data: Yahoo Finance.`));
+    for (const [s, reason] of spec.unavailable) foot.append(el('p', 'cedar-stocks-note', tr('stock.unavailable', { symbol: s, reason })));
+    foot.append(el('p', 'disclaimer', `${spec.disclaimer || tr('stock.notAdvice')} ${tr('stock.data', { source: 'Yahoo Finance' })}`));
     card.append(foot);
     return card;
   }

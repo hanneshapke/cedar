@@ -23,7 +23,8 @@ pub const INSTRUCTION: &str = "Review this whole conversation and write ONE self
     ended up wanting. Fold in everything that was clarified or corrected along the way; leave out \
     dead ends and the parts the user dropped. Include the concrete inputs (names, URLs, places, \
     numbers), the constraints, the format of the result, and the names of any files to produce. \
-    Write it in the second person imperative, as the user would. Do not ask questions, do not add \
+    Write it in the second person imperative, as the user would, and in the language the user \
+    wrote in. Do not ask questions, do not add \
     a preamble or commentary, and do not mention this conversation. Reply with the prompt text \
     only.";
 

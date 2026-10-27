@@ -16,8 +16,9 @@
 
 use crate::error::AppError;
 use crate::integrations::Integrations;
+use crate::locale;
 use crate::sandbox::SandboxFactory;
-use crate::tools::custom::{self, Installed, Permissions, PythonTool};
+use crate::tools::custom::{self, Installed, ListingText, Permissions, PythonTool};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -68,6 +69,10 @@ pub struct Listing {
     /// A maintainer reviewed this release (the registry's CI checks the rest).
     #[serde(default)]
     pub reviewed: bool,
+    /// The summary and secret descriptions in other languages, by locale (`de`, `fr-CH`). Only
+    /// shown; see [`translations`] for which are kept.
+    #[serde(default)]
+    pub translations: BTreeMap<String, ListingText>,
 }
 
 /// What an admin sends to install a tool: the permissions they agreed to, which must be exactly
@@ -111,6 +116,39 @@ pub fn check_file_name(name: &str) -> Result<()> {
         bail!("{name:?} is not a file name a release may contain");
     }
     Ok(())
+}
+
+const MAX_TRANSLATIONS: usize = 20;
+const MAX_SUMMARY_CHARS: usize = 200;
+const MAX_SECRET_TEXT_CHARS: usize = 500;
+
+/// The listing's translations worth showing: those for a locale cedar's clients are translated
+/// into, with text of a sane length, describing only secrets the release declares. The rest are
+/// dropped rather than failing the listing, since they are only display text.
+pub fn translations(l: &Listing) -> BTreeMap<String, ListingText> {
+    let fits = |t: &str, max: usize| {
+        !t.trim().is_empty() && t.chars().count() <= max && !t.chars().any(char::is_control)
+    };
+    l.translations
+        .iter()
+        .filter(|(tag, _)| {
+            locale::normalize(tag).is_ok_and(|n| n == **tag && locale::language(&n) != "en")
+        })
+        .take(MAX_TRANSLATIONS)
+        .map(|(tag, text)| {
+            let summary = text.summary.clone().filter(|s| fits(s, MAX_SUMMARY_CHARS));
+            let secrets = text
+                .secrets
+                .iter()
+                .filter(|(name, d)| {
+                    l.permissions.secrets.contains(name) && fits(d, MAX_SECRET_TEXT_CHARS)
+                })
+                .map(|(n, d)| (n.clone(), d.clone()))
+                .collect();
+            (tag.clone(), ListingText { summary, secrets })
+        })
+        .filter(|(_, t)| t.summary.is_some() || !t.secrets.is_empty())
+        .collect()
 }
 
 fn check_sha(sha: &str) -> Result<()> {
@@ -234,6 +272,7 @@ impl Marketplace {
             .filter(|l| check_listing(l).is_ok())
             .map(|l| {
                 let mut v = serde_json::to_value(l).unwrap_or_default();
+                v["translations"] = serde_json::to_value(translations(l)).unwrap_or_default();
                 let existing = set.get(&l.name);
                 let installed = existing
                     .and_then(|t| t.personal())
@@ -335,6 +374,7 @@ impl Marketplace {
             digest: release_digest(&listing.files),
             files: listing.files.clone(),
             installed_at: chrono::Utc::now().timestamp_millis(),
+            translations: translations(&listing),
         };
         let _guard = integrations.lock_changes().await;
         place(&dir, name, &files, &receipt)?;
@@ -501,7 +541,37 @@ mod tests {
                 .map(|(n, s)| (n.to_string(), s.to_string()))
                 .collect(),
             reviewed: false,
+            translations: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn only_sound_translations_are_shown() {
+        let mut l = listing(&[("tool.json", "1")]);
+        l.permissions.secrets = vec!["TOKEN".into()];
+        let text = |summary: &str, secrets: &[(&str, &str)]| ListingText {
+            summary: Some(summary.into()),
+            secrets: secrets
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        };
+        l.translations = BTreeMap::from([
+            ("de".into(), text("Zählt Wörter", &[("TOKEN", "Dein Token"), ("OTHER", "x")])),
+            ("fr-CH".into(), text("Compte les mots", &[])),
+            ("en".into(), text("Counts words", &[])),
+            ("es".into(), text("Cuenta palabras", &[])),
+            ("de_AT".into(), text("Zählt Wörter", &[])),
+            ("fr".into(), text(&"x".repeat(201), &[])),
+        ]);
+        let shown = translations(&l);
+        assert_eq!(shown.keys().collect::<Vec<_>>(), ["de", "fr-CH"]);
+        assert_eq!(shown["de"].summary.as_deref(), Some("Zählt Wörter"));
+        assert_eq!(
+            shown["de"].secrets,
+            BTreeMap::from([("TOKEN".to_string(), "Dein Token".to_string())]),
+            "only declared secrets are described"
+        );
     }
 
     #[test]
@@ -547,6 +617,7 @@ mod tests {
             digest: "d".into(),
             files: BTreeMap::new(),
             installed_at: 0,
+            translations: BTreeMap::new(),
         };
         let files = BTreeMap::from([("tool.py".to_string(), b"new".to_vec())]);
         place(&dir, "t", &files, &receipt).unwrap();

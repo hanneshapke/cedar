@@ -42,6 +42,47 @@ CGM_TYPES = {"LidCgmDataGxb": "Dexcom G6", "LidCgmDataG7": "Dexcom G7", "LidCgmD
 SENSOR_RANGE = {"Dexcom G6": (40, 400), "Dexcom G7": (40, 400), "FreeStyle Libre 2": (40, 500)}
 STATUS_HIGH, STATUS_LOW = 1, 2
 SLOT_MINUTES = 15  # the chart's resolution
+# Text the user sees in the charts, by CEDAR_LANGUAGE. The report itself stays English for the model.
+STRINGS = {
+    "en": {"last": "Last {h} h", "average": "{d}-day average", "target": "Target",
+           "glucose_title": "Glucose: last {h} h vs. your {d}-day average",
+           "tir_title": "Time in range ({low}–{high} {unit}) by time of day",
+           "tir_label": "% of the time in range", "overnight": "Overnight", "morning": "Morning",
+           "afternoon": "Afternoon", "evening": "Evening"},
+    "de": {"last": "Letzte {h} h", "average": "{d}-Tage-Schnitt", "target": "Zielbereich",
+           "glucose_title": "Glukose: letzte {h} h vs. dein {d}-Tage-Schnitt",
+           "tir_title": "Zeit im Zielbereich ({low}–{high} {unit}) nach Tageszeit",
+           "tir_label": "% der Zeit im Zielbereich", "overnight": "Nachts", "morning": "Morgens",
+           "afternoon": "Nachmittags", "evening": "Abends"},
+    "fr": {"last": "Dernières {h} h", "average": "Moyenne sur {d} jours", "target": "Cible",
+           "glucose_title": "Glycémie\u00a0: dernières {h} h vs votre moyenne sur {d} jours",
+           "tir_title": "Temps dans la cible ({low}–{high} {unit}) par moment de la journée",
+           "tir_label": "% du temps dans la cible", "overnight": "Nuit", "morning": "Matin",
+           "afternoon": "Après-midi", "evening": "Soir"},
+}
+WEEKDAYS = {"en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            "de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]}
+
+
+def language():
+    """The user's language from CEDAR_LANGUAGE (older servers don't set it: English)."""
+    lang = (os.environ.get("CEDAR_LANGUAGE") or "").strip().lower().split("-")[0]
+    return lang if lang in STRINGS else "en"
+
+
+def tr(key, **values):
+    """A chart string in the user's language; Swiss German (de-CH) writes ss for ß."""
+    lang = language()
+    text = STRINGS[lang].get(key, STRINGS["en"][key])
+    if lang == "de" and (os.environ.get("CEDAR_LOCALE") or "").replace("_", "-").lower().startswith("de-ch"):
+        text = text.replace("ß", "ss")
+    return text.format(**values)
+
+
+def decimal(value):
+    """A number written into chart text, with the decimal comma German and French use."""
+    return str(value) if language() == "en" else str(value).replace(".", ",")
 
 
 # --- setup -----------------------------------------------------------------------------------
@@ -491,7 +532,8 @@ def charts(readings, a, tz, low, high, unit):
     labels, recent, usual = [], [], []
     for k in range(count):
         t = grid + k * step
-        labels.append(t.astimezone(tz).strftime("%H:%M" if h <= 24 else "%a %H:%M"))
+        local = t.astimezone(tz)
+        labels.append(f"{local:%H:%M}" if h <= 24 else f"{WEEKDAYS[language()][local.weekday()]} {local:%H:%M}")
         recent.append(conv(statistics.fmean(slots[k])) if k in slots else None)
         same = typical.get(slot_of_day(t))
         usual.append(conv(statistics.fmean(same)) if same else None)
@@ -499,24 +541,24 @@ def charts(readings, a, tz, low, high, unit):
     while recent and recent[-1] is None:
         labels.pop(), recent.pop(), usual.pop()
 
-    series = [{"name": f"Last {h} h", "values": recent}]
+    series = [{"name": tr("last", h=h), "values": recent}]
     if any(v is not None for v in usual):
-        series.append({"name": f"{d}-day average", "values": usual})
+        series.append({"name": tr("average", d=d), "values": usual})
     unit_label = "mmol/L" if mmol else "mg/dL"
     out = [{
-        "kind": "line", "title": f"Glucose: last {h} h vs. your {d}-day average",
+        "kind": "line", "title": tr("glucose_title", h=h, d=d),
         "labels": labels, "series": series, "y_label": unit_label,
-        "band": {"from": conv(low), "to": conv(high), "label": "Target"},
+        "band": {"from": conv(low), "to": conv(high), "label": tr("target")},
     }]
 
     names = [name for name, _, _ in BLOCKS]
     tir = lambda blocks: [round(blocks[n]["tir"]) if blocks[n]["n"] else None for n in names]  # noqa: E731
-    by_time = [{"name": f"Last {h} h", "values": tir(a["recent_blocks"])}]
+    by_time = [{"name": tr("last", h=h), "values": tir(a["recent_blocks"])}]
     if a["base"]["n"]:
-        by_time.append({"name": f"{d}-day average", "values": tir(a["base_blocks"])})
+        by_time.append({"name": tr("average", d=d), "values": tir(a["base_blocks"])})
     out.append({
-        "kind": "bar", "title": f"Time in range ({conv(low)}–{conv(high)} {unit_label}) by time of day",
-        "labels": [n.capitalize() for n in names], "series": by_time, "y_label": "% of the time in range",
+        "kind": "bar", "title": tr("tir_title", low=decimal(conv(low)), high=decimal(conv(high)), unit=unit_label),
+        "labels": [tr(n) for n in names], "series": by_time, "y_label": tr("tir_label"),
     })
     return ["[chart] " + json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]
 

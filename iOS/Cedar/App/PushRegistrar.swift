@@ -32,14 +32,16 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         return true
     }
 
-    /// Called once the app model exists. Asks for permission when the server is configured.
+    /// Called once the app model exists. Asks for permission when the server is configured and a
+    /// language has been picked (a new install asks for that first; `AppModel.chooseLanguage` asks
+    /// for permission then).
     func attach(_ app: AppModel) {
         self.app = app
         if let pendingOpen {
             self.pendingOpen = nil
             app.open(conversationId: pendingOpen)
         }
-        if app.settings.isConfigured {
+        if app.settings.isConfigured, LanguageStore.shared.hasChosen {
             Task { await requestAuthorization() }
         }
     }

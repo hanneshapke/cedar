@@ -17,8 +17,8 @@ const cedarMap = (() => {
   const LEAFLET_JS = '/vendor/leaflet/leaflet.js';
   const LEAFLET_CSS = '/vendor/leaflet/leaflet.css';
   const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" ' +
-    'rel="noopener noreferrer">OpenStreetMap</a> contributors';
+  const OSM_LINK = '<a href="https://www.openstreetmap.org/copyright" target="_blank" ' +
+    'rel="noopener noreferrer">OpenStreetMap</a>';
   const MAX_MARKERS = 25;
   const MAX_TEXT = 200;
   const SINGLE_PIN_ZOOM = 10;
@@ -62,7 +62,7 @@ const cedarMap = (() => {
       link.rel = 'stylesheet';
       link.href = href;
       link.onload = resolve;
-      link.onerror = () => reject(new Error('Could not load the map library.'));
+      link.onerror = () => reject(new Error(tr('map.libraryFailed')));
       document.head.append(link);
     });
   }
@@ -72,7 +72,7 @@ const cedarMap = (() => {
       const script = el('script');
       script.src = src;
       script.onload = resolve;
-      script.onerror = () => reject(new Error('Could not load the map library.'));
+      script.onerror = () => reject(new Error(tr('map.libraryFailed')));
       document.head.append(script);
     });
   }
@@ -134,12 +134,12 @@ const cedarMap = (() => {
   function element(spec) {
     const card = el('div', 'cedar-map');
     card.setAttribute('role', 'group');
-    card.setAttribute('aria-label', spec.title || `Map of ${spec.markers.length} place${spec.markers.length === 1 ? '' : 's'}`);
+    card.setAttribute('aria-label', spec.title || tr('map.aria', { count: spec.markers.length }));
     if (spec.title) card.append(el('div', 'cedar-map-title', spec.title));
 
     const frame = el('div', 'cedar-map-frame');
     const canvas = el('div', 'cedar-map-canvas');
-    const status = el('div', 'cedar-map-status', 'Loading map…');
+    const status = el('div', 'cedar-map-status', tr('map.loading'));
     frame.append(canvas, status);
     const note = el('div', 'cedar-map-note');
     note.hidden = true;
@@ -152,25 +152,25 @@ const cedarMap = (() => {
       list.append(item);
     });
     card.append(list);
-    if (spec.notFound.length) card.append(el('div', 'cedar-map-note', `Not found: ${spec.notFound.join(', ')}`));
+    if (spec.notFound.length) card.append(el('div', 'cedar-map-note', tr('map.notFound', { names: spec.notFound.join(', ') })));
 
     loadLeaflet()
       .then((L) => {
         status.remove();
         draw(L, canvas, spec, () => {
-          note.textContent = 'The map tiles could not be loaded. The places are listed below.';
+          note.textContent = tr('map.tilesFailed');
           note.hidden = false;
         });
       })
       .catch((e) => {
-        status.textContent = e?.message || 'Could not draw the map.';
+        status.textContent = e?.message || tr('map.drawFailed');
         status.classList.add('failed');
       });
     return card;
   }
 
   /** The OpenStreetMap base layer, with its attribution. */
-  const tiles = (L) => L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIBUTION });
+  const tiles = (L) => L.tileLayer(TILES, { maxZoom: 19, attribution: `&copy; ${tr('map.attribution', { link: OSM_LINK })}` });
 
   return { parse, element, loadLeaflet, tiles };
 })();

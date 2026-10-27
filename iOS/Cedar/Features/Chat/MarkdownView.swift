@@ -32,7 +32,7 @@ private struct BlockView: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(ordered ? "\(start + offset)." : "•")
+                        Text(verbatim: ordered ? "\(start + offset)." : "•")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                         InlineText(item)

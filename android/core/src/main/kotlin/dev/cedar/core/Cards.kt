@@ -537,15 +537,17 @@ data class StocksCard(
 
 /** The products a `search_products` call found and weighed, as product-view.js reads them. */
 data class ProductsCard(
-    val query: String,
-    val store: String,
+    /** What was searched for; `null` when the result doesn't say (the app says "Products"). */
+    val query: String?,
+    /** Where; `null` when the result doesn't say (the app says "the store"). */
+    val store: String?,
     val currency: String,
     val total: Int,
     /** How many pages were read and products found, for a web search. */
     val pages: Int?,
     val productsFound: Int?,
     val asOf: Instant?,
-    /** How the options are ordered, in words. */
+    /** How the options are ordered: a key of [SORTS] (the app words it), or `null`. */
     val sort: String?,
     /** The model's recommendation, when it weighed the options. */
     val summary: String?,
@@ -650,11 +652,13 @@ data class ProductsCard(
 
     companion object {
         const val MAX_OPTIONS = 8
-        private val SORTS = mapOf(
+        /** The orders a search can have, in English words. */
+        val SORTS = mapOf(
             "best_selling" to "best selling first", "rating" to "highest rated first",
             "price_low" to "cheapest first", "price_high" to "priciest first",
         )
-        private val PICKS = listOf("top_pick" to "Top pick", "best_value" to "Best value", "best_rated" to "Best rated", "most_popular" to "Most popular")
+        /** The picks a search names, with their English badges (the app translates these). */
+        val PICKS = listOf("top_pick" to "Top pick", "best_value" to "Best value", "best_rated" to "Best rated", "most_popular" to "Most popular")
 
         /** A sku given as a number or a string. */
         fun sku(value: JsonElement?): String? {
@@ -687,14 +691,14 @@ data class ProductsCard(
             }
             val considered = value["considered"]
             return ProductsCard(
-                query = CardParse.text(value["query"], 160) ?: "Products",
-                store = CardParse.text(value["store"], 60) ?: "the store",
+                query = CardParse.text(value["query"], 160),
+                store = CardParse.text(value["store"], 60),
                 currency = currencyCode(value["currency"]) ?: "USD",
                 total = max(options.size + others.size, (CardParse.amount(value["total"], 1e9) ?: 0.0).toInt()),
                 pages = CardParse.amount(considered["pages"], 1e6)?.toInt(),
                 productsFound = CardParse.amount(considered["products"], 1e6)?.toInt(),
                 asOf = CardParse.time(value["as_of"]),
-                sort = value["sort"].str?.let { SORTS[it] },
+                sort = value["sort"].str?.takeIf { it in SORTS },
                 summary = CardParse.text(value["summary"], 800),
                 note = CardParse.text(value["note"], 600),
                 options = options, others = others, badges = badges, sources = sources,

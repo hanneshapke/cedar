@@ -46,6 +46,7 @@ The same as the iOS app:
   or `scripts/cedar-stack.sh --pair` shows, or by opening a `cedar://connect` link
 - Phone layout, and list and chat side by side on tablets, foldables and in landscape; light and
   dark theme
+- English, German and French (see [Languages](#languages))
 
 ## Requirements
 
@@ -71,6 +72,27 @@ The same as the iOS app:
 
 The access token is stored encrypted with a key in the Android Keystore; everything else in the
 app's preferences.
+
+## Languages
+
+The app speaks English, German (informal *du*; Swiss German writes *ss* for *ß*) and French (formal
+*vous*), following [the glossary](../docs/i18n-glossary.md). The language is the first thing a new
+install asks, with the phone's preselected when the app speaks it; **Settings → Language** changes it
+at once, or sets it to **Automatic** to follow the phone. On Android 13 and newer it is also the
+app's language in the system settings (`res/xml/locales_config.xml`).
+
+Each message carries the locale (`"locale": "de-CH"`; for Automatic the phone's when it is English,
+German or French, else `en`), so the agent answers in it, and the app tells the server
+(`PUT /api/settings/locale`, once connected) so that scheduled runs and notifications follow it too.
+Dates, times, numbers and prices are written the locale's way.
+
+The text is in `app/src/main/res/values*/strings.xml`: `values` is English and the source,
+`values-de` and `values-fr` the translations, and `values-de-rCH` holds only the German strings with
+an *ß*, written with *ss*. A new string goes into all three; product names, the server's messages
+and the model's text are not translated. The locale logic (the offered locales, the effective one,
+the request body) is in `core` (`Locales.kt`) and tested there. The app is an `AppCompatActivity` so
+that `AppCompatDelegate.setApplicationLocales` can switch it; before Android 13 AppCompat stores the
+choice itself (`AppLocalesMetadataHolderService` in the manifest).
 
 ## Push notifications
 
@@ -155,12 +177,14 @@ You can also open `android/` in Android Studio and run the `app` configuration.
 
 | Path | Contents |
 | --- | --- |
-| `core/` | Plain Kotlin, no Android: the `/api` types, the event-to-transcript reducer, the cards' parsers, the Markdown block parser, the attachment rules, the connection code, the SSE parser and the OkHttp client. Builds and tests without the Android SDK |
+| `core/` | Plain Kotlin, no Android: the `/api` types, the event-to-transcript reducer, the cards' parsers, the Markdown block parser, the attachment rules, the connection code, the locales, the SSE parser and the OkHttp client. Builds and tests without the Android SDK |
 | `core/src/test` | Unit tests ported from `iOS/CedarTests`, plus the client against a mock server |
 | `app/…/AppModel.kt`, `ChatModel.kt` | App state (settings, the lists, the inbox count, live notices, open chats) and one conversation's turns and streams, as the iOS app's models |
 | `app/…/ui/` | Compose screens: root (list and chat side by side when wide), list (chats, starred, scheduled), chat (turns, questions, approvals, images, composer), settings (with the QR scanner), cards |
 | `app/…/push/` | `PushManager` (FCM or UnifiedPush, registration with the server), the two services, and `Notifier`, which fetches the text and shows the notification |
 | `app/…/storage/` | Settings, with the token encrypted by an Android Keystore key |
+| `app/…/Language.kt`, `ui/Text.kt` | The app's language (AppCompat per-app locales) and the app's words for what `core` names by key |
+| `app/src/main/res/values*/` | The strings: English (source), German, French, Swiss German (ß → ss) |
 | `build-apk.sh` | Build an APK locally |
 
 ## How it talks to the server
@@ -170,7 +194,8 @@ As the iOS app (see its README): `GET /api/conversations`, `GET /api/conversatio
 followed live (reconnecting from the last event), `GET /api/events` while in front,
 `POST /api/conversations/{id}/seen`, stars (`PUT`/`DELETE /api/conversations/{id}/star`,
 `GET /api/starred`), schedules (`GET /api/schedules`, `GET /api/schedules/{id}`,
-`POST /api/schedules/{id}/run`, `PATCH /api/schedules/{id}`), plans and approvals, and files.
+`POST /api/schedules/{id}/run`, `PATCH /api/schedules/{id}`), plans and approvals, files, and the
+language (`PUT /api/settings/locale`, and `locale` with each message).
 The push token or endpoint goes to `POST /api/notifications/android/devices`.
 
 ## Continuous integration

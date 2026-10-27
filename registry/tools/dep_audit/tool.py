@@ -17,6 +17,7 @@ error and can try again differently.
 """
 import json
 import math
+import os
 import re
 import sys
 import tomllib
@@ -38,6 +39,34 @@ UNSUPPORTED = {"yarn.lock", "pnpm-lock.yaml", "bun.lockb", "Pipfile", "setup.py"
 MAX_FILES, MAX_DEPTH = 20, 4
 MAX_VULN_DETAILS, MAX_LATEST, WORKERS = 300, 80, 8
 SEVERITIES = ["critical", "high", "moderate", "low", "unknown"]
+# Text the user sees in the charts, by CEDAR_LANGUAGE. The report itself stays English for the model.
+STRINGS = {
+    "en": {"vuln_title": "Known vulnerabilities by severity", "vulnerabilities": "vulnerabilities",
+           "advisories": "advisories", "critical": "critical", "high": "high", "moderate": "moderate",
+           "low": "low", "unknown": "unknown", "behind_title": "Dependencies by how far behind",
+           "up to date": "up to date", "patch": "patch", "minor": "minor", "major": "major",
+           "packages": "packages"},
+    "de": {"vuln_title": "Bekannte Schwachstellen nach Schweregrad", "vulnerabilities": "Schwachstellen",
+           "advisories": "Sicherheitshinweise", "critical": "kritisch", "high": "hoch", "moderate": "mittel",
+           "low": "niedrig", "unknown": "unbekannt", "behind_title": "Abhängigkeiten nach Rückstand",
+           "up to date": "aktuell", "patch": "Patch", "minor": "Minor", "major": "Major",
+           "packages": "Pakete"},
+    "fr": {"vuln_title": "Vulnérabilités connues par gravité", "vulnerabilities": "vulnérabilités",
+           "advisories": "avis de sécurité", "critical": "critique", "high": "élevée", "moderate": "modérée",
+           "low": "faible", "unknown": "inconnue", "behind_title": "Dépendances par retard de version",
+           "up to date": "à jour", "patch": "correctif", "minor": "mineure", "major": "majeure",
+           "packages": "paquets"},
+}
+
+
+def tr(key):
+    """A chart string in CEDAR_LANGUAGE (English when unset); Swiss German (de-CH) writes ss for ß."""
+    lang = (os.environ.get("CEDAR_LANGUAGE") or "").strip().lower().split("-")[0]
+    lang = lang if lang in STRINGS else "en"
+    text = STRINGS[lang].get(key, STRINGS["en"][key])
+    if lang == "de" and (os.environ.get("CEDAR_LOCALE") or "").replace("_", "-").lower().startswith("de-ch"):
+        text = text.replace("ß", "ss")
+    return text
 REQUIREMENT = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(\[[^\]]*\])?\s*(.*)$")
 EXACT = re.compile(r"^={2,3}\s*([0-9][0-9A-Za-z.+!_-]*)$")
 
@@ -522,17 +551,17 @@ def charts(vulnerable, outdated, latest_checked):
             sev[v["severity"]] += 1
     if any(sev.values()):
         labels = [s for s in SEVERITIES if s != "unknown" or sev[s]]
-        out.append({"kind": "bar", "title": "Known vulnerabilities by severity", "labels": labels,
-                    "series": [{"name": "vulnerabilities", "values": [sev[s] for s in labels]}],
-                    "y_label": "advisories"})
+        out.append({"kind": "bar", "title": tr("vuln_title"), "labels": [tr(s) for s in labels],
+                    "series": [{"name": tr("vulnerabilities"), "values": [sev[s] for s in labels]}],
+                    "y_label": tr("advisories")})
     if latest_checked and outdated:
         far = {"major": 0, "minor": 0, "patch": 0}
         for _, _, f in outdated:
             far[f] += 1
         labels = ["up to date", "patch", "minor", "major"]
         values = [latest_checked - len(outdated), far["patch"], far["minor"], far["major"]]
-        out.append({"kind": "bar", "title": "Dependencies by how far behind", "labels": labels,
-                    "series": [{"name": "packages", "values": values}], "y_label": "packages"})
+        out.append({"kind": "bar", "title": tr("behind_title"), "labels": [tr(s) for s in labels],
+                    "series": [{"name": tr("packages"), "values": values}], "y_label": tr("packages")})
     return ["[chart] " + json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]
 
 

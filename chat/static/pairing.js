@@ -15,7 +15,7 @@
 
 const cedarPairing = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
-  const COMPUTER = { macos: 'this Mac', windows: 'this PC' };
+  const COMPUTER = { macos: 'pairing.computer.mac', windows: 'pairing.computer.pc' };
 
   let deps = null;
   let info = null;  // /api/pairing, as last loaded
@@ -44,6 +44,16 @@ const cedarPairing = (() => {
 
   function code(text) {
     return el('code', '', text);
+  }
+
+  /** The text for `key` as strings and nodes: each {name} that `nodes` has becomes that node,
+   *  so commands can be <code> and names <b> inside a translated sentence. */
+  function rich(key, nodes, params) {
+    const out = [];
+    for (const [i, piece] of tr(key, params).split(/\{(\w+)\}/).entries()) {
+      if (i % 2 === 0) { if (piece) out.push(piece); } else out.push(nodes[piece] ?? `{${piece}}`);
+    }
+    return out;
   }
 
   /** A paragraph from strings and nodes, so commands can be <code>. */
@@ -88,9 +98,9 @@ const cedarPairing = (() => {
   async function copy(text, what) {
     try {
       await navigator.clipboard.writeText(text);
-      deps.toast(`${what} copied`);
+      deps.toast(tr('pairing.copied', { what }));
     } catch {
-      deps.toast('Could not copy to the clipboard');
+      deps.toast(tr('pairing.copyFailed'));
     }
   }
 
@@ -99,14 +109,14 @@ const cedarPairing = (() => {
   /** Tailscale's state as a badge. */
   function tailscaleBadge(ts) {
     switch (ts.state) {
-      case 'ready': return badge('Ready', 'ok');
-      case 'missing': return badge('Not installed', 'warn');
-      case 'logged_out': return badge('Logged out', 'warn');
-      case 'stopped': return badge('Turned off', 'warn');
-      case 'connecting': return badge('Connecting', 'warn');
-      case 'no_magic_dns': return badge('No MagicDNS', 'warn');
-      case 'no_https': return badge('HTTPS off', 'warn');
-      default: return badge('Not answering', 'warn');
+      case 'ready': return badge(tr('pairing.ts.ready'), 'ok');
+      case 'missing': return badge(tr('pairing.ts.missing'), 'warn');
+      case 'logged_out': return badge(tr('pairing.ts.loggedOut'), 'warn');
+      case 'stopped': return badge(tr('pairing.ts.stopped'), 'warn');
+      case 'connecting': return badge(tr('pairing.ts.connecting'), 'warn');
+      case 'no_magic_dns': return badge(tr('pairing.ts.noMagicDns'), 'warn');
+      case 'no_https': return badge(tr('pairing.ts.noHttps'), 'warn');
+      default: return badge(tr('pairing.ts.unavailable'), 'warn');
     }
   }
 
@@ -119,14 +129,17 @@ const cedarPairing = (() => {
     const at = Math.max(0, order.indexOf(p.tailscale.state));
     const past = (state) => at > order.indexOf(state);
     const serveHow = inDesktopApp()
-      ? ['Turn on ', el('b', '', 'Share with the phone apps over Tailscale'), ' on Cedar\'s setup page (', el('b', '', 'Phone Access…'), ' in the menu).']
-      : ['Start the chat with ', code('scripts/cedar-stack.sh'), ' (', code('TAILSCALE_SERVE=auto'), ' or ', code('on'), ' in ', code('.env'), '), or run ', code('tailscale serve'), ' yourself and set ', code('CHAT_PUBLIC_URL'), ' to its address.'];
+      ? rich('pairing.serveDesktop', { share: el('b', '', tr('pairing.shareLabel')), menu: el('b', '', tr('pairing.phoneAccess')) })
+      : rich('pairing.serveLinux', {
+        script: code('scripts/cedar-stack.sh'), auto: code('TAILSCALE_SERVE=auto'), on: code('on'), env: code('.env'),
+        serve: code('tailscale serve'), url: code('CHAT_PUBLIC_URL'),
+      });
     return [
-      { done: past('unavailable'), parts: [`Tailscale installed on ${computer}`, ' (', link('https://tailscale.com/download', 'tailscale.com/download'), ').'] },
-      { done: past('connecting'), parts: ['Logged in and connected.'] },
-      { done: past('no_magic_dns'), parts: ['MagicDNS turned on, so the computer has a name on the tailnet.'] },
-      { done: past('no_https'), parts: ['HTTPS Certificates turned on in the ', link('https://login.tailscale.com/admin/dns', 'admin console (DNS page)'), '.'] },
-      { done: Boolean(p.server), parts: p.server ? ['The chat served over HTTPS.'] : ['The chat served over HTTPS. ', ...serveHow] },
+      { done: past('unavailable'), parts: rich('pairing.check.installed', { link: link('https://tailscale.com/download', 'tailscale.com/download') }, { computer }) },
+      { done: past('connecting'), parts: [tr('pairing.check.connected')] },
+      { done: past('no_magic_dns'), parts: [tr('pairing.check.magicDns')] },
+      { done: past('no_https'), parts: rich('pairing.check.https', { link: link('https://login.tailscale.com/admin/dns', tr('pairing.check.adminConsole')) }) },
+      { done: Boolean(p.server), parts: p.server ? [tr('pairing.check.served')] : [`${tr('pairing.check.served')} `, ...serveHow] },
     ];
   }
 
@@ -155,18 +168,18 @@ const cedarPairing = (() => {
     const wrap = el('div', 'cedar-pair-qr');
     wrap.hidden = true;
     const box = el('div', 'cedar-pair-qr-code');
-    wrap.append(box, note('In the Cedar app\'s Settings, tap Scan QR Code and point the camera here. The code holds the access token, so hide it again when you are done.'));
-    const toggle = button('Show QR code', () => {
+    wrap.append(box, note(tr('pairing.qrNote')));
+    const toggle = button(tr('pairing.showQr'), () => {
       if (!wrap.hidden) {
         wrap.hidden = true;
         box.replaceChildren();
-        toggle.textContent = 'Show QR code';
+        toggle.textContent = tr('pairing.showQr');
         return;
       }
       // SVG markup the server drew itself from the address and token.
       box.innerHTML = p.qr_svg || '';
       wrap.hidden = false;
-      toggle.textContent = 'Hide QR code';
+      toggle.textContent = tr('pairing.hideQr');
     }, 'primary');
     return { toggle, wrap };
   }
@@ -177,39 +190,39 @@ const cedarPairing = (() => {
     value.className = 'cedar-pair-token';
     main.append(value);
     let shown = false;
-    const reveal = button('Show', () => {
+    const reveal = button(tr('pairing.show'), () => {
       shown = !shown;
       value.textContent = shown ? token : masked(token);
-      reveal.textContent = shown ? 'Hide' : 'Show';
+      reveal.textContent = shown ? tr('pairing.hide') : tr('pairing.show');
     });
-    side.append(reveal, button('Copy', () => copy(token, what)));
+    side.append(reveal, button(tr('pairing.copy'), () => copy(token, what)));
     return r;
   }
 
   function render(section, p) {
-    const computer = COMPUTER[p.platform] || 'this computer';
+    const computer = tr(COMPUTER[p.platform] || 'pairing.computer.other');
     const parts = [];
 
     // Pair: the address, the code and the tokens.
     const pair = [];
-    const addr = row('Address', p.server
-      ? (p.on_tailnet ? `Served on your tailnet. It works while ${computer} is awake and Cedar is running.` : 'This chat\'s HTTPS address (CHAT_PUBLIC_URL).')
-      : 'The phone apps connect over HTTPS only, and the chat isn\'t served over HTTPS yet. See the steps below.');
+    const addr = row(tr('pairing.address'), p.server
+      ? (p.on_tailnet ? tr('pairing.addressTailnet', { computer }) : tr('pairing.addressPublic'))
+      : tr('pairing.addressNone'));
     if (p.server) {
       addr.main.append(code(p.server));
-      addr.side.append(badge('HTTPS', 'ok'), button('Copy', () => copy(p.server, 'Address')));
+      addr.side.append(badge('HTTPS', 'ok'), button(tr('pairing.copy'), () => copy(p.server, tr('pairing.address'))));
     } else {
-      addr.side.append(badge('Not shared', 'warn'));
+      addr.side.append(badge(tr('pairing.notShared'), 'warn'));
     }
     pair.push(addr.row);
     if (p.access_token) {
-      pair.push(tokenRow('Access token', 'CHAT_ACCESS_TOKEN: the app asks for it with the address, or reads it from the QR code.', p.access_token, 'Access token'));
+      pair.push(tokenRow(tr('pairing.accessToken'), tr('pairing.accessTokenNote'), p.access_token, tr('pairing.accessToken')));
     } else {
-      pair.push(note('No access token is set (CHAT_ACCESS_TOKEN), so anyone who can reach the address can use the chat. Set one before sharing it.', 'cedar-set-error'));
+      pair.push(note(tr('pairing.noAccessToken'), 'cedar-set-error'));
     }
     const admin = adminToken();
     if (admin) {
-      pair.push(tokenRow('Admin token', 'CHAT_ADMIN_TOKEN, entered in this browser: it unlocks the Server page. The phone apps don\'t need it.', admin, 'Admin token'));
+      pair.push(tokenRow(tr('pairing.adminToken'), tr('pairing.adminTokenNote'), admin, tr('pairing.adminToken')));
     }
     if (p.server && p.qr_svg) {
       const { toggle, wrap } = qrBlock(p);
@@ -217,14 +230,14 @@ const cedarPairing = (() => {
       acts.append(toggle);
       pair.push(acts, wrap);
     }
-    parts.push(block('Pair', ...pair));
+    parts.push(block(tr('pairing.pair'), ...pair));
 
     // Tailscale on this computer.
     const ts = p.tailscale;
     const known = ts.state === 'ready' && ts.name;
-    const tsRow = row('Tailscale', known ? `On your tailnet as ${ts.name}.` : `${ts.detail[0].toUpperCase()}${ts.detail.slice(1)}.`);
-    tsRow.side.append(tailscaleBadge(ts), button('Check again', () => renderPage(section)));
-    parts.push(block(`On ${computer}`, tsRow.row, checklist(computerSteps(p, computer))));
+    const tsRow = row('Tailscale', known ? tr('pairing.onTailnetAs', { name: ts.name }) : `${ts.detail[0].toUpperCase()}${ts.detail.slice(1)}.`);
+    tsRow.side.append(tailscaleBadge(ts), button(tr('pairing.checkAgain'), () => renderPage(section)));
+    parts.push(block(tr('pairing.onComputer', { computer }), tsRow.row, checklist(computerSteps(p, computer))));
 
     // The phones: the same code for both apps.
     const steps = () => {
@@ -232,28 +245,29 @@ const cedarPairing = (() => {
       return { list, step: (...nodes) => { const li = el('li'); li.append(...nodes); list.append(li); } };
     };
     const ios = steps();
-    ios.step(el('b', '', 'Tailscale'), ' from the App Store: log in with the same account as ', computer, ' and turn it on, so the phone is on the same tailnet.');
-    ios.step(el('b', '', 'Cedar'), ' for iOS (iOS 17 or newer): from TestFlight, or built from ', code('iOS/'), ' with Xcode.');
-    ios.step('In Cedar\'s Settings, tap ', el('b', '', 'Scan QR Code'), ' and scan the code above, or enter the address and the access token.');
-    ios.step('Optional: allow notifications in Cedar, then choose ', el('b', '', 'iPhone push'), ' on the Notifications page to hear when a response finishes.');
-    parts.push(block('On the iPhone or iPad', ios.list));
+    const b = (text) => el('b', '', text);
+    ios.step(...rich('pairing.ios.tailscale', { app: b('Tailscale') }, { computer }));
+    ios.step(...rich('pairing.ios.cedar', { app: b('Cedar'), dir: code('iOS/') }));
+    ios.step(...rich('pairing.ios.scan', { button: b(tr('pairing.ios.scanButton')) }));
+    ios.step(...rich('pairing.ios.push', { method: b(tr('notify.method.ios')) }));
+    parts.push(block(tr('pairing.ios.title'), ios.list));
     const android = steps();
-    android.step(el('b', '', 'Tailscale'), ' from Google Play or F-Droid: log in with the same account as ', computer, ' and turn it on.');
-    android.step(el('b', '', 'Cedar'), ' for Android: install the APK from ', link('https://github.com/hanneshapke/cedar/releases', 'GitHub Releases'), '.');
-    android.step('In Cedar\'s Settings, tap ', el('b', '', 'Scan QR code'), ' and scan the code above, or enter the address and the access token.');
-    android.step('Optional: allow notifications in Cedar, then choose ', el('b', '', 'Android push'), ' on the Notifications page. A phone without Google Play services gets pushes through the ', link('https://ntfy.sh', 'ntfy'), ' app (UnifiedPush) instead.');
-    parts.push(block('On an Android phone', android.list));
+    android.step(...rich('pairing.android.tailscale', { app: b('Tailscale') }, { computer }));
+    android.step(...rich('pairing.android.cedar', { app: b('Cedar'), link: link('https://github.com/hanneshapke/cedar/releases', 'GitHub Releases') }));
+    android.step(...rich('pairing.android.scan', { button: b(tr('pairing.android.scanButton')) }));
+    android.step(...rich('pairing.android.push', { method: b(tr('notify.method.android')), link: link('https://ntfy.sh', 'ntfy') }));
+    parts.push(block(tr('pairing.android.title'), android.list));
 
     section.replaceChildren(...parts);
   }
 
   async function renderPage(section) {
-    section.replaceChildren(note('Checking…'));
+    section.replaceChildren(note(tr('pairing.checking')));
     try {
       info = await deps.api('GET', '/pairing');
     } catch (e) {
       info = null;
-      section.replaceChildren(note(`Could not load the pairing details: ${e.message}`, 'cedar-set-error'));
+      section.replaceChildren(note(tr('pairing.loadFailed', { error: e.message }), 'cedar-set-error'));
       return;
     }
     render(section, info);
@@ -262,14 +276,14 @@ const cedarPairing = (() => {
 
   function summary() {
     if (!info) return null;
-    if (info.server) return info.on_tailnet ? 'Shared on the tailnet' : 'Shared over HTTPS';
-    return { text: 'Not shared', kind: '' };
+    if (info.server) return info.on_tailnet ? tr('pairing.sharedTailnet') : tr('pairing.sharedHttps');
+    return { text: tr('pairing.notShared'), kind: '' };
   }
 
   function bind() {
     shell()?.register({
-      id: 'iphone', label: 'Phone', title: 'iPhone, iPad & Android',
-      description: 'Connect the Cedar iOS or Android app to this chat: the QR code, the access token, and what Tailscale needs.',
+      id: 'iphone', label: tr('pairing.label'), title: tr('pairing.title'),
+      description: tr('pairing.description'),
       render: renderPage, summary, footer: false,
     });
   }

@@ -5,17 +5,21 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import dev.cedar.cedar.push.Notifier
 import dev.cedar.cedar.ui.CedarTheme
 import dev.cedar.cedar.ui.RootScreen
 import dev.cedar.core.ConnectionCode
 
-class MainActivity : ComponentActivity() {
+/**
+ * The one activity. An [AppCompatActivity] so that AppCompat can show it in the language picked in
+ * the app ([Language]); a change of language recreates it.
+ */
+class MainActivity : AppCompatActivity() {
     private val app get() = (application as CedarApplication).app
     private val push get() = (application as CedarApplication).push
 
@@ -25,6 +29,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 13+ lets the language be changed in the system's settings too: take it from there.
+        val language = app.language
+        if (Build.VERSION.SDK_INT >= 33 && language != null) {
+            val system = Language.systemChoice()
+            if (system != language) app.adoptLanguage(system)
+        }
+        Language.setDefault(app.language)
+        Notifier.createChannel(app.text())
         enableEdgeToEdge()
         setContent {
             CedarTheme {

@@ -20,8 +20,12 @@
 // The model and reasoning pickers take cedar's registry from cedarModels (models.js).
 
 const cedarSchedule = (() => {
-  const FREQUENCIES = [['daily', 'Every day'], ['weekdays', 'Weekdays (Mon–Fri)'], ['weekly', 'Every week']];
-  const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  // Each frequency is named by schedule.freq.<id> in the catalog.
+  const FREQUENCIES = ['daily', 'weekdays', 'weekly'];
+  /** Monday to Sunday in the page's language (1 January 2024 was a Monday). */
+  const DAYS = Array.from({ length: 7 }, (_, i) => new Date(2024, 0, 1 + i).toLocaleDateString(cedarI18n.locale, { weekday: 'long' }));
+  /** A run's or turn's state as shown; one the catalog doesn't know as it is. */
+  const stateName = (state) => (cedarI18n.has(`schedule.state.${state}`) ? tr(`schedule.state.${state}`) : state);
   const ACTIVE = new Set(['queued', 'running']);
   const PREVIEW_CHARS = 600;
   const REFRESH_MS = 10_000;
@@ -57,22 +61,28 @@ const cedarSchedule = (() => {
   /** "Mon 12 Oct, 09:00" in the viewer's locale. */
   function when(iso) {
     if (!iso) return '';
-    return new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return new Date(iso).toLocaleString(cedarI18n.locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
   /** "Notifies by email", for the list. */
   function notifyText(s) {
     if (!s.notify) return '';
-    if (s.notify === 'none') return 'Only in the app';
-    return `Notifies by ${typeof cedarNotify === 'undefined' ? s.notify : cedarNotify.methodLabel(s.notify).toLowerCase()}`;
+    if (s.notify === 'none') return tr('schedule.onlyInApp');
+    if (typeof cedarNotify === 'undefined') return tr('schedule.notifiesBy', { method: s.notify });
+    // German nouns keep their capital letter.
+    const label = cedarNotify.methodLabel(s.notify);
+    return tr('schedule.notifiesBy', { method: cedarI18n.lang === 'de' ? label : label.toLowerCase() });
   }
 
   /** "Every weekday at 09:00 (Europe/Berlin)". */
   function describe(s) {
-    const freq = FREQUENCIES.find(([k]) => k === s.frequency)?.[1] || s.frequency;
-    const day = s.frequency === 'weekly' && s.weekday != null ? ` on ${DAYS[s.weekday]}` : '';
+    const time = s.time_of_day;
+    let text;
+    if (s.frequency === 'weekly' && s.weekday != null) text = tr('schedule.at.weeklyOn', { day: DAYS[s.weekday], time });
+    else if (FREQUENCIES.includes(s.frequency)) text = tr(`schedule.at.${s.frequency}`, { time });
+    else text = tr('schedule.at.other', { frequency: s.frequency, time });
     const zone = s.timezone === localZone() ? '' : ` (${s.timezone})`;
-    return `${freq}${day} at ${s.time_of_day}${zone}`;
+    return `${text}${zone}`;
   }
 
   /** The next full hour, as HH:MM. */
@@ -84,12 +94,12 @@ const cedarSchedule = (() => {
 
   /** What a run is up to: a label and a class (ok, err, live, muted). */
   function runState(run) {
-    if (run.error) return ['could not start', 'err'];
+    if (run.error) return [tr('schedule.state.notStarted'), 'err'];
     const t = run.turn;
-    if (!t) return [run.conversation_id ? 'no response' : 'deleted', 'muted'];
-    if (ACTIVE.has(t.status)) return [t.status, 'live'];
-    if (t.status === 'completed') return ['completed', 'ok'];
-    return [t.status, 'err'];
+    if (!t) return [run.conversation_id ? tr('schedule.state.noResponse') : tr('schedule.state.deleted'), 'muted'];
+    if (ACTIVE.has(t.status)) return [stateName(t.status), 'live'];
+    if (t.status === 'completed') return [stateName('completed'), 'ok'];
+    return [stateName(t.status), 'err'];
   }
 
   function chip(run) {
@@ -116,14 +126,14 @@ const cedarSchedule = (() => {
     const dialog = el('dialog', 'cedar-sched-dialog');
     dialog.setAttribute('aria-labelledby', 'cedar-sched-title');
     const head = el('div', 'cedar-sched-head');
-    const title = el('h3', '', 'Schedule this agent');
+    const title = el('h3', '', tr('schedule.create'));
     title.id = 'cedar-sched-title';
-    head.append(title, button('Close', () => dialog.close()));
+    head.append(title, button(tr('schedule.close'), () => dialog.close()));
 
     // Stage 1: the conversation is being compacted.
     const review = el('div', 'cedar-sched-review');
-    const reviewText = el('span', '', 'Reviewing the conversation…');
-    const retry = button('Try again', () => compactNow());
+    const reviewText = el('span', '', tr('schedule.reviewing'));
+    const retry = button(tr('schedule.tryAgain'), () => compactNow());
     retry.hidden = true;
     review.append(el('span', 'spinner'), reviewText, retry);
 
@@ -132,46 +142,46 @@ const cedarSchedule = (() => {
     const titleInput = el('input');
     titleInput.maxLength = 200;
     titleInput.required = true;
-    titleInput.placeholder = 'What this agent does';
+    titleInput.placeholder = tr('schedule.namePlaceholder');
     const prompt = el('textarea');
     prompt.rows = 9;
     prompt.required = true;
-    prompt.placeholder = 'The prompt the agent runs each time';
+    prompt.placeholder = tr('schedule.promptPlaceholder');
     const promptHelp = el('div', 'cedar-sched-help');
-    const regenerate = button('Regenerate from the conversation', () => compactNow());
-    promptHelp.append(el('span', '', 'Cedar wrote this from the conversation. Edit it until it stands on its own.'), regenerate);
+    const regenerate = button(tr('schedule.regenerate'), () => compactNow());
+    promptHelp.append(el('span', '', tr('schedule.promptHelp')), regenerate);
     const frequency = el('select');
-    for (const [value, label] of FREQUENCIES) frequency.append(new Option(label, value));
+    for (const value of FREQUENCIES) frequency.append(new Option(tr(`schedule.freq.${value}`), value));
     const weekday = el('select');
     DAYS.forEach((d, i) => weekday.append(new Option(d, String(i))));
-    const weekdayField = field('Weekday', weekday);
+    const weekdayField = field(tr('schedule.weekday'), weekday);
     const time = el('input');
     time.type = 'time';
     time.required = true;
     const zone = el('div', 'cedar-sched-zone');
     const model = el('select');
-    const modelField = field('Model', model);
+    const modelField = field(tr('schedule.model'), model);
     const reasoning = el('select');
-    const reasoningField = field('Reasoning', reasoning);
+    const reasoningField = field(tr('schedule.reasoning'), reasoning);
     cedarModels.bindPair(model, reasoning);
     model.addEventListener('change', () => { reasoningField.hidden = reasoning.hidden; });
     // How a finished run is announced: the default from Settings → Notifications, not at all, or
     // one of the methods set up there (cedarNotify knows which).
     const notify = el('select');
-    const notifyField = field('Notify me by', notify);
+    const notifyField = field(tr('schedule.notifyMeBy'), notify);
     const notifyHelp = el('div', 'cedar-sched-help');
-    notifyHelp.append(el('span', '', 'Phone push, iPhone and Android push, browser push and email are set up under Settings → Notifications.'));
+    notifyHelp.append(el('span', '', tr('schedule.notifyHelp')));
     const error = el('div', 'cedar-sched-error');
     error.hidden = true;
     const actions = el('div', 'cedar-sched-actions');
-    const cancel = button('Cancel', () => dialog.close());
-    const submit = el('button', 'primary', 'Schedule');
+    const cancel = button(tr('schedule.cancel'), () => dialog.close());
+    const submit = el('button', 'primary', tr('schedule.schedule'));
     submit.type = 'submit';
     actions.append(cancel, submit);
 
     const row = el('div', 'cedar-sched-row');
-    row.append(field('Frequency', frequency), weekdayField, field('Time', time));
-    f.append(field('Name', titleInput), field('Prompt', prompt), promptHelp, row, zone, modelField, reasoningField, notifyField, notifyHelp, error, actions);
+    row.append(field(tr('schedule.frequency'), frequency), weekdayField, field(tr('schedule.time'), time));
+    f.append(field(tr('schedule.name'), titleInput), field(tr('schedule.prompt'), prompt), promptHelp, row, zone, modelField, reasoningField, notifyField, notifyHelp, error, actions);
     frequency.addEventListener('change', () => { weekdayField.hidden = frequency.value !== 'weekly'; });
     f.addEventListener('submit', (e) => { e.preventDefault(); submitForm(); });
 
@@ -201,14 +211,14 @@ const cedarSchedule = (() => {
   async function fillNotify(selected) {
     const current = selected ?? '';
     form.notify.textContent = '';
-    form.notify.append(new Option('Default', ''), new Option('Only in the app', 'none'));
+    form.notify.append(new Option(tr('schedule.default'), ''), new Option(tr('schedule.onlyInApp'), 'none'));
     form.notify.value = current === 'none' ? 'none' : '';
     if (typeof cedarNotify === 'undefined') return;
     try { await cedarNotify.loadStatus(true); } catch { return; }
     form.notify.textContent = '';
     for (const { value, label } of cedarNotify.methodOptions(true)) form.notify.append(new Option(label, value));
     if (current && ![...form.notify.options].some((o) => o.value === current)) {
-      form.notify.append(new Option(`${cedarNotify.methodLabel(current)} (no longer set up)`, current));
+      form.notify.append(new Option(tr('schedule.noLongerSetUp', { method: cedarNotify.methodLabel(current) }), current));
     }
     form.notify.value = current;
   }
@@ -218,7 +228,7 @@ const cedarSchedule = (() => {
     form.weekday.value = String(weekday ?? (new Date().getDay() + 6) % 7);
     form.weekdayField.hidden = frequency !== 'weekly';
     form.time.value = time;
-    form.zone.textContent = `Times are in ${timezone}.`;
+    form.zone.textContent = tr('schedule.zone', { zone: timezone });
     form.zone.dataset.zone = timezone;
   }
 
@@ -227,8 +237,8 @@ const cedarSchedule = (() => {
     if (!deps || !conversation) return;
     form ??= buildForm();
     editing = { conversation };
-    form.title.textContent = 'Schedule this agent';
-    form.submit.textContent = 'Schedule';
+    form.title.textContent = tr('schedule.create');
+    form.submit.textContent = tr('schedule.schedule');
     form.promptHelp.hidden = false;
     form.titleInput.value = conversation.title || '';
     form.prompt.value = '';
@@ -246,8 +256,8 @@ const cedarSchedule = (() => {
     form ??= buildForm();
     stopRefresh();
     editing = { schedule, returnTo };
-    form.title.textContent = 'Edit scheduled agent';
-    form.submit.textContent = 'Save';
+    form.title.textContent = tr('schedule.edit');
+    form.submit.textContent = tr('schedule.save');
     form.promptHelp.hidden = true;
     form.titleInput.value = schedule.title;
     form.prompt.value = schedule.prompt;
@@ -265,7 +275,7 @@ const cedarSchedule = (() => {
     if (!conversation) return;
     showStage('review');
     form.retry.hidden = true;
-    form.reviewText.textContent = 'Reviewing the conversation…';
+    form.reviewText.textContent = tr('schedule.reviewing');
     const id = ++request;
     try {
       const { prompt } = await deps.api('POST', `/conversations/${conversation.id}/compact`);
@@ -275,7 +285,7 @@ const cedarSchedule = (() => {
       form.prompt.focus();
     } catch (e) {
       if (id !== request || editing?.conversation !== conversation) return;
-      form.reviewText.textContent = e.message || 'Could not review the conversation.';
+      form.reviewText.textContent = e.message || tr('schedule.reviewFailed');
       form.retry.hidden = false;
     }
   }
@@ -300,17 +310,17 @@ const cedarSchedule = (() => {
       const back = editing.returnTo === 'detail' && editing.schedule;
       if (editing.schedule) {
         schedule = await deps.api('PATCH', `/schedules/${editing.schedule.id}`, body);
-        deps.toast(`Saved · next run ${when(schedule.next_run_at)}`);
+        deps.toast(tr('schedule.savedToast', { when: when(schedule.next_run_at) }));
       } else {
         body.conversation_id = editing.conversation.id;
         schedule = await deps.api('POST', '/schedules', body);
-        deps.toast(`Scheduled · next run ${when(schedule.next_run_at)}`);
+        deps.toast(tr('schedule.scheduledToast', { when: when(schedule.next_run_at) }));
       }
       loadSide();
       if (back) openDetail(schedule.id);
       else form.dialog.close();
     } catch (e) {
-      form.error.textContent = e.message || 'Could not save the schedule.';
+      form.error.textContent = e.message || tr('schedule.saveFailed');
       form.error.hidden = false;
     } finally {
       form.submit.disabled = false;
@@ -326,12 +336,12 @@ const cedarSchedule = (() => {
 
   /** "Mon 07:00" for a weekly schedule, "07:00" otherwise, for the sidebar. */
   function nextShort(s) {
-    if (!s.enabled) return 'paused';
+    if (!s.enabled) return tr('schedule.pausedShort');
     if (!s.next_run_at) return '';
     const d = new Date(s.next_run_at);
-    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const time = d.toLocaleTimeString(cedarI18n.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
     if (s.frequency === 'daily') return time;
-    return `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+    return `${d.toLocaleDateString(cedarI18n.locale, { weekday: 'short' })} ${time}`;
   }
 
   const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>';
@@ -375,8 +385,8 @@ const cedarSchedule = (() => {
     form ??= buildForm();
     editing = { detail: id };
     stopRefresh();
-    form.title.textContent = schedules.find((s) => s.id === id)?.title || 'Scheduled agent';
-    form.detail.replaceChildren(el('div', 'cedar-sched-review-text', 'Loading…'));
+    form.title.textContent = schedules.find((s) => s.id === id)?.title || tr('schedule.agent');
+    form.detail.replaceChildren(el('div', 'cedar-sched-review-text', tr('schedule.loading')));
     showStage('detail');
     if (!form.dialog.open) form.dialog.showModal();
     await renderDetail(id);
@@ -389,7 +399,7 @@ const cedarSchedule = (() => {
       data = await deps.api('GET', `/schedules/${id}`);
     } catch (e) {
       if (req !== request || editing?.detail !== id) return;
-      form.detail.replaceChildren(el('div', 'cedar-sched-error', e.message || 'Could not load the schedule.'));
+      form.detail.replaceChildren(el('div', 'cedar-sched-error', e.message || tr('schedule.loadFailed')));
       return;
     }
     if (req !== request || editing?.detail !== id) return;
@@ -397,19 +407,19 @@ const cedarSchedule = (() => {
     form.title.textContent = s.title;
     const main = el('div', 'cedar-sched-item-main');
     main.append(el('div', 'cedar-sched-sub', [describe(s), notifyText(s)].filter(Boolean).join(' · ')));
-    main.append(el('div', 'cedar-sched-sub', s.enabled ? `Next run ${when(s.next_run_at)}` : 'Paused'));
+    main.append(el('div', 'cedar-sched-sub', s.enabled ? tr('schedule.nextRun', { when: when(s.next_run_at) }) : tr('schedule.paused')));
     const promptBox = el('details', 'cedar-sched-prompt');
-    promptBox.append(el('summary', '', 'Prompt'), el('pre', '', s.prompt));
+    promptBox.append(el('summary', '', tr('schedule.prompt')), el('pre', '', s.prompt));
     const actions = el('div', 'cedar-sched-item-actions');
-    if (s.source_conversation_id) actions.append(button('Open', () => openConversation(s.source_conversation_id)));
+    if (s.source_conversation_id) actions.append(button(tr('schedule.open'), () => openConversation(s.source_conversation_id)));
     actions.append(
-      button('Run now', (e) => runNow(s, e.currentTarget)),
-      button(s.enabled ? 'Pause' : 'Resume', () => setEnabled(s, !s.enabled)),
-      button('Edit', () => openEdit(s, { returnTo: 'detail' })),
-      button('Delete', () => remove(s)),
+      button(tr('schedule.runNow'), (e) => runNow(s, e.currentTarget)),
+      button(s.enabled ? tr('schedule.pause') : tr('schedule.resume'), () => setEnabled(s, !s.enabled)),
+      button(tr('schedule.editButton'), () => openEdit(s, { returnTo: 'detail' })),
+      button(tr('schedule.delete'), () => remove(s)),
     );
-    const parts = [main, promptBox, actions, el('div', 'cedar-sched-runs-label', `${runs.length} run${runs.length === 1 ? '' : 's'}`)];
-    if (!runs.length) parts.push(el('div', 'empty-list', 'No runs yet.'));
+    const parts = [main, promptBox, actions, el('div', 'cedar-sched-runs-label', tr('schedule.runs', { count: runs.length }))];
+    if (!runs.length) parts.push(el('div', 'empty-list', tr('schedule.noRuns')));
     let live = false;
     for (const run of runs) {
       const [, cls] = runState(run);
@@ -424,8 +434,8 @@ const cedarSchedule = (() => {
     const row = el('div', 'cedar-sched-run');
     const head = el('div', 'cedar-sched-run-head');
     head.append(el('span', 'cedar-sched-when', when(run.started_at)), chip(run));
-    if (run.manual) head.append(el('span', 'cedar-sched-chip muted', 'run now'));
-    if (run.conversation_id) head.append(button('Open', () => openConversation(run.conversation_id)));
+    if (run.manual) head.append(el('span', 'cedar-sched-chip muted', tr('schedule.manualRun')));
+    if (run.conversation_id) head.append(button(tr('schedule.open'), () => openConversation(run.conversation_id)));
     row.append(head);
     const body = el('div', 'cedar-sched-run-body');
     if (run.error) {
@@ -439,11 +449,11 @@ const cedarSchedule = (() => {
       md.innerHTML = deps.renderMarkdown(short ? `${text.slice(0, PREVIEW_CHARS)}…` : text);
       body.append(md);
       if (short) {
-        const more = button('Show all', () => { md.innerHTML = deps.renderMarkdown(text); more.remove(); });
+        const more = button(tr('schedule.showAll'), () => { md.innerHTML = deps.renderMarkdown(text); more.remove(); });
         body.append(more);
       }
     } else if (run.turn && ACTIVE.has(run.turn.status)) {
-      body.append(el('div', 'cedar-sched-sub', 'Working… open it to follow along.'));
+      body.append(el('div', 'cedar-sched-sub', tr('schedule.working')));
     }
     if (body.childElementCount) row.append(body);
     return row;
@@ -453,7 +463,7 @@ const cedarSchedule = (() => {
     if (btn) btn.disabled = true;
     try {
       await deps.api('POST', `/schedules/${s.id}/run`);
-      deps.toast(`Started “${s.title}”`);
+      deps.toast(tr('schedule.started', { title: s.title }));
       loadSide();
       if (editing?.detail === s.id) renderDetail(s.id);
     } catch (e) {
@@ -473,7 +483,7 @@ const cedarSchedule = (() => {
   }
 
   async function remove(s) {
-    if (!(await cedarConfirm(`Delete “${s.title}” and the results of all its runs? This cannot be undone.`, { ok: 'Delete' }))) return;
+    if (!(await cedarConfirm(tr('schedule.confirmDelete', { title: s.title }), { ok: tr('schedule.delete') }))) return;
     try {
       await deps.api('DELETE', `/schedules/${s.id}`);
       if (form?.dialog.open) form.dialog.close();

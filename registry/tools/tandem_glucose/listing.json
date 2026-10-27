@@ -1,5 +1,33 @@
 {
   "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",
   "category": "health",
-  "reviewed": true
+  "reviewed": true,
+  "translations": {
+    "de": {
+      "summary": "Vergleiche deinen letzten Tag mit Tandem-Pumpen- und CGM-Daten mit der Woche davor, mit Tipps für heute",
+      "secrets": {
+        "TANDEM_EMAIL": "Die E-Mail-Adresse deines Tandem-Source-Kontos",
+        "TANDEM_PASSWORD": "Das Passwort dazu",
+        "TANDEM_REGION": "us oder eu (Standard: us)",
+        "TANDEM_TIMEZONE": "Die IANA-Zeitzone der Pumpe, z. B. Europe/Berlin",
+        "TANDEM_PUMP_SERIAL": "Welche Pumpe, falls das Konto mehrere hat",
+        "GLUCOSE_UNIT": "mgdl oder mmol",
+        "TARGET_LOW": "Untergrenze des Zielbereichs in mg/dL (Standard: 70)",
+        "TARGET_HIGH": "Obergrenze des Zielbereichs in mg/dL (Standard: 180)"
+      }
+    },
+    "fr": {
+      "summary": "Comparez votre dernière journée de pompe Tandem et de CGM à la semaine précédente, avec des conseils pour aujourd'hui",
+      "secrets": {
+        "TANDEM_EMAIL": "L'adresse e-mail de votre compte Tandem Source",
+        "TANDEM_PASSWORD": "Son mot de passe",
+        "TANDEM_REGION": "us ou eu (par défaut : us)",
+        "TANDEM_TIMEZONE": "Le fuseau horaire IANA de la pompe, par ex. Europe/Paris",
+        "TANDEM_PUMP_SERIAL": "Quelle pompe, si le compte en a plusieurs",
+        "GLUCOSE_UNIT": "mgdl ou mmol",
+        "TARGET_LOW": "Limite basse de la plage cible, en mg/dL (par défaut : 70)",
+        "TARGET_HIGH": "Limite haute de la plage cible, en mg/dL (par défaut : 180)"
+      }
+    }
+  }
 }

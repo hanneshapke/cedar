@@ -54,6 +54,30 @@ class ChatClientTest {
     }
 
     @Test
+    fun postsTheLocaleWithAMessage() = runBlocking {
+        server.enqueue(json("""{"id":"t1","conversation_id":"c1","seq":1,"run_id":"r1","prompt":"hallo","status":"queued"}"""))
+        val locale = AppLocales.effective(null, java.util.Locale.forLanguageTag("de-CH"))
+        client.send("c1", ChatClient.SendMessage("hallo", locale = locale))
+        assertEquals(j("""{"content":"hallo","locale":"de-CH"}"""), j(server.takeRequest().body.readUtf8()))
+    }
+
+    @Test
+    fun setsAndClearsTheServersLocale() = runBlocking {
+        server.enqueue(json("""{"locale":"fr-BE"}"""))
+        server.enqueue(json("""{"locale":null}"""))
+        client.setLocale("fr-BE")
+        client.setLocale(null)
+        server.takeRequest().let {
+            assertEquals("PUT /api/settings/locale", "${it.method} ${it.path}")
+            assertEquals(j("""{"locale":"fr-BE"}"""), j(it.body.readUtf8()))
+        }
+        server.takeRequest().let {
+            assertEquals("PUT /api/settings/locale", "${it.method} ${it.path}")
+            assertEquals(j("""{"locale":null}"""), j(it.body.readUtf8()), "Automatic clears it, explicitly")
+        }
+    }
+
+    @Test
     fun starsSchedulesAndRegistersThePhone() = runBlocking {
         val conversation = """{"id":"c1","unread":false,"needs_answer":false,"starred_at":"2026-10-23T08:00:00Z",
             "created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:36:00Z"}"""

@@ -1,12 +1,15 @@
 package dev.cedar.cedar
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.cedar.cedar.push.PushManager
+import dev.cedar.cedar.push.Notifier
 import dev.cedar.cedar.storage.SettingsStore
+import dev.cedar.cedar.ui.describe
 import dev.cedar.core.ChatClient
 import dev.cedar.core.ChatException
 import dev.cedar.core.Conversation
@@ -37,8 +40,24 @@ enum class SidebarMode { CHATS, STARRED, SCHEDULED }
  * App-wide state, as iOS/Cedar/App/AppModel.swift has it: settings, the conversation list, the
  * starred conversations, the scheduled agents, the inbox count, and the open chats.
  */
-class AppModel(private val store: SettingsStore, val push: PushManager) {
+class AppModel(private val context: Context, private val store: SettingsStore, val push: PushManager) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /**
+     * The language picked: a tag from `AppLocales.OPTIONS`, "" for Automatic, or null until the user
+     * has chosen one (the first step of onboarding).
+     */
+    var language by mutableStateOf(store.language)
+        private set
+
+    /** The locale each message carries and the server is told: the choice, or the device's for Automatic. */
+    val locale: String get() = Language.effective(language)
+
+    /** The app's resources in its language, for text made outside an activity. */
+    fun text(): Context = Language.localized(context, language)
+
+    /** What went wrong, in the user's language. */
+    fun describe(error: Throwable): String = text().describe(error)
 
     var settings by mutableStateOf(store.load())
         private set
@@ -88,6 +107,12 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
     var selection by mutableStateOf<String?>(null)
     var showingSettings by mutableStateOf(!settings.isConfigured)
 
+    /**
+     * The settings being edited while Settings is open, so that a change of language, which recreates
+     * the screen, keeps what was typed. Kept in memory only (it may hold a new access token).
+     */
+    var settingsDraft: ServerSettings? = null
+
     /** A `cedar://connect` link opened from outside, for Settings to fill in and test. */
     var pendingConnection by mutableStateOf<dev.cedar.core.ConnectionCode?>(null)
 
@@ -105,6 +130,44 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
         } catch (_: ChatException) {
             null
         }
+
+    // Language
+
+    /**
+     * The user picked a language ("" for Automatic), in onboarding or Settings: the app switches to it
+     * at once (activities are recreated in it), and the server is told so that scheduled runs and
+     * notifications follow it, now or once a server is connected.
+     */
+    fun chooseLanguage(choice: String) {
+        adoptLanguage(choice)
+        Language.apply(choice)
+        Notifier.createChannel(text())
+    }
+
+    /** Takes `choice` as the language without applying it (the system already has, on Android 13+). */
+    fun adoptLanguage(choice: String) {
+        store.language = choice
+        language = choice
+        store.localePending = true
+        syncLocale()
+    }
+
+    /** Tells the server the language if it hasn't been told yet. Failures are kept for the next start. */
+    private fun syncLocale() {
+        val choice = language ?: return
+        if (!store.localePending) return
+        val client = client ?: return
+        scope.launch {
+            try {
+                client.setLocale(choice.ifEmpty { null })
+                if (language == choice) store.localePending = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Not fatal: messages carry the locale anyway, and the next start tries again.
+            }
+        }
+    }
 
     fun updateSettings(new: ServerSettings) {
         val serverChanged = !new.sameServer(settings)
@@ -129,6 +192,8 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
             selection = null
             inboxUnread = 0
             push.serverChanged(old, new)
+            // A newly connected server learns the language too.
+            if (language != null && new.isConfigured) store.localePending = true
         }
         start()
     }
@@ -137,13 +202,14 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
     fun start() {
         scope.launch { refresh() }
         startNotices()
+        syncLocale()
     }
 
     // Conversations
 
     suspend fun refresh() {
         val client = client ?: run {
-            listError = ChatException.NotConfigured.message
+            listError = describe(ChatException.NotConfigured)
             return
         }
         isRefreshing = true
@@ -161,7 +227,7 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                starredError = e.message
+                starredError = describe(e)
             }
             if (!modelsLoaded) {
                 modelsLoaded = true
@@ -170,7 +236,7 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            listError = e.message
+            listError = describe(e)
         } finally {
             isRefreshing = false
         }
@@ -286,7 +352,7 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            scheduleError = e.message
+            scheduleError = describe(e)
             return
         }
         val ids = schedules.map { it.id }.toSet()
@@ -309,10 +375,10 @@ class AppModel(private val store: SettingsStore, val push: PushManager) {
                 scheduleRuns.remove(scheduleId)
                 expandedSchedules.remove(scheduleId)
             } else {
-                scheduleError = e.message
+                scheduleError = describe(e)
             }
         } catch (e: Exception) {
-            scheduleError = e.message
+            scheduleError = describe(e)
         }
     }
 

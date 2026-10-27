@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -53,9 +54,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.cedar.cedar.R
 import dev.cedar.cedar.ui.CedarColors
 import dev.cedar.cedar.ui.cardFrame
+import dev.cedar.cedar.ui.chartKindLabel
 import dev.cedar.core.ChartCard
+import java.text.NumberFormat
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -268,21 +272,22 @@ fun ChartCardView(card: ChartCard) {
     val hidden = remember(card) { mutableStateListOf<String>() }
     var showTable by remember(card) { mutableStateOf(false) }
     val format: (Double) -> String = { ChartCard.format(it) }
-    val visible = card.series.withIndex().filter { it.value.name !in hidden }
+    val names = seriesNames(card)
+    val visible = card.series.withIndex().filter { names[it.index] !in hidden }
     Column(Modifier.cardFrame(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column {
-            Text(card.title ?: card.kind.title, style = MaterialTheme.typography.titleMedium)
-            listOfNotNull(card.yLabel, card.xLabel?.let { "by $it" }).takeIf { it.isNotEmpty() }?.let {
+            Text(card.title ?: stringResource(chartKindLabel(card.kind)), style = MaterialTheme.typography.titleMedium)
+            listOfNotNull(card.yLabel, card.xLabel?.let { stringResource(R.string.chart_by, it) }).takeIf { it.isNotEmpty() }?.let {
                 Text(it.joinToString(" "), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
             }
         }
         when (card.kind) {
             ChartCard.Kind.PIE -> PieChart(card)
-            ChartCard.Kind.BAR, ChartCard.Kind.BARH, ChartCard.Kind.HISTOGRAM -> BarChart(card, hidden)
+            ChartCard.Kind.BAR, ChartCard.Kind.BARH, ChartCard.Kind.HISTOGRAM -> BarChart(card, names, hidden)
             else -> {
                 val numeric = card.numericX
                 val lines = visible.map { (i, s) ->
-                    Line(s.name, seriesColor(i), s.values.mapIndexed { j, v -> (if (numeric) card.labels[j].number!! else j.toDouble()) to v },
+                    Line(names[i], seriesColor(i), s.values.mapIndexed { j, v -> (if (numeric) card.labels[j].number!! else j.toDouble()) to v },
                         fill = card.kind == ChartCard.Kind.AREA)
                 }
                 LineChart(
@@ -297,28 +302,35 @@ fun ChartCardView(card: ChartCard) {
             }
         }
         if (card.series.size > 1 && card.kind != ChartCard.Kind.PIE) {
-            Legend(card.series.mapIndexed { i, s -> s.name to seriesColor(i) }, hidden) { name -> if (name in hidden) hidden.remove(name) else hidden.add(name) }
+            Legend(names.mapIndexed { i, name -> name to seriesColor(i) }, hidden) { name -> if (name in hidden) hidden.remove(name) else hidden.add(name) }
         }
-        if (card.thinned) Text("Thinned to fit the card; the saved file has every point.", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+        if (card.thinned) {
+            Text(stringResource(R.string.chart_thinned), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+        }
         Row(Modifier.clickable { showTable = !showTable }, verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.ChevronRight, null, Modifier.size(16.dp).rotate(if (showTable) 90f else 0f), tint = CedarColors.secondaryText)
-            Text("Data", style = MaterialTheme.typography.labelMedium, color = CedarColors.secondaryText)
+            Text(stringResource(R.string.chart_data), style = MaterialTheme.typography.labelMedium, color = CedarColors.secondaryText)
         }
-        if (showTable) DataTable(card)
+        if (showTable) DataTable(card, names)
     }
 }
 
+/** Each series' name: the model's, or "Series 2" in the user's language for one it didn't name. */
+@Composable
+private fun seriesNames(card: ChartCard): List<String> =
+    card.series.mapIndexed { i, s -> if (s.named) s.name else stringResource(R.string.chart_series, i + 1) }
+
 /** Bars, horizontal bars or a histogram's bins; stacked when the call asked. */
 @Composable
-private fun BarChart(card: ChartCard, hidden: List<String>) {
+private fun BarChart(card: ChartCard, names: List<String>, hidden: List<String>) {
     val measurer = rememberTextMeasurer()
     val ink = CedarColors.secondaryText
     val grid = MaterialTheme.colorScheme.outlineVariant
     val histogram = card.kind == ChartCard.Kind.HISTOGRAM
     val hist = if (histogram) card.histogram else null
     val categories: List<String> = hist?.first?.windowed(2)?.map { (a, b) -> "${ChartCard.format(a)}–${ChartCard.format(b)}" } ?: card.labels.map { it.text }
-    val series = card.series.withIndex().filter { it.value.name !in hidden }.map { (i, s) ->
-        Triple(s.name, seriesColor(i), if (hist != null) hist.second[i].map { it.toDouble() } else s.values.map { it ?: 0.0 })
+    val series = card.series.withIndex().filter { names[it.index] !in hidden }.map { (i, s) ->
+        Triple(names[i], seriesColor(i), if (hist != null) hist.second[i].map { it.toDouble() } else s.values.map { it ?: 0.0 })
     }
     if (series.isEmpty() || categories.isEmpty()) return
     val horizontal = card.kind == ChartCard.Kind.BARH
@@ -385,10 +397,8 @@ private fun BarChart(card: ChartCard, hidden: List<String>) {
         }
     }
     probe?.let { c ->
-        Text(
-            "${categories[c]}: " + series.joinToString(", ") { (name, _, values) -> "${if (series.size > 1) "$name " else ""}${ChartCard.format(values.getOrElse(c) { 0.0 })}" },
-            style = MaterialTheme.typography.bodySmall,
-        )
+        val read = series.joinToString(", ") { (name, _, values) -> "${if (series.size > 1) "$name " else ""}${ChartCard.format(values.getOrElse(c) { 0.0 })}" }
+        Text(stringResource(R.string.label_value, categories[c], read), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -433,7 +443,8 @@ private fun PieChart(card: ChartCard) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.alpha(if (probe == null || probe == i) 1f else 0.5f)) {
                     Box(Modifier.size(10.dp).clip(CircleShape).background(seriesColor(i)))
                     Spacer(Modifier.width(6.dp))
-                    Text("${l.text} ${"%.0f".format(values[i] / total * 100)}%", style = MaterialTheme.typography.bodySmall)
+                    val share = NumberFormat.getPercentInstance().apply { maximumFractionDigits = 0 }.format(values[i] / total)
+                    Text("${l.text} $share", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -442,7 +453,7 @@ private fun PieChart(card: ChartCard) {
 
 /** The data under the chart, the first rows of it. */
 @Composable
-private fun DataTable(card: ChartCard) {
+private fun DataTable(card: ChartCard, names: List<String>) {
     val maxRows = 200
     val histogram = card.kind == ChartCard.Kind.HISTOGRAM
     val rows: List<List<String>> = if (histogram) {
@@ -451,7 +462,7 @@ private fun DataTable(card: ChartCard) {
     } else {
         card.labels.mapIndexed { i, l -> listOf(l.text) + card.series.map { s -> s.values[i]?.let(ChartCard::format) ?: "–" } }
     }
-    val header = listOf(card.xLabel ?: if (histogram) "Bin" else "") + card.series.map { it.name }
+    val header = listOf(card.xLabel ?: if (histogram) stringResource(R.string.chart_bin) else "") + names
     Row(Modifier.horizontalScroll(rememberScrollState())) {
         header.indices.forEach { col ->
             Column(Modifier.padding(end = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -461,6 +472,6 @@ private fun DataTable(card: ChartCard) {
         }
     }
     if (rows.size > maxRows) {
-        Text("First $maxRows of ${rows.size} rows; the saved file has them all.", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+        Text(stringResource(R.string.chart_first_rows, maxRows, rows.size), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
     }
 }

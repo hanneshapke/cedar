@@ -4,6 +4,7 @@ use crate::cedar::{self, Attachment, CedarClient, RunOptions};
 use crate::channels::{self, ApnsEnvironment, Method, Reach, Scope, Security};
 use crate::config::Config;
 use crate::error::AppError;
+use crate::i18n::{self, Lang};
 use crate::prompt::{self, Exchange};
 use crate::schedule::{self, Timing};
 use crate::notify;
@@ -96,6 +97,20 @@ const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
+/// The pages' translations: the lookup every page loads first, and the language question and
+/// Settings page. The catalogs in `static/i18n/` hold the text, one file per area.
+const I18N_JS: &str = include_str!("../static/i18n.js");
+const LANGUAGE_JS: &str = include_str!("../static/language.js");
+const LANGUAGE_CSS: &str = include_str!("../static/language.css");
+const I18N_CATALOGS: &[(&str, &str)] = &[
+    ("common.js", include_str!("../static/i18n/common.js")),
+    ("settings.js", include_str!("../static/i18n/settings.js")),
+    ("cards.js", include_str!("../static/i18n/cards.js")),
+    ("v1.js", include_str!("../static/i18n/v1.js")),
+    ("v2.js", include_str!("../static/i18n/v2.js")),
+    ("v3.js", include_str!("../static/i18n/v3.js")),
+    ("v4.js", include_str!("../static/i18n/v4.js")),
+];
 const ATTACH_JS: &str = include_str!("../static/attach.js");
 const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
@@ -264,6 +279,7 @@ pub fn router(state: AppState) -> Router {
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
         .route("/settings", get(get_settings).put(put_settings))
+        .route("/settings/locale", put(put_locale))
         .route("/pairing", get(get_pairing))
         .route("/update", get(get_update).post(install_update))
         .route("/update/check", post(check_update))
@@ -294,6 +310,9 @@ pub fn router(state: AppState) -> Router {
     let pages = Router::new()
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
         .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
+        .route("/i18n.js", get(|| async { asset(JS, I18N_JS) }))
+        .route("/language.js", get(|| async { asset(JS, LANGUAGE_JS) }))
+        .route("/language.css", get(|| async { asset(CSS, LANGUAGE_CSS) }))
         .route("/confirm.js", get(|| async { asset(JS, CONFIRM_JS) }))
         .route("/image-view.js", get(|| async { asset(JS, IMAGE_VIEW_JS) }))
         .route("/image-view.css", get(|| async { asset(CSS, IMAGE_VIEW_CSS) }))
@@ -343,6 +362,9 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(|| async { "ok" }));
     let pages = FONTS.iter().fold(pages, |pages, &(name, bytes)| {
         pages.route(&format!("/fonts/{name}"), get(move || async move { asset(WOFF2, bytes) }))
+    });
+    let pages = I18N_CATALOGS.iter().fold(pages, |pages, &(name, js)| {
+        pages.route(&format!("/i18n/{name}"), get(move || async move { asset(JS, js) }))
     });
     with_ui(with_ui(with_ui(with_ui(pages, V1), V2), V3), V4)
         .nest("/api", api)
@@ -875,12 +897,14 @@ async fn test_notification(State(state): State<AppState>, ApiJson(body): ApiJson
         return Err(AppError::BadRequest("pick a method to test".into()));
     }
     let settings = state.store.notification_settings().await?;
+    let lang = Lang::of(state.store.preferences().await?.locale.as_deref());
     let message = channels::Message {
-        title: "Cedar: test notification".into(),
-        body: "This is how Cedar will tell you when a response finishes while you are away.".into(),
+        title: lang.test_title().into(),
+        body: lang.test_body().into(),
         url: format!("{}/", state.cfg.public_url),
         tag: "test".into(),
         conversation_id: None,
+        open_label: lang.open_in_cedar().into(),
     };
     let outcome = channels::send(&state, &settings, method, &message).await;
     channels::record(&state.store, method, true, &outcome).await?;
@@ -1064,6 +1088,8 @@ struct MessageBody {
     attachments: Option<Vec<Attachment>>,
     /// Whether the run plans: `off`, `on`, `auto` or `tool`. Absent: the plan setting from Settings.
     plan: Option<String>,
+    /// The language the page or app is shown in (a BCP 47 tag). Absent: the one from Settings.
+    locale: Option<String>,
 }
 
 /// The files sent with a message: checked the way cedar checks them (count, name, type, base64,
@@ -1201,6 +1227,7 @@ async fn send_message(
     let requested = blank_is_none(body.model.as_deref());
     let reasoning = blank_is_none(body.reasoning.as_deref());
     let plan = clean_plan(body.plan)?;
+    let locale = i18n::clean_locale(body.locale.as_deref()).map_err(AppError::BadRequest)?;
     // Whether the model takes them is cedar's call (its registry says), relayed as it answers.
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
     let prefs = state.store.preferences().await?;
@@ -1215,6 +1242,7 @@ async fn send_message(
         attachments: Some(&attachments),
         plan: Some(plan.as_deref().or(settings.plan.as_deref()).unwrap_or(DEFAULT_PLAN)),
         interactive: true,
+        locale: locale.as_deref().or(settings.locale.as_deref()),
         ..settings.options(parent)
     };
 
@@ -1255,6 +1283,8 @@ pub struct RunSettings {
     pub tools: Vec<String>,
     /// Whether a message's run plans first; only messages use it, not schedules.
     pub plan: Option<String>,
+    /// The language from Settings; a message may name its own (the page's or app's language).
+    pub locale: Option<String>,
 }
 
 /// What a message's run does about a plan when Settings doesn't say.
@@ -1285,7 +1315,15 @@ impl RunSettings {
             None => still_registered(state, prefs.model.as_deref()).await,
         };
         let tools = tools.or_else(|| prefs.tools.clone()).unwrap_or_else(|| vec!["*".to_string()]);
-        Self { model, reasoning, system: prefs.system.clone(), max_turns: prefs.max_turns, tools, plan: prefs.plan.clone() }
+        Self {
+            model,
+            reasoning,
+            system: prefs.system.clone(),
+            max_turns: prefs.max_turns,
+            tools,
+            plan: prefs.plan.clone(),
+            locale: prefs.locale.clone(),
+        }
     }
 
     pub fn options(&self, parent: Option<Uuid>) -> RunOptions<'_> {
@@ -1299,6 +1337,7 @@ impl RunSettings {
             attachments: None,
             plan: None,
             interactive: false,
+            locale: self.locale.as_deref(),
         }
     }
 }
@@ -1355,13 +1394,33 @@ async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<Sett
     }
     let (model, _) = clean_model_choice(&state, body.model.as_deref(), None).await?;
     let plan = clean_plan(body.plan)?;
+    // The language is saved on its own (`PUT /api/settings/locale`), so it is kept here.
+    let locale = state.store.preferences().await?.locale;
     let prefs = Preferences {
         tools: clean_tools(&state, body.tools).await?,
         model,
         system,
         max_turns: body.max_turns,
         plan,
+        locale,
     };
+    state.store.set_preferences(&prefs).await?;
+    Ok(Json(prefs))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocaleBody {
+    /// A BCP 47 tag such as `de` or `fr-CH`; `null` goes back to cedar's default.
+    locale: Option<String>,
+}
+
+/// Save the user's language: what scheduled runs and notifications use, and what the pages and
+/// apps start in on a device that hasn't picked one.
+async fn put_locale(State(state): State<AppState>, ApiJson(body): ApiJson<LocaleBody>) -> Result<Json<Preferences>, AppError> {
+    let locale = i18n::clean_locale(body.locale.as_deref()).map_err(AppError::BadRequest)?;
+    let mut prefs = state.store.preferences().await?;
+    prefs.locale = locale;
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))
 }

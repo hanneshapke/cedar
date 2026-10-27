@@ -28,8 +28,10 @@ class CedarApplication : Application() {
                 null
             }
         }
-        app = AppModel(store, push)
-        Notifier.createChannel(this)
+        app = AppModel(this, store, push)
+        // Numbers and dates in the user's language from the start, for notifications too.
+        Language.setDefault(store.language)
+        Notifier.createChannel(app.text())
         // OpenStreetMap's tile policy asks for an identifying user agent; tiles are cached in the
         // app's own cache, which needs no storage permission.
         Configuration.getInstance().apply {

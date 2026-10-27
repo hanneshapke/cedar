@@ -4,6 +4,7 @@
 //! the images present, cedar does the rest. When the daemon isn't running, the app it comes with
 //! is started.
 
+use crate::i18n::tf;
 use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::{Path, PathBuf};
@@ -253,7 +254,7 @@ impl DockerCli {
                 Ok(Err(e)) => return Err(e).context("reading docker pull output"),
                 Err(_) => {
                     let _ = child.kill().await;
-                    bail!("pulling {image} took longer than 45 minutes; check the connection and try again");
+                    bail!(tf("images.pull_slow", &[("image", image)]));
                 }
             }
         }
@@ -264,12 +265,9 @@ impl DockerCli {
             let stderr = errors.await.unwrap_or_default();
             let stderr = stderr.trim();
             if stderr.contains("denied") || stderr.contains("not found") || stderr.contains("manifest unknown") {
-                bail!(
-                    "{image} could not be pulled ({stderr}). Either this version's images have not been \
-                     published yet or the package is private on GitHub; see desktop/README.md"
-                );
+                bail!(tf("images.unpublished", &[("image", image), ("stderr", stderr)]));
             }
-            bail!("pulling {image} failed: {stderr}")
+            bail!(tf("images.pull_failed", &[("image", image), ("stderr", stderr)]))
         }
     }
 }

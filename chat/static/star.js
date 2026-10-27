@@ -41,7 +41,7 @@ const cedarStar = (() => {
   }
 
   function title(c) {
-    return c.title || 'New chat';
+    return c.title || tr('star.newChat');
   }
 
   // -- the sidebar list --------------------------------------------------------------------------
@@ -60,13 +60,13 @@ const cedarStar = (() => {
         link.href = `#/c/${c.id}`;
         link.classList.toggle('active', current?.id === c.id);
         link.classList.toggle('is-unread', Boolean(c.unread));
-        link.title = c.schedule_title ? `${title(c)} · scheduled by ${c.schedule_title}` : title(c);
+        link.title = c.schedule_title ? tr('star.scheduledBy', { title: title(c), schedule: c.schedule_title }) : title(c);
         const name = el('span', 'cedar-star-link-name');
         // A scheduled run gets the clock the schedule list uses, so the two kinds are told apart.
         name.insertAdjacentHTML('beforeend', c.schedule_id ? CLOCK : STAR);
         name.append(el('span', 'cedar-star-link-title', title(c)));
         link.append(name);
-        if (c.needs_answer) link.append(el('span', 'cedar-star-link-note', 'Needs answer'));
+        if (c.needs_answer) link.append(el('span', 'cedar-star-link-note', tr('star.needsAnswer')));
         else if (c.unread) link.append(el('span', 'cedar-star-link-dot'));
         link.addEventListener('click', () => deps.onOpen?.());
         list.append(link);
@@ -94,11 +94,11 @@ const cedarStar = (() => {
       b.hidden = !current;
       b.classList.add('cedar-star-btn');
       b.setAttribute('aria-pressed', String(on));
-      const label = on ? 'Unstar this conversation' : 'Star this conversation';
+      const label = on ? tr('star.unstarLabel') : tr('star.starLabel');
       b.setAttribute('aria-label', label);
-      b.title = on ? 'Starred: listed under Starred on every device. Click to unstar' : 'Star: list this conversation under Starred on every device';
+      b.title = on ? tr('star.starredTitle') : tr('star.starTitle');
       const lbl = b.querySelector('.lbl');
-      if (lbl) lbl.textContent = on ? 'Starred' : 'Star';
+      if (lbl) lbl.textContent = on ? tr('star.starred') : tr('star.star');
     }
   }
 
@@ -118,12 +118,12 @@ const cedarStar = (() => {
     button.disabled = true;
     try {
       await deps.api(on ? 'PUT' : 'DELETE', `/conversations/${c.id}/star`);
-      deps.toast(on ? 'Starred' : 'Removed from Starred');
+      deps.toast(on ? tr('star.added') : tr('star.removed'));
       load(); // for the schedule's title, and anything starred elsewhere in the meantime
     } catch (e) {
       starred = before;
       render();
-      deps.toast(e.message || 'Could not change the star');
+      deps.toast(e.message || tr('star.failed'));
     } finally {
       button.disabled = false;
     }

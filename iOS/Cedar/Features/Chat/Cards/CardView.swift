@@ -27,16 +27,17 @@ extension View {
     }
 }
 
-/// A small heading over a part of a card.
+/// A small heading over a part of a card, in capitals.
 struct CardLabel: View {
-    let text: String
+    let text: LocalizedStringKey
 
-    init(_ text: String) { self.text = text }
+    init(_ text: LocalizedStringKey) { self.text = text }
 
     var body: some View {
-        Text(text.uppercased())
+        Text(text)
             .font(.caption2.weight(.semibold))
             .tracking(0.6)
+            .textCase(.uppercase)
             .foregroundStyle(.secondary)
     }
 }
@@ -135,9 +136,9 @@ struct MapCardView: View {
             if let title = card.title {
                 Text(title).font(.headline)
             }
-            CardMap(title: card.title ?? "Map", position: position) {
+            CardMap(title: card.title ?? L10n.string("Map"), position: position) {
                 ForEach(Array(card.markers.enumerated()), id: \.offset) { index, place in
-                    Marker(place.label, monogram: Text("\(index + 1)"), coordinate: place.location)
+                    Marker(place.label, monogram: Text(verbatim: "\(index + 1)"), coordinate: place.location)
                         .tint(Color.accentColor)
                 }
             }
@@ -163,7 +164,7 @@ struct MapCardView: View {
 
     @ViewBuilder private func row(index: Int, place: Place) -> some View {
         let label = HStack(spacing: 10) {
-            Text("\(index + 1)")
+            Text(verbatim: "\(index + 1)")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 22, height: 22)

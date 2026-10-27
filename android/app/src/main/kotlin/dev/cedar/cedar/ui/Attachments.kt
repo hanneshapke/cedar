@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import dev.cedar.cedar.R
 import dev.cedar.core.OutgoingAttachment
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -44,7 +45,7 @@ object Attachments {
                 if (total > OutgoingAttachment.MAX_BYTES && OutgoingAttachment.accepts(mime)) break
             }
             out.toByteArray()
-        } ?: throw IOException("$name could not be read")
+        } ?: throw IOException(context.getString(R.string.file_could_not_be_read, name))
         if (OutgoingAttachment.accepts(mime)) return OutgoingAttachment(name, mime!!, data)
         if (mime?.startsWith("image/") != true) return null
         val jpeg = jpeg(data) ?: return null

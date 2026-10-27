@@ -37,19 +37,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.cedar.cedar.R
 import dev.cedar.cedar.ui.CedarColors
+import dev.cedar.cedar.ui.callLabel
 import dev.cedar.cedar.ui.cardFrame
+import dev.cedar.cedar.ui.confidenceLabel
 import dev.cedar.cedar.ui.openUrl
+import dev.cedar.cedar.ui.periodLabel
+import dev.cedar.cedar.ui.plural
 import dev.cedar.cedar.ui.relative
 import dev.cedar.cedar.ui.shortDateTime
+import dev.cedar.cedar.ui.skeletonDate
 import dev.cedar.core.StockFormat
 import dev.cedar.core.StocksCard
+import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -80,7 +87,12 @@ private fun offeredRanges(card: StocksCard, lines: List<StockLine>): List<String
     return StocksCard.RANGES.filter { (key, days) -> key == card.range || !last.minusSeconds(days * 86400L).isBefore(first.minusSeconds(7 * 86400L)) }.map { it.first }
 }
 
-private val dayFormat = DateTimeFormatter.ofPattern("d MMM yyyy").withZone(ZoneOffset.UTC)
+/** A trading day, "27 Oct 2026", as the user's locale writes it. */
+private fun day(instant: Instant): String = skeletonDate(instant, "dMMMyyyy", ZoneOffset.UTC)
+
+/** A period key (`1M`, `YTD`) in the user's language. */
+@Composable
+private fun period(key: String): String = periodLabel(key)?.let { stringResource(it) } ?: key
 
 /**
  * A `compare_stocks` card: a quote tile per symbol (which also picks the symbol shown below), a chart
@@ -131,7 +143,7 @@ fun StocksCardView(card: StocksCard) {
                 SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
                     offered.forEachIndexed { i, key ->
                         SegmentedButton(selected = range == key, onClick = { range = key }, shape = SegmentedButtonDefaults.itemShape(i, offered.size), icon = {}) {
-                            Text(key, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            Text(period(key), style = MaterialTheme.typography.labelSmall, maxLines = 1)
                         }
                     }
                 }
@@ -139,7 +151,8 @@ fun StocksCardView(card: StocksCard) {
                     SingleChoiceSegmentedButtonRow(Modifier.width(96.dp)) {
                         SegmentedButton(selected = percent, onClick = { percent = true }, shape = SegmentedButtonDefaults.itemShape(0, 2), icon = {}) { Text("%") }
                         SegmentedButton(selected = !percent, onClick = { percent = false }, shape = SegmentedButtonDefaults.itemShape(1, 2), icon = {}) {
-                            Text(StockFormat.currencySymbol(stock.currency).take(3), maxLines = 1)
+                            val symbol = stock.currency?.let(StockFormat::currencySymbol) ?: stringResource(R.string.stocks_price)
+                            Text(symbol.take(3), maxLines = 1)
                         }
                     }
                 }
@@ -167,7 +180,7 @@ fun StocksCardView(card: StocksCard) {
                 LineChart(
                     chartLines,
                     yFormat = { v -> if (percent) StockFormat.signed(v) else StockFormat.money(v, stock.currency) },
-                    xFormat = { x -> dayFormat.format(Instant.ofEpochSecond(x.toLong())) },
+                    xFormat = { x -> day(Instant.ofEpochSecond(x.toLong())) },
                     zeroRule = percent,
                     includeZero = percent,
                 )
@@ -179,7 +192,7 @@ fun StocksCardView(card: StocksCard) {
 
         // Returns.
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            CardLabel("Returns")
+            CardLabel(stringResource(R.string.returns))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("", style = MaterialTheme.typography.labelSmall)
@@ -187,7 +200,7 @@ fun StocksCardView(card: StocksCard) {
                 }
                 StocksCard.RETURN_PERIODS.forEachIndexed { p, (_, label) ->
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = CedarColors.secondaryText)
+                        Text(period(label), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = CedarColors.secondaryText)
                         card.stocks.forEach { s ->
                             val value = s.returns[p]
                             val color = changeColor(value)
@@ -208,7 +221,7 @@ fun StocksCardView(card: StocksCard) {
         // News.
         if (card.news.isNotEmpty() || card.newsNote != null) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                CardLabel("News")
+                CardLabel(stringResource(R.string.news))
                 val shown = if (allNews) card.news else card.news.take(4)
                 shown.forEach { item ->
                     Column(Modifier.fillMaxWidth().clickable { openUrl(context, item.url) }) {
@@ -218,7 +231,7 @@ fun StocksCardView(card: StocksCard) {
                     }
                 }
                 if (card.news.size > shown.size) {
-                    Text("Show all ${card.news.size} headlines", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                    Text(plural(R.plurals.show_all_headlines, card.news.size, card.news.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable { allNews = true })
                 }
                 card.newsNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText) }
@@ -228,8 +241,13 @@ fun StocksCardView(card: StocksCard) {
         // Footer.
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             val small = MaterialTheme.typography.labelSmall
-            card.unavailable.forEach { Text("${it.symbol}: ${it.reason ?: "not available"}", style = small, color = CedarColors.secondaryText) }
-            card.asOf?.let { Text("As of ${shortDateTime(it)}", style = small, color = CedarColors.secondaryText) }
+            card.unavailable.forEach {
+                Text(
+                    stringResource(R.string.label_value, it.symbol, it.reason ?: stringResource(R.string.not_available)),
+                    style = small, color = CedarColors.secondaryText,
+                )
+            }
+            card.asOf?.let { Text(stringResource(R.string.as_of, shortDateTime(it)), style = small, color = CedarColors.secondaryText) }
             card.disclaimer?.let { Text(it, style = small, color = CedarColors.secondaryText.copy(alpha = 0.7f)) }
         }
     }
@@ -240,7 +258,7 @@ fun StocksCardView(card: StocksCard) {
 private fun CallPill(call: StocksCard.Call, small: Boolean) {
     val color = callColor(call)
     Text(
-        call.label,
+        stringResource(callLabel(call)),
         style = if (small) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
         color = color,
@@ -267,7 +285,7 @@ private fun RatingPanel(stock: StocksCard.Stock, benchmark: String?) {
                 Column {
                     Text("${stock.symbol} ${stock.name}", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "${r.confidence.replaceFirstChar { it.uppercase() }} confidence${r.lean?.let { " · $it" } ?: ""}",
+                        stringResource(confidenceLabel(r.confidence)) + (r.lean?.let { " · $it" } ?: ""),
                         style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText,
                     )
                 }
@@ -276,7 +294,7 @@ private fun RatingPanel(stock: StocksCard.Stock, benchmark: String?) {
             r.summary?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             if (r.factors.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CardLabel("Why: the factors behind the call")
+                    CardLabel(stringResource(R.string.factors))
                     r.factors.forEach { f ->
                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -295,7 +313,7 @@ private fun RatingPanel(stock: StocksCard.Stock, benchmark: String?) {
             }
             if (r.watch.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CardLabel("What would change the view")
+                    CardLabel(stringResource(R.string.watch))
                     r.watch.forEach { w ->
                         Row {
                             Icon(Icons.Outlined.Visibility, null, Modifier.size(14.dp), tint = CedarColors.secondaryText)
@@ -306,20 +324,24 @@ private fun RatingPanel(stock: StocksCard.Stock, benchmark: String?) {
                 }
             }
         } else {
-            Text("${stock.symbol} ${stock.name}: no rating", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.no_rating_for, stock.symbol, stock.name), style = MaterialTheme.typography.titleSmall)
         }
         // The key numbers.
         val m = { v: Double -> StockFormat.money(v, stock.currency) }
         val i = stock.indicators
+        val context = LocalContext.current
         val items = buildList {
-            if (stock.low52 != null && stock.high52 != null) add("52-week range" to "${m(stock.low52!!)} – ${m(stock.high52!!)}")
-            if (stock.dayLow != null && stock.dayHigh != null) add("Day range" to "${m(stock.dayLow!!)} – ${m(stock.dayHigh!!)}")
-            i.sma50?.let { add("50-day avg" to m(it)) }
-            i.sma200?.let { add("200-day avg" to m(it)) }
-            i.rsi?.let { add("RSI (14)" to "%.0f".format(it)) }
-            i.volatility?.let { add("Volatility" to "%.0f%% / yr".format(it)) }
-            i.drawdown?.let { add("Max drawdown (1Y)" to StockFormat.signed(it)) }
-            i.beta?.let { add("Beta vs ${benchmark ?: "index"}" to "%.2f".format(it)) }
+            if (stock.low52 != null && stock.high52 != null) add(context.getString(R.string.range_52_weeks) to "${m(stock.low52!!)} – ${m(stock.high52!!)}")
+            if (stock.dayLow != null && stock.dayHigh != null) add(context.getString(R.string.range_day) to "${m(stock.dayLow!!)} – ${m(stock.dayHigh!!)}")
+            i.sma50?.let { add(context.getString(R.string.average_50_days) to m(it)) }
+            i.sma200?.let { add(context.getString(R.string.average_200_days) to m(it)) }
+            i.rsi?.let { add(context.getString(R.string.rsi_14) to "%.0f".format(it)) }
+            i.volatility?.let { v ->
+                val percent = NumberFormat.getPercentInstance().apply { maximumFractionDigits = 0 }.format(v / 100)
+                add(context.getString(R.string.volatility) to context.getString(R.string.per_year, percent))
+            }
+            i.drawdown?.let { add(context.getString(R.string.max_drawdown) to StockFormat.signed(it)) }
+            i.beta?.let { add(context.getString(R.string.beta_vs, benchmark ?: context.getString(R.string.index)) to "%.2f".format(it)) }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items.forEach { (label, value) ->
@@ -351,11 +373,11 @@ private fun ScoreGauge(rating: StocksCard.Rating) {
         }
         Row(Modifier.fillMaxWidth()) {
             val small = MaterialTheme.typography.labelSmall
-            Text("Sell", style = small, color = CedarColors.secondaryText)
+            Text(stringResource(R.string.call_sell), style = small, color = CedarColors.secondaryText)
             Spacer(Modifier.weight(1f))
-            Text("Hold", style = small, color = CedarColors.secondaryText)
+            Text(stringResource(R.string.call_hold), style = small, color = CedarColors.secondaryText)
             Spacer(Modifier.weight(1f))
-            Text("Buy", style = small, color = CedarColors.secondaryText)
+            Text(stringResource(R.string.call_buy), style = small, color = CedarColors.secondaryText)
         }
     }
 }

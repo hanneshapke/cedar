@@ -92,6 +92,7 @@ pub async fn run_agent(
                 run.reasoning.clone(),
             ))
         }),
+        locale: run.locale.clone(),
     };
     let tool_set = env.tools.load_full();
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
@@ -117,6 +118,10 @@ pub async fn run_agent(
     {
         note.push(' ');
         note.push_str(CITE_NOTE);
+    }
+    if let Some(directive) = crate::locale::directive(&run.locale) {
+        note.push(' ');
+        note.push_str(&directive);
     }
     let mut system = with_note(&run.system, &note);
     // A continuation starts with a copy of its parent's conversation (made when it was created).

@@ -8,6 +8,7 @@ use crate::config::Config;
 use crate::error::AppError;
 use crate::events::EventHub;
 use crate::images;
+use crate::locale;
 use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::{self, RunManager};
@@ -451,6 +452,13 @@ async fn create_run(
         Some(s) => s,
     };
 
+    let locale = match req.locale.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+        None => parent
+            .as_ref()
+            .map_or_else(|| cfg.default_locale.clone(), |p| p.locale.clone()),
+        Some(l) => locale::normalize(l).map_err(AppError::BadRequest)?,
+    };
+
     let tools = match req.tools {
         None => parent.as_ref().and_then(|p| p.tools.clone()),
         Some(mut tools) => {
@@ -515,6 +523,7 @@ async fn create_run(
         callback_secret,
         plan: req.plan.unwrap_or(cfg.plan),
         interactive: req.interactive.unwrap_or(false),
+        locale,
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -559,6 +568,8 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
         "model": default.as_ref().map(|m| m.model.clone()),
         "model_id": default.as_ref().map(|m| m.id.clone()),
         "system": cfg.default_system_prompt,
+        "locale": cfg.default_locale,
+        "locales": locale::LANGUAGES.iter().chain(locale::REGIONS).collect::<Vec<_>>(),
         "max_turns_cap": cfg.max_turns_cap,
         "plan": cfg.plan,
         "tool_approvals": !cfg.tool_approvals.is_empty(),

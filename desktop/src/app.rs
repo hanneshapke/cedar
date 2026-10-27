@@ -128,6 +128,8 @@ pub struct Status {
     pub sandbox_image: String,
     pub update: UpdateStatus,
     pub check_updates: bool,
+    /// The language picked on the page; empty until one is (the page then asks first).
+    pub locale: String,
 }
 
 impl AppState {
@@ -293,6 +295,7 @@ impl AppState {
             sandbox_image: cfg.sandbox_image(),
             update: self.update(),
             check_updates: cfg.check_updates,
+            locale: cfg.locale.clone(),
         }
     }
 
@@ -335,7 +338,7 @@ fn begin(setup: &Mutex<SetupStatus>) -> bool {
     if matches!(*setup, SetupStatus::Running(_)) {
         return false;
     }
-    *setup = SetupStatus::Running("Starting".into());
+    *setup = SetupStatus::Running(crate::i18n::t("setup.starting"));
     true
 }
 
@@ -378,7 +381,10 @@ pub async fn bootstrap(app: AppHandle) {
         if cli.image_present(&image).await {
             continue;
         }
-        state.set_images(ImagesStatus::Pulling(format!("{image}: starting")));
+        state.set_images(ImagesStatus::Pulling(format!(
+            "{image}: {}",
+            crate::i18n::t("images.starting")
+        )));
         let pulled = cli
             .pull(&image, |line| {
                 state.set_images(ImagesStatus::Pulling(format!("{image}: {line}")))

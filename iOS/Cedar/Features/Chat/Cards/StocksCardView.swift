@@ -140,7 +140,7 @@ struct StocksCardView: View {
                 .pickerStyle(.segmented)
                 if lines.count > 1 {
                     Picker("Values", selection: $percent) {
-                        Text("%").tag(true)
+                        Text(verbatim: "%").tag(true)
                         Text(StockFormat.currencySymbol(stock.currency)).tag(false)
                     }
                     .pickerStyle(.segmented)
@@ -170,10 +170,10 @@ struct StocksCardView: View {
                         .foregroundStyle(Color.secondary.opacity(0.5))
                         .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(readings.date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: .gmt)))
+                                Text(readings.date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: L10n.locale, timeZone: .gmt)))
                                     .font(.caption2.weight(.semibold))
                                 ForEach(readings.values, id: \.0) { label, value in
-                                    Text("\(label) \(format(value))").font(.caption2.monospacedDigit())
+                                    Text(verbatim: "\(label) \(format(value))").font(.caption2.monospacedDigit())
                                 }
                             }
                             .padding(6)
@@ -194,8 +194,9 @@ struct StocksCardView: View {
             .chartXSelection(value: $probe)
             .frame(height: 220)
             .accessibilityLabel(percent
-                ? "Percent change over \(range): " + data.map { "\($0.line.label) \(StockFormat.signed($0.points.last?.value))" }.joined(separator: ", ")
-                : "\(selected) price over \(range)")
+                ? L10n.format("Percent change over %@: %@", range,
+                              data.map { "\($0.line.label) \(StockFormat.signed($0.points.last?.value))" }.joined(separator: ", "))
+                : L10n.format("%@ price over %@", selected, range))
         }
     }
 
@@ -206,7 +207,9 @@ struct StocksCardView: View {
     }
 
     private func format(_ v: Double, compact: Bool = false) -> String {
-        if percent { return compact ? "\(v > 0 ? "+" : "")\(v.formatted(.number.precision(.fractionLength(0...1))))%" : StockFormat.signed(v) }
+        if percent {
+            return compact ? "\(v > 0 ? "+" : "")\(v.formatted(.number.precision(.fractionLength(0...1)).locale(L10n.locale)))%" : StockFormat.signed(v)
+        }
         return StockFormat.money(v, stock.currency)
     }
 
@@ -230,7 +233,7 @@ struct StocksCardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 Grid(alignment: .trailing, horizontalSpacing: 6, verticalSpacing: 4) {
                     GridRow {
-                        Text("")
+                        Text(verbatim: "")
                         ForEach(StocksCard.returnPeriods, id: \.0) { _, label in
                             Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                         }
@@ -289,7 +292,7 @@ struct StocksCardView: View {
     private func newsMeta(_ item: StocksCard.News) -> String {
         var parts = item.symbols
         if let publisher = item.publisher { parts.append(publisher) }
-        if let published = item.published { parts.append(published.formatted(.relative(presentation: .named))) }
+        if let published = item.published { parts.append(published.formatted(.relative(presentation: .named).locale(L10n.locale))) }
         return parts.joined(separator: " · ")
     }
 
@@ -298,10 +301,10 @@ struct StocksCardView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 3) {
             ForEach(card.unavailable, id: \.self) { u in
-                Text("\(u.symbol): \(u.reason ?? "not available")")
+                Text(L10n.labeled(u.symbol, u.reason ?? L10n.string("not available")))
             }
             if let asOf = card.asOf {
-                Text("As of \(asOf.formatted(date: .abbreviated, time: .shortened))")
+                Text("As of \(asOf.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: L10n.locale)))")
             }
             if let disclaimer = card.disclaimer {
                 Text(disclaimer).foregroundStyle(.tertiary)
@@ -324,12 +327,12 @@ private struct RatingPanel: View {
                 HStack(alignment: .center, spacing: 10) {
                     CallPill(call: r.call, small: false)
                     VStack(alignment: .leading, spacing: 2) {
-                        (Text(stock.symbol).bold() + Text(" \(stock.name)"))
+                        (Text(stock.symbol).bold() + Text(verbatim: " \(stock.name)"))
                             .font(.subheadline)
                             .lineLimit(1)
                         HStack(spacing: 6) {
-                            Text("\(r.confidence.capitalized) confidence")
-                            if let lean = r.lean { Text("· \(lean)") }
+                            Text(Self.confidence(r.confidence))
+                            if let lean = r.lean { Text(verbatim: "· \(lean)") }
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -367,7 +370,7 @@ private struct RatingPanel: View {
                     }
                 }
             } else {
-                (Text(stock.symbol).bold() + Text(" \(stock.name): no rating")).font(.subheadline)
+                (Text(stock.symbol).bold() + Text(verbatim: " ") + Text("\(stock.name): no rating")).font(.subheadline)
             }
             stats
         }
@@ -375,18 +378,28 @@ private struct RatingPanel: View {
         .background(Color(.systemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
     }
 
+    /// "High confidence", for the rating's `low`, `medium` or `high`.
+    private static func confidence(_ level: String) -> LocalizedStringKey {
+        switch level {
+        case "high": return "High confidence"
+        case "medium": return "Medium confidence"
+        default: return "Low confidence"
+        }
+    }
+
     private var stats: some View {
         let m = { (v: Double) in StockFormat.money(v, stock.currency) }
+        let n = { (v: Double, digits: Int) in v.formatted(.number.precision(.fractionLength(digits)).grouping(.never).locale(L10n.locale)) }
         let i = stock.indicators
         var items: [(String, String)] = []
-        if let low = stock.low52, let high = stock.high52 { items.append(("52-week range", "\(m(low)) – \(m(high))")) }
-        if let low = stock.dayLow, let high = stock.dayHigh { items.append(("Day range", "\(m(low)) – \(m(high))")) }
-        if let v = i.sma50 { items.append(("50-day avg", m(v))) }
-        if let v = i.sma200 { items.append(("200-day avg", m(v))) }
-        if let v = i.rsi { items.append(("RSI (14)", String(format: "%.0f", v))) }
-        if let v = i.volatility { items.append(("Volatility", String(format: "%.0f%% / yr", v))) }
-        if let v = i.drawdown { items.append(("Max drawdown (1Y)", StockFormat.signed(v))) }
-        if let v = i.beta { items.append(("Beta vs \(benchmark ?? "index")", String(format: "%.2f", v))) }
+        if let low = stock.low52, let high = stock.high52 { items.append((L10n.string("52-week range"), "\(m(low)) – \(m(high))")) }
+        if let low = stock.dayLow, let high = stock.dayHigh { items.append((L10n.string("Day range"), "\(m(low)) – \(m(high))")) }
+        if let v = i.sma50 { items.append((L10n.string("50-day avg"), m(v))) }
+        if let v = i.sma200 { items.append((L10n.string("200-day avg"), m(v))) }
+        if let v = i.rsi { items.append((L10n.string("RSI (14)"), n(v, 0))) }
+        if let v = i.volatility { items.append((L10n.string("Volatility"), L10n.format("%@%% / yr", n(v, 0)))) }
+        if let v = i.drawdown { items.append((L10n.string("Max drawdown (1Y)"), StockFormat.signed(v))) }
+        if let v = i.beta { items.append((L10n.format("Beta vs %@", benchmark ?? L10n.string("index")), n(v, 2))) }
         return LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
                          alignment: .leading, spacing: 8) {
             ForEach(items, id: \.0) { label, value in
@@ -508,13 +521,18 @@ enum StockFormat {
     private static let symbols = ["USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "INR": "₹", "CNY": "¥", "KRW": "₩"]
 
     static func currencySymbol(_ currency: String?) -> String {
-        currency.flatMap { symbols[$0] } ?? currency ?? "Price"
+        currency.flatMap { symbols[$0] } ?? currency ?? L10n.string("Price")
     }
 
-    /// `x` in `currency`, with as many decimals as a price its size needs.
+    /// `x` in `currency`, with as many decimals as a price its size needs: the symbol before the
+    /// number in English, where the locale puts it otherwise.
     static func money(_ x: Double, _ currency: String?) -> String {
         let digits = abs(x) >= 1000 ? 0 : abs(x) >= 1 ? 2 : 4
-        let n = x.formatted(.number.precision(.fractionLength(digits)))
+        let locale = L10n.locale
+        if let currency, currency.count == 3, locale.language.languageCode?.identifier != "en" {
+            return x.formatted(.currency(code: currency).precision(.fractionLength(digits)).locale(locale))
+        }
+        let n = x.formatted(.number.precision(.fractionLength(digits)).locale(locale))
         if let currency, let symbol = symbols[currency] { return "\(symbol)\(n)" }
         return currency.map { "\(n) \($0)" } ?? n
     }
@@ -522,7 +540,7 @@ enum StockFormat {
     static func signed(_ x: Double?, digits: Int = 1) -> String {
         guard let x else { return "–" }
         let sign = x > 0 ? "+" : x < 0 ? "−" : ""
-        return "\(sign)\(String(format: "%.\(digits)f", abs(x)))%"
+        return "\(sign)\(abs(x).formatted(.number.precision(.fractionLength(digits)).grouping(.never).locale(L10n.locale)))%"
     }
 
     static func color(_ x: Double?) -> Color {

@@ -9,6 +9,7 @@
 
 use crate::config::Config;
 use crate::docker::DockerCli;
+use crate::i18n;
 use crate::paths::Paths;
 use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
@@ -157,8 +158,9 @@ impl Runner {
                         backoff = Duration::from_secs(1);
                     }
                     if fast_crashes >= MAX_FAST_CRASHES {
-                        self.set(ServiceState::Crashed(format!(
-                            "{detail}. Gave up after {fast_crashes} crashes in a row; use Restart Services once the cause is fixed"
+                        self.set(ServiceState::Crashed(i18n::tf(
+                            "services.gave_up",
+                            &[("detail", &detail), ("count", &fast_crashes.to_string())],
                         )));
                         return;
                     }
@@ -178,16 +180,23 @@ impl Runner {
     /// One life of the pair: start both, report, then wait for a stop or an exit.
     /// `Ok` means a deliberate stop; `Err` carries why it ended otherwise.
     async fn run_once(&self, first: &mut Option<oneshot::Sender<Result<()>>>) -> Result<()> {
-        for (port, what) in [(self.cfg.cedar_port, "cedar"), (self.cfg.chat_port, "the chat")] {
+        for (port, what) in [
+            (self.cfg.cedar_port, "cedar".to_string()),
+            (self.cfg.chat_port, i18n::t("services.the_chat")),
+        ] {
             if std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
-                bail!(
-                    "port {port} is already in use, so {what} can't listen on it; change the port in {}",
-                    self.paths.config().display()
-                );
+                bail!(i18n::tf(
+                    "services.port_in_use",
+                    &[
+                        ("port", &port.to_string()),
+                        ("what", &what),
+                        ("config", &self.paths.config().display().to_string()),
+                    ],
+                ));
             }
         }
 
-        self.set(ServiceState::Starting("starting cedar".into()));
+        self.set(ServiceState::Starting(i18n::t("services.starting_cedar")));
         let cedar_log = self.paths.cedar_log();
         let mut cedar = self.spawn("cedar", self.cedar_env(), &cedar_log)?;
         if let Err(e) = wait_healthy(&mut cedar.child, &self.cfg.cedar_url(), "cedar", &cedar_log).await {
@@ -195,7 +204,7 @@ impl Runner {
             return Err(e);
         }
 
-        self.set(ServiceState::Starting("starting the chat".into()));
+        self.set(ServiceState::Starting(i18n::t("services.starting_chat")));
         let chat_log = self.paths.chat_log();
         let mut chat = match self.spawn("cedar-chat", self.chat_env(), &chat_log) {
             Ok(c) => c,
@@ -280,6 +289,11 @@ impl Runner {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
+        // The language picked in the app, for runs that don't name one (scheduled agents, and
+        // notifications about them).
+        if let Some(locale) = i18n::normalize(&cfg.locale) {
+            env.push(("DEFAULT_LOCALE".to_string(), locale.to_string()));
+        }
         // The user's own entries win (later duplicates override earlier ones in `envs`).
         env.extend(cfg.cedar_env.iter().map(|(k, v)| (k.clone(), v.clone())));
         env
@@ -439,6 +453,41 @@ mod tests {
             "sqlite:///Users/me/Library/Application Support/x/cedar.db"
         );
         assert_eq!(sqlite_url(Path::new("/tmp/a#b?c%.db")), "sqlite:///tmp/a%23b%3Fc%25.db");
+    }
+
+    fn runner(cfg: Config) -> Runner {
+        let dir = PathBuf::from("/tmp/cedar-test");
+        Runner {
+            exe_dir: dir.clone(),
+            paths: Paths {
+                data: dir.clone(),
+                logs: dir.clone(),
+                tools: dir.clone(),
+            },
+            cfg,
+            docker: DockerCli {
+                bin: dir.join("docker"),
+                path_env: String::new(),
+            },
+            public_url: None,
+            state: Arc::new(Mutex::new(ServiceState::Stopped)),
+            stop: CancellationToken::new(),
+        }
+    }
+
+    fn last(env: &[(String, String)], name: &str) -> Option<String> {
+        env.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone())
+    }
+
+    /// cedar gets the language picked in the app, unless `cedar_env` names one of its own.
+    #[test]
+    fn cedar_gets_the_picked_language() {
+        let mut cfg = Config::default();
+        assert_eq!(last(&runner(cfg.clone()).cedar_env(), "DEFAULT_LOCALE"), None);
+        cfg.locale = "de-CH".into();
+        assert_eq!(last(&runner(cfg.clone()).cedar_env(), "DEFAULT_LOCALE").as_deref(), Some("de-CH"));
+        cfg.cedar_env.insert("DEFAULT_LOCALE".into(), "fr-FR".into());
+        assert_eq!(last(&runner(cfg).cedar_env(), "DEFAULT_LOCALE").as_deref(), Some("fr-FR"));
     }
 
     #[test]

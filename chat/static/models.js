@@ -49,6 +49,12 @@ const cedarModels = (() => {
   const levelsFor = (id) => resolve(id)?.reasoning_levels || [];
   const multimodal = (id) => Boolean(resolve(id)?.multimodal);
 
+  /** A reasoning level as shown: the common ones in the page's language, others as registered. */
+  function levelName(level) {
+    const key = `models.level.${level}`;
+    return cedarI18n.has(key) ? tr(key) : level;
+  }
+
   /** The model's label, with its default level in parentheses when it has one. */
   function label(entry) {
     return entry.label || entry.model || entry.id;
@@ -59,11 +65,11 @@ const cedarModels = (() => {
    * cedar's default, named in it); `null` leaves it out, and the default entry is then selected
    * when `selected` is unknown. The select is hidden when there is nothing to choose between.
    */
-  function fillSelect(select, { blank = 'Default model', selected = '' } = {}) {
+  function fillSelect(select, { blank = tr('models.defaultModel'), selected = '' } = {}) {
     select.textContent = '';
     const def = defaultEntry();
     const withBlank = blank !== null && blank !== undefined;
-    if (withBlank) select.append(new Option(def ? `${blank} (${label(def)})` : blank, ''));
+    if (withBlank) select.append(new Option(def ? tr('models.withDefault', { blank, model: label(def) }) : blank, ''));
     for (const m of list) select.append(new Option(label(m), m.id));
     select.hidden = list.length < 2;
     select.value = byId(selected) ? selected : withBlank ? '' : defaultId();
@@ -81,8 +87,8 @@ const cedarModels = (() => {
     select.hidden = !levels.length;
     if (!levels.length) return false;
     const def = entry.default_reasoning;
-    select.append(new Option(def ? `Reasoning: default (${def})` : 'Reasoning: default', ''));
-    for (const l of levels) select.append(new Option(`Reasoning: ${l}`, l));
+    select.append(new Option(def ? tr('models.reasoningDefaultIs', { level: levelName(def) }) : tr('models.reasoningDefault'), ''));
+    for (const l of levels) select.append(new Option(tr('models.reasoning', { level: levelName(l) }), l));
     select.value = levels.includes(selected) ? selected : '';
     return true;
   }
@@ -103,7 +109,7 @@ const cedarModels = (() => {
     pick.className = 'cedar-send-pick';
     pick.setAttribute('aria-haspopup', 'menu');
     pick.setAttribute('aria-expanded', 'false');
-    pick.title = 'Model and reasoning level for this message';
+    pick.title = tr('models.pickTitle');
     const labelEl = document.createElement('span');
     labelEl.className = 'cedar-send-pick-label';
     pick.append(labelEl);
@@ -111,7 +117,7 @@ const cedarModels = (() => {
     const menu = document.createElement('div');
     menu.className = 'cedar-send-menu';
     menu.setAttribute('role', 'menu');
-    menu.setAttribute('aria-label', 'Model and reasoning level');
+    menu.setAttribute('aria-label', tr('models.menuLabel'));
     menu.hidden = true;
     group.append(pick, send, menu);
 
@@ -123,7 +129,7 @@ const cedarModels = (() => {
       const choosable = list.length >= 2 || (entry?.reasoning_levels || []).length > 0;
       pick.hidden = !entry || !choosable;
       if (!entry) { close(); return; }
-      labelEl.textContent = levelOf() ? `${label(entry)} · ${levelOf()}` : label(entry);
+      labelEl.textContent = levelOf() ? `${label(entry)} · ${levelName(levelOf())}` : label(entry);
       if (!menu.hidden) render();
     }
 
@@ -142,7 +148,7 @@ const cedarModels = (() => {
       menu.textContent = '';
       const title = document.createElement('div');
       title.className = 'cedar-send-menu-title';
-      title.textContent = 'Send with';
+      title.textContent = tr('models.sendWith');
       menu.append(title);
       const current = chosenModel();
       for (const m of list) {
@@ -163,7 +169,7 @@ const cedarModels = (() => {
         if (m.is_default) {
           const tag = document.createElement('span');
           tag.className = 'tag';
-          tag.textContent = 'default';
+          tag.textContent = tr('models.defaultTag');
           b.append(tag);
         }
         b.addEventListener('click', () => choose(m.id, isCurrent ? levelOf() : (m.default_reasoning ? '' : '')));
@@ -182,8 +188,8 @@ const cedarModels = (() => {
             c.addEventListener('click', () => choose(m.id, value));
             return c;
           };
-          row.append(chip('', m.default_reasoning ? `default (${m.default_reasoning})` : 'default', isCurrent && !levelOf()));
-          for (const l of levels) row.append(chip(l, l, isCurrent && levelOf() === l));
+          row.append(chip('', m.default_reasoning ? tr('models.defaultLevelIs', { level: levelName(m.default_reasoning) }) : tr('models.defaultTag'), isCurrent && !levelOf()));
+          for (const l of levels) row.append(chip(l, levelName(l), isCurrent && levelOf() === l));
           item.append(row);
         }
         menu.append(item);
@@ -210,5 +216,5 @@ const cedarModels = (() => {
     return { refresh };
   }
 
-  return { load, all, loaded, byId, defaultId, levelsFor, multimodal, fillSelect, fillLevels, bindPair, sendMenu };
+  return { load, all, loaded, byId, defaultId, levelsFor, multimodal, levelName, fillSelect, fillLevels, bindPair, sendMenu };
 })();

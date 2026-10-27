@@ -20,6 +20,7 @@ Exit non-zero with a message on stderr to report an error; the model sees it as 
 error and can try again differently.
 """
 import json
+import os
 import re
 import sys
 import urllib.error
@@ -33,6 +34,54 @@ ENERGY_CHARTS = "https://api.energy-charts.info/price"
 AWATTAR = "https://api.awattar.de/v1/marketdata"
 USER_AGENT = "cedar-electricity_de/1.0 (+https://github.com/hanneshapke/cedar/tree/main/registry/tools/electricity_de)"
 RATES = json.loads((Path(__file__).resolve().parent / "rates.json").read_text(encoding="utf-8"))
+# Text the user sees in the charts, by CEDAR_LANGUAGE. The report itself stays English for the model.
+STRINGS = {
+    "en": {"cost_title": "Estimated annual cost, {place}", "per_year": "€/year", "per_year_axis": "€ per year",
+           "dynamic": "Dynamic tariff", "fixed": "Fixed-price offer", "hourly_title": "Dynamic price by hour (gross)",
+           "hour": "{a} {t}"},
+    "de": {"cost_title": "Geschätzte Jahreskosten, {place}", "per_year": "€/Jahr", "per_year_axis": "€ pro Jahr",
+           "dynamic": "Dynamischer Tarif", "fixed": "Festpreisangebot", "hourly_title": "Dynamischer Preis pro Stunde (brutto)",
+           "hour": "{a} {t}"},
+    "fr": {"cost_title": "Coût annuel estimé, {place}", "per_year": "€/an", "per_year_axis": "€ par an",
+           "dynamic": "Tarif dynamique", "fixed": "Offre à prix fixe", "hourly_title": "Prix dynamique par heure (TTC)",
+           "hour": "{a} {t}"},
+}
+# The options' chart labels; the English ones are rates.json's.
+OPTION_LABELS = {
+    "de": {"fixed": "Günstigstes Festpreisangebot", "green": "Zertifizierter Ökostrom",
+           "dynamic": "Dynamischer Stundentarif", "default": "Grundversorgung"},
+    "fr": {"fixed": "Offre à prix fixe la moins chère", "green": "Électricité verte certifiée",
+           "dynamic": "Tarif horaire dynamique", "default": "Fourniture par défaut (Grundversorgung)"},
+}
+WEEKDAYS = {"en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            "de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]}
+
+
+def language():
+    """The user's language from CEDAR_LANGUAGE (older servers don't set it: English)."""
+    lang = (os.environ.get("CEDAR_LANGUAGE") or "").strip().lower().split("-")[0]
+    return lang if lang in STRINGS else "en"
+
+
+def swiss(text):
+    """Swiss German (de-CH) writes ss for ß."""
+    if language() == "de" and (os.environ.get("CEDAR_LOCALE") or "").replace("_", "-").lower().startswith("de-ch"):
+        return text.replace("ß", "ss")
+    return text
+
+
+def tr(key, **values):
+    """A chart string in the user's language."""
+    return swiss(STRINGS[language()].get(key, STRINGS["en"][key]).format(**values))
+
+
+def option_label(option):
+    return swiss(OPTION_LABELS.get(language(), {}).get(option["key"], option["label"]))
+
+
+def hour_label(t):
+    return tr("hour", a=WEEKDAYS[language()][t.weekday()], t=f"{t:%H:%M}")
 
 # The state of each two-digit postal region (Leitregion). A few regions straddle a border; the
 # geocoded state, when there is one, wins.
@@ -391,20 +440,20 @@ def report(args, place, state, code, population, kwh, kwh_note, spot, spot_sourc
 
 
 def charts(options, spot, grid_ct, concession_ct, place):
-    out = [{"kind": "barh", "title": f"Estimated annual cost, {place.split(',')[0]}",
-            "labels": [o["label"] for o in options],
-            "series": [{"name": "€/year", "values": [round(o["year"]) for o in options]}],
-            "x_label": "€ per year"}]
+    out = [{"kind": "barh", "title": tr("cost_title", place=place.split(",")[0]),
+            "labels": [option_label(o) for o in options],
+            "series": [{"name": tr("per_year"), "values": [round(o["year"]) for o in options]}],
+            "x_label": tr("per_year_axis")}]
     if spot:
         fixed = grid_ct + concession_ct + sum(RATES["levies_ct"].values()) + RATES["electricity_tax_ct"]
         markup = RATES["tariff_types"]["dynamic"]["markup_ct"]
         recent = spot[-72:]
         fixed_price = next((o["ct"] for o in options if o["key"] == "fixed"), None)
-        series = [{"name": "Dynamic tariff", "values": [round(gross(p + markup + fixed), 1) for _, p in recent]}]
+        series = [{"name": tr("dynamic"), "values": [round(gross(p + markup + fixed), 1) for _, p in recent]}]
         if fixed_price:
-            series.append({"name": "Fixed-price offer", "values": [round(fixed_price, 1)] * len(recent)})
-        out.append({"kind": "line", "title": "Dynamic price by hour (gross)",
-                    "labels": [f"{t:%a %H:%M}" for t, _ in recent], "series": series, "y_label": "ct/kWh"})
+            series.append({"name": tr("fixed"), "values": [round(fixed_price, 1)] * len(recent)})
+        out.append({"kind": "line", "title": tr("hourly_title"),
+                    "labels": [hour_label(t) for t, _ in recent], "series": series, "y_label": "ct/kWh"})
     return ["[chart] " + json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]
 
 

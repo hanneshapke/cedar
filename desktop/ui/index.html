@@ -71,12 +71,38 @@
   .update.hidden { display: none; }
   .update .grow { flex: 1; min-width: 220px; }
   .update a { color: inherit; font-size: 13px; }
+  .header-side { display: flex; align-items: baseline; gap: 12px; }
+  .lang-pick { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
+  .lang-pick select { width: auto; padding: 3px 6px; font-size: 12px; }
+  .onboarding { max-width: 440px; margin: 40px auto 0; }
+  .onboarding h1 { margin-bottom: 4px; }
+  .onboarding .locales { display: flex; flex-direction: column; gap: 4px; margin: 16px 0 8px; }
+  .onboarding .locales label { display: flex; align-items: center; gap: 10px; margin: 0; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 14px; cursor: pointer; }
+  .onboarding .locales label:has(input:checked) { border-color: var(--accent); }
 </style>
 </head>
 <body>
+<!-- The first step on a first launch: the language, before anything else (see app.js). -->
+<section id="onboarding" class="onboarding hidden" aria-labelledby="onboarding-title">
+  <h1 id="onboarding-title">Choose your language</h1>
+  <p class="muted">Sprache wählen · Choisissez votre langue</p>
+  <div class="locales" id="onboarding-locales" role="radiogroup" aria-labelledby="onboarding-title"></div>
+  <div class="row">
+    <button class="primary" id="onboarding-continue" data-i18n="onboarding.continue">Continue</button>
+  </div>
+  <p id="onboarding-error" class="error"></p>
+</section>
+
+<div id="panel" class="hidden">
 <header>
   <h1>Cedar</h1>
-  <span class="version" id="version"></span>
+  <div class="header-side">
+    <label class="lang-pick" for="language"><span data-i18n="language.label">Language</span>
+      <select id="language"></select>
+    </label>
+    <span class="version" id="version"></span>
+  </div>
 </header>
 
 <section id="update" class="update hidden">
@@ -84,24 +110,24 @@
     <strong id="update-title"></strong>
     <p id="update-text" class="muted"></p>
   </div>
-  <a id="update-notes" href="#" target="_blank" rel="noreferrer">Release notes</a>
+  <a id="update-notes" href="#" target="_blank" rel="noreferrer" data-i18n="update.notes">Release notes</a>
   <button class="primary" id="update-install">Update</button>
-  <button id="update-dismiss">Dismiss</button>
+  <button id="update-dismiss" data-i18n="update.dismiss">Dismiss</button>
 </section>
 
 <section id="docker">
   <h2><span class="dot" id="docker-dot"></span>Docker</h2>
-  <p id="docker-text" class="muted">Checking…</p>
+  <p id="docker-text" class="muted" data-i18n="docker.checking">Checking…</p>
   <div class="row">
-    <button id="docker-recheck">Check again</button>
-    <a id="docker-help" class="hidden muted" href="#" target="_blank" rel="noreferrer">Get Docker Desktop</a>
+    <button id="docker-recheck" data-i18n="common.checkAgain">Check again</button>
+    <a id="docker-help" class="hidden muted" href="#" target="_blank" rel="noreferrer" data-i18n="docker.getDesktop">Get Docker Desktop</a>
   </div>
   <div id="docker-setup" class="hidden">
     <p class="muted" id="docker-setup-intro"></p>
-    <p class="muted">Docker Desktop is free for personal use, education, and businesses with fewer than 250 employees and less than $10 million in annual revenue; larger organizations need a <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">paid subscription</a>. Setting it up here accepts the <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a> on your behalf.</p>
+    <p class="muted" data-i18n-html="html.docker.license">Docker Desktop is free for personal use, education, and businesses with fewer than 250 employees and less than $10 million in annual revenue; larger organizations need a <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">paid subscription</a>. Setting it up here accepts the <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a> on your behalf.</p>
     <div class="row">
-      <button class="primary" id="docker-install">Set up Docker for me</button>
-      <button class="primary hidden" id="docker-finish">Restart now</button>
+      <button class="primary" id="docker-install" data-i18n="dockerSetup.install">Set up Docker for me</button>
+      <button class="primary hidden" id="docker-finish" data-i18n="dockerSetup.restartNow">Restart now</button>
     </div>
     <p id="docker-setup-text" class="muted"></p>
     <p class="detail" id="docker-setup-detail"></p>
@@ -109,40 +135,40 @@
 </section>
 
 <section id="images">
-  <h2><span class="dot" id="images-dot"></span>Sandbox image</h2>
-  <p id="images-text" class="muted">Waiting for Docker.</p>
+  <h2><span class="dot" id="images-dot"></span><span data-i18n="images.title">Sandbox image</span></h2>
+  <p id="images-text" class="muted" data-i18n="images.waiting">Waiting for Docker.</p>
   <p class="detail" id="images-detail"></p>
   <div class="row">
     <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
-      <input type="checkbox" id="browser-toggle"> Browser tool (downloads a second, larger image with Chromium)
+      <input type="checkbox" id="browser-toggle"> <span data-i18n="images.browserToggle">Browser tool (downloads a second, larger image with Chromium)</span>
     </label>
   </div>
 </section>
 
 <section id="model">
-  <h2><span class="dot" id="model-dot"></span>Model server</h2>
-  <p id="model-text" class="muted">Not chosen yet.</p>
+  <h2><span class="dot" id="model-dot"></span><span data-i18n="model.title">Model server</span></h2>
+  <p id="model-text" class="muted" data-i18n="model.notChosen">Not chosen yet.</p>
   <p class="detail" id="model-detail"></p>
-  <p class="muted">Any OpenAI-compatible server that supports tool calling. Ollama, LM Studio, and vLLM all work; the server can run on <span class="this-computer">this computer</span> or on another machine. More models can be added from the chat's Settings.</p>
+  <p class="muted" data-i18n-html="html.model.about">Any OpenAI-compatible server that supports tool calling. Ollama, LM Studio, and vLLM all work; the server can run on <span class="this-computer">this computer</span> or on another machine. More models can be added from the chat's Settings.</p>
   <div class="row presets">
-    <span class="muted">Presets:</span>
+    <span class="muted" data-i18n="model.presets">Presets:</span>
     <button data-url="http://127.0.0.1:11434/v1">Ollama</button>
     <button data-url="http://127.0.0.1:1234/v1">LM Studio</button>
     <button data-url="http://127.0.0.1:8000/v1">vLLM</button>
   </div>
-  <label for="base-url">Address</label>
+  <label for="base-url" data-i18n="model.address">Address</label>
   <input type="text" id="base-url" placeholder="http://127.0.0.1:11434/v1" autocapitalize="off" autocorrect="off" spellcheck="false">
-  <label for="api-key">API key (only if the server needs one)</label>
+  <label for="api-key" data-i18n="model.apiKey">API key (only if the server needs one)</label>
   <input type="password" id="api-key" autocomplete="off">
   <div class="row">
-    <button id="probe">List models</button>
+    <button id="probe" data-i18n="model.list">List models</button>
     <span id="probe-status" class="muted"></span>
   </div>
   <div id="model-pick" class="hidden">
-    <label for="model-select">Model</label>
+    <label for="model-select" data-i18n="model.model">Model</label>
     <select id="model-select"></select>
     <div class="row">
-      <button class="primary" id="save">Save</button>
+      <button class="primary" id="save" data-i18n="model.save">Save</button>
     </div>
   </div>
   <p id="model-error" class="error"></p>
@@ -150,63 +176,67 @@
 
 <section id="services">
   <h2><span class="dot" id="services-dot"></span>Cedar</h2>
-  <p id="services-text" class="muted">Not started.</p>
+  <p id="services-text" class="muted" data-i18n="services.notStarted">Not started.</p>
   <p class="detail" id="services-detail"></p>
   <div class="row">
-    <button class="primary" id="open-chat" disabled>Open chat</button>
-    <button id="open-browser" disabled>Open in browser</button>
-    <button id="copy-token">Copy access token</button>
-    <button id="open-logs">Open logs</button>
+    <button class="primary" id="open-chat" disabled data-i18n="services.openChat">Open chat</button>
+    <button id="open-browser" disabled data-i18n="services.openBrowser">Open in browser</button>
+    <button id="copy-token" data-i18n="common.copyToken">Copy access token</button>
+    <button id="open-logs" data-i18n="services.openLogs">Open logs</button>
   </div>
-  <p class="muted" style="margin-top:10px">Opening the chat in a browser asks for the access token once; copy it from here. Settings live in <code id="config-path"></code>.</p>
+  <p class="muted" style="margin-top:10px" data-i18n-html="html.services.note">Opening the chat in a browser asks for the access token once; copy it from here. Settings live in <code id="config-path"></code>.</p>
 </section>
 
 <section id="share">
-  <h2><span class="dot" id="share-dot"></span>iPhone, iPad &amp; Android</h2>
-  <p class="muted">The Cedar iOS and Android apps connect over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on <span class="this-computer">this computer</span> and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
+  <h2><span class="dot" id="share-dot"></span><span data-i18n="share.title">iPhone, iPad &amp; Android</span></h2>
+  <p class="muted" data-i18n-html="html.share.about">The Cedar iOS and Android apps connect over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on <span class="this-computer">this computer</span> and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
   <div id="ts-setup" class="hidden">
     <p class="muted" id="ts-setup-intro"></p>
     <div class="row">
-      <button class="primary" id="ts-install">Set up Tailscale for me</button>
+      <button class="primary" id="ts-install" data-i18n="tsSetup.install">Set up Tailscale for me</button>
     </div>
     <p id="ts-setup-text" class="muted"></p>
     <p class="detail" id="ts-setup-detail"></p>
   </div>
   <div class="row">
     <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
-      <input type="checkbox" id="share-toggle"> Share with the phone apps over Tailscale
+      <input type="checkbox" id="share-toggle"> <span data-i18n="share.toggle">Share with the phone apps over Tailscale</span>
     </label>
   </div>
   <p id="share-text" class="muted"></p>
   <p class="detail" id="share-detail"></p>
   <div class="row hidden" id="share-actions">
-    <button id="copy-share-url">Copy address</button>
-    <button id="share-copy-token">Copy access token</button>
-    <button id="share-qr-toggle">Show QR code</button>
+    <button id="copy-share-url" data-i18n="share.copyAddress">Copy address</button>
+    <button id="share-copy-token" data-i18n="common.copyToken">Copy access token</button>
+    <button id="share-qr-toggle" data-i18n="share.showQr">Show QR code</button>
   </div>
   <div id="share-qr" class="hidden">
     <div id="share-qr-code" class="qr"></div>
-    <p class="muted">In the Cedar app’s Settings (iOS or Android), tap <b>Scan QR Code</b> and point the camera here. The code holds the access token, so hide it again when you are done.</p>
+    <p class="muted" data-i18n-html="html.share.qrNote">In the Cedar app’s Settings (iOS or Android), tap <b>Scan QR Code</b> and point the camera here. The code holds the access token, so hide it again when you are done.</p>
   </div>
   <div class="row">
-    <button class="hidden" id="share-retry">Try again</button>
+    <button class="hidden" id="share-retry" data-i18n="common.tryAgain">Try again</button>
   </div>
   <p id="share-error" class="error"></p>
 </section>
 
 <section id="updates">
-  <h2>Updates</h2>
+  <h2 data-i18n="updates.title">Updates</h2>
   <p id="updates-text" class="muted"></p>
   <div class="row">
     <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
-      <input type="checkbox" id="updates-toggle"> Check for updates automatically
+      <input type="checkbox" id="updates-toggle"> <span data-i18n="updates.toggle">Check for updates automatically</span>
     </label>
-    <button id="updates-check">Check now</button>
+    <button id="updates-check" data-i18n="updates.checkNow">Check now</button>
   </div>
 </section>
 
-<footer>Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.</footer>
+<footer data-i18n-html="html.footer">Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.</footer>
 
+</div>
+
+<script src="i18n.js"></script>
+<script src="strings.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

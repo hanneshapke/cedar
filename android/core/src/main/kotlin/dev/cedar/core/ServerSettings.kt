@@ -24,23 +24,34 @@ data class ServerSettings(
     fun sameServer(other: ServerSettings): Boolean =
         serverURL.trim() == other.serverURL.trim() && accessToken.trim() == other.accessToken.trim()
 
+    /** Why the app can't use `serverURL`, or null; for the app to word in the user's language. */
+    enum class UrlProblem { NOT_CONFIGURED, INVALID, NOT_HTTPS }
+
     /**
      * Why the app can't use `serverURL`, or null. Like the iOS app under App Transport Security, it
      * connects over HTTPS only (Android's default network security config allows no cleartext).
      */
-    fun urlProblem(): String? {
+    fun urlIssue(): UrlProblem? {
         val text = serverURL.trim()
-        if (text.isEmpty()) return ChatException.NotConfigured.message
+        if (text.isEmpty()) return UrlProblem.NOT_CONFIGURED
         val uri = try {
             URI(text)
         } catch (_: Exception) {
-            return ChatException.InvalidURL.message
+            return UrlProblem.INVALID
         }
         return when {
-            uri.scheme?.lowercase() == "http" -> HTTPS_ONLY
-            uri.scheme?.lowercase() != "https" || uri.host.isNullOrEmpty() -> ChatException.InvalidURL.message
+            uri.scheme?.lowercase() == "http" -> UrlProblem.NOT_HTTPS
+            uri.scheme?.lowercase() != "https" || uri.host.isNullOrEmpty() -> UrlProblem.INVALID
             else -> null
         }
+    }
+
+    /** [urlIssue] in English. */
+    fun urlProblem(): String? = when (urlIssue()) {
+        UrlProblem.NOT_CONFIGURED -> ChatException.NotConfigured.message
+        UrlProblem.INVALID -> ChatException.InvalidURL.message
+        UrlProblem.NOT_HTTPS -> HTTPS_ONLY
+        null -> null
     }
 
     companion object {

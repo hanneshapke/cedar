@@ -72,11 +72,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.cedar.cedar.ChatModel
+import dev.cedar.cedar.R
 import dev.cedar.cedar.ui.cards.CardView
 import dev.cedar.cedar.ui.cards.ChartCardView
 import dev.cedar.core.Approval
@@ -89,12 +91,12 @@ import dev.cedar.core.TranscriptItem
 import dev.cedar.core.TurnStatus
 import dev.cedar.core.TurnTranscript
 import dev.cedar.core.get
+import dev.cedar.core.number
 import dev.cedar.core.pretty
+import dev.cedar.core.price
 import dev.cedar.core.str
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
-import java.util.Currency
-import java.util.Locale
 
 /** A message and everything the agent did to answer it (iOS/Cedar/Features/Chat/TurnView.swift). */
 @Composable
@@ -134,23 +136,28 @@ private fun StatusFooter(turn: TurnTranscript) {
     val secondary = CedarColors.secondaryText
     val small = MaterialTheme.typography.bodySmall
     when (turn.turn.status) {
-        TurnStatus.QUEUED -> Working("Queued")
+        TurnStatus.QUEUED -> Working(stringResource(R.string.outcome_queued))
         TurnStatus.RUNNING -> Working(
-            when {
-                turn.pendingApproval != null -> "Waiting for your say-so"
-                turn.awaitingPlan != null -> "Waiting for the plan"
-                else -> "Working…"
-            },
+            stringResource(
+                when {
+                    turn.pendingApproval != null -> R.string.waiting_approval
+                    turn.awaitingPlan != null -> R.string.waiting_plan
+                    else -> R.string.working
+                },
+            ),
         )
         TurnStatus.FAILED -> Row(verticalAlignment = Alignment.Top) {
             Icon(Icons.Outlined.WarningAmber, null, Modifier.size(16.dp), tint = CedarColors.red)
             Spacer(Modifier.width(6.dp))
-            SelectionContainer { Text(turn.turn.error ?: "The run failed.", style = small, color = CedarColors.red) }
+            SelectionContainer { Text(turn.turn.error ?: stringResource(R.string.run_failed), style = small, color = CedarColors.red) }
         }
         TurnStatus.CANCELLED -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.StopCircle, null, Modifier.size(16.dp), tint = secondary)
             Spacer(Modifier.width(6.dp))
-            Text(turn.cancelReason?.let { "Stopped: $it" } ?: "Stopped", style = small, color = secondary)
+            Text(
+                turn.cancelReason?.let { stringResource(R.string.stopped_reason, it) } ?: stringResource(R.string.outcome_stopped),
+                style = small, color = secondary,
+            )
         }
         TurnStatus.COMPLETED -> {
             var copied by remember { mutableStateOf(false) }
@@ -163,7 +170,7 @@ private fun StatusFooter(turn: TurnTranscript) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(
                     if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
-                    "Copy answer",
+                    stringResource(R.string.copy_answer),
                     Modifier.size(16.dp).clickable {
                         copyText(context, turn.answer)
                         copied = true
@@ -173,24 +180,24 @@ private fun StatusFooter(turn: TurnTranscript) {
                 val usage = turn.usage
                 if (usage.inputTokens != 0 || usage.outputTokens != 0 || usage.costUSD != null) {
                     val n = NumberFormat.getIntegerInstance()
-                    Text("${n.format(usage.inputTokens)} in · ${n.format(usage.outputTokens)} out", style = MaterialTheme.typography.labelSmall, color = secondary)
+                    Text(
+                        stringResource(R.string.tokens_in_out, n.format(usage.inputTokens), n.format(usage.outputTokens)),
+                        style = MaterialTheme.typography.labelSmall, color = secondary,
+                    )
                 }
                 usage.costUSD?.let { cost ->
-                    val f = NumberFormat.getCurrencyInstance(Locale.US).apply {
-                        currency = Currency.getInstance("USD")
-                        maximumFractionDigits = if (cost < 0.01) 4 else 2
-                        minimumFractionDigits = if (cost < 0.01) 4 else 2
-                    }
-                    Text(f.format(cost), style = MaterialTheme.typography.labelSmall, color = secondary)
+                    // In US dollars, as cedar counts it, written as the user's locale writes prices.
+                    val digits = if (cost < 0.01) 4 else 2
+                    Text(price(cost, "USD", digits, digits), style = MaterialTheme.typography.labelSmall, color = secondary)
                 }
                 if (turn.turn.needsAnswer) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(14.dp), tint = CedarColors.orange)
                         Spacer(Modifier.width(3.dp))
-                        Text("Needs your answer", style = MaterialTheme.typography.labelSmall, color = CedarColors.orange)
+                        Text(stringResource(R.string.needs_your_answer), style = MaterialTheme.typography.labelSmall, color = CedarColors.orange)
                     }
                 } else if (turn.turn.stopReason == "max_tokens") {
-                    Text("Cut short", style = MaterialTheme.typography.labelSmall, color = secondary)
+                    Text(stringResource(R.string.cut_short), style = MaterialTheme.typography.labelSmall, color = secondary)
                 }
             }
         }
@@ -214,7 +221,11 @@ private fun ReasoningView(text: String, durationMs: Int?) {
         Row(Modifier.clickable { expanded = !expanded }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Psychology, null, Modifier.size(16.dp), tint = CedarColors.secondaryText)
             Spacer(Modifier.width(6.dp))
-            val title = if (durationMs != null && durationMs > 0) "Thought for ${Math.round(durationMs / 1000.0)} s" else "Thought it through"
+            val title = if (durationMs != null && durationMs > 0) {
+                stringResource(R.string.thought_for, Math.round(durationMs / 1000.0))
+            } else {
+                stringResource(R.string.thought_it_through)
+            }
             Text(title, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
             Icon(Icons.Outlined.ExpandMore, null, Modifier.size(16.dp).rotate(if (expanded) 180f else 0f), tint = CedarColors.secondaryText)
         }
@@ -257,13 +268,15 @@ private fun PlanView(plan: Plan, canAgree: Boolean, agree: () -> Unit) {
     Panel {
         PanelTitle(
             Icons.AutoMirrored.Outlined.ListAlt,
-            when {
-                plan.awaiting && plan.isProposed -> "Cedar planned this, waiting for your go-ahead"
-                plan.awaiting -> "Plan, waiting for your go-ahead"
-                plan.by == "timeout" -> "Plan (followed as proposed)"
-                plan.isProposed -> "Cedar's plan"
-                else -> "Plan"
-            },
+            stringResource(
+                when {
+                    plan.awaiting && plan.isProposed -> R.string.plan_proposed_waiting
+                    plan.awaiting -> R.string.plan_waiting
+                    plan.by == "timeout" -> R.string.plan_timeout
+                    plan.isProposed -> R.string.plan_cedars
+                    else -> R.string.plan
+                },
+            ),
         )
         plan.steps.forEachIndexed { index, step ->
             Row {
@@ -274,7 +287,7 @@ private fun PlanView(plan: Plan, canAgree: Boolean, agree: () -> Unit) {
         }
         if (plan.awaiting && canAgree) {
             Button(onClick = { sent = true; agree() }, enabled = !sent) {
-                Text(if (sent) "Sent" else if (plan.isProposed) "Go on" else "Go ahead")
+                Text(stringResource(if (sent) R.string.sent else if (plan.isProposed) R.string.go_on else R.string.go_ahead))
             }
         }
     }
@@ -285,7 +298,10 @@ private fun PlanView(plan: Plan, canAgree: Boolean, agree: () -> Unit) {
 @Composable
 private fun ApprovalView(approval: Approval, canDecide: Boolean, decide: (String) -> Unit) {
     Panel(tint = if (approval.isPending) CedarColors.orange else CedarColors.orange.copy(alpha = 0.4f)) {
-        PanelTitle(Icons.Outlined.BackHand, if (approval.isPending) "May the agent do this?" else "Asked: ${approval.reason}")
+        PanelTitle(
+            Icons.Outlined.BackHand,
+            if (approval.isPending) stringResource(R.string.approval_question) else stringResource(R.string.approval_asked, approval.reason),
+        )
         if (approval.isPending) Text(approval.reason, style = MaterialTheme.typography.bodyMedium)
         val summary = when (approval.tool) {
             "bash" -> approval.input["command"].str
@@ -297,17 +313,21 @@ private fun ApprovalView(approval: Approval, canDecide: Boolean, decide: (String
         if (approval.isPending) {
             if (canDecide) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { decide("allow") }) { Text("Allow") }
-                    OutlinedButton(onClick = { decide("allow_always") }) { Text(approval.alwaysLabel) }
-                    OutlinedButton(onClick = { decide("deny") }) { Text("Deny", color = CedarColors.red) }
+                    Button(onClick = { decide("allow") }) { Text(stringResource(R.string.allow)) }
+                    OutlinedButton(onClick = { decide("allow_always") }) {
+                        // What "always" would remember: the host, the packages.
+                        val scope = approval.scope
+                        Text(if (scope.isNullOrEmpty()) stringResource(R.string.approval_always) else stringResource(R.string.approval_always_for, scope))
+                    }
+                    OutlinedButton(onClick = { decide("deny") }) { Text(stringResource(R.string.deny), color = CedarColors.red) }
                 }
             }
         } else {
             val text = when (approval.decision) {
-                "allow" -> "Allowed"
-                "allow_always" -> "Allowed, and remembered"
-                "deny" -> "Denied"
-                "timeout" -> "No answer in time; not done"
+                "allow" -> stringResource(R.string.allowed)
+                "allow_always" -> stringResource(R.string.allowed_remembered)
+                "deny" -> stringResource(R.string.denied)
+                "timeout" -> stringResource(R.string.approval_timeout)
                 else -> approval.decision.orEmpty()
             }
             Text(text, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
@@ -321,7 +341,7 @@ fun QuestionsView(questions: Questions, submit: (List<ClarifyAnswer.Answer>) -> 
     val answers = remember(questions) { mutableStateListOf(*Array(questions.questions.size) { ClarifyAnswer.Answer() }) }
     var sent by remember(questions) { mutableStateOf(false) }
     Panel {
-        PanelTitle(Icons.AutoMirrored.Outlined.HelpOutline, "Cedar asks")
+        PanelTitle(Icons.AutoMirrored.Outlined.HelpOutline, stringResource(R.string.cedar_asks))
         questions.questions.forEachIndexed { index, question ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 question.header?.takeIf { it.isNotEmpty() }?.let {
@@ -361,13 +381,13 @@ fun QuestionsView(questions: Questions, submit: (List<ClarifyAnswer.Answer>) -> 
                     value = answers[index].own,
                     onValueChange = { answers[index] = answers[index].copy(own = it) },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(if (question.options.isEmpty()) "Your answer" else "Other") },
+                    placeholder = { Text(stringResource(if (question.options.isEmpty()) R.string.your_answer else R.string.other)) },
                     maxLines = 4,
                 )
             }
         }
         questions.note?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText) }
-        Button(onClick = { sent = true; submit(answers.toList()) }, enabled = !sent) { Text(if (sent) "Sent" else "Answer") }
+        Button(onClick = { sent = true; submit(answers.toList()) }, enabled = !sent) { Text(stringResource(if (sent) R.string.sent else R.string.answer)) }
     }
 }
 
@@ -407,8 +427,8 @@ fun ToolCallView(call: ToolCall, webURL: String?) {
             Spacer(Modifier.width(4.dp))
             when {
                 !call.isFinished -> CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                call.isError -> Icon(Icons.Outlined.Error, "Failed", Modifier.size(16.dp), tint = CedarColors.red)
-                else -> Icon(Icons.Outlined.CheckCircle, "Done", Modifier.size(16.dp), tint = CedarColors.green)
+                call.isError -> Icon(Icons.Outlined.Error, stringResource(R.string.failed), Modifier.size(16.dp), tint = CedarColors.red)
+                else -> Icon(Icons.Outlined.CheckCircle, stringResource(R.string.outcome_done), Modifier.size(16.dp), tint = CedarColors.green)
             }
             Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp).rotate(if (expanded) 90f else 0f), tint = CedarColors.secondaryText)
         }
@@ -420,14 +440,18 @@ fun ToolCallView(call: ToolCall, webURL: String?) {
                     Row(Modifier.clickable { openUrl(context, webURL) }, verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.OpenInBrowser, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(6.dp))
-                        Text("Open the ${cardKind(call.name)} on the web", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(openCardOnWeb(call.name)), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-                CodeBox("Input", inputText(call))
+                CodeBox(stringResource(R.string.input), inputText(call))
                 call.output?.let { output ->
                     // Charts the tool printed are drawn under it, so they're left out here.
                     val text = if (call.charts.isEmpty()) output else ChartCard.inOutput(output).text
-                    CodeBox(if (call.isError) "Error" else "Output", text.ifEmpty { "(no output)" }, isError = call.isError)
+                    CodeBox(
+                        stringResource(if (call.isError) R.string.error else R.string.output),
+                        text.ifEmpty { stringResource(R.string.no_output) },
+                        isError = call.isError,
+                    )
                 }
                 if (call.sources.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -444,7 +468,10 @@ fun ToolCallView(call: ToolCall, webURL: String?) {
                     }
                 }
                 call.durationMs?.let { ms ->
-                    Text(if (ms < 1000) "$ms ms" else "${"%.1f".format(ms / 1000.0)} s", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+                    Text(
+                        if (ms < 1000) "$ms ms" else "${number(ms / 1000.0, 1, 1)} s",
+                        style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText,
+                    )
                 }
             }
         }
@@ -458,14 +485,15 @@ private fun inputText(call: ToolCall): String = when (call.name) {
     else -> call.input.pretty()
 }
 
-private fun cardKind(name: String): String = when (name) {
-    "show_map" -> "map"
-    "show_recipe" -> "recipe"
-    "plan_trip" -> "route"
-    "compare_stocks" -> "comparison"
-    "search_products" -> "products"
-    "generate_chart" -> "chart"
-    else -> "result"
+/** "Open the map on the web", for a card the app can't draw. */
+private fun openCardOnWeb(name: String): Int = when (name) {
+    "show_map" -> R.string.open_map_on_web
+    "show_recipe" -> R.string.open_recipe_on_web
+    "plan_trip" -> R.string.open_route_on_web
+    "compare_stocks" -> R.string.open_comparison_on_web
+    "search_products" -> R.string.open_products_on_web
+    "generate_chart" -> R.string.open_chart_on_web
+    else -> R.string.open_result_on_web
 }
 
 private fun toolIcon(name: String): ImageVector = when (name) {
@@ -492,14 +520,15 @@ fun CodeBox(label: String?, text: String, isError: Boolean = false) {
     val context = LocalContext.current
     // Very long outputs are cut for display; the copy button still copies everything.
     val limit = 20_000
-    val shown = if (text.length > limit) text.take(limit) + "\n… (${text.length - limit} more characters)" else text
+    val more = text.length - limit
+    val shown = if (more > 0) text.take(limit) + "\n" + plural(R.plurals.more_characters, more, more) else text
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
         Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 6.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (label != null) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = if (isError) CedarColors.red else CedarColors.secondaryText)
             }
             Spacer(Modifier.weight(1f))
-            Icon(Icons.Outlined.ContentCopy, "Copy", Modifier.size(16.dp).clickable { copyText(context, text) }, tint = CedarColors.secondaryText)
+            Icon(Icons.Outlined.ContentCopy, stringResource(R.string.copy), Modifier.size(16.dp).clickable { copyText(context, text) }, tint = CedarColors.secondaryText)
         }
         SelectionContainer {
             Text(

@@ -12,7 +12,10 @@ import com.google.android.gms.common.GoogleApiAvailability
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import dev.cedar.cedar.BuildConfig
+import dev.cedar.cedar.Language
+import dev.cedar.cedar.R
 import dev.cedar.cedar.storage.SettingsStore
+import dev.cedar.cedar.ui.describe
 import dev.cedar.core.ChatClient
 import dev.cedar.core.ChatException
 import dev.cedar.core.ServerSettings
@@ -49,6 +52,9 @@ class PushManager(private val context: Context, private val store: SettingsStore
     /** Bumped when the transport or the distributors change, so Settings redraws. */
     var revision by mutableStateOf(0)
         private set
+
+    /** The app's text in its language (the status lines are made outside an activity). */
+    private fun text(id: Int, vararg args: Any): String = Language.localized(context, store.language).getString(id, *args)
 
     /** FCM works when the build carries a Firebase project and the phone has Google Play services. */
     val fcmAvailable: Boolean
@@ -87,7 +93,7 @@ class PushManager(private val context: Context, private val store: SettingsStore
 
     private fun registerFcm() {
         if (!fcmAvailable) {
-            status = "Google Play services or the app's Firebase project is missing: use ntfy instead."
+            status = text(R.string.push_fcm_missing)
             return
         }
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
@@ -95,7 +101,7 @@ class PushManager(private val context: Context, private val store: SettingsStore
             if (token != null) {
                 onToken(Transport.FCM, token)
             } else {
-                status = "FCM gave no token: ${task.exception?.message ?: "unknown error"}"
+                status = text(R.string.push_fcm_no_token, task.exception?.message ?: text(R.string.unknown_error))
             }
         }
     }
@@ -105,11 +111,7 @@ class PushManager(private val context: Context, private val store: SettingsStore
         val installed = distributors
         val distributor = saved ?: installed.singleOrNull()
         if (distributor == null) {
-            status = if (installed.isEmpty()) {
-                "Install the ntfy app (or another UnifiedPush distributor) to get notifications without Google."
-            } else {
-                "Choose which UnifiedPush app delivers Cedar's notifications."
-            }
+            status = if (installed.isEmpty()) text(R.string.push_install_distributor) else text(R.string.push_choose_distributor)
             return
         }
         if (saved == null) UnifiedPush.saveDistributor(context, distributor)
@@ -153,11 +155,11 @@ class PushManager(private val context: Context, private val store: SettingsStore
                 if (previous != null && previous != token) runCatching { client.unregisterAndroidDevice(previous) }
                 client.registerAndroidDevice(via.id, token, deviceName())
                 store.setString(REGISTERED_SERVER, client.baseURL.toString())
-                status = "Registered with the server through ${via.label}."
+                status = text(R.string.push_registered, via.label)
             } catch (e: ChatException) {
-                status = "Could not register for push: ${e.message}"
+                status = text(R.string.push_register_failed, Language.localized(context, store.language).describe(e))
             } catch (e: Exception) {
-                status = "Could not register for push: ${e.message}"
+                status = text(R.string.push_register_failed, e.message ?: e.toString())
                 Log.w(TAG, "push registration failed", e)
             }
         }
@@ -171,7 +173,7 @@ class PushManager(private val context: Context, private val store: SettingsStore
             store.setString(TOKEN, null)
             store.setString(TOKEN_TRANSPORT, null)
         }
-        status = "The UnifiedPush app unregistered Cedar."
+        status = text(R.string.push_unregistered)
         revision++
     }
 
@@ -190,7 +192,7 @@ class PushManager(private val context: Context, private val store: SettingsStore
     suspend fun sendTest(): String {
         val client = clientFor(null) ?: throw ChatException.NotConfigured
         client.testNotification("android")
-        return "Sent. It arrives as a notification in a moment."
+        return text(R.string.push_test_sent)
     }
 
     private fun unregisterFromServer(client: ChatClient?, token: String) {
