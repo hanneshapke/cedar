@@ -44,9 +44,10 @@ const cedarAttach = (() => {
   }
 
   function fmtSize(n) {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    const num = (v, digits) => cedarI18n.number(v, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
+    if (n < 1024) return tr('attach.sizeB', { size: num(n, 0) });
+    if (n < 1024 * 1024) return tr('attach.sizeKB', { size: num(n / 1024, n < 10 * 1024 ? 1 : 0) });
+    return tr('attach.sizeMB', { size: num(n / (1024 * 1024), 1) });
   }
 
   function kindOf(file) {
@@ -58,7 +59,7 @@ const cedarAttach = (() => {
   function readBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onerror = () => reject(new Error(`could not read ${file.name}`));
+      reader.onerror = () => reject(new Error(tr('attach.readFailed', { name: file.name })));
       // A data URL: "data:<type>;base64,<data>". Only the part after the comma is sent.
       reader.onload = () => resolve(String(reader.result).slice(String(reader.result).indexOf(',') + 1));
       reader.readAsDataURL(file);
@@ -70,12 +71,12 @@ const cedarAttach = (() => {
     const total = () => files.reduce((n, f) => n + f.size, 0);
     for (const file of Array.from(list)) {
       const media_type = kindOf(file);
-      if (!media_type) { deps.toast(`${file.name}: only PNG, JPEG, GIF, WebP and PDF files can be attached`); continue; }
-      if (media_type !== PDF && !images) { deps.toast(`${file.name}: this model takes PDFs but not images`); continue; }
-      if (!file.size) { deps.toast(`${file.name} is empty`); continue; }
-      if (file.size > MAX_BYTES) { deps.toast(`${file.name} is larger than ${fmtSize(MAX_BYTES)}`); continue; }
-      if (files.length >= MAX_FILES) { deps.toast(`At most ${MAX_FILES} files per message`); break; }
-      if (total() + file.size > MAX_TOTAL_BYTES) { deps.toast(`The files would add up to more than ${fmtSize(MAX_TOTAL_BYTES)}`); break; }
+      if (!media_type) { deps.toast(tr('attach.wrongType', { name: file.name })); continue; }
+      if (media_type !== PDF && !images) { deps.toast(tr('attach.noImages', { name: file.name })); continue; }
+      if (!file.size) { deps.toast(tr('attach.empty', { name: file.name })); continue; }
+      if (file.size > MAX_BYTES) { deps.toast(tr('attach.tooLarge', { name: file.name, size: fmtSize(MAX_BYTES) })); continue; }
+      if (files.length >= MAX_FILES) { deps.toast(tr('attach.tooMany', { count: MAX_FILES })); break; }
+      if (total() + file.size > MAX_TOTAL_BYTES) { deps.toast(tr('attach.tooMuch', { size: fmtSize(MAX_TOTAL_BYTES) })); break; }
       let data;
       try {
         data = await readBase64(file);
@@ -111,7 +112,7 @@ const cedarAttach = (() => {
     if (onRemove) {
       const x = el('button', 'cedar-attach-remove', '×');
       x.type = 'button';
-      x.setAttribute('aria-label', `Remove ${info.name}`);
+      x.setAttribute('aria-label', tr('attach.remove', { name: info.name }));
       x.addEventListener('click', onRemove);
       c.append(x);
     }
@@ -151,7 +152,7 @@ const cedarAttach = (() => {
 
   function syncButton() {
     if (!button) return;
-    const what = images ? 'Attach images or PDFs' : 'Attach PDFs';
+    const what = images ? tr('attach.imagesOrPdfs') : tr('attach.pdfs');
     button.hidden = !enabled;
     button.title = what;
     button.setAttribute('aria-label', what);

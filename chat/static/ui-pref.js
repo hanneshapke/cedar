@@ -10,6 +10,8 @@ const cedarUI = (() => {
   const KEY = 'cedar-chat-ui';
   const DEFAULT = 'v3';
   const LABELS = { v3: 'Ledger', v4: 'Dossier', v2: 'Cedar style', v1: 'Claude style' };
+  /** The UI's name in the page's language (Ledger and Dossier are names and stay as they are). */
+  const label = (ui) => (ui === 'v2' ? tr('ui.cedarStyle') : ui === 'v1' ? tr('ui.claudeStyle') : LABELS[ui]);
   const valid = (ui) => typeof ui === 'string' && Object.hasOwn(LABELS, ui);
 
   function get() {
@@ -48,10 +50,10 @@ const cedarUI = (() => {
     }
     if (typeof cedarSettingsShell !== 'undefined') {
       cedarSettingsShell.register({
-        id: 'interface', label: 'Interface', title: 'Interface',
-        description: 'Saved in this browser. Switching keeps your open conversation.',
+        id: 'interface', label: tr('ui.title'), title: tr('ui.title'),
+        description: tr('ui.description'),
         render: () => {},
-        summary: () => LABELS[document.documentElement.dataset.ui] || null,
+        summary: () => label(document.documentElement.dataset.ui) || null,
         footer: false,
       });
     }

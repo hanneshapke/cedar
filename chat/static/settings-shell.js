@@ -109,7 +109,8 @@ const cedarSettingsShell = (() => {
       const tagEl = item.querySelector('.settings-nav-tag');
       if (tagEl && page.tag) {
         const t = page.tag();
-        tagEl.textContent = t || '';
+        // The tag is 'ADMIN' or 'UNLOCKED'; shown in the page's language.
+        tagEl.textContent = t ? tr(`shell.tag.${t}`) : '';
         tagEl.classList.toggle('on', t === 'UNLOCKED');
       }
       if (pid === current) {
@@ -158,10 +159,10 @@ const cedarSettingsShell = (() => {
     const d = dirty.get(current) || 0;
     const note = notes.get(current);
     let text = '';
-    if (saving) text = 'Saving…';
-    else if (d === true) text = 'Unsaved changes';
-    else if (typeof d === 'number' && d > 0) text = `${d} change${d === 1 ? '' : 's'}`;
-    else if (statusEl?.dataset.saved === current) text = 'Saved';
+    if (saving) text = tr('shell.saving');
+    else if (d === true) text = tr('shell.unsaved');
+    else if (typeof d === 'number' && d > 0) text = tr('shell.changes', { count: d });
+    else if (statusEl?.dataset.saved === current) text = tr('shell.saved');
     const parts = [text, note?.text].filter(Boolean);
     statusEl.textContent = parts.join(' · ');
     statusEl.className = `cedar-set-status${note?.kind ? ` ${note.kind}` : ''}`;

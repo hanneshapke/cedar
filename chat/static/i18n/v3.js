@@ -420,7 +420,7 @@ cedarI18n.add({
     'v3.count.steps': { one: '{count} étape', other: '{count} étapes' },
     'v3.count.stocks': { one: '{count} action', other: '{count} actions comparées' },
     'v3.count.ways': { one: '{count} itinéraire', other: '{count} itinéraires' },
-    'v3.cutOff': 'La réponse a été coupée à la limite de sortie du modèle. Un modèle qui réfléchit avant de répondre peut l\'épuiser avant d\'écrire le moindre texte. Un administrateur peut l\'augmenter dans Réglages → Serveur, via le paramètre «\u00a0Tokens max. par réponse\u00a0» du modèle.',
+    'v3.cutOff': 'La réponse a été coupée à la limite de sortie du modèle. Un modèle qui réfléchit avant de répondre peut l\'épuiser avant d\'écrire le moindre texte. Un administrateur peut l\'augmenter dans Réglages → Serveur, via le paramètre «\u00a0Jetons max. par réponse\u00a0» du modèle.',
     'v3.delete': 'Supprimer',
     'v3.deleteConfirm': 'Supprimer «\u00a0{title}\u00a0»\u00a0? Cette action est irréversible.',
     'v3.deleteConversation': 'Supprimer la conversation',

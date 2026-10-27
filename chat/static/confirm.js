@@ -5,7 +5,7 @@
 // asking anything, so a "Delete …?" there did nothing. Every UI loads it; it draws with the UI's
 // own `dialog`, `.dialog-actions`, `.primary` and `.ghost` styles.
 
-function cedarConfirm(message, { ok = 'OK' } = {}) {
+function cedarConfirm(message, { ok = tr('confirm.ok') } = {}) {
   return new Promise((resolve) => {
     const dialog = document.createElement('dialog');
     dialog.className = 'cedar-confirm';
@@ -25,7 +25,7 @@ function cedarConfirm(message, { ok = 'OK' } = {}) {
       return b;
     };
     const yes = button(ok, 'primary', 'ok');
-    form.append(button('Cancel', 'ghost', 'cancel'), yes);
+    form.append(button(tr('confirm.cancel'), 'ghost', 'cancel'), yes);
     dialog.append(text, form);
     dialog.addEventListener('close', () => {
       dialog.remove();

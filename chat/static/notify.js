@@ -33,16 +33,11 @@
 // has been looked at.
 
 const cedarNotify = (() => {
-  const METHODS = [
-    ['none', 'Only in the app', 'The inbox, the marks in the conversation list and the count in the title.'],
-    ['desktop', 'Desktop notification', 'A notification from the Cedar app on this computer (Notification Center on a Mac, a toast on Windows), its window open or not.'],
-    ['browser', 'Browser push', 'A notification from this browser even when the tab is closed. Needs https, or localhost.'],
-    ['ios', 'iPhone push', 'A notification from the Cedar iOS app, through Apple\'s push service.'],
-    ['android', 'Android push', 'A notification from the Cedar Android app, through Firebase or UnifiedPush (ntfy).'],
-    ['pushover', 'Phone push via Pushover', 'A push to your phone through pushover.net and its app.'],
-    ['email', 'Email', 'A mail through an SMTP server of yours.'],
-  ];
-  const METHOD_LABELS = Object.fromEntries(METHODS.map(([id, label]) => [id, label]));
+  // The ways to be told, in order; each is named by notify.method.<id> and explained by
+  // notify.methodSub.<id> in the catalog.
+  const METHODS = ['none', 'desktop', 'browser', 'ios', 'android', 'pushover', 'email'];
+  /** A method's name in the page's language; an unknown id as it is. */
+  const methodLabel = (m) => (METHODS.includes(m) ? tr(`notify.method.${m}`) : m);
 
   let deps = null;
   let inbox = { items: [], unread: 0 };
@@ -79,19 +74,19 @@ const cedarNotify = (() => {
 
   /** "Finished", "Failed" or "Needs your answer", as the inbox and the notices say it. */
   function kindOf(item) {
-    if (item.needs_answer) return 'Needs your answer';
-    return item.status === 'failed' ? 'Failed' : 'Finished';
+    if (item.needs_answer) return tr('notify.kind.needsAnswer');
+    return item.status === 'failed' ? tr('notify.kind.failed') : tr('notify.kind.finished');
   }
 
   function when(iso) {
     if (!iso) return '';
     const d = new Date(iso);
     const today = new Date().toDateString() === d.toDateString();
-    return today ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : d.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return today ? d.toLocaleTimeString(cedarI18n.locale, { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleString(cedarI18n.locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
-  const nameOf = (item) => item.title || 'New chat';
+  const nameOf = (item) => item.title || tr('notify.newChat');
 
   // -- the count and the title -------------------------------------------------------------------
 
@@ -109,7 +104,7 @@ const cedarNotify = (() => {
     if (!countEl) return;
     countEl.hidden = !inbox.unread;
     countEl.textContent = inbox.unread > 99 ? '99+' : String(inbox.unread);
-    const label = inbox.unread ? `Finished responses, ${inbox.unread} unread` : 'Finished responses';
+    const label = inbox.unread ? tr('notify.inboxUnread', { count: inbox.unread }) : tr('notify.inboxTitle');
     deps.button.setAttribute('aria-label', label);
     deps.button.title = label;
   }
@@ -141,17 +136,17 @@ const cedarNotify = (() => {
     dialog = el('dialog', 'cedar-inbox-dialog');
     dialog.setAttribute('aria-labelledby', 'cedar-inbox-title');
     const head = el('div', 'cedar-inbox-head');
-    const title = el('h3', '', 'Finished responses');
+    const title = el('h3', '', tr('notify.inboxTitle'));
     title.id = 'cedar-inbox-title';
-    allRead = button('Mark all read', async () => {
+    allRead = button(tr('notify.markAllRead'), async () => {
       const ids = [...new Set(inbox.items.map((i) => i.conversation_id))];
       for (const id of ids) await seen(id);
     });
-    head.append(title, allRead, button('Close', () => dialog.close()));
+    head.append(title, allRead, button(tr('notify.close'), () => dialog.close()));
     listEl = el('div', 'cedar-inbox-list');
     const foot = el('div', 'cedar-inbox-foot');
-    awayLine = el('span', '', 'While you are away: only in the app.');
-    const change = button('Change in Settings', () => {
+    awayLine = el('span', '', tr('notify.awayNone'));
+    const change = button(tr('notify.changeInSettings'), () => {
       dialog.close();
       const btn = document.getElementById('settings-btn');
       if (btn) { btn.dataset.page = 'notify'; btn.click(); }
@@ -165,14 +160,14 @@ const cedarNotify = (() => {
   function updateAwayLine() {
     if (!awayLine) return;
     const method = status?.default_method || 'none';
-    awayLine.textContent = method === 'none' ? 'While you are away: only in the app.' : `While you are away: ${METHOD_LABELS[method] || method}.`;
+    awayLine.textContent = method === 'none' ? tr('notify.awayNone') : tr('notify.away', { method: methodLabel(method) });
   }
 
   function renderList() {
     listEl.textContent = '';
     allRead.hidden = !inbox.items.length;
     if (!inbox.items.length) {
-      listEl.append(el('div', 'cedar-inbox-empty', 'Nothing new. Responses that finish while you are elsewhere show up here.'));
+      listEl.append(el('div', 'cedar-inbox-empty', tr('notify.inboxEmpty')));
       return;
     }
     for (const item of inbox.items) {
@@ -182,7 +177,7 @@ const cedarNotify = (() => {
       const text = el('span', 'cedar-inbox-text');
       text.append(el('span', 'cedar-inbox-title', nameOf(item)));
       const parts = [kindOf(item)];
-      if (item.schedule_id) parts.push('scheduled run');
+      if (item.schedule_id) parts.push(tr('notify.scheduledRun'));
       parts.push(when(item.finished_at));
       text.append(el('span', 'cedar-inbox-sub', parts.join(' · ')));
       row.append(dot, text);
@@ -214,7 +209,7 @@ const cedarNotify = (() => {
   }
 
   function describe(notice) {
-    return `${kindOf(notice)}: ${nameOf(notice)}`;
+    return tr('notify.notice', { kind: kindOf(notice), title: nameOf(notice) });
   }
 
   function onNotice(notice) {
@@ -274,10 +269,10 @@ const cedarNotify = (() => {
 
   /** Register the service worker, subscribe with the server's key, and tell the server. */
   async function turnOnPush() {
-    if (!pushSupported()) throw new Error('This browser cannot take push notifications here (it needs https, or localhost).');
+    if (!pushSupported()) throw new Error(tr('notify.push.unsupported'));
     let permission = Notification.permission;
     if (permission === 'default') permission = await Notification.requestPermission();
-    if (permission !== 'granted') throw new Error('The browser does not allow notifications for this site.');
+    if (permission !== 'granted') throw new Error(tr('notify.push.denied'));
     if (!status?.browser?.public_key) status = await deps.api('GET', '/notifications');
     const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
     await navigator.serviceWorker.ready;
@@ -304,11 +299,11 @@ const cedarNotify = (() => {
   }
 
   function agentName(ua) {
-    if (!ua) return 'A browser';
+    if (!ua) return tr('notify.aBrowser');
     const m = ua.match(/(Firefox|Edg|OPR|Chrome|Safari)\/[\d.]+/);
-    const name = { Edg: 'Edge', OPR: 'Opera' }[m?.[1]] || m?.[1] || 'A browser';
+    const name = { Edg: 'Edge', OPR: 'Opera' }[m?.[1]] || m?.[1] || tr('notify.aBrowser');
     const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
-    return os ? `${name} on ${os}` : name;
+    return os ? tr('notify.browserOn', { browser: name, os }) : name;
   }
 
   /** The settings as last loaded (or loaded now), for other modules' pickers. */
@@ -326,10 +321,10 @@ const cedarNotify = (() => {
     const options = [];
     if (withDefault) {
       const d = status?.default_method || 'none';
-      options.push({ value: '', label: d === 'none' ? 'Default (only in the app)' : `Default (${METHOD_LABELS[d] || d})` });
+      options.push({ value: '', label: d === 'none' ? tr('notify.defaultNone') : tr('notify.defaultMethod', { method: methodLabel(d) }) });
     }
-    options.push({ value: 'none', label: 'Only in the app' });
-    for (const m of configured) options.push({ value: m, label: METHOD_LABELS[m] || m });
+    options.push({ value: 'none', label: methodLabel('none') });
+    for (const m of configured) options.push({ value: m, label: methodLabel(m) });
     return options;
   }
 
@@ -343,24 +338,24 @@ const cedarNotify = (() => {
   function summary() {
     if (!status) return null;
     const m = status.default_method || 'none';
-    return `${m === 'none' ? 'Only in the app' : METHOD_LABELS[m] || m} · ${status.scope === 'all' ? 'every response' : 'what needs me'}`;
+    return `${methodLabel(m)} · ${status.scope === 'all' ? tr('notify.summary.all') : tr('notify.summary.attention')}`;
   }
 
   /** The footer's warning while the chosen default isn't set up. */
   function guard() {
     const m = draft?.default_method || 'none';
     const ok = m === 'none' || (status?.configured || []).includes(m);
-    shell()?.setStatus('notify', ok ? '' : `${METHOD_LABELS[m] || m} isn't set up yet`, 'warn');
+    shell()?.setStatus('notify', ok ? '' : tr('notify.notSetUpYet', { method: methodLabel(m) }), 'warn');
   }
 
   async function renderSettings(sectionEl = section) {
     if (sectionEl) section = sectionEl;
     if (!section) return;
-    section.replaceChildren(note('Loading…'));
+    section.replaceChildren(note(tr('notify.loading')));
     try {
       [status, local] = await Promise.all([deps.api('GET', '/notifications'), localSubscription()]);
     } catch (e) {
-      section.replaceChildren(note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
+      section.replaceChildren(note(tr('notify.loadFailed', { error: e.message }), 'cedar-set-error'));
       return;
     }
     updateAwayLine();
@@ -376,17 +371,19 @@ const cedarNotify = (() => {
     };
 
     // Tell me by: one radio per method; the chosen one (or one being set up) unfolds its setup.
-    const tell = row('Tell me by');
+    const tell = row(tr('notify.tellMeBy'));
     const group = el('div', 'cedar-notify-methods');
     group.setAttribute('role', 'radiogroup');
-    group.setAttribute('aria-label', 'Tell me by');
+    group.setAttribute('aria-label', tr('notify.tellMeBy'));
     const panels = new Map();
     const radios = new Map();
     const syncOpen = () => {
       for (const [id, panel] of panels) panel.hidden = openMethod !== id;
       for (const [id, radio] of radios) radio.setAttribute('aria-checked', String(draft.default_method === id));
     };
-    for (const [id, label, sub] of METHODS) {
+    for (const id of METHODS) {
+      const label = methodLabel(id);
+      const sub = tr(`notify.methodSub.${id}`);
       // The desktop app's method only where there is one; browser push not in the app's web view.
       if (id === 'desktop' && !inDesktopApp && !status.desktop?.configured) continue;
       if (id === 'browser' && inDesktopApp) continue;
@@ -400,11 +397,11 @@ const cedarNotify = (() => {
       const text = el('span', 'cedar-notify-method-text');
       text.append(el('span', 'cedar-notify-method-label', label), el('span', 'cedar-notify-method-sub', sub));
       const side = el('span', 'cedar-notify-method-side');
-      if (id === 'none') side.append(badge('Always on'));
-      else if (configured.has(id)) side.append(badge('Set up', 'ok'));
+      if (id === 'none') side.append(badge(tr('notify.alwaysOn')));
+      else if (configured.has(id)) side.append(badge(tr('notify.setUpBadge'), 'ok'));
       else {
-        side.append(badge('Not set up'));
-        const setUp = el('button', 'settings-link', 'Set up');
+        side.append(badge(tr('notify.notSetUp')));
+        const setUp = el('button', 'settings-link', tr('notify.setUp'));
         setUp.type = 'button';
         setUp.addEventListener('click', () => { openMethod = openMethod === id ? null : id; syncOpen(); });
         side.append(setUp);
@@ -443,8 +440,8 @@ const cedarNotify = (() => {
       radio.setAttribute('role', 'radio');
       radios.set(m, radio);
       const text = el('span', 'cedar-notify-method-text');
-      text.append(el('span', 'cedar-notify-method-label', METHOD_LABELS[m] || m), el('span', 'cedar-notify-method-sub', 'No longer set up.'));
-      head.append(radio, text, badge('Not set up'));
+      text.append(el('span', 'cedar-notify-method-label', methodLabel(m)), el('span', 'cedar-notify-method-sub', tr('notify.noLongerSetUp')));
+      head.append(radio, text, badge(tr('notify.notSetUp')));
       item.append(head);
       group.append(item);
     }
@@ -452,22 +449,22 @@ const cedarNotify = (() => {
     tell.append(group);
 
     // For: which responses are worth it.
-    const scopeRow = row('For');
+    const scopeRow = row(tr('notify.for'));
     const scopeWrap = el('div', 'cedar-notify-scope');
     const seg = el('div', 'cedar-notify-seg');
     seg.setAttribute('role', 'radiogroup');
-    seg.setAttribute('aria-label', 'Which responses');
+    seg.setAttribute('aria-label', tr('notify.whichResponses'));
     const scopeNote = el('div', 'cedar-set-note');
     const SCOPE_NOTES = {
-      attention: 'Failures, questions and scheduled runs. Scheduled agents can pick their own method.',
-      all: 'Every response that ends while you are not watching it.',
+      attention: tr('notify.scope.attentionNote'),
+      all: tr('notify.scope.allNote'),
     };
     const segs = [];
     const syncScope = () => {
       for (const b of segs) b.setAttribute('aria-checked', String(b.dataset.scope === draft.scope));
       scopeNote.textContent = SCOPE_NOTES[draft.scope] || SCOPE_NOTES.attention;
     };
-    for (const [id, label] of [['attention', 'What needs me'], ['all', 'Every response']]) {
+    for (const [id, label] of [['attention', tr('notify.scope.attention')], ['all', tr('notify.scope.all')]]) {
       const b = el('button', 'cedar-notify-seg-item', label);
       b.type = 'button';
       b.setAttribute('role', 'radio');
@@ -481,16 +478,16 @@ const cedarNotify = (() => {
     scopeRow.append(scopeWrap);
 
     // Last sent.
-    const lastRow = row('Last sent');
+    const lastRow = row(tr('notify.lastSent'));
     lastRow.classList.add('last');
     const last = el('div', 'cedar-notify-last');
     if (status.last_delivery) {
       const d = status.last_delivery;
       last.classList.toggle('err', !d.ok);
       last.append(el('span', 'cedar-notify-when', when(d.at)));
-      last.append(` · ${d.test ? 'test · ' : ''}${METHOD_LABELS[d.method] || d.method} · ${d.ok ? 'sent' : 'failed'}${d.detail ? ` · ${d.detail}` : ''}`);
+      last.append(` · ${d.test ? `${tr('notify.last.test')} · ` : ''}${methodLabel(d.method)} · ${d.ok ? tr('notify.last.sent') : tr('notify.last.failed')}${d.detail ? ` · ${d.detail}` : ''}`);
     } else {
-      last.textContent = 'Nothing has been sent yet.';
+      last.textContent = tr('notify.last.none');
     }
     lastRow.append(last);
 
@@ -499,12 +496,12 @@ const cedarNotify = (() => {
 
     /** Save, then send a test by `method`; the outcome lands in the last-sent line. */
     function testButton(method) {
-      const b = button('Send a test', async () => {
+      const b = button(tr('notify.sendTest'), async () => {
         b.disabled = true;
         try {
           await submit();
           const result = await deps.api('POST', '/notifications/test', { method });
-          deps.toast(`Sent: ${result.detail}`);
+          deps.toast(tr('notify.testSent', { detail: result.detail }));
         } catch (e) {
           if (e.message) deps.toast(e.message);
         } finally {
@@ -524,9 +521,9 @@ const cedarNotify = (() => {
 
     function desktopBlock() {
       const d = status.desktop || {};
-      if (d.listening) return [helpRow('The Cedar app is running and will show them. If nothing appears, allow notifications for Cedar in System Settings → Notifications on a Mac, or Settings → System → Notifications on Windows.', testButton('desktop'))];
-      if (d.configured) return [helpRow(`The Cedar app last connected ${when(d.connected_at)}; it isn't running now, so nothing would show.`)];
-      return [helpRow('Waiting for the Cedar app to connect.')];
+      if (d.listening) return [helpRow(tr('notify.desktop.listening'), testButton('desktop'))];
+      if (d.configured) return [helpRow(tr('notify.desktop.away', { when: when(d.connected_at) }))];
+      return [helpRow(tr('notify.desktop.waiting'))];
     }
 
     function browserBlock(local) {
@@ -536,8 +533,8 @@ const cedarNotify = (() => {
         const list = el('div', 'cedar-notify-subs');
         for (const s of subs) {
           const r = el('div', 'cedar-notify-sub');
-          r.append(el('span', '', `${agentName(s.user_agent)} · since ${when(s.created_at)}${s.last_used_at ? ` · last sent ${when(s.last_used_at)}` : ''}`));
-          r.append(button('Remove', async () => {
+          r.append(el('span', '', `${agentName(s.user_agent)} · ${tr('notify.since', { when: when(s.created_at) })}${s.last_used_at ? ` · ${tr('notify.lastSentAt', { when: when(s.last_used_at) })}` : ''}`));
+          r.append(button(tr('notify.remove'), async () => {
             try { status = await deps.api('DELETE', `/notifications/push/subscriptions/${s.id}`); } catch (e) { deps.toast(e.message); }
             renderSettings();
           }, 'settings-ghost'));
@@ -546,28 +543,28 @@ const cedarNotify = (() => {
         parts.push(list);
       }
       const fields = el('div', 'cedar-set-fields');
-      const contact = input('email', status.browser?.contact, 'you@example.com', 'Contact for the push services');
+      const contact = input('email', status.browser?.contact, tr('notify.placeholder.email'), tr('notify.browser.contactLabel'));
       contact.addEventListener('input', () => { draft.contact = contact.value; dirty(); });
-      fields.append(field('Contact for the push services (optional)', contact));
+      fields.append(field(tr('notify.browser.contactField'), contact));
       parts.push(fields);
       const buttons = [];
       if (!pushSupported()) {
-        parts.push(helpRow('This browser cannot take push notifications here: it needs https, or localhost.'));
+        parts.push(helpRow(tr('notify.browser.unsupported')));
         return parts;
       }
       if (local) {
-        buttons.push(button('Turn off here', async () => {
-          try { await turnOffPush(); deps.toast('Push notifications are off in this browser'); } catch (e) { deps.toast(e.message); }
+        buttons.push(button(tr('notify.browser.turnOff'), async () => {
+          try { await turnOffPush(); deps.toast(tr('notify.browser.offToast')); } catch (e) { deps.toast(e.message); }
           renderSettings();
         }, 'settings-ghost'));
       } else {
-        buttons.push(button('Turn on in this browser', async () => {
-          try { await turnOnPush(); deps.toast('Push notifications are on in this browser'); } catch (e) { deps.toast(e.message); }
+        buttons.push(button(tr('notify.browser.turnOn'), async () => {
+          try { await turnOnPush(); deps.toast(tr('notify.browser.onToast')); } catch (e) { deps.toast(e.message); }
           renderSettings();
         }, 'settings-ghost'));
       }
       if (subs.length) buttons.push(testButton('browser'));
-      parts.push(helpRow(`${local ? 'On in this browser.' : 'Not on in this browser yet.'} The contact goes with every push as the address to reach the operator of this server; some push services want one.`, ...buttons));
+      parts.push(helpRow(`${local ? tr('notify.browser.on') : tr('notify.browser.off')} ${tr('notify.browser.help')}`, ...buttons));
       return parts;
     }
 
@@ -579,8 +576,8 @@ const cedarNotify = (() => {
         const list = el('div', 'cedar-notify-subs');
         for (const d of devices) {
           const row = el('div', 'cedar-notify-sub');
-          row.append(el('span', '', `${d.name || 'iPhone'} · since ${when(d.created_at)}${d.last_used_at ? ` · last sent ${when(d.last_used_at)}` : ''}`));
-          row.append(button('Remove', async () => {
+          row.append(el('span', '', `${d.name || 'iPhone'} · ${tr('notify.since', { when: when(d.created_at) })}${d.last_used_at ? ` · ${tr('notify.lastSentAt', { when: when(d.last_used_at) })}` : ''}`));
+          row.append(button(tr('notify.remove'), async () => {
             try { status = await deps.api('DELETE', `/notifications/apns/devices/${d.id}`); } catch (e) { deps.toast(e.message); }
             renderSettings();
           }, 'settings-ghost'));
@@ -589,40 +586,40 @@ const cedarNotify = (() => {
         parts.push(list);
       }
       const fields = el('div', 'cedar-set-fields');
-      const team = input('text', a.team_id, 'ABCDE12345', 'Apple team id');
+      const team = input('text', a.team_id, 'ABCDE12345', tr('notify.ios.teamLabel'));
       team.addEventListener('input', () => { draft.ios.team_id = team.value; dirty(); });
-      const keyId = input('text', a.key_id, 'ABC123DEFG', 'APNs key id');
+      const keyId = input('text', a.key_id, 'ABC123DEFG', tr('notify.ios.keyIdLabel'));
       keyId.addEventListener('input', () => { draft.ios.key_id = keyId.value; dirty(); });
-      const topic = input('text', a.topic, 'dev.cedar.Cedar', 'Bundle id');
+      const topic = input('text', a.topic, 'dev.cedar.Cedar', tr('notify.ios.bundleId'));
       topic.addEventListener('input', () => { draft.ios.topic = topic.value; dirty(); });
       const env = el('select');
-      env.setAttribute('aria-label', 'APNs environment');
-      env.append(new Option('Production (App Store, TestFlight)', 'production', false, a.environment !== 'sandbox'));
-      env.append(new Option('Sandbox (installed from Xcode)', 'sandbox', false, a.environment === 'sandbox'));
+      env.setAttribute('aria-label', tr('notify.ios.envLabel'));
+      env.append(new Option(tr('notify.ios.production'), 'production', false, a.environment !== 'sandbox'));
+      env.append(new Option(tr('notify.ios.sandbox'), 'sandbox', false, a.environment === 'sandbox'));
       env.addEventListener('change', () => { draft.ios.environment = env.value; dirty(); });
       const key = el('textarea');
       key.rows = 4;
-      key.placeholder = a.key_set ? 'Saved; paste to replace' : '-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----';
-      key.setAttribute('aria-label', 'APNs key (.p8 file)');
+      key.placeholder = a.key_set ? tr('notify.savedPaste') : '-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----';
+      key.setAttribute('aria-label', tr('notify.ios.keyLabel'));
       key.spellcheck = false;
       key.addEventListener('input', () => { draft.ios.private_key = key.value; dirty(); });
-      fields.append(field('Team id', team), field('Key id', keyId), field('Bundle id', topic), field('Environment', env));
-      const keyField = field('APNs key (the .p8 file\'s contents)', key);
+      fields.append(field(tr('notify.ios.team'), team), field(tr('notify.ios.keyId'), keyId), field(tr('notify.ios.bundleId'), topic), field(tr('notify.ios.env'), env));
+      const keyField = field(tr('notify.ios.keyField'), key);
       keyField.style.gridColumn = '1 / -1';
       fields.append(keyField);
       parts.push(fields);
       const buttons = [];
       if (devices.length) buttons.push(testButton('ios'));
       if (a.key_set) {
-        buttons.push(button('Forget the saved key', async () => {
+        buttons.push(button(tr('notify.forgetKey'), async () => {
           try { await submit({ ios: { team_id: '', key_id: '', private_key: '' }, default_method: draft.default_method === 'ios' ? 'none' : draft.default_method }); } catch { /* reported */ }
           renderSettings();
         }, 'settings-ghost'));
       }
       const registered = devices.length
-        ? `${devices.length} ${devices.length === 1 ? 'iPhone has' : 'iPhones have'} registered.`
-        : 'No iPhone has registered yet: open the Cedar app, point it at this server, and allow notifications.';
-      parts.push(helpRow(`${registered} In the Apple developer account, under Certificates, Identifiers & Profiles → Keys, make a key with Apple Push Notifications service (APNs) on, download its .p8 file once, and note the key id; the team id is under Membership. The key stays on this server.`, ...buttons));
+        ? tr('notify.ios.registered', { count: devices.length })
+        : tr('notify.ios.noneRegistered');
+      parts.push(helpRow(`${registered} ${tr('notify.ios.help')}`, ...buttons));
       return parts;
     }
 
@@ -635,8 +632,8 @@ const cedarNotify = (() => {
         for (const d of devices) {
           const row = el('div', 'cedar-notify-sub');
           const via = d.transport === 'unifiedpush' ? 'UnifiedPush' : 'Firebase';
-          row.append(el('span', '', `${d.name || 'Android phone'} · ${via} · since ${when(d.created_at)}${d.last_used_at ? ` · last sent ${when(d.last_used_at)}` : ''}`));
-          row.append(button('Remove', async () => {
+          row.append(el('span', '', `${d.name || tr('notify.android.phone')} · ${via} · ${tr('notify.since', { when: when(d.created_at) })}${d.last_used_at ? ` · ${tr('notify.lastSentAt', { when: when(d.last_used_at) })}` : ''}`));
+          row.append(button(tr('notify.remove'), async () => {
             try { status = await deps.api('DELETE', `/notifications/android/devices/${d.id}`); } catch (e) { deps.toast(e.message); }
             renderSettings();
           }, 'settings-ghost'));
@@ -647,81 +644,81 @@ const cedarNotify = (() => {
       const fields = el('div', 'cedar-set-fields');
       const key = el('textarea');
       key.rows = 4;
-      key.placeholder = a.key_set ? `Saved${a.project_id ? ` (project ${a.project_id})` : ''}; paste to replace` : '{ "type": "service_account", "project_id": …, "private_key": …, "client_email": … }';
-      key.setAttribute('aria-label', 'Firebase service-account key (JSON)');
+      key.placeholder = a.key_set ? (a.project_id ? tr('notify.android.savedProject', { project: a.project_id }) : tr('notify.savedPaste')) : '{ "type": "service_account", "project_id": …, "private_key": …, "client_email": … }';
+      key.setAttribute('aria-label', tr('notify.android.keyLabel'));
       key.spellcheck = false;
       key.addEventListener('input', () => { draft.android.service_account = key.value; dirty(); });
-      const keyField = field('Firebase service-account key (optional; the JSON file\'s contents)', key);
+      const keyField = field(tr('notify.android.keyField'), key);
       keyField.style.gridColumn = '1 / -1';
       fields.append(keyField);
       parts.push(fields);
       const buttons = [];
       if (devices.length) buttons.push(testButton('android'));
       if (a.key_set) {
-        buttons.push(button('Forget the saved key', async () => {
+        buttons.push(button(tr('notify.forgetKey'), async () => {
           const fcmOnly = devices.every((d) => d.transport !== 'unifiedpush');
           try { await submit({ android: { service_account: '' }, default_method: draft.default_method === 'android' && fcmOnly ? 'none' : draft.default_method }); } catch { /* reported */ }
           renderSettings();
         }, 'settings-ghost'));
       }
       const registered = devices.length
-        ? `${devices.length} ${devices.length === 1 ? 'Android phone has' : 'Android phones have'} registered.`
-        : 'No Android phone has registered yet: open the Cedar app, point it at this server, and allow notifications.';
-      const project = a.fcm_configured ? ` Firebase project: ${a.project_id}.` : '';
-      parts.push(helpRow(`${registered}${project} A phone that gets pushes through UnifiedPush (the ntfy app, for phones without Google Play services) needs nothing here. For Firebase, in the Firebase console of the project the app was built with, under Project settings → Service accounts, generate a new private key and paste the JSON file. The key stays on this server; pushes carry only which conversation finished, and the app fetches the rest from here.`, ...buttons));
+        ? tr('notify.android.registered', { count: devices.length })
+        : tr('notify.android.noneRegistered');
+      const project = a.fcm_configured ? ` ${tr('notify.android.project', { project: a.project_id })}` : '';
+      parts.push(helpRow(`${registered}${project} ${tr('notify.android.help')}`, ...buttons));
       return parts;
     }
 
     function pushoverBlock() {
       const p = status.pushover || {};
       const fields = el('div', 'cedar-set-fields');
-      const token = input('password', '', p.token_set ? 'Saved; type to replace' : 'Application token from pushover.net', 'Pushover application token');
+      const token = input('password', '', p.token_set ? tr('notify.savedType') : tr('notify.pushover.tokenPlaceholder'), tr('notify.pushover.tokenLabel'));
       token.addEventListener('input', () => { draft.pushover.token = token.value; dirty(); });
-      const user = input('password', '', p.user_set ? `Saved (…${p.user_last4}); type to replace` : 'Your user key', 'Pushover user key');
+      const user = input('password', '', p.user_set ? tr('notify.pushover.userSaved', { last4: p.user_last4 }) : tr('notify.pushover.userPlaceholder'), tr('notify.pushover.userLabel'));
       user.addEventListener('input', () => { draft.pushover.user = user.value; dirty(); });
-      fields.append(field('Application token', token), field('User key', user));
+      fields.append(field(tr('notify.pushover.token'), token), field(tr('notify.pushover.user'), user));
       const buttons = [testButton('pushover')];
       if (p.token_set || p.user_set) {
-        buttons.push(button('Forget the saved keys', async () => {
+        buttons.push(button(tr('notify.forgetKeys'), async () => {
           try { await submit({ pushover: { token: '', user: '' }, default_method: draft.default_method === 'pushover' ? 'none' : draft.default_method }); } catch { /* reported */ }
           renderSettings();
         }, 'settings-ghost'));
       }
-      return [fields, helpRow('Make an application at pushover.net/apps for its token; your user key is on the pushover.net front page. Both stay on this server.', ...buttons)];
+      return [fields, helpRow(tr('notify.pushover.help'), ...buttons)];
     }
 
     function emailBlock() {
       const e = status.email || {};
       const fields = el('div', 'cedar-set-fields');
-      const host = input('text', e.host, 'smtp.example.com', 'SMTP server');
+      const host = input('text', e.host, 'smtp.example.com', tr('notify.email.server'));
       host.addEventListener('input', () => { draft.email.host = host.value; dirty(); });
       const security = el('select');
-      security.setAttribute('aria-label', 'Connection');
-      for (const [id, label] of [['tls', 'TLS (port 465)'], ['starttls', 'STARTTLS (port 587)'], ['none', 'Plain (a relay on this machine)']]) {
+      security.setAttribute('aria-label', tr('notify.email.connection'));
+      for (const [id, label] of [['tls', tr('notify.email.tls')], ['starttls', tr('notify.email.starttls')], ['none', tr('notify.email.plain')]]) {
         security.append(new Option(label, id, false, (e.security || 'tls') === id));
       }
-      const port = input('number', e.port ?? '', 'Default for the connection', 'Port');
+      const port = input('number', e.port ?? '', tr('notify.email.portPlaceholder'), tr('notify.email.port'));
       port.min = '1';
       port.max = '65535';
       security.addEventListener('change', () => { draft.email.security = security.value; dirty(); });
       port.addEventListener('input', () => { draft.email.port = port.value ? Number(port.value) : 0; dirty(); });
-      const username = input('text', e.username, 'Often the full address', 'SMTP user name');
+      const username = input('text', e.username, tr('notify.email.userPlaceholder'), tr('notify.email.userLabel'));
       username.addEventListener('input', () => { draft.email.username = username.value; dirty(); });
-      const password = input('password', '', e.password_set ? 'Saved; type to replace' : 'Password or app password', 'SMTP password');
+      const password = input('password', '', e.password_set ? tr('notify.savedType') : tr('notify.email.passwordPlaceholder'), tr('notify.email.passwordLabel'));
       password.addEventListener('input', () => { draft.email.password = password.value; dirty(); });
-      const from = input('email', e.from, 'cedar@example.com', 'Sender');
+      const from = input('email', e.from, 'cedar@example.com', tr('notify.email.sender'));
       from.addEventListener('input', () => { draft.email.from = from.value; dirty(); });
-      const to = input('email', e.to, 'you@example.com', 'Recipient');
+      const to = input('email', e.to, tr('notify.placeholder.email'), tr('notify.email.recipient'));
       to.addEventListener('input', () => { draft.email.to = to.value; dirty(); });
-      fields.append(field('SMTP server', host), field('Connection', security), field('Port', port), field('User name', username), field('Password', password), field('From', from), field('To', to));
+      fields.append(field(tr('notify.email.server'), host), field(tr('notify.email.connection'), security), field(tr('notify.email.port'), port), field(tr('notify.email.user'), username), field(tr('notify.email.password'), password), field(tr('notify.email.from'), from), field(tr('notify.email.to'), to));
       const buttons = [testButton('email')];
       if (e.password_set) {
-        buttons.push(button('Forget the saved password', async () => {
+        buttons.push(button(tr('notify.forgetPassword'), async () => {
           try { await submit({ email: { password: '' } }); } catch { /* reported */ }
           renderSettings();
         }, 'settings-ghost'));
       }
-      return [fields, helpRow('The password stays on this server. A Gmail account takes an app password with STARTTLS on smtp.gmail.com.', ...buttons)];
+      return [fields, helpRow(tr('notify.email.help'), ...buttons)];
     }
   }
 
@@ -792,8 +789,8 @@ const cedarNotify = (() => {
     // picked but not saved is dropped when it closes.
     document.getElementById('settings-dialog')?.addEventListener('close', () => { draft = null; openMethod = null; });
     shell()?.register({
-      id: 'notify', label: 'Notifications', title: 'Notifications',
-      description: 'When a response finishes while you are away. The inbox and the marks in the list are always on.',
+      id: 'notify', label: tr('notify.title'), title: tr('notify.title'),
+      description: tr('notify.description'),
       render: renderSettings, summary, save, footer: true,
     });
     deps.button.classList.add('cedar-inbox-btn');
@@ -818,5 +815,5 @@ const cedarNotify = (() => {
     follow();
   }
 
-  return { init, start, setTitle, seen, refresh, loadStatus, methodOptions, methodLabel: (m) => METHOD_LABELS[m] || m, unread: () => inbox.unread };
+  return { init, start, setTitle, seen, refresh, loadStatus, methodOptions, methodLabel, unread: () => inbox.unread };
 })();

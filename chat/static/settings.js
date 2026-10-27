@@ -79,7 +79,7 @@ const cedarSettings = (() => {
     if (res.status === 204) return null;
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      const err = new Error(data?.error?.message || `Request failed (${res.status})`);
+      const err = new Error(data?.error?.message || tr('settings.requestFailed', { status: res.status }));
       err.status = res.status;
       throw err;
     }
@@ -134,7 +134,7 @@ const cedarSettings = (() => {
   /** Ask before switching on tools that send or change things. */
   async function confirmWrites(names) {
     if (!names.length) return true;
-    return cedarConfirm(`These tools can change things, not just read them:\n\n${names.join('\n')}\n\nLet the agent use them?`, { ok: 'Allow' });
+    return cedarConfirm(tr('settings.confirmWrites', { tools: names.join('\n') }), { ok: tr('settings.allow') });
   }
 
   /** Checkboxes for every group (and the single tools of Gmail and Calendar); calls onChange(state). */
@@ -151,8 +151,8 @@ const cedarSettings = (() => {
       const text = el('span');
       text.append(el('strong', '', g.label));
       const sub = g.available
-        ? (g.tools?.length ? g.tools.map((t) => t.name).join(', ') : 'Tools appear once cedar connects')
-        : g.reason || 'Not offered by this server';
+        ? (g.tools?.length ? g.tools.map((t) => t.name).join(', ') : tr('settings.tools.pending'))
+        : g.reason || tr('settings.tools.notOffered');
       text.append(el('small', '', sub));
       label.append(box, text);
       row.append(label);
@@ -166,7 +166,7 @@ const cedarSettings = (() => {
       if (single) {
         const details = el('details', 'cedar-set-single');
         details.open = v instanceof Set;
-        details.append(el('summary', '', 'Choose single tools'));
+        details.append(el('summary', '', tr('settings.tools.chooseSingle')));
         const inner = el('div', 'cedar-set-single-list');
         for (const t of g.tools) {
           const l = el('label', 'cedar-set-check small');
@@ -174,7 +174,7 @@ const cedarSettings = (() => {
           b.type = 'checkbox';
           b.checked = v === 'all' || (v instanceof Set && v.has(t.name));
           l.append(b, el('span', '', t.name));
-          if (t.writes) l.append(el('span', 'cedar-set-warn', 'changes things'));
+          if (t.writes) l.append(el('span', 'cedar-set-warn', tr('settings.tools.writes')));
           b.addEventListener('change', async () => {
             if (b.checked && t.writes && !(await confirmWrites([t.name]))) { b.checked = false; return; }
             const cur = state.get(g.id);
@@ -188,7 +188,7 @@ const cedarSettings = (() => {
         details.append(inner);
         row.append(details);
       } else if (g.tools?.some((t) => t.writes)) {
-        row.append(el('span', 'cedar-set-warn', 'includes tools that change things'));
+        row.append(el('span', 'cedar-set-warn', tr('settings.tools.includesWrites')));
       }
       list.append(row);
     }
@@ -241,14 +241,14 @@ const cedarSettings = (() => {
 
   async function renderTools(section) {
     toolsSection = section;
-    section.replaceChildren(note('Loading…'));
+    section.replaceChildren(note(tr('settings.loading')));
     try { await loadPrefs(); } catch (e) {
-      section.replaceChildren(note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
+      section.replaceChildren(note(tr('settings.loadFailed', { error: e.message }), 'cedar-set-error'));
       return;
     }
     const list = el('div', 'cedar-set-tools');
     const always = el('div', 'cedar-set-always');
-    always.append(el('span', 'settings-eyebrow', 'Always on'), el('span', '', 'bash, files, Python, documents, PDF, charts'));
+    always.append(el('span', 'settings-eyebrow', tr('settings.tools.alwaysOn')), el('span', '', tr('settings.tools.alwaysOnList')));
     list.append(always);
     const changed = () => {
       draft.tools = encode(toolState);
@@ -269,10 +269,10 @@ const cedarSettings = (() => {
     if (!market) return null;
     const b = el('div', 'cedar-set-block');
     const head = el('div', 'cedar-set-block-head');
-    head.append(el('span', 'settings-eyebrow', 'Tool registry'));
+    head.append(el('span', 'settings-eyebrow', tr('settings.registry.title')));
     const url = registryPage(lastRegistry);
     if (url) {
-      const link = el('a', 'settings-link', 'Open the tool registry');
+      const link = el('a', 'settings-link', tr('settings.registry.open'));
       link.href = url;
       link.target = '_blank';
       link.rel = 'noreferrer';
@@ -318,10 +318,10 @@ const cedarSettings = (() => {
     main.append(el('span', 'cedar-set-row-name', g.label));
     if (!g.available) {
       sub.textContent = '';
-      side.textContent = g.reason || 'Not offered by this server';
+      side.textContent = g.reason || tr('settings.tools.notOffered');
     } else if (single) {
-      sub.append(`${g.tools.length} tools · `);
-      const choose = el('button', 'settings-link', 'choose single tools');
+      sub.append(`${tr('settings.tools.count', { count: g.tools.length })} · `);
+      const choose = el('button', 'settings-link', tr('settings.tools.chooseSingleLower'));
       choose.type = 'button';
       choose.setAttribute('aria-expanded', 'false');
       sub.append(choose);
@@ -335,7 +335,7 @@ const cedarSettings = (() => {
         b.type = 'checkbox';
         b.value = t.name;
         l.append(b, el('span', '', t.name));
-        if (t.writes) l.append(el('span', 'cedar-set-warn', 'changes things'));
+        if (t.writes) l.append(el('span', 'cedar-set-warn', tr('settings.tools.writes')));
         b.addEventListener('change', async () => {
           if (b.checked && t.writes && !(await confirmWrites([t.name]))) { b.checked = false; return; }
           const cur = toolState.get(g.id);
@@ -348,10 +348,10 @@ const cedarSettings = (() => {
         singles.append(l);
       }
     } else {
-      sub.textContent = g.tools?.length ? g.tools.map((t) => t.name).join(', ') : 'Tools appear once cedar connects';
+      sub.textContent = g.tools?.length ? g.tools.map((t) => t.name).join(', ') : tr('settings.tools.pending');
     }
     if (g.available && g.tools?.some((t) => t.writes)) {
-      side.textContent = 'Can change things';
+      side.textContent = tr('settings.tools.canWrite');
       side.classList.add('warn');
     }
     main.append(sub);
@@ -365,9 +365,9 @@ const cedarSettings = (() => {
 
   async function renderModel(section) {
     modelSection = section;
-    section.replaceChildren(note('Loading…'));
+    section.replaceChildren(note(tr('settings.loading')));
     try { await loadPrefs(); } catch (e) {
-      section.replaceChildren(note(`Could not load the settings: ${e.message}`, 'cedar-set-error'));
+      section.replaceChildren(note(tr('settings.loadFailed', { error: e.message }), 'cedar-set-error'));
       return;
     }
     const defaults = prefs.defaults || null;
@@ -378,30 +378,30 @@ const cedarSettings = (() => {
     if (cedarModels.all().length) {
       const modelSelect = el('select');
       const def = cedarModels.byId(cedarModels.defaultId());
-      modelSelect.append(new Option(def ? `cedar's default (${modelLabel(def)})` : "cedar's default", ''));
+      modelSelect.append(new Option(def ? tr('settings.model.cedarDefaultIs', { model: modelLabel(def) }) : tr('settings.model.cedarDefault'), ''));
       for (const m of cedarModels.all()) modelSelect.append(new Option(modelLabel(m), m.id));
       modelSelect.value = cedarModels.byId(draft.model) ? draft.model : '';
       modelSelect.addEventListener('change', () => { draft.model = modelSelect.value || null; dirty(); });
-      fields.append(field('Default model', modelSelect));
+      fields.append(field(tr('settings.model.defaultModel'), modelSelect));
     } else if (cedarModels.loaded()) {
-      parts.push(note('No model is registered yet: an admin adds one on the Server page.', 'cedar-set-error'));
+      parts.push(note(tr('settings.model.noneRegistered'), 'cedar-set-error'));
     }
     const turns = el('input');
     turns.type = 'number';
     turns.min = '1';
     turns.max = '1000';
-    turns.placeholder = defaults ? `Server limit (${defaults.max_turns_cap})` : 'Server limit';
+    turns.placeholder = defaults ? tr('settings.model.serverLimitIs', { limit: String(defaults.max_turns_cap) }) : tr('settings.model.serverLimit');
     turns.value = draft.max_turns ?? '';
     turns.addEventListener('input', () => { draft.max_turns = turns.value ? Number(turns.value) : null; dirty(); });
-    fields.append(field('Max turns per message', turns));
+    fields.append(field(tr('settings.model.maxTurns'), turns));
     const plan = el('select');
-    for (const [value, label] of [['auto', 'For longer requests'], ['tool', 'When Cedar thinks it helps'], ['on', 'Always'], ['off', 'Never']]) plan.append(new Option(label, value));
+    for (const value of ['auto', 'tool', 'on', 'off']) plan.append(new Option(tr(`settings.plan.${value}`), value));
     plan.value = draft.plan || 'auto';
     plan.addEventListener('change', () => { draft.plan = plan.value; dirty(); });
-    fields.append(field('Plans', plan));
+    fields.append(field(tr('settings.plan.title'), plan));
     parts.push(fields);
     const notes = el('div', 'cedar-set-field-notes');
-    notes.append(el('div', 'cedar-set-field-note', 'Plans: Cedar proposes its steps and waits until you go ahead; you can edit them. With "When Cedar thinks it helps", Cedar decides which requests need a plan, so quick questions get none.'));
+    notes.append(el('div', 'cedar-set-field-note', tr('settings.plan.note')));
     parts.push(notes);
 
     // The system prompt: read as a document, edited as one. Without a saved prompt it shows
@@ -409,14 +409,14 @@ const cedarSettings = (() => {
     const block = el('div', 'cedar-set-prompt-block');
     const head = el('div', 'cedar-set-prompt-head');
     const headLeft = el('span');
-    const tag = el('span', 'cedar-set-badge', "cedar's default");
-    headLeft.append(el('span', 'settings-eyebrow', 'System prompt'), tag);
+    const tag = el('span', 'cedar-set-badge', tr('settings.model.cedarDefault'));
+    headLeft.append(el('span', 'settings-eyebrow', tr('settings.prompt.title')), tag);
     const acts = el('div', 'cedar-set-prompt-acts');
     head.append(headLeft, acts);
     const reading = el('div', 'cedar-set-prompt');
     const editor = el('textarea', 'cedar-set-prompt-edit');
-    editor.setAttribute('aria-label', 'System prompt');
-    editor.placeholder = defaults ? '' : "cedar's default system prompt (cedar could not be asked for its text)";
+    editor.setAttribute('aria-label', tr('settings.prompt.title'));
+    editor.placeholder = defaults ? '' : tr('settings.prompt.unknownDefault');
     const text = () => draft.system ?? defaultSystem();
     const sync = () => {
       tag.hidden = !isDefaultPrompt();
@@ -426,10 +426,10 @@ const cedarSettings = (() => {
       editor.hidden = !editingPrompt;
       acts.textContent = '';
       if (editingPrompt) {
-        if (!isDefaultPrompt()) acts.append(button('Use the default', () => { draft.system = null; editingPrompt = false; sync(); dirty(); }, 'settings-ghost'));
-        acts.append(button('Done', () => { editingPrompt = false; sync(); }, 'settings-ghost'));
+        if (!isDefaultPrompt()) acts.append(button(tr('settings.prompt.useDefault'), () => { draft.system = null; editingPrompt = false; sync(); dirty(); }, 'settings-ghost'));
+        acts.append(button(tr('settings.prompt.done'), () => { editingPrompt = false; sync(); }, 'settings-ghost'));
       } else {
-        acts.append(button('Edit', () => { editingPrompt = true; sync(); editor.focus(); }, 'settings-ghost'));
+        acts.append(button(tr('settings.edit'), () => { editingPrompt = true; sync(); editor.focus(); }, 'settings-ghost'));
       }
     };
     editor.addEventListener('input', () => {
@@ -438,7 +438,7 @@ const cedarSettings = (() => {
       dirty();
     });
     sync();
-    block.append(head, reading, editor, el('div', 'cedar-set-field-note', 'cedar adds a short note after it saying which tools this conversation has and what the sandbox can reach.'));
+    block.append(head, reading, editor, el('div', 'cedar-set-field-note', tr('settings.prompt.note')));
     parts.push(block);
     section.replaceChildren(...parts);
   }
@@ -481,20 +481,20 @@ const cedarSettings = (() => {
 
   function toolsSummary() {
     if (!prefs || !catalog) return null;
-    if (prefs.tools === null || prefs.tools === undefined) return 'Everything';
+    if (prefs.tools === null || prefs.tools === undefined) return tr('settings.tools.summaryAll');
     const state = decode(prefs.tools);
     const on = [...state.values()].filter((v) => v !== 'none').length;
-    return `${on} of ${state.size} groups on`;
+    return tr('settings.tools.summary', { on, count: state.size });
   }
 
   function modelSummary() {
     if (!prefs) return null;
-    if (cedarModels.loaded() && !cedarModels.all().length) return { text: 'No model registered', kind: 'error' };
+    if (cedarModels.loaded() && !cedarModels.all().length) return { text: tr('settings.model.summaryNone'), kind: 'error' };
     const m = cedarModels.byId(prefs.model) || cedarModels.byId(cedarModels.defaultId());
     const parts = [];
     if (m) parts.push(m.label || m.model || m.id);
     if (m?.default_reasoning) parts.push(m.default_reasoning);
-    parts.push(prefs.system ? 'custom prompt' : 'default prompt');
+    parts.push(prefs.system ? tr('settings.model.customPrompt') : tr('settings.model.defaultPrompt'));
     return parts.join(' · ');
   }
 
@@ -527,7 +527,7 @@ const cedarSettings = (() => {
       section.replaceChildren(unlockForm());
       return;
     }
-    section.replaceChildren(note('Loading…'));
+    section.replaceChildren(note(tr('settings.loading')));
     let status;
     try {
       status = await adminApi('GET', '/integrations');
@@ -543,7 +543,7 @@ const cedarSettings = (() => {
     }
     const parts = [];
     if (!status.storage) {
-      parts.push(note('cedar has no CEDAR_SECRET_KEY, so API keys can\'t be saved here: models whose server needs none can still be registered; the Brave and Best Buy keys and the Google account can only be set in cedar\'s environment.'));
+      parts.push(note(tr('settings.server.noStorage')));
     }
     const block = (title, ...children) => {
       const b = el('div', 'cedar-set-block');
@@ -553,49 +553,49 @@ const cedarSettings = (() => {
       return b;
     };
     const models = await modelsBlock(status);
-    const modelsBlockEl = block('Models', models.wrap);
+    const modelsBlockEl = block(tr('settings.server.models'), models.wrap);
     modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
-    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('Google account', googleRow(status)), block('Attachments', await imageSizeRow()), block('Sandbox', await sandboxIdleRow()));
+    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
     const tools = await personalToolsBlock();
-    if (tools) parts.push(block('Personal tools', tools));
+    if (tools) parts.push(block(tr('settings.server.personalTools'), tools));
     const market = await marketplaceBlock();
-    if (market) parts.push(block('Community tools', market));
+    if (market) parts.push(block(tr('settings.server.communityTools'), market));
     section.replaceChildren(...parts);
   }
 
   /** The page head's Lock button, when the admin token is in. */
   function serverActions() {
     if (!deps?.config()?.admin_enabled || !unlocked()) return null;
-    return [button('Lock', () => { setAdminToken(''); renderIntegrations(); shell()?.refresh('server'); }, 'settings-ghost')];
+    return [button(tr('settings.server.lock'), () => { setAdminToken(''); renderIntegrations(); shell()?.refresh('server'); }, 'settings-ghost')];
   }
 
   /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
   function setupHelp() {
     const wrap = el('div', 'cedar-set-help');
-    wrap.append(note('The models (each with its server and API key), the Brave Search key and the Google account are set on the cedar server. They can be managed here once these are set:'));
+    wrap.append(note(tr('settings.setup.intro')));
     const list = el('ul');
     const item = (code, text) => {
       const li = el('li');
       li.append(el('code', '', code), ` ${text}`);
       list.append(li);
     };
-    item('CHAT_ADMIN_TOKEN', 'on cedar-chat: the token that unlocks this section');
-    item('CEDAR_SECRET_KEY', 'on cedar (openssl rand -hex 32): encrypts the API keys saved here');
-    item('CEDAR_ADMIN_KEYS', "on cedar: include cedar-chat's CEDAR_API_KEY");
+    item('CHAT_ADMIN_TOKEN', tr('settings.setup.adminToken'));
+    item('CEDAR_SECRET_KEY', tr('settings.setup.secretKey'));
+    item('CEDAR_ADMIN_KEYS', tr('settings.setup.adminKeys'));
     wrap.append(list);
-    wrap.append(note('Models are only registered through cedar\'s admin API (PUT /v1/admin/models/{id}) or here. BRAVE_API_KEY, BESTBUY_API_KEY and the GOOGLE_* variables can also go in cedar\'s environment (see .env.example); everything else, like the sandbox and limits, is only set there.'));
+    wrap.append(note(tr('settings.setup.where')));
     if (cedarModels.loaded() && !cedarModels.all().length) {
-      wrap.append(note('No model is registered yet, so messages can\'t be sent.', 'cedar-set-error'));
+      wrap.append(note(tr('settings.setup.noModel'), 'cedar-set-error'));
     }
     const missing = groups().filter((g) => !g.available);
     if (missing.length) {
       const l = el('ul');
       for (const g of missing) {
         const li = el('li');
-        li.append(el('strong', '', g.label), `: ${g.reason || 'not offered'}`);
+        li.append(el('strong', '', g.label), `: ${g.reason || tr('settings.setup.notOffered')}`);
         l.append(li);
       }
-      wrap.append(note('Not available on this server right now:'), l);
+      wrap.append(note(tr('settings.setup.unavailable')), l);
     }
     return wrap;
   }
@@ -605,9 +605,9 @@ const cedarSettings = (() => {
     const input = el('input');
     input.type = 'password';
     input.autocomplete = 'off';
-    input.placeholder = 'Admin token';
-    input.setAttribute('aria-label', 'Admin token');
-    form.append(input, button('Unlock', () => form.requestSubmit(), 'primary'));
+    input.placeholder = tr('settings.unlock.token');
+    input.setAttribute('aria-label', tr('settings.unlock.token'));
+    form.append(input, button(tr('settings.unlock.button'), () => form.requestSubmit(), 'primary'));
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!input.value.trim()) return;
@@ -616,9 +616,9 @@ const cedarSettings = (() => {
       refreshTools();
     });
     const wrap = el('div', 'cedar-set-unlock-card');
-    wrap.append(note('The models, API keys and the Google account are for admins. Enter the admin token (CHAT_ADMIN_TOKEN) to manage them.'));
+    wrap.append(note(tr('settings.unlock.intro')));
     if (cedarModels.loaded() && !cedarModels.all().length) {
-      wrap.append(note('No model is registered yet, so messages can\'t be sent until an admin adds one here.', 'cedar-set-error'));
+      wrap.append(note(tr('settings.unlock.noModel'), 'cedar-set-error'));
     }
     if (error) wrap.append(note(error, 'cedar-set-error'));
     wrap.append(form);
@@ -656,61 +656,65 @@ const cedarSettings = (() => {
     try {
       ({ models: entries } = await adminApi('GET', '/integrations/models'));
     } catch (e) {
-      wrap.append(note(`Could not list the models: ${e.message}`, 'cedar-set-error'));
+      wrap.append(note(tr('settings.models.listFailed', { error: e.message }), 'cedar-set-error'));
       return { wrap, add: el('span') };
     }
     entries = entries || [];
     // The button sits in the block's heading, so it is in view however long the list is. The form
     // it opens goes right under the intro, above the first entry.
     const intro = entries.length
-      ? note('Each model is served by its own OpenAI-compatible server. New chats use the default; the picker by the message box chooses another, and the reasoning level next to it. Add a model for another server, or another model on the same one.')
-      : note('No model is registered yet, so messages can\'t be sent. Add the server that runs your model: for a local vLLM, http://localhost:8000/v1 and the name it registered (curl localhost:8000/v1/models).', 'cedar-set-error');
+      ? note(tr('settings.models.intro'))
+      : note(tr('settings.models.introEmpty'), 'cedar-set-error');
     wrap.append(intro);
-    const add = button('Add a model', () => {
+    const add = button(tr('settings.models.add'), () => {
       add.hidden = true;
       const form = modelForm(null, status, () => { add.hidden = false; form.remove(); });
       intro.after(form);
       form.querySelector('input').focus();
     }, entries.length ? 'settings-ghost' : 'primary');
-    add.setAttribute('aria-label', 'Add a model');
+    add.setAttribute('aria-label', tr('settings.models.add'));
     for (const entry of entries) wrap.append(modelRow(entry, status));
     return { wrap, add };
   }
 
   function modelRow(entry, status) {
     const levels = entry.reasoning_levels || [];
-    const { row, main, side } = integrationRow(entry.label || entry.id, `${entry.model} at ${entry.base_url}`);
-    main.append(el('small', '', `id: ${entry.id}`));
-    if (entry.is_default) side.append(badge('Default', 'ok'));
-    if (entry.api_key_set) side.append(badge('API key set'));
-    if (entry.multimodal) side.append(badge('Images'));
-    side.append(badge(levels.length ? `Reasoning: ${levels.join(', ')}${entry.default_reasoning ? ` (default ${entry.default_reasoning})` : ''}` : 'No reasoning levels'));
-    if (entry.max_tokens) side.append(badge(`Max ${entry.max_tokens.toLocaleString()} tokens`));
+    const { row, main, side } = integrationRow(entry.label || entry.id, tr('settings.models.at', { model: entry.model, url: entry.base_url }));
+    main.append(el('small', '', tr('settings.models.id', { id: entry.id })));
+    if (entry.is_default) side.append(badge(tr('settings.models.default'), 'ok'));
+    if (entry.api_key_set) side.append(badge(tr('settings.models.keySet')));
+    if (entry.multimodal) side.append(badge(tr('settings.models.images')));
+    side.append(badge(levels.length
+      ? (entry.default_reasoning
+        ? tr('settings.models.levelsDefault', { levels: levels.join(', '), level: entry.default_reasoning })
+        : tr('settings.models.levels', { levels: levels.join(', ') }))
+      : tr('settings.models.noLevels')));
+    if (entry.max_tokens) side.append(badge(tr('settings.models.maxTokensBadge', { count: entry.max_tokens })));
     // What the server listed when the entry was checked is offered in the edit form; the row only
     // says when the model name is not one of them.
     if (Array.isArray(entry.listed_models) && !entry.listed_models.includes(entry.model)) {
-      const listed = entry.listed_models.length ? entry.listed_models.join(', ') : 'none';
-      main.append(el('small', 'cedar-set-warn-text', `"${entry.model}" is not a model this server lists (${listed}); use Edit to pick one it does.`));
+      const listed = entry.listed_models.length ? entry.listed_models.join(', ') : tr('settings.models.listedNone');
+      main.append(el('small', 'cedar-set-warn-text', tr('settings.models.notListed', { model: entry.model, listed })));
     }
     let form = null;
-    side.append(button('Edit', () => {
+    side.append(button(tr('settings.edit'), () => {
       if (form) { form.remove(); form = null; return; }
       form = modelForm(entry, status, () => { form?.remove(); form = null; });
       row.append(form);
       form.querySelector('input').focus();
     }));
     if (!entry.is_default) {
-      side.append(button('Make default', async () => {
+      side.append(button(tr('settings.models.makeDefault'), async () => {
         try {
           await adminApi('PUT', `/integrations/models/${encodeURIComponent(entry.id)}`, { base_url: entry.base_url, model: entry.model, is_default: true });
-          deps.toast(`${entry.label || entry.id} is the default model`);
+          deps.toast(tr('settings.models.isDefault', { name: entry.label || entry.id }));
           await modelsChanged();
           renderIntegrations();
         } catch (err) { deps.toast(err.message); }
       }));
     }
-    side.append(button('Remove', async () => {
-      if (!(await cedarConfirm(`Remove the model ${entry.label || entry.id}? Conversations using it fail at their next message until another model is picked.`, { ok: 'Remove' }))) return;
+    side.append(button(tr('settings.remove'), async () => {
+      if (!(await cedarConfirm(tr('settings.models.confirmRemove', { name: entry.label || entry.id }), { ok: tr('settings.remove') }))) return;
       try {
         await adminApi('DELETE', `/integrations/models/${encodeURIComponent(entry.id)}`);
         await modelsChanged();
@@ -734,45 +738,45 @@ const cedarSettings = (() => {
       return i;
     };
     const slug = (text) => text.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+|-+$/g, '').slice(0, 64);
-    const id = input('id (letters, digits, . _ -), like deepseek', entry?.id || '', 'Model id');
+    const id = input(tr('settings.form.idPlaceholder'), entry?.id || '', tr('settings.form.id'));
     id.disabled = Boolean(entry);
-    const label = input('Name shown in the picker', entry?.label || '', 'Label');
+    const label = input(tr('settings.form.labelPlaceholder'), entry?.label || '', tr('settings.form.label'));
     let idTouched = Boolean(entry);
     id.addEventListener('input', () => { idTouched = true; });
     label.addEventListener('input', () => { if (!idTouched) id.value = slug(label.value); });
     // The whole address, protocol and path included; cedar adds /v1 if the path is left off.
-    const address = input('Server address, like http://10.0.0.5:8000/v1', entry?.base_url || '', 'Server address');
+    const address = input(tr('settings.form.addressPlaceholder'), entry?.base_url || '', tr('settings.form.address'));
     const canSaveKey = Boolean(status.storage);
     const key = input(
-      !canSaveKey ? 'API key (needs CEDAR_SECRET_KEY on cedar)' : entry?.api_key_set ? 'API key (leave empty to keep it)' : 'API key, if the server needs one',
-      '', 'API key', 'password',
+      !canSaveKey ? tr('settings.form.keyNoStorage') : entry?.api_key_set ? tr('settings.form.keyKeep') : tr('settings.form.keyOptional'),
+      '', tr('settings.form.key'), 'password',
     );
     key.autocomplete = 'off';
     key.disabled = !canSaveKey;
     const clearKey = el('label', 'cedar-set-check small plain');
     const clearBox = el('input');
     clearBox.type = 'checkbox';
-    clearKey.append(clearBox, el('span', '', 'Remove the saved API key'));
+    clearKey.append(clearBox, el('span', '', tr('settings.form.clearKey')));
     // The model name is picked from what the server lists: "List models" asks it (with the key
     // typed above, else the entry's saved one), and the picker offers those names only. An entry
     // being edited starts with what its server listed when it was last checked.
     const model = el('select');
-    model.setAttribute('aria-label', 'Model name');
-    const listBtn = button('List models', () => listServerModels());
+    model.setAttribute('aria-label', tr('settings.form.modelName'));
+    const listBtn = button(tr('settings.form.list'), () => listServerModels());
     const modelRow = el('div', 'cedar-set-server-models');
     modelRow.append(model, listBtn);
     const fillModels = (names, selected) => {
       model.textContent = '';
       if (!names) {
-        model.append(new Option('Enter the address, then list its models', ''));
+        model.append(new Option(tr('settings.form.listFirst'), ''));
         model.disabled = true;
         return;
       }
       model.disabled = false;
       const options = [...names];
       if (selected && !options.includes(selected)) options.unshift(selected);
-      model.append(new Option(options.length ? 'Choose a model' : 'The server lists no models', ''));
-      for (const m of options) model.append(new Option(m === selected && !names.includes(m) ? `${m} (not listed by the server)` : m, m));
+      model.append(new Option(options.length ? tr('settings.form.choose') : tr('settings.form.noModels'), ''));
+      for (const m of options) model.append(new Option(m === selected && !names.includes(m) ? tr('settings.form.unlisted', { model: m }) : m, m));
       model.value = selected && options.includes(selected) ? selected : options.length === 1 ? options[0] : '';
     };
     fillModels(entry ? entry.listed_models || [entry.model] : null, entry?.model || '');
@@ -788,79 +792,79 @@ const cedarSettings = (() => {
       i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); listServerModels(); } });
     }
     async function listServerModels() {
-      if (!address.value.trim()) { deps.toast('Enter the server address'); address.focus(); return; }
+      if (!address.value.trim()) { deps.toast(tr('settings.form.needAddress')); address.focus(); return; }
       const body = { base_url: address.value.trim() };
       if (key.value.trim()) body.api_key = key.value.trim();
       else if (entry && !clearBox.checked) body.id = entry.id;
       const previous = model.value || entry?.model || '';
       listBtn.disabled = true;
-      listBtn.textContent = 'Listing…';
+      listBtn.textContent = tr('settings.form.listing');
       try {
         const found = await adminApi('POST', '/integrations/server-models', body);
         fillModels(found.models || [], found.models?.includes(previous) ? previous : '');
         model.dispatchEvent(new Event('change'));
-        if (!found.models?.length) deps.toast('The server lists no models');
+        if (!found.models?.length) deps.toast(tr('settings.form.noModels'));
         model.focus();
       } catch (err) {
         fillModels(null);
         deps.toast(err.message);
       } finally {
         listBtn.disabled = false;
-        listBtn.textContent = 'List models';
+        listBtn.textContent = tr('settings.form.list');
       }
     }
-    const levels = input('Reasoning levels the model takes, like none, low, high, max (empty: none)', (entry?.reasoning_levels || []).join(', '), 'Reasoning levels');
+    const levels = input(tr('settings.form.levelsPlaceholder'), (entry?.reasoning_levels || []).join(', '), tr('settings.form.levels'));
     const defaultLevel = el('select');
-    defaultLevel.setAttribute('aria-label', 'Default reasoning level');
+    defaultLevel.setAttribute('aria-label', tr('settings.form.defaultLevel'));
     const parseLevels = () => [...new Set(levels.value.split(',').map((l) => l.trim()).filter(Boolean))];
     const fillDefault = () => {
       const current = defaultLevel.value || entry?.default_reasoning || '';
       defaultLevel.textContent = '';
-      defaultLevel.append(new Option("Default level: the server's own", ''));
-      for (const l of parseLevels()) defaultLevel.append(new Option(`Default level: ${l}`, l));
+      defaultLevel.append(new Option(tr('settings.form.defaultLevelServer'), ''));
+      for (const l of parseLevels()) defaultLevel.append(new Option(tr('settings.form.defaultLevelIs', { level: l }), l));
       defaultLevel.value = parseLevels().includes(current) ? current : '';
       defaultLevel.hidden = !parseLevels().length;
     };
     levels.addEventListener('input', fillDefault);
     fillDefault();
-    const maxTokens = input('Max tokens per reply', String(entry?.max_tokens ?? DEFAULT_MAX_TOKENS), 'Max tokens per reply', 'number');
+    const maxTokens = input(tr('settings.form.maxTokens'), String(entry?.max_tokens ?? DEFAULT_MAX_TOKENS), tr('settings.form.maxTokens'), 'number');
     maxTokens.min = '1';
     maxTokens.max = String(MAX_MAX_TOKENS);
     maxTokens.step = '1';
     const maxTokensField = el('label', 'cedar-set-field');
     const maxTokensHead = el('span', 'cedar-set-field-head');
-    maxTokensHead.append(el('span', '', 'Max tokens per reply'));
-    maxTokensField.append(maxTokensHead, maxTokens, el('small', 'cedar-set-field-note', 'The most one reply may take, a reasoning model\'s thinking included. A reply that reaches it is cut off.'));
+    maxTokensHead.append(el('span', '', tr('settings.form.maxTokens')));
+    maxTokensField.append(maxTokensHead, maxTokens, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
     const multimodalLabel = el('label', 'cedar-set-check plain');
     const multimodalBox = el('input');
     multimodalBox.type = 'checkbox';
     multimodalBox.checked = Boolean(entry?.multimodal);
     const multimodalText = el('span');
-    multimodalText.append(el('strong', '', 'Accepts images'));
-    multimodalText.append(el('small', '', 'Lets images be attached to a message while this model is picked, and shows it the first pages of attached PDFs as images (PDFs can be attached for any model; the agent reads their text). cedar passes images to the model as they are; a model that cannot read them fails the message.'));
+    multimodalText.append(el('strong', '', tr('settings.form.images')));
+    multimodalText.append(el('small', '', tr('settings.form.imagesNote')));
     multimodalLabel.append(multimodalBox, multimodalText);
     const makeDefault = el('label', 'cedar-set-check small plain');
     const defaultBox = el('input');
     defaultBox.type = 'checkbox';
     defaultBox.checked = Boolean(entry?.is_default);
     defaultBox.disabled = Boolean(entry?.is_default);
-    makeDefault.append(defaultBox, el('span', '', 'Use as the default model for new chats'));
-    const saveBtn = button(entry ? 'Check and save' : 'Check and add', () => form.requestSubmit(), 'primary');
+    makeDefault.append(defaultBox, el('span', '', tr('settings.form.makeDefault')));
+    const saveBtn = button(entry ? tr('settings.checkSave') : tr('settings.form.checkAdd'), () => form.requestSubmit(), 'primary');
     form.append(id, label, address, key);
     if (entry?.api_key_set && canSaveKey) form.append(clearKey);
     form.append(modelRow);
     form.append(levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
-    form.append(el('small', 'cedar-set-field-note', 'cedar checks the address again by listing the server\'s models before saving. DeepSeek V4 on vLLM takes the levels none, low, high, xhigh and max as reasoning_effort; OpenAI-style servers take none, minimal, low, medium and high.'));
-    form.append(saveBtn, button('Cancel', onDone));
+    form.append(el('small', 'cedar-set-field-note', tr('settings.form.note')));
+    form.append(saveBtn, button(tr('settings.cancel'), onDone));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!id.value.trim()) { deps.toast('Give the model an id'); id.focus(); return; }
-      if (!address.value.trim()) { deps.toast('Enter the server address'); address.focus(); return; }
-      if (model.disabled) { deps.toast('List the server\'s models, then choose one'); listBtn.focus(); return; }
-      if (!model.value) { deps.toast('Choose a model'); model.focus(); return; }
+      if (!id.value.trim()) { deps.toast(tr('settings.form.needId')); id.focus(); return; }
+      if (!address.value.trim()) { deps.toast(tr('settings.form.needAddress')); address.focus(); return; }
+      if (model.disabled) { deps.toast(tr('settings.form.needList')); listBtn.focus(); return; }
+      if (!model.value) { deps.toast(tr('settings.form.choose')); model.focus(); return; }
       const limit = Number(maxTokens.value);
       if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MAX_TOKENS) {
-        deps.toast(`Max tokens per reply must be a whole number from 1 to ${MAX_MAX_TOKENS.toLocaleString()}`);
+        deps.toast(tr('settings.form.maxTokensRange', { max: MAX_MAX_TOKENS }));
         maxTokens.focus();
         return;
       }
@@ -877,16 +881,16 @@ const cedarSettings = (() => {
       if (key.value.trim()) body.api_key = key.value.trim();
       else if (clearBox.checked) body.api_key = '';
       saveBtn.disabled = true;
-      saveBtn.textContent = 'Checking…';
+      saveBtn.textContent = tr('settings.checking');
       try {
         const saved = await adminApi('PUT', `/integrations/models/${encodeURIComponent(id.value.trim())}`, body);
-        deps.toast(`${saved.label || saved.id}: ${saved.model} at ${saved.base_url}`);
+        deps.toast(`${saved.label || saved.id}: ${tr('settings.models.at', { model: saved.model, url: saved.base_url })}`);
         await modelsChanged();
         renderIntegrations();
         refreshTools();
       } catch (err) {
         saveBtn.disabled = false;
-        saveBtn.textContent = entry ? 'Check and save' : 'Check and add';
+        saveBtn.textContent = entry ? tr('settings.checkSave') : tr('settings.form.checkAdd');
         deps.toast(err.message);
       }
     });
@@ -896,26 +900,26 @@ const cedarSettings = (() => {
   function braveRow(status) {
     return keyRow(status.brave, status.storage, {
       name: 'Brave Search',
-      what: 'Turns on web_search. The key stays on the cedar server.',
+      what: tr('settings.brave.what'),
       path: '/integrations/brave',
-      saved: 'Brave Search key saved; web search is on',
-      removeAsk: 'Remove the Brave Search key? Web search stops working for new messages.',
+      saved: tr('settings.brave.saved'),
+      removeAsk: tr('settings.brave.remove'),
     });
   }
 
   function bestbuyRow(status) {
     const b = status.bestbuy || {};
     if (b.enabled === false) {
-      const { row, side } = integrationRow('Best Buy', 'Product search is turned off on the server (PRODUCTS=off).');
-      side.append(badge('Off'));
+      const { row, side } = integrationRow('Best Buy', tr('settings.bestbuy.off'));
+      side.append(badge(tr('settings.off')));
       return row;
     }
     return keyRow(b, status.storage, {
       name: 'Best Buy',
-      what: 'Turns on search_products: product options with photos, prices, reviews and comparable picks. A free key from developer.bestbuy.com; it stays on the cedar server.',
+      what: tr('settings.bestbuy.what'),
       path: '/integrations/bestbuy',
-      saved: 'Best Buy key saved; product search is on',
-      removeAsk: 'Remove the Best Buy key? Product search stops working for new messages.',
+      saved: tr('settings.bestbuy.saved'),
+      removeAsk: tr('settings.bestbuy.remove'),
     });
   }
 
@@ -928,11 +932,11 @@ const cedarSettings = (() => {
   function keyRow(k = {}, storage, { name, what, path, saved, removeAsk }) {
     const { row, main, side } = integrationRow(name, what);
     if (k.source === 'env') {
-      side.append(badge(`••••${k.last4 || ''}`, 'ok'), badge('Managed by environment'));
+      side.append(badge(`••••${k.last4 || ''}`, 'ok'), badge(tr('settings.byEnv')));
       return row;
     }
     if (k.configured) side.append(badge(`••••${k.last4 || ''}`, 'ok'));
-    else side.append(badge('Not set'));
+    else side.append(badge(tr('settings.notSet')));
     if (!storage) return row;
 
     const edit = el('form', 'cedar-set-inline');
@@ -940,15 +944,15 @@ const cedarSettings = (() => {
     const input = el('input');
     input.type = 'password';
     input.autocomplete = 'off';
-    input.placeholder = `${name} API key`;
-    input.setAttribute('aria-label', `${name} API key`);
-    const saveBtn = button('Check and save', () => edit.requestSubmit(), 'primary');
-    edit.append(input, saveBtn, button('Cancel', () => { edit.hidden = true; }));
+    input.placeholder = tr('settings.apiKeyOf', { name });
+    input.setAttribute('aria-label', tr('settings.apiKeyOf', { name }));
+    const saveBtn = button(tr('settings.checkSave'), () => edit.requestSubmit(), 'primary');
+    edit.append(input, saveBtn, button(tr('settings.cancel'), () => { edit.hidden = true; }));
     edit.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!input.value.trim()) return;
       saveBtn.disabled = true;
-      saveBtn.textContent = 'Checking…';
+      saveBtn.textContent = tr('settings.checking');
       try {
         await adminApi('PUT', path, { api_key: input.value.trim() });
         deps.toast(saved);
@@ -956,14 +960,14 @@ const cedarSettings = (() => {
         refreshTools();
       } catch (err) {
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Check and save';
+        saveBtn.textContent = tr('settings.checkSave');
         deps.toast(err.message);
       }
     });
-    side.append(button(k.configured ? 'Replace' : 'Add key', () => { edit.hidden = false; input.focus(); }));
+    side.append(button(k.configured ? tr('settings.replace') : tr('settings.addKey'), () => { edit.hidden = false; input.focus(); }));
     if (k.configured) {
-      side.append(button('Remove', async () => {
-        if (!(await cedarConfirm(removeAsk, { ok: 'Remove' }))) return;
+      side.append(button(tr('settings.remove'), async () => {
+        if (!(await cedarConfirm(removeAsk, { ok: tr('settings.remove') }))) return;
         try {
           await adminApi('DELETE', path);
           renderIntegrations();
@@ -980,10 +984,10 @@ const cedarSettings = (() => {
   /** What a tool asks for, as short badges: hosts, secrets, packages, health data. */
   function permissionBadges(p = {}) {
     const out = [];
-    if (p.health_data) out.push(badge('Health data', 'warn'));
-    out.push(badge(p.network?.length ? `Internet: ${p.network.join(', ')}` : 'No internet'));
-    if (p.secrets?.length) out.push(badge(`${p.secrets.length} secret${p.secrets.length > 1 ? 's' : ''}`));
-    if (p.pip?.length) out.push(badge(`${p.pip.length} package${p.pip.length > 1 ? 's' : ''}`));
+    if (p.health_data) out.push(badge(tr('settings.perm.health'), 'warn'));
+    out.push(badge(p.network?.length ? tr('settings.perm.internet', { hosts: p.network.join(', ') }) : tr('settings.perm.noInternet')));
+    if (p.secrets?.length) out.push(badge(tr('settings.perm.secrets', { count: p.secrets.length })));
+    if (p.pip?.length) out.push(badge(tr('settings.perm.packages', { count: p.pip.length })));
     return out;
   }
 
@@ -994,10 +998,10 @@ const cedarSettings = (() => {
     if (!info.tools_dir) return null;
     const wrap = el('div', 'cedar-set-help');
     if (!info.tools.length) {
-      wrap.append(note('No personal tools yet. Put one in cedar\'s TOOLS_DIR, or install one from Community tools below.'));
+      wrap.append(note(tr('settings.personal.none')));
       return wrap;
     }
-    wrap.append(note('Each call runs in a container of its own that sees only that tool\'s folder and the conversation\'s workspace, with the secrets saved here and internet access only if the tool declares the hosts it reaches.'));
+    wrap.append(note(tr('settings.personal.intro')));
     for (const t of info.tools) wrap.append(personalToolRow(t, info.storage));
     return wrap;
   }
@@ -1005,30 +1009,30 @@ const cedarSettings = (() => {
   function personalToolRow(t, storage) {
     const title = t.version ? `${t.name} ${t.version}` : t.name;
     const { row, main, side } = integrationRow(title, t.description);
-    side.append(badge(t.source === 'marketplace' ? 'Community' : 'Local', t.source === 'marketplace' ? '' : 'ok'));
+    side.append(badge(t.source === 'marketplace' ? tr('settings.personal.community') : tr('settings.personal.local'), t.source === 'marketplace' ? '' : 'ok'));
     side.append(...permissionBadges({ network: t.network, secrets: t.secrets.map((x) => x.name), pip: t.pip, health_data: t.health_data }));
-    if (t.author) main.append(el('small', '', `By ${t.author}`));
-    if (t.health_data) main.append(note('Unofficial and informational, not a medical device. The model is told never to recommend doses or device settings.', 'cedar-set-warn-text cedar-set-note'));
+    if (t.author) main.append(el('small', '', tr('settings.by', { author: t.author })));
+    if (t.health_data) main.append(note(tr('settings.personal.health'), 'cedar-set-warn-text cedar-set-note'));
     for (const secret of t.secrets) main.append(toolSecretRow(t.name, secret, storage));
     if (t.pip.length) {
-      side.append(button('Reinstall packages', async (e) => {
+      side.append(button(tr('settings.personal.reinstall'), async (e) => {
         const b = e.currentTarget;
         b.disabled = true;
-        b.textContent = 'Installing…';
+        b.textContent = tr('settings.installing');
         try {
           await adminApi('POST', `/integrations/tools/${t.name}/setup`);
-          deps.toast(`${t.name}'s packages are installed`);
+          deps.toast(tr('settings.personal.installed', { name: t.name }));
         } catch (err) { deps.toast(err.message); }
         b.disabled = false;
-        b.textContent = 'Reinstall packages';
+        b.textContent = tr('settings.personal.reinstall');
       }));
     }
     if (t.source === 'marketplace') {
-      side.append(button('Uninstall', async () => {
-        if (!(await cedarConfirm(`Uninstall ${t.name}? Its files, its packages and its saved secrets are removed.`, { ok: 'Uninstall' }))) return;
+      side.append(button(tr('settings.personal.uninstall'), async () => {
+        if (!(await cedarConfirm(tr('settings.personal.confirmUninstall', { name: t.name }), { ok: tr('settings.personal.uninstall') }))) return;
         try {
           await adminApi('DELETE', `/integrations/marketplace/${t.name}`);
-          deps.toast(`${t.name} uninstalled`);
+          deps.toast(tr('settings.personal.uninstalled', { name: t.name }));
           renderIntegrations();
           refreshTools();
         } catch (err) { deps.toast(err.message); }
@@ -1040,8 +1044,8 @@ const cedarSettings = (() => {
   /** One secret a tool declares: saved or not, with a form to set it. Values are never shown. */
   function toolSecretRow(tool, secret, storage) {
     const line = el('div', 'cedar-set-inline');
-    const label = el('small', '', `${secret.name}${secret.optional ? ' (optional)' : ''}${secret.description ? ` — ${secret.description}` : ''}`);
-    line.append(label, badge(secret.saved ? 'Saved' : 'Not set', secret.saved ? 'ok' : ''));
+    const label = el('small', '', `${secret.optional ? tr('settings.secret.optional', { name: secret.name }) : secret.name}${secret.description ? ` — ${secret.description}` : ''}`);
+    line.append(label, badge(secret.saved ? tr('settings.secret.saved') : tr('settings.notSet'), secret.saved ? 'ok' : ''));
     if (!storage) return line;
     const input = el('input');
     input.type = 'password';
@@ -1049,19 +1053,19 @@ const cedarSettings = (() => {
     input.placeholder = secret.name;
     input.setAttribute('aria-label', `${tool} ${secret.name}`);
     input.hidden = true;
-    const save = button('Save', async () => {
+    const save = button(tr('settings.save'), async () => {
       if (!input.value) return;
       try {
         await adminApi('PUT', `/integrations/tools/${tool}/secrets/${secret.name}`, { value: input.value });
-        deps.toast(`${secret.name} saved for ${tool}`);
+        deps.toast(tr('settings.secret.savedFor', { name: secret.name, tool }));
         renderIntegrations();
       } catch (err) { deps.toast(err.message); }
     }, 'primary');
     save.hidden = true;
-    const edit = button(secret.saved ? 'Replace' : 'Set', () => { input.hidden = false; save.hidden = false; edit.hidden = true; input.focus(); });
+    const edit = button(secret.saved ? tr('settings.replace') : tr('settings.secret.set'), () => { input.hidden = false; save.hidden = false; edit.hidden = true; input.focus(); });
     line.append(input, save, edit);
     if (secret.saved) {
-      line.append(button('Remove', async () => {
+      line.append(button(tr('settings.remove'), async () => {
         try {
           await adminApi('DELETE', `/integrations/tools/${tool}/secrets/${secret.name}`);
           renderIntegrations();
@@ -1084,11 +1088,11 @@ const cedarSettings = (() => {
       return note(e.message, 'cedar-set-error');
     }
     const wrap = el('div', 'cedar-set-help');
-    wrap.append(note('Tools other people wrote and share. They are not officially supported: read what each one asks for before installing it. In conversations, every call of a community tool waits for your OK until you allow that version always.'));
-    if (!market.installable) wrap.append(note('cedar has no TOOLS_DIR, so tools can\'t be installed.', 'cedar-set-error'));
-    if (!market.tools.length) wrap.append(note('The registry lists no tools.'));
+    wrap.append(note(tr('settings.market.intro')));
+    if (!market.installable) wrap.append(note(tr('settings.market.noToolsDir'), 'cedar-set-error'));
+    if (!market.tools.length) wrap.append(note(tr('settings.market.empty')));
     for (const l of market.tools) wrap.append(listingRow(l, market.installable));
-    wrap.append(button('Check for updates', async () => {
+    wrap.append(button(tr('settings.market.checkUpdates'), async () => {
       const fresh = await marketplaceBlock(true);
       if (fresh) wrap.replaceWith(fresh);
     }));
@@ -1097,28 +1101,28 @@ const cedarSettings = (() => {
 
   function listingRow(l, installable) {
     const { row, main, side } = integrationRow(`${l.name} ${l.version}`, l.summary);
-    const by = [l.author && `By ${l.author}`, l.category, l.license].filter(Boolean).join(' · ');
+    const by = [l.author && tr('settings.by', { author: l.author }), l.category, l.license].filter(Boolean).join(' · ');
     if (by) main.append(el('small', '', by));
     side.append(...permissionBadges(l.permissions));
-    if (l.reviewed) side.append(badge('Reviewed', 'ok'));
+    if (l.reviewed) side.append(badge(tr('settings.market.reviewed'), 'ok'));
     if (l.conflict) {
-      main.append(note(`Can't be installed: ${l.conflict}.`, 'cedar-set-note'));
+      main.append(note(tr('settings.market.conflict', { reason: l.conflict }), 'cedar-set-note'));
       return row;
     }
     if (l.installed && !l.installed.update_available) {
-      side.append(badge(`Installed ${l.installed.version}`, 'ok'));
+      side.append(badge(tr('settings.market.installedVersion', { version: l.installed.version }), 'ok'));
       return row;
     }
     if (!installable) return row;
-    const label = l.installed ? `Update from ${l.installed.version}` : 'Install';
+    const label = l.installed ? tr('settings.market.updateFrom', { version: l.installed.version }) : tr('settings.market.install');
     side.append(button(label, async (e) => {
       const b = e.currentTarget;  // null once the event is done, so before the confirmation
-      if (!(await cedarConfirm(installQuestion(l), { ok: l.installed ? 'Update' : 'Install' }))) return;
+      if (!(await cedarConfirm(installQuestion(l), { ok: l.installed ? tr('settings.market.update') : tr('settings.market.install') }))) return;
       b.disabled = true;
-      b.textContent = 'Installing…';
+      b.textContent = tr('settings.installing');
       try {
         await adminApi('POST', `/integrations/marketplace/${l.name}/install`, { accept: l.permissions });
-        deps.toast(`${l.name} ${l.version} installed`);
+        deps.toast(tr('settings.market.installed', { name: l.name, version: l.version }));
         renderIntegrations();
         refreshTools();
       } catch (err) {
@@ -1133,46 +1137,47 @@ const cedarSettings = (() => {
   /** What installing a tool lets it do, spelled out for the confirmation. */
   function installQuestion(l) {
     const p = l.permissions || {};
-    const lines = [`Install ${l.name} ${l.version}${l.author ? ` by ${l.author}` : ''}?`, '', 'It is a community tool, not officially supported. It will be able to:'];
-    lines.push(p.network?.length ? `• reach ${p.network.join(', ')}` : '• work without internet access');
-    if (p.secrets?.length) lines.push(`• read the secrets you save for it: ${p.secrets.join(', ')}`);
-    if (p.pip?.length) lines.push(`• install ${p.pip.join(', ')} into its own environment`);
-    lines.push('• read and write files in a conversation\'s workspace when it is called');
+    const tool = `${l.name} ${l.version}`;
+    const lines = [l.author ? tr('settings.install.askBy', { tool, author: l.author }) : tr('settings.install.ask', { tool }), '', tr('settings.install.able')];
+    lines.push(`• ${p.network?.length ? tr('settings.install.reach', { hosts: p.network.join(', ') }) : tr('settings.install.offline')}`);
+    if (p.secrets?.length) lines.push(`• ${tr('settings.install.secrets', { secrets: p.secrets.join(', ') })}`);
+    if (p.pip?.length) lines.push(`• ${tr('settings.install.packages', { packages: p.pip.join(', ') })}`);
+    lines.push(`• ${tr('settings.install.files')}`);
     if (p.health_data) {
-      lines.push('', 'It handles personal health data. It is informational, not a medical device: never change medication or device settings based on it without your care team.');
+      lines.push('', tr('settings.install.health'));
     }
-    if (!l.reviewed) lines.push('', 'No maintainer has reviewed this release.');
+    if (!l.reviewed) lines.push('', tr('settings.install.unreviewed'));
     return lines.join('\n');
   }
 
   /** cedar's max image size: attached images with a longer side are scaled down to it. */
   function imageSizeRow() {
     return serverSettingRow({
-      title: 'Max image size',
-      desc: 'Attached images with a longer side than this are scaled down before they reach the model, to save prompt space. One setting for every conversation.',
+      title: tr('settings.imageSize.title'),
+      desc: tr('settings.imageSize.desc'),
       key: 'max_image_side',
       unit: 'px',
-      label: 'Max image size in pixels',
+      label: tr('settings.imageSize.label'),
       range: (d) => [d.min_max_image_side ?? 256, d.max_max_image_side ?? 8192],
       fallback: 1568,
       shown: (n) => `${n} px`,
-      saved: (n) => `Images are now scaled down to ${n} px`,
+      saved: (n) => tr('settings.imageSize.saved', { size: String(n) }),
     });
   }
 
   /** How long a conversation's sandbox keeps running after a turn before cedar pauses it. */
   function sandboxIdleRow() {
-    const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
+    const minutes = (n) => tr('settings.idle.minutes', { count: n });
     return serverSettingRow({
-      title: 'Pause when idle',
-      desc: "A conversation keeps its sandbox between turns, so what it installed and left running is still there. After this many minutes without a new message the sandbox is paused, and the next message resumes it. 0 pauses it as soon as a reply is done.",
+      title: tr('settings.idle.title'),
+      desc: tr('settings.idle.desc'),
       key: 'sandbox_idle_minutes',
       unit: 'min',
-      label: 'Minutes before an idle sandbox is paused',
+      label: tr('settings.idle.label'),
       range: (d) => [0, d.max_sandbox_idle_minutes ?? 1440],
       fallback: 10,
-      shown: (n) => (n === 0 ? 'Right away' : minutes(n)),
-      saved: (n) => (n === 0 ? 'Sandboxes are now paused as soon as a reply is done' : `Sandboxes are now paused after ${minutes(n)} idle`),
+      shown: (n) => (n === 0 ? tr('settings.idle.now') : minutes(n)),
+      saved: (n) => (n === 0 ? tr('settings.idle.savedNow') : tr('settings.idle.saved', { minutes: minutes(n) })),
     });
   }
 
@@ -1184,7 +1189,7 @@ const cedarSettings = (() => {
     try {
       settings = await adminApi('GET', '/integrations/settings');
     } catch (err) {
-      side.append(badge('Unavailable'));
+      side.append(badge(tr('settings.unavailable')));
       main.append(el('small', '', err.message));
       return row;
     }
@@ -1197,10 +1202,10 @@ const cedarSettings = (() => {
     input.min = String(min);
     input.max = String(max);
     input.step = '1';
-    input.placeholder = `${fallback} (default)`;
+    input.placeholder = tr('settings.defaultValue', { value: String(fallback) });
     input.value = settings[o.key] ?? '';
     input.setAttribute('aria-label', o.label);
-    const saveBtn = button('Save', () => form.requestSubmit(), 'primary');
+    const saveBtn = button(tr('settings.save'), () => form.requestSubmit(), 'primary');
     form.append(input, el('span', '', o.unit), saveBtn);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1216,30 +1221,31 @@ const cedarSettings = (() => {
       }
     });
     const value = settings[o.key];
-    side.append(badge(value != null ? o.shown(value) : 'Default', 'ok'));
+    side.append(badge(value != null ? o.shown(value) : tr('settings.models.default'), 'ok'));
     main.append(form);
     return row;
   }
 
   function googleRow(status) {
     const g = status.google || {};
-    const services = (g.services || []).map((s) => s[0].toUpperCase() + s.slice(1)).join(' and ') || 'Gmail and Calendar';
-    const { row, main, side } = integrationRow('Google account', `For the ${services} tools. The token stays on the cedar server.`);
+    const names = (g.services || []).map((s) => s[0].toUpperCase() + s.slice(1));
+    const services = new Intl.ListFormat(cedarI18n.locale, { type: 'conjunction' }).format(names.length ? names : ['Gmail', 'Calendar']);
+    const { row, main, side } = integrationRow(tr('settings.google.title'), tr('settings.google.desc', { services }));
     if (!g.enabled) {
-      side.append(badge('Off'));
-      main.append(el('small', '', 'Turn on GMAIL or CALENDAR and set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on cedar first.'));
+      side.append(badge(tr('settings.off')));
+      main.append(el('small', '', tr('settings.google.disabled')));
       return row;
     }
     if (g.source === 'env') {
-      side.append(badge('Connected', 'ok'), badge('Managed by environment'));
+      side.append(badge(tr('settings.google.connected'), 'ok'), badge(tr('settings.byEnv')));
       return row;
     }
-    if (g.configured) side.append(badge(g.account || 'Connected', 'ok'));
-    else side.append(badge('Not connected'));
+    if (g.configured) side.append(badge(g.account || tr('settings.google.connected'), 'ok'));
+    else side.append(badge(tr('settings.google.notConnected')));
     if (!status.storage) return row;
     if (g.configured) {
-      side.append(button('Disconnect', async () => {
-        if (!(await cedarConfirm('Disconnect the Google account? Its tools stop working for new messages.', { ok: 'Disconnect' }))) return;
+      side.append(button(tr('settings.google.disconnect'), async () => {
+        if (!(await cedarConfirm(tr('settings.google.confirmDisconnect'), { ok: tr('settings.google.disconnect') }))) return;
         try {
           await adminApi('DELETE', '/integrations/google');
           renderIntegrations();
@@ -1247,7 +1253,7 @@ const cedarSettings = (() => {
         } catch (err) { deps.toast(err.message); }
       }));
     }
-    side.append(button(g.configured ? 'Reconnect' : 'Connect Google', async () => {
+    side.append(button(g.configured ? tr('settings.google.reconnect') : tr('settings.google.connect'), async () => {
       try {
         const { url } = await adminApi('POST', '/integrations/google/connect');
         location.assign(url);
@@ -1255,7 +1261,8 @@ const cedarSettings = (() => {
     }, g.configured ? 'copy-btn' : 'primary'));
     if (g.redirect_uri) {
       const hint = el('small', 'cedar-set-hint');
-      hint.append('Add ', el('code', '', g.redirect_uri), ' as an authorized redirect URI of the OAuth client.');
+      const [before, after] = tr('settings.google.redirect').split('{uri}');
+      hint.append(before, el('code', '', g.redirect_uri), after ?? '');
       main.append(hint);
     }
     return row;
@@ -1283,7 +1290,7 @@ const cedarSettings = (() => {
     const own = override();
     const differs = own !== undefined && prefs && !sameSelection(own, prefs.tools);
     chip.classList.toggle('custom', own !== undefined && (prefs ? differs : true));
-    chip.title = own === undefined ? 'Tools: the defaults from Settings' : 'Tools: chosen for this conversation';
+    chip.title = own === undefined ? tr('settings.chip.defaults') : tr('settings.chip.custom');
   }
 
   async function openMenu() {
@@ -1296,19 +1303,19 @@ const cedarSettings = (() => {
     }
     if (!menu) {
       menu = el('dialog', 'cedar-set-menu');
-      menu.setAttribute('aria-label', 'Tools for this conversation');
+      menu.setAttribute('aria-label', tr('settings.chip.menuTitle'));
       document.body.append(menu);
     }
     const own = override();
     let state = decode(own === undefined ? prefs.tools : own);
     let chosen = own;
-    const apply = button('Apply', () => save(chosen), 'primary');
+    const apply = button(tr('settings.chip.apply'), () => save(chosen), 'primary');
     const head = el('div', 'cedar-set-menu-head');
-    head.append(el('h3', '', 'Tools for this conversation'), button('Close', () => menu.close()));
+    head.append(el('h3', '', tr('settings.chip.menuTitle')), button(tr('settings.close'), () => menu.close()));
     const picker = toolPicker(state, (s) => { state = s; chosen = encode(s); }, { detailed: false });
     const actions = el('div', 'cedar-set-actions');
-    actions.append(button('Use the defaults', () => save(undefined)), apply);
-    menu.replaceChildren(head, note('Sandbox tools (files, shell, Python, documents, charts) are always on.'), picker, actions);
+    actions.append(button(tr('settings.chip.useDefaults'), () => save(undefined)), apply);
+    menu.replaceChildren(head, note(tr('settings.chip.alwaysOn')), picker, actions);
     menu.showModal();
 
     async function save(tools) {
@@ -1356,7 +1363,7 @@ const cedarSettings = (() => {
     const outcome = params.get('integrations');
     if (!outcome) return;
     history.replaceState(null, '', location.pathname + location.hash);
-    deps.toast(outcome === 'connected' ? 'Google account connected' : `Google: ${params.get('message') || 'not connected'}`);
+    deps.toast(outcome === 'connected' ? tr('settings.google.connectedToast') : `Google: ${params.get('message') || tr('settings.google.notConnectedLower')}`);
     const btn = document.getElementById('settings-btn');
     if (btn) { btn.dataset.page = 'server'; btn.click(); }
   }
@@ -1367,26 +1374,26 @@ const cedarSettings = (() => {
     const s = shell();
     if (s) {
       s.register({
-        id: 'tools', label: 'Tools', title: 'Tools',
-        description: 'What every new conversation may use. The Tools button by the message box changes it for one conversation.',
+        id: 'tools', label: tr('settings.tools.title'), title: tr('settings.tools.title'),
+        description: tr('settings.tools.description'),
         render: renderTools, summary: toolsSummary, save: submit, footer: true,
       });
       s.register({
-        id: 'model', label: 'Model & prompt', title: 'Model & prompt',
-        description: 'Defaults for every new conversation. The picker by the message box changes the model for one.',
+        id: 'model', label: tr('settings.model.title'), title: tr('settings.model.title'),
+        description: tr('settings.model.description'),
         render: renderModel, summary: modelSummary, save: submit, footer: true,
       });
       s.register({
-        id: 'server', label: 'Server', title: 'Server',
-        description: 'Models, API keys and the Google account on the cedar server.',
+        id: 'server', label: tr('settings.server.title'), title: tr('settings.server.title'),
+        description: tr('settings.server.description'),
         render: renderIntegrations, summary: () => null,
         tag: () => (deps?.config()?.admin_enabled && unlocked() ? 'UNLOCKED' : 'ADMIN'),
         actions: serverActions, footer: false,
       });
     }
     if (deps.anchor) {
-      chip = button('Tools', openMenu, 'copy-btn cedar-set-chip');
-      chip.setAttribute('aria-label', 'Tools for this conversation');
+      chip = button(tr('settings.tools.title'), openMenu, 'copy-btn cedar-set-chip');
+      chip.setAttribute('aria-label', tr('settings.chip.menuTitle'));
       deps.anchor.after(chip);
       updateChip();
     }
