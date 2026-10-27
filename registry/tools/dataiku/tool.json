@@ -1,0 +1,64 @@
+{
+  "description": "Work in the user's Dataiku DSS instance, as Dataiku Headless does: inspect projects, datasets (schema, size, sample rows), recipes, scenarios and jobs; build a dataset or run a scenario and follow the job; and delegate building or changing a project's assets (recipes, flows, models, dashboards, agents, wikis) to Cobuild, Dataiku's own agent. Inspect first (list_projects, project, dataset) and use real project keys and dataset names. To create or change anything inside a project, use action cobuild with a plain-language instruction rather than describing the steps yourself; set allow_edit=true only when the user asked for the change, and verify the result afterwards with project or dataset. Cobuild keeps its conversation in DSS: pass the returned conversation_id to continue it. When a result has a confirmation_id, Cobuild wants to delete something: show the user exactly what (objects_to_delete, deletion_impacts) and ask them before calling cobuild_confirm with APPROVE; otherwise CANCEL. When it has a question_id, answer it with cobuild_answer (ask the user if the answer is theirs to give). build and run_scenario wait up to four minutes; if the result says it is still running, check later with job or scenario. dataset with export=true writes the rows as CSV to dataiku/<PROJECT>/<dataset>.csv in the workspace, for run_python. Give the user the url from the result so they can open the object in Dataiku.",
+  "version": "1.0.0",
+  "author": "Hannes Hapke",
+  "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/dataiku",
+  "license": "Apache-2.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["instance", "list_projects", "project", "dataset", "build", "job", "run_scenario", "scenario", "cobuild", "cobuild_confirm", "cobuild_answer"],
+        "description": "instance: the connected instance and user. list_projects: the projects (filter with query). project: a project's datasets, recipes, scenarios and variables. dataset: a dataset's schema, size and sample rows. build: build a dataset. job: a job's state (log=true for its log). run_scenario: run a scenario. scenario: a scenario's last runs. cobuild: send Cobuild a message (starts a conversation unless conversation_id is given). cobuild_confirm / cobuild_answer: answer Cobuild's pending confirmation or question."
+      },
+      "project_key": { "type": "string", "description": "The project key, e.g. SALES_FORECAST. Required by every action but instance and list_projects." },
+      "query": { "type": "string", "description": "list_projects: keep the projects whose key or name contains this." },
+      "dataset": { "type": "string", "description": "dataset, build: the dataset's name." },
+      "limit": { "type": "integer", "minimum": 0, "maximum": 200, "description": "dataset: sample rows to return (default 20, 0 for none). list_projects: projects to list (default 50). scenario: runs to list (default 5)." },
+      "export": { "type": "boolean", "default": false, "description": "dataset: also write the rows as CSV to dataiku/<PROJECT>/<dataset>.csv in the workspace." },
+      "export_limit": { "type": "integer", "minimum": 1, "maximum": 1000000, "default": 100000, "description": "dataset with export: the most rows to write." },
+      "partitions": { "type": "string", "description": "dataset, build: partition id(s), comma-separated, for a partitioned dataset." },
+      "mode": { "type": "string", "enum": ["forced", "recursive", "recursive_forced"], "default": "forced", "description": "build: forced rebuilds just this dataset; recursive also builds what is out of date upstream; recursive_forced rebuilds everything upstream." },
+      "wait": { "type": "boolean", "default": true, "description": "build, run_scenario: wait (up to four minutes) for the result." },
+      "job_id": { "type": "string", "description": "job: the job id that build returned." },
+      "log": { "type": "boolean", "default": false, "description": "job: include the end of the job's log." },
+      "scenario_id": { "type": "string", "description": "run_scenario, scenario: the scenario's id." },
+      "params": { "type": "object", "description": "run_scenario: parameters passed to the scenario run." },
+      "message": { "type": "string", "description": "cobuild: what Cobuild should inspect, build or change, in plain language." },
+      "conversation_id": { "type": "string", "description": "cobuild (to continue), cobuild_confirm, cobuild_answer: the conversation_id an earlier result returned." },
+      "allow_edit": { "type": "boolean", "default": false, "description": "cobuild: allow Cobuild to create and edit objects in the project for this message. False only inspects." },
+      "confirmation_id": { "type": "string", "description": "cobuild_confirm: the confirmation_id from the result." },
+      "choice": { "type": "string", "enum": ["APPROVE", "CANCEL"], "description": "cobuild_confirm: APPROVE only after the user agreed." },
+      "question_id": { "type": "string", "description": "cobuild_answer: the question_id from the result." },
+      "answers": { "type": "array", "items": { "type": "string" }, "description": "cobuild_answer: the chosen answers (from question.answers, or your own if custom_answer_allowed)." },
+      "custom_answer": { "type": "boolean", "default": false, "description": "cobuild_answer: an answer is free text rather than one of question.answers." },
+      "reject": { "type": "boolean", "default": false, "description": "cobuild_answer: decline to answer and let Cobuild go on." }
+    },
+    "required": ["action"]
+  },
+  "timeout_secs": 600,
+  "network": [
+    "*.dataiku.io",
+    "*.dataiku.com"
+  ],
+  "secrets": [
+    {
+      "name": "DKU_DSS_URL",
+      "description": "The address of your Dataiku instance, e.g. https://dss-1a2b3c4d-5e6f7a8b-dku.eu-west-3.app.dataiku.io"
+    },
+    {
+      "name": "DKU_API_KEY",
+      "description": "A personal API key of your Dataiku account (Profile → API keys)"
+    },
+    {
+      "name": "DKU_READ_ONLY",
+      "description": "true to only inspect: no builds, scenario runs or Cobuild changes",
+      "optional": true
+    }
+  ],
+  "pip": [
+    "dataiku-api-client>=14.7"
+  ],
+  "health_data": false
+}

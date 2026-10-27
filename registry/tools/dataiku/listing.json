@@ -1,0 +1,22 @@
+{
+  "summary": "Inspect, build and run Dataiku projects, and delegate changes to Cobuild, like Dataiku Headless",
+  "category": "data",
+  "translations": {
+    "de": {
+      "summary": "Dataiku-Projekte ansehen, bauen und ausführen und Änderungen an Cobuild übergeben, wie Dataiku Headless",
+      "secrets": {
+        "DKU_DSS_URL": "Die Adresse deiner Dataiku-Instanz, z. B. https://dss-1a2b3c4d-5e6f7a8b-dku.eu-west-3.app.dataiku.io",
+        "DKU_API_KEY": "Ein persönlicher API-Schlüssel deines Dataiku-Kontos (Profil → API-Schlüssel)",
+        "DKU_READ_ONLY": "true, um nur zu lesen: keine Builds, Szenario-Läufe oder Änderungen durch Cobuild"
+      }
+    },
+    "fr": {
+      "summary": "Consultez, construisez et exécutez des projets Dataiku, et confiez les changements à Cobuild, comme Dataiku Headless",
+      "secrets": {
+        "DKU_DSS_URL": "L'adresse de votre instance Dataiku, par ex. https://dss-1a2b3c4d-5e6f7a8b-dku.eu-west-3.app.dataiku.io",
+        "DKU_API_KEY": "Une clé d'API personnelle de votre compte Dataiku (Profil → Clés d'API)",
+        "DKU_READ_ONLY": "true pour consulter seulement : pas de builds, d'exécutions de scénarios ni de changements par Cobuild"
+      }
+    }
+  }
+}

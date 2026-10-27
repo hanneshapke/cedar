@@ -66,6 +66,55 @@
       }
     },
     {
+      "name": "dataiku",
+      "version": "1.0.0",
+      "summary": "Inspect, build and run Dataiku projects, and delegate changes to Cobuild, like Dataiku Headless",
+      "category": "data",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/dataiku",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "*.dataiku.io",
+          "*.dataiku.com"
+        ],
+        "secrets": [
+          "DKU_DSS_URL",
+          "DKU_API_KEY",
+          "DKU_READ_ONLY"
+        ],
+        "pip": [
+          "dataiku-api-client>=14.7"
+        ],
+        "health_data": false
+      },
+      "base_url": "tools/dataiku/",
+      "files": {
+        ".env.example": "62cf7847a41cfb7d6ed258ffd9c59b77a834397cc8d0cfe583d03777535bbc4a",
+        "tool.json": "290d6a5e8fc237c4617acf7e284031cf968bd907d9279adcba6f632d0ec5e9f8",
+        "tool.py": "661387e3fc2218f08ae9d0c4ee0c5cf42006110cd3cbd2d3389373ceded9cba4"
+      },
+      "reviewed": false,
+      "translations": {
+        "de": {
+          "summary": "Dataiku-Projekte ansehen, bauen und ausf\u00fchren und \u00c4nderungen an Cobuild \u00fcbergeben, wie Dataiku Headless",
+          "secrets": {
+            "DKU_DSS_URL": "Die Adresse deiner Dataiku-Instanz, z. B. https://dss-1a2b3c4d-5e6f7a8b-dku.eu-west-3.app.dataiku.io",
+            "DKU_API_KEY": "Ein pers\u00f6nlicher API-Schl\u00fcssel deines Dataiku-Kontos (Profil \u2192 API-Schl\u00fcssel)",
+            "DKU_READ_ONLY": "true, um nur zu lesen: keine Builds, Szenario-L\u00e4ufe oder \u00c4nderungen durch Cobuild"
+          }
+        },
+        "fr": {
+          "summary": "Consultez, construisez et ex\u00e9cutez des projets Dataiku, et confiez les changements \u00e0 Cobuild, comme Dataiku Headless",
+          "secrets": {
+            "DKU_DSS_URL": "L'adresse de votre instance Dataiku, par ex. https://dss-1a2b3c4d-5e6f7a8b-dku.eu-west-3.app.dataiku.io",
+            "DKU_API_KEY": "Une cl\u00e9 d'API personnelle de votre compte Dataiku (Profil \u2192 Cl\u00e9s d'API)",
+            "DKU_READ_ONLY": "true pour consulter seulement : pas de builds, d'ex\u00e9cutions de sc\u00e9narios ni de changements par Cobuild"
+          }
+        }
+      }
+    },
+    {
       "name": "dep_audit",
       "version": "1.1.0",
       "summary": "Check Python and npm dependencies for known vulnerabilities (OSV.dev) and outdated releases",
