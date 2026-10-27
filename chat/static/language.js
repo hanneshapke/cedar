@@ -72,7 +72,7 @@ const cedarLanguage = (() => {
       title.id = 'lang-dialog-title';
       head.append(
         title,
-        el('p', 'lang-dialog-sub', 'Sprache wählen · Choisissez votre langue'),
+        el('p', 'lang-dialog-sub', 'Sprache wählen · Choisissez votre langue · Elige tu idioma'),
         el('p', 'lang-dialog-note', tr('language.onboardingNote')),
       );
       let picked = locale;

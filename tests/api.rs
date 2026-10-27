@@ -848,10 +848,10 @@ async fn the_locale_reaches_the_model_and_continuations_keep_it() {
     }
 
     // A language without translations is kept as English, which adds nothing.
-    let spanish = app
-        .create_run_with(KEY_A, json!({ "prompt": "x", "locale": "es-ES" }))
+    let portuguese = app
+        .create_run_with(KEY_A, json!({ "prompt": "x", "locale": "pt-BR" }))
         .await;
-    assert_eq!(spanish["locale"], "en");
+    assert_eq!(portuguese["locale"], "en");
 }
 
 // -- ownership, listing, deletion -------------------------------------------------------------

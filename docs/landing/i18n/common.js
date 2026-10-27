@@ -12,4 +12,7 @@ cedarSite.add({
   fr: {
     'site.language': 'Langue',
   },
+  es: {
+    'site.language': 'Idioma',
+  },
 });

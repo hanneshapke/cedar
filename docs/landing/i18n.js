@@ -1,7 +1,9 @@
 'use strict';
 
-// The website in English, German or French. Each page loads this first, then its catalogs from
-// i18n/ (cedarSite.add({ en: {...}, de: {...}, fr: {...} })), in <head>, before anything else.
+// The website in English, German, French or Spanish. Each page loads this first, then its
+// catalogs from i18n/ (cedarSite.add({ en: {...}, de: {...}, fr: {...}, es: {...} })), in <head>,
+// before anything else. A regional catalog ('es-ES': {...}) holds only the text that differs
+// there, and is used when the browser's region for that language matches.
 //
 // The language comes from ?lang=de in the address (and is remembered), else from what the visitor
 // picked before, else from the browser's languages; English otherwise. Once the page is parsed,
@@ -20,8 +22,8 @@
 
 const cedarSite = (() => {
   const KEY = 'cedar-site-lang';
-  const NAMES = { en: 'English', de: 'Deutsch', fr: 'Français' };
-  const catalogs = { en: {}, de: {}, fr: {} };
+  const NAMES = { en: 'English', de: 'Deutsch', fr: 'Français', es: 'Español' };
+  const catalogs = { en: {}, de: {}, fr: {}, es: {} };
 
   const pick = (raw) => {
     const lang = String(raw || '').trim().toLowerCase().split(/[-_]/)[0];
@@ -49,17 +51,21 @@ const cedarSite = (() => {
   // The browser's own region, when it speaks this language, for dates and numbers.
   const locale = (navigator.languages || []).find((t) => pick(t) === lang) || lang;
   document.documentElement.lang = lang;
+  // The catalog for the browser's region in this language ('es-ES'), if there is one.
+  const region = String(locale).replace('_', '-').split('-')[1];
+  const regionalCatalog = () => (region && catalogs[`${lang}-${region.toUpperCase()}`]) || {};
 
   function add(byLanguage) {
     for (const [l, entries] of Object.entries(byLanguage || {})) {
       if (catalogs[l]) Object.assign(catalogs[l], entries);
+      else if (pick(l)) Object.assign((catalogs[l] ||= {}), entries);
     }
   }
 
   let plurals = null;
   /** The text for `key`, with {name} placeholders filled from params; English when missing. */
   function t(key, params) {
-    let value = catalogs[lang][key] ?? catalogs.en[key] ?? key;
+    let value = regionalCatalog()[key] ?? catalogs[lang][key] ?? catalogs.en[key] ?? key;
     if (value && typeof value === 'object') {
       plurals ||= new Intl.PluralRules(locale);
       value = value[typeof params?.count === 'number' ? plurals.select(params.count) : 'other'] ?? value.other;

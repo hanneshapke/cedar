@@ -20,6 +20,14 @@ cedarI18n.add({
     'language.onboardingNote': 'Du kannst das später in den Einstellungen ändern.',
     'language.continue': 'Weiter',
   },
+  es: {
+    'language.title': 'Idioma',
+    'language.description': 'El idioma de esta página y el que Cedar usa si no está claro cuál usar. Cedar siempre responde en el idioma en que escribes.',
+    'language.auto': 'Automático',
+    'language.autoNote': 'El idioma de tu navegador, si Cedar lo habla',
+    'language.onboardingNote': 'Puedes cambiarlo más tarde en Configuración.',
+    'language.continue': 'Continuar',
+  },
   fr: {
     'language.title': 'Langue',
     'language.description': 'La langue de cette page et celle que Cedar utilise par défaut. Cedar répond toujours dans la langue dans laquelle vous écrivez.',

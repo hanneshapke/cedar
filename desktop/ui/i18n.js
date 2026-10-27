@@ -1,14 +1,15 @@
 'use strict';
 
-// The setup page's text in the user's language: English, German or French. A small copy of the
+// The setup page's text in the user's language: English, German, French or Spanish. A small copy of the
 // chat's runtime (chat/static/i18n.js), without the chat server: the language is saved in the
 // app's config.json (the `set_locale` command), so the tray menu and the app's own messages use it
 // too. Loaded first, before the catalog (strings.js) that fills it:
 //
-//   cedarI18n.add({ en: { 'key': 'Text with {name}' }, de: { ... }, fr: { ... } });
+//   cedarI18n.add({ en: { 'key': 'Text with {name}' }, de: { ... }, fr: { ... }, es: { ... },
+//                   'es-ES': { 'key': 'only what Spain says differently' } });
 //
-// tr('key', { name }) (cedarI18n.t) looks a key up in the current language, then in English,
-// and falls back to the key itself. A value may be an object of plural forms ({ one, other })
+// tr('key', { name }) (cedarI18n.t) looks a key up in the user's region's catalog, then their
+// language's, then English, and falls back to the key itself. A value may be an object of plural forms ({ one, other })
 // picked by params.count. Elements carry their text as data-i18n="key" (textContent),
 // data-i18n-html="key" (markup from the catalog itself, for text with links in it) and
 // data-i18n-attr="placeholder:key; title:key"; apply(root) fills them in. Swiss German (de-CH)
@@ -16,7 +17,7 @@
 
 const cedarI18n = (() => {
   /** The languages the page is translated into, each named in its own language. */
-  const LANGUAGES = { en: 'English', de: 'Deutsch', fr: 'Français' };
+  const LANGUAGES = { en: 'English', de: 'Deutsch', fr: 'Français', es: 'Español' };
   /** The locales offered, in order, with their own names. */
   const LOCALES = [
     { tag: 'en', label: 'English' },
@@ -29,8 +30,14 @@ const cedarI18n = (() => {
     { tag: 'fr-BE', label: 'Français (Belgique)' },
     { tag: 'fr-CH', label: 'Français (Suisse)' },
     { tag: 'fr-CA', label: 'Français (Canada)' },
+    { tag: 'es-ES', label: 'Español (España)' },
+    { tag: 'es-MX', label: 'Español (México)' },
+    { tag: 'es-419', label: 'Español (Latinoamérica)' },
+    { tag: 'es-US', label: 'Español (Estados Unidos)' },
   ];
-  const catalogs = { en: {}, de: {}, fr: {} };
+  // Spanish from a country not listed (es-AR, es-CO, ...) is Latin American Spanish.
+  const MAIN = { es: 'es-419' };
+  const catalogs = { en: {}, de: {}, fr: {}, es: {} };
 
   let locale = 'en';
   let lang = 'en';
@@ -51,7 +58,7 @@ const cedarI18n = (() => {
       const exact = normalize(tag);
       if (exact) return exact;
       const l = String(tag || '').split(/[-_]/)[0].toLowerCase();
-      if (l !== 'en' && Object.hasOwn(LANGUAGES, l)) return LOCALES.find((x) => x.tag.startsWith(l + '-')).tag;
+      if (l !== 'en' && Object.hasOwn(LANGUAGES, l)) return MAIN[l] || LOCALES.find((x) => x.tag.startsWith(l + '-')).tag;
       if (l === 'en') return 'en';
     }
     return 'en';
@@ -69,6 +76,7 @@ const cedarI18n = (() => {
   function add(byLanguage) {
     for (const [l, entries] of Object.entries(byLanguage || {})) {
       if (catalogs[l]) Object.assign(catalogs[l], entries);
+      else if (normalize(l) === l) Object.assign((catalogs[l] ||= {}), entries);
     }
   }
 
@@ -85,7 +93,8 @@ const cedarI18n = (() => {
 
   /** The text for `key` in the user's language, with {name} placeholders filled from params. */
   function t(key, params) {
-    let value = catalogs[lang][key];
+    let value = catalogs[locale]?.[key];
+    if (value === undefined) value = catalogs[lang][key];
     if (value === undefined) value = catalogs.en[key];
     if (value === undefined) value = key;
     let text = String(pick(value, params?.count));

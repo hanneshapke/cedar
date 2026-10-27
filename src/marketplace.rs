@@ -560,7 +560,7 @@ mod tests {
             ("de".into(), text("Zählt Wörter", &[("TOKEN", "Dein Token"), ("OTHER", "x")])),
             ("fr-CH".into(), text("Compte les mots", &[])),
             ("en".into(), text("Counts words", &[])),
-            ("es".into(), text("Cuenta palabras", &[])),
+            ("pt".into(), text("Conta palavras", &[])),
             ("de_AT".into(), text("Zählt Wörter", &[])),
             ("fr".into(), text(&"x".repeat(201), &[])),
         ]);
