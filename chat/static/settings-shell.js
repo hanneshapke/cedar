@@ -22,7 +22,7 @@
 // in Settings" asks for 'notify', the Google redirect for 'server').
 
 const cedarSettingsShell = (() => {
-  const ORDER = ['interface', 'tools', 'model', 'notify', 'iphone', 'server'];
+  const ORDER = ['interface', 'language', 'tools', 'model', 'notify', 'iphone', 'server'];
   const PAGE_KEY = 'cedar-chat-settings-page';
 
   const pages = new Map();

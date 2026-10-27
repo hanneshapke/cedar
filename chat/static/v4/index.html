@@ -11,6 +11,7 @@
   <!-- Instrument Sans for the interface, Instrument Serif for prompts and documents, JetBrains Mono for code; served from /fonts/. -->
   <link rel="stylesheet" href="/fonts/fonts.css">
   <link rel="stylesheet" href="/v4/style.css">
+  <link rel="stylesheet" href="/language.css">
   <link rel="stylesheet" href="/trust-view.css">
   <link rel="stylesheet" href="/map-view.css">
   <link rel="stylesheet" href="/recipe-view.css">
@@ -211,9 +212,16 @@
     </div>
   </dialog>
 
+  <script src="/i18n.js"></script>
+  <script src="/i18n/common.js"></script>
+  <script src="/i18n/settings.js"></script>
+  <script src="/i18n/cards.js"></script>
+  <script src="/i18n/v4.js"></script>
+  <script>cedarI18n.apply(document);</script>
   <script src="/ui-pref.js"></script>
   <script src="/confirm.js"></script>
   <script src="/settings-shell.js"></script>
+  <script src="/language.js"></script>
   <script src="/image-view.js"></script>
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>

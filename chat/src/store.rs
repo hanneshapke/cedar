@@ -254,6 +254,10 @@ pub struct Preferences {
     /// Whether a message's run plans: `off`, `on`, `auto` or `tool`. `None` is `auto`.
     #[serde(default)]
     pub plan: Option<String>,
+    /// The user's language and region (a BCP 47 tag such as `de-CH`), for runs that don't name
+    /// one (scheduled runs) and for notifications. `None` leaves it to cedar (`DEFAULT_LOCALE`).
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
@@ -1219,6 +1223,7 @@ mod tests {
             system: Some("be brief".into()),
             max_turns: Some(5),
             plan: Some("off".into()),
+            locale: Some("de-CH".into()),
         };
         store.set_preferences(&prefs).await.unwrap();
         store.set_preferences(&prefs).await.unwrap();

@@ -1,0 +1,32 @@
+/* The first visit's language question. The choices reuse each UI's .ui-option buttons. */
+.lang-dialog {
+  max-width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 24px;
+  border: none;
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.25);
+  overflow: auto;
+}
+.lang-dialog::backdrop { background: rgba(20, 20, 20, 0.45); }
+.lang-dialog-head { margin-bottom: 16px; }
+.lang-dialog-title { margin: 0 0 4px; font-size: 20px; }
+.lang-dialog-sub { margin: 0 0 8px; opacity: 0.75; }
+.lang-dialog-note { margin: 0; font-size: 13px; opacity: 0.65; }
+.lang-choice .ui-option { cursor: pointer; font: inherit; color: inherit; }
+.lang-dialog .lang-choice { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.lang-dialog .lang-choice .ui-option { padding: 8px 12px; }
+
+.lang-dialog-go {
+  margin-top: 16px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent, #1b6f8a);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lang-dialog-go:disabled { opacity: 0.6; cursor: default; }

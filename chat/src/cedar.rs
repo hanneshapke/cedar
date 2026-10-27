@@ -108,6 +108,9 @@ impl CedarClient {
         if opts.interactive {
             body["interactive"] = json!(true);
         }
+        if let Some(l) = opts.locale {
+            body["locale"] = json!(l);
+        }
         let mut timeout = REQUEST_TIMEOUT;
         if let Some(a) = opts.attachments.filter(|a| !a.is_empty()) {
             body["attachments"] = json!(a);
@@ -372,6 +375,8 @@ pub struct RunOptions<'a> {
     /// Someone is there to answer: the run waits for its plan to be agreed and for risky calls
     /// to be approved. Off for scheduled runs.
     pub interactive: bool,
+    /// The user's language and region; `None` leaves cedar's default (or the parent's).
+    pub locale: Option<&'a str>,
 }
 
 /// cedar refuses the admin routes to a key that isn't an admin key: say which setting to fix.
