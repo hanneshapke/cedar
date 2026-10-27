@@ -76,7 +76,7 @@
     },
     {
       "name": "drug_prices",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "summary": "Cheapest US price for a prescription: generic vs brand, Cost Plus Drugs, NADAC pharmacy cost, your copay",
       "category": "health",
       "author": "Hannes Hapke",
@@ -94,8 +94,8 @@
       },
       "base_url": "tools/drug_prices/",
       "files": {
-        "tool.json": "2bcedf196450a9a58800d0990f8632adf9f3d145a20f2317ff9f31d42b9d0f30",
-        "tool.py": "ad1c1d4db7347993e7df3f5ab674c334742b24ab6b1e0e418297471932df90f2"
+        "tool.json": "3e79e8dbcd403c564a6b794d0bef217dac026c81bcf58d250f93c54f291a4679",
+        "tool.py": "58d8a51b5a1f03d64c5d3937df85f476bef30fb8291ec3e1b4d7c2a1a4542321"
       },
       "reviewed": true
     },

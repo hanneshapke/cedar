@@ -370,9 +370,12 @@ def build(args):
                                  f"{'s' if len(rows) > 1 else ''} (median {usd(typical)}), as of "
                                  f"{max(r['_day'] for r in rows):%b %d, %Y}"})
 
-    # Cost Plus Drugs, live, or its published formula on NADAC when the API has nothing.
+    # Cost Plus Drugs, live, or its published formula on NADAC when the API has nothing. Their
+    # brand_name can name the reference brand on a generic, so a brand-looking quote only gives
+    # way to a generic-looking one; it is never dropped for having nothing to give way to.
     try:
-        quotes = [q for q in cost_plus(ingredient, versions[0], quantity) if q["generic"] or not generic]
+        quotes = cost_plus(ingredient, versions[0], quantity)
+        quotes = [q for q in quotes if q["generic"] or not generic] or quotes
     except SourceError as e:
         quotes = []
         failed.append(f"Cost Plus Drugs ({e})")
@@ -406,11 +409,31 @@ def build(args):
             offer["detail"] += f": {usd(price)} for {their_qty}, scaled to {quantity}"
         offers.append(offer)
 
+    if not offers and failed:
+        sys.exit("couldn't get any prices: " + "; ".join(failed) + ". Try again in a little while.")
     if not offers:
-        sys.exit("couldn't get any prices: " + "; ".join(failed or ["no source lists this drug"])
-                 + ". Try again in a little while.")
+        return unlisted(base, ingredient, quantity)
     offers.sort(key=lambda o: o["price"])
     return report(base, ingredient, generic, asked_brand, quantity, offers, failed)
+
+
+def coupon_links(ingredient):
+    name = slug(ingredient.replace(" / ", "-"))
+    return f"https://www.goodrx.com/{name} and https://www.singlecare.com/prescription/{name}"
+
+
+def unlisted(base, ingredient, quantity):
+    """Every source answered, and none lists this product: an answer, not an error to retry."""
+    return "\n".join([
+        f"No open price source lists {base}: NADAC has no pharmacy cost for its package codes and "
+        "Cost Plus Drugs doesn't sell it. That is common for specialty drugs, drugs given at a "
+        "clinic, and new brands; asking again won't change it.",
+        f"Compare coupon prices for {quantity} at {coupon_links(ingredient)}, or ask the pharmacy "
+        "for its cash price. For a brand, the maker's savings card or patient assistance program "
+        "is often the cheapest way.",
+        "Informational only: don't change the drug, strength or dose to save money without the "
+        "prescriber or pharmacist.",
+    ])
 
 
 def report(base, ingredient, generic, asked_brand, quantity, offers, failed):
@@ -438,10 +461,9 @@ def report(base, ingredient, generic, asked_brand, quantity, offers, failed):
         dear = [o for o in offers if not o["buyable"] and o["generic"] is False]
         if dear and dear[0]["price"] > pharmacy[0]["price"] * 1.5:
             out.append(f"The brand costs pharmacies {dear[0]['price'] / pharmacy[0]['price']:.0f}x the generic.")
-    name = slug(ingredient.replace(" / ", "-"))
     out.append("")
     out.append("Coupon prices at local pharmacies change daily and were not fetched; compare at "
-               f"https://www.goodrx.com/{name} and https://www.singlecare.com/prescription/{name} before going. "
+               f"{coupon_links(ingredient)} before going. "
                "Cash prices don't count toward an insurance deductible, and a 90-day supply is usually cheaper per pill.")
     if failed:
         out.append("Not available this time: " + "; ".join(failed) + ".")
