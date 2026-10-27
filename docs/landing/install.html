@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install Cedar</title>
-<meta name="description" content="Answer a few questions and get the install steps for Cedar on your Mac, Windows PC or Linux machine.">
+<script src="./i18n.js"></script>
+<script src="./i18n/common.js"></script>
+<script src="./i18n/install.js"></script>
+<meta name="description" data-i18n-attr="content:install.meta" content="Answer a few questions and get the install steps for Cedar on your Mac, Windows PC or Linux machine.">
 <link rel="icon" href="docs/assets/cedar-mark.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
@@ -99,41 +102,42 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 <header class="site-header">
   <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
   <nav>
-    <a href="./#does">What it does</a>
-    <a href="./#private">Private by design</a>
-    <a href="./#apps">Mac, Windows, Linux &amp; phones</a>
-    <a href="./#compare">Compared</a>
-    <a href="models.html">Models</a>
-    <a href="install.html" aria-current="page">Install</a>
+    <a href="./#does" data-i18n="install.nav.does">What it does</a>
+    <a href="./#private" data-i18n="install.nav.private">Private by design</a>
+    <a href="./#apps" data-i18n="install.nav.apps">Mac, Windows, Linux &amp; phones</a>
+    <a href="./#compare" data-i18n="install.nav.compare">Compared</a>
+    <a href="models.html" data-i18n="install.nav.models">Models</a>
+    <a href="install.html" aria-current="page" data-i18n="install.nav.install">Install</a>
+    <span data-lang-switch></span>
     <a class="dl" id="header-dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
   </nav>
 </header>
 </div>
 <div class="wrap">
   <main>
-    <a class="back" href="./">← Back to the Cedar home page</a><br>
-    <span class="eyebrow">Install guide</span>
-    <h1>Your path to Cedar.</h1>
-    <p class="lede">Tell us what you're working with, and we'll put the steps in order for you. Pick an answer in each row; the steps below change as you go, and the page address remembers your answers so you can share them.</p>
+    <a class="back" href="./" data-i18n="install.back">← Back to the Cedar home page</a><br>
+    <span class="eyebrow" data-i18n="install.eyebrow">Install guide</span>
+    <h1 data-i18n="install.h1">Your path to Cedar.</h1>
+    <p class="lede" data-i18n="install.lede">Tell us what you're working with, and we'll put the steps in order for you. Pick an answer in each row; the steps below change as you go, and the page address remembers your answers so you can share them.</p>
 
-    <section class="picker" id="picker" aria-label="Your setup"></section>
-    <div class="share"><span id="share-hint">This page's address now holds your answers.</span><button type="button" id="copy-link">Copy link</button><button type="button" id="reset">Start over</button></div>
+    <section class="picker" id="picker" data-i18n-attr="aria-label:install.pickerLabel" aria-label="Your setup"></section>
+    <div class="share"><span id="share-hint" data-i18n="install.share.hint">This page's address now holds your answers.</span><button type="button" id="copy-link" data-i18n="install.share.copy">Copy link</button><button type="button" id="reset" data-i18n="install.share.reset">Start over</button></div>
 
     <div class="summary" id="summary" aria-live="polite"></div>
     <ol class="steps" id="steps"></ol>
   </main>
 
   <div class="help">
-    <span>Stuck?</span>
-    <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md#troubleshooting">Mac &amp; Windows troubleshooting</a>
-    <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md#troubleshooting">Linux troubleshooting</a>
-    <a href="https://github.com/hanneshapke/cedar/discussions">Ask in Discussions</a>
+    <span data-i18n="install.help.stuck">Stuck?</span>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md#troubleshooting" data-i18n="install.help.desktop">Mac &amp; Windows troubleshooting</a>
+    <a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md#troubleshooting" data-i18n="install.help.linux">Linux troubleshooting</a>
+    <a href="https://github.com/hanneshapke/cedar/discussions" data-i18n="install.help.discussions">Ask in Discussions</a>
   </div>
 </div>
 
 <footer class="site-footer">
-  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt="">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span>
-  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51">iPhone invite</a><a href="./#iphone-private">iPhone, privately</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md">For developers</a></span>
+  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt=""><span data-i18n-html="install.footer.license">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span></span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html" data-i18n="install.footer.models">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51" data-i18n="install.footer.iphoneInvite">iPhone invite</a><a href="./#iphone-private" data-i18n="install.footer.iphonePrivate">iPhone, privately</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest" data-i18n="install.footer.android">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" data-i18n="install.footer.desktop">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" data-i18n="install.footer.linux">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" data-i18n="install.footer.developers">For developers</a><span data-lang-switch></span></span>
 </footer>
 
 <script src="./version.js"></script>
@@ -163,41 +167,41 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   // Each question: its id in the address (?os=mac&arch=arm64&docker=no...), and the answers.
   // An answer's `os` limits it to some systems; a question's `when` hides it for others.
   const QUESTIONS = [
-    { id: 'os', label: 'Which computer will run Cedar?', hint: 'The one that does the work. Phones pair with it later.',
+    { id: 'os', label: tr('install.q.os'), hint: tr('install.q.osHint'),
       opts: [{ v: 'mac', t: 'macOS' }, { v: 'windows', t: 'Windows' }, { v: 'linux', t: 'Linux' }] },
-    { id: 'arch', label: 'What kind of chip?', hint: 'Mac: Apple menu → About This Mac. Windows: Settings → System → About.',
+    { id: 'arch', label: tr('install.q.arch'), hint: tr('install.q.archHint'),
       opts: [
         { v: 'arm64', t: 'Apple silicon', s: 'M1, M2, M3, M4…', os: ['mac'] },
         { v: 'x64', t: 'Intel', os: ['mac'] },
-        { v: 'x64', t: 'x64', s: 'Intel or AMD', os: ['windows', 'linux'] },
+        { v: 'x64', t: 'x64', s: tr('install.opt.intelOrAmd'), os: ['windows', 'linux'] },
         { v: 'arm64', t: 'Arm', s: 'Snapdragon, Surface', os: ['windows'] },
         { v: 'arm64', t: 'arm64', s: 'DGX Spark, Ampere, Pi', os: ['linux'] },
       ] },
-    { id: 'docker', label: 'Do you have Docker installed?', hint: 'Cedar runs every chat in a sealed Docker box.',
-      opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what Docker is' }] },
-    { id: 'host', label: 'Can you run an AI model yourself?', hint: 'It takes lots of fast memory: an M4 or M5 Mac with 32 GB or more, a DGX Spark, an AMD Ryzen AI Max (Strix Halo), or a GPU with 16 GB or more.',
+    { id: 'docker', label: tr('install.q.docker'), hint: tr('install.q.dockerHint'),
+      opts: [{ v: 'yes', t: tr('install.opt.yes') }, { v: 'no', t: tr('install.opt.no') }, { v: 'unknown', t: tr('install.opt.noIdeaDocker') }] },
+    { id: 'host', label: tr('install.q.host'), hint: tr('install.q.hostHint'),
       opts: [
-        { v: 'yes', t: 'Yes', s: 'on this or another machine' }, { v: 'no', t: 'No', s: 'use a token provider' },
-        { v: 'unknown', t: 'Not sure' },
+        { v: 'yes', t: tr('install.opt.yes'), s: tr('install.opt.hostYes') }, { v: 'no', t: tr('install.opt.no'), s: tr('install.opt.hostNo') },
+        { v: 'unknown', t: tr('install.opt.notSure') },
       ] },
-    { id: 'serve', label: 'How do you want to serve it?', hint: 'Ollama is the easiest. LM Studio has a window. vLLM is fastest on a Linux GPU box.', when: (s) => s.host === 'yes',
+    { id: 'serve', label: tr('install.q.serve'), hint: tr('install.q.serveHint'), when: (s) => s.host === 'yes',
       opts: [
-        { v: 'ollama', t: 'Ollama', s: 'simplest, any computer' }, { v: 'lmstudio', t: 'LM Studio', s: 'an app with a window' },
-        { v: 'vllm', t: 'vLLM', s: 'Linux, NVIDIA or AMD GPU' },
+        { v: 'ollama', t: 'Ollama', s: tr('install.opt.ollama') }, { v: 'lmstudio', t: 'LM Studio', s: tr('install.opt.lmstudio') },
+        { v: 'vllm', t: 'vLLM', s: tr('install.opt.vllm') },
       ] },
-    { id: 'provider', label: 'Which token provider?', hint: 'They run open models in their data center and charge per token.', when: (s) => s.host === 'no',
+    { id: 'provider', label: tr('install.q.provider'), hint: tr('install.q.providerHint'), when: (s) => s.host === 'no',
       opts: [
         { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' },
-        { v: 'other', t: 'Another provider', s: 'any OpenAI-compatible API' },
+        { v: 'other', t: tr('install.opt.otherProvider'), s: tr('install.opt.otherProviderHint') },
       ] },
-    { id: 'mobile', label: 'Do you want to reach your assistant from your phone?', hint: 'Chat with Cedar from anywhere; the phone app talks to your personal Cedar AI Assistant.',
-      opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No', s: 'this computer only' }] },
-    { id: 'phone', label: 'Which phone do you have?', hint: 'Cedar has an app for each.', when: (s) => s.mobile === 'yes',
-      opts: [{ v: 'iphone', t: 'iPhone', s: 'or iPad' }, { v: 'android', t: 'Android' }] },
-    { id: 'ios', label: 'How do you want to install the iPhone app?', hint: 'TestFlight is Apple\'s beta app and needs an invite. Privately, you install it yourself with SideStore and your own Apple ID.', when: (s) => s.mobile === 'yes' && s.phone === 'iphone',
-      opts: [{ v: 'testflight', t: 'TestFlight', s: 'ask for an invite' }, { v: 'sidestore', t: 'Privately', s: 'SideStore, no invite' }] },
-    { id: 'tailscale', label: 'Do you have Tailscale installed?', hint: 'It links your phone to this computer privately.', when: (s) => s.mobile === 'yes',
-      opts: [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }, { v: 'unknown', t: 'No idea what it is' }] },
+    { id: 'mobile', label: tr('install.q.mobile'), hint: tr('install.q.mobileHint'),
+      opts: [{ v: 'yes', t: tr('install.opt.yes') }, { v: 'no', t: tr('install.opt.no'), s: tr('install.opt.thisComputerOnly') }] },
+    { id: 'phone', label: tr('install.q.phone'), hint: tr('install.q.phoneHint'), when: (s) => s.mobile === 'yes',
+      opts: [{ v: 'iphone', t: 'iPhone', s: tr('install.opt.orIpad') }, { v: 'android', t: 'Android' }] },
+    { id: 'ios', label: tr('install.q.ios'), hint: tr('install.q.iosHint'), when: (s) => s.mobile === 'yes' && s.phone === 'iphone',
+      opts: [{ v: 'testflight', t: 'TestFlight', s: tr('install.opt.askInvite') }, { v: 'sidestore', t: tr('install.opt.privately'), s: tr('install.opt.sideStoreNoInvite') }] },
+    { id: 'tailscale', label: tr('install.q.tailscale'), hint: tr('install.q.tailscaleHint'), when: (s) => s.mobile === 'yes',
+      opts: [{ v: 'yes', t: tr('install.opt.yes') }, { v: 'no', t: tr('install.opt.no') }, { v: 'unknown', t: tr('install.opt.noIdeaTailscale') }] },
   ];
 
   const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', mobile: '', phone: detectPhone(), ios: '', tailscale: '' };
@@ -250,7 +254,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   // A code block. Lines starting with # are shown as comments; `shell` labels the terminal to use.
   function code(text, shell) {
     const html = text.split('\n').map((l) => /^\s*#/.test(l) ? `<span class="c">${esc(l)}</span>` : esc(l)).join('\n');
-    return `<div class="code">${shell ? `<span class="shell">${esc(shell)}</span>` : ''}<pre>${html}</pre><button type="button" data-copy>Copy</button></div>`;
+    return `<div class="code">${shell ? `<span class="shell">${esc(shell)}</span>` : ''}<pre>${html}</pre><button type="button" data-copy>${esc(tr('install.copy'))}</button></div>`;
   }
   const explain = (html) => `<div class="explain">${html}</div>`;
   const btn = (href, label, ghost) => `<a class="btn${ghost ? ' ghost' : ''}" href="${esc(href)}">${label}</a>`;
@@ -273,20 +277,20 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const chips = [];
     const name = { mac: 'macOS', windows: 'Windows', linux: 'Linux' }[s.os];
     if (name) chips.push(`<span class="chip">${name} · ${s.arch === 'arm64' ? (s.os === 'mac' ? 'Apple silicon' : s.os === 'windows' ? 'Arm' : 'arm64') : (s.os === 'mac' ? 'Intel' : 'x64')}</span>`);
-    if (s.docker) chips.push(s.docker === 'yes' ? '<span class="chip done">Docker ready</span>' : '<span class="chip todo">Docker to install</span>');
-    if (s.host === 'yes' && s.serve) chips.push(`<span class="chip done">Your own model · ${SERVERS[s.serve].name}</span>`);
-    if (s.host === 'no' && s.provider) chips.push(`<span class="chip done">Hosted model · ${s.provider === 'other' ? 'another provider' : PROVIDERS[s.provider].name}</span>`);
-    if (s.host === 'unknown') chips.push('<span class="chip todo">Check your hardware</span>');
-    if (s.mobile === 'no') chips.push('<span class="chip skip">No phone app</span>');
-    if (s.mobile === 'yes' && s.phone) chips.push(`<span class="chip">${s.phone === 'iphone' ? 'iPhone' : 'Android'} app${s.phone === 'iphone' && s.ios ? (s.ios === 'sidestore' ? ' · SideStore' : ' · TestFlight') : ''}</span>`);
-    if (s.mobile === 'yes' && s.tailscale) chips.push(s.tailscale === 'yes' ? '<span class="chip done">Tailscale ready</span>' : '<span class="chip todo">Tailscale to install</span>');
+    if (s.docker) chips.push(s.docker === 'yes' ? `<span class="chip done">${tr('install.chip.dockerReady')}</span>` : `<span class="chip todo">${tr('install.chip.dockerToInstall')}</span>`);
+    if (s.host === 'yes' && s.serve) chips.push(`<span class="chip done">${tr('install.chip.ownModel', { server: SERVERS[s.serve].name })}</span>`);
+    if (s.host === 'no' && s.provider) chips.push(`<span class="chip done">${tr('install.chip.hostedModel', { provider: s.provider === 'other' ? tr('install.chip.anotherProvider') : PROVIDERS[s.provider].name })}</span>`);
+    if (s.host === 'unknown') chips.push(`<span class="chip todo">${tr('install.chip.checkHardware')}</span>`);
+    if (s.mobile === 'no') chips.push(`<span class="chip skip">${tr('install.chip.noPhoneApp')}</span>`);
+    if (s.mobile === 'yes' && s.phone) chips.push(`<span class="chip">${tr('install.chip.phoneApp', { phone: s.phone === 'iphone' ? 'iPhone' : 'Android' })}${s.phone === 'iphone' && s.ios ? (s.ios === 'sidestore' ? ' · SideStore' : ' · TestFlight') : ''}</span>`);
+    if (s.mobile === 'yes' && s.tailscale) chips.push(s.tailscale === 'yes' ? `<span class="chip done">${tr('install.chip.tailscaleReady')}</span>` : `<span class="chip todo">${tr('install.chip.tailscaleToInstall')}</span>`);
     document.getElementById('summary').innerHTML = chips.join('');
   }
 
   function renderSteps() {
     const list = document.getElementById('steps');
     if (!state.os) {
-      list.innerHTML = `<li class="step optional"><h2>Start with your computer</h2><div class="body"><p>Pick macOS, Windows or Linux above, and the steps appear here.</p></div></li>`;
+      list.innerHTML = `<li class="step optional"><h2>${tr('install.start.title')}</h2><div class="body"><p>${tr('install.start.body')}</p></div></li>`;
       return;
     }
     const steps = buildSteps(state);
@@ -295,9 +299,9 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
   function renderDownload() {
     const dl = {
-      mac: ['Download for Mac', release.dmg], windows: ['Download for Windows', release.msi],
-      linux: ['Download for Linux', release[state.arch === 'arm64' ? 'linux-arm64' : 'linux-x64']],
-    }[state.os] || ['Download Cedar', ''];
+      mac: [tr('install.dl.mac'), release.dmg], windows: [tr('install.dl.windows'), release.msi],
+      linux: [tr('install.dl.linux'), release[state.arch === 'arm64' ? 'linux-arm64' : 'linux-x64']],
+    }[state.os] || [tr('install.dl.cedar'), ''];
     const a = document.getElementById('header-dl');
     a.textContent = dl[0];
     a.href = dl[1] || RELEASES;
@@ -330,44 +334,44 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const arch = s.arch === 'arm64' ? 'arm64' : 'x64';
     const desktop = {
       mac: s.arch === 'x64'
-        ? `<p>${btn(DESKTOP + '#on-a-mac', 'Build guide for Intel Macs')}</p><p class="note">There is no ready-made Intel build; the guide shows how to build it.</p>`
-        : `<p>${btn(release.dmg || RELEASES, 'Cedar for Mac (Apple silicon, .dmg)')}</p>`,
-      windows: `<p>${btn(release.msi || RELEASES, `Cedar for Windows (${s.arch === 'arm64' ? 'x64, runs on Arm' : 'x64'}, .msi)`)}</p>`,
-      linux: `<p>${btn(linuxUrl(arch), `Cedar ${esc(release.ver)} for Linux (${arch}, .tar.gz)`)}</p>`,
+        ? `<p>${btn(DESKTOP + '#on-a-mac', tr('install.dl.intelGuide'))}</p><p class="note">${tr('install.dl.intelNote')}</p>`
+        : `<p>${btn(release.dmg || RELEASES, tr('install.dl.macBuild'))}</p>`,
+      windows: `<p>${btn(release.msi || RELEASES, tr('install.dl.windowsBuild', { arch: s.arch === 'arm64' ? tr('install.dl.x64OnArm') : 'x64' }))}</p>`,
+      linux: `<p>${btn(linuxUrl(arch), tr('install.dl.linuxBuild', { version: esc(release.ver), arch }))}</p>`,
     }[s.os];
     const phone = s.mobile !== 'yes' ? ''
-      : sideloads(s) ? `<p>${btn(ADD_SOURCE, 'Cedar for iPhone (add to SideStore)')}${btn(release.ipa || RELEASES, 'Or the .ipa', true)}</p>`
-      : s.phone === 'iphone' && s.ios === 'testflight' ? `<p>${btn(TESTFLIGHT, 'Cedar for iPhone (TestFlight invite)')}</p>`
-      : s.phone === 'iphone' ? `<p>${btn(TESTFLIGHT, 'iPhone (TestFlight invite)')}${btn(release.ipa || RELEASES, 'iPhone, privately (.ipa)', true)}</p>`
-      : s.phone === 'android' ? `<p>${btn(release.apk || RELEASES, 'Cedar for Android (.apk)')}</p>`
+      : sideloads(s) ? `<p>${btn(ADD_SOURCE, tr('install.dl.iphoneSideStore'))}${btn(release.ipa || RELEASES, tr('install.dl.orIpa'), true)}</p>`
+      : s.phone === 'iphone' && s.ios === 'testflight' ? `<p>${btn(TESTFLIGHT, tr('install.dl.iphoneTestFlight'))}</p>`
+      : s.phone === 'iphone' ? `<p>${btn(TESTFLIGHT, tr('install.dl.iphoneInvite'))}${btn(release.ipa || RELEASES, tr('install.dl.iphonePrivately'), true)}</p>`
+      : s.phone === 'android' ? `<p>${btn(release.apk || RELEASES, tr('install.dl.android'))}</p>`
       : `<p>${btn(TESTFLIGHT, 'iPhone (TestFlight)', true)}${btn(release.ipa || RELEASES, 'iPhone (.ipa)', true)}${btn(release.apk || RELEASES, 'Android (.apk)', true)}</p>`;
-    return step('Your downloads', `<p>The build that matches your answers${s.mobile === 'yes' ? ', and the app for your phone' : ''}:</p>${desktop}${phone}
-      <p class="note">Something else? Every build is on the <a href="${RELEASES}">latest release page</a>.</p>`, 'final');
+    return step(tr('install.dl.title'), `<p>${tr(s.mobile === 'yes' ? 'install.dl.introPhone' : 'install.dl.intro')}</p>${desktop}${phone}
+      <p class="note">${tr('install.dl.elsewhere', { url: RELEASES })}</p>`, 'final');
   }
 
-  const WHAT_IS_DOCKER = explain('<b>What is Docker?</b> A free program that runs small, sealed Linux boxes (containers) on your computer. Cedar does every chat\'s work inside one, so the commands it runs can\'t see your documents, photos or the rest of your system. You install it once and never have to touch it again.');
-  const WHAT_IS_TAILSCALE = explain('<b>What is Tailscale?</b> A free app that links your own devices into a private network, wherever they are. Cedar uses it so your phone can reach the computer at home securely, without opening anything to the internet. <b>You only need it for the iPhone or Android app</b>; skip this step if you\'ll use Cedar on this computer only.');
+  const WHAT_IS_DOCKER = explain(tr('install.explain.docker'));
+  const WHAT_IS_TAILSCALE = explain(tr('install.explain.tailscale'));
 
   // Where Cedar finds each kind of model server, and what the setup window calls it.
   const SERVERS = {
-    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1', pick: 'the <strong>Ollama</strong> preset' },
-    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1', pick: 'the <strong>LM Studio</strong> preset' },
-    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1', pick: 'the <strong>vLLM</strong> preset (or your GPU box\'s address)' },
+    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1', pick: tr('install.pick.preset', { name: 'Ollama' }) },
+    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1', pick: tr('install.pick.preset', { name: 'LM Studio' }) },
+    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1', pick: tr('install.pick.vllm') },
   };
   const PROVIDERS = {
     doubleword: { name: 'Doubleword', addr: 'https://api.doubleword.ai/v1', site: 'https://www.doubleword.ai', keys: 'https://app.doubleword.ai', docs: 'https://docs.doubleword.ai/inference-api/using-the-platform',
-      keyHow: 'Sign up, open <strong>API Keys</strong> in the Doubleword console and create one. You can give it a spending cap.' },
+      keyHow: tr('install.provider.doublewordKey') },
     baseten: { name: 'Baseten', addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co', keys: 'https://app.baseten.co/settings/api_keys', docs: 'https://docs.baseten.co/development/model-apis/overview',
-      keyHow: 'Sign up, then create an API key under <strong>Settings → API keys</strong>. Cedar uses Baseten\'s <em>Model APIs</em>, where every model supports tool calling.' },
-    other: { name: 'your provider', addr: 'https://<provider>/v1', docs: '',
-      keyHow: 'Any provider with an OpenAI-compatible <code>/v1/chat/completions</code> API and tool calling works. Create an API key in its console and find its base URL in its docs.' },
+      keyHow: tr('install.provider.basetenKey') },
+    other: { name: tr('install.provider.yours'), addr: 'https://<provider>/v1', docs: '',
+      keyHow: tr('install.provider.otherKey') },
   };
 
   // What to choose in the setup window's model step (Mac and Windows) for the answers given.
   function modelChoice(s) {
-    if (s.host === 'yes' && s.serve) return `pick ${SERVERS[s.serve].pick}`;
-    if (s.host === 'no' && s.provider) return `type <code>${esc(PROVIDERS[s.provider].addr)}</code> as the address, paste your API key`;
-    return 'pick your model server\'s preset (or type its address)';
+    if (s.host === 'yes' && s.serve) return SERVERS[s.serve].pick;
+    if (s.host === 'no' && s.provider) return tr('install.pick.provider', { address: esc(PROVIDERS[s.provider].addr) });
+    return tr('install.pick.any');
   }
 
   // The address the Linux chat's Settings → Server is given.
@@ -376,59 +380,59 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     return SERVERS[s.serve || 'ollama'].addr;
   }
 
-  const WHAT_IS_A_PROVIDER = explain('<b>What is a token provider?</b> A company that runs open AI models in its data center and lets you use them over the internet, billed per token (roughly, per word read and written). Nothing to install, and no big computer needed. The trade-off: <b>your prompts, and the file contents Cedar sends to the model, go to that company</b>. Cedar itself, your conversations and the sealed boxes still stay on your machine.');
+  const WHAT_IS_A_PROVIDER = explain(tr('install.explain.provider'));
 
   function modelStep(s) {
     const shell = s.os === 'windows' ? 'PowerShell' : 'Terminal';
     const inSetup = s.os === 'linux'
-      ? '<p class="note">You\'ll register it in the chat\'s <strong>Settings → Server</strong> in a later step.</p>'
-      : `<p class="note">You'll pick it in Cedar's setup window in a later step: ${modelChoice(s)}.</p>`;
-    const toolsNote = '<p class="note">Whatever you pick, it must support <em>tool calling</em>: that\'s how Cedar acts. Bigger is smarter but slower. Not sure which one? The <a href="models.html">model guide</a> suggests one for your hardware.</p>';
+      ? `<p class="note">${tr('install.model.laterLinux')}</p>`
+      : `<p class="note">${tr('install.model.laterSetup', { choice: modelChoice(s) })}</p>`;
+    const toolsNote = `<p class="note">${tr('install.model.toolsNote')}</p>`;
 
     if (s.host === 'no') return providerStep(s, inSetup);
     if (s.host === 'yes') {
       if (s.serve === 'ollama') return ollamaStep(s, shell, inSetup, toolsNote);
       if (s.serve === 'lmstudio') return lmStudioStep(s, inSetup, toolsNote);
       if (s.serve === 'vllm') return vllmStep(s, inSetup);
-      return step('Choose how to serve your model', '<p>Pick <strong>Ollama</strong>, <strong>LM Studio</strong> or <strong>vLLM</strong> above. Not sure? Ollama is the easiest start on any computer; vLLM gets the most out of a Linux box with an NVIDIA or AMD GPU, like a DGX Spark.</p>', 'optional');
+      return step(tr('install.serve.title'), `<p>${tr('install.serve.body')}</p>`, 'optional');
     }
     // Not sure, or not answered yet.
-    return step('Can your computer run a model?', `${s.host ? '' : '<p class="note">Answer <em>Can you run an AI model yourself?</em> above to tailor this step.</p>'}
-      <p>Models that are good at using tools are big, and they need to fit in memory the chip can use quickly. These machines run one well:</p>
+    return step(tr('install.hw.title'), `${s.host ? '' : `<p class="note">${tr('install.hw.answer', { question: esc(tr('install.q.host')) })}</p>`}
+      <p>${tr('install.hw.intro')}</p>
       <ul>
-        <li><strong>A Mac with an M4 or M5 chip and 32 GB of memory or more</strong> (64 GB+ for the larger models). Check under Apple menu → <em>About This Mac</em>.</li>
-        <li><strong>An NVIDIA DGX Spark</strong> (128 GB), the machine Cedar is built on.</li>
-        <li><strong>A PC with an AMD Ryzen AI Max</strong> ("Strix Halo", for example the Framework Desktop) with 64 or 128 GB.</li>
-        <li><strong>A PC with an NVIDIA or AMD graphics card with 16 GB or more</strong> of video memory (24 GB+ is better).</li>
+        <li>${tr('install.hw.mac')}</li>
+        <li>${tr('install.hw.spark')}</li>
+        <li>${tr('install.hw.ryzen')}</li>
+        <li>${tr('install.hw.gpu')}</li>
       </ul>
       ${s.os === 'windows' ? code('# your graphics card and its memory\nGet-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM\n# total memory\n(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB', 'PowerShell')
         : s.os === 'linux' ? code('free -h                 # memory\nnvidia-smi              # NVIDIA GPU and its memory, if any\nrocm-smi --showmeminfo vram   # AMD GPU, if any', 'Terminal')
         : code("system_profiler SPHardwareDataType | grep -E 'Chip|Memory'", 'Terminal')}
-      <p class="note">The <a href="models.html">model guide</a> shows which models fit each of these.</p>
-      <p>One of those? Choose <strong>Yes</strong> above. A laptop with 8 or 16 GB can run a small model, but it will be slow and miss steps; choose <strong>No</strong> and use a token provider instead. You can switch later, per conversation.</p>`, 'optional');
+      <p class="note">${tr('install.hw.guide')}</p>
+      <p>${tr('install.hw.outro', { yes: esc(tr('install.opt.yes')), no: esc(tr('install.opt.no')) })}</p>`, 'optional');
   }
 
   function providerStep(s, inSetup) {
     if (!s.provider) {
-      return step('Pick a token provider', `${WHAT_IS_A_PROVIDER}<p>Choose one above. <a href="https://www.doubleword.ai">Doubleword</a> and <a href="https://www.baseten.co">Baseten</a> both serve open models like DeepSeek, Qwen, GLM and gpt-oss over an OpenAI-compatible API, which is all Cedar needs.</p>`, 'optional');
+      return step(tr('install.provider.pickTitle'), `${WHAT_IS_A_PROVIDER}<p>${tr('install.provider.pickBody')}</p>`, 'optional');
     }
     const p = PROVIDERS[s.provider];
-    const keyLink = p.keys ? `<p>${btn(p.keys, `Get a ${p.name} API key`)}</p>` : '';
+    const keyLink = p.keys ? `<p>${btn(p.keys, tr('install.provider.getKey', { name: p.name }))}</p>` : '';
     const check = code(`# check the key, and see the model names you can use\ncurl -s ${p.addr}/models -H "Authorization: Bearer <your API key>"`, s.os === 'windows' ? 'PowerShell' : 'Terminal')
       .replace('curl -s', s.os === 'windows' ? 'curl.exe -s' : 'curl -s');
     const where = s.os === 'linux'
-      ? `<p>In a later step you'll add it in the chat's <strong>Settings → Server</strong>: address <code>${esc(p.addr)}</code>, your API key, then <strong>List models</strong>.</p>`
-      : `<p>In Cedar's setup window, in the <strong>Model server</strong> step, type the address <code>${esc(p.addr)}</code>, paste the key into <strong>API key</strong>, click <strong>List models</strong> and choose one.</p>`;
-    return step(`Get a key from ${p.name}`, `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
-      <ol><li>Copy the key somewhere safe; it's shown once.</li><li>Check it works and see which models you can use:${check}</li></ol>
+      ? `<p>${tr('install.provider.whereLinux', { address: esc(p.addr) })}</p>`
+      : `<p>${tr('install.provider.whereSetup', { address: esc(p.addr) })}</p>`;
+    return step(tr('install.provider.title', { name: p.name }), `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
+      <ol><li>${tr('install.provider.keepKey')}</li><li>${tr('install.provider.checkKey')}${check}</li></ol>
       ${where}
-      <p class="note">Pick a model that supports tool calling; a large one (DeepSeek, GLM, Kimi, Qwen) does best, and the <a href="models.html?where=factory">model guide</a> suggests some. Cedar keeps the key encrypted and never puts it inside a sealed box.${p.docs ? ` More in <a href="${p.docs}">${p.name}'s docs</a>.` : ''}</p>`);
+      <p class="note">${tr('install.provider.note')}${p.docs ? tr('install.provider.docs', { url: p.docs, name: p.name }) : ''}</p>`);
   }
 
   function ollamaStep(s, shell, inSetup, toolsNote) {
     const install = {
-      mac: `<p>${btn('https://ollama.com/download/mac', 'Download Ollama for Mac')}</p><p>Or with Homebrew: <code>brew install ollama</code>. Open the app once; it runs in the menu bar.</p>`,
-      windows: `<p>${btn('https://ollama.com/download/windows', 'Download Ollama for Windows')}</p><p>Run the installer. Ollama starts in the tray. On an AMD Ryzen AI Max or Radeon card it uses the GPU on its own.</p>`,
+      mac: `<p>${btn('https://ollama.com/download/mac', tr('install.ollama.downloadMac'))}</p><p>${tr('install.ollama.mac')}</p>`,
+      windows: `<p>${btn('https://ollama.com/download/windows', tr('install.ollama.downloadWindows'))}</p><p>${tr('install.ollama.windows')}</p>`,
       linux: code('curl -fsSL https://ollama.com/install.sh | sh\nsystemctl status ollama --no-pager   # it runs as a service', 'Terminal'),
     }[s.os];
     const ctx = s.os === 'windows'
@@ -436,144 +440,146 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       : s.os === 'linux'
         ? code('sudo systemctl edit ollama\n# add these two lines, save, then:\n#   [Service]\n#   Environment="OLLAMA_CONTEXT_LENGTH=32768"\nsudo systemctl restart ollama', 'Terminal')
         : code('launchctl setenv OLLAMA_CONTEXT_LENGTH 32768\n# then quit Ollama from the menu bar and open it again', 'Terminal');
-    return step('Install Ollama and a model', `${install}
-      <p>Pull a model that fits your memory:</p>
+    return step(tr('install.ollama.title'), `${install}
+      <p>${tr('install.ollama.pull')}</p>
       ${code('# 16-24 GB\nollama pull qwen3:8b\n# 32-48 GB\nollama pull qwen3:30b\n# 64 GB and more: Spark, Ryzen AI Max, a big Mac\nollama pull gpt-oss:120b\n\nollama run qwen3:8b "say hi"    # a quick test', shell)}
-      <p>Cedar's tasks need a long memory of the conversation, longer than Ollama's default. Raise it once:</p>${ctx}
-      <p>Cedar reaches Ollama at <code>${SERVERS.ollama.addr}</code>.</p>${inSetup}${toolsNote}`);
+      <p>${tr('install.ollama.context')}</p>${ctx}
+      <p>${tr('install.reaches', { name: 'Ollama', address: SERVERS.ollama.addr })}</p>${inSetup}${toolsNote}`);
   }
 
   function lmStudioStep(s, inSetup, toolsNote) {
-    const note = { mac: 'On Apple silicon, prefer <strong>MLX</strong> models: they run fastest.', windows: 'On an AMD Ryzen AI Max or Radeon card, LM Studio uses the Vulkan or ROCm runtime; check it under <em>Settings → Runtime</em>.', linux: 'On Linux it ships as an AppImage; make it executable and run it.' }[s.os];
-    return step('Install LM Studio and start its server', `<p>${btn('https://lmstudio.ai/download', 'Download LM Studio')}</p>
+    const note = tr({ mac: 'install.lms.mac', windows: 'install.lms.windows', linux: 'install.lms.linux' }[s.os]);
+    return step(tr('install.lms.title'), `<p>${btn('https://lmstudio.ai/download', tr('install.lms.download'))}</p>
       <ol>
-        <li>Open LM Studio and go to <strong>Discover</strong>. Search for a model with tool use (the hammer icon), for example <strong>Qwen3 30B A3B</strong> on 32 GB, or <strong>gpt-oss 120B</strong> on 64 GB and more, and download it. ${note}</li>
-        <li>Open the <strong>Developer</strong> tab, load the model and set its <strong>context length</strong> to at least 32768.</li>
-        <li>Switch <strong>Status: Running</strong> on. Or from a terminal:${code('lms server start\nlms ls          # the models you have', s.os === 'windows' ? 'PowerShell' : 'Terminal')}</li>
+        <li>${tr('install.lms.discover', { note })}</li>
+        <li>${tr('install.lms.developer')}</li>
+        <li>${tr('install.lms.running')}${code('lms server start\nlms ls          # the models you have', s.os === 'windows' ? 'PowerShell' : 'Terminal')}</li>
       </ol>
-      <p>Cedar reaches LM Studio at <code>${SERVERS.lmstudio.addr}</code>.</p>${inSetup}${toolsNote}`);
+      <p>${tr('install.reaches', { name: 'LM Studio', address: SERVERS.lmstudio.addr })}</p>${inSetup}${toolsNote}`);
   }
 
   function vllmStep(s, inSetup) {
     const remote = s.os !== 'linux'
-      ? explain('<b>vLLM runs on Linux</b> with an NVIDIA or AMD GPU, so it lives on a separate box (a DGX Spark, a GPU server) and Cedar on this computer talks to it over your network. Run the commands below on that box, with <code>--host 0.0.0.0</code> so it listens on the network, and use <code>http://&lt;box&gt;:8000/v1</code> as the address. Tailscale is the easy way to reach it safely from anywhere.')
+      ? explain(tr('install.vllm.remote'))
       : '';
-    return step('Serve a model with vLLM', `${remote}
-      <p>Start vLLM with <strong>tool calling on</strong>, or the model's tool calls come back as plain text and Cedar can't act. The flags depend on the model; for DeepSeek V4, the model Cedar is built around:</p>
-      <details open><summary>NVIDIA GPU, DGX Spark</summary>
-      ${code(`docker run --gpus all --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  vllm/vllm-openai:latest \\\n  deepseek-ai/DeepSeek-V4-Flash --trust-remote-code \\\n  --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \\\n  --enable-auto-tool-choice --reasoning-parser deepseek_v4${s.os !== 'linux' ? ' \\\n  --host 0.0.0.0' : ''}`, 'GPU box')}
-      <p class="note">On a DGX Spark, NVIDIA's <a href="https://build.nvidia.com/spark/vllm">vLLM playbook</a> has the container built for its GB10 chip.</p></details>
-      <details><summary>AMD GPU (Instinct, Radeon, Ryzen AI Max)</summary>
-      ${code(`docker run --device=/dev/kfd --device=/dev/dri --group-add video \\\n  --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  rocm/vllm:latest \\\n  vllm serve <model> --enable-auto-tool-choice --tool-call-parser <parser>${s.os !== 'linux' ? ' --host 0.0.0.0' : ''}`, 'GPU box')}
-      <p class="note">AMD's <a href="https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/inference/vllm.html">vLLM guide</a> picks the right image for your GPU and ROCm version.</p></details>
-      <details><summary>Another model</summary><p>Any model with a tool-call parser works; the <a href="https://docs.vllm.ai/en/latest/features/tool_calling.html">vLLM tool calling docs</a> list them. For example <code>openai/gpt-oss-120b</code> with <code>--tool-call-parser openai</code>, or Qwen3 with <code>--tool-call-parser hermes</code>. The <a href="https://recipes.vllm.ai">vLLM recipes</a> have the flags per model.</p></details>
-      <p>Then check which model name it serves:</p>
-      ${code(`curl -s localhost:8000/v1/models | jq -r '.data[].id'`, 'GPU box')}
-      <p class="note">The <a href="${LINUX}#2-make-sure-vllm-is-ready-for-cedar">Linux guide</a> has a one-line tool-calling test.</p>${inSetup}`);
+    return step(tr('install.vllm.title'), `${remote}
+      <p>${tr('install.vllm.intro')}</p>
+      <details open><summary>${tr('install.vllm.nvidia')}</summary>
+      ${code(`docker run --gpus all --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  vllm/vllm-openai:latest \\\n  deepseek-ai/DeepSeek-V4-Flash --trust-remote-code \\\n  --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 \\\n  --enable-auto-tool-choice --reasoning-parser deepseek_v4${s.os !== 'linux' ? ' \\\n  --host 0.0.0.0' : ''}`, tr('install.shell.gpuBox'))}
+      <p class="note">${tr('install.vllm.sparkNote')}</p></details>
+      <details><summary>${tr('install.vllm.amd')}</summary>
+      ${code(`docker run --device=/dev/kfd --device=/dev/dri --group-add video \\\n  --ipc=host -p 8000:8000 \\\n  -v ~/.cache/huggingface:/root/.cache/huggingface \\\n  rocm/vllm:latest \\\n  vllm serve <model> --enable-auto-tool-choice --tool-call-parser <parser>${s.os !== 'linux' ? ' --host 0.0.0.0' : ''}`, tr('install.shell.gpuBox'))}
+      <p class="note">${tr('install.vllm.amdNote')}</p></details>
+      <details><summary>${tr('install.vllm.other')}</summary><p>${tr('install.vllm.otherBody')}</p></details>
+      <p>${tr('install.vllm.check')}</p>
+      ${code(`curl -s localhost:8000/v1/models | jq -r '.data[].id'`, tr('install.shell.gpuBox'))}
+      <p class="note">${tr('install.vllm.test', { url: LINUX + '#2-make-sure-vllm-is-ready-for-cedar' })}</p>${inSetup}`);
   }
 
   function phoneStep(s) {
     const wanted = s.mobile === 'yes';
     const kind = !wanted ? 'optional' : s.tailscale === 'yes' ? 'ok' : '';
-    const ask = !wanted ? '<p class="note">Answer <em>Do you want to reach your assistant from your phone?</em> above to tailor this step. Skip it if you won\'t use a phone.</p>'
-      : !s.tailscale ? '<p class="note">Answer <em>Do you have Tailscale installed?</em> above to tailor this step.</p>' : '';
+    const ask = !wanted ? `<p class="note">${tr('install.phone.answerMobile', { question: esc(tr('install.q.mobile')) })}</p>`
+      : !s.tailscale ? `<p class="note">${tr('install.phone.answerTailscale', { question: esc(tr('install.q.tailscale')) })}</p>` : '';
     const intro = (s.tailscale === 'unknown' ? WHAT_IS_TAILSCALE : '') + ask;
-    const menu = s.os === 'mac' ? 'menu bar' : 'tray';
-    const byCedar = `<p>In Cedar, choose <strong>Phone Access…</strong> from the ${menu} menu and click <strong>Set up Tailscale for me</strong>. Cedar downloads Tailscale, checks that it is signed by Tailscale, installs it (${s.os === 'mac' ? 'macOS asks once for an administrator’s password' : 'Windows asks once for permission'}) and opens it. Log in from Tailscale’s icon in the ${menu}${s.os === 'mac' ? ', and allow its VPN configuration when macOS asks' : ''}.</p>`;
+    const byCedar = `<p>${tr(s.os === 'mac' ? 'install.phone.byCedarMac' : 'install.phone.byCedarWindows')}</p>`;
     const install = {
       mac: appSetsUp(s)
-        ? byCedar + '<p class="note">Rather do it yourself? Get it from <a href="https://tailscale.com/download/mac">tailscale.com</a> or the Mac App Store, open it and log in.</p>'
-        : '<p>Install Tailscale from <a href="https://tailscale.com/download/mac">tailscale.com</a> or the Mac App Store, open it and log in.</p>',
+        ? byCedar + `<p class="note">${tr('install.phone.yourselfMac')}</p>`
+        : `<p>${tr('install.phone.installMac')}</p>`,
       windows: appSetsUp(s)
-        ? byCedar + '<p class="note">Rather do it yourself? Get it from <a href="https://tailscale.com/download/windows">tailscale.com</a>, open it and log in.</p>'
-        : '<p>Install Tailscale from <a href="https://tailscale.com/download/windows">tailscale.com</a>, open it and log in.</p>',
+        ? byCedar + `<p class="note">${tr('install.phone.yourselfWindows')}</p>`
+        : `<p>${tr('install.phone.installWindows')}</p>`,
       linux: code('curl -fsSL https://tailscale.com/install.sh | sh\nsudo tailscale up', 'Terminal'),
     }[s.os];
-    const dns = '<li>In the Tailscale <a href="https://login.tailscale.com/admin/dns">admin console\'s DNS page</a>, turn on <strong>MagicDNS</strong> and <strong>HTTPS Certificates</strong>.</li>';
+    const dns = `<li>${tr('install.phone.dns')}</li>`;
     const app = {
       iphone: sideloads(s)
-        ? 'Install Tailscale from the App Store on your iPhone and log in to the same account. Cedar itself you installed with SideStore in the step above.'
-        : `Install Tailscale from the App Store on your iPhone and log in to the same account. Then get Cedar through the <a href="${TESTFLIGHT}">TestFlight invite</a>${s.ios ? '' : ', or install it privately with SideStore (choose <em>Privately</em> above)'}.`,
-      android: `Install Tailscale from Google Play on your Android phone and log in to the same account. Then install the <a href="${release.apk || RELEASES}">Cedar APK</a> (allow installs from your browser when asked).`,
-    }[wanted && s.phone] || `Install Tailscale on the phone and log in to the same account. Then get Cedar: <a href="${TESTFLIGHT}">TestFlight invite</a> or the <a href="${release.ipa || RELEASES}">.ipa</a> for iPhone, or the <a href="${release.apk || RELEASES}">Android APK</a>.`;
+        ? tr('install.phone.iphoneSideStore')
+        : tr(s.ios ? 'install.phone.iphone' : 'install.phone.iphoneEither', { testflight: TESTFLIGHT, privately: esc(tr('install.opt.privately')) }),
+      android: tr('install.phone.android', { apk: release.apk || RELEASES }),
+    }[wanted && s.phone] || tr('install.phone.any', { testflight: TESTFLIGHT, ipa: release.ipa || RELEASES, apk: release.apk || RELEASES });
     const phone = `<li>${app}</li>`;
     const share = s.os === 'linux'
-      ? `<li>Share the chat on your tailnet and tell it its address:${code('sudo tailscale serve --bg --https=443 http://127.0.0.1:3000\nURL=https://$(tailscale status --json | jq -r \'.Self.DNSName | rtrimstr(".")\')\necho "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env\nsudo systemctl restart cedar-chat', 'Terminal')}</li>
-         <li>In the chat, open <strong>Settings → Phone</strong> and scan the QR code with the Cedar app (Settings → <strong>Scan QR Code</strong>).</li>`
-      : `<li>In Cedar, choose <strong>Phone Access…</strong> from the ${s.os === 'mac' ? 'menu bar' : 'tray'} menu and tick <strong>Share with the phone apps over Tailscale</strong>. Cedar restarts once.</li>
-         <li>Click <strong>Show QR code</strong>, then in the Cedar app tap Settings → <strong>Scan QR Code</strong>. Done.</li>`;
-    const title = { iphone: 'Pair your iPhone', android: 'Pair your Android phone' }[wanted && s.phone] || 'Pair your phone';
-    return step(title, `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">Only your own devices on your tailnet can reach Cedar. More in the <a href="${s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad'}">phone guide</a>.</p>`, kind, wanted ? '' : 'Optional');
+      ? `<li>${tr('install.phone.shareLinux')}${code('sudo tailscale serve --bg --https=443 http://127.0.0.1:3000\nURL=https://$(tailscale status --json | jq -r \'.Self.DNSName | rtrimstr(".")\')\necho "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env\nsudo systemctl restart cedar-chat', 'Terminal')}</li>
+         <li>${tr('install.phone.scanLinux')}</li>`
+      : `<li>${tr(s.os === 'mac' ? 'install.phone.shareMac' : 'install.phone.shareWindows')}</li>
+         <li>${tr('install.phone.showQr')}</li>`;
+    const title = tr({ iphone: 'install.phone.titleIphone', android: 'install.phone.titleAndroid' }[wanted && s.phone] || 'install.phone.title');
+    return step(title, `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">${tr('install.phone.note', { url: s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad' })}</p>`, kind, wanted ? '' : tr('install.tag.optional'));
   }
 
   // The iPhone app without TestFlight: SideStore signs it on the phone with the user's own Apple ID.
   const sideloads = (s) => s.mobile === 'yes' && s.phone === 'iphone' && s.ios === 'sidestore';
 
   function sideStoreStep(s) {
-    return step('Install Cedar on your iPhone with SideStore', `<p>Private and without an invite: you install the app yourself, and it never goes through TestFlight or asks for your email address. <a href="https://sidestore.io">SideStore</a> is a free, open source app store that signs Cedar on your iPhone with your own Apple ID; a free one is enough.</p>
+    return step(tr('install.side.title'), `<p>${tr('install.side.intro')}</p>
       <ol>
-        <li>Install SideStore once, following the <a href="https://sidestore.io">guide on sidestore.io</a>. It takes a computer for the first install only.</li>
-        <li>On the iPhone, add Cedar's source to SideStore: tap the button below, or in SideStore go to <strong>Sources → +</strong> and paste the address.${code(SOURCE)}
-          <p>${btn(ADD_SOURCE, 'Add to SideStore')}</p></li>
-        <li>In the source, tap <strong>Cedar</strong>, then <strong>Free</strong> to install it. SideStore offers each new release as an update.</li>
+        <li>${tr('install.side.once')}</li>
+        <li>${tr('install.side.source')}${code(SOURCE)}
+          <p>${btn(ADD_SOURCE, tr('install.side.add'))}</p></li>
+        <li>${tr('install.side.free')}</li>
       </ol>
-      <p class="note">Rather install the file yourself? Download <a href="${release.ipa || RELEASES}">the .ipa</a> on the iPhone and open it with SideStore (<strong>My Apps → +</strong>).</p>
-      ${explain('<b>What is different?</b> The app is the same, with one exception: no push notifications, since an app signed with your own Apple ID can\'t have them. With a free Apple ID the app must be refreshed every 7 days; SideStore does it in the background or when you tap <strong>Refresh</strong>. It needs iOS 17 or newer.')}`);
+      <p class="note">${tr('install.side.ipa', { ipa: release.ipa || RELEASES })}</p>
+      ${explain(tr('install.side.different'))}`);
   }
 
   // The Mac and Windows apps update themselves (desktop/README.md, "Updates"); a self-built one doesn't.
-  const UPDATES_NOTE = '<p class="note">Cedar keeps itself up to date: when a new version is out, a banner in the app offers to install it.</p>';
+  const UPDATES_NOTE = `<p class="note">${tr('install.updatesNote')}</p>`;
+
+  // The setup window's three checks (Mac and Windows), as the app names them.
+  const checks = (s) => `<ul><li>${tr('install.check.docker')}</li><li>${tr('install.check.image')}</li><li>${tr('install.check.model', { choice: modelChoice(s) })}</li></ul>`;
 
   function macSteps(s) {
     const steps = [];
     const cedarSetsUpDocker = s.docker !== 'yes' && appSetsUp(s);
     if (s.docker === 'yes') {
-      const starts = appSetsUp(s) ? '<p class="note">If Docker Desktop, OrbStack or Rancher Desktop is installed but not running, Cedar starts it for you.</p>' : '';
-      steps.push(step('Make sure Docker is running', `<p>Docker Desktop, OrbStack, Colima and Rancher Desktop all work. Start it, then check it answers:</p>${code("docker info --format '{{.ServerVersion}}'   # prints a version number", 'Terminal')}${starts}`, 'ok'));
+      const starts = appSetsUp(s) ? `<p class="note">${tr('install.mac.dockerStarts')}</p>` : '';
+      steps.push(step(tr('install.docker.runningTitle'), `<p>${tr('install.mac.dockerRunning')}</p>${code("docker info --format '{{.ServerVersion}}'   # prints a version number", 'Terminal')}${starts}`, 'ok'));
     } else if (!cedarSetsUpDocker) {
-      steps.push(step('Install Docker', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p><strong>Docker Desktop</strong> is free for personal use and the most common choice. <strong>OrbStack</strong> is a lighter alternative for Macs.</p>
-        <p>${btn('https://www.docker.com/products/docker-desktop/', 'Get Docker Desktop')}${btn('https://orbstack.dev', 'Or OrbStack', true)}</p>
-        <p>Or with Homebrew:</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}
-        <p>Open it once so it finishes setting up, and leave it running.</p>`));
+      steps.push(step(tr('install.mac.dockerTitle'), `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>${tr('install.mac.dockerIntro')}</p>
+        <p>${btn('https://www.docker.com/products/docker-desktop/', tr('install.mac.getDocker'))}${btn('https://orbstack.dev', tr('install.mac.orOrbStack'), true)}</p>
+        <p>${tr('install.mac.homebrew')}</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}
+        <p>${tr('install.mac.openOnce')}</p>`));
     }
     steps.push(modelStep(s));
     if (s.arch === 'x64') {
-      steps.push(step('Build Cedar for your Intel Mac', `<p>Releases are built for Apple silicon only, so on an Intel Mac you build the app yourself. It needs Xcode's command line tools and Rust; the <a href="${DESKTOP}#on-a-mac">Mac build guide</a> has the commands.</p>${btn(DESKTOP + '#on-a-mac', 'Mac build guide')}`));
+      steps.push(step(tr('install.mac.intelTitle'), `<p>${tr('install.mac.intelBody', { url: DESKTOP + '#on-a-mac' })}</p>${btn(DESKTOP + '#on-a-mac', tr('install.mac.buildGuide'))}`));
     } else {
-      steps.push(step('Download Cedar for Mac', `<p>${btn(release.dmg || RELEASES, 'Download for Mac')}</p><p>Open the <code>.dmg</code> and drag Cedar to Applications. It's signed and notarized, so it opens without warnings.</p>`));
+      steps.push(step(tr('install.mac.downloadTitle'), `<p>${btn(release.dmg || RELEASES, tr('install.dl.mac'))}</p><p>${tr('install.mac.dmg')}</p>`));
     }
     if (cedarSetsUpDocker) {
       // Cedar's own setup window installs Docker Desktop, so Cedar comes first here.
-      steps.push(step('Let Cedar set up Docker for you', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>Open Cedar from Applications; a tree appears in your menu bar and the setup window opens. In its Docker step, click <strong>Set up Docker for me</strong>. Cedar:</p>
-        <ol><li>checks that your Mac can run Docker,</li><li>downloads Docker Desktop for your Mac’s chip (about 600 MB),</li><li>checks that it is signed by Docker and installs it into Applications, asking once for an administrator’s password,</li><li>starts it and carries on. No restart needed.</li></ol>
-        <p class="note">Docker Desktop is free for personal use, education and small businesses. Rather do it by hand, or prefer OrbStack?</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}`));
+      steps.push(step(tr('install.docker.cedarTitle'), `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>${tr('install.mac.cedarDocker')}</p>
+        <ol><li>${tr('install.mac.cedarDocker1')}</li><li>${tr('install.mac.cedarDocker2')}</li><li>${tr('install.mac.cedarDocker3')}</li><li>${tr('install.mac.cedarDocker4')}</li></ol>
+        <p class="note">${tr('install.mac.cedarDockerNote')}</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}`));
     }
-    steps.push(step(cedarSetsUpDocker ? 'Finish the setup' : 'Open Cedar and follow the setup', `<p>${cedarSetsUpDocker ? 'The setup window shows' : 'A tree appears in your menu bar and the setup window opens with'} three checks:</p>
-      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
-      <p>The window turns into the chat. Give it a task.</p>${s.arch === 'x64' ? '' : UPDATES_NOTE}`));
+    steps.push(step(tr(cedarSetsUpDocker ? 'install.finish.title' : 'install.mac.openTitle'), `<p>${tr(cedarSetsUpDocker ? 'install.mac.checksShown' : 'install.mac.checksOpen')}</p>
+      ${checks(s)}
+      <p>${tr('install.finish.chat')}</p>${s.arch === 'x64' ? '' : UPDATES_NOTE}`));
     return steps;
   }
 
   function windowsSteps(s) {
     const steps = [];
-    const armNote = s.arch === 'arm64' ? '<p class="note">Releases are built for x64; Windows on Arm runs them emulated.</p>' : '';
-    const installCedar = step('Download and install Cedar for Windows', `<p>${btn(release.msi || RELEASES, 'Download for Windows')}</p><p>Run the <code>.msi</code> (it needs administrator rights once). It isn't code-signed yet, so Windows warns the first time: choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>${armNote}`);
+    const armNote = s.arch === 'arm64' ? `<p class="note">${tr('install.win.armNote')}</p>` : '';
+    const installCedar = step(tr('install.win.installTitle'), `<p>${btn(release.msi || RELEASES, tr('install.dl.windows'))}</p><p>${tr('install.win.msi')}</p>${armNote}`);
 
     if (s.docker === 'yes') {
-      steps.push(step('Make sure Docker is running', `<p>Docker Desktop (with its default WSL 2 backend) or Rancher Desktop both work. Start it, then check it answers:</p>${code("docker info --format '{{.ServerVersion}}'", 'PowerShell')}<p class="note">If Docker Desktop is installed but not running, Cedar starts it for you.</p>`, 'ok'));
+      steps.push(step(tr('install.docker.runningTitle'), `<p>${tr('install.win.dockerRunning')}</p>${code("docker info --format '{{.ServerVersion}}'", 'PowerShell')}<p class="note">${tr('install.win.dockerStarts')}</p>`, 'ok'));
       steps.push(modelStep(s));
       steps.push(installCedar);
     } else {
       // Cedar's own setup window installs WSL 2 and Docker Desktop, so Cedar comes first here.
       steps.push(modelStep(s));
       steps.push(installCedar);
-      steps.push(step('Let Cedar set up Docker for you', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>Open Cedar from the Start Menu. In the setup window's Docker step, click <strong>Set up Docker for me</strong>. Cedar:</p>
-        <ol><li>checks your PC (Windows 10 version 2004 or newer, virtualization on),</li><li>downloads Docker Desktop (about 600 MB),</li><li>turns on WSL 2 and installs Docker Desktop, asking for administrator rights once,</li><li>asks you to restart; after you sign in again it picks up where it left off.</li></ol>
-        <p class="note">Docker Desktop is free for personal use, education and small businesses. Rather do it by hand? Run <code>wsl --install</code> as administrator, restart, then install <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>.</p>`));
+      steps.push(step(tr('install.docker.cedarTitle'), `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>${tr('install.win.cedarDocker')}</p>
+        <ol><li>${tr('install.win.cedarDocker1')}</li><li>${tr('install.win.cedarDocker2')}</li><li>${tr('install.win.cedarDocker3')}</li><li>${tr('install.win.cedarDocker4')}</li></ol>
+        <p class="note">${tr('install.win.cedarDockerNote')}</p>`));
     }
-    steps.push(step('Finish the setup', `<p>Cedar's icon sits in the tray (it may be under the <strong>^</strong> arrow) and the setup window shows three checks:</p>
-      <ul><li><strong>Docker</strong>: found and running.</li><li><strong>Sandbox image</strong>: Cedar downloads its sealed box once.</li><li><strong>Model server</strong>: ${modelChoice(s)}, click <strong>List models</strong>, choose one and <strong>Save</strong>.</li></ul>
-      <p>The window turns into the chat. Give it a task.</p>${UPDATES_NOTE}`));
+    steps.push(step(tr('install.finish.title'), `<p>${tr('install.win.checks')}</p>
+      ${checks(s)}
+      <p>${tr('install.finish.chat')}</p>${UPDATES_NOTE}`));
     return steps;
   }
 
@@ -582,30 +588,30 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const arch = s.arch === 'arm64' ? 'arm64' : 'x64';
     const V = release.ver;
     if (s.docker === 'yes') {
-      steps.push(step('Make sure Docker works for your user', `${code("docker info --format '{{.ServerVersion}}'   # prints a version number\n\n# \"permission denied\"? add yourself to the docker group, then log out and back in\nsudo usermod -aG docker \"$USER\"", 'Terminal')}`, 'ok'));
+      steps.push(step(tr('install.linux.dockerTitle'), `${code("docker info --format '{{.ServerVersion}}'   # prints a version number\n\n# \"permission denied\"? add yourself to the docker group, then log out and back in\nsudo usermod -aG docker \"$USER\"", 'Terminal')}`, 'ok'));
     } else {
-      steps.push(step('Install Docker Engine', `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>On a server you want <strong>Docker Engine</strong> (no desktop app needed). Docker's script sets it up on Ubuntu, Debian and most others:</p>
+      steps.push(step(tr('install.linux.engineTitle'), `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>${tr('install.linux.engine')}</p>
         ${code('curl -fsSL https://get.docker.com | sh\nsudo usermod -aG docker "$USER"   # then log out and back in\ndocker info --format \'{{.ServerVersion}}\'', 'Terminal')}
-        <p class="note">Prefer your distribution's packages? See <a href="https://docs.docker.com/engine/install/">Docker's install docs</a>.</p>`));
+        <p class="note">${tr('install.linux.engineNote')}</p>`));
     }
     steps.push(modelStep(s));
-    steps.push(step(`Install Cedar for Linux (${arch})`, `<p>Cedar is two programs: <code>cedar</code> runs the agents, <code>cedar-chat</code> serves the chat page. For Ubuntu 22.04, Debian 12 and newer.</p>
+    steps.push(step(tr('install.linux.installTitle', { arch }), `<p>${tr('install.linux.install')}</p>
       ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nU=https://github.com/hanneshapke/cedar/releases/download\ncurl -fLO $U/v$V/$F.tar.gz\ntar -xzf $F.tar.gz\nsudo install -m 0755 $F/cedar $F/cedar-chat /usr/local/bin/\n\n# the sealed box the agent's tools run in\ndocker pull ghcr.io/hanneshapke/cedar-sandbox:$V\ndocker tag ghcr.io/hanneshapke/cedar-sandbox:$V cedar-sandbox:latest`, 'Terminal')}
-      <p class="note">${arch === 'arm64' ? 'This is the one for a DGX Spark. ' : ''}Rather build from source? <code>scripts/cedar-stack.sh</code> in the repo builds everything and starts it in tmux.</p>`));
-    steps.push(step('Configure Cedar', `<p>Create a service user and the two settings files. Keep the two tokens it prints.</p>
+      <p class="note">${arch === 'arm64' ? tr('install.linux.spark') : ''}${tr('install.linux.fromSource')}</p>`));
+    steps.push(step(tr('install.linux.configTitle'), `<p>${tr('install.linux.config')}</p>
       ${code(`sudo useradd --system --create-home --home-dir /var/lib/cedar \\\n  --shell /usr/sbin/nologin --groups docker cedar\n\nCEDAR_KEY=$(openssl rand -hex 24)\nCHAT_TOKEN=$(openssl rand -hex 24)\nADMIN_TOKEN=$(openssl rand -hex 24)\nSECRET_KEY=$(openssl rand -hex 32)\nsudo install -d -m 0755 /etc/cedar\n\nsudo tee /etc/cedar/cedar.env >/dev/null <<EOF\nCEDAR_API_KEYS=$CEDAR_KEY\nCEDAR_ADMIN_KEYS=$CEDAR_KEY\nCEDAR_SECRET_KEY=$SECRET_KEY\nBIND_ADDR=127.0.0.1:8080\nDATABASE_URL=sqlite:///var/lib/cedar/cedar.db\nEOF\n\nsudo tee /etc/cedar/chat.env >/dev/null <<EOF\nCEDAR_URL=http://127.0.0.1:8080\nCEDAR_API_KEY=$CEDAR_KEY\nCHAT_BIND_ADDR=127.0.0.1:3000\nCHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db\nCHAT_ACCESS_TOKEN=$CHAT_TOKEN\nCHAT_ADMIN_TOKEN=$ADMIN_TOKEN\nEOF\n\nsudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env\necho "Chat access token: $CHAT_TOKEN"\necho "Admin token:       $ADMIN_TOKEN"`, 'Terminal')}
-      <p class="note">Every setting (web search, timeouts, how many runs at once) is in the <a href="${LINUX}#4-configure">Linux guide</a>.</p>`));
-    steps.push(step('Run it under systemd', `<p>So both programs start at boot and come back after a crash.</p>
-      <details><summary>Show the two service files</summary>
+      <p class="note">${tr('install.linux.configNote', { url: LINUX + '#4-configure' })}</p>`));
+    steps.push(step(tr('install.linux.systemdTitle'), `<p>${tr('install.linux.systemd')}</p>
+      <details><summary>${tr('install.linux.serviceFiles')}</summary>
       ${code(`sudo tee /etc/systemd/system/cedar.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar agent server\nAfter=network-online.target docker.service\nWants=network-online.target\nRequires=docker.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/cedar.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=30\n\n[Install]\nWantedBy=multi-user.target\nEOF\n\nsudo tee /etc/systemd/system/cedar-chat.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar chat UI\nAfter=network-online.target cedar.service\nWants=cedar.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/chat.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar-chat\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\nEOF`, 'Terminal')}
       </details>
       ${code('sudo systemctl daemon-reload\nsudo systemctl enable --now cedar cedar-chat\ncurl -s -o /dev/null -w \'%{http_code}\\n\' http://127.0.0.1:8080/readyz   # 200', 'Terminal')}`));
-    steps.push(step('Open the chat and add your model', `<p>On this machine, open <code>http://localhost:3000</code>. From a laptop, tunnel to it first:</p>
-      ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', 'Laptop')}
-      <p>Enter the <strong>chat access token</strong>. Then go to <strong>Settings → Server</strong>, unlock it with the <strong>admin token</strong>, add your model server (<code>${esc(modelAddress(s))}</code>${s.host === 'no' ? ' with your API key' : s.serve === 'vllm' ? ', or your GPU box\'s address' : ''}), click <strong>List models</strong>, choose one and save. Give it a task.</p>`));
-    steps.push(step('Turn on one-click updates', `<p>When a new release is out, the chat shows a banner. With Cedar's small updater set up, its <strong>Update</strong> button (with the admin token) downloads the release, checks it against the release's checksums, installs it, restarts both services, and goes back to the old version if Cedar doesn't come up.</p>
+    steps.push(step(tr('install.linux.chatTitle'), `<p>${tr('install.linux.chatOpen')}</p>
+      ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', tr('install.shell.laptop'))}
+      <p>${tr(s.host === 'no' ? 'install.linux.chatModelKey' : s.serve === 'vllm' ? 'install.linux.chatModelGpu' : 'install.linux.chatModel', { address: esc(modelAddress(s)) })}</p>`));
+    steps.push(step(tr('install.linux.updatesTitle'), `<p>${tr('install.linux.updates')}</p>
       ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nsudo install -m 0755 $F/cedar-update /usr/local/sbin/cedar-update\nsudo install -m 0644 $F/cedar-update.path $F/cedar-update.service /etc/systemd/system/\nsudo install -d -o cedar -g cedar -m 0750 /var/lib/cedar/update\necho "CHAT_UPDATE_DIR=/var/lib/cedar/update" | sudo tee -a /etc/cedar/chat.env\n\n# also pull the matching sealed box with each update\necho "CEDAR_UPDATE_PULL_IMAGE=1" | sudo tee /etc/cedar/update.env\n\nsudo systemctl daemon-reload\nsudo systemctl enable --now cedar-update.path\nsudo systemctl restart cedar-chat`, 'Terminal')}
-      <p class="note">Run it from the folder you unpacked Cedar in. <code>sudo cedar-update</code> does the same from a shell. More in the <a href="${LINUX}#updates">Linux guide</a>.</p>`, 'optional', 'Optional'));
+      <p class="note">${tr('install.linux.updatesNote', { url: LINUX + '#updates' })}</p>`, 'optional', tr('install.tag.optional')));
     return steps;
   }
 
@@ -624,15 +630,15 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const b = e.target.closest('[data-copy]');
     if (!b) return;
     const text = b.parentElement.querySelector('pre').innerText;
-    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
-    catch { b.textContent = 'Select & copy'; }
-    setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+    try { await navigator.clipboard.writeText(text); b.textContent = tr('install.copied'); }
+    catch { b.textContent = tr('install.copyFailed'); }
+    setTimeout(() => { b.textContent = tr('install.copy'); }, 1600);
   });
 
   document.getElementById('copy-link').addEventListener('click', async (e) => {
-    try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Link copied'; }
-    catch { e.target.textContent = 'Copy it from the address bar'; }
-    setTimeout(() => { e.target.textContent = 'Copy link'; }, 1600);
+    try { await navigator.clipboard.writeText(location.href); e.target.textContent = tr('install.share.copied'); }
+    catch { e.target.textContent = tr('install.share.copyFailed'); }
+    setTimeout(() => { e.target.textContent = tr('install.share.copy'); }, 1600);
   });
 
   document.getElementById('reset').addEventListener('click', () => {
