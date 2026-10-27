@@ -2,8 +2,9 @@ import Foundation
 import Observation
 
 /// A language the app offers, as a BCP 47 tag with its name in that language. The text comes in
-/// English, German and French; the region picks the formats (dates, numbers, currency) and tells
-/// the server which variant to write in. Swiss German also has its own text, with ss for ß.
+/// English, German, French and Spanish; the region picks the formats (dates, numbers, currency) and
+/// tells the server which variant to write in. Swiss German also has its own text, with ss for ß,
+/// and so does Spain's Spanish where its words differ (the Spanish text is Latin American).
 struct AppLanguage: Identifiable, Hashable, Sendable {
     let tag: String
     let name: String
@@ -21,10 +22,25 @@ struct AppLanguage: Identifiable, Hashable, Sendable {
         AppLanguage(tag: "fr-BE", name: "Français (Belgique)"),
         AppLanguage(tag: "fr-CH", name: "Français (Suisse)"),
         AppLanguage(tag: "fr-CA", name: "Français (Canada)"),
+        AppLanguage(tag: "es-ES", name: "Español (España)"),
+        AppLanguage(tag: "es-MX", name: "Español (México)"),
+        AppLanguage(tag: "es-419", name: "Español (Latinoamérica)"),
+        AppLanguage(tag: "es-US", name: "Español (Estados Unidos)"),
     ]
 
     /// The languages the text is translated into.
-    static let languageCodes: Set<String> = ["en", "de", "fr"]
+    static let languageCodes: Set<String> = ["en", "de", "fr", "es"]
+
+    /// The variant a language starts on when the device's region isn't offered (`de-LU` → `de-DE`):
+    /// its first one in `all`, unless named here. Spanish from elsewhere (`es-AR`) is Latin American.
+    private static let mainVariants: [String: String] = ["es": "es-419"]
+
+    /// The variant to offer for language `code`, if the text is translated into it.
+    static func mainVariant(of code: String) -> AppLanguage? {
+        guard languageCodes.contains(code) else { return nil }
+        if let tag = mainVariants[code], let main = offered(tag) { return main }
+        return all.first { languageCode(of: $0.tag) == code }
+    }
 
     /// `tag` the BCP 47 way, `de-CH` for `de_ch`: the language lowercased and the region, if any,
     /// uppercased. Scripts and extensions are dropped (`en-Latn-GB-u-ca-gregory` → `en-GB`).
@@ -63,14 +79,11 @@ struct AppLanguage: Identifiable, Hashable, Sendable {
 
     /// The language to start the picker on for the device's languages, most preferred first: the
     /// first one offered as it is, else the first one translated, in its main variant (`de-LU` →
-    /// `de-DE`); English when none is.
+    /// `de-DE`, `es-AR` → `es-419`); English when none is.
     static func suggested(for preferred: [String]) -> AppLanguage {
         for tag in preferred {
             if let exact = offered(tag) { return exact }
-            let code = languageCode(of: tag)
-            if languageCodes.contains(code), let main = all.first(where: { languageCode(of: $0.tag) == code }) {
-                return main
-            }
+            if let main = mainVariant(of: languageCode(of: tag)) { return main }
         }
         return all[0]
     }
@@ -93,7 +106,7 @@ struct AppLanguage: Identifiable, Hashable, Sendable {
     }
 
     /// Where text for `tag` is looked up, most specific first: `de-CH`, `de`, then English, the
-    /// source. Only the variants with text of their own (`de-CH`) have a translation to find.
+    /// source. Only the variants with text of their own (`de-CH`, `es-ES`) have a translation to find.
     static func lookupChain(for tag: String) -> [String] {
         guard let normalized = canonical(tag) else { return ["en"] }
         var chain = [normalized]

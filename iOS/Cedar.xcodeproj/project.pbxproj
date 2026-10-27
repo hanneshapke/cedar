@@ -151,6 +151,8 @@
 				Base,
 				de,
 				"de-CH",
+				es,
+				"es-ES",
 				fr,
 			);
 			mainGroup = CE0000000000000000000002;
