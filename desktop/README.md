@@ -333,7 +333,8 @@ version; set them to use an image you built yourself (`docker build -t cedar-san
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,
-`fr-FR`, `fr-BE`, `fr-CH` or `fr-CA`, empty until one is picked. The setup page, the tray menu and
+`fr-FR`, `fr-BE`, `fr-CH`, `fr-CA`, `es-ES`, `es-MX`, `es-419` or `es-US`, empty until one is
+picked. The setup page, the tray menu and
 the app's own messages (setup steps, its own errors, the password and permission prompts) follow
 it; what Docker, Tailscale and the installers print stays as they print it. cedar gets it as
 `DEFAULT_LOCALE` (for scheduled agents and their notifications) the next time it starts, unless

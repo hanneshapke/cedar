@@ -486,6 +486,8 @@ mod tests {
         assert_eq!(last(&runner(cfg.clone()).cedar_env(), "DEFAULT_LOCALE"), None);
         cfg.locale = "de-CH".into();
         assert_eq!(last(&runner(cfg.clone()).cedar_env(), "DEFAULT_LOCALE").as_deref(), Some("de-CH"));
+        cfg.locale = "es-419".into();
+        assert_eq!(last(&runner(cfg.clone()).cedar_env(), "DEFAULT_LOCALE").as_deref(), Some("es-419"));
         cfg.cedar_env.insert("DEFAULT_LOCALE".into(), "fr-FR".into());
         assert_eq!(last(&runner(cfg).cedar_env(), "DEFAULT_LOCALE").as_deref(), Some("fr-FR"));
     }
