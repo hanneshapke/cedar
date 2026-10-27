@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, plan, interactive, callback_url, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, locale, callback_url, created_at, started_at, finished_at";
 
 /// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
 /// its run's final state.
@@ -77,6 +77,7 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         callback_url: r.try_get("callback_url")?,
         plan: PlanMode::parse(r.try_get("plan")?).unwrap_or_default(),
         interactive: r.try_get("interactive")?,
+        locale: r.try_get("locale")?,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
@@ -325,8 +326,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, locale, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -344,6 +345,7 @@ impl Store {
         .bind(&callback.1)
         .bind(new.plan.as_str())
         .bind(new.interactive)
+        .bind(&new.locale)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -1022,6 +1024,7 @@ mod tests {
             callback_secret: None,
             plan: PlanMode::Off,
             interactive: false,
+            locale: "en".into(),
         }
     }
 
@@ -1338,6 +1341,7 @@ mod tests {
             attachments: files.clone(),
             plan: PlanMode::Off,
             interactive: false,
+            locale: "en".into(),
             ..new_run("a")
         };
         let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();

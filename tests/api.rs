@@ -493,6 +493,7 @@ async fn invalid_requests_are_rejected_with_json_errors() {
         (json!({ "prompt": "x", "model": "gpt-4" }), "not registered"),
         (json!({ "prompt": "x", "reasoning": "max" }), "not offered"),
         (json!({ "prompt": "x", "bogus": 1 }), "bogus"),
+        (json!({ "prompt": "x", "locale": "de CH" }), "not a language tag"),
         (json!({ "nothing": "here" }), "prompt"),
         (json!({ "prompt": "x".repeat(100_001) }), "prompt is longer"),
         (
@@ -807,6 +808,50 @@ async fn defaults_and_clamps_are_applied() {
     let requests = app.llm.requests();
     assert!(requests.iter().any(|r| r["model"] == "small-model"
         && r["system"].as_str().unwrap().starts_with("be brief\n\n")));
+}
+
+#[tokio::test]
+async fn the_locale_reaches_the_model_and_continuations_keep_it() {
+    let app = TestApp::new(vec![
+        Step::Reply(text("a")),
+        Step::Reply(text("b")),
+        Step::Reply(text("c")),
+    ])
+    .await;
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["locale"], "en");
+    assert!(defaults["locales"].as_array().unwrap().contains(&json!("de-CH")));
+
+    // Without a locale nothing is added to the system prompt.
+    let plain = app.create_run(KEY_A, "x").await;
+    assert_eq!(plain["locale"], "en");
+    app.wait_status(KEY_A, &id_of(&plain), "completed").await;
+
+    let swiss = app
+        .create_run_with(KEY_A, json!({ "prompt": "Wie spät ist es?", "locale": "de_ch" }))
+        .await;
+    assert_eq!(swiss["locale"], "de-CH", "the tag is normalized");
+    app.wait_status(KEY_A, &id_of(&swiss), "completed").await;
+    let child = app
+        .create_run_with(KEY_A, json!({ "prompt": "und morgen?", "parent_id": id_of(&swiss) }))
+        .await;
+    assert_eq!(child["locale"], "de-CH", "a continuation keeps its parent's locale");
+    app.wait_status(KEY_A, &id_of(&child), "completed").await;
+
+    let requests = app.llm.requests();
+    let system = |i: usize| requests[i]["system"].as_str().unwrap().to_string();
+    assert!(!system(0).contains("language the user's message is written in"));
+    for i in [1, 2] {
+        let s = system(i);
+        assert!(s.contains("reply in German") && s.contains("CHF"), "{s}");
+        assert!(s.contains("language the user's message is written in"), "{s}");
+    }
+
+    // A language without translations is kept as English, which adds nothing.
+    let spanish = app
+        .create_run_with(KEY_A, json!({ "prompt": "x", "locale": "es-ES" }))
+        .await;
+    assert_eq!(spanish["locale"], "en");
 }
 
 // -- ownership, listing, deletion -------------------------------------------------------------
@@ -1674,6 +1719,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         callback_secret: None,
         plan: cedar::models::PlanMode::Off,
         interactive: false,
+        locale: "en".into(),
     };
     let running = store
         .insert_run_limited(&new("was running"), 10)

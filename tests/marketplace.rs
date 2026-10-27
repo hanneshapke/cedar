@@ -376,8 +376,12 @@ async fn a_community_tool_waits_for_approval_gets_its_secrets_and_brings_the_hea
     assert!(calls[0].network, "it declares a host");
     assert_eq!(
         calls[0].env,
-        [("GLUCO_TOKEN".to_string(), "tok-123".to_string())],
-        "only its own saved secret"
+        [
+            ("GLUCO_TOKEN".to_string(), "tok-123".to_string()),
+            ("CEDAR_LOCALE".to_string(), "en".to_string()),
+            ("CEDAR_LANGUAGE".to_string(), "en".to_string()),
+        ],
+        "only its own saved secret, and the run's locale"
     );
 
     // The system prompt carries the health rules and the community-tool warning.

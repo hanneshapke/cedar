@@ -85,6 +85,8 @@ pub struct Run {
     /// The client answers what the run asks while it goes: it waits for the plan to be agreed and
     /// for risky tool calls to be approved. Otherwise the plan is only shown and nothing waits.
     pub interactive: bool,
+    /// The user's language and region (a BCP 47 tag such as `de-CH`; see [`crate::locale`]).
+    pub locale: String,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -109,6 +111,7 @@ pub struct NewRun {
     pub callback_secret: Option<String>,
     pub plan: PlanMode,
     pub interactive: bool,
+    pub locale: String,
 }
 
 /// Whether a run makes a plan before it starts: always, never, or for prompts long enough to
@@ -363,4 +366,7 @@ pub struct CreateRunRequest {
     /// (`POST /v1/runs/{id}/plan`) and approve risky tool calls
     /// (`POST /v1/runs/{id}/approvals/{approval_id}`). Absent: false, and nothing waits.
     pub interactive: Option<bool>,
+    /// The user's language and region, a BCP 47 tag such as `de` or `fr-CH` (see
+    /// [`crate::locale`]). Absent: the parent's for a continuation, else `DEFAULT_LOCALE`.
+    pub locale: Option<String>,
 }

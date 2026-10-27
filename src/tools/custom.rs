@@ -121,6 +121,21 @@ pub struct Installed {
     pub files: std::collections::BTreeMap<String, String>,
     /// Unix milliseconds.
     pub installed_at: i64,
+    /// The listing's text in other languages, for Settings (see [`ListingText`]).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub translations: std::collections::BTreeMap<String, ListingText>,
+}
+
+/// A registry listing's text for people in one language (`translations` in its `listing.json`):
+/// the one-line summary and the descriptions of its secrets. It is only shown, never sent to the
+/// model, and it is not part of what an admin accepts, so fixing a translation asks for nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ListingText {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Secret name → description.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub secrets: std::collections::BTreeMap<String, String>,
 }
 
 /// One tool loaded from `TOOLS_DIR`.
@@ -534,12 +549,16 @@ impl Tool for PythonTool {
         changes::touch(ctx, &marker).await?;
         let timeout = self.timeout.unwrap_or(ctx.timeout);
         let staged = input.to_string();
+        // The locale is cedar's to set: `CEDAR_*` names are reserved, so no secret can take them.
+        let mut env = self.env.clone();
+        env.push(("CEDAR_LOCALE".into(), ctx.locale.clone()));
+        env.push(("CEDAR_LANGUAGE".into(), crate::locale::language(&ctx.locale).into()));
         let call = ToolRun {
             name: &self.name,
             dir: &self.dir,
             entry: &self.entry,
             input: staged.as_bytes(),
-            env: &self.env,
+            env: &env,
             network: !self.network.is_empty(),
         };
         let out = ctx.sandbox.run_tool(&call, timeout, ctx.max_output).await;

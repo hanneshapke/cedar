@@ -78,6 +78,8 @@ pub struct ToolContext {
     /// The run's model, for a tool that reasons over what it found (`search_products`). `None`
     /// when the model isn't registered any more, or outside a run.
     pub model: Option<Arc<ToolModel>>,
+    /// The run's locale (see [`crate::locale`]), which personal tools see as `CEDAR_LOCALE`.
+    pub locale: String,
 }
 
 /// The run's model as a tool may use it: one tool-free request at a time, with the tokens it

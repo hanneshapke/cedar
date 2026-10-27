@@ -51,7 +51,9 @@ async fn a_personal_tool_is_offered_and_runs_its_script_on_the_staged_input() {
         &[("TOOLS_DIR", dir.to_str().unwrap())],
     )
     .await;
-    let run = app.create_run(KEY_A, "count").await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "count", "locale": "fr-CH" }))
+        .await;
     let id = run["id"].as_str().unwrap();
     app.wait_status(KEY_A, id, "completed").await;
 
@@ -76,7 +78,14 @@ async fn a_personal_tool_is_offered_and_runs_its_script_on_the_staged_input() {
     assert_eq!(calls[0].dir, dir.join("word_count"));
     assert_eq!(calls[0].entry, "tool.py");
     assert_eq!(calls[0].input, json!({ "path": "notes.txt" }));
-    assert!(calls[0].env.is_empty());
+    // No secrets; only the run's locale, which cedar sets.
+    let env = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    };
+    assert_eq!(
+        calls[0].env,
+        env(&[("CEDAR_LOCALE", "fr-CH"), ("CEDAR_LANGUAGE", "fr")])
+    );
     assert!(!calls[0].network, "no hosts declared, no network");
 
     let requests = app.llm.requests();

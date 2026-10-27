@@ -520,6 +520,7 @@ async fn generate_pdf_renders_markdown_in_the_sandbox() {
         timeout: 60 * SECOND,
         max_output: 32_768,
         model: None,
+        locale: "en".into(),
     };
     let input = json!({
         "path": "out/it's a report.pdf",
@@ -569,6 +570,7 @@ fn tool_ctx(sb: &Arc<dyn Sandbox>) -> cedar::tools::ToolContext {
         timeout: 60 * SECOND,
         max_output: 32_768,
         model: None,
+        locale: "en".into(),
     }
 }
 

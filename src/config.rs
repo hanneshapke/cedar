@@ -228,6 +228,9 @@ pub struct Config {
     pub bind_addr: SocketAddr,
 
     pub default_system_prompt: String,
+    /// The locale of a run that doesn't name one (`DEFAULT_LOCALE`, `en` by default); see
+    /// [`crate::locale`].
+    pub default_locale: String,
     pub max_turns_cap: u32,
 
     pub max_concurrent_runs: usize,
@@ -484,6 +487,11 @@ impl Config {
 
             default_system_prompt: get("SYSTEM_PROMPT")
                 .unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.into()),
+            default_locale: match get("DEFAULT_LOCALE") {
+                None => "en".into(),
+                Some(v) => crate::locale::normalize(&v)
+                    .map_err(|e| anyhow!("invalid DEFAULT_LOCALE: {e}"))?,
+            },
             max_turns_cap: parse("MAX_TURNS_CAP", get("MAX_TURNS_CAP"), 25)?,
 
             max_concurrent_runs: parse("MAX_CONCURRENT_RUNS", get("MAX_CONCURRENT_RUNS"), 4)?,

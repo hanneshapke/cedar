@@ -15,8 +15,8 @@ pub const SYSTEM: &str = "You plan work for an AI agent before it starts. The ag
 /// The request that closes the conversation for the planning call.
 pub const INSTRUCTION: &str = "Break the latest request into 3 to 7 concrete steps the agent \
     will work through, in order. Each step is one short imperative line (at most 12 words) \
-    saying what will be done, e.g. \"Find 2025 market-share figures\". Reply with JSON only: \
-    {\"steps\": [\"...\", \"...\"]}";
+    saying what will be done, e.g. \"Find 2025 market-share figures\", written in the \
+    language of the request. Reply with JSON only: {\"steps\": [\"...\", \"...\"]}";
 
 /// Prompts with fewer words than this get no plan in `auto` mode: they are questions, not tasks.
 pub const AUTO_MIN_WORDS: usize = 15;
