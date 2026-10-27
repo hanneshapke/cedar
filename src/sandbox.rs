@@ -719,7 +719,7 @@ impl Sandbox for DockerSandbox {
         timeout: Duration,
         max_output: usize,
     ) -> Result<ExecOutput> {
-        ensure_tool_env(&self.docker, &self.cfg, call.name).await?;
+        ensure_tool_env(&self.docker, &self.cfg, call.name, false).await?;
         let container = format!("cedar-tool-{}", Uuid::new_v4());
         let args = tool_run_args(
             &self.cfg,
@@ -1058,7 +1058,7 @@ impl SandboxFactory for DockerSandboxFactory {
         if requirements.is_empty() {
             return Ok(String::new());
         }
-        ensure_tool_env(&self.docker, &self.cfg, name).await?;
+        ensure_tool_env(&self.docker, &self.cfg, name, true).await?;
         let args = tool_setup_args(&self.cfg, name, requirements);
         let out = docker_output(&self.docker, &args, SETUP_TIMEOUT).await?;
         let text = |b: &[u8]| String::from_utf8_lossy(b).trim().to_string();
@@ -1076,8 +1076,16 @@ impl SandboxFactory for DockerSandboxFactory {
 }
 
 /// Create a personal tool's environment volume if it doesn't exist yet, owned by the agent's user
-/// (a new volume is root's, unless the image already has the directory).
-async fn ensure_tool_env(docker: &str, cfg: &SandboxConfig, name: &str) -> Result<()> {
+/// (a new volume is root's, unless the image already has the directory). With `fix_owner`, an
+/// existing volume is handed to the agent's user too: one left root's (by an install whose chown
+/// failed, or by `docker run -v` creating it) would otherwise fail every `pip install` with
+/// "Permission denied".
+async fn ensure_tool_env(
+    docker: &str,
+    cfg: &SandboxConfig,
+    name: &str,
+    fix_owner: bool,
+) -> Result<()> {
     let volume = tool_env_volume(name);
     let inspect = ["volume", "inspect", "--format", "{{.Name}}", &volume].map(String::from);
     if docker_output(docker, &inspect, DOCKER_CALL_TIMEOUT)
@@ -1085,6 +1093,9 @@ async fn ensure_tool_env(docker: &str, cfg: &SandboxConfig, name: &str) -> Resul
         .status
         .success()
     {
+        if fix_owner {
+            chown_tool_env(docker, cfg, &volume).await?;
+        }
         return Ok(());
     }
     let create = [
@@ -1096,6 +1107,11 @@ async fn ensure_tool_env(docker: &str, cfg: &SandboxConfig, name: &str) -> Resul
     ]
     .map(String::from);
     docker_checked(docker, &create, DOCKER_CALL_TIMEOUT).await?;
+    chown_tool_env(docker, cfg, &volume).await
+}
+
+/// Make a tool's environment volume the agent's user's.
+async fn chown_tool_env(docker: &str, cfg: &SandboxConfig, volume: &str) -> Result<()> {
     let chown = [
         "run",
         "--rm",
