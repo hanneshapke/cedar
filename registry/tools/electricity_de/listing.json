@@ -1,0 +1,12 @@
+{
+  "summary": "German electricity tariffs for your postal code: fixed, green, dynamic and default supply, with providers",
+  "category": "home",
+  "translations": {
+    "de": {
+      "summary": "Stromtarife für deine Postleitzahl: Festpreis, Ökostrom, dynamisch und Grundversorgung, mit Anbietern"
+    },
+    "fr": {
+      "summary": "Tarifs d'électricité en Allemagne pour votre code postal : prix fixe, vert, dynamique et par défaut"
+    }
+  }
+}

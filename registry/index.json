@@ -118,8 +118,8 @@
       },
       "base_url": "tools/drug_prices/",
       "files": {
-        "tool.json": "9c3c4df16edf74d00f78a5f3138e400928a21a15994a6f65b9a54c66a6752e36",
-        "tool.py": "c9d5fb54a05ef5383a4bdbfecc1bc7b8925e9c54f8211c41272bba3375d242b6"
+        "tool.json": "1b771a03495997a4d2e55c1ace875cf6c4756247903e3277b368b98a00c3c254",
+        "tool.py": "e2c8450ac993f98ea3da90da0630e08f6348d4a6673a5d0290fc24c16efa8151"
       },
       "reviewed": true,
       "translations": {
@@ -128,6 +128,40 @@
         },
         "fr": {
           "summary": "Prix le plus bas aux \u00c9tats-Unis pour une ordonnance\u00a0: g\u00e9n\u00e9rique ou marque, Cost Plus Drugs, NADAC, votre quote-part"
+        }
+      }
+    },
+    {
+      "name": "electricity_de",
+      "version": "1.1.0",
+      "summary": "German electricity tariffs for your postal code: fixed, green, dynamic and default supply, with providers",
+      "category": "home",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/electricity_de",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "geocoding-api.open-meteo.com",
+          "api.energy-charts.info",
+          "api.awattar.de"
+        ],
+        "secrets": [],
+        "pip": [],
+        "health_data": false
+      },
+      "base_url": "tools/electricity_de/",
+      "files": {
+        "rates.json": "ace1c40616eefd57d86e05eee4364ca931ec75bb1803c2fec3c2f041fc6e2e3d",
+        "tool.json": "0fbae1a26db003e5f8c79f8ddc276e3c5a7e10812048227a4a9f93f60a60c4c3",
+        "tool.py": "0919e6103160472961598b61ddc95ff924459c5d7be7f2420c3a4312bf07ab8c"
+      },
+      "reviewed": false,
+      "translations": {
+        "de": {
+          "summary": "Stromtarife f\u00fcr deine Postleitzahl: Festpreis, \u00d6kostrom, dynamisch und Grundversorgung, mit Anbietern"
+        },
+        "fr": {
+          "summary": "Tarifs d'\u00e9lectricit\u00e9 en Allemagne pour votre code postal\u00a0: prix fixe, vert, dynamique et par d\u00e9faut"
         }
       }
     },
