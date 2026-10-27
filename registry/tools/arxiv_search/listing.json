@@ -7,6 +7,9 @@
     },
     "fr": {
       "summary": "Recherchez des articles arXiv par sujet, auteur, catégorie et date, ou par identifiant, avec résumés et PDF"
+    },
+    "es": {
+      "summary": "Busca artículos de arXiv por tema, autor, categoría y fecha, u obtenlos por ID, con resúmenes y PDF"
     }
   }
 }

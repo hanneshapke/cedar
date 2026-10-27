@@ -28,6 +28,19 @@
         "TARGET_LOW": "Limite basse de la plage cible, en mg/dL (par défaut : 70)",
         "TARGET_HIGH": "Limite haute de la plage cible, en mg/dL (par défaut : 180)"
       }
+    },
+    "es": {
+      "summary": "Compara tu último día de datos de la bomba Tandem y el CGM con la semana anterior, con consejos para hoy",
+      "secrets": {
+        "TANDEM_EMAIL": "El correo electrónico de tu cuenta de Tandem Source",
+        "TANDEM_PASSWORD": "Su contraseña",
+        "TANDEM_REGION": "us o eu (predeterminado: us)",
+        "TANDEM_TIMEZONE": "La zona horaria IANA de la bomba, p. ej., America/Mexico_City",
+        "TANDEM_PUMP_SERIAL": "Qué bomba, si la cuenta tiene varias",
+        "GLUCOSE_UNIT": "mgdl o mmol",
+        "TARGET_LOW": "Límite inferior del rango objetivo, en mg/dL (predeterminado: 70)",
+        "TARGET_HIGH": "Límite superior del rango objetivo, en mg/dL (predeterminado: 180)"
+      }
     }
   }
 }

@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "air_quality",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "summary": "Air quality index, pollutants, UV and pollen now and for the next days, from Open-Meteo (no key)",
       "category": "health",
       "author": "Hannes Hapke",
@@ -20,8 +20,8 @@
       },
       "base_url": "tools/air_quality/",
       "files": {
-        "tool.json": "70bbe5d71abd1ae3ff997a3e939b2ebfea47b51141f3f0ecd830ff0094a2f01f",
-        "tool.py": "219af2fbd26d020b87760616220eb1e144e3aa2fa0064da1a60732cd63f4074e"
+        "tool.json": "ccda1981c8e620eaee8f6033093e644d84431323103c1abb37d15d3c66474bb7",
+        "tool.py": "f7198c649ba205845f34a332ba33c1c77576c815cb95e95dd56277f455a95623"
       },
       "reviewed": false,
       "translations": {
@@ -30,6 +30,9 @@
         },
         "fr": {
           "summary": "Indice de qualit\u00e9 de l'air, polluants, UV et pollens, maintenant et pour les jours \u00e0 venir, via Open-Meteo (sans cl\u00e9)"
+        },
+        "es": {
+          "summary": "\u00cdndice de calidad del aire, contaminantes, UV y polen ahora y para los pr\u00f3ximos d\u00edas, de Open-Meteo (sin clave)"
         }
       }
     },
@@ -62,12 +65,15 @@
         },
         "fr": {
           "summary": "Recherchez des articles arXiv par sujet, auteur, cat\u00e9gorie et date, ou par identifiant, avec r\u00e9sum\u00e9s et PDF"
+        },
+        "es": {
+          "summary": "Busca art\u00edculos de arXiv por tema, autor, categor\u00eda y fecha, u obtenlos por ID, con res\u00famenes y PDF"
         }
       }
     },
     {
       "name": "dep_audit",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "summary": "Check Python and npm dependencies for known vulnerabilities (OSV.dev) and outdated releases",
       "category": "developer",
       "author": "Hannes Hapke",
@@ -85,8 +91,8 @@
       },
       "base_url": "tools/dep_audit/",
       "files": {
-        "tool.json": "6c76a3f06fe89d6fd551ebf7d832f8591628204a35eea2ee8747cf66cd9d09df",
-        "tool.py": "ee9922e51ce1efe39de70f8bc58e7c009297b4f1a1e5688115e661c47965a778"
+        "tool.json": "0b38b0b497d26169b1f0fcdbbbd17f5f4ced64f2dda3ace72746cb51a8ab8af4",
+        "tool.py": "238442b960640aa6b5dd3a34bb8780eaf999a2dfec752b5d891aa7e10df8b144"
       },
       "reviewed": false,
       "translations": {
@@ -95,12 +101,15 @@
         },
         "fr": {
           "summary": "V\u00e9rifiez les d\u00e9pendances Python et npm\u00a0: vuln\u00e9rabilit\u00e9s connues (OSV.dev) et versions obsol\u00e8tes"
+        },
+        "es": {
+          "summary": "Revisa las dependencias de Python y npm: vulnerabilidades conocidas (OSV.dev) y versiones desactualizadas"
         }
       }
     },
     {
       "name": "drug_prices",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "summary": "Cheapest US price for a prescription: generic vs brand, Cost Plus Drugs, NADAC pharmacy cost, your copay",
       "category": "health",
       "author": "Hannes Hapke",
@@ -118,8 +127,8 @@
       },
       "base_url": "tools/drug_prices/",
       "files": {
-        "tool.json": "1b771a03495997a4d2e55c1ace875cf6c4756247903e3277b368b98a00c3c254",
-        "tool.py": "e2c8450ac993f98ea3da90da0630e08f6348d4a6673a5d0290fc24c16efa8151"
+        "tool.json": "c78e6b4eb611fd43748d48db152da61d35477efe521738ddb78949c8190767ca",
+        "tool.py": "7ae21f62ebb739132f4ccdd8cc9060393a898c013ef907330b4493fbff31e2ec"
       },
       "reviewed": true,
       "translations": {
@@ -128,12 +137,15 @@
         },
         "fr": {
           "summary": "Prix le plus bas aux \u00c9tats-Unis pour une ordonnance\u00a0: g\u00e9n\u00e9rique ou marque, Cost Plus Drugs, NADAC, votre quote-part"
+        },
+        "es": {
+          "summary": "Precio m\u00e1s bajo en EE. UU. para una receta: gen\u00e9rico o de marca, Cost Plus Drugs, NADAC, tu copago"
         }
       }
     },
     {
       "name": "electricity_de",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "summary": "German electricity tariffs for your postal code: fixed, green, dynamic and default supply, with providers",
       "category": "home",
       "author": "Hannes Hapke",
@@ -152,8 +164,8 @@
       "base_url": "tools/electricity_de/",
       "files": {
         "rates.json": "ace1c40616eefd57d86e05eee4364ca931ec75bb1803c2fec3c2f041fc6e2e3d",
-        "tool.json": "0fbae1a26db003e5f8c79f8ddc276e3c5a7e10812048227a4a9f93f60a60c4c3",
-        "tool.py": "0919e6103160472961598b61ddc95ff924459c5d7be7f2420c3a4312bf07ab8c"
+        "tool.json": "0306ed8ba37cc74d73ea7aec49e5d261e9656585f24956ea666d63fd2c417fd1",
+        "tool.py": "60a4d97238a6cf0723c6c9e2d8a44441d593a21d45aaa63ad47cf2e087f2e3da"
       },
       "reviewed": false,
       "translations": {
@@ -162,12 +174,15 @@
         },
         "fr": {
           "summary": "Tarifs d'\u00e9lectricit\u00e9 en Allemagne pour votre code postal\u00a0: prix fixe, vert, dynamique et par d\u00e9faut"
+        },
+        "es": {
+          "summary": "Tarifas el\u00e9ctricas en Alemania para tu c\u00f3digo postal: precio fijo, verde, din\u00e1mica y suministro b\u00e1sico"
         }
       }
     },
     {
       "name": "tandem_glucose",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",
       "category": "health",
       "author": "Hannes Hapke",
@@ -197,8 +212,8 @@
       "base_url": "tools/tandem_glucose/",
       "files": {
         ".env.example": "a442f1e4bcb057e4b09cc1aef8e3f7a75b0add4e0c1fba70d98c4cd0298b15d1",
-        "tool.json": "111615b35482d6bd9748403c237b79f66e75d4091009d19ca76dca081da3cc17",
-        "tool.py": "1f1170793c3153085845b740853d00c7c419cf05bb9c2f298c68d10ce8a0cb03"
+        "tool.json": "dfc1646dc3fb82f5059e5f59f3b12fb354f0a0a3e09af3c94b530ad8d6caf38d",
+        "tool.py": "03a9bd84323a2d7f5e51153c7563ac298fddd58fc13ec5224f2ce8ba891588c0"
       },
       "reviewed": true,
       "translations": {
@@ -226,6 +241,19 @@
             "GLUCOSE_UNIT": "mgdl ou mmol",
             "TARGET_LOW": "Limite basse de la plage cible, en mg/dL (par d\u00e9faut\u00a0: 70)",
             "TARGET_HIGH": "Limite haute de la plage cible, en mg/dL (par d\u00e9faut\u00a0: 180)"
+          }
+        },
+        "es": {
+          "summary": "Compara tu \u00faltimo d\u00eda de datos de la bomba Tandem y el CGM con la semana anterior, con consejos para hoy",
+          "secrets": {
+            "TANDEM_EMAIL": "El correo electr\u00f3nico de tu cuenta de Tandem Source",
+            "TANDEM_PASSWORD": "Su contrase\u00f1a",
+            "TANDEM_REGION": "us o eu (predeterminado: us)",
+            "TANDEM_TIMEZONE": "La zona horaria IANA de la bomba, p. ej., America/Mexico_City",
+            "TANDEM_PUMP_SERIAL": "Qu\u00e9 bomba, si la cuenta tiene varias",
+            "GLUCOSE_UNIT": "mgdl o mmol",
+            "TARGET_LOW": "L\u00edmite inferior del rango objetivo, en mg/dL (predeterminado: 70)",
+            "TARGET_HIGH": "L\u00edmite superior del rango objetivo, en mg/dL (predeterminado: 180)"
           }
         }
       }

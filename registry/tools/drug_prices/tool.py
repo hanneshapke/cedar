@@ -64,6 +64,11 @@ STRINGS = {
            "nadac": "Coût pour la pharmacie, {kind} (NADAC)", "generic": "générique", "brand": "princeps",
            "estimate": "Cost Plus Drugs (estimation)", "copay": "Votre quote-part d'assurance",
            "quote": "un devis"},
+    "es": {"title": "{base}, {quantity} unidades",
+           "x_label": "USD (* lo que pagan las farmacias, no un precio que puedas pagar)",
+           "nadac": "Costo para la farmacia, {kind} (NADAC)", "generic": "genérico", "brand": "de marca",
+           "estimate": "Cost Plus Drugs (estimación)", "copay": "Tu copago del seguro",
+           "quote": "una cotización"},
 }
 # The English names this tool gives its own price sources, for the chart's labels.
 OWN_SOURCES = {"Pharmacy cost, generic (NADAC)": ("nadac", "generic"),

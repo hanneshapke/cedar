@@ -45,6 +45,9 @@ STRINGS = {
     "fr": {"cost_title": "Coût annuel estimé, {place}", "per_year": "€/an", "per_year_axis": "€ par an",
            "dynamic": "Tarif dynamique", "fixed": "Offre à prix fixe", "hourly_title": "Prix dynamique par heure (TTC)",
            "hour": "{a} {t}"},
+    "es": {"cost_title": "Costo anual estimado, {place}", "per_year": "€/año", "per_year_axis": "€ por año",
+           "dynamic": "Tarifa dinámica", "fixed": "Oferta de precio fijo", "hourly_title": "Precio dinámico por hora (IVA incluido)",
+           "hour": "{a} {t}"},
 }
 # The options' chart labels; the English ones are rates.json's.
 OPTION_LABELS = {
@@ -52,10 +55,13 @@ OPTION_LABELS = {
            "dynamic": "Dynamischer Stundentarif", "default": "Grundversorgung"},
     "fr": {"fixed": "Offre à prix fixe la moins chère", "green": "Électricité verte certifiée",
            "dynamic": "Tarif horaire dynamique", "default": "Fourniture par défaut (Grundversorgung)"},
+    "es": {"fixed": "Oferta de precio fijo más barata", "green": "Electricidad verde certificada",
+           "dynamic": "Tarifa horaria dinámica", "default": "Suministro básico (Grundversorgung)"},
 }
 WEEKDAYS = {"en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
             "de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
-            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]}
+            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."],
+            "es": ["lun.", "mar.", "mié.", "jue.", "vie.", "sáb.", "dom."]}
 
 
 def language():

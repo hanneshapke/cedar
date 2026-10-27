@@ -72,13 +72,19 @@ STRINGS = {
            "good": "bon", "pollen_title": "Pic quotidien de pollen", "pollen_unit": "grains/m³",
            "alder": "aulne", "birch": "bouleau", "olive": "olivier", "grass": "graminées", "mugwort": "armoise",
            "ragweed": "ambroisie", "day": "{a} {d} {b}", "hour": "{a} {t}"},
+    "es": {"name_us": "ICA de EE. UU.", "name_european": "ICA europeo", "forecast": "Pronóstico del {name}",
+           "good": "bueno", "pollen_title": "Pico diario de polen", "pollen_unit": "granos/m³",
+           "alder": "aliso", "birch": "abedul", "olive": "olivo", "grass": "gramíneas", "mugwort": "artemisa",
+           "ragweed": "ambrosía", "day": "{a}, {d} {b}", "hour": "{a} {t}"},
 }
 WEEKDAYS = {"en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
             "de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
-            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]}
+            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."],
+            "es": ["lun.", "mar.", "mié.", "jue.", "vie.", "sáb.", "dom."]}
 MONTHS = {"en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
           "de": ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
-          "fr": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]}
+          "fr": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
+          "es": ["ene.", "feb.", "mar.", "abr.", "may.", "jun.", "jul.", "ago.", "sept.", "oct.", "nov.", "dic."]}
 
 
 def language():

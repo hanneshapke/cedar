@@ -59,10 +59,16 @@ STRINGS = {
            "tir_title": "Temps dans la cible ({low}–{high} {unit}) par moment de la journée",
            "tir_label": "% du temps dans la cible", "overnight": "Nuit", "morning": "Matin",
            "afternoon": "Après-midi", "evening": "Soir"},
+    "es": {"last": "Últimas {h} h", "average": "Promedio de {d} días", "target": "Rango objetivo",
+           "glucose_title": "Glucosa: últimas {h} h vs. tu promedio de {d} días",
+           "tir_title": "Tiempo en rango ({low}–{high} {unit}) por momento del día",
+           "tir_label": "% del tiempo en rango", "overnight": "Madrugada", "morning": "Mañana",
+           "afternoon": "Tarde", "evening": "Noche"},
 }
 WEEKDAYS = {"en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
             "de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
-            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]}
+            "fr": ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."],
+            "es": ["lun.", "mar.", "mié.", "jue.", "vie.", "sáb.", "dom."]}
 
 
 def language():
@@ -80,9 +86,18 @@ def tr(key, **values):
     return text.format(**values)
 
 
+# Spanish regions that write a decimal point (CLDR); Spain and the rest of Latin America use a comma.
+DECIMAL_POINT_ES = {"MX", "US", "419", "CU", "DO", "GT", "HN", "NI", "PA", "PE", "PR", "SV"}
+
+
 def decimal(value):
-    """A number written into chart text, with the decimal comma German and French use."""
-    return str(value) if language() == "en" else str(value).replace(".", ",")
+    """A number written into chart text, with the decimal comma German, French and most Spanish use."""
+    lang = language()
+    if lang == "es":
+        region = (os.environ.get("CEDAR_LOCALE") or "").replace("_", "-").upper().split("-")[1:2]
+        if region and region[0] in DECIMAL_POINT_ES:
+            return str(value)
+    return str(value) if lang == "en" else str(value).replace(".", ",")
 
 
 # --- setup -----------------------------------------------------------------------------------
