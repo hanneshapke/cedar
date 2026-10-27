@@ -238,7 +238,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 
 /* -- misc ---------------------------------------------------------------------------------- */
 
-.toast { position: fixed; left: 50%; bottom: 120px; z-index: 30; max-width: min(520px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 10px; background: var(--text); color: var(--bg); font-size: 14px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transform: translate(-50%, 8px); transition: opacity .2s, transform .2s; }
+.toast { position: fixed; top: auto; right: auto; left: 50%; bottom: 120px; z-index: 30; margin: 0; border: 0; max-width: min(520px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 10px; background: var(--text); color: var(--bg); font-size: 14px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transform: translate(-50%, 8px); transition: opacity .2s, transform .2s; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 dialog { width: min(400px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }

@@ -72,6 +72,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let toastTimer;
 function toast(message) {
   els.toast.textContent = message;
+  // The toast is a popover so it can sit in the top layer: re-showing it puts it
+  // above any modal dialog (settings, files) opened since, instead of behind it.
+  if (els.toast.showPopover) {
+    if (els.toast.matches(':popover-open')) els.toast.hidePopover();
+    els.toast.showPopover();
+    void els.toast.offsetWidth; // start the fade-in from the hidden state
+  }
   els.toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => els.toast.classList.remove('show'), 4000);
