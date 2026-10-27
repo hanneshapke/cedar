@@ -1,5 +1,7 @@
 //! Where the app keeps its files. Tauri derives both directories from the bundle identifier:
 //! `~/Library/Application Support/io.github.hanneshapke.cedar/` and `~/Library/Logs/io.github.hanneshapke.cedar/`.
+//! Personal tools live in `~/.cedar/tools`, where people put their own and where tools installed
+//! from the registry go.
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -11,6 +13,8 @@ pub struct Paths {
     pub data: PathBuf,
     /// `cedar.log` and `cedar-chat.log`.
     pub logs: PathBuf,
+    /// Personal tools (cedar's `TOOLS_DIR`): `~/.cedar/tools`.
+    pub tools: PathBuf,
 }
 
 impl Paths {
@@ -19,7 +23,9 @@ impl Paths {
         let logs = app.path().app_log_dir().context("no logs directory")?;
         std::fs::create_dir_all(&data).with_context(|| format!("creating {}", data.display()))?;
         std::fs::create_dir_all(&logs).with_context(|| format!("creating {}", logs.display()))?;
-        Ok(Self { data, logs })
+        let tools = app.path().home_dir().context("no home directory")?.join(".cedar").join("tools");
+        std::fs::create_dir_all(&tools).with_context(|| format!("creating {}", tools.display()))?;
+        Ok(Self { data, logs, tools })
     }
 
     pub fn config(&self) -> PathBuf {

@@ -256,6 +256,37 @@ const cedarSettings = (() => {
     };
     for (const g of groups()) list.append(toolRow(g, changed));
     section.replaceChildren(list);
+    const registry = await registryBlock();
+    if (registry && list.isConnected) section.append(registry);
+  }
+
+  /** Under the tool list: the community registry's tools, with a link to it, to install from.
+   *  `null` without the admin token (its address and its tools come from cedar's admin API) or
+   *  when cedar has no registry. */
+  async function registryBlock() {
+    if (!deps.config().admin_enabled || !unlocked()) return null;
+    const market = await marketplaceBlock();
+    if (!market) return null;
+    const b = el('div', 'cedar-set-block');
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', 'Tool registry'));
+    const url = registryPage(lastRegistry);
+    if (url) {
+      const link = el('a', 'settings-link', 'Open the tool registry');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      head.append(link);
+    }
+    b.append(head, market);
+    return b;
+  }
+
+  /** The registry's page on GitHub for an index at raw.githubusercontent.com, else the index. */
+  function registryPage(index) {
+    const m = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(?:(.+)\/)?index\.json$/.exec(index || '');
+    if (!m) return index || '';
+    return `https://github.com/${m[1]}/${m[2]}/tree/${m[3]}${m[4] ? `/${m[4]}` : ''}`;
   }
 
   /** One switch row of the Tools page. */
@@ -1040,11 +1071,14 @@ const cedarSettings = (() => {
     return line;
   }
 
+  let lastRegistry = '';  // the registry's index URL, from the last marketplace listing
+
   /** The community registry's tools, to install or update. `null` when cedar has no registry. */
   async function marketplaceBlock(refresh = false) {
     let market;
     try {
       market = await adminApi('GET', `/integrations/marketplace${refresh ? '?refresh=true' : ''}`);
+      lastRegistry = market.registry || '';
     } catch (e) {
       if (e.status === 409) return null;  // no TOOLS_REGISTRY_URL on cedar
       return note(e.message, 'cedar-set-error');
@@ -1078,13 +1112,13 @@ const cedarSettings = (() => {
     if (!installable) return row;
     const label = l.installed ? `Update from ${l.installed.version}` : 'Install';
     side.append(button(label, async (e) => {
+      const b = e.currentTarget;  // null once the event is done, so before the confirmation
       if (!(await cedarConfirm(installQuestion(l), { ok: l.installed ? 'Update' : 'Install' }))) return;
-      const b = e.currentTarget;
       b.disabled = true;
       b.textContent = 'Installing…';
       try {
         await adminApi('POST', `/integrations/marketplace/${l.name}/install`, { accept: l.permissions });
-        deps.toast(`${l.name} ${l.version} installed`);
+        if (await askRestart(l)) return;
         renderIntegrations();
         refreshTools();
       } catch (err) {
@@ -1094,6 +1128,19 @@ const cedarSettings = (() => {
       }
     }, 'primary'));
     return row;
+  }
+
+  /** After an install: in the Cedar app, tell the user to restart it, and restart it on "Restart
+   *  now" (the window catches the address; see desktop/src/window.rs). True when it restarts. */
+  async function askRestart(l) {
+    const done = `${l.name} ${l.version} is installed in your personal tools folder.`;
+    if (window.__CEDAR_DESKTOP_APP__ !== true) {
+      deps.toast(`${l.name} ${l.version} installed`);
+      return false;
+    }
+    if (!(await cedarConfirm(`${done}\n\nRestart Cedar to start using it. A reply in progress is stopped.`, { ok: 'Restart now' }))) return false;
+    window.location.href = '/__cedar-app/restart';
+    return true;
   }
 
   /** What installing a tool lets it do, spelled out for the confirmation. */

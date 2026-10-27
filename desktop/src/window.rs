@@ -14,6 +14,10 @@ pub const MAIN: &str = "main";
 /// loaded, the window catches it (see [`create`]). The chat page has no other way to reach the app.
 const UPDATE_PATH: &str = "/__cedar-app/update/";
 
+/// Where Settings sends the window to restart the servers after installing a tool, caught the
+/// same way.
+const RESTART_PATH: &str = "/__cedar-app/restart";
+
 /// The setup page's own URL, where Tauri serves `ui/index.html`: `tauri://localhost` on a Mac,
 /// `http://tauri.localhost` on Windows. Not read back from the window after it is built: on
 /// Windows that is still `about:blank` until WebView2 commits its first navigation, and going
@@ -46,12 +50,18 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
             }
             NewWindowResponse::Deny
         })
-        .on_navigation(move |url| match update_action(url, &chat) {
-            Some(action) => {
-                banner_action(&handle, action);
-                false
+        .on_navigation(move |url| {
+            if restart_requested(url, &chat) {
+                tauri::async_runtime::spawn(crate::app::restart(handle.clone()));
+                return false;
             }
-            None => true,
+            match update_action(url, &chat) {
+                Some(action) => {
+                    banner_action(&handle, action);
+                    false
+                }
+                None => true,
+            }
         })
         .on_page_load(|webview, payload| {
             if payload.event() == PageLoadEvent::Finished {
@@ -108,6 +118,11 @@ fn update_action(url: &Url, chat: &str) -> Option<UpdateAction> {
         "dismiss" => Some(UpdateAction::Dismiss),
         _ => None,
     }
+}
+
+/// Settings' "Restart now", when `url` is the chat's address for it.
+fn restart_requested(url: &Url, chat: &str) -> bool {
+    url.origin().ascii_serialization() == chat && url.path() == RESTART_PATH
 }
 
 fn banner_action(app: &AppHandle, action: UpdateAction) {
@@ -255,6 +270,16 @@ mod tests {
         assert_eq!(at("http://127.0.0.1:13000/"), None);
         assert_eq!(at("http://127.0.0.1:13001/__cedar-app/update/install"), None);
         assert_eq!(at("https://example.com/__cedar-app/update/install"), None);
+    }
+
+    #[test]
+    fn only_the_chats_restart_address_reaches_the_app() {
+        let chat = "http://127.0.0.1:13000";
+        let at = |u: &str| restart_requested(&Url::parse(u).unwrap(), chat);
+        assert!(at("http://127.0.0.1:13000/__cedar-app/restart"));
+        assert!(!at("http://127.0.0.1:13000/__cedar-app/restart/x"));
+        assert!(!at("http://127.0.0.1:13001/__cedar-app/restart"));
+        assert!(!at("https://example.com/__cedar-app/restart"));
     }
 
     #[test]

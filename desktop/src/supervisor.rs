@@ -21,6 +21,11 @@ use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+/// The community tool registry in this repository (`registry/`), which Settings lists tools from
+/// and installs them into `~/.cedar/tools`. A `TOOLS_REGISTRY_URL` in `cedar_env` wins.
+const TOOLS_REGISTRY_URL: &str =
+    "https://raw.githubusercontent.com/hanneshapke/cedar/main/registry/index.json";
+
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
 pub enum ServiceState {
@@ -264,6 +269,9 @@ impl Runner {
             ("SANDBOX_IMAGE", cfg.sandbox_image()),
             ("BROWSER", if cfg.browser { "on" } else { "off" }.to_string()),
             ("BROWSER_IMAGE", cfg.browser_image()),
+            // Personal tools, and the community registry Settings installs them from.
+            ("TOOLS_DIR", self.paths.tools.to_string_lossy().into_owned()),
+            ("TOOLS_REGISTRY_URL", TOOLS_REGISTRY_URL.to_string()),
             ("DOCKER_BIN", self.docker.bin.to_string_lossy().into_owned()),
             ("PATH", self.docker.path_env.clone()),
             ("CEDAR_EXIT_ON_STDIN_EOF", "1".to_string()),
