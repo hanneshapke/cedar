@@ -95,9 +95,9 @@ admin token, so Settings works without typing anything.
 (`TOOLS_REGISTRY_URL`). Under the tool list in the chat's Settings → Tools, *Tool registry* links
 to the registry on GitHub and lists its tools, with what each one asks for. *Install* copies the
 tool's files from GitHub into `~/.cedar/tools/<name>`, checking each against the hash the
-registry pins, and then asks you to restart Cedar; *Restart now* restarts the servers. A tool you
-write yourself goes in the same folder. `TOOLS_DIR` or `TOOLS_REGISTRY_URL` in `cedar_env`
-(see the config file) point elsewhere.
+registry pins. cedar loads it right away, with no restart. A tool you write yourself goes in the
+same folder. `TOOLS_DIR` or `TOOLS_REGISTRY_URL` in `cedar_env` (see the config file) point
+elsewhere.
 
 When a response finishes, the app can tell you with a **desktop notification**: in Notification
 Center on a Mac, as a toast on Windows. Clicking it opens the conversation. The app sets this

@@ -1118,7 +1118,7 @@ const cedarSettings = (() => {
       b.textContent = 'Installing…';
       try {
         await adminApi('POST', `/integrations/marketplace/${l.name}/install`, { accept: l.permissions });
-        if (await askRestart(l)) return;
+        deps.toast(`${l.name} ${l.version} installed`);
         renderIntegrations();
         refreshTools();
       } catch (err) {
@@ -1128,19 +1128,6 @@ const cedarSettings = (() => {
       }
     }, 'primary'));
     return row;
-  }
-
-  /** After an install: in the Cedar app, tell the user to restart it, and restart it on "Restart
-   *  now" (the window catches the address; see desktop/src/window.rs). True when it restarts. */
-  async function askRestart(l) {
-    const done = `${l.name} ${l.version} is installed in your personal tools folder.`;
-    if (window.__CEDAR_DESKTOP_APP__ !== true) {
-      deps.toast(`${l.name} ${l.version} installed`);
-      return false;
-    }
-    if (!(await cedarConfirm(`${done}\n\nRestart Cedar to start using it. A reply in progress is stopped.`, { ok: 'Restart now' }))) return false;
-    window.location.href = '/__cedar-app/restart';
-    return true;
   }
 
   /** What installing a tool lets it do, spelled out for the confirmation. */
