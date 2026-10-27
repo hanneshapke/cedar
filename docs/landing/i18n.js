@@ -12,8 +12,10 @@
 //   data-i18n-attr="title:key; alt:key"  attributes
 //   data-lang-switch                     filled with links to the three languages
 //
-// This runs before support.js boots index.html's template, so the template is read translated;
-// text written by the pages' scripts goes through tr('key', { name }). Terms and tone follow
+// This runs before support.js boots index.html's template, so the template is read translated.
+// support.js would otherwise fetch the page's source again and swap the English template back
+// in, which index.html prevents by setting window.__resources before loading it. Text written
+// by the pages' scripts goes through tr('key', { name }). Terms and tone follow
 // docs/i18n-glossary.md: German says du, French vous.
 
 const cedarSite = (() => {

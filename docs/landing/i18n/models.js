@@ -162,7 +162,7 @@ cedarSite.add({
 
     'models.nav.does': "Was es kann",
     'models.nav.private': "Privat von Grund auf",
-    'models.nav.apps': "Mac, Windows, Linux & Smartphones",
+    'models.nav.apps': "Mac, Windows, Linux & Handy",
     'models.nav.compare': "Im Vergleich",
     'models.nav.models': "Modelle",
     'models.nav.install': "Installieren",
@@ -302,9 +302,9 @@ cedarSite.add({
     'page.title': "Choisir un modèle pour Cedar",
     'models.meta.description': "Répondez à quelques questions pour voir quels modèles d'IA ouverts conviennent à Cedar sur votre matériel : un Mac M4 ou M5, un AMD Ryzen AI Max, un NVIDIA DGX Spark ou un fournisseur de jetons.",
 
-    'models.nav.does': "Ce qu'il fait",
-    'models.nav.private': "Privé par conception",
-    'models.nav.apps': "Mac, Windows, Linux et téléphones",
+    'models.nav.does': "Ce qu’il fait",
+    'models.nav.private': "Vie privée",
+    'models.nav.apps': "Mac, Windows, Linux et mobiles",
     'models.nav.compare': "Comparatif",
     'models.nav.models': "Modèles",
     'models.nav.install': "Installation",

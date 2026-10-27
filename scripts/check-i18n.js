@@ -82,8 +82,9 @@ function checkUses(sources, en) {
   for (const file of sources) {
     const text = fs.readFileSync(file, 'utf8');
     const used = [
-      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*'([^'$]+)'/g)].map((m) => m[1]),
-      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*"([^"$]+)"/g)].map((m) => m[1]),
+      // A literal followed by + is a prefix the code completes at run time.
+      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*'([^'$]+)'(?!\s*\+)/g)].map((m) => m[1]),
+      ...[...text.matchAll(/\b(?:tr|cedarI18n\.t)\(\s*"([^"$]+)"(?!\s*\+)/g)].map((m) => m[1]),
       ...[...text.matchAll(/data-i18n(?:-html)?="([^"]+)"/g)].map((m) => m[1]),
       ...[...text.matchAll(/data-i18n-attr="([^"]+)"/g)].flatMap((m) => m[1].split(';').map((p) => (p.split(':')[1] || '').trim())),
     // A key that ends in '.' is a prefix the code completes at run time.
