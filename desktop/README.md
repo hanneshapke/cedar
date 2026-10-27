@@ -402,7 +402,8 @@ pull request from a branch named `release/<version>` is merged into `main`:
    and cedar-chat), `version` in `desktop/Cargo.toml` (the app, and the image tag it pulls),
    `MARKETING_VERSION` in `iOS/Cedar.xcodeproj` and `window.CEDAR_VERSION` in
    `docs/landing/version.js` (the version the landing page and install guide show).
-   `scripts/check-version.sh <version>` checks them all.
+   `scripts/bump-version.sh` sets all four (and the lock files): the next patch version by
+   default, or `minor`, `major` or an exact version. `scripts/check-version.sh <version>` checks them.
    It must be a plain `major.minor.patch` with major and minor up to 255 and patch up to 65535,
    with no pre-release suffix like `-beta`: Windows Installer takes nothing else, and the workflow
    refuses other versions up front.
