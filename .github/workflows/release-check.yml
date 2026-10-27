@@ -1,0 +1,32 @@
+name: Release check
+
+# Fails a pull request from a release/<version> branch until every version in the repository
+# matches <version>: both Cargo.toml versions, the iOS app's MARKETING_VERSION and the version
+# the landing site shows (docs/landing/version.js). See scripts/check-version.sh.
+# Make "Release check / versions" a required status check on main so a mismatch can't be merged.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: release-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  versions:
+    if: startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Versions match the release branch
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: scripts/check-version.sh "${HEAD_REF#release/}"

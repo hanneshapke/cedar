@@ -1,7 +1,7 @@
 # Builds a release when a pull request from a `release/<version>` branch is merged into main:
 #
-#   1. verify   the branch's version matches both Cargo.toml versions and the iOS app's
-#               MARKETING_VERSION, the tag is free, tests pass
+#   1. verify   the branch's version matches both Cargo.toml versions, the iOS app's
+#               MARKETING_VERSION and docs/landing/version.js, the tag is free, tests pass
 #   2. images   the sandbox and browser images, built natively for amd64 and arm64 and pushed to
 #               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
 #   3. dmg      cedar and cedar-chat for Apple Silicon, wrapped in Cedar.app, signed, notarized,
@@ -133,20 +133,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cargo.toml versions match the branch
+      - name: Versions match the branch
+        # Cargo.toml, desktop/Cargo.toml, the iOS MARKETING_VERSION and the landing site's
+        # docs/landing/version.js; release-check.yml runs the same check on the open pull request.
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          set -eu
-          ws=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cedar") | .version')
-          app=$(cargo metadata --no-deps --format-version 1 --manifest-path desktop/Cargo.toml | jq -r '.packages[] | select(.name == "cedar-app") | .version')
-          echo "workspace: $ws, desktop app: $app, branch: $VERSION"
-          [ "$ws" = "$VERSION" ] || { echo "::error::Cargo.toml [workspace.package] version is $ws, the branch says $VERSION"; exit 1; }
-          [ "$app" = "$VERSION" ] || { echo "::error::desktop/Cargo.toml version is $app, the branch says $VERSION"; exit 1; }
-          # Every build configuration (app and tests, Debug and Release) carries the same version.
-          ios=$(grep -o 'MARKETING_VERSION = [^;]*' iOS/Cedar.xcodeproj/project.pbxproj | sed 's/.* = //' | sort -u)
-          echo "iOS app: $ios"
-          [ "$ios" = "$VERSION" ] || { echo "::error::iOS/Cedar.xcodeproj MARKETING_VERSION is $(echo $ios), the branch says $VERSION"; exit 1; }
+        run: scripts/check-version.sh "$VERSION"
 
       - name: The tag does not exist yet
         if: steps.meta.outputs.publish == 'true'

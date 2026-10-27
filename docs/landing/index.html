@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./version.js"></script>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -525,7 +526,7 @@ class Component extends DCLogic {
       linuxX64Href: this.state.linuxX64 || 'https://github.com/hanneshapke/cedar/releases/latest',
       linuxArmHref: this.state.linuxArm || 'https://github.com/hanneshapke/cedar/releases/latest',
       // The newest release with Linux builds, until GitHub says which is latest.
-      ver: this.state.ver || '0.1.9',
+      ver: this.state.ver || window.CEDAR_VERSION,
       showPlan: phase >= 1, showResult: phase === 3,
       statusLine: phase === 0 ? 'new task' : phase === 1 ? 'planning' : phase === 2 ? 'working in a sealed box' : 'done',
       ...this.comparison(cmp),
