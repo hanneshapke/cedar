@@ -95,7 +95,7 @@
       "base_url": "tools/drug_prices/",
       "files": {
         "tool.json": "3e79e8dbcd403c564a6b794d0bef217dac026c81bcf58d250f93c54f291a4679",
-        "tool.py": "58d8a51b5a1f03d64c5d3937df85f476bef30fb8291ec3e1b4d7c2a1a4542321"
+        "tool.py": "563a8c4e9bb26c5e497119f06046d79fdd0d301243e07d03a04cd3c082e64746"
       },
       "reviewed": true
     },

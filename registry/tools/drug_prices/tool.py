@@ -19,6 +19,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
 RXNAV = "https://rxnav.nlm.nih.gov/REST"
@@ -28,8 +29,9 @@ USER_AGENT = "cedar-drug_prices/1.0 (+https://github.com/hanneshapke/cedar/tree/
 PRODUCT_TTYS = ("SCD", "SBD", "GPCK", "BPCK")  # clinical (generic) and branded drugs and packs
 GENERIC_TTYS = ("SCD", "GPCK")
 NADAC_TITLE = re.compile(r"^NADAC \(National Average Drug Acquisition Cost\)\s+(\d{4})$", re.I)
-MAX_NDCS = 300  # per drug; a common generic has a hundred or so
+MAX_NDCS = 3000  # per drug; a much-repackaged generic like metformin has hundreds per strength
 NDC_CHUNK = 60
+NADAC_WORKERS = 8
 # Cost Plus: their cost plus 15%, a $5 pharmacy fee per drug, and $5 shipping per order.
 COST_PLUS_MARKUP, COST_PLUS_FEE, COST_PLUS_SHIPPING = 1.15, 5.0, 5.0
 UNITS = {"mg": "MG", "mcg": "MCG", "µg": "MCG", "ug": "MCG", "g": "G", "ml": "ML", "unit": "UNT",
@@ -212,19 +214,24 @@ def parse_day(text):
     return date.min
 
 
+def nadac_chunk(dataset, ndcs):
+    query = {"conditions": [{"property": "ndc", "value": ndcs, "operator": "in"}],
+             "limit": 500, "keys": True, "schema": False, "count": False,
+             "sorts": [{"property": "as_of_date", "order": "desc"}]}
+    try:
+        data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
+    except SourceError:
+        query.pop("sorts")  # the weekly rows of a year still fit, unsorted, for a few NDCs
+        data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
+    return data.get("results") or []
+
+
 def nadac_rows(dataset, ndcs):
-    rows = []
-    for i in range(0, len(ndcs), NDC_CHUNK):
-        query = {"conditions": [{"property": "ndc", "value": ndcs[i:i + NDC_CHUNK], "operator": "in"}],
-                 "limit": 500, "keys": True, "schema": False, "count": False,
-                 "sorts": [{"property": "as_of_date", "order": "desc"}]}
-        try:
-            data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
-        except SourceError:
-            query.pop("sorts")  # the weekly rows of a year still fit, unsorted, for a few NDCs
-            data = fetch(f"{MEDICAID}/datastore/query/{dataset}/0", body=query, timeout=60)
-        rows.extend(data.get("results") or [])
-    return rows
+    """NADAC's rows for every NDC asked for. Most of a common generic's NDCs are repackagers that
+    NADAC doesn't price, so none can be skipped; the chunks run side by side."""
+    chunks = [ndcs[i:i + NDC_CHUNK] for i in range(0, len(ndcs), NDC_CHUNK)]
+    with ThreadPoolExecutor(NADAC_WORKERS) as pool:
+        return [row for rows in pool.map(lambda c: nadac_chunk(dataset, c), chunks) for row in rows]
 
 
 def nadac_prices(ndcs):
@@ -348,9 +355,8 @@ def build(args):
     offers, failed = [], []
 
     # What pharmacies pay, generic and brand apart.
-    nadac = {"generic": [], "brand": []}
+    nadac, kinds = {"generic": [], "brand": []}, {}
     try:
-        kinds = {}
         for p in versions:
             for ndc in ndcs_of(p["rxcui"]):
                 kinds.setdefault(ndc, "generic" if p["generic"] else "brand")
@@ -412,7 +418,7 @@ def build(args):
     if not offers and failed:
         sys.exit("couldn't get any prices: " + "; ".join(failed) + ". Try again in a little while.")
     if not offers:
-        return unlisted(base, ingredient, quantity)
+        return unlisted(base, ingredient, quantity, len(kinds))
     offers.sort(key=lambda o: o["price"])
     return report(base, ingredient, generic, asked_brand, quantity, offers, failed)
 
@@ -422,12 +428,13 @@ def coupon_links(ingredient):
     return f"https://www.goodrx.com/{name} and https://www.singlecare.com/prescription/{name}"
 
 
-def unlisted(base, ingredient, quantity):
+def unlisted(base, ingredient, quantity, ndcs):
     """Every source answered, and none lists this product: an answer, not an error to retry."""
     return "\n".join([
-        f"No open price source lists {base}: NADAC has no pharmacy cost for its package codes and "
-        "Cost Plus Drugs doesn't sell it. That is common for specialty drugs, drugs given at a "
-        "clinic, and new brands; asking again won't change it.",
+        f"No open price source lists {base}: NADAC has no pharmacy cost for any of the {ndcs} "
+        "package codes RxNorm gives for it, and Cost Plus Drugs had no matching quote. That is "
+        "usual for specialty drugs, drugs given at a clinic, and new brands; for a common generic "
+        "it is unexpected and worth reporting. Asking again won't change it.",
         f"Compare coupon prices for {quantity} at {coupon_links(ingredient)}, or ask the pharmacy "
         "for its cash price. For a brand, the maker's savings card or patient assistance program "
         "is often the cheapest way.",
