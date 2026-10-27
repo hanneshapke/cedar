@@ -75,6 +75,31 @@
       "reviewed": false
     },
     {
+      "name": "drug_prices",
+      "version": "1.0.0",
+      "summary": "Cheapest US price for a prescription: generic vs brand, Cost Plus Drugs, NADAC pharmacy cost, your copay",
+      "category": "health",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/drug_prices",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "rxnav.nlm.nih.gov",
+          "data.medicaid.gov",
+          "us-central1-costplusdrugs-publicapi.cloudfunctions.net"
+        ],
+        "secrets": [],
+        "pip": [],
+        "health_data": true
+      },
+      "base_url": "tools/drug_prices/",
+      "files": {
+        "tool.json": "2bcedf196450a9a58800d0990f8632adf9f3d145a20f2317ff9f31d42b9d0f30",
+        "tool.py": "ad1c1d4db7347993e7df3f5ab674c334742b24ab6b1e0e418297471932df90f2"
+      },
+      "reviewed": true
+    },
+    {
       "name": "tandem_glucose",
       "version": "1.1.0",
       "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",
