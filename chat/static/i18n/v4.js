@@ -595,7 +595,7 @@ cedarI18n.add({
     'v4.count.steps': { one: '{count} paso', other: '{count} pasos' },
     'v4.count.stocks': { one: '{count} acción', other: '{count} acciones comparadas' },
     'v4.count.ways': { one: '{count} ruta', other: '{count} rutas' },
-    'v4.cutOff': 'La respuesta se cortó al llegar al límite de salida del modelo. Un modelo que piensa antes de responder puede agotarlo por completo antes de escribir texto. Un administrador puede aumentarlo en Configuración → Servidor, en el campo «Tokens máximos por respuesta» del modelo.',
+    'v4.cutOff': 'La respuesta se cortó al llegar al límite de salida del modelo. Un modelo que piensa antes de responder puede agotarlo por completo antes de escribir texto. Un administrador puede aumentarlo en Configuración → Servidor, en el campo «Máximo de tokens por respuesta» del modelo.',
     'v4.delete': 'Eliminar',
     'v4.deleteConfirm': '¿Eliminar «{title}»? No se puede deshacer.',
     'v4.deleteConversation': 'Eliminar conversación',

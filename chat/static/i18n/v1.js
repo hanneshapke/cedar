@@ -283,7 +283,7 @@ cedarI18n.add({
     'v1.copied': 'Copiado',
     'v1.copy': 'Copiar',
     'v1.copyFailed': 'No se pudo copiar al portapapeles',
-    'v1.cutOff': 'La respuesta se cortó al llegar al límite de salida del modelo. Un modelo que piensa antes de responder puede agotarlo por completo antes de escribir texto. Un administrador puede aumentarlo en Configuración → Servidor, en el campo «Tokens máximos por respuesta» del modelo.',
+    'v1.cutOff': 'La respuesta se cortó al llegar al límite de salida del modelo. Un modelo que piensa antes de responder puede agotarlo por completo antes de escribir texto. Un administrador puede aumentarlo en Configuración → Servidor, en el campo «Máximo de tokens por respuesta» del modelo.',
     'v1.delete': 'Eliminar',
     'v1.deleteConversation': 'Eliminar conversación',
     'v1.deleteNamed': 'Eliminar {title}',
