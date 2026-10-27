@@ -115,3 +115,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 registry/build_index.py --check
+
+  # The translations of the web chat and the desktop app: every key in English, German and French,
+  # with the same placeholders, and every key the pages use defined.
+  i18n:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: node scripts/check-i18n.js

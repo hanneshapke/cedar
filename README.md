@@ -59,7 +59,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "locale"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [Languages](#languages) for `locale`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
@@ -74,7 +74,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
 | `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
@@ -350,6 +350,35 @@ are read through a short-lived container that mounts the workspace read-only, wi
 restrictions as a sandbox; nothing is read from the host filesystem, and a symlink that points
 outside `/workspace` is reported as missing.
 
+## Languages
+
+The clients (web chat, desktop app, iOS and Android) are in English, German and French, and a run
+can name the user's language and region as a BCP 47 tag: `"locale": "de-CH"` on `POST /v1/runs`.
+`de`, `fr` and `en` are supported with any region (`de-AT`, `fr-CA`, `en-GB`, ...); a tag in another
+language is kept as `en`, and a continuation keeps its parent's locale. `GET /v1/defaults` lists the
+locales the clients offer.
+
+The system prompt stays in English whatever the locale: models follow English instructions best, and
+the safety rules (health tools, community tools) have one wording. A run with a locale other than
+plain `en` gets a short directive added to it instead:
+
+- reply in the language the user's message is written in, and in the locale's language when that is
+  unclear (a single word, an attachment, a scheduled task);
+- in German address the user informally (*du*), in French formally (*vous*);
+- write dates, times, numbers, units and prices the locale's way (`27.10.2026`, `1'234.5`, `CHF` for
+  `de-CH`), and Swiss German without ß;
+- give safety notices in the language of the reply.
+
+Plans and compacted prompts are written in the language of the request. [Personal
+tools](#personal-tools-in-python) see the locale as `CEDAR_LOCALE` (`de-CH`) and `CEDAR_LANGUAGE`
+(`de`), and community tool listings can carry translated summaries (see
+[registry/CONTRIBUTING.md](registry/CONTRIBUTING.md#translations)).
+
+The chat asks for the language first, on a new browser or phone, and keeps it in Settings → Language.
+It sends the locale with every message, and saves it on its server too, so scheduled runs and
+notifications use it. Translators: see [docs/i18n-glossary.md](docs/i18n-glossary.md) for the terms
+and tone.
+
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
@@ -414,6 +443,7 @@ Settings come from environment variables. The important ones:
 | `BIND_ADDR` | `127.0.0.1:8080` |
 | `DATABASE_URL` | `sqlite://cedar.db` |
 | `MAX_TURNS_CAP` | 25 |
+| `DEFAULT_LOCALE` | `en` (the language and region of a run that doesn't name one, such as `de-CH`; see [Languages](#languages)) |
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
@@ -697,7 +727,7 @@ A manifest also says what the tool needs, which cedar enforces and shows to admi
 | --- | --- |
 | `version`, `author`, `homepage`, `license` | Shown in the settings; `version` names a release |
 | `network` | The hosts the tool reaches (`api.example.com`, or `*.example.com`). With any, its calls get `TOOLS_NETWORK` (`bridge` by default); without, no network at all |
-| `secrets` | The environment variables it reads credentials from: names (`"API_TOKEN"`) or `{"name", "description"?, "optional"?}`. Admins save them in the settings (encrypted, see [Integrations](#integrations)); a call gets only its own tool's declared, saved ones. `PATH`, `HOME`, `PYTHON*`, `PIP_*`, `LD_*`, `CEDAR_*` and similar are reserved |
+| `secrets` | The environment variables it reads credentials from: names (`"API_TOKEN"`) or `{"name", "description"?, "optional"?}`. Admins save them in the settings (encrypted, see [Integrations](#integrations)); a call gets only its own tool's declared, saved ones, plus `CEDAR_LOCALE` and `CEDAR_LANGUAGE` (the run's [language](#languages)). `PATH`, `HOME`, `PYTHON*`, `PIP_*`, `LD_*`, `CEDAR_*` and similar are reserved |
 | `pip` | Plain requirements (`"requests>=2"`; no options, URLs or paths), installed into the tool's own environment when it is installed from the marketplace, or with `POST /v1/admin/tools/{name}/setup` |
 | `health_data` | It reads or returns personal health data. Runs that have such a tool get health rules in their system prompt (informational only, safety first, never dosing or device-setting advice, see the care team), and installing one asks for consent |
 

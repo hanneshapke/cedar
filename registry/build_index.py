@@ -7,7 +7,8 @@
 Every folder in registry/tools/ is one tool: the files cedar installs (tool.json, the script, and
 any other plain files) plus a listing.json that only the registry reads:
 
-    {"summary": "One line for the list", "category": "health", "reviewed": false}
+    {"summary": "One line for the list", "category": "health", "reviewed": false,
+     "translations": {"de": {"summary": "...", "secrets": {"NAME": "..."}}, "fr": {...}}}
 
 The index lists each tool's current release with the permissions its manifest asks for and the
 SHA-256 of every file, so cedar refuses any file that differs from what was reviewed here. The
@@ -53,7 +54,11 @@ MANIFEST_KEYS = {
     "name", "description", "input_schema", "entry", "timeout_secs", "version", "author",
     "homepage", "license", "network", "secrets", "pip", "health_data",
 }
-LISTING_KEYS = {"summary", "category", "reviewed"}
+LISTING_KEYS = {"summary", "category", "reviewed", "translations"}
+# The languages cedar's clients are translated into besides English, with an optional region.
+TRANSLATION_TAG = re.compile(r"^(de|fr)(-[A-Z]{2})?$")
+TRANSLATION_KEYS = {"summary", "secrets"}
+MAX_SECRET_TEXT = 500
 CATEGORIES = {"health", "productivity", "data", "finance", "home", "media", "developer", "other"}
 # Things that look like credentials. A false alarm is better than a leaked key.
 SECRET_PATTERNS = [
@@ -148,6 +153,8 @@ def check_tool(folder, problems):
     for req in pip:
         if not isinstance(req, str) or not REQUIREMENT.match(req):
             problems.add(name, f"pip: {req!r} is not a plain requirement (no options, URLs or paths)")
+    translations = listing.get("translations", {})
+    check_translations(name, translations, secrets, problems)
     health = manifest.get("health_data", False) is True
     if health and listing.get("reviewed") is not True:
         problems.add(name, "a tool that handles health data needs a maintainer's review "
@@ -184,7 +191,7 @@ def check_tool(folder, problems):
     if entry not in files:
         problems.add(name, f"the entry script {entry} is missing")
 
-    return {
+    listed = {
         "name": name,
         "version": version,
         "summary": summary,
@@ -197,6 +204,39 @@ def check_tool(folder, problems):
         "files": files,
         "reviewed": listing.get("reviewed") is True,
     }
+    if translations:
+        listed["translations"] = translations
+    return listed
+
+
+def check_translations(name, translations, secrets, problems):
+    """The listing's text in other languages: display only, so it never changes what a tool asks
+    for. cedar shows a summary or secret description from here in place of the English one."""
+    if not isinstance(translations, dict):
+        problems.add(name, "translations is an object of locale -> {summary, secrets}")
+        return
+    for tag, text in translations.items():
+        where = f"translations[{tag!r}]"
+        if not TRANSLATION_TAG.match(tag):
+            problems.add(name, f"{where}: locales are de or fr, optionally with a region (de-CH)")
+        if not isinstance(text, dict):
+            problems.add(name, f"{where} is an object with summary and secrets")
+            continue
+        for key in set(text) - TRANSLATION_KEYS:
+            problems.add(name, f"{where} has an unknown field {key!r}")
+        summary = text.get("summary")
+        if summary is not None and (not isinstance(summary, str) or not summary.strip()
+                                    or len(summary) > 120 or "\n" in summary):
+            problems.add(name, f"{where}: the summary is one line of at most 120 characters")
+        described = text.get("secrets", {})
+        if not isinstance(described, dict):
+            problems.add(name, f"{where}: secrets is an object of secret name -> description")
+            continue
+        for secret, desc in described.items():
+            if secret not in secrets:
+                problems.add(name, f"{where}: {secret} is not a secret tool.json declares")
+            if not isinstance(desc, str) or not desc.strip() or len(desc) > MAX_SECRET_TEXT:
+                problems.add(name, f"{where}: {secret}'s description is 1 to {MAX_SECRET_TEXT} characters")
 
 
 def build(problems):
