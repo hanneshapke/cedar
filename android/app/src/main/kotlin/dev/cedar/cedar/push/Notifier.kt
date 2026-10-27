@@ -32,6 +32,7 @@ object Notifier {
     const val CHANNEL = "responses"
     const val EXTRA_CONVERSATION = "conversation_id"
 
+    /** Creates the channel, or renames it in the app's language (`context` should be localized). */
     fun createChannel(context: Context) {
         val channel = NotificationChannel(CHANNEL, context.getString(R.string.channel_responses), NotificationManager.IMPORTANCE_DEFAULT)
         channel.description = context.getString(R.string.channel_responses_description)
@@ -41,11 +42,12 @@ object Notifier {
     /** Handles a push's data, from FCM's map or UnifiedPush's JSON body. Runs on a background thread. */
     fun handle(context: Context, data: Map<String, String>) {
         val app = (context.applicationContext as CedarApplication).app
+        val text = runOnMain { app.text() }
         val kind = data["kind"] ?: "turn"
         val conversationId = data["conversation_id"].orEmpty()
         val tag = data["tag"] ?: conversationId
         if (kind == "test" || conversationId.isEmpty()) {
-            show(context, "test", null, "Cedar: test notification", "This is how Cedar will tell you when a response finishes while you are away.")
+            show(context, "test", null, text.getString(R.string.notification_test_title), text.getString(R.string.notification_test_text))
             return
         }
         // A response in the conversation that's open is already in front of the user.
@@ -57,14 +59,15 @@ object Notifier {
         val detail = client?.let { runBlocking { withTimeoutOrNull(8_000) { runCatching { it.conversation(conversationId) }.getOrNull() } } }
         // Looked at on another device in the meantime: nothing to tell.
         if (detail != null && !detail.conversation.unread && !detail.conversation.needsAnswer) return
-        val title = detail?.conversation?.displayTitle ?: "Cedar"
+        val title = detail?.conversation?.titleOr(text.getString(R.string.new_chat)) ?: text.getString(R.string.app_name)
         val last = detail?.turns?.maxByOrNull { it.seq }
+        val finished = text.getString(R.string.notification_finished)
         val body = when {
-            last == null -> "A response finished."
-            last.needsAnswer -> "Needs your answer: ${last.finalText.orEmpty()}".trim()
-            last.status == TurnStatus.FAILED -> "Failed: ${last.error ?: "the run failed"}"
-            last.status == TurnStatus.CANCELLED -> "Stopped."
-            else -> last.finalText?.takeIf { it.isNotBlank() } ?: "A response finished."
+            last == null -> finished
+            last.needsAnswer -> text.getString(R.string.notification_needs_answer, last.finalText.orEmpty()).trim()
+            last.status == TurnStatus.FAILED -> text.getString(R.string.notification_failed, last.error ?: text.getString(R.string.notification_run_failed))
+            last.status == TurnStatus.CANCELLED -> text.getString(R.string.notification_stopped)
+            else -> last.finalText?.takeIf { it.isNotBlank() } ?: finished
         }
         show(context, tag, conversationId, title, body.take(400))
         runOnMain { app.scope.launch { app.refresh() } }

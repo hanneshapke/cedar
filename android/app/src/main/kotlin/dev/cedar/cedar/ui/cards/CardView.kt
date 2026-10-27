@@ -41,11 +41,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.cedar.cedar.R
 import dev.cedar.cedar.ui.CedarColors
 import dev.cedar.cedar.ui.cardFrame
 import dev.cedar.cedar.ui.openUrl
@@ -107,7 +109,7 @@ fun CardMap(title: String, pins: List<Pin>, routes: List<Route> = emptyList()) {
         OsmMap(pins, routes, interactive = false, modifier = Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().clickable { expanded = true })
         Icon(
-            Icons.Outlined.OpenInFull, "Open the map full screen",
+            Icons.Outlined.OpenInFull, stringResource(R.string.open_map_full_screen),
             Modifier.align(Alignment.TopEnd).padding(8.dp).size(28.dp).clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)).padding(6.dp),
         )
@@ -117,7 +119,7 @@ fun CardMap(title: String, pins: List<Pin>, routes: List<Route> = emptyList()) {
             Surface(Modifier.fillMaxSize()) {
                 Column {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { expanded = false }) { Icon(Icons.Filled.Close, "Close") }
+                        IconButton(onClick = { expanded = false }) { Icon(Icons.Filled.Close, stringResource(R.string.close)) }
                         Text(title, style = MaterialTheme.typography.titleMedium)
                     }
                     OsmMap(pins, routes, interactive = true, modifier = Modifier.fillMaxSize())
@@ -203,7 +205,7 @@ fun MapCardView(card: MapCard) {
     val accent = MaterialTheme.colorScheme.primary
     Column(Modifier.cardFrame(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         card.title?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
-        CardMap(card.title ?: "Map", card.markers.mapIndexed { i, p -> Pin(p.coordinate, "${i + 1}", p.label, accent) })
+        CardMap(card.title ?: stringResource(R.string.map), card.markers.mapIndexed { i, p -> Pin(p.coordinate, "${i + 1}", p.label, accent) })
         card.markers.forEachIndexed { index, place ->
             Row(
                 Modifier.fillMaxWidth().clickable { openUrl(context, place.mapsUrl()) }.padding(vertical = 2.dp),
@@ -218,7 +220,10 @@ fun MapCardView(card: MapCard) {
             }
         }
         if (card.notFound.isNotEmpty()) {
-            Text("Not found: ${card.notFound.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
+            Text(
+                stringResource(R.string.not_found, card.notFound.joinToString(", ")),
+                style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText,
+            )
         }
     }
 }

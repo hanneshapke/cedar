@@ -68,11 +68,13 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.ChatModel
+import dev.cedar.cedar.R
 import dev.cedar.core.AttachmentInfo
 import dev.cedar.core.OutgoingAttachment
 import kotlinx.coroutines.Dispatchers
@@ -92,9 +94,10 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
     LaunchedEffect(chat.conversationId) { chat.conversationId?.let { if (app.conversation(it) != null) app.markSeen(it) } }
 
     val conversationId = chat.conversationId
-    val title = conversationId?.let { app.conversation(it) }?.displayTitle
+    val newChat = stringResource(R.string.new_chat)
+    val title = conversationId?.let { app.conversation(it) }?.titleOr(newChat)
         ?: chat.turns.firstOrNull()?.prompt?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()?.let { if (it.length > 80) it.take(80) + "…" else it }
-        ?: "New Chat"
+        ?: newChat
     val webURL = conversationId?.let { id -> app.client?.webURL(id) }
     val openQuestions = chat.openQuestions
 
@@ -110,7 +113,7 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
             TopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
                 },
                 actions = {
                     if (conversationId != null) {
@@ -122,15 +125,19 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
                                 } catch (e: kotlinx.coroutines.CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    starError = e.message
+                                    starError = context.describe(e)
                                 }
                             }
                         }) {
-                            if (starred) Icon(Icons.Filled.Star, "Unstar", tint = CedarColors.yellow) else Icon(Icons.Outlined.StarBorder, "Star")
+                            if (starred) {
+                                Icon(Icons.Filled.Star, stringResource(R.string.unstar), tint = CedarColors.yellow)
+                            } else {
+                                Icon(Icons.Outlined.StarBorder, stringResource(R.string.star))
+                            }
                         }
                     }
                     if (webURL != null) {
-                        IconButton(onClick = { openUrl(context, webURL) }) { Icon(Icons.Outlined.OpenInBrowser, "Open on the web") }
+                        IconButton(onClick = { openUrl(context, webURL) }) { Icon(Icons.Outlined.OpenInBrowser, stringResource(R.string.open_on_the_web)) }
                     }
                 },
             )
@@ -174,7 +181,7 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
             }
         }
     }
-    ErrorDialog("Could Not Change the Star", starError) { starError = null }
+    ErrorDialog(stringResource(R.string.could_not_change_star), starError) { starError = null }
 }
 
 @Composable
@@ -182,10 +189,10 @@ private fun Greeting() {
     Column(Modifier.fillMaxWidth().padding(top = 80.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(Icons.Outlined.Eco, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.size(12.dp))
-        Text("What should the agent do?", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.greeting_title), style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.size(8.dp))
         Text(
-            "It can search the web, write files and run code in its own sandbox. Follow-ups keep its files.",
+            stringResource(R.string.greeting_text),
             style = MaterialTheme.typography.bodyMedium,
             color = CedarColors.secondaryText,
             textAlign = TextAlign.Center,
@@ -233,7 +240,7 @@ private fun ErrorBanner(message: String, dismiss: () -> Unit) {
         Icon(Icons.Outlined.WarningAmber, null, Modifier.size(18.dp), tint = CedarColors.red)
         Spacer(Modifier.size(8.dp))
         Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = CedarColors.red)
-        IconButton(onClick = dismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Filled.Close, "Dismiss", tint = CedarColors.red) }
+        IconButton(onClick = dismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Filled.Close, stringResource(R.string.dismiss), tint = CedarColors.red) }
     }
 }
 
@@ -266,14 +273,17 @@ private fun Composer(chat: ChatModel) {
                         if (chat.isAddingAttachments) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Outlined.AttachFile, if (chat.acceptsImages) "Attach images or PDFs" else "Attach PDFs")
+                            Icon(
+                                Icons.Outlined.AttachFile,
+                                stringResource(if (chat.acceptsImages) R.string.attach_images_or_pdfs else R.string.attach_pdfs),
+                            )
                         }
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         // Photos only for a model that takes images; PDFs for any.
                         if (chat.acceptsImages) {
                             DropdownMenuItem(
-                                text = { Text("Photos") },
+                                text = { Text(stringResource(R.string.photos)) },
                                 leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null) },
                                 onClick = {
                                     menu = false
@@ -282,7 +292,7 @@ private fun Composer(chat: ChatModel) {
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text(if (chat.acceptsImages) "Choose Files" else "Choose PDFs") },
+                            text = { Text(stringResource(if (chat.acceptsImages) R.string.choose_files else R.string.choose_pdfs)) },
                             leadingIcon = { Icon(Icons.Outlined.Folder, null) },
                             onClick = {
                                 menu = false
@@ -295,14 +305,20 @@ private fun Composer(chat: ChatModel) {
                     value = chat.draft,
                     onValueChange = { chat.draft = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (chat.openQuestions == null) "Message cedar" else "Or answer in your own words") },
+                    placeholder = {
+                        Text(stringResource(if (chat.openQuestions == null) R.string.message_placeholder else R.string.answer_placeholder))
+                    },
                     maxLines = 8,
                     shape = RoundedCornerShape(20.dp),
                 )
                 if (chat.isActive) {
-                    FilledIconButton(onClick = { chat.stop() }, enabled = chat.pendingPrompt == null) { Icon(Icons.Filled.Stop, "Stop") }
+                    FilledIconButton(onClick = { chat.stop() }, enabled = chat.pendingPrompt == null) {
+                        Icon(Icons.Filled.Stop, stringResource(R.string.stop))
+                    }
                 } else {
-                    FilledIconButton(onClick = { chat.send() }, enabled = chat.canSend) { Icon(Icons.Filled.ArrowUpward, "Send") }
+                    FilledIconButton(onClick = { chat.send() }, enabled = chat.canSend) {
+                        Icon(Icons.Filled.ArrowUpward, stringResource(R.string.send))
+                    }
                 }
             }
         }
@@ -312,6 +328,7 @@ private fun Composer(chat: ChatModel) {
 /** A file picked for the next message, with a thumbnail for images and a remove button. */
 @Composable
 private fun AttachmentChip(file: OutgoingAttachment, remove: () -> Unit) {
+    val context = LocalContext.current
     var thumbnail by remember(file.id) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(file.id) {
         if (file.isImage) {
@@ -334,8 +351,10 @@ private fun AttachmentChip(file: OutgoingAttachment, remove: () -> Unit) {
         Spacer(Modifier.size(6.dp))
         Column(Modifier.widthIn(max = 140.dp)) {
             Text(file.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(OutgoingAttachment.format(file.data.size.toLong()), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+            Text(context.fileSize(file.data.size.toLong()), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
         }
-        IconButton(onClick = remove, modifier = Modifier.size(28.dp)) { Icon(Icons.Outlined.Cancel, "Remove ${file.name}", tint = CedarColors.secondaryText) }
+        IconButton(onClick = remove, modifier = Modifier.size(28.dp)) {
+            Icon(Icons.Outlined.Cancel, stringResource(R.string.remove_file, file.name), tint = CedarColors.secondaryText)
+        }
     }
 }

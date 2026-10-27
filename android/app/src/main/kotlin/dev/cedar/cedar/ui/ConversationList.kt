@@ -55,10 +55,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.cedar.cedar.AppModel
+import dev.cedar.cedar.R
 import dev.cedar.cedar.SidebarMode
 import dev.cedar.core.Conversation
 import kotlinx.coroutines.launch
@@ -67,6 +69,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(app: AppModel) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var actionError by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<Conversation?>(null) }
@@ -78,7 +81,7 @@ fun ConversationListScreen(app: AppModel) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                actionError = e.message
+                actionError = context.describe(e)
             }
         }
     }
@@ -95,9 +98,9 @@ fun ConversationListScreen(app: AppModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("cedar") },
+                title = { Text(stringResource(R.string.brand)) },
                 navigationIcon = {
-                    IconButton(onClick = { app.showingSettings = true }) { Icon(Icons.Outlined.Settings, "Settings") }
+                    IconButton(onClick = { app.showingSettings = true }) { Icon(Icons.Outlined.Settings, stringResource(R.string.settings)) }
                 },
                 actions = {
                     IconButton(
@@ -106,7 +109,7 @@ fun ConversationListScreen(app: AppModel) {
                             app.newChat()
                         },
                         enabled = app.settings.isConfigured,
-                    ) { Icon(Icons.Outlined.EditNote, "New Chat") }
+                    ) { Icon(Icons.Outlined.EditNote, stringResource(R.string.new_chat)) }
                 },
             )
         },
@@ -114,9 +117,13 @@ fun ConversationListScreen(app: AppModel) {
         Column(Modifier.padding(padding).fillMaxSize()) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
                 val modes = listOf(
-                    SidebarMode.CHATS to "Chats",
-                    SidebarMode.STARRED to "Starred",
-                    SidebarMode.SCHEDULED to if (app.scheduledUnread > 0) "Scheduled (${app.scheduledUnread})" else "Scheduled",
+                    SidebarMode.CHATS to stringResource(R.string.tab_chats),
+                    SidebarMode.STARRED to stringResource(R.string.tab_starred),
+                    SidebarMode.SCHEDULED to if (app.scheduledUnread > 0) {
+                        stringResource(R.string.tab_scheduled_count, app.scheduledUnread)
+                    } else {
+                        stringResource(R.string.tab_scheduled)
+                    },
                 )
                 modes.forEachIndexed { index, (mode, label) ->
                     SegmentedButton(
@@ -142,12 +149,12 @@ fun ConversationListScreen(app: AppModel) {
     }
 
     renaming?.let { conversation ->
-        RenameDialog(conversation.displayTitle, onDismiss = { renaming = null }) { title ->
+        RenameDialog(conversation.titleOr(stringResource(R.string.new_chat)), onDismiss = { renaming = null }) { title ->
             renaming = null
             if (title.isNotBlank()) act { app.rename(conversation, title.trim()) }
         }
     }
-    ErrorDialog("Could Not Do That", actionError) { actionError = null }
+    ErrorDialog(stringResource(R.string.could_not_do_that), actionError) { actionError = null }
 }
 
 @Composable
@@ -156,7 +163,12 @@ private fun ChatRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit, onRe
     if (app.conversations.isEmpty() && app.listError == null && !app.isRefreshing) {
         // In a scrollable column, so pulling to refresh still works on an empty list.
         LazyColumn(Modifier.fillMaxSize()) {
-            item { EmptyState(Icons.AutoMirrored.Outlined.Chat, "No Conversations", "Start a new chat to run the agent.", Modifier.padding(top = 80.dp)) }
+            item {
+                EmptyState(
+                    Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.empty_chats_title), stringResource(R.string.empty_chats_text),
+                    Modifier.padding(top = 80.dp),
+                )
+            }
         }
         return
     }
@@ -171,14 +183,17 @@ private fun ChatRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit, onRe
                 starred = starred,
                 onClick = { app.selection = conversation.id },
                 menu = listOf(
-                    MenuAction(if (starred) "Unstar" else "Star", if (starred) Icons.Outlined.StarBorder else Icons.Outlined.Star) {
+                    MenuAction(
+                        stringResource(if (starred) R.string.unstar else R.string.star),
+                        if (starred) Icons.Outlined.StarBorder else Icons.Outlined.Star,
+                    ) {
                         onAction { app.setStarred(conversation.id, !starred) }
                     },
-                    MenuAction("Rename", Icons.Outlined.Edit) { onRename(conversation) },
-                    MenuAction("Open on the Web", Icons.Outlined.OpenInBrowser) {
+                    MenuAction(stringResource(R.string.rename), Icons.Outlined.Edit) { onRename(conversation) },
+                    MenuAction(stringResource(R.string.open_on_web), Icons.Outlined.OpenInBrowser) {
                         app.client?.let { openUrl(context, it.webURL(conversation.id)) }
                     },
-                    MenuAction("Delete", Icons.Outlined.Delete, destructive = true) {
+                    MenuAction(stringResource(R.string.delete), Icons.Outlined.Delete, destructive = true) {
                         onAction {
                             try {
                                 app.delete(conversation)
@@ -203,8 +218,7 @@ private fun StarredRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
             item {
                 if (app.starredLoaded) {
                     EmptyState(
-                        Icons.Outlined.StarBorder, "No Starred Conversations",
-                        "Star a chat or a scheduled run, here or on the web, to keep it at hand on every device.",
+                        Icons.Outlined.StarBorder, stringResource(R.string.empty_starred_title), stringResource(R.string.empty_starred_text),
                         Modifier.padding(top = 80.dp),
                     )
                 } else {
@@ -224,8 +238,8 @@ private fun StarredRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                 starred = false,
                 onClick = { app.selection = conversation.id },
                 menu = listOf(
-                    MenuAction("Unstar", Icons.Outlined.StarBorder) { onAction { app.setStarred(conversation.id, false) } },
-                    MenuAction("Open on the Web", Icons.Outlined.OpenInBrowser) {
+                    MenuAction(stringResource(R.string.unstar), Icons.Outlined.StarBorder) { onAction { app.setStarred(conversation.id, false) } },
+                    MenuAction(stringResource(R.string.open_on_web), Icons.Outlined.OpenInBrowser) {
                         app.client?.let { openUrl(context, it.webURL(conversation.id)) }
                     },
                 ),
@@ -297,7 +311,7 @@ private fun ConversationRow(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        conversation.displayTitle,
+                        conversation.titleOr(stringResource(R.string.new_chat)),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = if (conversation.unread) FontWeight.SemiBold else FontWeight.Normal,
@@ -310,13 +324,16 @@ private fun ConversationRow(
                     val small = MaterialTheme.typography.bodySmall
                     if (conversation.scheduleId != null) {
                         Icon(Icons.Outlined.Schedule, null, Modifier.size(12.dp), tint = CedarColors.secondaryText)
-                        Text("${conversation.scheduleTitle ?: "Scheduled"} ·", style = small, color = CedarColors.secondaryText, maxLines = 1)
+                        Text(
+                            "${conversation.scheduleTitle ?: stringResource(R.string.tab_scheduled)} ·",
+                            style = small, color = CedarColors.secondaryText, maxLines = 1,
+                        )
                     }
                     Text(relative(conversation.updatedAt), style = small, color = CedarColors.secondaryText, maxLines = 1)
                     if (conversation.needsAnswer) {
                         NeedsAnswerChip()
                     } else if (conversation.unread) {
-                        Text("Unread", style = small, color = CedarColors.secondaryText)
+                        Text(stringResource(R.string.unread), style = small, color = CedarColors.secondaryText)
                     }
                     conversation.model?.takeIf { it.isNotEmpty() }?.let {
                         Text("· $it", style = small, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -340,7 +357,7 @@ fun UnreadDot(visible: Boolean, modifier: Modifier = Modifier, size: Int = 8) {
 @Composable
 fun NeedsAnswerChip() {
     Text(
-        "Needs answer",
+        stringResource(R.string.needs_answer),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold,
         color = CedarColors.orange,
@@ -356,9 +373,9 @@ private fun RenameDialog(initial: String, onDismiss: () -> Unit, onSave: (String
     var title by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename Conversation") },
-        text = { OutlinedTextField(title, { title = it }, singleLine = true, label = { Text("Title") }) },
-        confirmButton = { TextButton(onClick = { onSave(title) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        title = { Text(stringResource(R.string.rename_conversation)) },
+        text = { OutlinedTextField(title, { title = it }, singleLine = true, label = { Text(stringResource(R.string.title)) }) },
+        confirmButton = { TextButton(onClick = { onSave(title) }) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }

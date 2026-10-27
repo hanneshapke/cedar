@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -49,18 +50,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import dev.cedar.cedar.R
 import dev.cedar.cedar.ui.CedarColors
+import dev.cedar.cedar.ui.badgeLabel
 import dev.cedar.cedar.ui.cardFrame
+import dev.cedar.cedar.ui.confidenceLabel
 import dev.cedar.cedar.ui.openUrl
+import dev.cedar.cedar.ui.plural
 import dev.cedar.cedar.ui.shortDateTime
+import dev.cedar.cedar.ui.sortLabel
+import dev.cedar.cedar.ui.verdictLabel
 import dev.cedar.core.ProductsCard
-import dev.cedar.core.number
+import dev.cedar.core.price
 
-private fun money(value: Double, currency: String): String {
-    val symbol = mapOf("USD" to "$", "EUR" to "€", "GBP" to "£", "JPY" to "¥", "CAD" to "CA$", "AUD" to "A$")[currency]
-    val n = number(value, 2, 2)
-    return if (symbol != null) "$symbol$n" else "$n $currency"
-}
+/** A price in `currency`, as the user's locale writes prices. */
+private fun money(value: Double, currency: String): String = price(value, currency, 2, 2)
 
 private fun verdictColor(v: ProductsCard.Verdict): Color = when (v) {
     ProductsCard.Verdict.EXCELLENT, ProductsCard.Verdict.GOOD -> CedarColors.green
@@ -92,11 +96,14 @@ fun ProductsCardView(card: ProductsCard) {
 
     Column(Modifier.cardFrame(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column {
-            Text(card.query.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium)
+            Text((card.query ?: stringResource(R.string.products)).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium)
             val meta = buildList {
-                add("${card.options.size} of ${card.total} from ${card.store}")
-                if (card.pages != null && card.productsFound != null) add("${card.productsFound} products on ${card.pages} pages")
-                card.sort?.let { add(it) }
+                add(
+                    card.store?.let { context.getString(R.string.products_meta, card.options.size, card.total, it) }
+                        ?: context.getString(R.string.products_meta_unnamed, card.options.size, card.total),
+                )
+                if (card.pages != null && card.productsFound != null) add(context.getString(R.string.products_pages, card.productsFound, card.pages))
+                card.sort?.let { sort -> sortLabel(sort)?.let { add(context.getString(it)) } }
             }
             Text(meta.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
         }
@@ -105,7 +112,7 @@ fun ProductsCardView(card: ProductsCard) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)).padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                CardLabel("The recommendation")
+                CardLabel(stringResource(R.string.the_recommendation))
                 Text(it, style = MaterialTheme.typography.bodyMedium)
             }
         }
@@ -140,7 +147,7 @@ fun ProductsCardView(card: ProductsCard) {
                     Row(Modifier.clickable { select(o.id, null) }, verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(4.dp))
-                        Text("Back to ${o.name}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                        Text(stringResource(R.string.back_to, o.name), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                     }
                 }
             }
@@ -165,25 +172,30 @@ fun ProductsCardView(card: ProductsCard) {
             }
             PriceLine(product, card.currencyOf(product))
             val stock = buildList {
-                product.online?.let { add(if (it) "Available online" else "Not available online") }
-                product.inStore?.let { add(if (it) "In stores" else "Not in stores") }
-                if (product.freeShipping == true) add("Free shipping")
+                product.online?.let { add(context.getString(if (it) R.string.available_online else R.string.not_available_online)) }
+                product.inStore?.let { add(context.getString(if (it) R.string.in_stores else R.string.not_in_stores)) }
+                if (product.freeShipping == true) add(context.getString(R.string.free_shipping))
             }
             if (stock.isNotEmpty()) Text(stock.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
             product.url?.let { url ->
                 Row(Modifier.clickable { openUrl(context, url) }, verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(4.dp))
-                    Text("View at ${product.store ?: card.store}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    val store = product.store ?: card.store
+                    Text(
+                        store?.let { stringResource(R.string.view_at, it) } ?: stringResource(R.string.view_at_store),
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
             if (product.why != null || product.bestFor != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CardLabel("Why it fits")
+                    CardLabel(stringResource(R.string.why_it_fits))
                     product.why?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                     product.bestFor?.let {
+                        val bestFor = stringResource(R.string.best_for)
                         Text(buildAnnotatedString {
-                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append("Best for: ") }
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append("$bestFor ") }
                             append(it)
                         }, style = MaterialTheme.typography.bodyMedium)
                     }
@@ -199,13 +211,13 @@ fun ProductsCardView(card: ProductsCard) {
             product.description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText) }
             if (product.features.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    CardLabel("Key features")
+                    CardLabel(stringResource(R.string.key_features))
                     product.features.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
             }
             if (product.specs.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    CardLabel("Specs")
+                    CardLabel(stringResource(R.string.specs))
                     product.specs.forEach { spec ->
                         Row {
                             Text(spec.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
@@ -217,7 +229,7 @@ fun ProductsCardView(card: ProductsCard) {
             val sources = product.sources.mapNotNull { n -> card.sources[n]?.let { n to it } }
             if (sources.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    CardLabel("Sources")
+                    CardLabel(stringResource(R.string.sources))
                     sources.forEach { (n, source) ->
                         Text(
                             "[$n] ${source.title}${source.host?.let { " · $it" } ?: ""}",
@@ -236,7 +248,7 @@ fun ProductsCardView(card: ProductsCard) {
         val comparable = product.comparable.mapNotNull(card::product)
         if (comparable.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                CardLabel("Comparable options")
+                CardLabel(stringResource(R.string.comparable_options))
                 comparable.forEach { c ->
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { select(c.id, if (card.options.any { it.id == product.id }) product.id else origin) }.padding(4.dp),
@@ -255,7 +267,7 @@ fun ProductsCardView(card: ProductsCard) {
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            card.asOf?.let { Text("As of ${shortDateTime(it)}", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText) }
+            card.asOf?.let { Text(stringResource(R.string.as_of, shortDateTime(it)), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText) }
             card.disclaimer?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText.copy(alpha = 0.7f)) }
         }
     }
@@ -277,17 +289,17 @@ private fun ProductPhoto(url: String?, name: String, height: Int) {
 private fun PriceLine(product: ProductsCard.Product, currency: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(product.price?.let { money(it, currency) } ?: "Price at the store", style = MaterialTheme.typography.titleLarge)
+            Text(product.price?.let { money(it, currency) } ?: stringResource(R.string.price_at_store), style = MaterialTheme.typography.titleLarge)
             product.regularPrice?.let {
                 Text(money(it, currency), style = MaterialTheme.typography.bodyMedium.copy(textDecoration = TextDecoration.LineThrough), color = CedarColors.secondaryText)
             }
             product.savingsPct?.let {
-                Text("Save ${Math.round(it)}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CedarColors.green,
+                Text(stringResource(R.string.save_percent, Math.round(it)), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CedarColors.green,
                     modifier = Modifier.clip(RoundedCornerShape(50)).background(CedarColors.green.copy(alpha = 0.15f)).padding(horizontal = 6.dp, vertical = 2.dp))
             }
         }
         if (product.price != null && !product.priceChecked) {
-            Text("From review or search text, not checked on a store page", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+            Text(stringResource(R.string.price_unchecked), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
         }
     }
 }
@@ -314,7 +326,7 @@ private fun RatingLine(reviews: ProductsCard.Reviews) {
             Stars(average)
             Text("(${java.text.NumberFormat.getIntegerInstance().format(reviews.count)})", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
         } else {
-            Text("No reviews", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+            Text(stringResource(R.string.no_reviews), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
         }
     }
 }
@@ -322,29 +334,36 @@ private fun RatingLine(reviews: ProductsCard.Reviews) {
 @Composable
 private fun ReviewsPanel(reviews: ProductsCard.Reviews) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        CardLabel("Reviews")
+        CardLabel(stringResource(R.string.reviews))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val color = verdictColor(reviews.verdict)
-            Text(reviews.verdict.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = color,
+            Text(stringResource(verdictLabel(reviews.verdict)), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = color,
                 modifier = Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.15f)).padding(horizontal = 8.dp, vertical = 2.dp))
             val average = reviews.average
             if (average != null) {
                 Stars(average, 14)
-                Text("${"%.1f".format(average)} from ${java.text.NumberFormat.getIntegerInstance().format(reviews.count)} review${if (reviews.count == 1) "" else "s"}",
-                    style = MaterialTheme.typography.bodySmall)
+                Text(
+                    plural(R.plurals.reviews_average, reviews.count, "%.1f".format(average), java.text.NumberFormat.getIntegerInstance().format(reviews.count)),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             } else {
-                Text("No customer rating found", style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
+                Text(stringResource(R.string.no_customer_rating), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
             }
         }
         reviews.adjusted?.let {
-            Text("Adjusted for the number of reviews: ${"%.1f".format(it)} / 5 · ${reviews.confidence} confidence", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+            Text(
+                stringResource(R.string.reviews_adjusted, "%.1f".format(it), stringResource(confidenceLabel(reviews.confidence, lower = true))),
+                style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText,
+            )
         }
         reviews.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
 @Composable
-private fun PickBadge(text: String) {
+private fun PickBadge(badge: String) {
+    // The picks core names are translated; badges the model gave stay as they are.
+    val text = badgeLabel(badge)?.let { stringResource(it) } ?: badge
     Text(text, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimary,
         modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp, vertical = 2.dp))
 }

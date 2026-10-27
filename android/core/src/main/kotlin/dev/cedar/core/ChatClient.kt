@@ -35,7 +35,19 @@ sealed class ChatException(message: String) : Exception(message) {
 
     data object InvalidURL : ChatException("The server URL is not valid.")
 
-    data class Unreachable(val detail: String) : ChatException("Could not reach cedar-chat: $detail")
+    /**
+     * `detail` says what went wrong in English; a `hint`, when there is one, is advice the app words
+     * itself in the user's language.
+     */
+    data class Unreachable(val detail: String, val hint: Hint? = null) : ChatException("Could not reach cedar-chat: $detail") {
+        sealed interface Hint {
+            /** The address is `http://` (refused as cleartext): use the HTTPS one. */
+            data object HttpsOnly : Hint
+
+            /** TLS failed on an explicit port, which likely serves plain HTTP; `error` is the TLS error. */
+            data class PlainHttpPort(val port: Int, val error: String) : Hint
+        }
+    }
 
     data object Unauthorized : ChatException("cedar-chat wants an access token, or rejected this one. Check Settings.")
 
@@ -124,6 +136,8 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         val attachments: List<Upload>? = null,
         /** `off`, `on`, `auto` or `tool`; absent leaves it to the server's Settings. */
         val plan: String? = null,
+        /** The user's locale as a BCP 47 tag (`de-CH`), so the agent answers in it ([AppLocales.effective]). */
+        val locale: String? = null,
     ) {
         @Serializable
         data class Upload(
@@ -163,6 +177,16 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
      */
     fun turnEvents(turnId: String, after: Int = 0): Flow<RunEvent> =
         stream(request("api/turns/$turnId/events", query = mapOf("after" to after.toString())), RunEvent.serializer()) { it.isTerminal }
+
+    // Settings
+
+    /**
+     * Sets the server's language (`PUT /api/settings/locale`), which scheduled runs and notifications
+     * follow; `null` clears it, for an app that follows the device.
+     */
+    suspend fun setLocale(locale: String?) {
+        send(request("api/settings/locale", "PUT", buildJsonObject { put("locale", locale) }))
+    }
 
     // Inbox and notices
 
@@ -312,7 +336,7 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
          */
         fun unreachable(error: IOException, baseURL: HttpUrl): ChatException {
             if (error is UnknownServiceException && error.message.orEmpty().contains("CLEARTEXT", ignoreCase = true)) {
-                return ChatException.Unreachable(ServerSettings.HTTPS_ONLY)
+                return ChatException.Unreachable(ServerSettings.HTTPS_ONLY, ChatException.Unreachable.Hint.HttpsOnly)
             }
             val detail = error.message ?: error.javaClass.simpleName
             val explicitPort = baseURL.port != HttpUrl.defaultPort(baseURL.scheme)
@@ -322,6 +346,7 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
             return ChatException.Unreachable(
                 "$detail Port ${baseURL.port} may serve plain HTTP. Use the HTTPS address " +
                     "from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port).",
+                ChatException.Unreachable.Hint.PlainHttpPort(baseURL.port, detail),
             )
         }
 

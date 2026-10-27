@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.cedar.cedar.ui.Attachments
+import dev.cedar.cedar.ui.attachmentProblem
 import dev.cedar.core.Approval
 import dev.cedar.core.AttachmentInfo
 import dev.cedar.core.ChatClient
@@ -102,9 +103,9 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: ChatException.Api) {
-            errorMessage = if (e.status == 404) "This conversation no longer exists on the server." else e.message
+            errorMessage = if (e.status == 404) app.text().getString(R.string.conversation_gone) else app.describe(e)
         } catch (e: Exception) {
-            errorMessage = e.message
+            errorMessage = app.describe(e)
         }
     }
 
@@ -174,14 +175,15 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
                     throw e
                 } catch (e: ChatException.Api) {
                     if (e.status == 404) {
-                        update(turnId) { it.copy(turn = it.turn.copy(status = TurnStatus.FAILED, error = "This response no longer exists on the server.")) }
+                        val gone = app.text().getString(R.string.response_gone)
+                        update(turnId) { it.copy(turn = it.turn.copy(status = TurnStatus.FAILED, error = gone)) }
                         break
                     }
                     failures += 1
-                    if (failures >= 3) errorMessage = e.message
+                    if (failures >= 3) errorMessage = app.describe(e)
                 } catch (e: Exception) {
                     failures += 1
-                    if (failures >= 3) errorMessage = e.message
+                    if (failures >= 3) errorMessage = app.describe(e)
                 }
                 delay((min(30.0, 2.0.pow(min(failures, 5))) * 1000).toLong())
             }
@@ -212,17 +214,18 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
                 // Reading and re-encoding a photo takes a moment; keep it off the main thread.
                 val read = withContext(Dispatchers.IO) { runCatching { Attachments.read(context, uri, index, uris.size) } }
                 if (read.isFailure) {
-                    problems += read.exceptionOrNull()?.message ?: "A picked file could not be read"
+                    problems += read.exceptionOrNull()?.message ?: context.getString(R.string.file_unreadable)
                     continue
                 }
                 val file = read.getOrNull()
                 if (file == null) {
-                    problems += "${Attachments.name(context, uri) ?: "A file"}: only PNG, JPEG, GIF, WebP and PDF files can be attached"
+                    val name = withContext(Dispatchers.IO) { runCatching { Attachments.name(context, uri) }.getOrNull() }
+                    problems += context.getString(R.string.file_type_unsupported, name ?: context.getString(R.string.a_file))
                     continue
                 }
-                val problem = OutgoingAttachment.problem(file, attachments, acceptsImages)
+                val problem = OutgoingAttachment.check(file, attachments, acceptsImages)
                 if (problem != null) {
-                    problems += problem
+                    problems += context.attachmentProblem(problem)
                     continue
                 }
                 attachments = attachments + file
@@ -256,7 +259,7 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     suspend fun send(text: String, files: List<OutgoingAttachment> = emptyList()): Boolean {
         if (isActive) return false
         val client = app.client ?: run {
-            errorMessage = ChatException.NotConfigured.message
+            errorMessage = app.describe(ChatException.NotConfigured)
             return false
         }
         pendingPrompt = text
@@ -273,6 +276,8 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
                 model = settings.model.ifEmpty { null },
                 reasoning = settings.reasoning.ifEmpty { null },
                 plan = settings.plan.ifEmpty { null },
+                // The agent answers, and formats, in the user's locale.
+                locale = app.locale,
                 attachments = files.takeIf { it.isNotEmpty() }?.map {
                     ChatClient.SendMessage.Upload(it.name, it.mediaType, Base64.encodeToString(it.data, Base64.NO_WRAP))
                 },
@@ -284,7 +289,7 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            errorMessage = e.message
+            errorMessage = app.describe(e)
             if ((e as? ChatException.Api)?.status == 409) {
                 // A response is running, most likely started from another device: show it.
                 reload()
@@ -298,7 +303,13 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
 
     /** Answers the open clarifying questions. */
     fun answer(questions: Questions, answers: List<ClarifyAnswer.Answer>) {
-        app.scope.launch { send(ClarifyAnswer.text(questions, answers)) }
+        val text = app.text()
+        val answer = ClarifyAnswer.text(
+            questions, answers,
+            other = { text.getString(R.string.clarify_other, it) },
+            noPreference = text.getString(R.string.clarify_no_preference),
+        )
+        app.scope.launch { send(answer) }
     }
 
     fun stop() {
@@ -309,11 +320,11 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
                 client.cancel(active.id)
             } catch (e: ChatException.Api) {
                 // 409: already finished; the stream will deliver the terminal event.
-                if (e.status != 409) errorMessage = e.message
+                if (e.status != 409) errorMessage = app.describe(e)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                errorMessage = e.message
+                errorMessage = app.describe(e)
             }
         }
     }
@@ -335,11 +346,11 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
                 }
             } catch (e: ChatException.Api) {
                 // 409: no longer waiting; the stream has, or will have, the outcome.
-                if (e.status != 409) errorMessage = e.message
+                if (e.status != 409) errorMessage = app.describe(e)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                errorMessage = e.message
+                errorMessage = app.describe(e)
             }
         }
     }
@@ -350,11 +361,11 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
             try {
                 client.answerPlan(turn.id, plan.steps)
             } catch (e: ChatException.Api) {
-                if (e.status != 409) errorMessage = e.message
+                if (e.status != 409) errorMessage = app.describe(e)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                errorMessage = e.message
+                errorMessage = app.describe(e)
             }
         }
     }

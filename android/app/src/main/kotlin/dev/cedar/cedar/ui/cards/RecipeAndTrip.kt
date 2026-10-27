@@ -1,5 +1,6 @@
 package dev.cedar.cedar.ui.cards
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -54,10 +56,16 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import dev.cedar.cedar.R
 import dev.cedar.cedar.ui.CedarColors
 import dev.cedar.cedar.ui.cardFrame
+import dev.cedar.cedar.ui.duration
+import dev.cedar.cedar.ui.factLabel
+import dev.cedar.cedar.ui.legKindLabel
 import dev.cedar.cedar.ui.openUrl
 import dev.cedar.cedar.ui.shortTime
+import dev.cedar.cedar.ui.tripModeLabel
+import dev.cedar.cedar.ui.tripTakeLabel
 import dev.cedar.core.RecipeCard
 import dev.cedar.core.TripCard
 import dev.cedar.core.TripStyle
@@ -80,7 +88,7 @@ fun RecipeCardView(card: RecipeCard) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 card.facts.forEach { fact ->
                     Column {
-                        CardLabel(fact.label)
+                        CardLabel(factLabel(fact)?.let { stringResource(it) } ?: fact.label)
                         Text(fact.value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     }
                 }
@@ -95,7 +103,7 @@ fun RecipeCardView(card: RecipeCard) {
                     contentScale = ContentScale.Crop,
                 )
                 Text(
-                    "Photo: ${photo.source}",
+                    stringResource(R.string.photo_credit, photo.source),
                     style = MaterialTheme.typography.labelSmall,
                     color = CedarColors.secondaryText,
                     modifier = photo.pageURL?.let { url -> Modifier.clickable { openUrl(context, url) } } ?: Modifier,
@@ -103,7 +111,7 @@ fun RecipeCardView(card: RecipeCard) {
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            CardLabel("Ingredients")
+            CardLabel(stringResource(R.string.ingredients))
             card.ingredients.forEachIndexed { index, ingredient ->
                 val checked = index in have
                 Row(
@@ -125,7 +133,7 @@ fun RecipeCardView(card: RecipeCard) {
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            CardLabel("Steps")
+            CardLabel(stringResource(R.string.steps))
             card.steps.forEachIndexed { index, step ->
                 val isDone = index in done
                 Row(verticalAlignment = Alignment.Top) {
@@ -151,7 +159,7 @@ fun RecipeCardView(card: RecipeCard) {
         }
         if (card.tips.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                CardLabel(if (card.tips.size == 1) "Tip" else "Tips")
+                CardLabel(stringResource(if (card.tips.size == 1) R.string.recipe_tip else R.string.recipe_tips))
                 card.tips.forEach { tip ->
                     Row {
                         Icon(Icons.Outlined.Lightbulb, null, Modifier.size(16.dp), tint = CedarColors.yellow)
@@ -193,12 +201,14 @@ private fun clock(instant: Instant, card: TripCard, weekday: Boolean = false): S
 }
 
 /** The facts under an option's name: its times, transfers, distance or price. */
-private fun facts(o: TripCard.Option, card: TripCard): String {
+private fun facts(context: Context, o: TripCard.Option, card: TripCard): String {
     val out = mutableListOf<String>()
     if (o.depart != null && o.arrive != null) out += "${clock(o.depart!!, card)} – ${clock(o.arrive!!, card)}"
     if (o.mode == TripCard.Mode.TRANSIT) {
-        o.transfers?.let { out += if (it == 0) "direct" else "$it transfer${if (it == 1) "" else "s"}" }
-        o.walkMinutes?.takeIf { it > 0 }?.let { out += "$it min walk" }
+        o.transfers?.let {
+            out += if (it == 0) context.getString(R.string.trip_direct) else context.resources.getQuantityString(R.plurals.trip_transfers, it, it)
+        }
+        o.walkMinutes?.takeIf { it > 0 }?.let { out += context.getString(R.string.walk_minutes, it) }
     } else {
         TripStyle.distance(o.km, o.meters)?.let { out += it }
     }
@@ -209,12 +219,13 @@ private fun facts(o: TripCard.Option, card: TripCard): String {
 /** A trip: the recommendation, a map of the chosen option's route, the options, and the chosen one's steps. */
 @Composable
 fun TripCardView(card: TripCard) {
+    val context = LocalContext.current
     var selected by rememberSaveable(card) { mutableStateOf((card.recommendedOption ?: card.options[0]).id) }
     val option = card.options.firstOrNull { it.id == selected } ?: card.options[0]
     val accent = MaterialTheme.colorScheme.primary
     val route = "${card.from.label} → ${card.to.label}"
-    val whenText = card.arriveBy?.let { "Arrive by ${clock(it, card, true)}" }
-        ?: card.departAt?.let { "Leave ${clock(it, card, true)}" } ?: "Leaving now"
+    val whenText = card.arriveBy?.let { stringResource(R.string.arrive_by, clock(it, card, true)) }
+        ?: card.departAt?.let { stringResource(R.string.leave_at, clock(it, card, true)) } ?: stringResource(R.string.leaving_now)
 
     // Each transit leg in its colour, walks dashed, a car route solid, or a dashed straight line without geometry.
     val lines = buildList {
@@ -244,7 +255,7 @@ fun TripCardView(card: TripCard) {
                 Icon(modeIcon(rec.mode), null, Modifier.size(20.dp), tint = accent)
                 Spacer(Modifier.width(10.dp))
                 Column {
-                    Text("Take ${rec.mode.label.lowercase()}: ${TripStyle.duration(rec.minutes)}", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(tripTakeLabel(rec.mode), context.duration(rec.minutes)), style = MaterialTheme.typography.titleSmall)
                     card.reason?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText) }
                 }
             }
@@ -269,22 +280,29 @@ fun TripCardView(card: TripCard) {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(o.mode.label, style = MaterialTheme.typography.titleSmall)
-                            if (o.id == card.recommended) Text("Recommended", style = MaterialTheme.typography.labelSmall, color = accent)
-                            if (o.id == card.fastest?.id && card.options.size > 1) Text("Fastest", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+                            Text(stringResource(tripModeLabel(o.mode)), style = MaterialTheme.typography.titleSmall)
+                            if (o.id == card.recommended) Text(stringResource(R.string.recommended), style = MaterialTheme.typography.labelSmall, color = accent)
+                            if (o.id == card.fastest?.id && card.options.size > 1) {
+                                Text(stringResource(R.string.fastest), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
+                            }
                         }
-                        val f = facts(o, card)
+                        val f = facts(context, o, card)
                         if (f.isNotEmpty()) Text(f, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
                         o.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText) }
                     }
-                    Text(TripStyle.duration(o.minutes), style = MaterialTheme.typography.titleSmall)
+                    Text(context.duration(o.minutes), style = MaterialTheme.typography.titleSmall)
                 }
             }
         }
         if (option.mode == TripCard.Mode.TRANSIT && option.legs.isNotEmpty()) TripSteps(card, option)
         if (card.unavailable.isNotEmpty() || card.attribution != null) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                card.unavailable.forEach { Text("${it.mode.label}: ${it.reason ?: "not available"}", style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText) }
+                card.unavailable.forEach {
+                    Text(
+                        stringResource(R.string.label_value, stringResource(tripModeLabel(it.mode)), it.reason ?: stringResource(R.string.not_available)),
+                        style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText,
+                    )
+                }
                 card.attribution?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText.copy(alpha = 0.7f)) }
             }
         }
@@ -294,8 +312,9 @@ fun TripCardView(card: TripCard) {
 /** A transit option's steps: each walk and ride, with its line, times and stops. */
 @Composable
 private fun TripSteps(card: TripCard, option: TripCard.Option) {
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CardLabel("Steps")
+        CardLabel(stringResource(R.string.steps))
         option.legs.forEach { leg ->
             Row(verticalAlignment = Alignment.Top) {
                 Icon(legIcon(leg.kind), null, Modifier.size(18.dp), tint = CedarColors.secondaryText)
@@ -308,19 +327,20 @@ private fun TripSteps(card: TripCard, option: TripCard.Option) {
                                 modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(color).padding(horizontal = 6.dp, vertical = 1.dp))
                         }
                         val what = if (leg.kind == TripCard.LegKind.WALK) {
-                            "Walk${leg.to?.let { " to $it" } ?: ""}"
+                            leg.to?.let { stringResource(R.string.walk_to, it) } ?: stringResource(R.string.trip_walk)
                         } else {
-                            "${leg.kind.label}${leg.headsign?.let { " towards $it" } ?: ""}"
+                            val kind = stringResource(legKindLabel(leg.kind))
+                            leg.headsign?.let { stringResource(R.string.leg_towards, kind, it) } ?: kind
                         }
                         Text(what, style = MaterialTheme.typography.bodyMedium)
                     }
                     val details = buildList {
                         if (leg.depart != null && leg.arrive != null) add("${clock(leg.depart!!, card)} – ${clock(leg.arrive!!, card)}")
                         if (leg.kind != TripCard.LegKind.WALK) {
-                            leg.from?.let { add("from $it") }
-                            leg.stops?.let { add("$it stop${if (it == 1) "" else "s"}") }
+                            leg.from?.let { add(context.getString(R.string.leg_from, it)) }
+                            leg.stops?.let { add(context.resources.getQuantityString(R.plurals.trip_stops, it, it)) }
                         }
-                        add(TripStyle.duration(leg.minutes))
+                        add(context.duration(leg.minutes))
                         if (leg.kind == TripCard.LegKind.WALK) TripStyle.distance(null, leg.meters)?.let { add(it) }
                         leg.agency?.let { add(it) }
                     }

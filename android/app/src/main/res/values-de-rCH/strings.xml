@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Swiss German writes ss for ß: only the German strings that have one, generated from values-de. -->
+<resources>
+    <string name="close">Schliessen</string>
+    <string name="dismiss">Schliessen</string>
+    <string name="attach_too_large">%1$s ist grösser als %2$s</string>
+    <string name="attach_too_large_total">Die Dateien wären zusammen grösser als %1$s</string>
+    <string name="trip_walk">Zu Fuss</string>
+    <string name="trip_take_walk">Geh zu Fuss: %1$s</string>
+    <string name="walk_to">Zu Fuss nach %1$s</string>
+    <string name="walk_minutes">%1$d Min. zu Fuss</string>
+</resources>

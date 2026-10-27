@@ -82,6 +82,12 @@ class TranscriptTest {
         // The answer reads as the web UI composes it.
         val text = ClarifyAnswer.text(questions, listOf(ClarifyAnswer.Answer(listOf("Berlin"), "or nearby"), ClarifyAnswer.Answer()))
         assertEquals("1. Which city?\nBerlin, Other: or nearby\n\n2. Anything else?\nNo preference", text)
+        // In the user's language, when the app gives its words.
+        val german = ClarifyAnswer.text(
+            questions, listOf(ClarifyAnswer.Answer(listOf("Berlin"), "oder in der Nähe"), ClarifyAnswer.Answer()),
+            other = { "Anderes: $it" }, noPreference = "Keine Vorliebe",
+        )
+        assertEquals("1. Which city?\nBerlin, Anderes: oder in der Nähe\n\n2. Anything else?\nKeine Vorliebe", german)
         val one = Questions(listOf(questions.questions[1]), null)
         assertEquals("Anything else?\nno", ClarifyAnswer.text(one, listOf(ClarifyAnswer.Answer(emptyList(), "no"))))
         assertNull(Questions.parse("""{"questions":[]}"""))

@@ -386,13 +386,22 @@ object WorkspaceImages {
 object ClarifyAnswer {
     data class Answer(val chosen: List<String> = emptyList(), val own: String = "")
 
-    fun text(questions: Questions, answers: List<Answer>): String =
+    /**
+     * The answer's text; `other` words an answer of one's own next to the options, and
+     * `noPreference` a question left open, in the user's language (English by default).
+     */
+    fun text(
+        questions: Questions,
+        answers: List<Answer>,
+        other: (String) -> String = { "Other: $it" },
+        noPreference: String = "No preference",
+    ): String =
         questions.questions.mapIndexed { index, q ->
             val answer = answers.getOrNull(index) ?: Answer()
             val parts = answer.chosen.toMutableList()
             val own = answer.own.trim()
-            if (own.isNotEmpty()) parts += if (answer.chosen.isEmpty() && q.options.isEmpty()) own else "Other: $own"
-            val text = if (parts.isEmpty()) "No preference" else parts.joinToString(", ")
+            if (own.isNotEmpty()) parts += if (answer.chosen.isEmpty() && q.options.isEmpty()) own else other(own)
+            val text = if (parts.isEmpty()) noPreference else parts.joinToString(", ")
             if (questions.questions.size == 1) "${q.question}\n$text" else "${index + 1}. ${q.question}\n$text"
         }.joinToString("\n\n")
 }

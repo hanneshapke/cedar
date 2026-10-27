@@ -30,18 +30,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.cedar.cedar.R
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-/** "5 minutes ago", "in 2 hours", "Yesterday". */
+/** "5 minutes ago", "in 2 hours", "Yesterday", in the user's language (the default locale). */
 fun relative(instant: Instant): String =
     DateUtils.getRelativeTimeSpanString(instant.toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
 
-/** A date and time as the device's locale writes it, short. */
+/** A date and time as the user's locale writes it, short. */
 fun shortDateTime(instant: Instant, zone: ZoneId = ZoneId.systemDefault()): String =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withZone(zone).format(instant)
 
@@ -52,7 +54,7 @@ fun openUrl(context: Context, url: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: Exception) {
-        Toast.makeText(context, "No app can open $url", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.no_app_to_open, url), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -96,7 +98,7 @@ fun Loading(modifier: Modifier = Modifier) {
 /** The small star a starred conversation's row carries. */
 @Composable
 fun StarMark() {
-    Icon(Icons.Filled.Star, "Starred", Modifier.size(14.dp), tint = CedarColors.yellow)
+    Icon(Icons.Filled.Star, stringResource(R.string.tab_starred), Modifier.size(14.dp), tint = CedarColors.yellow)
 }
 
 /** "Could not do that": an error from an action, until dismissed. */
@@ -105,7 +107,7 @@ fun ErrorDialog(title: String, message: String?, onDismiss: () -> Unit) {
     if (message == null) return
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         title = { Text(title) },
         text = { Text(message) },
     )

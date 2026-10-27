@@ -35,9 +35,11 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import dev.cedar.cedar.R
 import dev.cedar.core.ChatClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,13 +95,13 @@ private fun WorkspaceImage(client: ChatClient, conversationId: String, path: Str
                     Text(path, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     IconButton(onClick = { scope.launch { share(context, path, s.bytes) } }) {
-                        Icon(Icons.Outlined.Share, "Share $path", Modifier.size(18.dp))
+                        Icon(Icons.Outlined.Share, stringResource(R.string.share_file, path), Modifier.size(18.dp))
                     }
                 }
             }
             Loaded.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.BrokenImage, null, Modifier.size(16.dp), tint = CedarColors.secondaryText)
-                Text(" Could not load $path", style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
+                Text(" " + stringResource(R.string.could_not_load, path), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
             }
             Loaded.Loading -> Loading()
         }
