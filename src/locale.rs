@@ -8,11 +8,12 @@
 
 /// The languages cedar's clients are translated into. A locale in another language is kept as
 /// English (`en`).
-pub const LANGUAGES: &[&str] = &["en", "de", "fr"];
+pub const LANGUAGES: &[&str] = &["en", "de", "fr", "es"];
 
 /// The locales the clients offer, besides the bare languages.
 pub const REGIONS: &[&str] = &[
-    "en-US", "en-GB", "de-DE", "de-AT", "de-CH", "fr-FR", "fr-BE", "fr-CH", "fr-CA",
+    "en-US", "en-GB", "de-DE", "de-AT", "de-CH", "fr-FR", "fr-BE", "fr-CH", "fr-CA", "es-ES",
+    "es-MX", "es-419", "es-US",
 ];
 
 /// The longest tag accepted, before it is cut to language and region.
@@ -118,7 +119,25 @@ fn conventions(locale: &str) -> Option<Conventions> {
             None,
         ),
         "en-GB" => c("27/10/2026", "14:05", "1,234.5", "GBP", metric, None),
-        // Another region of a supported language: that language's usual conventions.
+        "es" | "es-ES" => c(
+            "27/10/2026",
+            "14:05",
+            "1.234,5",
+            "EUR",
+            metric,
+            Some("use the words of Spain where they differ, such as ordenador and móvil"),
+        ),
+        "es-MX" => c("27/10/2026", "14:05", "1,234.5", "MXN", metric, None),
+        "es-US" => c(
+            "10/27/2026",
+            "2:05 PM",
+            "1,234.5",
+            "USD",
+            "US customary units",
+            None,
+        ),
+        // Another region of a supported language: that language's usual conventions. Latin
+        // America (es-419) and its countries differ too much to name one currency or format.
         other => match language(other) {
             "de" => return conventions("de"),
             "fr" => return conventions("fr"),
@@ -131,6 +150,7 @@ fn language_name(language: &str) -> &'static str {
     match language {
         "de" => "German",
         "fr" => "French",
+        "es" => "Spanish",
         _ => "English",
     }
 }
@@ -148,7 +168,8 @@ pub fn directive(locale: &str) -> Option<String> {
         language_name(lang)
     );
     note.push_str(
-        " When you reply in German, address the user informally (du); in French, use vous.",
+        " When you reply in German, address the user informally (du); in French, use vous; in \
+         Spanish, use tú.",
     );
     if let Some(c) = conventions(locale) {
         note.push_str(&format!(
@@ -182,7 +203,8 @@ mod tests {
         assert_eq!(normalize("en-US").unwrap(), "en-US");
         assert_eq!(normalize("fr-419").unwrap(), "fr-419");
         // Languages without translations are kept as English.
-        assert_eq!(normalize("es-ES").unwrap(), "en");
+        assert_eq!(normalize("es_mx").unwrap(), "es-MX");
+        assert_eq!(normalize("pt-BR").unwrap(), "en");
         assert_eq!(normalize("zh-Hant-TW").unwrap(), "en");
         for bad in [
             "",
@@ -230,6 +252,13 @@ mod tests {
         // An unlisted region uses its language's conventions.
         assert!(directive("de-LU").unwrap().contains("EUR"));
         assert!(directive("fr-SN").unwrap().contains("27/10/2026"));
+        let es = directive("es-ES").unwrap();
+        assert!(es.contains("reply in Spanish") && es.contains("use tú") && es.contains("EUR"));
+        assert!(es.contains("ordenador"));
+        assert!(directive("es-MX").unwrap().contains("MXN"));
+        // Latin America as a whole: the language rule, and no one currency.
+        let latam = directive("es-419").unwrap();
+        assert!(latam.contains("reply in Spanish") && !latam.contains("Format for"));
         // An English region without a table entry still gets the language rule.
         let au = directive("en-AU").unwrap();
         assert!(au.contains("reply in English") && !au.contains("Format for"));

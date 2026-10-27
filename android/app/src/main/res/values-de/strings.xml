@@ -4,7 +4,7 @@
     <string name="channel_responses">Antworten</string>
     <string name="channel_responses_description">Eine Antwort ist fertig geworden, während du weg warst</string>
     <string name="language_title">Wähle deine Sprache</string>
-    <string name="language_subtitle">Choose your language · Choisissez votre langue</string>
+    <string name="language_subtitle">Choose your language · Choisissez votre langue · Elige tu idioma</string>
     <string name="language_continue">Weiter</string>
     <string name="language">Sprache</string>
     <string name="language_automatic">Automatisch</string>

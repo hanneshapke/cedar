@@ -10,6 +10,7 @@ pub enum Lang {
     En,
     De,
     Fr,
+    Es,
 }
 
 /// The longest locale tag accepted (as cedar takes them).
@@ -38,6 +39,7 @@ impl Lang {
         match language.to_ascii_lowercase().as_str() {
             "de" => Lang::De,
             "fr" => Lang::Fr,
+            "es" => Lang::Es,
             _ => Lang::En,
         }
     }
@@ -57,6 +59,7 @@ impl Lang {
             Lang::En => "New chat",
             Lang::De => "Neuer Chat",
             Lang::Fr => "Nouvelle conversation",
+            Lang::Es => "Nueva conversación",
         }
     }
 
@@ -65,6 +68,7 @@ impl Lang {
             Lang::En => "Open in Cedar",
             Lang::De => "In Cedar öffnen",
             Lang::Fr => "Ouvrir dans Cedar",
+            Lang::Es => "Abrir en Cedar",
         }
     }
 
@@ -73,6 +77,7 @@ impl Lang {
             Lang::En => "Cedar: test notification",
             Lang::De => "Cedar: Testbenachrichtigung",
             Lang::Fr => "Cedar : notification de test",
+            Lang::Es => "Cedar: notificación de prueba",
         }
     }
 
@@ -81,6 +86,7 @@ impl Lang {
             Lang::En => "This is how Cedar will tell you when a response finishes while you are away.",
             Lang::De => "So sagt dir Cedar Bescheid, wenn eine Antwort fertig ist, während du weg bist.",
             Lang::Fr => "C'est ainsi que Cedar vous préviendra lorsqu'une réponse sera prête pendant votre absence.",
+            Lang::Es => "Así te avisará Cedar cuando una respuesta esté lista mientras no estás.",
         }
     }
 }
@@ -115,6 +121,9 @@ pub fn turn_message(
         (Lang::Fr, Outcome::NeedsAnswer) => ("attend votre réponse", "attend votre réponse"),
         (Lang::Fr, Outcome::Failed) => ("échec", "a échoué"),
         (Lang::Fr, Outcome::Finished) => ("terminé", "est terminée"),
+        (Lang::Es, Outcome::NeedsAnswer) => ("necesita tu respuesta", "necesita tu respuesta"),
+        (Lang::Es, Outcome::Failed) => ("falló", "falló"),
+        (Lang::Es, Outcome::Finished) => ("lista", "está lista"),
     };
     let kind = match (lang, scheduled) {
         (Lang::En, true) => "A scheduled run",
@@ -123,12 +132,15 @@ pub fn turn_message(
         (Lang::De, false) => "Eine Antwort",
         (Lang::Fr, true) => "Une exécution planifiée",
         (Lang::Fr, false) => "Une réponse",
+        (Lang::Es, true) => "Una ejecución programada",
+        (Lang::Es, false) => "Una respuesta",
     };
     // How each language quotes the conversation's name.
     let quoted = match lang {
         Lang::En => format!("in \"{name}\""),
         Lang::De => format!("in „{name}“"),
         Lang::Fr => format!("dans « {name} »"),
+        Lang::Es => format!("en «{name}»"),
     };
     let colon = if lang == Lang::Fr { " :" } else { ":" };
     let body = match (error, outcome, excerpt) {
@@ -138,6 +150,7 @@ pub fn turn_message(
                 Lang::En => "Cedar asks",
                 Lang::De => "Cedar fragt",
                 Lang::Fr => "Cedar demande",
+                Lang::Es => "Cedar pregunta",
             };
             format!("{asks} {quoted}{colon}\n{text}")
         }
@@ -167,7 +180,8 @@ mod tests {
     fn languages_fall_back_to_english() {
         assert_eq!(Lang::of(Some("de-AT")), Lang::De);
         assert_eq!(Lang::of(Some("FR")), Lang::Fr);
-        assert_eq!(Lang::of(Some("es")), Lang::En);
+        assert_eq!(Lang::of(Some("es-419")), Lang::Es);
+        assert_eq!(Lang::of(Some("pt")), Lang::En);
         assert_eq!(Lang::of(None), Lang::En);
     }
 
@@ -196,6 +210,10 @@ mod tests {
         );
         let (_, body) = turn_message(Some("de-CH"), Some("Straße"), Outcome::Finished, true, None, None);
         assert_eq!(body, "Ein geplanter Lauf in „Strasse“ ist fertig.");
+        assert_eq!(
+            msg(Some("es-MX"), Outcome::Finished, None, Some("Listo.")),
+            ("Reise: lista".into(), "Una respuesta en «Reise» está lista:\nListo.".into())
+        );
         let (title, _) = turn_message(Some("de"), None, Outcome::Finished, false, None, None);
         assert_eq!(title, "Neuer Chat: fertig");
     }

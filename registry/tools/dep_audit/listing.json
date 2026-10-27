@@ -7,6 +7,9 @@
     },
     "fr": {
       "summary": "Vérifiez les dépendances Python et npm : vulnérabilités connues (OSV.dev) et versions obsolètes"
+    },
+    "es": {
+      "summary": "Revisa las dependencias de Python y npm: vulnerabilidades conocidas (OSV.dev) y versiones desactualizadas"
     }
   }
 }

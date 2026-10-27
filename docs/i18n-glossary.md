@@ -1,13 +1,17 @@
 # Translation glossary
 
-cedar's clients (web chat, desktop app, iOS, Android) are translated into German and French. English is
-the source. Use these terms everywhere so the same thing has the same name on every screen.
+cedar's clients (web chat, desktop app, iOS, Android) and the website are translated into German,
+French and Spanish. English is the source. Use these terms everywhere so the same thing has the same
+name on every screen.
 
 ## Tone
 
 - **German** addresses the user informally: *du*, *dein*, imperative *Wähle …*. Capitalize *Du* only at the
   start of a sentence.
 - **French** addresses the user formally: *vous*, *votre*, imperative *Choisissez …*.
+- **Spanish** addresses the user informally: *tú*, *tu*, imperative *Elige …*. It is neutral Latin American
+  Spanish (*computadora*, *celular*, *carpeta*); Spain (`es-ES`) gets its own text only where a word
+  clearly differs (*ordenador*, *móvil*), in an `es-ES` catalog that holds just those keys.
 - **Swiss German** (`de-CH`) writes *ss* instead of *ß*. The clients derive it from the German text; don't
   keep a separate copy unless a word differs otherwise.
 - Keep it short and plain, like the English. Buttons are verbs (*Speichern*, *Enregistrer*).
@@ -16,6 +20,7 @@ the source. Use these terms everywhere so the same thing has the same name on ev
 
 - German quotes: „so“. French quotes: « ainsi », with a no-break space (U+00A0) inside.
 - French puts a no-break space (U+00A0) before `:`, `;`, `?` and `!`.
+- Spanish opens questions and exclamations with `¿` and `¡`, and quotes «así» (no spaces inside).
 - Use the ellipsis character `…`, as the English does.
 - Numbers, dates and times are never written into a string by hand: format them for the user's locale
   (`Intl` on the web, `Locale` on iOS, `java.util.Locale` on Android).
@@ -29,45 +34,47 @@ server (they are for developers).
 
 ## Terms
 
-| English | Deutsch | Français |
-| --- | --- | --- |
-| conversation | Unterhaltung | conversation |
-| new chat | Neuer Chat | Nouvelle conversation |
-| message | Nachricht | message |
-| response, reply | Antwort | réponse |
-| run (one agent run) | Lauf | exécution |
-| task | Aufgabe | tâche |
-| agent | Agent | agent |
-| scheduled agent, schedule | geplanter Agent, Zeitplan | agent planifié, planification |
-| plan, step | Plan, Schritt | plan, étape |
-| approve, approval | freigeben, Freigabe | approuver, approbation |
-| Allow / Allow always / Deny | Erlauben / Immer erlauben / Ablehnen | Autoriser / Toujours autoriser / Refuser |
-| tool, tool group | Werkzeug, Werkzeuggruppe | outil, groupe d'outils |
-| personal tools | Eigene Werkzeuge | Outils personnels |
-| community tools | Community-Werkzeuge | Outils de la communauté |
-| sandbox | Sandbox | bac à sable |
-| workspace | Arbeitsbereich | espace de travail |
-| file, attachment, attach | Datei, Anhang, anhängen | fichier, pièce jointe, joindre |
-| sources | Quellen | sources |
-| model | Modell | modèle |
-| reasoning (level) | Denkaufwand | niveau de raisonnement |
-| system prompt | System-Prompt | prompt système |
-| settings | Einstellungen | Réglages |
-| interface | Oberfläche | Interface |
-| language | Sprache | Langue |
-| notifications | Benachrichtigungen | Notifications |
-| inbox | Posteingang | Boîte de réception |
-| server | Server | serveur |
-| access token | Zugriffstoken | jeton d'accès |
-| connect, pair (a phone) | verbinden, koppeln | connecter, associer |
-| star, starred | markieren, Markiert | ajouter aux favoris, Favoris |
-| send | Senden | Envoyer |
-| stop (a run) | Stoppen | Arrêter |
-| cancel (a dialog) | Abbrechen | Annuler |
-| save | Speichern | Enregistrer |
-| delete | Löschen | Supprimer |
-| rename | Umbenennen | Renommer |
-| retry | Erneut versuchen | Réessayer |
-| copy, copied | Kopieren, Kopiert | Copier, Copié |
-| update (software) | Update | mise à jour |
-| Automatic (language) | Automatisch | Automatique |
+| English | Deutsch | Français | Español |
+| --- | --- | --- | --- |
+| conversation | Unterhaltung | conversation | conversación |
+| new chat | Neuer Chat | Nouvelle conversation | Nueva conversación |
+| message | Nachricht | message | mensaje |
+| response, reply | Antwort | réponse | respuesta |
+| run (one agent run) | Lauf | exécution | ejecución |
+| task | Aufgabe | tâche | tarea |
+| agent | Agent | agent | agente |
+| scheduled agent, schedule | geplanter Agent, Zeitplan | agent planifié, planification | agente programado, programación |
+| plan, step | Plan, Schritt | plan, étape | plan, paso |
+| approve, approval | freigeben, Freigabe | approuver, approbation | aprobar, aprobación |
+| Allow / Allow always / Deny | Erlauben / Immer erlauben / Ablehnen | Autoriser / Toujours autoriser / Refuser | Permitir / Permitir siempre / Denegar |
+| tool, tool group | Werkzeug, Werkzeuggruppe | outil, groupe d'outils | herramienta, grupo de herramientas |
+| personal tools | Eigene Werkzeuge | Outils personnels | Herramientas propias |
+| community tools | Community-Werkzeuge | Outils de la communauté | Herramientas de la comunidad |
+| sandbox | Sandbox | bac à sable | sandbox (entorno aislado) |
+| workspace | Arbeitsbereich | espace de travail | espacio de trabajo |
+| file, attachment, attach | Datei, Anhang, anhängen | fichier, pièce jointe, joindre | archivo, adjunto, adjuntar |
+| sources | Quellen | sources | fuentes |
+| model | Modell | modèle | modelo |
+| reasoning (level) | Denkaufwand | niveau de raisonnement | nivel de razonamiento |
+| system prompt | System-Prompt | prompt système | prompt del sistema |
+| settings | Einstellungen | Réglages | Configuración |
+| interface | Oberfläche | Interface | Interfaz |
+| language | Sprache | Langue | Idioma |
+| notifications | Benachrichtigungen | Notifications | Notificaciones |
+| inbox | Posteingang | Boîte de réception | Bandeja de entrada |
+| server | Server | serveur | servidor |
+| computer | Computer | ordinateur | computadora (es-ES: ordenador) |
+| phone (the user's) | Handy | téléphone | celular (es-ES: móvil) |
+| access token | Zugriffstoken | jeton d'accès | token de acceso |
+| connect, pair (a phone) | verbinden, koppeln | connecter, associer | conectar, vincular |
+| star, starred | markieren, Markiert | ajouter aux favoris, Favoris | destacar, Destacadas |
+| send | Senden | Envoyer | Enviar |
+| stop (a run) | Stoppen | Arrêter | Detener |
+| cancel (a dialog) | Abbrechen | Annuler | Cancelar |
+| save | Speichern | Enregistrer | Guardar |
+| delete | Löschen | Supprimer | Eliminar |
+| rename | Umbenennen | Renommer | Cambiar nombre |
+| retry | Erneut versuchen | Réessayer | Reintentar |
+| copy, copied | Kopieren, Kopiert | Copier, Copié | Copiar, Copiado |
+| update (software) | Update | mise à jour | actualización |
+| Automatic (language) | Automatisch | Automatique | Automático |

@@ -7,6 +7,9 @@
     },
     "fr": {
       "summary": "Indice de qualité de l'air, polluants, UV et pollens, maintenant et pour les jours à venir, via Open-Meteo (sans clé)"
+    },
+    "es": {
+      "summary": "Índice de calidad del aire, contaminantes, UV y polen ahora y para los próximos días, de Open-Meteo (sin clave)"
     }
   }
 }

@@ -1,13 +1,14 @@
 'use strict';
 
-// The pages' text in the user's language: English, German or French, with the region (de-CH,
-// fr-CA, ...) deciding how dates, numbers and prices are written. Loaded first by every page,
-// before the catalogs in /i18n/ that fill it:
+// The pages' text in the user's language: English, German, French or Spanish, with the region
+// (de-CH, fr-CA, es-MX, ...) deciding how dates, numbers and prices are written. Loaded first by
+// every page, before the catalogs in /i18n/ that fill it:
 //
-//   cedarI18n.add({ en: { 'key': 'Text with {name}' }, de: { ... }, fr: { ... } });
+//   cedarI18n.add({ en: { 'key': 'Text with {name}' }, de: { ... }, fr: { ... }, es: { ... },
+//                   'es-ES': { 'key': 'only what Spain says differently' } });
 //
-// tr('key', { name }) (cedarI18n.t) looks a key up in the current language, then in English,
-// and falls back to the key itself. A value may be an object of plural forms ({ one, other })
+// tr('key', { name }) (cedarI18n.t) looks a key up in the user's region's catalog, then their
+// language's, then English, and falls back to the key itself. A value may be an object of plural forms ({ one, other })
 // picked by params.count. Elements carry their text as data-i18n="key" (textContent) and
 // data-i18n-attr="placeholder:key; title:key", which apply(root) fills in; each page calls
 // apply(document) once its catalogs are loaded.
@@ -19,7 +20,7 @@
 const cedarI18n = (() => {
   const KEY = 'cedar-locale';
   /** The languages the pages are translated into, each named in its own language. */
-  const LANGUAGES = { en: 'English', de: 'Deutsch', fr: 'Français' };
+  const LANGUAGES = { en: 'English', de: 'Deutsch', fr: 'Français', es: 'Español' };
   /** The locales offered in Settings and at the first visit, in order, with their own names. */
   const LOCALES = [
     { tag: 'en', label: 'English' },
@@ -32,8 +33,13 @@ const cedarI18n = (() => {
     { tag: 'fr-BE', label: 'Français (Belgique)' },
     { tag: 'fr-CH', label: 'Français (Suisse)' },
     { tag: 'fr-CA', label: 'Français (Canada)' },
+    { tag: 'es-ES', label: 'Español (España)' },
+    { tag: 'es-MX', label: 'Español (México)' },
+    { tag: 'es-419', label: 'Español (Latinoamérica)' },
+    { tag: 'es-US', label: 'Español (Estados Unidos)' },
   ];
-  const catalogs = { en: {}, de: {}, fr: {} };
+  // By language, plus regional catalogs ('es-ES') that hold only the text that differs there.
+  const catalogs = { en: {}, de: {}, fr: {}, es: {} };
 
   /** `raw` as `de` or `de-CH`, or '' if it isn't a tag in one of our languages. */
   function normalize(raw) {
@@ -66,6 +72,7 @@ const cedarI18n = (() => {
   function add(byLanguage) {
     for (const [l, entries] of Object.entries(byLanguage || {})) {
       if (catalogs[l]) Object.assign(catalogs[l], entries);
+      else if (l.includes('-') && normalize(l) === l) Object.assign((catalogs[l] ||= {}), entries);
     }
   }
 
@@ -79,7 +86,8 @@ const cedarI18n = (() => {
 
   /** The text for `key` in the user's language, with {name} placeholders filled from params. */
   function t(key, params) {
-    let value = catalogs[lang][key];
+    let value = catalogs[locale]?.[key];
+    if (value === undefined) value = catalogs[lang][key];
     if (value === undefined) value = catalogs.en[key];
     if (value === undefined) value = key;
     let text = String(pick(value, params?.count));
@@ -95,7 +103,7 @@ const cedarI18n = (() => {
 
   /** Whether the catalogs have `key` (in any language). */
   function has(key) {
-    return catalogs[lang][key] !== undefined || catalogs.en[key] !== undefined;
+    return catalogs[locale]?.[key] !== undefined || catalogs[lang][key] !== undefined || catalogs.en[key] !== undefined;
   }
 
   function number(n, opts) {

@@ -17,7 +17,7 @@ struct LanguageOnboardingView: View {
                     .font(.title2.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 // The same in the other languages, for whoever can't read the first line yet.
-                Text(verbatim: "Sprache wählen · Choisissez votre langue")
+                Text(verbatim: "Sprache wählen · Choisissez votre langue · Elige tu idioma")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

@@ -1,6 +1,6 @@
 {
   "description": "Download the user's Tandem insulin pump and CGM data (glucose readings, boluses, basal) from Tandem Source, and analyze the last hours (24 by default) against the average of the days before (7 by default): time in range, lows and highs, variability, GMI, a time-of-day breakdown, post-meal rises, and insulin totals, plus rule-based suggestions for today. Use it when the user asks how their glucose or diabetes has been, or what to change today. Turn the result into a short answer: say plainly how the last day compares with the week, put lows and safety first, and give 1-3 concrete things to try for the rest of today (meal and bolus timing, a walk after a meal, carrying fast carbs, checks before activity). Never recommend insulin doses, basal rates, carb ratios, correction factors, or any numeric pump setting change; say which settings are worth discussing with their care team instead. Its output ends with [chart] lines, which the chat draws as charts for the user (glucose over the last hours against their usual day, with the target range shaded, and time in range by time of day): don't repeat those numbers or redraw them with generate_chart unless the user asks for an image file. With export=true it also writes tandem/glucose.csv, boluses.csv, and basal.csv to the workspace.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "Hannes Hapke",
   "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/tandem_glucose",
   "license": "Apache-2.0",

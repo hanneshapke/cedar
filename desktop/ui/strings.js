@@ -1,7 +1,8 @@
 'use strict';
 
 // The setup page's catalog (see i18n.js). English is the source; German says du, French vous with
-// a no-break space ( ) before : ; ? ! and inside « ». Terms follow docs/i18n-glossary.md.
+// a no-break space ( ) before : ; ? ! and inside « », Spanish tú with ¿ ¡ and «así» (neutral Latin
+// American; es-ES holds only what Spain says differently). Terms follow docs/i18n-glossary.md.
 // Keys under html.* are markup (data-i18n-html): only links, <code>, <b> and the this-computer span.
 
 cedarI18n.add({
@@ -354,5 +355,138 @@ cedarI18n.add({
     'updates.idle': 'Cedar {current}. Cedar recherche une version plus récente plusieurs fois par jour.',
 
     'html.footer': 'Chaque exécution d’agent dispose de son propre conteneur Docker ; Cedar n’exécute jamais lui-même le serveur de modèles. L’image du bac à sable est <code id="sandbox-image"></code>.',
+  },
+
+  // Neutral Latin American Spanish (tú, computadora, celular); es-ES below holds only what Spain
+  // says differently. A Windows PC is "el equipo", as Windows itself calls it in both.
+  es: {
+    'language.label': 'Idioma',
+    'onboarding.continue': 'Continuar',
+    'common.checkAgain': 'Verificar de nuevo',
+    'common.tryAgain': 'Reintentar',
+    'common.copyToken': 'Copiar token de acceso',
+
+    'platform.macos.computer': 'esta Mac',
+    'platform.macos.computerSubject': 'esta Mac',
+    'platform.macos.dockerApps': 'Docker Desktop, OrbStack o Colima',
+    'platform.macos.dockerStart': 'Inicia Docker Desktop (u OrbStack, Colima)',
+    'platform.macos.dockerStarting': 'Iniciando Docker…',
+    'platform.macos.setupIntro': 'Cedar puede configurar Docker por ti. Descarga Docker Desktop para el chip de esta Mac (unos 600 MB) y lo instala en Aplicaciones. macOS pide una vez la contraseña de un administrador; luego Cedar inicia Docker Desktop y continúa.',
+    'platform.macos.tailscaleIntro': 'Tailscale no está instalado en esta Mac. Cedar puede instalarlo por ti: descarga la app independiente de Tailscale desde tailscale.com, verifica que esté firmada por Tailscale y la instala en Aplicaciones después de que macOS pida una vez la contraseña de un administrador.',
+    'platform.macos.tailscaleNext': 'Tailscale está instalado y abierto. Permite su configuración de VPN (y, si se te pide, su extensión del sistema en Ajustes del Sistema → General → Ítems de inicio y extensiones), inicia sesión desde el ícono de Tailscale en la barra de menús',
+    'platform.windows.computer': 'este equipo',
+    'platform.windows.computerSubject': 'este equipo',
+    'platform.windows.dockerApps': 'Docker Desktop (con el backend de WSL 2) o Rancher Desktop',
+    'platform.windows.dockerStart': 'Inicia Docker Desktop (o Rancher Desktop)',
+    'platform.windows.dockerStarting': 'Iniciando Docker Desktop…',
+    'platform.windows.setupIntro': 'Cedar puede configurar Docker por ti. Activa WSL 2 (el Subsistema de Windows para Linux) y luego descarga e instala Docker Desktop (unos 600 MB). Windows pregunta una vez si Cedar puede hacer cambios, y es posible que al final tengas que reiniciar o cerrar sesión; después Cedar se vuelve a abrir solo y termina.',
+    'platform.windows.tailscaleIntro': 'Tailscale no está instalado en este equipo. Cedar puede instalarlo por ti: descarga el instalador de Tailscale desde tailscale.com, verifica que esté firmado por Tailscale y lo instala después de que Windows pregunte una vez si Cedar puede hacer cambios.',
+    'platform.windows.tailscaleNext': 'Tailscale está instalado y abierto. Inicia sesión desde el ícono de Tailscale en el área de notificación (puede estar bajo la flecha ^)',
+
+    'update.notes': 'Notas de la versión',
+    'update.install': 'Actualizar',
+    'update.dismiss': 'Descartar',
+    'update.updatingTo': 'Actualizando a Cedar {version}',
+    'update.available': 'Cedar {version} está disponible',
+    'update.working': 'En curso…',
+    'update.failed': 'La actualización falló: {detail}',
+    'update.restartNote': 'Tienes la versión {current}. Al actualizar, Cedar se reinicia y se detiene cualquier respuesta que siga en curso.',
+
+    'docker.checking': 'Verificando…',
+    'docker.looking': 'Buscando Docker…',
+    'docker.getDesktop': 'Descargar Docker Desktop',
+    'docker.missing': 'No se encontró el comando docker. Instala {apps}, inícialo y vuelve a verificar.',
+    'docker.firstStart': '{starting} El primer inicio después de instalarlo tarda uno o dos minutos.',
+    'docker.notRunning': 'Docker está instalado pero no responde. {start} y vuelve a verificar. {detail}',
+    'html.docker.license': 'Docker Desktop es gratuito para uso personal, educación y empresas con menos de 250 empleados y menos de 10 millones de dólares estadounidenses de ingresos anuales; las organizaciones más grandes necesitan una <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">suscripción de pago</a>. Si lo configuras aquí, se acepta en tu nombre el <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a>.',
+    'dockerSetup.install': 'Configurar Docker automáticamente',
+    'dockerSetup.repair': 'Reparar WSL y Docker',
+    'dockerSetup.restartNow': 'Reiniciar ahora',
+    'dockerSetup.signOutNow': 'Cerrar sesión ahora',
+    'dockerSetup.almostRestart': 'Casi listo. Reinicia el equipo para terminar; antes guarda tu trabajo en las demás apps. Cedar se vuelve a abrir cuando inicias sesión, inicia Docker Desktop y continúa.',
+    'dockerSetup.almostSignOut': 'Casi listo. Cierra sesión en Windows y vuelve a iniciarla para terminar; antes guarda tu trabajo en las demás apps. Cedar se vuelve a abrir cuando inicias sesión, inicia Docker Desktop y continúa.',
+    'dockerSetup.virtualization': 'La virtualización está desactivada en el firmware de este equipo (BIOS o UEFI), y WSL 2 la necesita. Reinicia el equipo en la configuración del firmware (a menudo presionando F2, F10 o Supr durante el arranque, o desde Configuración → Sistema → Recuperación → Inicio avanzado), activa Intel VT-x, AMD-V o SVM (a veces se llama simplemente «Virtualization Technology»), guarda y vuelve a iniciar Windows. Luego haz clic en «Verificar de nuevo».',
+    'dockerSetup.wslGuide': 'Guía de Microsoft para solucionar problemas de WSL',
+    'dockerSetup.failed': 'La configuración de Docker no terminó.',
+
+    'images.title': 'Imagen del sandbox',
+    'images.waiting': 'Esperando a Docker.',
+    'images.pulling': 'Descargando la imagen en la que se ejecutan las herramientas del agente. Esto ocurre una vez por versión.',
+    'images.failed': 'La descarga falló.',
+    'images.ready': 'Lista.',
+    'images.browserToggle': 'Herramienta de navegador (descarga una segunda imagen, más grande, con Chromium)',
+
+    'model.title': 'Servidor de modelos',
+    'model.notChosen': 'Sin elegir todavía.',
+    'html.model.about': 'Cualquier servidor compatible con OpenAI que admita llamadas a herramientas. Ollama, LM Studio y vLLM funcionan; el servidor puede ejecutarse en <span class="this-computer">esta computadora</span> o en otra máquina. Puedes agregar más modelos desde la Configuración del chat.',
+    'model.presets': 'Predefinidos:',
+    'model.address': 'Dirección',
+    'model.apiKey': 'Clave de API (solo si el servidor la necesita)',
+    'model.saved': 'guardada',
+    'model.list': 'Listar modelos',
+    'model.model': 'Modelo',
+    'model.save': 'Guardar',
+    'model.asking': 'Consultando al servidor…',
+    'model.count': { one: '{count} modelo', other: '{count} modelos' },
+    'model.savedNote': 'Guardado.',
+    'model.registering': 'Registrando {model} en Cedar…',
+    'model.using': 'Usando {model} en {url}',
+    'model.failed': 'Cedar no pudo registrar {model}. ¿Está en ejecución el servidor de modelos?',
+    'model.pending': '{model} en {url} (se registra en cuanto Cedar se inicie)',
+
+    'services.notStarted': 'Sin iniciar.',
+    'services.openChat': 'Abrir chat',
+    'services.openBrowser': 'Abrir en el navegador',
+    'services.openLogs': 'Abrir registros',
+    'html.services.note': 'Si abres el chat en un navegador, te pedirá el token de acceso una vez; cópialo desde aquí. La configuración está en <code id="config-path"></code>.',
+    'services.starting': 'Iniciando: {detail}',
+    'services.crashed': 'Se detuvo con un error.',
+    'services.running': 'En ejecución en {url}.',
+    'services.notRunning': 'No está en ejecución.',
+    'services.waiting': 'Esperando a que elijas un servidor de modelos arriba.',
+
+    'share.title': 'iPhone, iPad y Android',
+    'html.share.about': 'Las apps de Cedar para iOS y Android solo se conectan por HTTPS. Cedar puede servir el chat en tu red de <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> con <code>tailscale serve</code>, de modo que solo lleguen a él los dispositivos con sesión iniciada en la misma tailnet. Para ello necesitas Tailscale en <span class="this-computer">esta computadora</span> y en el celular, y tener activados MagicDNS y HTTPS Certificates en la consola de administración. Activarlo o desactivarlo reinicia Cedar una vez para que el chat conozca su nueva dirección; si hay una respuesta en curso, se detiene.',
+    'share.toggle': 'Compartir con las apps del celular a través de Tailscale',
+    'share.copyAddress': 'Copiar dirección',
+    'share.showQr': 'Mostrar código QR',
+    'share.hideQr': 'Ocultar código QR',
+    'html.share.qrNote': 'En la Configuración de la app Cedar (iOS o Android), toca <b>Escanear código QR</b> y apunta la cámara hacia aquí. El código contiene el token de acceso, así que vuelve a ocultarlo cuando termines.',
+    'share.starting': 'Configurando tailscale serve…',
+    'share.on': 'En la Configuración de la app Cedar (iOS o Android), escanea el código QR o escribe {url} y el token de acceso. Funciona mientras {computer} no esté en reposo y Cedar esté en ejecución.',
+    'share.failed': 'Aún no se comparte. Corrige la causa y vuelve a intentarlo.',
+    'share.pending': 'Se activa en cuanto Cedar esté en ejecución.',
+    'share.off': 'Desactivado. Solo {computer} puede acceder al chat.',
+    'tsSetup.install': 'Configurar Tailscale automáticamente',
+    'tsSetup.intro': '{intro} El plan Personal de Tailscale es gratuito.',
+    'tsSetup.next': '{next} y luego activa MagicDNS y HTTPS Certificates en la página DNS de la consola de administración. Después activa abajo el uso compartido. Instala Tailscale también en el celular, con la misma cuenta.',
+    'tsSetup.consoleLink': 'Consola de administración de Tailscale: DNS',
+    'tsSetup.failed': 'La instalación de Tailscale no terminó.',
+
+    'updates.title': 'Actualizaciones',
+    'updates.toggle': 'Buscar actualizaciones automáticamente',
+    'updates.checkNow': 'Buscar ahora',
+    'updates.noSelfUpdate': 'Esta compilación de Cedar ({current}) no se actualiza sola; las de la página de versiones, sí.',
+    'updates.off': 'Cedar {current}. La búsqueda automática está desactivada.',
+    'updates.checking': 'Cedar {current}. Buscando…',
+    'updates.available': 'Cedar {current}. Cedar {version} está disponible.',
+    'updates.failed': 'Cedar {current}. La última búsqueda falló: {detail}',
+    'updates.idle': 'Cedar {current}. Cedar busca una versión más reciente cada pocas horas.',
+
+    'html.footer': 'Cada ejecución de un agente tiene su propio contenedor de Docker; Cedar nunca ejecuta el servidor de modelos por sí mismo. La imagen del sandbox es <code id="sandbox-image"></code>.',
+  },
+
+  // Spain: el Mac, ordenador, móvil, icono, añadir.
+  'es-ES': {
+    'platform.macos.computer': 'este Mac',
+    'platform.macos.computerSubject': 'este Mac',
+    'platform.macos.setupIntro': 'Cedar puede configurar Docker por ti. Descarga Docker Desktop para el chip de este Mac (unos 600 MB) y lo instala en Aplicaciones. macOS pide una vez la contraseña de un administrador; luego Cedar inicia Docker Desktop y continúa.',
+    'platform.macos.tailscaleIntro': 'Tailscale no está instalado en este Mac. Cedar puede instalarlo por ti: descarga la app independiente de Tailscale desde tailscale.com, comprueba que esté firmada por Tailscale y la instala en Aplicaciones después de que macOS pida una vez la contraseña de un administrador.',
+    'platform.macos.tailscaleNext': 'Tailscale está instalado y abierto. Permite su configuración de VPN (y, si se te pide, su extensión del sistema en Ajustes del Sistema → General → Ítems de inicio y extensiones), inicia sesión desde el icono de Tailscale en la barra de menús',
+    'platform.windows.tailscaleNext': 'Tailscale está instalado y abierto. Inicia sesión desde el icono de Tailscale en el área de notificación (puede estar bajo la flecha ^)',
+    'html.model.about': 'Cualquier servidor compatible con OpenAI que admita llamadas a herramientas. Ollama, LM Studio y vLLM funcionan; el servidor puede ejecutarse en <span class="this-computer">este ordenador</span> o en otra máquina. Puedes añadir más modelos desde la Configuración del chat.',
+    'html.share.about': 'Las apps de Cedar para iOS y Android solo se conectan por HTTPS. Cedar puede servir el chat en tu red de <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> con <code>tailscale serve</code>, de modo que solo lleguen a él los dispositivos con sesión iniciada en la misma tailnet. Para ello necesitas Tailscale en <span class="this-computer">este ordenador</span> y en el móvil, y tener activados MagicDNS y HTTPS Certificates en la consola de administración. Activarlo o desactivarlo reinicia Cedar una vez para que el chat conozca su nueva dirección; si hay una respuesta en curso, se detiene.',
+    'share.toggle': 'Compartir con las apps del móvil a través de Tailscale',
+    'tsSetup.next': '{next} y luego activa MagicDNS y HTTPS Certificates en la página DNS de la consola de administración. Después activa abajo el uso compartido. Instala Tailscale también en el móvil, con la misma cuenta.',
   },
 });

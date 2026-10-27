@@ -13,12 +13,15 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
-const LANGS = ['en', 'de', 'fr'];
+const LANGS = ['en', 'de', 'fr', 'es'];
+// A regional catalog ('es-ES') holds only the text that differs in that region.
+const REGIONAL = /^(de|fr|es)-([A-Z]{2}|\d{3})$/;
 const problems = [];
 
 /** Load catalog files the way the pages do, with a stub cedarI18n.add (cedarSite.add on the website). */
 function loadCatalogs(files) {
-  const merged = { en: {}, de: {}, fr: {} };
+  const merged = { en: {}, de: {}, fr: {}, es: {} };
+  const regional = {};
   const origin = {};
   for (const file of files) {
     const added = [];
@@ -27,6 +30,12 @@ function loadCatalogs(files) {
     vm.runInNewContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
     for (const catalog of added) {
       for (const lang of Object.keys(catalog)) {
+        if (REGIONAL.test(lang)) {
+          for (const [key, value] of Object.entries(catalog[lang] || {})) {
+            (regional[lang] ||= {})[key] = { value, file };
+          }
+          continue;
+        }
         if (!LANGS.includes(lang)) problems.push(`${rel(file)}: unknown language ${lang}`);
         for (const [key, value] of Object.entries(catalog[lang] || {})) {
           if (lang === 'en' && origin[key] && origin[key] !== file) {
@@ -38,14 +47,26 @@ function loadCatalogs(files) {
       }
     }
   }
-  return { merged, origin };
+  return { merged, origin, regional };
 }
 
 const rel = (f) => path.relative(root, f);
 const placeholders = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
 const forms = (v) => (v && typeof v === 'object' ? Object.values(v) : [v]);
 
-function checkCatalogs({ merged, origin }) {
+function checkCatalogs({ merged, origin, regional }) {
+  for (const [tag, entries] of Object.entries(regional || {})) {
+    for (const [key, { value, file }] of Object.entries(entries)) {
+      const en = merged.en[key];
+      if (en === undefined) {
+        problems.push(`${rel(file)}: ${key} (${tag}) overrides a key English doesn't have`);
+        continue;
+      }
+      if (typeof en !== 'object' && placeholders(value) !== placeholders(en)) {
+        problems.push(`${rel(file)}: ${key} (${tag}) has placeholders {${placeholders(value)}}, English {${placeholders(en)}}`);
+      }
+    }
+  }
   const keys = new Set(LANGS.flatMap((l) => Object.keys(merged[l])));
   for (const key of keys) {
     const where = origin[key] ? rel(origin[key]) : '?';

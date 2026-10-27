@@ -47,7 +47,7 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Connecting by scanning the QR code the chat's Settings → Phone page, the Cedar desktop app or
   `scripts/cedar-stack.sh --pair` shows
 - iPhone and iPad layouts, light and dark mode
-- English, German and French, picked on first launch or under Settings → Language (see
+- English, German, French and Spanish, picked on first launch or under Settings → Language (see
   [Languages](#languages))
 
 ## Requirements
@@ -115,7 +115,7 @@ into `production` for distribution builds.
 | `Cedar/Storage` | Settings, Keychain access, and the Mac app's connection code (`cedar://connect?server=…&token=…`) |
 | `Cedar/Features` | SwiftUI screens: conversation list, chat (turns, questions, approvals, images), and settings (with the QR scanner and the first launch's language picker) |
 | `Cedar/Localization` | The offered languages, the picked one (`LanguageStore`), and `L10n` for text built outside SwiftUI views |
-| `Cedar/Localizable.xcstrings`, `Cedar/InfoPlist.xcstrings` | The String Catalogs: the app's text and the permission prompts, in German and French |
+| `Cedar/Localizable.xcstrings`, `Cedar/InfoPlist.xcstrings` | The String Catalogs: the app's text and the permission prompts, in German, French and Spanish |
 | `CedarTests` | Unit tests for the API types, the reducer, the SSE parser, Markdown, the connection code, and the languages |
 | `Config/Cedar.entitlements` | Push notifications |
 
@@ -142,26 +142,33 @@ into `production` for distribution builds.
 
 ## Languages
 
-The app is in English, German and French. A new install asks first, before the server's settings,
-starting on the device's language; Settings → Language changes it at once, or sets it to
+The app is in English, German, French and Spanish. A new install asks first, before the server's
+settings, starting on the device's language; Settings → Language changes it at once, or sets it to
 **Automatic** to follow the device. The offered locales are `en`, `en-US`, `en-GB`, `de-DE`,
-`de-AT`, `de-CH`, `fr-FR`, `fr-BE`, `fr-CH` and `fr-CA`: the language picks the text, the region
-the formats of dates, numbers and prices. Swiss German has its own text only where German writes
-ß (`de-CH` in the catalog, with ss); everything else falls back to German. What the system draws
-(the photo picker, permission prompts) follows on the next launch.
+`de-AT`, `de-CH`, `fr-FR`, `fr-BE`, `fr-CH`, `fr-CA`, `es-ES`, `es-MX`, `es-419` and `es-US`: the
+language picks the text, the region the formats of dates, numbers and prices. A device language
+whose region isn't offered starts on the language's main variant: `de-LU` on `de-DE`, and Spanish
+from elsewhere (`es-AR`) on `es-419`. Swiss German has its own text only where German writes ß
+(`de-CH` in the catalog, with ss); everything else falls back to German. Likewise the Spanish
+(`es`) is neutral Latin American (*computadora*, *celular*), and Spain has its own text (`es-ES`)
+only for the keys where its words differ (*coche*, *móvil*, *Ajustes* for the system's Settings
+app); everything else falls back to `es`. What the system draws (the photo picker, permission
+prompts) follows on the next launch.
 
 - The root view sets SwiftUI's `locale` to the picked language, so `Text("…")`, `Button("…")` and
   the like look themselves up in it. Text built elsewhere (models, errors, labels kept in a
   `String`) goes through `L10n.string("…")` or `L10n.format("… %@", value)`, which read the
-  compiled catalog's `.lproj` for the picked language (`de-CH`, then `de`, then English).
+  compiled catalog's `.lproj` for the picked language (`de-CH`, then `de`, then English;
+  `es-ES`, then `es`).
 - Format numbers and dates with `.locale(L10n.locale)`, never a fixed locale or the device's.
 
 To add text, write it in English in the code. A SwiftUI string literal is added to
 `Cedar/Localizable.xcstrings` by Xcode when it builds; one passed to `L10n` has to be added by
-hand, as a manually managed string (Xcode can't find it in the code). Give every key a German
-and a French translation, following [the glossary](../docs/i18n-glossary.md) (German *du*,
-French *vous*, a no-break space before `:` `;` `?` `!` in French), and a `de-CH` one where the
-German has ß. Permission prompts are in `Cedar/InfoPlist.xcstrings`.
+hand, as a manually managed string (Xcode can't find it in the code). Give every key a German,
+a French and a Spanish translation, following [the glossary](../docs/i18n-glossary.md) (German
+*du*, French *vous*, a no-break space before `:` `;` `?` `!` in French, Spanish *tú* with `¿` `¡`
+and «así»), a `de-CH` one where the German has ß, and an `es-ES` one only where Spain says it
+differently. Permission prompts are in `Cedar/InfoPlist.xcstrings`.
 
 ## Tests
 

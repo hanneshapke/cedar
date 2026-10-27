@@ -56,7 +56,7 @@ MANIFEST_KEYS = {
 }
 LISTING_KEYS = {"summary", "category", "reviewed", "translations"}
 # The languages cedar's clients are translated into besides English, with an optional region.
-TRANSLATION_TAG = re.compile(r"^(de|fr)(-[A-Z]{2})?$")
+TRANSLATION_TAG = re.compile(r"^(de|fr|es)(-[A-Z]{2}|-419)?$")
 TRANSLATION_KEYS = {"summary", "secrets"}
 MAX_SECRET_TEXT = 500
 CATEGORIES = {"health", "productivity", "data", "finance", "home", "media", "developer", "other"}
@@ -218,7 +218,7 @@ def check_translations(name, translations, secrets, problems):
     for tag, text in translations.items():
         where = f"translations[{tag!r}]"
         if not TRANSLATION_TAG.match(tag):
-            problems.add(name, f"{where}: locales are de or fr, optionally with a region (de-CH)")
+            problems.add(name, f"{where}: locales are de, fr or es, optionally with a region (de-CH, es-419)")
         if not isinstance(text, dict):
             problems.add(name, f"{where} is an object with summary and secrets")
             continue

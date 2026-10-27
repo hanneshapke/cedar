@@ -4,7 +4,7 @@
     <string name="channel_responses">Réponses</string>
     <string name="channel_responses_description">Une réponse s\'est terminée pendant votre absence</string>
     <string name="language_title">Choisissez votre langue</string>
-    <string name="language_subtitle">Choose your language · Sprache wählen</string>
+    <string name="language_subtitle">Choose your language · Sprache wählen · Elige tu idioma</string>
     <string name="language_continue">Continuer</string>
     <string name="language">Langue</string>
     <string name="language_automatic">Automatique</string>

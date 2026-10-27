@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The languages Android 13+ offers for the app in its system settings: the same as the app's own
-     picker (dev.cedar.core.AppLocales.OPTIONS). -->
+     picker (dev.cedar.core.AppLocales.OPTIONS), plus plain es (the app reads it as es-419, its
+     Latin American Spanish). -->
 <locale-config xmlns:android="http://schemas.android.com/apk/res/android">
     <locale android:name="en" />
     <locale android:name="en-US" />
@@ -12,4 +13,9 @@
     <locale android:name="fr-BE" />
     <locale android:name="fr-CH" />
     <locale android:name="fr-CA" />
+    <locale android:name="es" />
+    <locale android:name="es-ES" />
+    <locale android:name="es-MX" />
+    <locale android:name="es-419" />
+    <locale android:name="es-US" />
 </locale-config>

@@ -63,15 +63,15 @@ Only a maintainer adds `"reviewed": true`.
 
 ### Translations
 
-cedar's clients are in English, German and French. Two kinds of text in a tool are for people, and
+cedar's clients are in English, German, French and Spanish. Two kinds of text in a tool are for people, and
 can be translated; the rest stays in English:
 
 - **For the model: English.** `description` and the `input_schema` descriptions in `tool.json` are
   instructions to the model, like cedar's system prompt. The model answers in the user's language
   whatever language they are in.
 - **For the admin's tool list: `translations` in `listing.json`.** A one-line `summary` (at most 120
-  characters) and descriptions of the secrets `tool.json` declares, per locale (`de`, `fr`, or one
-  with a region such as `de-CH` where it differs):
+  characters) and descriptions of the secrets `tool.json` declares, per locale (`de`, `fr`, `es`, or
+  one with a region such as `de-CH` or `es-ES` where it differs):
 
   ```json
   {
@@ -80,7 +80,8 @@ can be translated; the rest stays in English:
     "translations": {
       "de": { "summary": "Luftqualität, Schadstoffe, UV und Pollen von Open-Meteo" },
       "fr": { "summary": "Qualité de l'air, polluants, UV et pollens d'Open-Meteo",
-              "secrets": { "EXAMPLE_TOKEN": "Votre jeton d'API" } }
+              "secrets": { "EXAMPLE_TOKEN": "Votre jeton d'API" } },
+      "es": { "summary": "Calidad del aire, contaminantes, UV y polen de Open-Meteo" }
     }
   }
   ```
@@ -89,15 +90,15 @@ can be translated; the rest stays in English:
   tool's permissions. They are kept out of `tool.json` because older cedar servers refuse a manifest
   with fields they don't know.
 - **For the user, at run time: `CEDAR_LANGUAGE`.** Every call gets `CEDAR_LOCALE` (`de-CH`) and
-  `CEDAR_LANGUAGE` (`de`, `fr` or `en`); either may be missing on older servers, so default to English.
+  `CEDAR_LANGUAGE` (`de`, `fr`, `es` or `en`); either may be missing on older servers, so default to English.
   Text the user sees directly, above all `[chart]` titles, series names and axis labels, should follow
-  it when the tool can: a small `STRINGS = {"en": {...}, "de": {...}, "fr": {...}}` table is
+  it when the tool can: a small `STRINGS = {"en": {...}, "de": {...}, "fr": {...}, "es": {...}}` table is
   enough, with no extra packages. Write weekday and month names from your own table rather than
   `strftime`, since the sandbox has no locales installed. Numbers in a chart stay numbers: the chat
   formats them for the user. Text for the model can stay in English.
 
 Use the terms and tone in [docs/i18n-glossary.md](../docs/i18n-glossary.md) (German *du*, French
-*vous*).
+*vous*, Spanish *tú*).
 
 ## 3. Build the index and open a pull request
 

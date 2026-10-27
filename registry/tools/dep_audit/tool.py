@@ -56,6 +56,11 @@ STRINGS = {
            "low": "faible", "unknown": "inconnue", "behind_title": "Dépendances par retard de version",
            "up to date": "à jour", "patch": "correctif", "minor": "mineure", "major": "majeure",
            "packages": "paquets"},
+    "es": {"vuln_title": "Vulnerabilidades conocidas por gravedad", "vulnerabilities": "vulnerabilidades",
+           "advisories": "avisos de seguridad", "critical": "crítica", "high": "alta", "moderate": "moderada",
+           "low": "baja", "unknown": "desconocida", "behind_title": "Dependencias por retraso de versión",
+           "up to date": "al día", "patch": "parche", "minor": "menor", "major": "mayor",
+           "packages": "paquetes"},
 }
 
 
