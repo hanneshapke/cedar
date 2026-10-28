@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3
 
 - Fix: on a Mac, Settings → Phone could show Tailscale as *Not answering* with *The Tailscale GUI failed to start … (Tailscale.CLIError error 3.)* while Tailscale was running. Run from Cedar.app, the binary inside Tailscale.app inherited the app's launch variables and took itself for an app launch instead of the CLI. Cedar now runs it without them (also for `tailscale serve`), follows a symlink to it, and if it still fails, says what to try (#120).
 
