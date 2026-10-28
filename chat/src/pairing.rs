@@ -38,6 +38,9 @@ pub async fn tailscale_check(cli: Option<&str>) -> Check {
     #[allow(unused_mut)]
     let mut cmd = tokio::process::Command::new(&bin);
     cmd.args(["status", "--json"]).stdin(Stdio::null()).stderr(Stdio::piped()).kill_on_drop(true);
+    for var in tailscale::LAUNCH_ENV {
+        cmd.env_remove(var);
+    }
     // CREATE_NO_WINDOW: under the desktop app on Windows, no console flashes up.
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
@@ -53,7 +56,7 @@ pub async fn tailscale_check(cli: Option<&str>) -> Check {
         Err(_) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
             let msg = if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() };
-            Check::without_status(State::Unavailable, format!("`tailscale status` failed: {msg}"))
+            Check::without_status(State::Unavailable, format!("`tailscale status` failed: {}", tailscale::failure(msg)))
         }
     }
 }

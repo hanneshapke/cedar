@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix: on a Mac, Settings → Phone could show Tailscale as *Not answering* with *The Tailscale GUI failed to start … (Tailscale.CLIError error 3.)* while Tailscale was running. Run from Cedar.app, the binary inside Tailscale.app inherited the app's launch variables and took itself for an app launch instead of the CLI. Cedar now runs it without them (also for `tailscale serve`), follows a symlink to it, and if it still fails, says what to try (#120).
+
 ## 0.2.2
 
 - Fix: a tool install could still fail with pip's *Permission denied: '/opt/cedar/env/.local'* on 0.2.1 when the folders *inside* the tool's package volume (`.local`, `.cache`) belonged to root, since 0.2.1 only handed the volume's top folder to the sandbox's user. The install now hands over everything in it (#118).
