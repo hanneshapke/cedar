@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
 
-- Fix: a tool install could still fail with pip's *Permission denied: '/opt/cedar/env/.local'* on 0.2.1 when the folders *inside* the tool's package volume (`.local`, `.cache`) belonged to root, since 0.2.1 only handed the volume's top folder to the sandbox's user. The install now hands over everything in it.
+- Fix: a tool install could still fail with pip's *Permission denied: '/opt/cedar/env/.local'* on 0.2.1 when the folders *inside* the tool's package volume (`.local`, `.cache`) belonged to root, since 0.2.1 only handed the volume's top folder to the sandbox's user. The install now hands over everything in it (#118).
 
 ## 0.2.1
 
