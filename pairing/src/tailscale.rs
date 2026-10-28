@@ -70,6 +70,26 @@ fn is_executable(p: &Path) -> bool {
     }
 }
 
+/// Variables macOS hands a process LaunchServices started (Cedar.app) and its children inherit.
+/// The Mac app's binary reads them to tell whether it was opened as the app or run as the CLI:
+/// inherited from Cedar, it takes itself for an app launch and fails with "The Tailscale GUI
+/// failed to start". Whoever runs the CLI removes them first.
+pub const LAUNCH_ENV: &[&str] = &["__CFBundleIdentifier", "XPC_SERVICE_NAME", "XPC_FLAGS"];
+
+/// What to tell the user when the CLI failed with `msg`: the message, and for the Mac app's
+/// "GUI failed to start" what to try.
+pub fn failure(msg: &str) -> String {
+    if msg.contains("GUI failed to start") {
+        format!(
+            "{msg}. Open Tailscale from Applications (or quit and reopen it from the menu bar) \
+            and try again. If it keeps failing, install the standalone Tailscale from \
+            https://tailscale.com/download/mac in place of the App Store one"
+        )
+    } else {
+        msg.to_string()
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub const MISSING: &str =
     "Tailscale is not installed. Get it from https://tailscale.com/download/mac \
@@ -223,6 +243,13 @@ mod tests {
         assert_eq!(check(stopped).unwrap().state, State::Stopped);
         assert_eq!(check(r#"{"BackendState": "Starting"}"#).unwrap().state, State::Connecting);
         assert!(check("not json").is_err());
+    }
+
+    #[test]
+    fn a_gui_that_failed_to_start_says_what_to_try() {
+        let gui = "The Tailscale GUI failed to start: (Tailscale.CLIError error 3.)";
+        assert!(failure(gui).starts_with(gui) && failure(gui).contains("reopen"));
+        assert_eq!(failure("permission denied"), "permission denied");
     }
 
     #[test]

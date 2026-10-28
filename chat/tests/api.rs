@@ -984,6 +984,27 @@ async fn pairing_on_the_tailnet_gives_the_code() {
     assert_eq!(p["link"], "cedar://connect?server=https%3A%2F%2Fchat.example%3A8443&token=");
 }
 
+/// The Mac app's binary takes the variables LaunchServices gave Cedar.app for an app launch of its
+/// own and fails; the check runs it without them.
+#[cfg(unix)]
+#[tokio::test]
+async fn pairing_runs_tailscale_without_the_apps_launch_variables() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("cedar-chat-ts-{}-gui", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("tailscale");
+    let ready = r#"{"BackendState": "Running", "Self": {"DNSName": "box.tail1234.ts.net."}, "CertDomains": ["box.tail1234.ts.net"]}"#;
+    let gui = "The Tailscale GUI failed to start: (Tailscale.CLIError error 3.)";
+    std::fs::write(&bin, format!("#!/bin/sh\nif [ -n \"$__CFBundleIdentifier$XPC_SERVICE_NAME\" ]; then echo '{gui}' >&2; exit 1; fi\necho '{ready}'\n")).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Only this test's fake reads them; the others ignore the environment.
+    std::env::set_var("__CFBundleIdentifier", "io.github.hanneshapke.cedar");
+    std::env::set_var("XPC_SERVICE_NAME", "application.io.github.hanneshapke.cedar");
+    let h = Harness::new(&[("CHAT_TAILSCALE_CLI", bin.to_str().unwrap())]).await;
+    let (_, p) = h.json(Method::GET, "/api/pairing", None).await;
+    assert_eq!(p["tailscale"]["state"], "ready", "{}", p["tailscale"]["detail"]);
+}
+
 async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
     h.call_full(Request::builder().uri(uri).body(Body::empty()).unwrap()).await
 }

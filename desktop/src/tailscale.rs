@@ -5,7 +5,7 @@
 
 use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
-use cedar_pairing::tailscale::https_url;
+use cedar_pairing::tailscale::{failure, https_url, LAUNCH_ENV};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -23,23 +23,21 @@ pub fn find() -> Option<TailscaleCli> {
 
 impl TailscaleCli {
     async fn output(&self, args: &[&str], timeout: Duration) -> Result<String> {
-        let out = tokio::time::timeout(
-            timeout,
-            proc::command(&self.bin)
-                .args(args)
-                .stdin(Stdio::null())
-                .kill_on_drop(true)
-                .output(),
-        )
-        .await
-        .map_err(|_| {
-            anyhow!(
-                "`tailscale {}` did not answer within {:?}",
-                args.join(" "),
-                timeout
-            )
-        })?
-        .with_context(|| format!("running {}", self.bin.display()))?;
+        let mut cmd = proc::command(&self.bin);
+        cmd.args(args).stdin(Stdio::null()).kill_on_drop(true);
+        for var in LAUNCH_ENV {
+            cmd.env_remove(var);
+        }
+        let out = tokio::time::timeout(timeout, cmd.output())
+            .await
+            .map_err(|_| {
+                anyhow!(
+                    "`tailscale {}` did not answer within {:?}",
+                    args.join(" "),
+                    timeout
+                )
+            })?
+            .with_context(|| format!("running {}", self.bin.display()))?;
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
         } else {
@@ -50,7 +48,11 @@ impl TailscaleCli {
             } else {
                 stderr
             };
-            bail!("`tailscale {}` failed: {}", args.join(" "), msg.trim())
+            bail!(
+                "`tailscale {}` failed: {}",
+                args.join(" "),
+                failure(msg.trim())
+            )
         }
     }
 
