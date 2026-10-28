@@ -1110,7 +1110,9 @@ async fn ensure_tool_env(
     chown_tool_env(docker, cfg, &volume).await
 }
 
-/// Make a tool's environment volume the agent's user's.
+/// Make a tool's environment volume, and everything in it, the agent's user's. Recursive, since a
+/// root-owned `.local` or `.cache` inside the volume fails `pip install` just like a root-owned
+/// volume does.
 async fn chown_tool_env(docker: &str, cfg: &SandboxConfig, volume: &str) -> Result<()> {
     let chown = [
         "run",
@@ -1127,6 +1129,7 @@ async fn chown_tool_env(docker: &str, cfg: &SandboxConfig, volume: &str) -> Resu
         &format!("{volume}:{TOOL_ENV_MOUNT}"),
         &cfg.image,
         "chown",
+        "-R",
         "1000:1000",
         TOOL_ENV_MOUNT,
     ]
