@@ -45,9 +45,15 @@ pub fn candidates() -> Vec<PathBuf> {
     all
 }
 
-/// The tailscale CLI, if it is installed.
+/// The tailscale CLI, if it is installed, with symlinks resolved. The Mac app's binary only acts as
+/// the CLI when started from inside its bundle: through a symlink to it (a hand-made
+/// `/usr/local/bin/tailscale`, say) it fails with "The Tailscale GUI failed to start".
 pub fn find() -> Option<PathBuf> {
-    candidates().into_iter().find(|p| is_executable(p))
+    first_executable(candidates())
+}
+
+fn first_executable(paths: Vec<PathBuf>) -> Option<PathBuf> {
+    paths.into_iter().find(|p| is_executable(p)).map(|p| std::fs::canonicalize(&p).unwrap_or(p))
 }
 
 fn is_executable(p: &Path) -> bool {
@@ -224,5 +230,22 @@ mod tests {
         let all = candidates();
         assert!(all.len() > known().len() || std::env::var_os("PATH").is_none());
         assert!(all.iter().all(|p| p.file_stem().is_some_and(|n| n.eq_ignore_ascii_case("tailscale"))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_cli_is_run_from_where_a_symlink_points() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("cedar-ts-link-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let real = dir.join("Tailscale");
+        std::fs::write(&real, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = dir.join("tailscale");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let found = first_executable(vec![dir.join("missing"), link]);
+        assert_eq!(found, Some(std::fs::canonicalize(&real).unwrap()));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
