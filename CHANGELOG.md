@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix: a tool install could still fail with pip's *Permission denied: '/opt/cedar/env/.local'* on 0.2.1 when the folders *inside* the tool's package volume (`.local`, `.cache`) belonged to root, since 0.2.1 only handed the volume's top folder to the sandbox's user. The install now hands over everything in it.
+
 ## 0.2.1
 
 - **Cedar speaks Spanish.** The web chat (all four interfaces), the Mac and Windows app, the iPhone and Android apps and the website are translated into neutral Latin American Spanish (*tú*), with Spain's words where they differ: Español (España, México, Latinoamérica, Estados Unidos), picked like the other languages in the first step or Settings → Language. Runs take `es`, `es-ES`, `es-MX`, `es-419` and `es-US`, and answers follow the region's dates, numbers and prices. Registry listings have Spanish summaries, and the chart tools draw their labels in Spanish (#116).

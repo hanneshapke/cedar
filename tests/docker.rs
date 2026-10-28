@@ -978,3 +978,50 @@ print(json.dumps({{"found": found, "own": sorted(os.listdir("/opt/cedar/tool")),
     factory.remove_tool_env("spy").await.unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn installing_a_tool_takes_over_root_owned_folders_in_its_environment() {
+    // A volume an earlier, half-finished install left with root's `.local` and `.cache` inside.
+    let factory = DockerSandboxFactory::new(config("none"));
+    let volume = cedar::sandbox::tool_env_volume("rooted");
+    let image = config("none").image;
+    docker(&["volume", "create", &volume]);
+    docker(&[
+        "run",
+        "--rm",
+        "--user",
+        "0:0",
+        "-v",
+        &format!("{volume}:/opt/cedar/env"),
+        &image,
+        "mkdir",
+        "-p",
+        "/opt/cedar/env/.local/lib",
+        "/opt/cedar/env/.cache/pip",
+    ]);
+
+    // pillow is in the image already, so pip needs no network to be satisfied.
+    factory
+        .setup_tool("rooted", &["pillow".to_string()])
+        .await
+        .expect("install into a volume with root-owned folders");
+    let owners = docker(&[
+        "run",
+        "--rm",
+        "-v",
+        &format!("{volume}:/opt/cedar/env"),
+        &image,
+        "stat",
+        "-c",
+        "%u",
+        "/opt/cedar/env/.local/lib",
+        "/opt/cedar/env/.cache/pip",
+    ]);
+    assert_eq!(
+        owners.split_whitespace().collect::<Vec<_>>(),
+        ["1000", "1000"]
+    );
+
+    factory.remove_tool_env("rooted").await.unwrap();
+}
