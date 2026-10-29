@@ -44,10 +44,10 @@ RESERVED_SECRETS = {"PATH", "HOME", "USER", "SHELL", "PWD", "TMPDIR", "LANG"}
 RESERVED_PREFIXES = ("PYTHON", "PIP_", "LD_", "CEDAR_", "DOCKER_", "SSL_", "LC_")
 # cedar's own tool groups and names; a tool can't take them.
 RESERVED_NAMES = {
-    "core", "web_search", "web_fetch", "weather", "maps", "recipes", "transit", "stocks",
+    "core", "web_search", "web_fetch", "weather", "maps", "recipes", "transit", "flights", "stocks",
     "products", "ask_user", "browser", "gmail", "calendar", "custom", "bash", "read_file",
     "write_file", "run_python", "read_document", "generate_pdf", "generate_chart", "fetch_url",
-    "download_file", "weather_forecast", "show_map", "show_recipe", "plan_trip",
+    "download_file", "weather_forecast", "show_map", "show_recipe", "plan_trip", "search_flights",
     "compare_stocks", "search_products",
 }
 MANIFEST_KEYS = {

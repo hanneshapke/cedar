@@ -230,52 +230,6 @@
       }
     },
     {
-      "name": "flight_search",
-      "version": "1.0.0",
-      "summary": "Search flights on Google Flights by route, dates, passengers, cabin and stops, with price insights and booking links",
-      "category": "productivity",
-      "author": "Hannes Hapke",
-      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/flight_search",
-      "license": "Apache-2.0",
-      "permissions": {
-        "network": [
-          "serpapi.com"
-        ],
-        "secrets": [
-          "SERPAPI_API_KEY"
-        ],
-        "pip": [],
-        "health_data": false
-      },
-      "base_url": "tools/flight_search/",
-      "files": {
-        ".env.example": "1721a74c624db58bde9de3da87c94313c8d585104bb8a7e6d27f11119045bace",
-        "tool.json": "9f8c97678a8e66077a7938028ca399dfd134cfbddf411a061e6c93d2fc8b33c9",
-        "tool.py": "982d4fc70ddf7d7ab2e191b0e70d952f9ecce514830721cd8c894aa1b583efb2"
-      },
-      "reviewed": false,
-      "translations": {
-        "de": {
-          "summary": "Fl\u00fcge auf Google Flights nach Strecke, Datum, Reisenden, Klasse und Stopps suchen, mit Preistrend und Buchungslinks",
-          "secrets": {
-            "SERPAPI_API_KEY": "Dein SerpApi-API-Schl\u00fcssel (serpapi.com \u2192 Dashboard \u2192 Private API Key); der kostenlose Tarif reicht f\u00fcr eine begrenzte Zahl Suchen im Monat"
-          }
-        },
-        "fr": {
-          "summary": "Vols sur Google Flights par trajet, dates, voyageurs, classe et escales, avec tendance des prix et liens de r\u00e9servation",
-          "secrets": {
-            "SERPAPI_API_KEY": "Votre cl\u00e9 d'API SerpApi (serpapi.com \u2192 Dashboard \u2192 Private API Key) ; l'offre gratuite couvre un nombre limit\u00e9 de recherches par mois"
-          }
-        },
-        "es": {
-          "summary": "Busca vuelos en Google Flights por ruta, fechas, pasajeros, clase y escalas, con tendencia de precios y enlaces",
-          "secrets": {
-            "SERPAPI_API_KEY": "Tu clave de API de SerpApi (serpapi.com \u2192 Dashboard \u2192 Private API Key); el plan gratuito incluye un n\u00famero limitado de b\u00fasquedas al mes"
-          }
-        }
-      }
-    },
-    {
       "name": "tandem_glucose",
       "version": "1.3.0",
       "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",
