@@ -77,7 +77,7 @@ async fn reasoning_cost_and_the_sandbox_are_reported() {
     let started = of_kind(&events, "run.started")[0];
     assert_eq!(
         started["sandbox"],
-        json!({ "network": "none", "memory": "1g", "cpus": 1.0 })
+        json!({ "runtime": "openshell", "network": "none", "policy": "offline", "hosts": [], "memory": "1g", "cpus": 1.0 })
     );
     assert_eq!(started["interactive"], false);
     let reasoning = of_kind(&events, "assistant.reasoning");
@@ -257,12 +257,19 @@ async fn in_tool_mode_the_model_proposes_a_plan_when_it_wants_one() {
             "propose_plan",
             json!({ "steps": ["Find the figures", "Draw a chart"] }),
         )),
-        Step::Reply(tool_use("p2", "propose_plan", json!({ "steps": ["Again", "And again"] }))),
+        Step::Reply(tool_use(
+            "p2",
+            "propose_plan",
+            json!({ "steps": ["Again", "And again"] }),
+        )),
         Step::Reply(text("Here it is.")),
     ])
     .await;
     let run = app
-        .create_run_with(KEY_A, json!({ "prompt": "chart the market", "plan": "tool" }))
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "chart the market", "plan": "tool" }),
+        )
         .await;
     let id = id_of(&run);
     app.wait_status(KEY_A, &id, "completed").await;
@@ -278,7 +285,10 @@ async fn in_tool_mode_the_model_proposes_a_plan_when_it_wants_one() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     assert!(tools.contains(&"propose_plan"), "{tools:?}");
-    assert!(requests[0]["system"].as_str().unwrap().contains("call propose_plan"));
+    assert!(requests[0]["system"]
+        .as_str()
+        .unwrap()
+        .contains("call propose_plan"));
 
     let plan = of_kind(&events, "plan");
     assert_eq!(plan.len(), 1, "a second plan is refused");
@@ -291,39 +301,69 @@ async fn in_tool_mode_the_model_proposes_a_plan_when_it_wants_one() {
     assert!(of_kind(&events, "tool.call").is_empty());
     let first = result_before(&app, 1);
     assert_eq!(first["tool_use_id"], "p1");
-    assert!(first["content"].as_str().unwrap().starts_with("The plan is shown"), "{first}");
+    assert!(
+        first["content"]
+            .as_str()
+            .unwrap()
+            .starts_with("The plan is shown"),
+        "{first}"
+    );
     let again = result_before(&app, 2);
     assert_eq!(again["is_error"], true);
-    assert!(again["content"].as_str().unwrap().contains("already a plan"), "{again}");
+    assert!(
+        again["content"]
+            .as_str()
+            .unwrap()
+            .contains("already a plan"),
+        "{again}"
+    );
 }
 
 #[tokio::test]
 async fn the_tool_is_offered_only_in_tool_mode_and_bad_steps_go_back_to_the_model() {
     let app = TestApp::new(vec![
         Step::Reply(text("ok")),
-        Step::Reply(tool_use("p1", "propose_plan", json!({ "steps": ["just one"] }))),
+        Step::Reply(tool_use(
+            "p1",
+            "propose_plan",
+            json!({ "steps": ["just one"] }),
+        )),
         Step::Reply(text("Fine, no plan.")),
     ])
     .await;
-    let run = app.create_run_with(KEY_A, json!({ "prompt": "hi", "plan": "off" })).await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "hi", "plan": "off" }))
+        .await;
     app.wait_status(KEY_A, &id_of(&run), "completed").await;
     let request = &app.llm.requests()[0];
     assert!(!request["tools"].to_string().contains("propose_plan"));
     assert!(!request["system"].as_str().unwrap().contains("propose_plan"));
 
-    let run = app.create_run_with(KEY_A, json!({ "prompt": "go", "plan": "tool" })).await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "go", "plan": "tool" }))
+        .await;
     let id = id_of(&run);
     app.wait_status(KEY_A, &id, "completed").await;
     let result = result_before(&app, 2);
     assert_eq!(result["is_error"], true);
-    assert!(result["content"].as_str().unwrap().contains("2 to 7 steps, got 1"), "{result}");
+    assert!(
+        result["content"]
+            .as_str()
+            .unwrap()
+            .contains("2 to 7 steps, got 1"),
+        "{result}"
+    );
     assert!(of_kind(&app.events(KEY_A, &id, None).await, "plan").is_empty());
 }
 
 #[tokio::test]
 async fn an_interactive_run_waits_mid_run_for_the_plan_the_model_proposed() {
     let app = TestApp::new(vec![
-        Step::Reply(tool_use("p1", "propose_plan", json!({ "steps": ["Search", "Write"] }))),
+        Step::Reply(tool_use(
+            "p1",
+            "propose_plan",
+            json!({ "steps": ["Search", "Write"] }),
+        )),
         Step::Reply(text("Done.")),
     ])
     .await;
@@ -350,7 +390,10 @@ async fn an_interactive_run_waits_mid_run_for_the_plan_the_model_proposed() {
     let result = result_before(&app, 1);
     let content = result["content"].as_str().unwrap();
     assert!(content.starts_with("The user agreed"), "{content}");
-    assert!(content.ends_with("\n1. Search the archive\n2. Summarize"), "{content}");
+    assert!(
+        content.ends_with("\n1. Search the archive\n2. Summarize"),
+        "{content}"
+    );
 }
 
 #[tokio::test]
@@ -427,7 +470,7 @@ async fn always_allowing_remembers_the_scope_for_the_key() {
             Step::Reply(install("t2")),
             Step::Reply(text("Installed.")),
         ],
-        &[("SANDBOX_NETWORK", "bridge")],
+        &[("SANDBOX_POLICY", "packages")],
     )
     .await;
     let run = app
@@ -541,4 +584,145 @@ async fn the_model_is_asked_to_cite_when_it_can_read_the_web() {
         .unwrap()
         .to_string();
     assert!(system.contains("Cite sources as [n]"), "{system}");
+}
+
+#[tokio::test]
+async fn a_blocked_connection_is_reported_and_the_model_told() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use(
+            "t1",
+            "bash",
+            json!({ "command": "curl https://example.com/data" }),
+        )),
+        Step::Reply(text("Couldn't reach it.")),
+    ])
+    .await;
+    let run = app.create_run(KEY_A, "fetch it").await;
+    let id = id_of(&run);
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let events = app.events(KEY_A, &id, None).await;
+    let denied = of_kind(&events, "sandbox.denied");
+    assert_eq!(denied.len(), 1);
+    assert_eq!(
+        *denied[0],
+        json!({ "call_id": "t1", "program": "/usr/bin/curl", "host": "example.com", "port": 443,
+                "what": "connect", "reason": "transparent_tcp_policy_denied" })
+    );
+    // Nobody can be asked in a run that isn't interactive.
+    assert!(of_kind(&events, "approval.required").is_empty());
+    let result = result_before(&app, 1);
+    let content = result["content"].as_str().unwrap();
+    assert!(
+        content.contains("[the sandbox's network policy blocked]\n- curl → example.com:443"),
+        "{content}"
+    );
+    assert!(content.contains("nobody can be asked"), "{content}");
+    assert!(app.factory.sandbox(0).allowed.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_blocked_connection_can_be_allowed_and_always_is_remembered_for_the_key() {
+    let curl = |id: &str| {
+        tool_use(
+            id,
+            "bash",
+            json!({ "command": "curl https://api.example.com/v1" }),
+        )
+    };
+    let app = TestApp::new(vec![
+        Step::Reply(curl("t1")),
+        Step::Reply(text("Blocked; allowed now.")),
+        Step::Reply(curl("t2")),
+        Step::Reply(text("Fetched.")),
+    ])
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "fetch it", "interactive": true }))
+        .await;
+    let id = id_of(&run);
+    let asked = wait_for(&app, &id, "approval.required").await;
+    let approval = &asked.data["data"];
+    assert_eq!(approval["rule"], "network");
+    assert_eq!(approval["call_id"], "t1");
+    assert_eq!(approval["scope"], "curl → api.example.com:443");
+    assert_eq!(
+        approval["input"],
+        json!({ "program": "/usr/bin/curl", "host": "api.example.com", "port": 443 })
+    );
+    let uri = format!(
+        "/v1/runs/{id}/approvals/{}",
+        approval["id"].as_str().unwrap()
+    );
+    post(&app, &uri, json!({ "decision": "allow_always" })).await;
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let endpoint = cedar::policy::Endpoint {
+        binary: "/usr/bin/curl".into(),
+        host: "api.example.com".into(),
+        port: 443,
+    };
+    assert_eq!(
+        *app.factory.sandbox(0).allowed.lock().unwrap(),
+        std::slice::from_ref(&endpoint)
+    );
+    let content = result_before(&app, 1)["content"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        content.contains(
+            "The user allowed /usr/bin/curl → api.example.com:443; run the command again."
+        ),
+        "{content}"
+    );
+
+    // The next run of the same key starts with it allowed, and isn't asked again.
+    let next = app
+        .create_run_with(KEY_A, json!({ "prompt": "again", "interactive": true }))
+        .await;
+    let next = id_of(&next);
+    app.wait_status(KEY_A, &next, "completed").await;
+    assert_eq!(*app.factory.sandbox(1).allowed.lock().unwrap(), [endpoint]);
+    let events = app.events(KEY_A, &next, None).await;
+    assert!(of_kind(&events, "approval.required").is_empty());
+    assert!(of_kind(&events, "sandbox.denied").is_empty());
+    let content = result_before(&app, 3)["content"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(content, "fetched api.example.com");
+}
+
+#[tokio::test]
+async fn a_declined_connection_stays_blocked() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use(
+            "t1",
+            "bash",
+            json!({ "command": "curl https://evil.example/x" }),
+        )),
+        Step::Reply(text("Left it.")),
+    ])
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "fetch it", "interactive": true }))
+        .await;
+    let id = id_of(&run);
+    let asked = wait_for(&app, &id, "approval.required").await;
+    let uri = format!(
+        "/v1/runs/{id}/approvals/{}",
+        asked.data["data"]["id"].as_str().unwrap()
+    );
+    post(&app, &uri, json!({ "decision": "deny" })).await;
+    app.wait_status(KEY_A, &id, "completed").await;
+    assert!(app.factory.sandbox(0).allowed.lock().unwrap().is_empty());
+    let content = result_before(&app, 1)["content"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        content.contains("The user did not allow /usr/bin/curl → evil.example:443"),
+        "{content}"
+    );
 }

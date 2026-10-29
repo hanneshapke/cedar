@@ -236,7 +236,7 @@ impl Integrations {
         Ok(json!({
             "tools_dir": self.cfg.sandbox.tools_dir.is_some(),
             "storage": self.secrets.is_some(),
-            "network": self.cfg.sandbox.tools_network,
+            "network": "declared",
             "tools": tools,
         }))
     }

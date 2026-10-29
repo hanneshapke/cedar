@@ -1,5 +1,5 @@
 //! The `generate_pdf` tool against the fake sandbox: what gets staged, what gets run, and what the
-//! model hears back. Real rendering is covered by `tests/docker.rs`.
+//! model hears back. Real rendering is covered by `tests/openshell.rs`.
 
 mod common;
 

@@ -6,8 +6,9 @@
 # This runs the stack on one machine you are logged in to. Nothing restarts it after a crash or a
 # reboot; for a long-running server use the systemd setup in DEPLOYMENT.md.
 #
-# Before it starts, it checks Docker and (unless TAILSCALE_SERVE=off) Tailscale; --pair checks
-# Tailscale too, --down neither. On Linux it offers
+# Before it starts, it checks Docker, the OpenShell gateway that runs cedar's sandboxes, and
+# (unless TAILSCALE_SERVE=off) Tailscale; --pair checks Tailscale too, --down none of them.
+# OpenShell isn't installed for you: the script says how (see "Setting up OpenShell" in README.md). On Linux it offers
 # to fix what is missing, showing each command and running it only when you answer yes: install
 # Docker Engine (get.docker.com), start it, let your user run it, install Tailscale
 # (tailscale.com/install.sh) and log in. Without a terminal it installs nothing and says what to
@@ -157,6 +158,22 @@ ensure_docker() {
 
     if [[ -n ${VLLM_COMPOSE_FILE:-} ]] && (( ! no_vllm )) && ! docker compose version >/dev/null 2>&1; then
         die "VLLM_COMPOSE_FILE is set but 'docker compose' is missing; install the compose plugin (sudo apt install docker-compose-plugin)"
+    fi
+}
+
+# ensure_openshell: the openshell command (OPENSHELL_BIN, default openshell) and a gateway that
+# answers. cedar runs every sandbox through it; it isn't installed for you.
+ensure_openshell() {
+    local bin=${OPENSHELL_BIN:-openshell} out
+    if ! command -v "$bin" >/dev/null; then
+        die "OpenShell is not installed ($bin not found). Install it and start its gateway: curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh (then see \"Setting up OpenShell\" in README.md, which also needs allow_driver_config = true in the gateway's settings)"
+    fi
+    if ! out=$("$bin" --workspace "${OPENSHELL_WORKSPACE:-default}" status 2>&1) || ! grep -q "Status: Connected" <<<"$out"; then
+        echo "$out" >&2
+        if [[ $(uname -s) == Darwin ]]; then
+            die "the OpenShell gateway is not answering; start it: brew services restart nvidia/openshell/openshell"
+        fi
+        die "the OpenShell gateway is not answering; start it (openshell-gateway, or its systemd unit from DEPLOYMENT.md) and run this again"
     fi
 }
 
@@ -319,9 +336,9 @@ LLM_BASE_URL=http://localhost:8000/v1
 MAX_CONCURRENT_RUNS=2
 RUN_TIMEOUT_SECS=1800
 RUST_LOG=info,sqlx=warn
-# Give the sandbox network access so the agent can \`pip install\` packages. Set to "none" to keep
-# it offline (the agent then only has what sandbox/Dockerfile installs).
-SANDBOX_NETWORK=bridge
+# Let the agent \`pip install\` packages: OpenShell's policy lets Python reach PyPI and nothing
+# else. Set to "offline" to reach nothing (the agent then only has what sandbox/Dockerfile installs).
+SANDBOX_POLICY=packages
 # Brave Search API key (https://api-dashboard.search.brave.com/). Turns on the web_search tool,
 # which runs in cedar, not the sandbox. Without it the model has no way to search the web.
 # BRAVE_API_KEY=
@@ -440,6 +457,7 @@ main() {
     [[ -f $ENV_FILE ]] || create_env
     load_env
     ensure_docker "$no_vllm" "$@"
+    ensure_openshell
     ensure_tailscale
 
     local ts_url

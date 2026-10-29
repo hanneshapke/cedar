@@ -5,8 +5,9 @@
 //! A run that completes keeps its sandbox for the next run in its workspace (the conversation's
 //! next turn), so what it left running and installed is still there. Once the conversation has
 //! been idle for the `sandbox_idle_minutes` setting (an admin sets it with
-//! `PUT /v1/admin/settings`), the sandbox is paused; the next run resumes it. It is destroyed with
-//! its workspace, when the server stops, or when a run that used it doesn't complete.
+//! `PUT /v1/admin/settings`), the sandbox is stopped (OpenShell keeps its files); the next run
+//! starts it again. It is destroyed with its workspace, when the server stops, or when a run that
+//! used it doesn't complete.
 
 use crate::agent::{run_agent, AgentEnv, AgentError, Completion};
 use crate::browser::{BrowserFactory, BrowserSession};
@@ -151,9 +152,9 @@ impl RunManager {
             Ok(0) => {}
             Ok(n) => tracing::warn!(
                 count = n,
-                "removed sandbox containers left over from a previous process"
+                "removed sandboxes left over from a previous process"
             ),
-            // Docker may simply be down right now; /readyz reports that.
+            // Docker or the OpenShell gateway may simply be down right now; /readyz reports that.
             Err(e) => {
                 tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover sandboxes")
             }
@@ -404,7 +405,7 @@ impl Inner {
         }
     }
 
-    /// Keep a completed run's sandbox for the next run in `workspace_id`, and pause it once that
+    /// Keep a completed run's sandbox for the next run in `workspace_id`, and stop it once that
     /// hasn't come for the `sandbox_idle_minutes` setting.
     async fn park(&self, workspace_id: Uuid, sandbox: Arc<dyn Sandbox>) {
         let minutes = idle_minutes(&self.store).await.unwrap_or_else(|e| {
@@ -420,7 +421,7 @@ impl Inner {
                     _ = stop.cancelled() => {}
                     _ = tokio::time::sleep(idle) => {
                         sandbox.pause().await;
-                        tracing::info!(%workspace_id, "paused an idle sandbox");
+                        tracing::info!(%workspace_id, "stopped an idle sandbox");
                     }
                 }
             })

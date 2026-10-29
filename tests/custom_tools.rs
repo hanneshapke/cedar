@@ -1,6 +1,6 @@
 //! Personal Python tools from `TOOLS_DIR`: how they reach the model, how a call runs in the
 //! sandbox, and how the `custom` group behaves in the catalog and a run's tool selection.
-//! Real execution in Docker is covered by `tests/docker.rs`.
+//! Real execution in OpenShell is covered by `tests/openshell.rs`.
 
 mod common;
 
@@ -80,13 +80,16 @@ async fn a_personal_tool_is_offered_and_runs_its_script_on_the_staged_input() {
     assert_eq!(calls[0].input, json!({ "path": "notes.txt" }));
     // No secrets; only the run's locale, which cedar sets.
     let env = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     };
     assert_eq!(
         calls[0].env,
         env(&[("CEDAR_LOCALE", "fr-CH"), ("CEDAR_LANGUAGE", "fr")])
     );
-    assert!(!calls[0].network, "no hosts declared, no network");
+    assert!(calls[0].hosts.is_empty(), "no hosts declared, no network");
 
     let requests = app.llm.requests();
     let result = &requests[1]["messages"].as_array().unwrap().last().unwrap()["content"][0];

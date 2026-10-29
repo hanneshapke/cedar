@@ -5,11 +5,12 @@
 //! tool) or installed from the community registry (see `marketplace`), which leaves an
 //! [`INSTALL_RECEIPT`] in its folder.
 //!
-//! Every call runs in a container of its own (see [`crate::sandbox::ToolRun`]): it sees the run's
-//! workspace, its own folder read-only at [`MOUNT`], and its own environment, where its packages
-//! live, but not the other tools' folders, their secrets, or their packages. It gets a network
-//! only if its manifest declares the hosts it reaches, and only the secrets its manifest declares
-//! (saved through the admin API, encrypted). The call's input arrives as JSON on stdin, stdout is
+//! Every call runs in an OpenShell sandbox of its own (see [`crate::sandbox::ToolRun`]): it sees
+//! the run's workspace, a read-only copy of its own folder at [`MOUNT`], and its own environment,
+//! where its packages live, but not the other tools' folders, their secrets, or their packages.
+//! Its policy lets it reach the hosts its manifest declares (from Python, on ports 80 and 443) and
+//! nothing else, and it gets only the secrets its manifest declares (saved through the admin API,
+//! encrypted). The call's input arrives as JSON on stdin, stdout is
 //! the result, and a non-zero exit turns stderr into an error the model sees.
 //!
 //! The manifests are read on the host, every time the tool set is built, so a tool added or
@@ -60,7 +61,7 @@ struct Manifest {
     author: Option<String>,
     homepage: Option<String>,
     license: Option<String>,
-    /// The hosts the tool reaches. Declaring any gives its calls `TOOLS_NETWORK`.
+    /// The hosts the tool reaches; its calls can reach these and nothing else.
     #[serde(default)]
     network: Vec<String>,
     /// The environment variables it reads its credentials from.
@@ -559,7 +560,7 @@ impl Tool for PythonTool {
             entry: &self.entry,
             input: staged.as_bytes(),
             env: &env,
-            network: !self.network.is_empty(),
+            hosts: &self.network,
         };
         let out = ctx.sandbox.run_tool(&call, timeout, ctx.max_output).await;
         let out = match out {

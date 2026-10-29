@@ -1,7 +1,7 @@
 //! The agent loop: call the model, run the tools it asks for, feed the results back, and stop
 //! when the model stops asking for tools.
 
-use crate::approvals::{self, Rules};
+use crate::approvals::{self, Gate, Rules};
 use crate::attachments;
 use crate::browser::BrowserSession;
 use crate::events::Emitter;
@@ -9,6 +9,7 @@ use crate::integrations::Integrations;
 use crate::llm::{LlmRouter, MessageRequest};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
+use crate::policy::{Endpoint, Policy};
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
@@ -18,7 +19,7 @@ use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tokio_util::sync::CancellationToken;
 
 /// What every run shares.
@@ -31,10 +32,10 @@ pub struct AgentEnv {
     pub store: Store,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
-    /// The sandbox's Docker network mode, for the note on what the sandbox can reach and for
-    /// which calls need approval.
-    pub sandbox_network: String,
-    /// What `run.started` says about the sandbox: `{network, memory, cpus}`.
+    /// The base policy of a conversation's sandbox, for the note on what the sandbox can reach
+    /// and for which calls need approval.
+    pub sandbox_policy: Policy,
+    /// What `run.started` says about the sandbox: `{runtime, network, policy, hosts, memory, cpus}`.
     pub sandbox_info: Value,
     /// Which calls wait for approval in interactive runs.
     pub approvals: Rules,
@@ -94,6 +95,19 @@ pub async fn run_agent(
         }),
         locale: run.locale.clone(),
     };
+    // Connections the key's owner always allows, which the sandbox's base policy doesn't.
+    let allowed: Vec<Endpoint> = env
+        .store
+        .grants(&run.owner, approvals::Rule::Network.as_str())
+        .await?
+        .iter()
+        .filter_map(|g| Endpoint::from_grant(g))
+        .collect();
+    if !allowed.is_empty() {
+        if let Err(e) = sandbox.allow(&allowed).await {
+            tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not apply the connections this key always allows");
+        }
+    }
     let tool_set = env.tools.load_full();
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
     tokio::select! {
@@ -103,7 +117,7 @@ pub async fn run_agent(
     }
     let tools = tool_set.select(run.tools.as_deref());
     let mut tool_defs = tools.definitions();
-    let mut note = tools.environment_note(&env.sandbox_network);
+    let mut note = tools.environment_note(&env.sandbox_policy);
     // In `tool` mode the model decides whether a request needs a plan.
     let offers_plan = run.plan == PlanMode::Tool;
     if offers_plan {
@@ -526,7 +540,7 @@ async fn approve(
         .and_then(|t| t.personal())
         .and_then(|t| approvals::check_personal(&env.approvals, t));
     let Some(gate) =
-        approvals::check(&env.approvals, name, input, &env.sandbox_network).or(personal)
+        approvals::check(&env.approvals, name, input, env.sandbox_policy.networked()).or(personal)
     else {
         return Ok(None);
     };
@@ -534,13 +548,45 @@ async fn approve(
     if env.store.granted(&run.owner, rule, &gate.grants).await? {
         return Ok(None);
     }
+    match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
+        Decision::Allow => Ok(None),
+        Decision::Always => {
+            env.store.grant(&run.owner, rule, &gate.grants).await?;
+            Ok(None)
+        }
+        Decision::Timeout => Ok(Some(NOT_APPROVED)),
+        Decision::Deny => Ok(Some(DECLINED)),
+    }
+}
+
+/// What the user answered to an approval card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Decision {
+    Allow,
+    Always,
+    Deny,
+    Timeout,
+}
+
+/// Show `gate` as an `approval.required` event and wait for the user's answer.
+#[allow(clippy::too_many_arguments)]
+async fn ask(
+    env: &AgentEnv,
+    run: &Run,
+    events: &Emitter,
+    cancel: &CancellationToken,
+    call_id: &str,
+    name: &str,
+    input: &Value,
+    gate: &Gate,
+) -> Result<Decision, AgentError> {
     let id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
     let key = format!("approval:{id}");
     let rx = env.waits.register(run.id, &key);
     events
         .emit(
             event::APPROVAL_REQUIRED,
-            json!({ "id": id, "call_id": call_id, "tool": name, "input": input, "rule": rule,
+            json!({ "id": id, "call_id": call_id, "tool": name, "input": input, "rule": gate.rule.as_str(),
                     "reason": gate.reason, "scope": gate.scope }),
         )
         .await?;
@@ -553,15 +599,132 @@ async fn approve(
     events
         .emit(event::APPROVAL_RESOLVED, json!({ "id": id, "decision": decision, "by": by }))
         .await?;
-    match decision.as_str() {
-        "allow" => Ok(None),
-        "allow_always" => {
-            env.store.grant(&run.owner, rule, &gate.grants).await?;
-            Ok(None)
+    Ok(match decision.as_str() {
+        "allow" => Decision::Allow,
+        "allow_always" => Decision::Always,
+        "timeout" => Decision::Timeout,
+        _ => Decision::Deny,
+    })
+}
+
+/// The calls that run the model's own code in the sandbox, and so the ones whose connections the
+/// sandbox's policy may refuse.
+const RUNS_CODE: &[&str] = &["bash", "run_python"];
+
+/// After a call that ran code in the sandbox: the connections and requests the sandbox's policy
+/// refused meanwhile, as `sandbox.denied` events. In an interactive run, the user is asked about
+/// each refused connection (the `network` rule), and what they allow is let through from then on.
+/// Returns what the model is told about it, or `None` if nothing was refused.
+#[allow(clippy::too_many_arguments)]
+async fn blocked_connections(
+    env: &AgentEnv,
+    run: &Run,
+    ctx: &ToolContext,
+    events: &Emitter,
+    cancel: &CancellationToken,
+    call_id: &str,
+    name: &str,
+    since: SystemTime,
+) -> Result<Option<String>, AgentError> {
+    let denials = match ctx.sandbox.denials(since).await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not read the sandbox's refused connections");
+            return Ok(None);
         }
-        "timeout" => Ok(Some(NOT_APPROVED)),
-        _ => Ok(Some(DECLINED)),
+    };
+    if denials.is_empty() {
+        return Ok(None);
     }
+    let mut lines = Vec::new();
+    let mut endpoints: Vec<Endpoint> = Vec::new();
+    for d in &denials {
+        events
+            .emit(
+                event::SANDBOX_DENIED,
+                json!({ "call_id": call_id, "program": d.binary, "host": d.host, "port": d.port,
+                        "what": d.what, "reason": d.reason }),
+            )
+            .await?;
+        let program = d
+            .binary
+            .as_deref()
+            .map(|b| b.rsplit('/').next().unwrap_or(b));
+        lines.push(match (program, d.what.as_str()) {
+            (Some(p), "connect") => format!("- {p} → {}:{}", d.host, d.port),
+            (None, "connect") => format!("- a connection to {}:{}", d.host, d.port),
+            (_, what) => format!("- {what} on {}:{}", d.host, d.port),
+        });
+        if let (Some(binary), "connect") = (&d.binary, d.what.as_str()) {
+            let e = Endpoint {
+                binary: binary.clone(),
+                host: d.host.clone(),
+                port: d.port,
+            };
+            if e.check().is_ok() && !endpoints.contains(&e) {
+                endpoints.push(e);
+            }
+        }
+    }
+    let mut note = format!(
+        "[the sandbox's network policy blocked]\n{}",
+        lines.join("\n")
+    );
+    let mut allowed = Vec::new();
+    let mut declined = Vec::new();
+    for endpoint in endpoints {
+        let shown = format!("{} → {}:{}", endpoint.binary, endpoint.host, endpoint.port);
+        let rule = approvals::Rule::Network.as_str();
+        let grant = vec![endpoint.grant()];
+        let decision = if env.store.granted(&run.owner, rule, &grant).await? {
+            Decision::Always
+        } else {
+            let Some(gate) = run
+                .interactive
+                .then(|| approvals::check_connection(&env.approvals, &endpoint))
+                .flatten()
+            else {
+                continue;
+            };
+            let input =
+                json!({ "program": endpoint.binary, "host": endpoint.host, "port": endpoint.port });
+            ask(env, run, events, cancel, call_id, name, &input, &gate).await?
+        };
+        match decision {
+            Decision::Allow | Decision::Always => {
+                if decision == Decision::Always {
+                    env.store.grant(&run.owner, rule, &grant).await?;
+                }
+                match ctx.sandbox.allow(std::slice::from_ref(&endpoint)).await {
+                    Ok(()) => allowed.push(shown),
+                    Err(e) => {
+                        tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not allow a connection");
+                        declined.push(shown);
+                    }
+                }
+            }
+            Decision::Deny | Decision::Timeout => declined.push(shown),
+        }
+    }
+    if !allowed.is_empty() {
+        note.push_str(&format!(
+            "\nThe user allowed {}; run the command again.",
+            allowed.join(", ")
+        ));
+    }
+    if !declined.is_empty() {
+        note.push_str(&format!(
+            "\nThe user did not allow {}; don't try to reach it another way.",
+            declined.join(", ")
+        ));
+    }
+    if allowed.is_empty() && declined.is_empty() {
+        note.push_str(
+            "\nThe sandbox's policy doesn't allow this, and nobody can be asked during this run; \
+             go on without it, or say what you would need.",
+        );
+    }
+    Ok(Some(note))
 }
 
 /// Execute one `tool_use` block and return the matching `tool_result` block.
@@ -593,6 +756,7 @@ async fn execute_tool_call(
         .await?;
 
     let started = Instant::now();
+    let since = SystemTime::now();
     let call = async {
         if let Some(message) = refused {
             return Err(anyhow!(message));
@@ -609,7 +773,7 @@ async fn execute_tool_call(
         r = call => r,
     };
 
-    let (output, is_error) = match result {
+    let (mut output, is_error) = match result {
         Ok(out) => (out, false),
         Err(e) if e.downcast_ref::<SandboxFatal>().is_some() => {
             return Err(AgentError::Failed(e.to_string()))
@@ -617,6 +781,14 @@ async fn execute_tool_call(
         // Errors go back to the model so it can recover.
         Err(e) => (format!("{e:#}"), true),
     };
+    if refused.is_none() && RUNS_CODE.contains(&name) && tools.get(name).is_some() {
+        if let Some(note) =
+            blocked_connections(env, run, ctx, events, cancel, id, name, since).await?
+        {
+            output.push_str("\n\n");
+            output.push_str(&note);
+        }
+    }
     let mut data = json!({ "id": id, "output": output, "is_error": is_error, "duration_ms": started.elapsed().as_millis() as u64 });
     // The model sees the numbers it cites by; the event keeps the output as the tool wrote it
     // and lists the numbered sources beside it.

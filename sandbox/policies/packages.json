@@ -1,0 +1,76 @@
+{
+  "filesystem_policy": {
+    "include_workdir": true,
+    "read_only": [
+      "/bin",
+      "/sbin",
+      "/usr",
+      "/lib",
+      "/lib64",
+      "/etc",
+      "/opt",
+      "/proc",
+      "/var/log",
+      "/var/cache/fontconfig",
+      "/dev/urandom",
+      "/dev/random",
+      "/dev/zero",
+      "/dev/full"
+    ],
+    "read_write": [
+      "/tmp",
+      "/dev/null",
+      "/dev/shm",
+      "/home/agent"
+    ]
+  },
+  "landlock": {
+    "compatibility": "best_effort"
+  },
+  "network_policies": {
+    "npm": {
+      "binaries": [
+        {
+          "path": "/usr/bin/node"
+        },
+        {
+          "path": "/usr/local/bin/node"
+        }
+      ],
+      "endpoints": [
+        {
+          "access": "read-only",
+          "allow_encoded_slash": true,
+          "enforcement": "enforce",
+          "host": "registry.npmjs.org",
+          "port": 443,
+          "protocol": "rest"
+        }
+      ]
+    },
+    "pypi": {
+      "binaries": [
+        {
+          "path": "/usr/bin/python3*"
+        }
+      ],
+      "endpoints": [
+        {
+          "access": "read-only",
+          "enforcement": "enforce",
+          "host": "pypi.org",
+          "port": 443,
+          "protocol": "rest"
+        },
+        {
+          "access": "read-only",
+          "enforcement": "enforce",
+          "host": "files.pythonhosted.org",
+          "port": 443,
+          "protocol": "rest"
+        }
+      ]
+    }
+  },
+  "version": 1
+}

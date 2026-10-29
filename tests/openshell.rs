@@ -1,38 +1,41 @@
-//! Tests of the real Docker sandbox. They need a running Docker daemon and the sandbox image:
+//! Tests of the real sandbox: OpenShell sandboxes on Docker. They need a running Docker daemon,
+//! an OpenShell gateway the `openshell` command is registered with (its Docker driver with
+//! `allow_driver_config = true`), and the sandbox image:
 //!
 //!     docker build -t cedar-sandbox sandbox/
-//!     cargo test --test docker -- --ignored
+//!     cargo test --test openshell -- --ignored --test-threads 4
 //!
 //! Set CEDAR_TEST_SANDBOX_IMAGE to use a different image.
 
 use cedar::config::SandboxConfig;
-use cedar::sandbox::{DockerSandboxFactory, Sandbox, SandboxFactory, SandboxFatal};
+use cedar::policy::{Endpoint, Policy};
+use cedar::sandbox::{OpenShellSandboxFactory, Sandbox, SandboxFactory, SandboxFatal};
 use std::process::Command;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use uuid::Uuid;
 
-fn config(network: &str) -> SandboxConfig {
+fn config(policy: Policy) -> SandboxConfig {
     SandboxConfig {
+        openshell_bin: "openshell".into(),
+        openshell_workspace: "default".into(),
         docker_bin: "docker".into(),
         image: std::env::var("CEDAR_TEST_SANDBOX_IMAGE")
             .unwrap_or_else(|_| "cedar-sandbox:latest".into()),
-        network: network.into(),
+        policy,
         memory: "256m".into(),
         cpus: "1".into(),
         tools_dir: None,
-        tools_network: "none".into(),
     }
 }
 
-async fn sandbox() -> (DockerSandboxFactory, Uuid, Arc<dyn Sandbox>) {
-    let factory = DockerSandboxFactory::new(config("none"));
+async fn sandbox() -> (OpenShellSandboxFactory, Uuid, Arc<dyn Sandbox>) {
+    let factory = OpenShellSandboxFactory::new(config(Policy::offline()));
     let id = Uuid::new_v4();
     // A fresh run's workspace is named after the run.
-    let sandbox = factory
-        .create(id, id)
-        .await
-        .expect("create sandbox (is Docker running and the image built?)");
+    let sandbox = factory.create(id, id).await.expect(
+        "create sandbox (are Docker and the OpenShell gateway running, and the image built?)",
+    );
     (factory, id, sandbox)
 }
 
@@ -41,8 +44,34 @@ fn docker(args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+/// The sandbox's phase as OpenShell reports it, or `None` if there is no such sandbox.
+fn phase(name: &str) -> Option<String> {
+    phase_in("default", name)
+}
+
+fn phase_in(workspace: &str, name: &str) -> Option<String> {
+    let out = Command::new("openshell")
+        .args([
+            "--workspace",
+            workspace,
+            "sandbox",
+            "get",
+            name,
+            "-o",
+            "json",
+        ])
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    if !out.status.success() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    v["phase"].as_str().map(String::from)
+}
+
 /// Destroy the sandbox and delete its workspace volume, which `destroy` leaves behind on purpose.
-async fn teardown(factory: &DockerSandboxFactory, id: Uuid, sandbox: &Arc<dyn Sandbox>) {
+async fn teardown(factory: &OpenShellSandboxFactory, id: Uuid, sandbox: &Arc<dyn Sandbox>) {
     sandbox.destroy().await;
     factory
         .remove_workspace(id)
@@ -53,39 +82,58 @@ async fn teardown(factory: &DockerSandboxFactory, id: Uuid, sandbox: &Arc<dyn Sa
 const SECOND: Duration = Duration::from_secs(1);
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
-async fn a_paused_sandbox_resumes_with_its_processes_and_can_still_be_destroyed() {
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
+async fn a_paused_sandbox_resumes_with_its_files_and_can_still_be_destroyed() {
     let (f, id, sb) = sandbox().await;
-    let name = format!("cedar-run-{id}");
+    let name = cedar::sandbox::run_sandbox_name(id);
     let out = sb
-        .exec("sleep 300 >/dev/null 2>&1 & echo $! > /tmp/bg", 10 * SECOND, 1000)
+        .exec(
+            "echo kept > /tmp/scratch && echo too > kept.txt",
+            10 * SECOND,
+            1000,
+        )
         .await
         .unwrap();
     assert_eq!(out.exit_code, Some(0));
+    // OpenShell's Docker driver can't freeze a sandbox, so pausing stops it.
     sb.pause().await;
-    assert_eq!(docker(&["inspect", "-f", "{{.State.Status}}", &name]), "paused");
+    assert_eq!(phase(&name).as_deref(), Some("Stopped"));
     sb.resume().await.unwrap();
-    assert_eq!(docker(&["inspect", "-f", "{{.State.Status}}", &name]), "running");
+    assert_eq!(phase(&name).as_deref(), Some("Ready"));
     let out = sb
-        .exec("kill -0 \"$(cat /tmp/bg)\" && echo alive", 10 * SECOND, 1000)
+        .exec("cat /tmp/scratch kept.txt", 10 * SECOND, 1000)
         .await
         .unwrap();
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        "alive",
-        "the background process lived on"
+        String::from_utf8_lossy(&out.stdout),
+        "kept\ntoo\n",
+        "the workspace and even /tmp survive a stop"
     );
-    sb.resume().await.expect("resuming a running sandbox is a no-op");
+    sb.resume()
+        .await
+        .expect("resuming a running sandbox is a no-op");
 
     // Paused again, it is still removed, and then can't be resumed.
     sb.pause().await;
     teardown(&f, id, &sb).await;
-    assert_eq!(docker(&["ps", "-aq", "--filter", &format!("name={name}")]), "");
+    assert_eq!(phase(&name), None);
     assert!(sb.resume().await.is_err());
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
+async fn killing_the_idle_process_doesnt_lose_the_sandbox() {
+    let (f, id, sb) = sandbox().await;
+    // What `pkill sleep` or `kill -9 -1` from the agent would do.
+    let _ = sb.exec("pkill -9 sleep; true", 10 * SECOND, 1000).await;
+    // OpenShell replaces the runtime; the next command waits for it and runs.
+    let out = sb.exec("echo back", 30 * SECOND, 1000).await.unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "back\n");
+    teardown(&f, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn exec_captures_output_exit_code_and_working_directory() {
     let (f, id, sb) = sandbox().await;
     let out = sb
@@ -99,7 +147,7 @@ async fn exec_captures_output_exit_code_and_working_directory() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn commands_that_overrun_are_killed_and_reported_as_timed_out() {
     let (f, id, sb) = sandbox().await;
     let started = Instant::now();
@@ -118,7 +166,7 @@ async fn commands_that_overrun_are_killed_and_reported_as_timed_out() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn runaway_output_is_capped_without_exhausting_memory() {
     let (f, id, sb) = sandbox().await;
     let out = sb
@@ -136,7 +184,7 @@ async fn runaway_output_is_capped_without_exhausting_memory() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn files_round_trip_through_the_sandbox() {
     let (f, id, sb) = sandbox().await;
     let text = "héllo\nwörld ✓\n";
@@ -177,7 +225,7 @@ async fn files_round_trip_through_the_sandbox() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn the_sandbox_cannot_see_the_host_even_through_symlinks() {
     let (f, id, sb) = sandbox().await;
     let dir = std::env::temp_dir().join(format!("cedar-host-secret-{}", Uuid::new_v4()));
@@ -203,7 +251,7 @@ async fn the_sandbox_cannot_see_the_host_even_through_symlinks() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn the_sandbox_is_unprivileged_offline_and_free_of_secrets() {
     std::env::set_var("LLM_API_KEY", "sk-should-not-leak");
     let (f, id, sb) = sandbox().await;
@@ -241,37 +289,19 @@ async fn the_sandbox_is_unprivileged_offline_and_free_of_secrets() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
-async fn destroy_removes_the_container_but_keeps_the_workspace_and_is_idempotent() {
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
+async fn destroy_removes_the_sandbox_but_keeps_the_workspace_and_is_idempotent() {
     let (f, id, sb) = sandbox().await;
-    let name = format!("cedar-run-{id}");
+    let name = cedar::sandbox::run_sandbox_name(id);
     let volume = format!("cedar-ws-{id}");
-    assert!(docker(&[
-        "ps",
-        "-a",
-        "--filter",
-        &format!("name={name}"),
-        "--format",
-        "{{.Names}}"
-    ])
-    .contains(&name));
+    assert_eq!(phase(&name).as_deref(), Some("Ready"));
     assert!(
         docker(&["volume", "ls", "-q", "--filter", &format!("name={volume}")]).contains(&volume)
     );
 
     sb.destroy().await;
     sb.destroy().await;
-    assert_eq!(
-        docker(&[
-            "ps",
-            "-a",
-            "--filter",
-            &format!("name={name}"),
-            "--format",
-            "{{.Names}}"
-        ]),
-        ""
-    );
+    assert_eq!(phase(&name), None);
     // The workspace outlives the run so a continuation can mount it; removing it is explicit.
     assert!(
         docker(&["volume", "ls", "-q", "--filter", &format!("name={volume}")]).contains(&volume)
@@ -285,28 +315,32 @@ async fn destroy_removes_the_container_but_keeps_the_workspace_and_is_idempotent
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn orphaned_sandboxes_are_swept_and_health_checks_pass() {
-    let (factory, id, sb) = sandbox().await;
+    // The sweep removes every cedar sandbox in its OpenShell workspace, so this test has one of
+    // its own and leaves the other tests' sandboxes alone.
+    let workspace = "cedar-sweep";
+    let _ = Command::new("openshell")
+        .args(["workspace", "create", "--name", workspace])
+        .output();
+    let factory = OpenShellSandboxFactory::new(SandboxConfig {
+        openshell_workspace: workspace.into(),
+        ..config(Policy::offline())
+    });
+    let id = Uuid::new_v4();
+    let sb = factory.create(id, id).await.expect("create sandbox");
     factory
         .health()
         .await
-        .expect("daemon reachable and image present");
+        .expect("daemon and gateway reachable, image present");
 
-    // Simulates a crash: the sandbox, kept paused for an idle conversation, is never destroyed
+    // Simulates a crash: the sandbox, kept stopped for an idle conversation, is never destroyed
     // by its owner.
     sb.pause().await;
     assert!(factory.cleanup_orphans().await.unwrap() >= 1);
     assert_eq!(
-        docker(&[
-            "ps",
-            "-a",
-            "--filter",
-            &format!("name=cedar-run-{id}"),
-            "--format",
-            "{{.Names}}"
-        ]),
-        ""
+        phase_in(workspace, &cedar::sandbox::run_sandbox_name(id)),
+        None
     );
     // Workspaces are not touched by the sweep; stray ones are removed separately at startup.
     let volume = format!("cedar-ws-{id}");
@@ -317,11 +351,11 @@ async fn orphaned_sandboxes_are_swept_and_health_checks_pass() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn a_missing_image_is_reported_by_the_health_check_and_create() {
-    let factory = DockerSandboxFactory::new(SandboxConfig {
+    let factory = OpenShellSandboxFactory::new(SandboxConfig {
         image: "cedar-no-such-image:0".into(),
-        ..config("none")
+        ..config(Policy::offline())
     });
     let err = format!("{:#}", factory.health().await.unwrap_err());
     assert!(err.contains("docker build"), "{err}");
@@ -333,7 +367,7 @@ async fn a_missing_image_is_reported_by_the_health_check_and_create() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn workspace_files_are_listed_and_read_after_the_run_is_gone() {
     let (f, id, sb) = sandbox().await;
     sb.write_file("out/report.pdf", b"%PDF-1.4 fake")
@@ -453,14 +487,14 @@ async fn workspace_files_are_listed_and_read_after_the_run_is_gone() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker, the cedar-sandbox image, and network access for pip"]
+#[ignore = "needs Docker, an OpenShell gateway, the cedar-sandbox image, and network access for pip"]
 async fn pip_installs_into_the_workspace_and_persists_across_runs() {
-    let factory = DockerSandboxFactory::new(config("bridge"));
+    let factory = OpenShellSandboxFactory::new(config(Policy::packages()));
     let id = Uuid::new_v4();
     let first = factory.create(id, id).await.unwrap();
     let out = first
         .exec(
-            "pip --version && pip install --quiet six",
+            "pip --version && pip install --quiet colorama",
             120 * SECOND,
             10_000,
         )
@@ -479,7 +513,7 @@ async fn pip_installs_into_the_workspace_and_persists_across_runs() {
     let second = factory.create(Uuid::new_v4(), id).await.unwrap();
     let out = second
         .exec(
-            "python3 -c 'import six, os; print(six.__file__)'",
+            "python3 -c 'import colorama; print(colorama.__file__)'",
             30 * SECOND,
             1000,
         )
@@ -508,7 +542,7 @@ fn sandbox_fatal_is_a_distinct_error_type() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn generate_pdf_renders_markdown_in_the_sandbox() {
     use cedar::tools::{GeneratePdf, Tool, ToolContext};
     use serde_json::json;
@@ -575,7 +609,7 @@ fn tool_ctx(sb: &Arc<dyn Sandbox>) -> cedar::tools::ToolContext {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn bash_lists_the_files_it_created_or_modified() {
     use cedar::tools::{Bash, Tool};
     use serde_json::json;
@@ -614,7 +648,7 @@ async fn bash_lists_the_files_it_created_or_modified() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn run_python_runs_code_and_lists_the_files_it_wrote() {
     use cedar::tools::{RunPython, Tool};
     use serde_json::json;
@@ -661,7 +695,7 @@ print("warn", file=sys.stderr)
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn read_document_extracts_office_files_csv_and_pdf() {
     use cedar::tools::{ReadDocument, RunPython, Tool};
     use serde_json::json;
@@ -748,7 +782,7 @@ w = PdfWriter(); w.add_blank_page(100, 100); w.write("blank.pdf")
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn generate_chart_draws_png_svg_and_pdf() {
     use cedar::tools::{GenerateChart, Tool};
     use serde_json::json;
@@ -802,7 +836,7 @@ async fn generate_chart_draws_png_svg_and_pdf() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn attached_pdfs_are_saved_and_their_first_pages_rendered() {
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
     use cedar::attachments;
@@ -861,17 +895,17 @@ async fn attached_pdfs_are_saved_and_their_first_pages_rendered() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
-async fn personal_python_tools_run_in_containers_of_their_own() {
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
+async fn personal_python_tools_run_in_sandboxes_of_their_own() {
     use cedar::tools::custom::SavedSecrets;
     use cedar::tools::ToolSet;
     use serde_json::json;
 
     // The sample tools in examples/tools, the way `TOOLS_DIR` holds them.
     let dir = std::fs::canonicalize("examples/tools").unwrap();
-    let mut cfg = config("none");
+    let mut cfg = config(Policy::offline());
     cfg.tools_dir = Some(dir.clone());
-    let factory = DockerSandboxFactory::new(cfg);
+    let factory = OpenShellSandboxFactory::new(cfg);
     let id = Uuid::new_v4();
     let sb = factory.create(id, id).await.expect("create sandbox");
     let ctx = tool_ctx(&sb);
@@ -915,7 +949,7 @@ async fn personal_python_tools_run_in_containers_of_their_own() {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn a_tool_sees_neither_other_tools_nor_their_secrets_nor_the_network() {
     use cedar::tools::custom::SavedSecrets;
     use cedar::tools::ToolSet;
@@ -929,7 +963,10 @@ async fn a_tool_sees_neither_other_tools_nor_their_secrets_nor_the_network() {
         std::fs::write(p, text).unwrap();
     };
     // `vault` keeps a .env and has a saved secret; `spy` looks for both, and for the network.
-    write("vault/tool.json", r#"{"description": "d", "secrets": ["VAULT_KEY"]}"#);
+    write(
+        "vault/tool.json",
+        r#"{"description": "d", "secrets": ["VAULT_KEY"]}"#,
+    );
     write("vault/tool.py", "print('vault')");
     write("vault/.env", "VAULT_KEY=from-the-file");
     write(
@@ -952,26 +989,37 @@ print(json.dumps({{"found": found, "own": sorted(os.listdir("/opt/cedar/tool")),
         ),
     );
     let dir = std::fs::canonicalize(&dir).unwrap();
-    let mut cfg = config("none");
+    // The run's own policy reaches PyPI; a tool that declares no hosts still reaches nothing.
+    let mut cfg = config(Policy::packages());
     cfg.tools_dir = Some(dir.clone());
-    cfg.tools_network = "bridge".into();
-    let factory = DockerSandboxFactory::new(cfg);
+    let factory = OpenShellSandboxFactory::new(cfg);
     let id = Uuid::new_v4();
     let sb = factory.create(id, id).await.expect("create sandbox");
     let ctx = tool_ctx(&sb);
     let secrets = SavedSecrets::from([
-        ("spy".to_string(), HashMap::from([("SPY_KEY".to_string(), "mine".to_string())])),
-        ("vault".to_string(), HashMap::from([("VAULT_KEY".to_string(), "theirs".to_string())])),
+        (
+            "spy".to_string(),
+            HashMap::from([("SPY_KEY".to_string(), "mine".to_string())]),
+        ),
+        (
+            "vault".to_string(),
+            HashMap::from([("VAULT_KEY".to_string(), "theirs".to_string())]),
+        ),
     ]);
     let mut set = ToolSet::standard();
     set.load_custom(&dir, &secrets).unwrap();
-    let out = set.get("spy").unwrap().call(&ctx, &json!({})).await.unwrap();
+    let out = set
+        .get("spy")
+        .unwrap()
+        .call(&ctx, &json!({}))
+        .await
+        .unwrap();
     let seen: Value = serde_json::from_str(out.trim()).unwrap();
     assert_eq!(seen["found"], json!([]), "{seen}");
     assert_eq!(seen["own"], json!(["tool.json", "tool.py"]));
     assert_eq!(seen["spy_key"], "mine");
     assert_eq!(seen["vault_key"], Value::Null);
-    assert_eq!(seen["net"], false, "no hosts declared, so no network even with TOOLS_NETWORK=bridge");
+    assert_eq!(seen["net"], false, "no hosts declared, so no network");
     assert_eq!(seen["home"], "/opt/cedar/env");
 
     teardown(&factory, id, &sb).await;
@@ -980,12 +1028,13 @@ print(json.dumps({{"found": found, "own": sorted(os.listdir("/opt/cedar/tool")),
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and the cedar-sandbox image"]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
 async fn installing_a_tool_takes_over_root_owned_folders_in_its_environment() {
     // A volume an earlier, half-finished install left with root's `.local` and `.cache` inside.
-    let factory = DockerSandboxFactory::new(config("none"));
+    // It also has no OpenShell labels, as a volume from before OpenShell wouldn't.
+    let factory = OpenShellSandboxFactory::new(config(Policy::offline()));
     let volume = cedar::sandbox::tool_env_volume("rooted");
-    let image = config("none").image;
+    let image = config(Policy::offline()).image;
     docker(&["volume", "create", &volume]);
     docker(&[
         "run",
@@ -1024,4 +1073,155 @@ async fn installing_a_tool_takes_over_root_owned_folders_in_its_environment() {
     );
 
     factory.remove_tool_env("rooted").await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, an OpenShell gateway, the cedar-sandbox image, and network access to PyPI"]
+async fn the_policy_decides_which_program_reaches_which_host_and_refusals_are_reported() {
+    let factory = OpenShellSandboxFactory::new(config(Policy::packages()));
+    let id = Uuid::new_v4();
+    let sb = factory.create(id, id).await.expect("create sandbox");
+    let since = SystemTime::now();
+    let stdout =
+        |out: &cedar::sandbox::ExecOutput| String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+    // Python may read from PyPI...
+    let out = sb
+        .exec(
+            "python3 -c \"import urllib.request as u; print(u.urlopen('https://pypi.org/simple/six/', timeout=30).status)\"",
+            60 * SECOND,
+            1000,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        stdout(&out),
+        "200",
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // ...but curl may not, and nothing reaches any other host.
+    let curl = "curl -sS -m 15 -o /dev/null -w '%{http_code}' https://pypi.org/simple/six/";
+    let out = sb.exec(curl, 30 * SECOND, 1000).await.unwrap();
+    assert_ne!(
+        out.exit_code,
+        Some(0),
+        "curl is not allowed: {}",
+        stdout(&out)
+    );
+    let out = sb
+        .exec(
+            "python3 -c \"import socket; socket.create_connection(('example.com', 443), 5)\"",
+            30 * SECOND,
+            1000,
+        )
+        .await
+        .unwrap();
+    assert_ne!(out.exit_code, Some(0));
+
+    // The refusal is in the sandbox's log, with the program that tried.
+    let mut denials = vec![];
+    for _ in 0..20 {
+        denials = sb.denials(since).await.unwrap();
+        if denials
+            .iter()
+            .any(|d| d.binary.as_deref() == Some("/usr/bin/curl"))
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let curl_denial = denials
+        .iter()
+        .find(|d| d.binary.as_deref() == Some("/usr/bin/curl"))
+        .unwrap_or_else(|| panic!("{denials:#?}"));
+    assert_eq!(
+        (curl_denial.host.as_str(), curl_denial.port),
+        ("pypi.org", 443)
+    );
+
+    // Allowing exactly that lets it through, live, and nothing more.
+    let endpoint = Endpoint {
+        binary: "/usr/bin/curl".into(),
+        host: "pypi.org".into(),
+        port: 443,
+    };
+    sb.allow(std::slice::from_ref(&endpoint)).await.unwrap();
+    sb.allow(&[endpoint])
+        .await
+        .expect("allowing it again changes nothing");
+    let out = sb.exec(curl, 30 * SECOND, 1000).await.unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(stdout(&out), "200");
+    let out = sb
+        .exec(
+            "curl -sS -m 10 -o /dev/null https://example.com/",
+            30 * SECOND,
+            1000,
+        )
+        .await
+        .unwrap();
+    assert_ne!(out.exit_code, Some(0));
+
+    teardown(&factory, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
+async fn large_files_are_written_in_parts_and_a_workspace_from_before_openshell_is_kept() {
+    // A workspace volume made before cedar ran on OpenShell has no OpenShell labels.
+    let id = Uuid::new_v4();
+    let volume = format!("cedar-ws-{id}");
+    let image = config(Policy::offline()).image;
+    docker(&[
+        "volume",
+        "create",
+        "--label",
+        &format!("cedar.workspace={id}"),
+        &volume,
+    ]);
+    docker(&[
+        "run",
+        "--rm",
+        "--user",
+        "1000:1000",
+        "-v",
+        &format!("{volume}:/workspace"),
+        &image,
+        "sh",
+        "-c",
+        "echo from-before > /workspace/old.txt",
+    ]);
+    let factory = OpenShellSandboxFactory::new(config(Policy::offline()));
+    let sb = factory
+        .create(Uuid::new_v4(), id)
+        .await
+        .expect("create on an old workspace");
+    let read = sb.read_file("old.txt", 100).await.unwrap();
+    assert_eq!(read.bytes, b"from-before\n");
+
+    // 10 MB: more than OpenShell takes in one go.
+    let big: Vec<u8> = (0..10_000_000u32).map(|i| (i % 251) as u8).collect();
+    sb.write_file("attachments/big.bin", &big).await.unwrap();
+    let out = sb
+        .exec(
+            "wc -c < attachments/big.bin; ls attachments",
+            10 * SECOND,
+            1000,
+        )
+        .await
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "10000000\nbig.bin\n");
+    let back = sb
+        .read_file("attachments/big.bin", 20_000_000)
+        .await
+        .unwrap();
+    assert!(back.bytes == big, "the file came back as written");
+
+    teardown(&factory, id, &sb).await;
 }

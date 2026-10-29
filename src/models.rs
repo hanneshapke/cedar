@@ -270,6 +270,8 @@ pub mod event {
     pub const PLAN_UPDATED: &str = "plan.updated";
     pub const APPROVAL_REQUIRED: &str = "approval.required";
     pub const APPROVAL_RESOLVED: &str = "approval.resolved";
+    /// The sandbox's policy refused a connection or request while a call ran.
+    pub const SANDBOX_DENIED: &str = "sandbox.denied";
     pub const USAGE: &str = "usage";
     pub const RUN_COMPLETED: &str = "run.completed";
     pub const RUN_FAILED: &str = "run.failed";

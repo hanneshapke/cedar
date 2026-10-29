@@ -39,7 +39,7 @@ pub struct Config {
     /// the tray menu, and cedar's `DEFAULT_LOCALE`. Empty until one is picked: the page then
     /// asks first.
     pub locale: String,
-    /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
+    /// Extra environment for cedar, applied last (`SANDBOX_POLICY`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
     pub chat_env: BTreeMap<String, String>,

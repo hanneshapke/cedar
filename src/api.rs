@@ -103,9 +103,13 @@ impl AppState {
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
         let env = AgentEnv {
             llm: llm.clone(),
-            sandbox_network: cfg.sandbox.network.clone(),
+            sandbox_policy: cfg.sandbox.policy.clone(),
             sandbox_info: json!({
-                "network": cfg.sandbox.network,
+                "runtime": "openshell",
+                // `none` when nothing can be reached, else the policy's name.
+                "network": if cfg.sandbox.policy.networked() { cfg.sandbox.policy.name.as_str() } else { "none" },
+                "policy": cfg.sandbox.policy.name,
+                "hosts": cfg.sandbox.policy.hosts(),
                 "memory": cfg.sandbox.memory,
                 // A number when it is one ("1", "0.5"), as Docker takes it.
                 "cpus": cfg.sandbox.cpus.parse::<f64>().map_or_else(|_| json!(cfg.sandbox.cpus), |n| json!(n)),

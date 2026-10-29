@@ -2,12 +2,12 @@
 
 # cedar
 
-A backend service in Rust for running LLM agents against any OpenAI-compatible server (built for DeepSeek V4 on a local vLLM). Clients submit a task over HTTP, cedar runs the agent loop in the background, and clients follow progress live (Server-Sent Events), cancel, or read the result later. Every run's tools execute inside their own Docker container.
+A backend service in Rust for running LLM agents against any OpenAI-compatible server (built for DeepSeek V4 on a local vLLM). Clients submit a task over HTTP, cedar runs the agent loop in the background, and clients follow progress live (Server-Sent Events), cancel, or read the result later. Every conversation's tools run in an [OpenShell](https://github.com/NVIDIA/OpenShell) sandbox on Docker, whose policy decides which program may reach which host: by default, none can reach any.
 
 ## How it works
 
 1. `POST /v1/runs` stores a `queued` run and returns `202`.
-2. When a slot is free (`MAX_CONCURRENT_RUNS`), the run starts: cedar creates a sandbox container for it (or resumes the one its conversation kept, see [Continuing a run](#continuing-a-run)) and runs the agent loop.
+2. When a slot is free (`MAX_CONCURRENT_RUNS`), the run starts: cedar creates an OpenShell sandbox for it (or starts again the one its conversation kept, see [Continuing a run](#continuing-a-run)) and runs the agent loop.
 3. The loop sends the conversation, system prompt, and tool definitions to the LLM server's chat-completions API. The reply is scanned for content blocks:
    - `text` is collected as the answer.
    - `tool_use` (a tool call) is executed in the run's sandbox and the result is sent back as a `tool_result`. Errors are returned to the model with `is_error: true` so it can recover.
@@ -18,7 +18,7 @@ Runs, the full conversation, and an append-only event log are stored in SQLite. 
 
 ## Quick start
 
-You need a recent Rust toolchain, Docker, and an OpenAI-compatible LLM server. cedar defaults to a local [vLLM](https://docs.vllm.ai) serving DeepSeek V4:
+You need a recent Rust toolchain, Docker, an [OpenShell](https://github.com/NVIDIA/OpenShell) gateway (see [Setting up OpenShell](#setting-up-openshell)), and an OpenAI-compatible LLM server. cedar defaults to a local [vLLM](https://docs.vllm.ai) serving DeepSeek V4:
 
 ```sh
 # 0. Start vLLM (vLLM 0.20 or newer; see the vLLM recipe for flags that suit your GPUs:
@@ -27,18 +27,26 @@ vllm serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --tokenizer-mode de
   --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-parser deepseek_v4
 ```
 
-The tool-call flags are required: without them the model's tool calls come back as plain text and the agent can't act. Check the registered model name with `curl localhost:8000/v1/models`; you register it with cedar in step 3.
+The tool-call flags are required: without them the model's tool calls come back as plain text and the agent can't act. Check the registered model name with `curl localhost:8000/v1/models`; you register it with cedar in step 4.
 
 ```sh
-# 1. Build the image the agent's tools run in
+# 1. Install OpenShell (its CLI and a local gateway on Docker), and let it attach the Docker
+#    volumes that hold cedar's workspaces. On a Mac, see "Setting up OpenShell".
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+mkdir -p ~/.config/openshell
+printf '[openshell]\nversion = 2\n\n[openshell.drivers.docker]\nallow_driver_config = true\n' \
+  >> ~/.config/openshell/gateway.toml
+systemctl --user restart openshell-gateway && openshell status
+
+# 2. Build the image the agent's tools run in
 docker build -t cedar-sandbox sandbox/
 
-# 2. Start the server (it listens on 127.0.0.1:8080 by default). The key is also an admin key,
+# 3. Start the server (it listens on 127.0.0.1:8080 by default). The key is also an admin key,
 #    so it may register models.
 export CEDAR_API_KEYS=$(openssl rand -hex 24) CEDAR_ADMIN_KEYS=$CEDAR_API_KEYS
 cargo run --release
 
-# 3. In another shell: register the vLLM server as a model (cedar checks the address by listing
+# 4. In another shell: register the vLLM server as a model (cedar checks the address by listing
 #    its models first), then start a run and follow it
 KEY=<the key you generated>
 curl -s -X PUT -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
@@ -51,7 +59,7 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 curl -N -H "Authorization: Bearer $KEY" localhost:8080/v1/runs/<id>/events
 ```
 
-The chat UI does the same under Settings → Server (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database and Docker (including the sandbox image) are usable, and how many models are registered. See `.env.example` for every setting.
+The chat UI does the same under Settings → Server (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database, Docker (including the sandbox image) and the OpenShell gateway are usable, and how many models are registered. See `.env.example` for every setting.
 
 ## API
 
@@ -76,7 +84,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`). |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
-| `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, defaults}`. |
+| `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is stopped (0–1440; default 10, see [Continuing a run](#continuing-a-run)). A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
 | `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
@@ -86,7 +94,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. |
 | `POST /v1/admin/integrations/google/callback` | Admin: finish it with the `{"state", "code"}` Google sent to the redirect URI. Returns `{account}`. |
 | `DELETE /v1/admin/integrations/google` | Admin: disconnect the Google account. |
-| `GET /healthz`, `GET /readyz` | Liveness, and readiness (database + Docker). No auth. |
+| `GET /healthz`, `GET /readyz` | Liveness, and readiness (database, Docker, OpenShell gateway). No auth. |
 
 A run belongs to the key that created it. Anyone else gets `404`.
 
@@ -185,13 +193,14 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 
 | Type | `data` |
 | --- | --- |
-| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{network, memory, cpus}` |
+| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{runtime: "openshell", network, policy, hosts, memory, cpus}`, where `network` is `none` when the policy reaches nothing and the policy's name otherwise, and `hosts` are the hosts it reaches |
 | `plan` | `steps` (`[{id, title}]`), `editable`, `awaiting`, and `origin: "tool"` for a plan the model proposed with `propose_plan` (see [Plans and approvals](#plans-and-approvals)) |
 | `plan.updated` | `steps`, `by` (`user`, or `timeout` when no answer came) |
 | `assistant.reasoning` | `turn`, `text`, `duration_ms`, `done`: the model's reasoning, when its server returns it (`reasoning_content` or `reasoning`). Not kept in the conversation |
 | `assistant.text` | `turn`, `text` |
 | `approval.required` | `id`, `call_id`, `tool`, `input`, `rule`, `reason`, `scope` |
 | `approval.resolved` | `id`, `decision` (`allow`, `allow_always`, `deny` or `timeout`), `by` |
+| `sandbox.denied` | `call_id`, `program` (the path OpenShell named, `null` for a refused HTTP request), `host`, `port`, `what` (`connect`, or the method and path of a refused request), `reason`: the sandbox's policy refused something while a `bash` or `run_python` call ran (see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)) |
 | `tool.call` | `id`, `name`, `input` |
 | `tool.result` | `id`, `output`, `is_error`, `duration_ms`, and `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite |
 | `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call; one with `purpose: "tool"` and the `tool`'s name is a call a tool made to the model during that turn (`search_products` picking products, `plan_trip` choosing a trip option) |
@@ -232,7 +241,11 @@ same way, and a second call in the same run is refused, so a request gets at mos
 - a tool call that matches a `TOOL_APPROVALS` rule waits for `POST
   /v1/runs/{id}/approvals/{approval_id}`. `allow` runs it, `deny` doesn't (the model is told the
   user declined), and `allow_always` runs it and remembers its `scope` (a host, package names)
-  for the API key, so the same kind of call goes ahead without asking from then on.
+  for the API key, so the same kind of call goes ahead without asking from then on;
+- a connection the sandbox's policy refused while `bash` or `run_python` ran is asked about
+  after the call, the same way (rule `network`): `allow` lets that program reach that host and
+  port in this sandbox from then on, `allow_always` also for every later run of the API key, and
+  the model is told to run the command again.
 
 Each wait ends after `APPROVAL_TIMEOUT_SECS`: the plan as proposed is followed, and the call is
 not made. Time spent waiting doesn't count toward `RUN_TIMEOUT_SECS`. A run that isn't
@@ -245,9 +258,9 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 | --- | --- |
 | `email` | Gmail tools that send, draft or change mail |
 | `downloads` | `download_file`; "always" is per host |
-| `installs` | `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`, when the sandbox has a network; "always" is per package |
+| `installs` | `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`, when the sandbox's policy reaches any host; "always" is per package |
 | `deletes` | `rm`, `rmdir`, `shred`, `unlink` and `find -delete` in `bash`; asked every time |
-| `network` | any other `bash` or `run_python` call when the sandbox has a network (`SANDBOX_NETWORK` isn't `none`) |
+| `network` | a connection the sandbox's policy refused while `bash` or `run_python` ran, asked after the call; "always" is per program, host and port |
 | `community` | every call of a [community tool](#community-tools); "Always" covers that release only |
 
 ## Being told when a run ends
@@ -317,12 +330,13 @@ curl -s localhost:8080/v1/runs -H "Authorization: Bearer devkey" \
   the new prompt. If the parent stopped in the middle of a tool call, that call gets an error
   result so the conversation stays valid.
 - It mounts the parent's workspace, so files under `/workspace` are kept. If the parent
-  completed, the continuation also gets the parent's container back, so processes it left running
-  and anything it installed outside `/workspace` are still there. That container keeps running for
-  `sandbox_idle_minutes` (10 unless an admin sets it with `PUT /v1/admin/settings`, 0–1440) after
-  the run ends, and is then paused (`docker pause`: its processes are frozen and use no CPU). The
-  continuation resumes it. If the parent failed or was cancelled, or its container can't be
-  resumed, the continuation gets a new container on the same workspace.
+  completed, the continuation also gets the parent's sandbox back, so anything it installed or
+  wrote outside `/workspace`, and connections the user allowed in it, are still there. That
+  sandbox keeps running for `sandbox_idle_minutes` (10 unless an admin sets it with `PUT
+  /v1/admin/settings`, 0–1440) after the run ends, so processes it left running live on until
+  then, and is then stopped (its processes end; its files stay). The continuation starts it again.
+  If the parent failed or was cancelled, or its sandbox can't be started, the continuation gets a
+  new sandbox on the same workspace.
 - The model, its reasoning level and the system prompt come from the parent unless the request sets them. A continuation of a run whose model has since been removed from the registry is refused until the request names another.
 - A run can be continued once, and only after it has finished, so a chain of runs is a straight
   line and never shares a workspace with a run that is still going. To keep going, continue from
@@ -332,7 +346,7 @@ curl -s localhost:8080/v1/runs -H "Authorization: Bearer devkey" \
 Workspaces are kept for `WORKSPACE_TTL_SECS` (default 86400) after their last run ends, then
 removed. A continuation of a run whose workspace has expired still gets the conversation, but
 starts with an empty workspace, and the model is told so. Deleting the last run that uses a
-workspace removes it straight away. A kept container goes with its workspace, and is removed when
+workspace removes it straight away. A kept sandbox goes with its workspace, and is removed when
 cedar stops.
 
 ## Workspace files
@@ -480,31 +494,33 @@ Settings come from environment variables. The important ones:
 | `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |
 | `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time` |
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
-| `DOCKER_BIN` | `docker` (the Docker CLI, as a name on `PATH` or an absolute path; the desktop app sets it) |
+| `DOCKER_BIN` | `docker` (the Docker CLI, as a name on `PATH` or an absolute path, for the volumes that hold workspaces and tools' packages; the desktop app sets it) |
+| `OPENSHELL_BIN` | `openshell` (the OpenShell CLI, as a name on `PATH` or an absolute path; it uses the gateway it is registered with, or `OPENSHELL_GATEWAY` / `OPENSHELL_GATEWAY_ENDPOINT`) |
+| `OPENSHELL_WORKSPACE` | `default` (the OpenShell workspace cedar's sandboxes live in; run one cedar per workspace, since cedar removes the sandboxes it finds there at startup) |
 | `CEDAR_EXIT_ON_STDIN_EOF` | `off` (set `1` to shut down when stdin reaches end-of-file: a launcher holding a pipe to cedar then takes it down with itself) |
-| `SANDBOX_IMAGE` / `SANDBOX_NETWORK` | `cedar-sandbox:latest` / `none` (set `bridge` to let the agent `pip install` packages) |
+| `SANDBOX_IMAGE` | `cedar-sandbox:latest` |
+| `SANDBOX_POLICY` | `offline` (what a conversation's sandbox may reach: `offline` for nothing, `packages` for pip and npm downloads, or the path of a JSON policy file; see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)). The old `SANDBOX_NETWORK` still works when this is unset: `none` is `offline`, anything else becomes `packages` |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `512m` / `1` |
-| `TOOLS_DIR` | empty (a directory of [personal tools in Python](#personal-tools-in-python); each call runs in a container that sees only its own tool) |
-| `TOOLS_NETWORK` | `bridge` (the Docker network for calls of personal tools that declare `network` hosts; tools that declare none get no network) |
+| `TOOLS_DIR` | empty (a directory of [personal tools in Python](#personal-tools-in-python); each call runs in a sandbox that sees only its own tool and reaches only the hosts it declares) |
 | `TOOLS_REGISTRY_URL` | empty (the index of a [community tool registry](#community-tools) admins can install from) |
 | `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
-| `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the browser needs internet access, so `none` is refused) |
+| `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the Docker network of the browser's container, which is not an OpenShell sandbox; it needs internet access, so `none` is refused) |
 | `BROWSER_MEMORY` / `BROWSER_CPUS` | `1g` / `1` |
 
 ## Tools
 
 | Tool | What it does |
 | --- | --- |
-| `bash` | Runs a command with `sh -c` in the run's container and returns stdout, stderr, the exit status if it was non-zero, and the workspace files the command created or modified. Killed after `TOOL_TIMEOUT_SECS`. |
-| `read_file` | Reads a text file from the container. |
-| `write_file` | Writes content to a path in the container, creating parent directories and overwriting the file. |
-| `run_python` | Runs a Python 3 script (`code`, optional `args`) in the container with `/workspace` as working directory and on the import path. Returns what `bash` does. Unlike `bash`, the code needs no shell quoting. |
+| `bash` | Runs a command with `sh -c` in the run's sandbox and returns stdout, stderr, the exit status if it was non-zero, and the workspace files the command created or modified. Killed after `TOOL_TIMEOUT_SECS`. |
+| `read_file` | Reads a text file from the sandbox. |
+| `write_file` | Writes content to a path in the sandbox, creating parent directories and overwriting the file. |
+| `run_python` | Runs a Python 3 script (`code`, optional `args`) in the sandbox with `/workspace` as working directory and on the import path. Returns what `bash` does. Unlike `bash`, the code needs no shell quoting. |
 | `read_document` | Extracts the text of a PDF, Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), CSV/TSV, or HTML file in the workspace, with tables as Markdown. Takes `path`, optional `pages` (PDF pages or slides, like `2-5` or `1,4-`), `sheet`, and `rows` (spreadsheet or CSV data rows; the header is always shown). |
 | `generate_pdf` | Renders Markdown (default) or HTML to a PDF file in the workspace. Takes `path` (must end in `.pdf`), `content`, optional `format` (`markdown` or `html`) and optional `title`. Returns the page count and size, plus the renderer's warnings (a missing image, say). |
 | `generate_chart` | Draws a chart with matplotlib and saves it as PNG, SVG, or PDF, in the same palette and style as the chat's chart card. Takes `path`, `kind` (`line`, `bar`, `barh`, `area`, `scatter`, `pie`, `histogram`), `labels` (x categories or values), `series` (`[{name?, values}]`, `null` for gaps), and optional `title`, `x_label`, `y_label`, `stacked`, `bins`, `log_scale`, and `band` (`{from, to, label?}`: a shaded range on the value axis, such as a target range). The chat interfaces and the phone apps draw the call's data as an interactive chart card instead of showing the picture ([chat/README.md](chat/README.md)). |
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
 | `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
-| `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
+| `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the sandbox stays offline. |
 | `weather_forecast` | Current conditions and a daily forecast from [Open-Meteo](https://open-meteo.com) (open source, open data, no API key). Takes a `location` (a place name or postal code, geocoded to its best match) or `latitude` and `longitude`, optional `days` (1–16, default 3) and optional `units` (`metric` or `imperial`). Returns the resolved place, current temperature, conditions, humidity, wind, and precipitation, then per day the conditions, low and high, precipitation and its chance, wind, UV index, and sunrise and sunset. Unless `WEATHER=off`. |
 | `show_map` | Shows the user a map in the chat, with a numbered pin for each place. Takes `markers` (1–25 objects, each with a `location` such as `Berlin` or `Paris, France`, or `latitude` and `longitude`, and an optional `label`) and an optional `title`. Names are looked up with Open-Meteo's geocoding API, which knows cities, towns, and regions but not street addresses or businesses. Returns JSON with the coordinates used; names that could not be found are listed under `not_found`, and a call where none are found is an error. The chat interfaces draw the JSON as a map ([chat/README.md](chat/README.md)); other clients just get the JSON. Unless `MAPS=off`. |
 | `show_recipe` | Shows the user a recipe in the chat: a photo of the dish, the times and servings, the ingredients as a checklist, and the steps as a timeline. Takes `title`, `ingredients` (1–60, each `{quantity?, item}` or a string), `steps` (1–40, each `{title?, text, duration?}` or a string), and optional `description`, `servings`, `prep_time`, `cook_time`, `total_time`, `tips`, and `image_query` (what to search for the photo; defaults to the title). A photo is always looked up: the lead image of the best matching Wikipedia article, else the best matching bitmap on Wikimedia Commons. Returns the checked recipe as JSON with an `image` (`url`, `page_url`, `title`, `source`), or an `image_note` saying why there is none; a missing photo never fails the call. The system prompt asks the model to use it whenever its answer is a recipe. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Unless `RECIPES=off`. |
@@ -513,12 +529,12 @@ Settings come from environment variables. The important ones:
 | `search_products` | Finds products to buy in any category, from any shop, and recommends the best. Takes `query` (what the user wants, e.g. `trail running shoes for wide feet`), optional `needs` (what matters to them: use, fit, style, must-haves), `min_price`, `max_price`, and `count` (options to recommend, 1–6, default 4). It runs two Brave web searches, one for reviews and roundups and one for shops, and, with a Best Buy key, searches Best Buy's catalog too. It reads up to eight of the pages it found (shops first, then reviews; through the same public-addresses-only client as `fetch_url`) for the schema.org product data shops embed: name, brand, photos, price and currency, stock, the customer rating with its review count, and a few reviews, falling back on Open Graph product tags; a review article is kept as text. Then the run's own model gets that evidence in one tool-free request and picks the best options for the request, each with why it fits, pros and cons, who it suits, the sources behind it, and the other options it compares with. The reply is held to the evidence: links and photos only come from the pages and search results, a price shown as checked comes from a store page (a price only review text states is kept, marked unchecked; one no source states is dropped), and a rating only counts with its review count. Each rating is also read on its own: the `adjusted` rating shrinks the average toward 4.0 as if fifteen typical reviews were added, with a `verdict` and a `confidence`. The tokens the tool's request takes are added to the run's, as a `usage` event with `purpose: "tool"`. If the model can't be asked or its reply can't be used, the products found are ranked by their adjusted ratings instead (`method: "ratings"`, with a `note`). Returns JSON with the `summary`, the `options` (`badges`, `price`, `price_checked`, `store`, `images`, `reviews`, `why`, `pros`, `cons`, `best_for`, `sources`, `comparable`, ...), the cited `sources`, and how many pages and products were `considered`. A search that finds nothing is an error. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Offered when a Brave Search key or a Best Buy key is set (in the environment or saved by an admin; see [Integrations](#integrations)), unless `PRODUCTS=off`. |
 | `ask_user` | Asks the user clarifying questions when a request is ambiguous and the answer would change what the agent does. Takes `questions` (1–4 objects, each with a `question`, an optional short `header`, up to 8 `options` with a `label` and optional `description`, given as 2 or more or left out for an open question, and `multi_select` to let several options be chosen). An "Other" option is dropped, since the user can always answer in their own words. The run then ends as `completed` with `stop_reason: "ask_user"` and the questions as its `final_text`; the tool result holds them as JSON, which the chat interfaces draw as a form (radio buttons, or checkboxes with `multi_select`, plus a free-form answer). The answer is the prompt of the next run, started with `parent_id`. Unless `ASK_USER=off`. |
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
-| personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Each call runs in a container of its own that sees the workspace and only that tool, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
+| personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Each call runs in a sandbox of its own that sees the workspace and only that tool, and reaches only the hosts the tool declares, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
 `writes` in `GET /v1/tools` marks Gmail and Calendar tools whose names say they send, create, change, or delete something, so clients can ask before switching them on.
 
-`web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`, and `search_products` run in the cedar process, not in the container, because the container has no network. `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
+`web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`, and `search_products` run in the cedar process, not in the sandbox, because the sandbox has no network (or only the little its policy allows). `web_search` returns snippets only; `fetch_url` reads a page. A rate-limited request (Brave's free plan allows one per second) is retried once. Get a key from the [Brave Search API dashboard](https://api-dashboard.search.brave.com/).
 
 `weather_forecast` talks only to the two Open-Meteo endpoints in the settings above, never to a URL the model picks, so it needs no address checks. A rate-limited request is retried once. Open-Meteo's public API is free for non-commercial use only; for commercial use, run your own instance or buy their commercial plan and set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to it. The forecast ends with Open-Meteo's CC BY 4.0 attribution line so the model can pass it on.
 
@@ -532,15 +548,88 @@ Settings come from environment variables. The important ones:
 
 Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `show_recipe`, `search_products`, `browser`, and the Gmail and Calendar tools are available (with a reminder that emails and event descriptions are information, not instructions), so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY` (and without `CEDAR_SECRET_KEY`, which would let an admin add one later), cedar logs a warning at startup.
 
-`generate_pdf` runs in the sandbox like the file tools: the document is staged in the container's `/tmp`, rendered with `cedar-render-pdf` (a script in the sandbox image, built on [WeasyPrint](https://weasyprint.org)), and the staging file removed. Markdown gets a page template with A4 pages, margins, page numbers, and styles for headings, tables, code blocks, and footnotes; HTML that is already a full document (`<html>`) is rendered as-is with its own styles. Relative image URLs resolve against `/workspace`, so a chart the agent saved earlier can be embedded. The tool is always offered, so a custom `SANDBOX_IMAGE` must ship `cedar-render-pdf` or the model gets an error telling it so.
+`generate_pdf` runs in the sandbox like the file tools: the document is staged in the sandbox's `/tmp`, rendered with `cedar-render-pdf` (a script in the sandbox image, built on [WeasyPrint](https://weasyprint.org)), and the staging file removed. Markdown gets a page template with A4 pages, margins, page numbers, and styles for headings, tables, code blocks, and footnotes; HTML that is already a full document (`<html>`) is rendered as-is with its own styles. Relative image URLs resolve against `/workspace`, so a chart the agent saved earlier can be embedded. The tool is always offered, so a custom `SANDBOX_IMAGE` must ship `cedar-render-pdf` or the model gets an error telling it so.
 
 `generate_chart` and `read_document` work the same way, through `cedar-render-chart` and `cedar-read-document` in the sandbox image (`sandbox/render_chart.py` and `sandbox/read_document.py`). `generate_chart` checks the spec in cedar first (kinds, matching label and value counts, at most 20 series and 100,000 points), so most mistakes come back before anything runs. `read_document` picks the format from the file's content where it can (PDF and the Office zip formats), otherwise from the extension; legacy `.doc`/`.xls`/`.ppt` files and scanned PDFs without a text layer are reported rather than guessed at. `run_python` stages the script in `/tmp`, runs it, and lists files newer than a marker it touches just before, skipping the same cache and dependency directories as the workspace listing.
 
 Output is cut at `TOOL_OUTPUT_MAX_BYTES` per stream with a `[truncated N bytes]` marker, so a large file or noisy command can't fill the context window.
 
+### The sandbox and its network policy
+
+Every sandbox is an [OpenShell](https://github.com/NVIDIA/OpenShell) sandbox, which cedar drives
+through the `openshell` command the way it used to drive `docker`. OpenShell runs it as a
+container on its gateway's Docker driver: as the image's non-root user, without capabilities, with
+Landlock on its files, under `SANDBOX_MEMORY` and `SANDBOX_CPUS`, and without a network device of
+its own. Every connection a program in it opens goes to OpenShell's supervisor instead, which checks
+it against the sandbox's **policy**: which program (by its real path) may reach which host and
+port, and for HTTP which methods and paths. Anything no rule allows is refused and logged, and so
+are private, loopback and cloud-metadata addresses unless a rule names them.
+
+A conversation's sandbox starts from the policy `SANDBOX_POLICY` names:
+
+| `SANDBOX_POLICY` | What the sandbox reaches |
+| --- | --- |
+| `offline` (default) | nothing |
+| `packages` | `pypi.org` and `files.pythonhosted.org` from Python, and `registry.npmjs.org` from Node.js, read-only (`GET`), so `pip install` and `npm install` work and nothing else does |
+| a path | the rules of a JSON policy file of your own ([OpenShell's schema](https://github.com/NVIDIA/OpenShell/blob/main/docs/how-it-works/policies/schema.mdx), written as JSON, which OpenShell reads as YAML). [sandbox/policies/](sandbox/policies) holds the two presets to start from |
+
+cedar adds what its own tools need (read-write `/workspace`), and rules for the connections the key's
+owner has always allowed. The model is told which hosts it can reach.
+
+**Blocked connections.** After each `bash` or `run_python` call, cedar reads what the policy
+refused meanwhile from the sandbox's log, sends a `sandbox.denied` event for each, and tells the
+model, so it doesn't keep guessing. In an [interactive run](#plans-and-approvals) the user is asked
+whether to let that program reach that host and port (rule `network`); an allowed connection is
+added to the running sandbox's policy (it takes a few seconds, and nothing restarts), and the model
+is told to run the command again. A run that isn't interactive can't ask, so it goes on without.
+
+Personal tools get their own policy: their declared hosts, from Python, on ports 80 and 443 (see
+[Personal tools in Python](#personal-tools-in-python)).
+
+### Setting up OpenShell
+
+OpenShell's [installer](https://github.com/NVIDIA/OpenShell) sets up its CLI and a local gateway: a
+Debian or RPM package with a systemd user service on Linux, a Homebrew formula from its own tap with a
+`brew services` entry on a Mac (not the `openshell` formula in Homebrew's core, which has no
+gateway). It needs Docker 28 or newer and a Linux kernel with Landlock (6.2 or newer; on a Mac,
+Docker Desktop's). Then:
+
+1. **Let the gateway attach cedar's volumes.** Workspaces and tools' packages are Docker volumes
+   cedar creates (with the labels OpenShell's admission check wants), and OpenShell only attaches
+   such volumes when the driver allows it. In the gateway's configuration
+   (`~/.config/openshell/gateway.toml`; on a Mac without one, `$(brew --prefix)/var/openshell/gateway.toml`),
+   which starts with `[openshell]` and `version = 2`:
+
+   ```toml
+   [openshell.drivers.docker]
+   allow_driver_config = true
+   ```
+
+   No other caller of the gateway should be able to create sandboxes then, since driver
+   configuration is what attaches volumes; keep the gateway on loopback, as it comes.
+2. **On a Mac with Docker Desktop**, put OpenShell's supervisor on the bridge network in the same
+   table, unless Docker Desktop's "Enable host networking" is on: otherwise every sandbox fails to
+   start with `ControlSupervisorStartFailed` ... `failed to connect to OpenShell server`.
+
+   ```toml
+   supervisor_network_mode = "bridge"
+   ```
+3. **Turn its telemetry off** if you don't want it: `OPENSHELL_TELEMETRY_ENABLED=false` in
+   `~/.config/openshell/gateway.env`.
+4. **Restart the gateway** (`systemctl --user restart openshell-gateway`, or `brew services restart
+   nvidia/openshell/openshell`) and check it with `openshell status`. cedar's `/readyz` checks it
+   too.
+
+Behind a corporate proxy, the Docker driver's `https_proxy`, `proxy_ca_bundle` and
+`proxy_connect_by_hostname` settings carry the sandboxes' allowed connections through it. A
+conversation's idle sandbox is stopped rather than frozen (OpenShell's Docker driver can't freeze
+one): processes it left running end, its files stay, and it starts again in a couple of seconds.
+
 ### The sandbox image
 
-`sandbox/Dockerfile` builds a Debian image with `python3`, `pip`, `venv`, `git`, `curl`, `jq`, `cedar-render-pdf` (WeasyPrint and python-markdown from PyPI, with the pango and DejaVu font packages they need), `cedar-render-chart` (matplotlib), and `cedar-read-document` (pypdf, python-docx, openpyxl, python-pptx). Those libraries are importable from `run_python` too. pip installs go to `/workspace/.local` (via `PYTHONUSERBASE`), so packages the agent installs in one run are still there in a [continuation](#continuing-a-run), and scripts they install are on `PATH`. Installing needs network access: with the default `SANDBOX_NETWORK=none` the container is offline and `pip install` fails to reach PyPI, so set `SANDBOX_NETWORK=bridge` if you want the agent to add packages itself (see [Safety](#safety)). Anything the agent should have offline goes into the Dockerfile.
+`sandbox/Dockerfile` builds a Debian image with `python3`, `pip`, `venv`, `git`, `curl`, `jq`, `cedar-render-pdf` (WeasyPrint and python-markdown from PyPI, with the pango and DejaVu font packages they need), `cedar-render-chart` (matplotlib), and `cedar-read-document` (pypdf, python-docx, openpyxl, python-pptx). Those libraries are importable from `run_python` too. pip installs go to `/workspace/.local` (via `PYTHONUSERBASE`), so packages the agent installs in one run are still there in a [continuation](#continuing-a-run), and scripts they install are on `PATH`. Installing needs network access: with the default `SANDBOX_POLICY=offline` the sandbox reaches nothing and `pip install` fails, so set `SANDBOX_POLICY=packages` if you want the agent to add packages itself (see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)). Anything the agent should have offline goes into the Dockerfile.
+
+The image's working directory is `/sandbox`, not `/workspace`: OpenShell won't mount a volume over an image's working directory, and cedar runs every command in `/workspace` itself. OpenShell passes the image's `PATH` but not the rest of its environment, so cedar sets `PYTHONUSERBASE`, `MPLBACKEND` and `PIP_DISABLE_PIP_VERSION_CHECK` for every sandbox. A custom `SANDBOX_IMAGE` needs `python3` (cedar runs commands through a small Python wrapper, `sandbox/exec_wrapper.py`), a non-root `USER`, and an empty `/workspace` that user owns.
 
 ### The browser
 
@@ -550,7 +639,7 @@ Output is cut at `TOOL_OUTPUT_MAX_BYTES` per stream with a `[truncated N bytes]`
 - **Pages as text.** Every call answers with the page's URL, title, HTTP status (when it isn't a success), and text: headings as Markdown, list items, and each visible interactive element numbered, like `[12] button "Show all 12 reviews"` or `[3] link "Next page" -> /search?page=2`. The model passes that number as `ref` to `click` or `type`. The numbers are reassigned on every call. When a modal dialog is open, only the dialog is described. `scroll` scrolls the open dialog (or the page) and says when it has reached the bottom, after giving the page time to load more. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES`, continued with `{"action": "snapshot", "start": N}`, and runs of look-alike numbered buttons (a calendar's days) are written as one line.
 - **Limits.** Only the six actions are passed to the browser; the model can't run scripts of its own in it. Images, media, and fonts are not loaded, downloads are refused, and links that would open a new tab open in the same one. A browser that hangs (no answer within 90 s) or dies (out of memory, say) is removed, the model is told to navigate again, and its next call starts a new one.
 
-The URL in a `navigate` call is checked like `fetch_url`'s: http(s) only, and it must resolve to public addresses unless `WEB_FETCH_ALLOW_PRIVATE=on`. Pages the browser reaches on its own (links, redirects, a page's scripts) are not checked, so it can reach whatever its Docker network reaches; see [Safety](#safety).
+The URL in a `navigate` call is checked like `fetch_url`'s: http(s) only, and it must resolve to public addresses unless `WEB_FETCH_ALLOW_PRIVATE=on`. Pages the browser reaches on its own (links, redirects, a page's scripts) are not checked, so it can reach whatever its Docker network reaches; see [Safety](#safety). The browser is a plain Docker container, not an OpenShell sandbox: OpenShell only lets a sandbox resolve the host names its policy names, and a browser has to reach whatever a page links to.
 
 `browser/Dockerfile` builds the image: Debian with Playwright and Chromium's headless shell, plus the driver (`browser/driver.py`, installed as `cedar-browser`) that keeps the browser running and answers one call at a time over a Unix socket. Build it with `docker build -t cedar-browser browser/`; `/readyz` reports whether it is present when the browser is on. You can drive it by hand to see what the model sees:
 
@@ -727,7 +816,7 @@ A manifest also says what the tool needs, which cedar enforces and shows to admi
 | Field | Meaning |
 | --- | --- |
 | `version`, `author`, `homepage`, `license` | Shown in the settings; `version` names a release |
-| `network` | The hosts the tool reaches (`api.example.com`, or `*.example.com`). With any, its calls get `TOOLS_NETWORK` (`bridge` by default); without, no network at all |
+| `network` | The hosts the tool reaches (`api.example.com`, or `*.example.com` with at least two labels after the `*`). Its calls can reach these, from Python, on ports 80 and 443, and nothing else; without any, no network at all |
 | `secrets` | The environment variables it reads credentials from: names (`"API_TOKEN"`) or `{"name", "description"?, "optional"?}`. Admins save them in the settings (encrypted, see [Integrations](#integrations)); a call gets only its own tool's declared, saved ones, plus `CEDAR_LOCALE` and `CEDAR_LANGUAGE` (the run's [language](#languages)). `PATH`, `HOME`, `PYTHON*`, `PIP_*`, `LD_*`, `CEDAR_*` and similar are reserved |
 | `pip` | Plain requirements (`"requests>=2"`; no options, URLs or paths), installed into the tool's own environment when it is installed from the marketplace, or with `POST /v1/admin/tools/{name}/setup` |
 | `health_data` | It reads or returns personal health data. Runs that have such a tool get health rules in their system prompt (informational only, safety first, never dosing or device-setting advice, see the care team), and installing one asks for consent |
@@ -766,18 +855,20 @@ week before, and suggests what to try today, with charts of the last day against
 `TOOLS_DIR` or install it from the [marketplace](#community-tools), then save its secrets in the
 settings (a `.env` in its own folder works too, see its `.env.example`).
 
-Each call of a personal tool runs in a container of its own, not in the run's sandbox: it sees
-the run's workspace (at `/workspace`), its own folder read-only at `/opt/cedar/tool`, and its own
-environment at `/opt/cedar/env` (its home, where its `pip` packages live; a Docker volume named
-`cedar-tool-env-<name>` that outlives runs). It does not see the other tools' folders, secrets or
-packages, and neither does the agent: `TOOLS_DIR` is not mounted into the run's sandbox at all.
-The container runs as the sandbox user, under the sandbox's memory and CPU limits and the call's
-timeout, with no network unless the manifest declares hosts, and gets only its declared, saved
-secrets (passed by name, so their values never show in a process list). Besides its packages, a
-tool can use the standard library and whatever the sandbox image ships (matplotlib, pypdf,
-openpyxl, python-docx, python-pptx, pillow). Since the tool folders are bind-mounted by Docker,
-`TOOLS_DIR` must be a path the Docker daemon can see; with a remote daemon, that is a path on the
-daemon's host. A relative path is resolved against the directory cedar starts in.
+Each call of a personal tool runs in an OpenShell sandbox of its own, not in the run's sandbox: it
+sees the run's workspace (at `/workspace`), a read-only copy of its own folder at `/opt/cedar/tool`,
+and its own environment at `/opt/cedar/env` (its home, where its `pip` packages live; a Docker
+volume named `cedar-tool-env-<name>` that outlives runs). It does not see the other tools' folders,
+secrets or packages, and neither does the agent: `TOOLS_DIR` is not mounted into the run's sandbox
+at all. The sandbox runs as the sandbox user, under the sandbox's memory and CPU limits and the
+call's timeout; its policy lets Python reach the hosts the manifest declares and nothing else, and
+it gets only its declared, saved secrets (passed by name, so their values never show in a process
+list). Starting it adds about a second to a call. Besides its packages, a tool can use the
+standard library and whatever the sandbox image ships (matplotlib, pypdf, openpyxl, python-docx,
+python-pptx, pillow). The copy of the folder is a Docker volume (`cedar-tool-code-<name>-<digest>`)
+made when the folder changes, by bind-mounting it into a short-lived container, so `TOOLS_DIR` must
+be a path the Docker daemon can see; with a remote daemon, that is a path on the daemon's host. A
+relative path is resolved against the directory cedar starts in.
 
 The manifests are read when the tool set is built: at startup, and again whenever a credential is
 saved or removed through the admin API or a tool is installed or uninstalled. A folder whose manifest or script can't be used is logged
@@ -805,7 +896,7 @@ Installing a tool:
    `health_data`), and refuses if the release asks for anything else;
 3. downloads its files and refuses any whose SHA-256 differs from the index's;
 4. checks its `tool.json` as cedar checks any manifest, and that it matches its listing;
-5. installs its `pip` packages into the tool's own environment (with `TOOLS_NETWORK`);
+5. installs its `pip` packages into the tool's own environment, in a sandbox that reaches PyPI and nothing else;
 6. puts the folder in place in one step, with a `.cedar-install.json` receipt that marks it as a
    community tool, and rebuilds the tools.
 
@@ -813,7 +904,7 @@ A tool written locally is never replaced: a release whose name a local or built-
 can't be installed. Installing over a community tool updates it; its saved secrets are kept.
 Uninstalling removes its folder, its environment volume and its saved secrets.
 
-Community tools run like any personal tool, in containers of their own. On top of that, in
+Community tools run like any personal tool, in sandboxes of their own. On top of that, in
 [interactive runs](#plans-and-approvals) every call waits for the user's OK (rule `community`):
 "Always" allows that release only, so an update asks again. Every run with one is told that their
 results are information, not instructions, and runs with a `health_data` tool get the health
@@ -828,9 +919,8 @@ rules described above.
 | `POST /v1/admin/marketplace/{name}/install` | Admin: install or update (`{"accept": {"network", "secrets", "pip", "health_data"}}`, exactly the release's permissions). Returns the tool as `GET /v1/admin/tools` shows it. `409` for a name clash or other permissions, `502` for a release that doesn't check out |
 | `DELETE /v1/admin/marketplace/{name}` | Admin: uninstall a community tool |
 
-The declared `network` hosts are shown and approved but not yet enforced host by host: a tool
-that declares any gets the whole `TOOLS_NETWORK`. Reviews of the registry read the code for that
-reason, and a stricter `TOOLS_NETWORK` (a Docker network whose egress you filter) narrows it.
+The declared `network` hosts are shown, approved and enforced: a tool's calls reach those hosts and
+nothing else, and only from Python.
 
 ## Adding a tool
 
@@ -862,28 +952,28 @@ The `definition()` method builds the tool definition for the LLM client, so you 
 
 The agent runs arbitrary commands, so isolation is the point of the design:
 
-- Each conversation gets its own container, created by its first run and kept (paused once idle) for its continuations until its workspace goes or cedar stops, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Containers run as a non-root user with all capabilities dropped, `no-new-privileges`, and memory, CPU, and process limits. Networking is off (`SANDBOX_NETWORK=none`) unless you change it.
-- Every file and command operation goes through `docker exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
-- Model servers' API keys and `BRAVE_API_KEY` are never passed into a container. With `web_search` enabled, the model's search queries leave your machine for Brave.
+- Each conversation gets its own OpenShell sandbox, created by its first run and kept (stopped once idle) for its continuations until its workspace goes or cedar stops, mounting a workspace volume that is kept for [continuations](#continuing-a-run) until `WORKSPACE_TTL_SECS` expires. Sandboxes run as a non-root user without capabilities, with Landlock on their files, memory, CPU and process limits, and no network device: every connection is checked against the policy, which reaches nothing (`SANDBOX_POLICY=offline`) unless you change it. Rules name the program as well as the host, and a rule covers what that program starts, so a rule for Python covers a `curl` that Python runs (cedar's own command wrapper is kept out of that chain on purpose).
+- Every file and command operation goes through `openshell sandbox exec`. The host filesystem is never touched, so a symlink the agent creates can't point out of its workspace.
+- Model servers' API keys and `BRAVE_API_KEY` are never passed into a sandbox. With `web_search` enabled, the model's search queries leave your machine for Brave.
 - With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. With `plan_trip` enabled, a trip's start, destination, and time go to the transit planner and the driving router (Transitous and the OSRM demo server by default). Set `WEATHER=off`, `MAPS=off`, and `TRANSIT=off` if that is not acceptable.
 - With `show_recipe` enabled, the names of the dishes the model writes recipes for leave your machine for Wikipedia and Wikimedia Commons. Set `RECIPES=off` if that is not acceptable.
 - With `compare_stocks` enabled, the ticker symbols the model looks up leave your machine for Yahoo Finance. Its chart and search APIs are public but unofficial: they need no key, but Yahoo may change or rate-limit them, and its terms limit them to personal use. Set `STOCKS=off` if that is not acceptable.
-- With `search_products` enabled (a Brave or Best Buy key is set or saved), the shopping requests the model makes leave your machine for Brave (and Best Buy, with its key), cedar fetches the shop and review pages they return from its own host, and the chat page loads product photos from the shops' servers. Pages can carry prompt injections like any fetched page; the tool hands the model their text as evidence and keeps only links and photos found on them. The keys are never passed into a container. Remove the keys or set `PRODUCTS=off` if that is not acceptable.
+- With `search_products` enabled (a Brave or Best Buy key is set or saved), the shopping requests the model makes leave your machine for Brave (and Best Buy, with its key), cedar fetches the shop and review pages they return from its own host, and the chat page loads product photos from the shops' servers. Pages can carry prompt injections like any fetched page; the tool hands the model their text as evidence and keeps only links and photos found on them. The keys are never passed into a sandbox. Remove the keys or set `PRODUCTS=off` if that is not acceptable.
 - With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
 - A run's `callback_url` is a request from the cedar host too, to a URL the API client chooses. It carries only the run's id and final status, never its text, and refuses non-public addresses unless `WEBHOOK_ALLOW_PRIVATE` is on. A `callback_secret` is stored in cedar's database as given (it signs the calls; it is not a credential for anything else) and never returned.
 - API keys are compared in constant time, and runs are scoped to the key that created them. Infrastructure error details (Docker paths and so on) go to the server log, not to API clients.
 - cedar speaks plain HTTP. Put it behind a TLS-terminating proxy before exposing it. `/healthz` and `/readyz` are unauthenticated.
-- The user running cedar needs access to the Docker daemon, which is effectively root on that machine. Run cedar on a host or VM you are willing to dedicate to it.
-- Turning networking on for the sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services.
-- The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
-- [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
-- Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
+- The user running cedar needs access to the Docker daemon and to the OpenShell gateway, each effectively root on that machine (the gateway also has to allow driver configuration, so it can attach cedar's volumes). Run cedar on a host or VM you are willing to dedicate to it.
+- A policy that reaches hosts lets data leave to them: `packages` lets Python and Node.js read from the package registries (no uploads), and every connection the user allows reaches that host fully. Allowing is per program, host and port, and an "always" applies to every later run of the API key; an admin removes such grants from the database (`approval_grants`, rule `network`).
+- The browser (`BROWSER=on`) needs internet access, so it is a plain Docker container, not an OpenShell sandbox. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
+- [Personal tools](#personal-tools-in-python) run in a sandbox per call that sees only a copy of their own folder, their own package environment, the run's workspace, and their own declared secrets, and reaches only the hosts they declare. A tool can still read and change anything in the workspace, and data it is given can leave to those hosts. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
+- Downloads are served from the workspace volume only, through a read-only, offline container that runs nothing of the agent's; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
 ## Operations
 
-- **Restarts:** SQLite file plus in-process queue means one instance only. Runs that were queued or running when the process stopped cannot be resumed, so at startup they are marked `failed` and leftover containers are removed. Workspace volumes that still belong to a run in the database are kept until `WORKSPACE_TTL_SECS` expires; any other workspace volume is removed.
+- **Restarts:** SQLite file plus in-process queue means one instance only. Runs that were queued or running when the process stopped cannot be resumed, so at startup they are marked `failed` and leftover sandboxes are removed. Workspace volumes that still belong to a run in the database are kept until `WORKSPACE_TTL_SECS` expires; any other workspace volume is removed.
 - **Shutdown:** on SIGTERM or Ctrl-C cedar stops accepting connections, cancels active runs (they end as `cancelled` with reason `server shutting down`), waits up to 10 seconds for them to record their final state, and gives their webhooks two seconds to go out. What isn't delivered by then is sent at the next start.
 - **API errors:** requests to the LLM server time out and retry on 429, 5xx, and connection errors (up to 4 attempts, exponential backoff, honoring `retry-after`). Other 4xx errors fail the run immediately with the API's message.
 - **Logs:** `RUST_LOG` controls verbosity (default `info`). Prompts and keys are not logged.
@@ -893,7 +983,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 ```sh
 cargo test                        # unit + integration tests; no Docker or network needed
 cargo clippy --all-targets -- -D warnings
-cargo test --test docker -- --ignored   # sandbox tests; need Docker and the cedar-sandbox image
+cargo test --test openshell -- --ignored --test-threads 4   # sandbox tests; need Docker, an OpenShell gateway (see Setting up OpenShell) and the cedar-sandbox image
 cargo test --test docker_browser -- --ignored   # browser tests; need Docker and the cedar-browser image
 python3 registry/build_index.py --check  # the community tool registry's rules and index
 ```

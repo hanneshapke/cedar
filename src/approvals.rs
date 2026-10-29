@@ -1,9 +1,12 @@
 //! Which tool calls wait for the user's OK before they run, in runs whose client answers
 //! (`interactive`). The rules are a heuristic on the tool and its input: sending email, saving
-//! files from the web, installing packages, deleting files, and, when the sandbox has a network,
-//! running code that can reach it, and every call of a community tool installed from the
-//! marketplace. `TOOL_APPROVALS` picks the rules; `off` turns the gate off.
+//! files from the web, installing packages (when the sandbox's policy reaches a network at all),
+//! deleting files, and every call of a community tool installed from the marketplace. One rule
+//! asks afterwards instead: when the sandbox's OpenShell policy refused a connection a command
+//! tried to make, the user can let that program reach that host from then on (`network`).
+//! `TOOL_APPROVALS` picks the rules; `off` turns the gate off.
 
+use crate::policy::Endpoint;
 use crate::tools::{group_of, writes, PythonTool};
 use anyhow::{bail, Result};
 use serde_json::Value;
@@ -20,7 +23,7 @@ pub enum Rule {
     Installs,
     /// `rm` and friends in `bash`.
     Deletes,
-    /// Any `bash` or `run_python` call while the sandbox has a network.
+    /// A connection the sandbox's policy refused, which the user may allow from then on.
     Network,
     /// A community tool installed from the marketplace. "Always" covers that release only, so an
     /// update asks again.
@@ -113,10 +116,9 @@ pub struct Gate {
     pub grants: Vec<String>,
 }
 
-/// Whether calling `name` with `input` needs the user's OK under `rules`, given the sandbox's
-/// Docker network mode.
-pub fn check(rules: &Rules, name: &str, input: &Value, sandbox_network: &str) -> Option<Gate> {
-    let networked = sandbox_network != "none";
+/// Whether calling `name` with `input` needs the user's OK under `rules`, given whether the
+/// sandbox's policy lets anything reach the network.
+pub fn check(rules: &Rules, name: &str, input: &Value, networked: bool) -> Option<Gate> {
     match name {
         "download_file" if rules.has(Rule::Downloads) => {
             let url = input["url"].as_str().unwrap_or_default();
@@ -158,19 +160,6 @@ pub fn check(rules: &Rules, name: &str, input: &Value, sandbox_network: &str) ->
                     grants: packages,
                 });
             }
-            if networked && rules.has(Rule::Network) {
-                let what = if name == "bash" {
-                    "Run a command"
-                } else {
-                    "Run Python"
-                };
-                return Some(Gate {
-                    rule: Rule::Network,
-                    reason: format!("{what} with internet access: {}", one_line(code)),
-                    scope: Some("code with internet access".into()),
-                    grants: vec!["sandbox".into()],
-                });
-            }
             None
         }
         _ if rules.has(Rule::Email) && group_of(name) == "gmail" && writes(name) => {
@@ -206,7 +195,28 @@ pub fn check(rules: &Rules, name: &str, input: &Value, sandbox_network: &str) ->
     }
 }
 
-/// `gmail_send_message` -> "Send message".
+/// Whether the user is asked to let `endpoint.binary` reach `endpoint.host:port` after the
+/// sandbox's policy refused it.
+pub fn check_connection(rules: &Rules, endpoint: &Endpoint) -> Option<Gate> {
+    if !rules.has(Rule::Network) {
+        return None;
+    }
+    let program = endpoint
+        .binary
+        .rsplit('/')
+        .next()
+        .unwrap_or(&endpoint.binary);
+    let target = format!("{}:{}", endpoint.host, endpoint.port);
+    Some(Gate {
+        rule: Rule::Network,
+        reason: format!(
+            "Let {program} connect to {target}. The sandbox's network policy blocked it."
+        ),
+        scope: Some(format!("{program} → {target}")),
+        grants: vec![endpoint.grant()],
+    })
+}
+
 /// Whether a call of the personal tool `tool` needs the user's OK under `rules`: every call of
 /// one installed from the marketplace does, until the user always allows that release.
 pub fn check_personal(rules: &Rules, tool: &PythonTool) -> Option<Gate> {
@@ -242,6 +252,7 @@ pub fn check_personal(rules: &Rules, tool: &PythonTool) -> Option<Gate> {
     })
 }
 
+/// `gmail_send_message` -> "Send message".
 fn humanize(name: &str) -> String {
     let words: Vec<&str> = name.split('_').skip(1).collect();
     let mut s = words.join(" ");
@@ -388,7 +399,7 @@ mod tests {
             &all(),
             "download_file",
             &json!({ "url": "https://www.example.com/r/x.pdf", "path": "attachments/x.pdf" }),
-            "none",
+            false,
         )
         .unwrap();
         assert_eq!(gate.rule, Rule::Downloads);
@@ -406,7 +417,7 @@ mod tests {
             &all(),
             "gmail_send_message",
             &json!({ "to": ["a@x.org"], "subject": "Q3 numbers" }),
-            "none",
+            false,
         )
         .unwrap();
         assert_eq!(gate.rule, Rule::Email);
@@ -415,13 +426,13 @@ mod tests {
             gate.reason,
             "Send message in your Gmail to a@x.org: \"Q3 numbers\"."
         );
-        assert!(check(&all(), "gmail_search_threads", &json!({}), "none").is_none());
-        assert!(check(&all(), "calendar_create_event", &json!({}), "none").is_none());
+        assert!(check(&all(), "gmail_search_threads", &json!({}), false).is_none());
+        assert!(check(&all(), "calendar_create_event", &json!({}), false).is_none());
     }
 
     #[test]
     fn deletes_are_caught_as_commands_only() {
-        let rm = |c: &str| check(&all(), "bash", &json!({ "command": c }), "none");
+        let rm = |c: &str| check(&all(), "bash", &json!({ "command": c }), false);
         assert_eq!(rm("rm -rf out/").unwrap().rule, Rule::Deletes);
         assert_eq!(rm("cd x && rm a.txt").unwrap().rule, Rule::Deletes);
         assert_eq!(
@@ -435,8 +446,8 @@ mod tests {
     #[test]
     fn installs_need_a_network_and_name_their_packages() {
         let input = json!({ "command": "pip install -q pandas==2.2 'numpy>=1' && python a.py" });
-        assert!(check(&all(), "bash", &input, "none").is_none());
-        let gate = check(&all(), "bash", &input, "bridge").unwrap();
+        assert!(check(&all(), "bash", &input, false).is_none());
+        let gate = check(&all(), "bash", &input, true).unwrap();
         assert_eq!(gate.rule, Rule::Installs);
         assert_eq!(gate.grants, ["pandas", "numpy"]);
         assert_eq!(gate.scope.as_deref(), Some("pandas, numpy"));
@@ -454,14 +465,29 @@ mod tests {
     }
 
     #[test]
-    fn code_with_a_network_asks_unless_that_rule_is_off() {
+    fn code_runs_without_asking_and_a_blocked_connection_asks_afterwards() {
+        // The policy decides where code can go, so running it needs no OK of its own.
         let input = json!({ "code": "print(1)" });
-        let gate = check(&all(), "run_python", &input, "bridge").unwrap();
+        assert!(check(&all(), "run_python", &input, true).is_none());
+        assert!(check(&all(), "run_python", &input, false).is_none());
+
+        let blocked = Endpoint {
+            binary: "/usr/bin/python3.11".into(),
+            host: "api.example.com".into(),
+            port: 443,
+        };
+        let gate = check_connection(&all(), &blocked).unwrap();
         assert_eq!(gate.rule, Rule::Network);
-        assert_eq!(gate.grants, ["sandbox"]);
-        assert!(check(&all(), "run_python", &input, "none").is_none());
+        assert_eq!(gate.grants, ["/usr/bin/python3.11 api.example.com:443"]);
+        assert_eq!(
+            gate.scope.as_deref(),
+            Some("python3.11 → api.example.com:443")
+        );
+        assert!(gate
+            .reason
+            .contains("python3.11 connect to api.example.com:443"));
         let rules = Rules::parse("email,downloads,installs,deletes").unwrap();
-        assert!(check(&rules, "run_python", &input, "bridge").is_none());
+        assert!(check_connection(&rules, &blocked).is_none());
     }
 
     #[test]
@@ -471,10 +497,10 @@ mod tests {
             &off,
             "download_file",
             &json!({ "url": "https://a.b/c" }),
-            "none"
+            false
         )
         .is_none());
-        assert!(check(&off, "bash", &json!({ "command": "rm x" }), "none").is_none());
+        assert!(check(&off, "bash", &json!({ "command": "rm x" }), false).is_none());
     }
 
     #[test]

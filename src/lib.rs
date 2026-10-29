@@ -1,4 +1,4 @@
-//! cedar: a backend service that runs LLM agents in sandboxed containers.
+//! cedar: a backend service that runs LLM agents in sandboxes (OpenShell, on Docker).
 //!
 //! The binary (`src/main.rs`) wires these modules together; they are a library so integration
 //! tests can substitute fakes for the LLM, the sandbox, and the browser.
@@ -21,12 +21,14 @@ pub mod manager;
 pub mod marketplace;
 pub mod mcp;
 pub mod models;
+pub mod openshell;
 pub mod plan;
+pub mod policy;
 pub mod sandbox;
 pub mod secrets;
 pub mod sources;
 pub mod sse;
 pub mod store;
 pub mod tools;
-pub mod webhooks;
 pub mod waits;
+pub mod webhooks;
