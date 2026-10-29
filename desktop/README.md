@@ -81,21 +81,44 @@ isn't enough.
 curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
 ```
 
-Then add this to the gateway's configuration, `$(brew --prefix)/var/openshell/gateway.toml` (or
-`~/.config/openshell/gateway.toml` if you made one), below its `[openshell]` and
-`[openshell.gateway]` tables, and restart it:
+Then let the gateway attach the Docker volumes that hold cedar's workspaces, and put its
+supervisor on Docker Desktop's bridge network (Docker Desktop has no host networking unless it is
+turned on in its settings). This adds both settings to the configuration file Homebrew's service
+reads: `~/.config/openshell/gateway.toml` if you have one, otherwise
+`$(brew --prefix)/var/openshell/gateway.toml`. If that file has a `[openshell.drivers.docker]`
+section already, it changes nothing and says so; set the two settings in that section by hand. Paste it into the terminal as it is: the
+TOML itself is not a command, and zsh answers it with `no matches found`.
 
-```toml
+```sh
+F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"
+[ -f "$F" ] || F="$(brew --prefix)/var/openshell/gateway.toml"
+if grep -qs '^\[openshell\.drivers\.docker\]' "$F"; then
+  echo "$F already has [openshell.drivers.docker]; make sure it sets: allow_driver_config = true, supervisor_network_mode = \"bridge\""
+else
+  cat >> "$F" <<'EOF'
+
 [openshell.drivers.docker]
-# lets OpenShell attach the Docker volumes that hold cedar's workspaces
 allow_driver_config = true
-# Docker Desktop has no host networking unless it is turned on in its settings
 supervisor_network_mode = "bridge"
+EOF
+fi
 ```
+
+Restart the gateway and check it. It takes a few seconds to listen, so `openshell status` right
+after the restart can say `Connection refused`; after the wait it should say Connected and
+Authenticated:
 
 ```sh
 brew services restart nvidia/openshell/openshell
-openshell status        # Connected, Authenticated
+sleep 5
+openshell status
+```
+
+If it still says `Connection refused`, the gateway stopped. Its log says why, often a mistake in
+the configuration, which `openshell-gateway config preflight --path <file>` checks:
+
+```sh
+tail -n 30 "$(brew --prefix)/var/log/openshell/openshell-gateway.err.log"
 ```
 
 Cedar finds the `openshell` command in Homebrew's folder (set `OPENSHELL_BIN` in cedar's

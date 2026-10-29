@@ -655,16 +655,42 @@ const cedarSettings = (() => {
 
   /** The commands that set OpenShell up for cedar, for the OS cedar runs on (not the browser's). */
   const OPENSHELL_INSTALL = 'curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh';
+  // Each block is pasted into a terminal as it is (zsh on a Mac), so: no shell comments, which
+  // interactive zsh runs as commands, and the TOML only inside a heredoc. A config file that has
+  // the section already is left alone, since a second one would stop the gateway from starting.
+  const openShellConfig = (pick, settings) => [
+    ...pick,
+    'if grep -qs \'^\\[openshell\\.drivers\\.docker\\]\' "$F"; then',
+    '  echo "$F already has [openshell.drivers.docker]; make sure it sets: ' + settings.join(', ').replace(/"/g, '\\"') + '"',
+    'else',
+    '  cat >> "$F" <<\'EOF\'',
+    '',
+    '[openshell.drivers.docker]',
+    ...settings,
+    'EOF',
+    'fi',
+  ].join('\n');
   const OPENSHELL_STEPS = {
     macos: {
       name: 'macOS',
-      config: '# $(brew --prefix)/var/openshell/gateway.toml\n[openshell.drivers.docker]\nallow_driver_config = true\nsupervisor_network_mode = "bridge"   # with Docker Desktop',
-      restart: 'brew services restart nvidia/openshell/openshell\nopenshell status',
+      // Docker Desktop has no host networking unless it is turned on in its settings.
+      // Homebrew's service reads ~/.config/openshell/gateway.toml when there is one, and its own
+      // file under the Homebrew prefix only otherwise.
+      config: openShellConfig([
+        'F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"',
+        '[ -f "$F" ] || F="$(brew --prefix)/var/openshell/gateway.toml"',
+      ], ['allow_driver_config = true', 'supervisor_network_mode = "bridge"']),
+      // The gateway takes a few seconds to listen after a restart.
+      restart: 'brew services restart nvidia/openshell/openshell\nsleep 5\nopenshell status',
     },
     linux: {
       name: 'Linux',
-      config: '# ~/.config/openshell/gateway.toml of the user cedar runs as\n[openshell]\nversion = 2\n\n[openshell.drivers.docker]\nallow_driver_config = true',
-      restart: 'systemctl --user restart openshell-gateway\nopenshell status',
+      // As the user cedar runs as; the file needs its header if the installer made none.
+      config: openShellConfig([
+        'F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"',
+        'mkdir -p "$(dirname "$F")"; [ -s "$F" ] || printf \'[openshell]\\nversion = 2\\n\' > "$F"',
+      ], ['allow_driver_config = true']),
+      restart: 'systemctl --user restart openshell-gateway\nsleep 5\nopenshell status',
     },
   };
   const OPENSHELL_GUIDE = 'https://github.com/hanneshapke/cedar#openshell-sandboxes-opt-in';
