@@ -32,9 +32,11 @@ Community tools) or with the admin API (see [the README](../README.md#community-
   instructions, whatever the tool's description says: no dosing advice, safety first, and point to
   the care team.
 
-One limit to know: the `network` hosts are shown and approved, but they are not yet enforced host
-by host. A tool that declares any host gets the network `TOOLS_NETWORK` gives it (`bridge` by
-default). That is why reviews read the code.
+One limit to know: on cedar's default Docker sandboxes, the `network` hosts are shown and
+approved but not enforced host by host. A tool that declares any host gets the network
+`TOOLS_NETWORK` gives it (`bridge` by default). That is why reviews read the code. Where an admin
+has turned on OpenShell sandboxes, a tool reaches its declared hosts (from Python, on ports 80 and
+443) and nothing else.
 
 ## Layout
 

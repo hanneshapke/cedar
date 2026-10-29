@@ -11,9 +11,11 @@ use cedar::browser::{Browser, BrowserFactory};
 use cedar::config::Config;
 use cedar::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
 use cedar::models::{ModelEntry, Usage};
+use cedar::openshell::Denial;
+use cedar::policy::Endpoint;
 use cedar::sandbox::{
-    check_workspace_path, ExecOutput, FileContent, Sandbox, SandboxFactory, SandboxFatal, ToolRun,
-    WorkspaceFile, WorkspaceListing, WorkspaceMissing,
+    check_workspace_path, ExecOutput, FileContent, Runtime, Sandbox, SandboxFactory, SandboxFatal,
+    ToolRun, WorkspaceFile, WorkspaceListing, WorkspaceMissing,
 };
 use cedar::store::Store;
 use http_body_util::BodyExt;
@@ -126,7 +128,9 @@ pub const FAKE_PDF_PAGES: usize = 3;
 /// A workspace's files, shared by every sandbox that mounts it.
 pub type Files = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 
-/// Commands with special meaning: `fatal` (sandbox breaks), `fail` (exit 1 with stderr),
+/// Commands with special meaning: `curl https://HOST/...` (on OpenShell, a connection the policy
+/// refuses unless [`Sandbox::allow`] let `/usr/bin/curl` reach HOST:443), `fatal` (sandbox breaks),
+/// `fail` (exit 1 with stderr),
 /// `big` (output larger than the cap), the changed-files listing that follows `bash` and
 /// `run_python` (it prints `changed`, one path per line), and `cedar-render-pages` (every PDF has
 /// [`FAKE_PDF_PAGES`] pages, page N renders as `jpeg N`; a path containing `broken` fails).
@@ -146,6 +150,12 @@ pub struct FakeSandbox {
     pub gone: AtomicBool,
     /// The personal tool calls, in order.
     pub tool_calls: Mutex<Vec<ToolCallRecord>>,
+    /// Connections refused since the last look (see `curl` in [`Sandbox::exec`]).
+    pub refused: Mutex<Vec<Denial>>,
+    /// What [`Sandbox::allow`] let through, in order.
+    pub allowed: Mutex<Vec<Endpoint>>,
+    /// Runs on OpenShell rather than Docker: the runtime saved when it was created.
+    pub openshell: bool,
 }
 
 /// What a personal tool call was handed (see [`Sandbox::run_tool`]).
@@ -156,7 +166,7 @@ pub struct ToolCallRecord {
     pub entry: String,
     pub input: Value,
     pub env: Vec<(String, String)>,
-    pub network: bool,
+    pub hosts: Vec<String>,
 }
 
 impl FakeSandbox {
@@ -198,6 +208,14 @@ impl FakeSandbox {
 
 #[async_trait]
 impl Sandbox for FakeSandbox {
+    fn runtime(&self) -> Runtime {
+        if self.openshell {
+            Runtime::OpenShell
+        } else {
+            Runtime::Docker
+        }
+    }
+
     async fn exec(
         &self,
         command: &str,
@@ -205,6 +223,43 @@ impl Sandbox for FakeSandbox {
         max_output: usize,
     ) -> Result<ExecOutput> {
         self.commands.lock().unwrap().push(command.to_string());
+        if let Some(url) = command.strip_prefix("curl ").filter(|_| self.openshell) {
+            let host = url
+                .trim_start_matches("https://")
+                .split('/')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let endpoint = Endpoint {
+                binary: "/usr/bin/curl".into(),
+                host: host.clone(),
+                port: 443,
+            };
+            if self.allowed.lock().unwrap().contains(&endpoint) {
+                let out = format!("fetched {host}");
+                return Ok(ExecOutput {
+                    stdout_total: out.len(),
+                    stdout: out.into_bytes(),
+                    exit_code: Some(0),
+                    ..Default::default()
+                });
+            }
+            self.refused.lock().unwrap().push(Denial {
+                binary: Some("/usr/bin/curl".into()),
+                host: host.clone(),
+                port: 443,
+                what: "connect".into(),
+                reason: Some("transparent_tcp_policy_denied".into()),
+                at: 0.0,
+            });
+            let err = format!("curl: (7) Failed to connect to {host} port 443");
+            return Ok(ExecOutput {
+                stderr_total: err.len(),
+                stderr: err.into_bytes(),
+                exit_code: Some(7),
+                ..Default::default()
+            });
+        }
         match command {
             "fatal" => Err(SandboxFatal("wedged".into()).into()),
             "fail" => Ok(ExecOutput {
@@ -275,7 +330,7 @@ impl Sandbox for FakeSandbox {
             entry: call.entry.to_string(),
             input: input.clone(),
             env: call.env.to_vec(),
-            network: call.network,
+            hosts: call.hosts.to_vec(),
         });
         if call.name == "failing_tool" {
             return Ok(ExecOutput {
@@ -292,6 +347,20 @@ impl Sandbox for FakeSandbox {
             exit_code: Some(0),
             ..Default::default()
         })
+    }
+
+    async fn denials(&self, _since: std::time::SystemTime) -> Result<Vec<Denial>> {
+        Ok(std::mem::take(&mut *self.refused.lock().unwrap()))
+    }
+
+    async fn allow(&self, endpoints: &[Endpoint]) -> Result<()> {
+        let mut allowed = self.allowed.lock().unwrap();
+        for e in endpoints {
+            if !allowed.contains(e) {
+                allowed.push(e.clone());
+            }
+        }
+        Ok(())
     }
 
     async fn pause(&self) {
@@ -324,6 +393,10 @@ pub struct FakeFactory {
     /// Tool environments set up: (tool, requirements).
     pub tool_setups: Mutex<Vec<(String, Vec<String>)>>,
     pub removed_tool_envs: Mutex<Vec<String>>,
+    /// The app's store, for the saved `sandbox_runtime` (on any platform: it is a fake).
+    pub store: std::sync::OnceLock<Store>,
+    /// Make switching to OpenShell fail, as without a gateway.
+    pub openshell_down: AtomicBool,
 }
 
 impl FakeFactory {
@@ -337,6 +410,8 @@ impl FakeFactory {
             fail_create: AtomicBool::new(false),
             tool_setups: Mutex::default(),
             removed_tool_envs: Mutex::default(),
+            store: std::sync::OnceLock::new(),
+            openshell_down: AtomicBool::new(false),
         })
     }
 
@@ -379,6 +454,7 @@ impl SandboxFactory for FakeFactory {
             .clone();
         let sandbox = Arc::new(FakeSandbox {
             files,
+            openshell: self.runtime().await == Runtime::OpenShell,
             ..Default::default()
         });
         self.created.lock().unwrap().push((run_id, sandbox.clone()));
@@ -439,6 +515,23 @@ impl SandboxFactory for FakeFactory {
         } else {
             Err(anyhow!("docker is down"))
         }
+    }
+
+    async fn runtime(&self) -> Runtime {
+        match self.store.get() {
+            Some(store) => cedar::sandbox::saved_runtime(store)
+                .await
+                .unwrap()
+                .unwrap_or(Runtime::Docker),
+            None => Runtime::Docker,
+        }
+    }
+
+    async fn check_runtime(&self, runtime: Runtime) -> Result<()> {
+        if runtime == Runtime::OpenShell && self.openshell_down.load(Ordering::SeqCst) {
+            return Err(anyhow!("the OpenShell gateway is not answering"));
+        }
+        Ok(())
     }
 
     async fn setup_tool(&self, name: &str, requirements: &[String]) -> Result<String> {
@@ -610,6 +703,7 @@ impl TestApp {
         if store.get_model(TEST_MODEL).await.unwrap().is_none() {
             register_model(&store, TEST_MODEL, TEST_MODEL, &TEST_MODEL_LEVELS).await;
         }
+        let _ = factory.store.set(store.clone());
         let clients = Arc::new(LlmRouter::new());
         clients.set(TEST_MODEL, llm.clone());
         let browsers = Arc::new(FakeBrowserFactory::default());
@@ -632,6 +726,13 @@ impl TestApp {
             factory,
             browsers,
         }
+    }
+
+    /// Run the sandboxes of later runs on OpenShell, as an admin does in Settings → Advanced.
+    pub async fn use_openshell(&self) {
+        cedar::sandbox::set_runtime(&self.state.store, Some(Runtime::OpenShell))
+            .await
+            .unwrap();
     }
 
     /// Register another model that the scripted client answers for.

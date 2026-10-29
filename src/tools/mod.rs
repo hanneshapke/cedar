@@ -445,8 +445,8 @@ impl ToolSet {
     }
 
     /// A note for the system prompt; see [`ToolView::environment_note`].
-    pub fn environment_note(&self, sandbox_network: &str) -> String {
-        self.select(None).environment_note(sandbox_network)
+    pub fn environment_note(&self, reach: &crate::sandbox::Reach) -> String {
+        self.select(None).environment_note(reach)
     }
 
     pub fn definitions(&self) -> Vec<Value> {
@@ -565,13 +565,31 @@ impl<'a> ToolView<'a> {
 
     /// A note for the system prompt saying what the sandbox can reach and how to use the web, so
     /// the model doesn't try to fetch search engines or pages with `curl`.
-    pub fn environment_note(&self, sandbox_network: &str) -> String {
+    pub fn environment_note(&self, reach: &crate::sandbox::Reach) -> String {
+        use crate::sandbox::Reach;
         let search = self.get("web_search").is_some();
         let fetch = self.get("fetch_url").is_some();
-        let net = if sandbox_network == "none" {
+        let hosts = match reach {
+            Reach::Hosts(hosts) => hosts.clone(),
+            _ => Vec::new(),
+        };
+        let net = if !reach.any() {
             "The sandbox has no internet access: curl, wget, and pip install cannot reach the network."
+                .to_string()
+        } else if let Reach::Network(_) = reach {
+            "The sandbox has outbound network access (e.g. for pip install).".to_string()
+        } else if hosts.iter().any(|h| h == "pypi.org") {
+            format!(
+                "The sandbox's network policy lets it reach only these hosts: {}. pip install (and \
+                 npm install) work; anything else is blocked.",
+                hosts.join(", ")
+            )
         } else {
-            "The sandbox has outbound network access (e.g. for pip install)."
+            format!(
+                "The sandbox's network policy lets it reach only these hosts: {}; anything else is \
+                 blocked.",
+                hosts.join(", ")
+            )
         };
         let how = if search {
             "To look something up on the web, use the web_search tool; do not query search engines \
@@ -581,6 +599,12 @@ impl<'a> ToolView<'a> {
              query them with curl or wget. If a task needs information from the web, say so."
         };
         let mut note = format!("{net} {how}");
+        if let Reach::Hosts(_) = reach {
+            note.push_str(
+                " When the sandbox blocks a connection, the tool result says so; don't try to get \
+                 around it another way.",
+            );
+        }
         if fetch {
             note.push_str(
                 " To read a web page, use fetch_url; to save a file from the web into the \
@@ -910,7 +934,7 @@ mod tests {
         let search =
             ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])).unwrap();
 
-        let note = search.environment_note("none");
+        let note = search.environment_note(&crate::sandbox::Reach::Nothing);
         assert!(note.contains("no internet access"));
         assert!(note.contains("use the web_search tool"));
         assert!(note.contains("use fetch_url") && note.contains("use download_file"));
@@ -930,13 +954,13 @@ mod tests {
         let shopping =
             ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BESTBUY_API_KEY", "k")]))
                 .unwrap()
-                .environment_note("none");
+                .environment_note(&crate::sandbox::Reach::Nothing);
         assert!(shopping.contains("use search_products"), "{shopping}");
         let browser = ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BROWSER", "on")]))
             .unwrap()
-            .environment_note("none");
+            .environment_note(&crate::sandbox::Reach::Nothing);
         assert!(browser.contains("use the browser tool"), "{browser}");
-        let note = plain.environment_note("none");
+        let note = plain.environment_note(&crate::sandbox::Reach::Nothing);
         assert!(note.contains("No web search tool is available"));
         assert!(!note.contains("use the web_search tool"));
         assert!(!note.contains("fetch_url"));
@@ -946,9 +970,19 @@ mod tests {
         assert!(!note.contains("plan_trip"));
         assert!(!note.contains("compare_stocks"));
         assert!(!note.contains("ask_user"));
-        assert!(plain
-            .environment_note("bridge")
-            .contains("outbound network access"));
+        let packages = plain.environment_note(&crate::sandbox::Reach::Hosts(
+            crate::policy::Policy::packages().hosts(),
+        ));
+        assert!(
+            packages
+                .contains("only these hosts: files.pythonhosted.org, pypi.org, registry.npmjs.org"),
+            "{packages}"
+        );
+        assert!(packages.contains("pip install"), "{packages}");
+        assert!(packages.contains("blocks a connection"), "{packages}");
+        let docker = plain.environment_note(&crate::sandbox::Reach::Network("bridge".into()));
+        assert!(docker.contains("outbound network access"), "{docker}");
+        assert!(!docker.contains("blocks a connection"), "{docker}");
     }
 
     fn tool_names(cfg: &Config) -> Vec<String> {
@@ -1176,7 +1210,7 @@ mod tests {
             ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])).unwrap();
         let allow = ["web_search".to_string()];
         let view = set.select(Some(&allow));
-        let note = view.environment_note("none");
+        let note = view.environment_note(&crate::sandbox::Reach::Nothing);
         assert!(note.contains("use the web_search tool"));
         assert!(!note.contains("fetch_url") && !note.contains("weather_forecast"));
         assert!(view.get("bash").is_some(), "sandbox tools are always in");

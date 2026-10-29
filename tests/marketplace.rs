@@ -373,7 +373,11 @@ async fn a_community_tool_waits_for_approval_gets_its_secrets_and_brings_the_hea
     let calls = app.factory.sandbox(0).tool_calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].dir, dir.join("glucose"));
-    assert!(calls[0].network, "it declares a host");
+    assert_eq!(
+        calls[0].hosts,
+        ["api.example.com"],
+        "it reaches the host it declares"
+    );
     assert_eq!(
         calls[0].env,
         [

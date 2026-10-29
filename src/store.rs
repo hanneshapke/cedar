@@ -442,6 +442,18 @@ impl Store {
         Ok(true)
     }
 
+    /// Everything `owner` always allows for `rule`, oldest first.
+    pub async fn grants(&self, owner: &str, rule: &str) -> Result<Vec<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT scope FROM approval_grants WHERE owner = ? AND rule = ? ORDER BY created_at, scope",
+        )
+        .bind(owner)
+        .bind(rule)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(scope,)| scope).collect())
+    }
+
     /// Remember that `owner` always allows `scopes` for `rule`.
     pub async fn grant(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<()> {
         for scope in scopes {

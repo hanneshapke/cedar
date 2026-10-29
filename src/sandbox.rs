@@ -1,19 +1,39 @@
 //! Isolated execution environments for a run's tools.
 //!
-//! Every file and command operation goes through the sandbox (`docker exec`), never the host
-//! filesystem. Reading host-side from a bind mount would let the agent point a symlink outside
-//! its workspace.
+//! Two runtimes run them (see [`Runtime`]), and an admin picks one with the `sandbox_runtime`
+//! setting (Settings → Advanced in the chat):
+//!
+//! - **Docker** (the default, [`docker`]): a locked-down container per conversation, with no
+//!   network unless the sandbox's policy reaches something, and then all of `SANDBOX_NETWORK`.
+//! - **OpenShell** (opt-in, not on Windows, [`openshell`]): an NVIDIA OpenShell sandbox per
+//!   conversation, whose policy decides which program may reach which host (see
+//!   [`crate::policy`]).
+//!
+//! Either way, a conversation's files live in a Docker volume mounted at `/workspace`, so they
+//! outlive the sandbox and a conversation can move from one runtime to the other. Every file and
+//! command operation goes through the sandbox, never the host filesystem. Reading host-side from
+//! the volume would let the agent point a symlink outside its workspace; the files API reads a
+//! finished conversation's volume through a locked-down, read-only container.
+
+pub mod docker;
+pub mod openshell;
 
 use crate::config::SandboxConfig;
+use crate::openshell::Denial;
+use crate::policy::Endpoint;
+use crate::store::Store;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
+use serde_json::{json, Value};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use uuid::Uuid;
+
+pub use docker::DockerSandboxFactory;
+pub use openshell::{run_sandbox_name, OpenShellSandboxFactory};
 
 /// The sandbox itself is broken (e.g. a command wouldn't die). Unlike an ordinary tool error,
 /// this is not something the model can recover from, so the run fails.
@@ -94,25 +114,40 @@ pub fn check_workspace_path(path: &str) -> Result<()> {
 
 #[async_trait]
 pub trait Sandbox: Send + Sync {
-    /// Run `command` with `sh -c`, killing it after `timeout`. Exit code 124 means it timed out.
+    /// Which runtime this sandbox runs on.
+    fn runtime(&self) -> Runtime {
+        Runtime::Docker
+    }
+    /// Run `command` with `sh -c` in `/workspace`, stopping it (and everything it started) after
+    /// `timeout`. Exit code 124 means it timed out.
     async fn exec(&self, command: &str, timeout: Duration, max_output: usize)
         -> Result<ExecOutput>;
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent>;
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
-    /// Run one call of a personal tool in a container of its own (see [`ToolRun`]). Exit code
-    /// 124 means it timed out.
+    /// Run one call of a personal tool in a sandbox of its own (see [`ToolRun`]). Exit code 124
+    /// means it timed out.
     async fn run_tool(
         &self,
         _call: &ToolRun<'_>,
         _timeout: Duration,
         _max_output: usize,
     ) -> Result<ExecOutput> {
-        bail!("personal tools need the Docker sandbox")
+        bail!("this sandbox can't run personal tools")
     }
-    /// Freeze the environment's processes while its conversation is idle, keeping it (and what
-    /// runs in it) for the next run. Best effort: failures are logged, not returned.
+    /// The connections and requests the sandbox's policy refused since `since`, oldest first.
+    /// Only an OpenShell sandbox knows; a Docker one has no policy to refuse them.
+    async fn denials(&self, _since: SystemTime) -> Result<Vec<Denial>> {
+        Ok(vec![])
+    }
+    /// Let the sandbox make these connections from now on (approved by the user). Takes effect
+    /// for the next connection; nothing restarts.
+    async fn allow(&self, _endpoints: &[Endpoint]) -> Result<()> {
+        bail!("this sandbox's policy can't be changed")
+    }
+    /// Stop the environment's processes while its conversation is idle, keeping it (and its
+    /// files) for the next run. Best effort: failures are logged, not returned.
     async fn pause(&self) {}
-    /// Make a kept environment usable again, unfreezing it if it was paused. Fails if it is gone,
+    /// Make a kept environment usable again, starting it if it was stopped. Fails if it is gone,
     /// so the caller can start a new one instead.
     async fn resume(&self) -> Result<()> {
         Ok(())
@@ -148,10 +183,19 @@ pub trait SandboxFactory: Send + Sync {
     ) -> Result<Option<FileContent>>;
     /// Is the backing runtime reachable and usable? (for `/readyz`)
     async fn health(&self) -> Result<()>;
+    /// The runtime the next sandbox starts on.
+    async fn runtime(&self) -> Runtime {
+        Runtime::Docker
+    }
+    /// Whether `runtime` can run sandboxes here: checked before an admin switches to it.
+    async fn check_runtime(&self, _runtime: Runtime) -> Result<()> {
+        Ok(())
+    }
     /// Install a personal tool's `pip` requirements into its own environment (see
-    /// [`tool_env_volume`]), with the network personal tools get. Returns pip's output.
+    /// [`tool_env_volume`]), in a sandbox that can reach PyPI and nothing else. Returns pip's
+    /// output.
     async fn setup_tool(&self, _name: &str, _requirements: &[String]) -> Result<String> {
-        bail!("installing a tool's packages needs the Docker sandbox")
+        bail!("this runtime can't install a tool's packages")
     }
     /// Delete a personal tool's environment. Succeeds if it doesn't exist.
     async fn remove_tool_env(&self, _name: &str) -> Result<()> {
@@ -159,7 +203,7 @@ pub trait SandboxFactory: Send + Sync {
     }
 }
 
-/// One call of a personal tool. It runs in a fresh container that sees the run's workspace, the
+/// One call of a personal tool. It runs in a fresh sandbox that sees the run's workspace, the
 /// tool's own folder (read-only, at [`TOOL_MOUNT`]) and the tool's own environment (at
 /// [`TOOL_ENV_MOUNT`], where its packages are installed), and nothing of any other tool.
 pub struct ToolRun<'a> {
@@ -170,13 +214,14 @@ pub struct ToolRun<'a> {
     pub entry: &'a str,
     /// Handed to the script on stdin.
     pub input: &'a [u8],
-    /// Environment variables for the script: the secrets its manifest declares.
+    /// Environment variables for the script: the secrets its manifest declares, and the locale.
     pub env: &'a [(String, String)],
-    /// The manifest declares hosts it reaches, so the call gets `tools_network` instead of none.
-    pub network: bool,
+    /// The hosts the manifest declares. On OpenShell the call's sandbox can reach these (from
+    /// Python) and nothing else; on Docker, declaring any gives it `TOOLS_NETWORK`.
+    pub hosts: &'a [String],
 }
 
-/// Where a personal tool's folder is mounted in its container.
+/// Where a personal tool's folder is mounted in its sandbox.
 pub const TOOL_MOUNT: &str = "/opt/cedar/tool";
 /// Where a personal tool's environment (its home, and its `pip install --user` packages) is.
 pub const TOOL_ENV_MOUNT: &str = "/opt/cedar/env";
@@ -203,66 +248,17 @@ fn bind_mount_ro(host: &std::path::Path, container: &str) -> String {
     };
     format!("type=bind,{src},dst={container},readonly")
 }
-
 // ---------------------------------------------------------------------------------------------
-// Docker
+// Workspaces: Docker volumes, whichever runtime mounts them
 // ---------------------------------------------------------------------------------------------
 
-const LABEL: &str = "cedar.run";
 const WORKSPACE_LABEL: &str = "cedar.workspace";
 const VOLUME_PREFIX: &str = "cedar-ws-";
 pub(crate) const DOCKER_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const DOCKER_CREATE_TIMEOUT: Duration = Duration::from_secs(120);
-/// Extra time beyond the in-container `timeout` before the host gives up on `docker exec`.
-const EXEC_BACKSTOP: Duration = Duration::from_secs(10);
-const WRITE_SCRIPT: &str = r#"mkdir -p -- "$(dirname -- "$1")" && cat > "$1""#;
-
-fn container_name(run_id: Uuid) -> String {
-    format!("cedar-run-{run_id}")
-}
 
 fn volume_name(workspace_id: Uuid) -> String {
     format!("{VOLUME_PREFIX}{workspace_id}")
-}
-
-/// Arguments for `docker run` that start the (idle) sandbox container.
-pub fn run_args(cfg: &SandboxConfig, run_id: Uuid, workspace_id: Uuid) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "run",
-        "-d",
-        "--init", // reap zombies left by killed commands; the pids limit is finite
-        "--name",
-        &container_name(run_id),
-        "--label",
-        &format!("{LABEL}={run_id}"),
-        "--network",
-        &cfg.network,
-        "--memory",
-        &cfg.memory,
-        "--memory-swap",
-        &cfg.memory,
-        "--cpus",
-        &cfg.cpus,
-        "--pids-limit",
-        "256",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        "--user",
-        "1000:1000",
-        "-w",
-        "/workspace",
-        "-v",
-        &format!("{}:/workspace", volume_name(workspace_id)),
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    // Personal tools are not mounted here: each call runs in a container of its own that sees
-    // only that tool (see `tool_run_args`), so the agent and other tools can't read its files.
-    args.extend([cfg.image.clone(), "sleep".into(), "infinity".into()]);
-    args
 }
 
 /// Lists regular files (symlinks excluded) as NUL-separated `size\tmtime\tpath` records, skipping
@@ -289,19 +285,41 @@ case $p in /workspace/*) ;; *) exit 2 ;; esac
 exec head -c "$2" -- "$p""#;
 
 /// Arguments for a one-off `docker run` that executes `script` with the workspace mounted
-/// read-only, under the same restrictions as a sandbox. Used to look at a workspace whose run
-/// has finished (and whose container is therefore gone).
+/// read-only, offline and unprivileged. Used to look at a workspace whose run has finished (and
+/// whose sandbox may be stopped or gone); no code of the agent's runs here.
 pub fn workspace_run_args(
     cfg: &SandboxConfig,
     workspace_id: Uuid,
     script: &str,
     args: &[&str],
 ) -> Vec<String> {
-    let mut out: Vec<String> = [
-        "run",
-        "--rm",
+    let mut out: Vec<String> = ["run", "--rm"].iter().map(|s| s.to_string()).collect();
+    out.extend(locked_down(cfg, "none", "64"));
+    out.extend(
+        [
+            "-w",
+            "/workspace",
+            "-v",
+            &format!("{}:/workspace:ro", volume_name(workspace_id)),
+            &cfg.image,
+            "sh",
+            "-c",
+            script,
+            "sh",
+        ]
+        .iter()
+        .map(|s| s.to_string()),
+    );
+    out.extend(args.iter().map(|s| s.to_string()));
+    out
+}
+
+/// The restrictions every container cedar runs itself is under (Docker sandboxes, the files API),
+/// as `docker run` arguments.
+fn locked_down(cfg: &SandboxConfig, network: &str, pids: &str) -> Vec<String> {
+    [
         "--network",
-        "none",
+        network,
         "--memory",
         &cfg.memory,
         "--memory-swap",
@@ -309,28 +327,17 @@ pub fn workspace_run_args(
         "--cpus",
         &cfg.cpus,
         "--pids-limit",
-        "64",
+        pids,
         "--cap-drop",
         "ALL",
         "--security-opt",
         "no-new-privileges",
         "--user",
         "1000:1000",
-        "-w",
-        "/workspace",
-        "-v",
-        &format!("{}:/workspace:ro", volume_name(workspace_id)),
-        &cfg.image,
-        "sh",
-        "-c",
-        script,
-        "sh",
     ]
     .iter()
     .map(|s| s.to_string())
-    .collect();
-    out.extend(args.iter().map(|s| s.to_string()));
-    out
+    .collect()
 }
 
 /// Parse the output of [`list_script`]. Unparseable records are skipped.
@@ -356,166 +363,6 @@ fn parse_listing(raw: &[u8]) -> WorkspaceListing {
     files.truncate(MAX_LISTED_FILES);
     files.sort_by(|a, b| a.path.cmp(&b.path));
     WorkspaceListing { files, truncated }
-}
-
-/// Arguments for `docker exec` that run `command` under an in-container `timeout`.
-/// `-k 2` escalates to SIGKILL if SIGTERM is ignored; exit code 124 means the command timed out.
-pub fn exec_args(container: &str, timeout_secs: u64, command: &str) -> Vec<String> {
-    [
-        "exec",
-        container,
-        "timeout",
-        "-k",
-        "2",
-        &timeout_secs.to_string(),
-        "sh",
-        "-c",
-        command,
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
-}
-
-/// The restrictions every sandbox container runs under, as `docker run` arguments.
-fn locked_down(cfg: &SandboxConfig, network: &str, pids: &str) -> Vec<String> {
-    [
-        "--network",
-        network,
-        "--memory",
-        &cfg.memory,
-        "--memory-swap",
-        &cfg.memory,
-        "--cpus",
-        &cfg.cpus,
-        "--pids-limit",
-        pids,
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        "--user",
-        "1000:1000",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
-}
-
-/// The environment a personal tool's container gets: its own home and package directory. Secret
-/// names follow as `-e NAME` only, so their values come from the `docker` process's environment
-/// and never appear in its arguments (which other users of the host can see).
-fn tool_env_args(env_names: &[&str]) -> Vec<String> {
-    let mut args: Vec<String> = [
-        format!("HOME={TOOL_ENV_MOUNT}"),
-        format!("PYTHONUSERBASE={TOOL_ENV_MOUNT}/.local"),
-        format!("PATH={TOOL_ENV_MOUNT}/.local/bin:/usr/local/bin:/usr/bin:/bin"),
-        "PIP_DISABLE_PIP_VERSION_CHECK=1".into(),
-    ]
-    .into_iter()
-    .flat_map(|e| ["-e".to_string(), e])
-    .collect();
-    for name in env_names {
-        args.push("-e".into());
-        args.push(name.to_string());
-    }
-    args
-}
-
-/// The network a personal tool's call gets: `tools_network` if its manifest declares hosts,
-/// else none.
-fn tool_network(cfg: &SandboxConfig, wants: bool) -> &str {
-    if wants {
-        &cfg.tools_network
-    } else {
-        "none"
-    }
-}
-
-/// Arguments for the `docker run` of one personal tool call (see [`ToolRun`]): the run's
-/// workspace, the tool's folder read-only, the tool's environment, the declared secrets by name,
-/// and the script under an in-container `timeout`, reading its input from stdin.
-pub fn tool_run_args(
-    cfg: &SandboxConfig,
-    run_id: Uuid,
-    workspace_id: Uuid,
-    container: &str,
-    call: &ToolRun<'_>,
-    timeout_secs: u64,
-) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "run",
-        "--rm",
-        "-i",
-        "--init",
-        "--name",
-        container,
-        // So `cleanup_orphans` removes a call left behind by a crash, like the run's sandbox.
-        "--label",
-        &format!("{LABEL}={run_id}"),
-        "--label",
-        &format!("{TOOL_LABEL}={}", call.name),
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    args.extend(locked_down(cfg, tool_network(cfg, call.network), "128"));
-    args.extend([
-        "-w".to_string(),
-        "/workspace".into(),
-        "-v".into(),
-        format!("{}:/workspace", volume_name(workspace_id)),
-        "--mount".into(),
-        bind_mount_ro(call.dir, TOOL_MOUNT),
-        "-v".into(),
-        format!("{}:{TOOL_ENV_MOUNT}", tool_env_volume(call.name)),
-    ]);
-    let names: Vec<&str> = call.env.iter().map(|(k, _)| k.as_str()).collect();
-    args.extend(tool_env_args(&names));
-    args.extend([
-        cfg.image.clone(),
-        "timeout".into(),
-        "-k".into(),
-        "2".into(),
-        timeout_secs.to_string(),
-        "python3".into(),
-        "--".into(),
-        format!("{TOOL_MOUNT}/{}", call.entry),
-    ]);
-    args
-}
-
-/// Arguments for installing a tool's requirements into its environment, as the agent's user.
-/// Requirements were checked when the manifest was read (no options, URLs or paths).
-pub fn tool_setup_args(cfg: &SandboxConfig, name: &str, requirements: &[String]) -> Vec<String> {
-    let mut args: Vec<String> = ["run", "--rm", "--label", &format!("{TOOL_LABEL}={name}")]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    args.extend(locked_down(cfg, &cfg.tools_network, "128"));
-    args.extend([
-        "-v".to_string(),
-        format!("{}:{TOOL_ENV_MOUNT}", tool_env_volume(name)),
-        "-w".into(),
-        TOOL_ENV_MOUNT.into(),
-    ]);
-    args.extend(tool_env_args(&[]));
-    args.extend(
-        [
-            &cfg.image,
-            "python3",
-            "-m",
-            "pip",
-            "install",
-            "--user",
-            "--no-warn-script-location",
-            "--",
-        ]
-        .iter()
-        .map(|s| s.to_string()),
-    );
-    args.extend(requirements.iter().cloned());
-    args
 }
 
 pub(crate) async fn docker_output(
@@ -580,252 +427,6 @@ async fn read_capped<R: AsyncRead + Unpin>(
         }
     }
 }
-
-pub struct DockerSandbox {
-    docker: String,
-    container: String,
-    cfg: SandboxConfig,
-    run_id: Uuid,
-    workspace_id: Uuid,
-    /// `docker pause` succeeded and no `docker unpause` has since.
-    paused: AtomicBool,
-}
-
-impl DockerSandbox {
-    async fn unpause(&self) -> Result<()> {
-        let args = vec!["unpause".to_string(), self.container.clone()];
-        docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
-        self.paused.store(false, Ordering::SeqCst);
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sandbox for DockerSandbox {
-    async fn exec(
-        &self,
-        command: &str,
-        timeout: Duration,
-        max_output: usize,
-    ) -> Result<ExecOutput> {
-        let args = exec_args(&self.container, timeout.as_secs().max(1), command);
-        let mut child = Command::new(&self.docker)
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .with_context(|| format!("failed to run `{}`", self.docker))?;
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let stderr = child.stderr.take().expect("stderr is piped");
-
-        let finished = tokio::time::timeout(timeout + EXEC_BACKSTOP, async {
-            tokio::join!(
-                read_capped(stdout, max_output),
-                read_capped(stderr, max_output),
-                child.wait()
-            )
-        })
-        .await;
-
-        match finished {
-            Ok((out, err, status)) => {
-                let (stdout, stdout_total) = out?;
-                let (stderr, stderr_total) = err?;
-                Ok(ExecOutput {
-                    stdout,
-                    stderr,
-                    stdout_total,
-                    stderr_total,
-                    exit_code: status?.code(),
-                })
-            }
-            Err(_) => {
-                // The in-container timeout should have fired long ago, so the container is wedged.
-                drop(child);
-                self.destroy().await;
-                Err(SandboxFatal("command did not terminate after its timeout".into()).into())
-            }
-        }
-    }
-
-    async fn read_file(&self, path: &str, max_bytes: usize) -> Result<FileContent> {
-        check_path(path)?;
-        let args: Vec<String> = [
-            "exec",
-            &self.container,
-            "head",
-            "-c",
-            &(max_bytes + 1).to_string(),
-            "--",
-            path,
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        let out = docker_output(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
-        if !out.status.success() {
-            bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
-        }
-        let mut bytes = out.stdout;
-        let truncated = bytes.len() > max_bytes;
-        bytes.truncate(max_bytes);
-        Ok(FileContent { bytes, truncated })
-    }
-
-    async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
-        check_path(path)?;
-        let mut child = Command::new(&self.docker)
-            .args([
-                "exec",
-                "-i",
-                &self.container,
-                "sh",
-                "-c",
-                WRITE_SCRIPT,
-                "sh",
-                path,
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .with_context(|| format!("failed to run `{}`", self.docker))?;
-        let mut stdin = child.stdin.take().expect("stdin is piped");
-        let write = async move {
-            let res = stdin.write_all(content).await;
-            drop(stdin); // EOF for `cat`
-            res
-        };
-        let (written, out) = tokio::time::timeout(DOCKER_CALL_TIMEOUT, async {
-            tokio::join!(write, child.wait_with_output())
-        })
-        .await
-        .map_err(|_| anyhow!("writing {path} timed out"))?;
-        let out = out?;
-        if !out.status.success() {
-            bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
-        }
-        // A broken pipe with a zero exit would mean `cat` quit early; surface it.
-        written.context("writing file contents")?;
-        Ok(())
-    }
-
-    async fn run_tool(
-        &self,
-        call: &ToolRun<'_>,
-        timeout: Duration,
-        max_output: usize,
-    ) -> Result<ExecOutput> {
-        ensure_tool_env(&self.docker, &self.cfg, call.name, false).await?;
-        let container = format!("cedar-tool-{}", Uuid::new_v4());
-        let args = tool_run_args(
-            &self.cfg,
-            self.run_id,
-            self.workspace_id,
-            &container,
-            call,
-            timeout.as_secs().max(1),
-        );
-        let mut cmd = Command::new(&self.docker);
-        cmd.args(&args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        // Passed by name in the arguments; docker takes the values from its own environment.
-        for (k, v) in call.env {
-            cmd.env(k, v);
-        }
-        let mut child = cmd
-            .spawn()
-            .with_context(|| format!("failed to run `{}`", self.docker))?;
-        let mut stdin = child.stdin.take().expect("stdin is piped");
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let stderr = child.stderr.take().expect("stderr is piped");
-        let input = call.input;
-        let write = async move {
-            // A script that never reads its input closes the pipe early; that is not an error.
-            let _ = stdin.write_all(input).await;
-            drop(stdin);
-        };
-        // Starting a container takes a moment on top of the script's own limit.
-        let finished = tokio::time::timeout(timeout + EXEC_BACKSTOP + DOCKER_CALL_TIMEOUT, async {
-            tokio::join!(
-                write,
-                read_capped(stdout, max_output),
-                read_capped(stderr, max_output),
-                child.wait()
-            )
-        })
-        .await;
-        match finished {
-            Ok(((), out, err, status)) => {
-                let (stdout, stdout_total) = out?;
-                let (stderr, stderr_total) = err?;
-                Ok(ExecOutput {
-                    stdout,
-                    stderr,
-                    stdout_total,
-                    stderr_total,
-                    exit_code: status?.code(),
-                })
-            }
-            Err(_) => {
-                drop(child);
-                let rm = vec!["rm".to_string(), "-f".into(), container.clone()];
-                if let Err(e) = docker_checked(&self.docker, &rm, DOCKER_CALL_TIMEOUT).await {
-                    tracing::warn!(error = %e, %container, "removing a stuck tool container failed");
-                }
-                bail!("{} did not finish after its timeout", call.name)
-            }
-        }
-    }
-
-    async fn pause(&self) {
-        let args = vec!["pause".to_string(), self.container.clone()];
-        match docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
-            Ok(_) => self.paused.store(true, Ordering::SeqCst),
-            Err(e) => {
-                tracing::warn!(error = %e, container = %self.container, "pausing sandbox container failed")
-            }
-        }
-    }
-
-    async fn resume(&self) -> Result<()> {
-        let inspect = [
-            "container",
-            "inspect",
-            "--format",
-            "{{.State.Status}}",
-            &self.container,
-        ]
-        .map(String::from);
-        let status = docker_checked(&self.docker, &inspect, DOCKER_CALL_TIMEOUT).await?;
-        match status.trim() {
-            "running" => Ok(()),
-            "paused" => self.unpause().await,
-            other => bail!("sandbox container {} is {other}", self.container),
-        }
-    }
-
-    async fn destroy(&self) {
-        // Some Docker versions refuse to kill a paused container.
-        if self.paused.load(Ordering::SeqCst) {
-            if let Err(e) = self.unpause().await {
-                tracing::warn!(error = %e, container = %self.container, "unpausing sandbox container failed");
-            }
-        }
-        // Only the container: the workspace volume outlives the run so it can be continued.
-        let args = vec!["rm".to_string(), "-f".into(), self.container.clone()];
-        if let Err(e) = docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
-            tracing::warn!(error = %e, container = %self.container, "removing sandbox container failed");
-        }
-    }
-}
-
 fn check_path(path: &str) -> Result<()> {
     if path.is_empty() {
         bail!("path must not be empty");
@@ -836,26 +437,16 @@ fn check_path(path: &str) -> Result<()> {
     Ok(())
 }
 
-pub struct DockerSandboxFactory {
-    docker: String,
-    cfg: SandboxConfig,
+/// A conversation's workspace volumes, the same for either runtime.
+struct Workspaces<'a> {
+    docker: &'a str,
+    cfg: &'a SandboxConfig,
 }
 
-impl DockerSandboxFactory {
-    pub fn new(cfg: SandboxConfig) -> Self {
-        Self {
-            docker: cfg.docker_bin.clone(),
-            cfg,
-        }
-    }
-
-    fn label_filter() -> String {
-        format!("label={LABEL}")
-    }
-
+impl Workspaces<'_> {
     /// `docker run` would silently create a missing volume, so check first. [`WorkspaceMissing`]
     /// if it doesn't exist; other docker failures are returned as they are.
-    async fn require_workspace(&self, workspace_id: Uuid) -> Result<()> {
+    async fn require(&self, workspace_id: Uuid) -> Result<()> {
         let args = [
             "volume",
             "inspect",
@@ -864,7 +455,7 @@ impl DockerSandboxFactory {
             &volume_name(workspace_id),
         ]
         .map(String::from);
-        let out = docker_output(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
+        let out = docker_output(self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
         if out.status.success() {
             return Ok(());
         }
@@ -879,104 +470,35 @@ impl DockerSandboxFactory {
         );
     }
 
-    async fn run_in_workspace(
+    async fn run_in(
         &self,
         workspace_id: Uuid,
         script: &str,
         args: &[&str],
     ) -> Result<std::process::Output> {
-        self.require_workspace(workspace_id).await?;
-        let args = workspace_run_args(&self.cfg, workspace_id, script, args);
-        docker_output(&self.docker, &args, DOCKER_CREATE_TIMEOUT).await
-    }
-}
-
-#[async_trait]
-impl SandboxFactory for DockerSandboxFactory {
-    async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>> {
-        let sandbox = DockerSandbox {
-            docker: self.docker.clone(),
-            container: container_name(run_id),
-            cfg: self.cfg.clone(),
-            run_id,
-            workspace_id,
-            paused: AtomicBool::new(false),
-        };
-        let started: Result<()> = async {
-            // Creating a volume that already exists is a no-op, which is what a continuation wants.
-            let volume_args = [
-                "volume",
-                "create",
-                "--label",
-                &format!("{WORKSPACE_LABEL}={workspace_id}"),
-                &volume_name(workspace_id),
-            ]
-            .map(String::from);
-            docker_checked(&self.docker, &volume_args, DOCKER_CALL_TIMEOUT).await?;
-            docker_checked(
-                &self.docker,
-                &run_args(&self.cfg, run_id, workspace_id),
-                DOCKER_CREATE_TIMEOUT,
-            )
-            .await?;
-            Ok(())
-        }
-        .await;
-        if let Err(e) = started {
-            sandbox.destroy().await;
-            return Err(e.context("creating sandbox container"));
-        }
-        Ok(Arc::new(sandbox))
+        self.require(workspace_id).await?;
+        let args = workspace_run_args(self.cfg, workspace_id, script, args);
+        docker_output(self.docker, &args, DOCKER_CREATE_TIMEOUT).await
     }
 
-    async fn cleanup_orphans(&self) -> Result<usize> {
-        let ps = ["ps", "-aq", "--filter", &Self::label_filter()].map(String::from);
-        let ids = docker_checked(&self.docker, &ps, DOCKER_CALL_TIMEOUT).await?;
-        let ids: Vec<String> = ids.split_whitespace().map(String::from).collect();
-        // Sandboxes kept paused for an idle conversation; unpaused first, as `destroy` does.
-        let paused = [
-            "ps",
-            "-q",
-            "--filter",
-            &Self::label_filter(),
-            "--filter",
-            "status=paused",
-        ]
-        .map(String::from);
-        let paused = docker_checked(&self.docker, &paused, DOCKER_CALL_TIMEOUT).await?;
-        let paused: Vec<String> = paused.split_whitespace().map(String::from).collect();
-        if !paused.is_empty() {
-            let mut args = vec!["unpause".to_string()];
-            args.extend(paused);
-            if let Err(e) = docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await {
-                tracing::warn!(error = %e, "unpausing leftover sandboxes failed");
+    async fn remove(&self, workspace_id: Uuid) -> Result<()> {
+        // A sandbox that was just removed can hold on to the volume for a moment.
+        let args = ["volume", "rm", "-f", &volume_name(workspace_id)].map(String::from);
+        let mut last = None;
+        for attempt in 0..10 {
+            if attempt > 0 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            match docker_checked(self.docker, &args, DOCKER_CALL_TIMEOUT).await {
+                Ok(_) => return Ok(()),
+                Err(e) if e.to_string().contains("in use") => last = Some(e),
+                Err(e) => return Err(e),
             }
         }
-        if !ids.is_empty() {
-            let mut args = vec!["rm".to_string(), "-f".into()];
-            args.extend(ids.iter().cloned());
-            docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
-        }
-
-        // Volumes labelled per run come from before workspaces outlived their run.
-        let ls = ["volume", "ls", "-q", "--filter", &Self::label_filter()].map(String::from);
-        let volumes = docker_checked(&self.docker, &ls, DOCKER_CALL_TIMEOUT).await?;
-        let volumes: Vec<String> = volumes.split_whitespace().map(String::from).collect();
-        if !volumes.is_empty() {
-            let mut args = vec!["volume".to_string(), "rm".into(), "-f".into()];
-            args.extend(volumes);
-            docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
-        }
-        Ok(ids.len())
+        Err(last.expect("at least one attempt"))
     }
 
-    async fn remove_workspace(&self, workspace_id: Uuid) -> Result<()> {
-        let args = ["volume", "rm", "-f", &volume_name(workspace_id)].map(String::from);
-        docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
-        Ok(())
-    }
-
-    async fn list_workspaces(&self) -> Result<Vec<Uuid>> {
+    async fn list(&self) -> Result<Vec<Uuid>> {
         let ls = [
             "volume",
             "ls",
@@ -985,17 +507,15 @@ impl SandboxFactory for DockerSandboxFactory {
             &format!("label={WORKSPACE_LABEL}"),
         ]
         .map(String::from);
-        let names = docker_checked(&self.docker, &ls, DOCKER_CALL_TIMEOUT).await?;
+        let names = docker_checked(self.docker, &ls, DOCKER_CALL_TIMEOUT).await?;
         Ok(names
             .split_whitespace()
             .filter_map(|n| n.strip_prefix(VOLUME_PREFIX)?.parse().ok())
             .collect())
     }
 
-    async fn list_workspace_files(&self, workspace_id: Uuid) -> Result<WorkspaceListing> {
-        let out = self
-            .run_in_workspace(workspace_id, &list_script(), &[])
-            .await?;
+    async fn files(&self, workspace_id: Uuid) -> Result<WorkspaceListing> {
+        let out = self.run_in(workspace_id, &list_script(), &[]).await?;
         if !out.status.success() {
             bail!(
                 "listing workspace {workspace_id} failed ({}): {}",
@@ -1006,7 +526,7 @@ impl SandboxFactory for DockerSandboxFactory {
         Ok(parse_listing(&out.stdout))
     }
 
-    async fn read_workspace_file(
+    async fn read(
         &self,
         workspace_id: Uuid,
         path: &str,
@@ -1015,7 +535,7 @@ impl SandboxFactory for DockerSandboxFactory {
         check_workspace_path(path)?;
         let limit = (max_bytes + 1).to_string();
         let out = self
-            .run_in_workspace(workspace_id, READ_WORKSPACE_SCRIPT, &[path, &limit])
+            .run_in(workspace_id, READ_WORKSPACE_SCRIPT, &[path, &limit])
             .await?;
         match out.status.code() {
             Some(0) => {
@@ -1032,82 +552,6 @@ impl SandboxFactory for DockerSandboxFactory {
             ),
         }
     }
-
-    async fn health(&self) -> Result<()> {
-        docker_checked(
-            &self.docker,
-            &["info", "--format", "{{.ServerVersion}}"].map(String::from),
-            DOCKER_CALL_TIMEOUT,
-        )
-        .await
-        .context("docker daemon is not reachable")?;
-        let inspect =
-            ["image", "inspect", "--format", "{{.Id}}", &self.cfg.image].map(String::from);
-        docker_checked(&self.docker, &inspect, DOCKER_CALL_TIMEOUT)
-            .await
-            .with_context(|| {
-                format!(
-                    "sandbox image {} is missing; build it with `docker build -t {} sandbox/`",
-                    self.cfg.image, self.cfg.image
-                )
-            })?;
-        Ok(())
-    }
-
-    async fn setup_tool(&self, name: &str, requirements: &[String]) -> Result<String> {
-        if requirements.is_empty() {
-            return Ok(String::new());
-        }
-        ensure_tool_env(&self.docker, &self.cfg, name, true).await?;
-        let args = tool_setup_args(&self.cfg, name, requirements);
-        let out = docker_output(&self.docker, &args, SETUP_TIMEOUT).await?;
-        let text = |b: &[u8]| String::from_utf8_lossy(b).trim().to_string();
-        if !out.status.success() {
-            bail!("pip install failed ({}): {}", out.status, text(&out.stderr));
-        }
-        Ok(text(&out.stdout))
-    }
-
-    async fn remove_tool_env(&self, name: &str) -> Result<()> {
-        let args = ["volume", "rm", "-f", &tool_env_volume(name)].map(String::from);
-        docker_checked(&self.docker, &args, DOCKER_CALL_TIMEOUT).await?;
-        Ok(())
-    }
-}
-
-/// Create a personal tool's environment volume if it doesn't exist yet, owned by the agent's user
-/// (a new volume is root's, unless the image already has the directory). With `fix_owner`, an
-/// existing volume is handed to the agent's user too: one left root's (by an install whose chown
-/// failed, or by `docker run -v` creating it) would otherwise fail every `pip install` with
-/// "Permission denied".
-async fn ensure_tool_env(
-    docker: &str,
-    cfg: &SandboxConfig,
-    name: &str,
-    fix_owner: bool,
-) -> Result<()> {
-    let volume = tool_env_volume(name);
-    let inspect = ["volume", "inspect", "--format", "{{.Name}}", &volume].map(String::from);
-    if docker_output(docker, &inspect, DOCKER_CALL_TIMEOUT)
-        .await?
-        .status
-        .success()
-    {
-        if fix_owner {
-            chown_tool_env(docker, cfg, &volume).await?;
-        }
-        return Ok(());
-    }
-    let create = [
-        "volume",
-        "create",
-        "--label",
-        &format!("{TOOL_LABEL}={name}"),
-        &volume,
-    ]
-    .map(String::from);
-    docker_checked(docker, &create, DOCKER_CALL_TIMEOUT).await?;
-    chown_tool_env(docker, cfg, &volume).await
 }
 
 /// Make a tool's environment volume, and everything in it, the agent's user's. Recursive, since a
@@ -1140,15 +584,259 @@ async fn chown_tool_env(docker: &str, cfg: &SandboxConfig, volume: &str) -> Resu
     Ok(())
 }
 
+/// Whether the Docker daemon answers and has the sandbox image.
+async fn docker_health(docker: &str, image: &str) -> Result<()> {
+    docker_checked(
+        docker,
+        &["info", "--format", "{{.ServerVersion}}"].map(String::from),
+        DOCKER_CALL_TIMEOUT,
+    )
+    .await
+    .context("docker daemon is not reachable")?;
+    let inspect = ["image", "inspect", "--format", "{{.Id}}", image].map(String::from);
+    docker_checked(docker, &inspect, DOCKER_CALL_TIMEOUT)
+        .await
+        .with_context(|| {
+            format!("sandbox image {image} is missing; build it with `docker build -t {image} sandbox/`")
+        })?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Runtimes
+// ---------------------------------------------------------------------------------------------
+
+/// What runs a conversation's sandbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Runtime {
+    /// A locked-down Docker container: the default, and the only runtime on Windows.
+    Docker,
+    /// An NVIDIA OpenShell sandbox, with a network policy per program and host. Opt-in.
+    OpenShell,
+}
+
+/// Whether OpenShell can run here at all: it has no Windows support.
+pub const OPENSHELL_SUPPORTED: bool = cfg!(not(windows));
+
+/// Where the chosen runtime is saved in the settings table.
+const RUNTIME_SETTING: &str = "sandbox_runtime";
+
+impl Runtime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Runtime::Docker => "docker",
+            Runtime::OpenShell => "openshell",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "docker" => Some(Runtime::Docker),
+            "openshell" => Some(Runtime::OpenShell),
+            _ => None,
+        }
+    }
+}
+
+/// The saved `sandbox_runtime`, or `None` when it is the default (Docker).
+pub async fn saved_runtime(store: &Store) -> Result<Option<Runtime>> {
+    Ok(store
+        .setting(RUNTIME_SETTING)
+        .await?
+        .and_then(|v| v.as_str().and_then(Runtime::parse)))
+}
+
+/// The runtime new sandboxes start on: the saved one where it can run, else Docker.
+pub async fn runtime(store: &Store) -> Result<Runtime> {
+    Ok(match saved_runtime(store).await? {
+        Some(Runtime::OpenShell) if OPENSHELL_SUPPORTED => Runtime::OpenShell,
+        _ => Runtime::Docker,
+    })
+}
+
+/// Whether `runtime` may be chosen on this platform; the error says why not.
+pub fn check_platform(runtime: Runtime) -> Result<(), String> {
+    if runtime == Runtime::OpenShell && !OPENSHELL_SUPPORTED {
+        return Err("OpenShell doesn't run on Windows; sandboxes run on Docker here".into());
+    }
+    Ok(())
+}
+
+/// Save `sandbox_runtime`, or go back to the default (Docker) with `None`. It applies from the
+/// next run: a conversation's kept sandbox on the other runtime is replaced then.
+pub async fn set_runtime(store: &Store, runtime: Option<Runtime>) -> Result<()> {
+    store
+        .set_setting(RUNTIME_SETTING, runtime.map(|r| json!(r.as_str())).as_ref())
+        .await
+}
+
+/// What code in a conversation's sandbox can reach. OpenShell enforces the policy host by host;
+/// Docker can only give a container a whole network or none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reach {
+    Nothing,
+    /// OpenShell: these hosts, from the programs the policy names, and nothing else.
+    Hosts(Vec<String>),
+    /// Docker: this network, and through it whatever it reaches (usually the internet).
+    Network(String),
+}
+
+impl Reach {
+    pub fn of(runtime: Runtime, cfg: &SandboxConfig) -> Self {
+        match runtime {
+            _ if !cfg.policy.networked() => Reach::Nothing,
+            Runtime::OpenShell => Reach::Hosts(cfg.policy.hosts()),
+            Runtime::Docker => match cfg.docker_network() {
+                "none" => Reach::Nothing,
+                network => Reach::Network(network.to_string()),
+            },
+        }
+    }
+
+    /// Whether anything at all can be reached.
+    pub fn any(&self) -> bool {
+        *self != Reach::Nothing
+    }
+}
+
+/// What `run.started` says about the sandbox: `{runtime, network, policy, hosts, memory, cpus}`.
+/// `network` is `none` when nothing can be reached, else the Docker network or (on OpenShell) the
+/// policy's name; `hosts` are the hosts an OpenShell policy reaches, `null` on Docker.
+pub fn describe(runtime: Runtime, cfg: &SandboxConfig) -> Value {
+    let reach = Reach::of(runtime, cfg);
+    let (network, hosts) = match &reach {
+        Reach::Nothing => ("none".to_string(), json!([])),
+        Reach::Hosts(hosts) => (cfg.policy.name.clone(), json!(hosts)),
+        Reach::Network(network) => (network.clone(), Value::Null),
+    };
+    json!({
+        "runtime": runtime.as_str(),
+        "network": network,
+        "policy": cfg.policy.name,
+        "hosts": hosts,
+        "memory": cfg.memory,
+        // A number when it is one ("1", "0.5"), as Docker takes it.
+        "cpus": cfg.cpus.parse::<f64>().map_or_else(|_| json!(cfg.cpus), |n| json!(n)),
+    })
+}
+
+/// The sandbox factory cedar runs with: Docker, or OpenShell when an admin has turned it on (the
+/// `sandbox_runtime` setting, read for every new sandbox). Workspaces and tool environments are
+/// the same Docker volumes for both, so either runtime picks up where the other left off.
+pub struct Sandboxes {
+    docker: DockerSandboxFactory,
+    openshell: OpenShellSandboxFactory,
+    store: Store,
+}
+
+impl Sandboxes {
+    pub fn new(cfg: SandboxConfig, store: Store) -> Self {
+        Self {
+            docker: DockerSandboxFactory::new(cfg.clone()),
+            openshell: OpenShellSandboxFactory::new(cfg),
+            store,
+        }
+    }
+
+    fn current(&self, runtime: Runtime) -> &dyn SandboxFactory {
+        match runtime {
+            Runtime::Docker => &self.docker,
+            Runtime::OpenShell => &self.openshell,
+        }
+    }
+
+    fn workspaces(&self) -> &dyn SandboxFactory {
+        &self.docker
+    }
+}
+
+#[async_trait]
+impl SandboxFactory for Sandboxes {
+    async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>> {
+        let runtime = SandboxFactory::runtime(self).await;
+        self.current(runtime).create(run_id, workspace_id).await
+    }
+
+    async fn cleanup_orphans(&self) -> Result<usize> {
+        let mut removed = self.docker.cleanup_orphans().await?;
+        if OPENSHELL_SUPPORTED {
+            match self.openshell.cleanup_orphans().await {
+                Ok(n) => removed += n,
+                // Without OpenShell (most installs) there is nothing of it to sweep.
+                Err(e) if SandboxFactory::runtime(self).await == Runtime::Docker => {
+                    tracing::debug!(error = %format!("{e:#}"), "no OpenShell sandboxes to sweep");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(removed)
+    }
+
+    async fn remove_workspace(&self, workspace_id: Uuid) -> Result<()> {
+        self.workspaces().remove_workspace(workspace_id).await
+    }
+
+    async fn list_workspaces(&self) -> Result<Vec<Uuid>> {
+        self.workspaces().list_workspaces().await
+    }
+
+    async fn list_workspace_files(&self, workspace_id: Uuid) -> Result<WorkspaceListing> {
+        self.workspaces().list_workspace_files(workspace_id).await
+    }
+
+    async fn read_workspace_file(
+        &self,
+        workspace_id: Uuid,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<Option<FileContent>> {
+        self.workspaces()
+            .read_workspace_file(workspace_id, path, max_bytes)
+            .await
+    }
+
+    async fn health(&self) -> Result<()> {
+        let runtime = SandboxFactory::runtime(self).await;
+        self.current(runtime).health().await
+    }
+
+    async fn runtime(&self) -> Runtime {
+        runtime(&self.store).await.unwrap_or_else(|e| {
+            tracing::warn!(error = %format!("{e:#}"), "could not read sandbox_runtime; using Docker");
+            Runtime::Docker
+        })
+    }
+
+    async fn check_runtime(&self, runtime: Runtime) -> Result<()> {
+        check_platform(runtime).map_err(|e| anyhow!(e))?;
+        self.current(runtime).health().await
+    }
+
+    async fn setup_tool(&self, name: &str, requirements: &[String]) -> Result<String> {
+        let runtime = SandboxFactory::runtime(self).await;
+        self.current(runtime).setup_tool(name, requirements).await
+    }
+
+    async fn remove_tool_env(&self, name: &str) -> Result<()> {
+        // Docker commands only: the environment, and the copies of the tool's folder OpenShell
+        // mounted, whichever runtime made them.
+        self.openshell.remove_tool_env(name).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::Policy;
 
     fn cfg() -> SandboxConfig {
         SandboxConfig {
+            openshell_bin: "openshell".into(),
+            openshell_workspace: "default".into(),
             docker_bin: "docker".into(),
             image: "img:1".into(),
-            network: "none".into(),
+            policy: Policy::offline(),
+            network: "bridge".into(),
             memory: "256m".into(),
             cpus: "2".into(),
             tools_dir: None,
@@ -1157,39 +845,58 @@ mod tests {
     }
 
     #[test]
-    fn run_args_lock_the_container_down() {
-        let id = Uuid::nil();
-        let ws = Uuid::max();
-        let args = run_args(&cfg(), id, ws);
-        let joined = args.join(" ");
-        assert!(joined.contains("--network none"));
-        assert!(joined.contains("--cap-drop ALL"));
-        assert!(joined.contains("--security-opt no-new-privileges"));
-        assert!(joined.contains("--user 1000:1000"));
-        assert!(joined.contains("--memory 256m --memory-swap 256m"));
-        assert!(joined.contains(&format!("--name cedar-run-{id}")));
-        assert!(
-            joined.contains(&format!("-v cedar-ws-{ws}:/workspace")),
-            "the workspace, not the run, names the volume"
+    fn the_runtime_is_docker_unless_openshell_is_chosen_where_it_runs() {
+        assert_eq!(Runtime::parse("docker"), Some(Runtime::Docker));
+        assert_eq!(Runtime::parse("openshell"), Some(Runtime::OpenShell));
+        assert_eq!(Runtime::parse("podman"), None);
+        assert!(check_platform(Runtime::Docker).is_ok());
+        assert_eq!(
+            check_platform(Runtime::OpenShell).is_ok(),
+            OPENSHELL_SUPPORTED
         );
-        // Image and the idle command come last, so nothing after the image is parsed as a docker flag.
-        assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
-        assert!(!joined.contains("LLM_API_KEY"));
-        assert!(!joined.contains("/opt/cedar/tools"));
+    }
 
-        // Personal tools are never mounted into the run's sandbox, only into their own calls.
-        let with_tools = SandboxConfig {
-            tools_dir: Some("/home/me/.cedar/tools".into()),
+    #[test]
+    fn what_a_sandbox_reaches_depends_on_the_runtime() {
+        let offline = cfg();
+        assert_eq!(Reach::of(Runtime::Docker, &offline), Reach::Nothing);
+        assert_eq!(Reach::of(Runtime::OpenShell, &offline), Reach::Nothing);
+        let packages = SandboxConfig {
+            policy: Policy::packages(),
             ..cfg()
         };
-        let args = run_args(&with_tools, id, ws);
-        assert!(!args.join(" ").contains("/home/me/.cedar/tools"));
-        assert_eq!(&args[args.len() - 3..], ["img:1", "sleep", "infinity"]);
+        // OpenShell reaches the policy's hosts; Docker can only give the whole network.
+        assert!(
+            matches!(Reach::of(Runtime::OpenShell, &packages), Reach::Hosts(h) if h.contains(&"pypi.org".to_string()))
+        );
+        assert_eq!(
+            Reach::of(Runtime::Docker, &packages),
+            Reach::Network("bridge".into())
+        );
+        let none = SandboxConfig {
+            network: "none".into(),
+            ..packages.clone()
+        };
+        assert_eq!(Reach::of(Runtime::Docker, &none), Reach::Nothing);
+
+        let info = describe(Runtime::Docker, &packages);
+        assert_eq!(info["runtime"], "docker");
+        assert_eq!(info["network"], "bridge");
+        assert_eq!(info["hosts"], Value::Null);
+        assert_eq!(info["cpus"], 2.0);
+        let info = describe(Runtime::OpenShell, &packages);
+        assert_eq!(info["runtime"], "openshell");
+        assert_eq!(info["network"], "packages");
+        assert!(info["hosts"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("pypi.org")));
+        assert_eq!(describe(Runtime::OpenShell, &offline)["network"], "none");
     }
 
     #[test]
     fn a_tool_folder_mounts_from_a_windows_path_or_one_with_a_comma() {
-        // `-v C:\tools\t:/opt/cedar/tool:ro` would split at the drive letter's colon.
+        // `-v C:\tools\t:/from:ro` would split at the drive letter's colon.
         assert_eq!(
             bind_mount_ro(std::path::Path::new(r"C:\Users\me\tools\t"), TOOL_MOUNT),
             r"type=bind,src=C:\Users\me\tools\t,dst=/opt/cedar/tool,readonly"
@@ -1197,83 +904,6 @@ mod tests {
         assert_eq!(
             bind_mount_ro(std::path::Path::new(r#"/srv/a,b "c""#), TOOL_MOUNT),
             r#"type=bind,"src=/srv/a,b ""c""",dst=/opt/cedar/tool,readonly"#
-        );
-    }
-
-    #[test]
-    fn a_tool_call_sees_only_its_own_folder_environment_and_secrets() {
-        let (run, ws) = (Uuid::nil(), Uuid::max());
-        let env = vec![("TANDEM_PASSWORD".to_string(), "hunter2".to_string())];
-        let call = ToolRun {
-            name: "tandem_glucose",
-            dir: std::path::Path::new("/home/me/tools/tandem_glucose"),
-            entry: "tool.py",
-            input: b"{}",
-            env: &env,
-            network: false,
-        };
-        let args = tool_run_args(&cfg(), run, ws, "cedar-tool-x", &call, 30);
-        let joined = args.join(" ");
-        assert!(
-            joined.contains("--network none"),
-            "no hosts declared: {joined}"
-        );
-        assert!(joined.contains("--cap-drop ALL"));
-        assert!(joined.contains("--user 1000:1000"));
-        assert!(joined.contains(&format!("--label cedar.run={run}")));
-        assert!(joined.contains(&format!("-v cedar-ws-{ws}:/workspace ")));
-        assert!(joined.contains(
-            "--mount type=bind,src=/home/me/tools/tandem_glucose,dst=/opt/cedar/tool,readonly"
-        ));
-        assert!(joined.contains("-v cedar-tool-env-tandem_glucose:/opt/cedar/env"));
-        assert!(joined.contains("-e PYTHONUSERBASE=/opt/cedar/env/.local"));
-        // The secret goes by name; its value is in docker's environment, not its arguments.
-        assert!(joined.contains("-e TANDEM_PASSWORD "));
-        assert!(!joined.contains("hunter2"));
-        assert!(
-            !joined.contains("/home/me/tools "),
-            "not the whole tools directory"
-        );
-        assert_eq!(
-            &args[args.len() - 8..],
-            [
-                "img:1",
-                "timeout",
-                "-k",
-                "2",
-                "30",
-                "python3",
-                "--",
-                "/opt/cedar/tool/tool.py"
-            ]
-        );
-
-        let networked = ToolRun {
-            network: true,
-            ..call
-        };
-        let joined = tool_run_args(&cfg(), run, ws, "c", &networked, 30).join(" ");
-        assert!(joined.contains("--network bridge"), "{joined}");
-    }
-
-    #[test]
-    fn tool_setup_installs_into_the_tools_own_environment() {
-        let args = tool_setup_args(&cfg(), "t", &["tconnectsync>=3.0".to_string()]);
-        let joined = args.join(" ");
-        assert!(joined.contains("--network bridge"));
-        assert!(joined.contains("-v cedar-tool-env-t:/opt/cedar/env"));
-        assert!(joined.ends_with(
-            "img:1 python3 -m pip install --user --no-warn-script-location -- tconnectsync>=3.0"
-        ));
-    }
-
-    #[test]
-    fn exec_args_keep_the_command_as_a_single_argv_element() {
-        let cmd = "echo 'hi'; rm -rf / # $(whoami)";
-        let args = exec_args("c1", 30, cmd);
-        assert_eq!(
-            args,
-            ["exec", "c1", "timeout", "-k", "2", "30", "sh", "-c", cmd]
         );
     }
 
