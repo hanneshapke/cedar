@@ -70,11 +70,19 @@ fn is_executable(p: &Path) -> bool {
     }
 }
 
-/// Variables macOS hands a process LaunchServices started (Cedar.app) and its children inherit.
-/// The Mac app's binary reads them to tell whether it was opened as the app or run as the CLI:
-/// inherited from Cedar, it takes itself for an app launch and fails with "The Tailscale GUI
-/// failed to start". Whoever runs the CLI removes them first.
-pub const LAUNCH_ENV: &[&str] = &["__CFBundleIdentifier", "XPC_SERVICE_NAME", "XPC_FLAGS"];
+/// What the Mac app's binary goes by to tell a CLI run from an app launch: a variable a shell
+/// sets (`TERM`, `TERM_PROGRAM` or `SHLVL`; any one will do). A child of Cedar.app has none of
+/// them, so the binary takes itself for an app launch and fails with "The Tailscale GUI failed
+/// to start … (Tailscale.CLIError error 3.)" while Tailscale is running, and leaves the GUI
+/// stopped; from a terminal, where they are set, it works. Whoever runs the CLI sets this when
+/// it isn't already in the environment. The app's launch variables (`__CFBundleIdentifier`,
+/// `XPC_SERVICE_NAME`) make no difference either way.
+pub const TERMINAL_ENV: (&str, &str) = ("TERM", "dumb");
+
+/// [`TERMINAL_ENV`], unless the process already has a `TERM` of its own to pass on.
+pub fn terminal_env() -> Option<(&'static str, &'static str)> {
+    std::env::var_os(TERMINAL_ENV.0).is_none().then_some(TERMINAL_ENV)
+}
 
 /// What to tell the user when the CLI failed with `msg`: the message, and for the Mac app's
 /// "GUI failed to start" what to try.
@@ -250,6 +258,15 @@ mod tests {
         let gui = "The Tailscale GUI failed to start: (Tailscale.CLIError error 3.)";
         assert!(failure(gui).starts_with(gui) && failure(gui).contains("reopen"));
         assert_eq!(failure("permission denied"), "permission denied");
+    }
+
+    #[test]
+    fn a_terminal_variable_is_set_only_when_there_is_none() {
+        // Whichever the test runner's own environment has: TERM wins, else the default goes in.
+        match std::env::var_os("TERM") {
+            Some(_) => assert_eq!(terminal_env(), None),
+            None => assert_eq!(terminal_env(), Some(("TERM", "dumb"))),
+        }
     }
 
     #[test]

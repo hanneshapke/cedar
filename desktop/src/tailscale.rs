@@ -5,7 +5,7 @@
 
 use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
-use cedar_pairing::tailscale::{failure, https_url, LAUNCH_ENV};
+use cedar_pairing::tailscale::{failure, https_url, terminal_env};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -25,8 +25,8 @@ impl TailscaleCli {
     async fn output(&self, args: &[&str], timeout: Duration) -> Result<String> {
         let mut cmd = proc::command(&self.bin);
         cmd.args(args).stdin(Stdio::null()).kill_on_drop(true);
-        for var in LAUNCH_ENV {
-            cmd.env_remove(var);
+        if let Some((k, v)) = terminal_env() {
+            cmd.env(k, v);
         }
         let out = tokio::time::timeout(timeout, cmd.output())
             .await
@@ -61,6 +61,10 @@ impl TailscaleCli {
         let status = self
             .output(&["status", "--json"], Duration::from_secs(10))
             .await?;
+        // The Mac app's binary exits 0 with its "GUI failed to start" on stdout, not JSON.
+        if !status.starts_with('{') {
+            bail!("`tailscale status` failed: {}", failure(&status));
+        }
         https_url(&status, https_port)
     }
 

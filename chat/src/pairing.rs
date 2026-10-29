@@ -38,8 +38,8 @@ pub async fn tailscale_check(cli: Option<&str>) -> Check {
     #[allow(unused_mut)]
     let mut cmd = tokio::process::Command::new(&bin);
     cmd.args(["status", "--json"]).stdin(Stdio::null()).stderr(Stdio::piped()).kill_on_drop(true);
-    for var in tailscale::LAUNCH_ENV {
-        cmd.env_remove(var);
+    if let Some((k, v)) = tailscale::terminal_env() {
+        cmd.env(k, v);
     }
     // CREATE_NO_WINDOW: under the desktop app on Windows, no console flashes up.
     #[cfg(windows)]
