@@ -126,6 +126,8 @@ fun TurnView(turn: TurnTranscript, chat: ChatModel, webURL: String?, isLast: Boo
         if (!turn.isActive && conversationId != null && client != null) {
             val images = turn.images
             if (images.isNotEmpty()) ImagesView(images, conversationId, client)
+            val documents = turn.documents
+            if (documents.isNotEmpty()) DocumentsView(documents, conversationId, client)
         }
         StatusFooter(turn)
     }

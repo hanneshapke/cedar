@@ -44,6 +44,10 @@ struct TurnView: View {
                 if !images.isEmpty {
                     ImagesView(paths: images, conversationId: conversationId, client: client)
                 }
+                let documents = turn.documents
+                if !documents.isEmpty {
+                    DocumentsView(paths: documents, conversationId: conversationId, client: client)
+                }
             }
             StatusFooter(turn: turn)
         }

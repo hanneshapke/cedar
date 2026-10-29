@@ -7,6 +7,7 @@ import android.util.LruCache
 import android.webkit.MimeTypeMap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,17 +42,22 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import dev.cedar.cedar.R
 import dev.cedar.core.ChatClient
+import dev.cedar.core.WorkspaceFileKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** The images a response produced, loaded from the conversation's workspace with the access token. */
+/** The images a response produced, loaded from the conversation's workspace with the access token. A tap opens one at full size. */
 @Composable
 fun ImagesView(paths: List<String>, conversationId: String, client: ChatClient) {
+    var viewing by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        paths.forEach { path -> WorkspaceImage(client, conversationId, path) }
+        paths.forEach { path ->
+            WorkspaceImage(client, conversationId, path, open = if (WorkspaceFileKind.of(path) == WorkspaceFileKind.IMAGE) ({ viewing = path }) else null)
+        }
     }
+    viewing?.let { path -> WorkspaceFileDialog(client, conversationId, path) { viewing = null } }
 }
 
 private sealed interface Loaded {
@@ -61,7 +67,7 @@ private sealed interface Loaded {
 }
 
 @Composable
-private fun WorkspaceImage(client: ChatClient, conversationId: String, path: String) {
+private fun WorkspaceImage(client: ChatClient, conversationId: String, path: String, open: (() -> Unit)?) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val key = "${client.baseURL}|$conversationId|$path"
@@ -88,7 +94,8 @@ private fun WorkspaceImage(client: ChatClient, conversationId: String, path: Str
                 val shape = RoundedCornerShape(10.dp)
                 Image(
                     s.image, path,
-                    Modifier.fillMaxWidth().heightIn(max = 420.dp).clip(shape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+                    Modifier.fillMaxWidth().heightIn(max = 420.dp).clip(shape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                        .then(if (open != null) Modifier.clickable(onClickLabel = stringResource(R.string.open_file, path), onClick = open) else Modifier),
                     contentScale = ContentScale.Fit,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {

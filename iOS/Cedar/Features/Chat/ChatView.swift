@@ -6,6 +6,7 @@ struct ChatView: View {
     @Bindable var chat: ChatModel
     @FocusState private var composerFocused: Bool
     @State private var starError: String?
+    @State private var showingFiles = false
 
     private let bottomID = "bottom"
 
@@ -75,6 +76,15 @@ struct ChatView: View {
                     .tint(starred ? Color.yellow : nil)
                 }
             }
+            if chat.conversationId != nil, chat.client != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingFiles = true
+                    } label: {
+                        Label("Files", systemImage: "folder")
+                    }
+                }
+            }
             if let webURL {
                 ToolbarItem(placement: .topBarTrailing) {
                     Link(destination: webURL) {
@@ -90,6 +100,11 @@ struct ChatView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(starError ?? "")
+        }
+        .sheet(isPresented: $showingFiles) {
+            if let id = chat.conversationId, let client = chat.client {
+                WorkspaceFilesView(conversationId: id, client: client)
+            }
         }
         .task { await chat.start() }
         .onAppear {

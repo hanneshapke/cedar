@@ -344,13 +344,21 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
 
     /// The images the turn's finished tool calls produced, each once, in order: workspace paths.
     var images: [String] {
+        // A chart drawn as a card isn't shown again as a picture.
+        produced(WorkspaceImages.isImage) { $0.name == "generate_chart" && $0.card != nil }
+    }
+
+    /// The PDFs the turn's finished tool calls produced, each once, in order: workspace paths.
+    var documents: [String] {
+        produced(WorkspaceImages.isPDF) { _ in false }
+    }
+
+    private func produced(_ include: (String) -> Bool, skipping skip: (ToolCall) -> Bool) -> [String] {
         var seen: Set<String> = []
         var paths: [String] = []
         for item in items {
-            // A chart drawn as a card isn't shown again as a picture.
-            guard case .tool(let call) = item, call.isFinished, !call.isError,
-                  !(call.name == "generate_chart" && call.card != nil) else { continue }
-            for path in WorkspaceImages.produced(by: call) where seen.insert(path).inserted {
+            guard case .tool(let call) = item, call.isFinished, !call.isError, !skip(call) else { continue }
+            for path in WorkspaceImages.files(producedBy: call) where include(path) && seen.insert(path).inserted {
                 paths.append(path)
             }
         }
@@ -358,8 +366,8 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Which workspace files a tool call produced that are images; the same rule as the web UI's
-/// `image-view.js`.
+/// Which workspace files a tool call produced that are images or PDFs; the same rule as the web
+/// UI's `image-view.js`.
 enum WorkspaceImages {
     static let maxShown = 12
     static let extensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg"]
@@ -367,7 +375,13 @@ enum WorkspaceImages {
     static let fileTools: Set<String> = ["write_file", "generate_chart", "download_file"]
     static let changedHeading = "\n[files created or modified]\n"
 
+    /// The images `call` produced.
     static func produced(by call: ToolCall) -> [String] {
+        files(producedBy: call).filter(isImage)
+    }
+
+    /// Every workspace file `call` wrote or changed.
+    static func files(producedBy call: ToolCall) -> [String] {
         var paths: [String] = []
         if fileTools.contains(call.name) {
             if let path = call.input["path"]?.stringValue { paths.append(path) }
@@ -378,7 +392,7 @@ enum WorkspaceImages {
                 paths.append(String(line.dropFirst(2)))
             }
         }
-        return paths.compactMap(workspacePath).filter(isImage)
+        return paths.compactMap(workspacePath)
     }
 
     /// A path relative to the workspace, or nil if `path` points elsewhere.
@@ -396,8 +410,35 @@ enum WorkspaceImages {
     }
 
     static func isImage(_ path: String) -> Bool {
-        guard let dot = path.lastIndex(of: ".") else { return false }
-        return extensions.contains(path[path.index(after: dot)...].lowercased())
+        guard let ext = fileExtension(path) else { return false }
+        return extensions.contains(ext)
+    }
+
+    static func isPDF(_ path: String) -> Bool {
+        fileExtension(path) == "pdf"
+    }
+
+    /// What follows the path's last dot, lowercased, or nil when it has none.
+    static func fileExtension(_ path: String) -> String? {
+        guard let dot = path.lastIndex(of: ".") else { return nil }
+        return path[path.index(after: dot)...].lowercased()
+    }
+}
+
+/// How the app shows a workspace file: an image, a PDF, or nil for files it leaves to the web UI
+/// (SVG among them, which UIKit doesn't draw).
+enum WorkspaceFileKind: Equatable, Sendable {
+    case image
+    case pdf
+
+    init?(path: String) {
+        if WorkspaceImages.isPDF(path) {
+            self = .pdf
+        } else if WorkspaceImages.isImage(path), WorkspaceImages.fileExtension(path) != "svg" {
+            self = .image
+        } else {
+            return nil
+        }
     }
 }
 

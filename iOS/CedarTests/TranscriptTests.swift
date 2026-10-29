@@ -140,6 +140,30 @@ final class TranscriptTests: XCTestCase {
         XCTAssertFalse(WorkspaceImages.isImage("photo"))
     }
 
+    func testPDFsComeFromFileToolsAndChangedFiles() {
+        var transcript = TurnTranscript(turn: turn())
+        let calls: [(String, JSONValue, String, Bool)] = [
+            ("write_file", .object(["path": .string("/workspace/report.pdf")]), "ok", false),
+            ("bash", .object(["command": .string("make")]), "built\n[files created or modified]\n- out/Slides.PDF\n- out/a.png\n- report.pdf", false),
+            ("write_file", .object(["path": .string("failed.pdf")]), "disk full", true),
+        ]
+        for (offset, (name, input, output, isError)) in calls.enumerated() {
+            let id = "c\(offset)"
+            transcript.apply(event(offset * 2 + 1, "tool.call", .object(["id": .string(id), "name": .string(name), "input": input])))
+            transcript.apply(event(offset * 2 + 2, "tool.result", .object(["id": .string(id), "output": .string(output), "is_error": .bool(isError)])))
+        }
+        XCTAssertEqual(transcript.documents, ["report.pdf", "out/Slides.PDF"])
+        XCTAssertEqual(transcript.images, ["out/a.png"])
+    }
+
+    func testTheViewerShowsImagesAndPDFs() {
+        XCTAssertEqual(WorkspaceFileKind(path: "out/chart.PNG"), .image)
+        XCTAssertEqual(WorkspaceFileKind(path: "docs/report.pdf"), .pdf)
+        XCTAssertNil(WorkspaceFileKind(path: "plot.svg"))
+        XCTAssertNil(WorkspaceFileKind(path: "notes.md"))
+        XCTAssertNil(WorkspaceFileKind(path: "Makefile"))
+    }
+
     func testCardTitles() {
         var call = ToolCall(id: "1", name: "compare_stocks", input: .object(["symbols": .array([.string("AAPL"), .string("MSFT")])]))
         XCTAssertEqual(call.summary, "AAPL, MSFT")

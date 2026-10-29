@@ -336,21 +336,27 @@ data class TurnTranscript(
 
     /** The images the turn's finished tool calls produced, each once, in order: workspace paths. */
     val images: List<String>
-        get() {
-            val seen = LinkedHashSet<String>()
-            for (item in items) {
-                val call = (item as? TranscriptItem.Tool)?.call ?: continue
-                // A chart drawn as a card isn't shown again as a picture.
-                if (!call.isFinished || call.isError || (call.name == "generate_chart" && call.card != null)) continue
-                seen += WorkspaceImages.producedBy(call)
-            }
-            return seen.take(WorkspaceImages.MAX_SHOWN)
+        // A chart drawn as a card isn't shown again as a picture.
+        get() = produced(WorkspaceImages::isImage) { it.name == "generate_chart" && it.card != null }
+
+    /** The PDFs the turn's finished tool calls produced, each once, in order: workspace paths. */
+    val documents: List<String>
+        get() = produced(WorkspaceImages::isPdf) { false }
+
+    private fun produced(include: (String) -> Boolean, skip: (ToolCall) -> Boolean): List<String> {
+        val seen = LinkedHashSet<String>()
+        for (item in items) {
+            val call = (item as? TranscriptItem.Tool)?.call ?: continue
+            if (!call.isFinished || call.isError || skip(call)) continue
+            seen += WorkspaceImages.filesProducedBy(call).filter(include)
         }
+        return seen.take(WorkspaceImages.MAX_SHOWN)
+    }
 }
 
 private fun <T> List<T>.replaced(index: Int, item: T): List<T> = toMutableList().also { it[index] = item }
 
-/** Which workspace files a tool call produced that are images; the same rule as the web UI's `image-view.js`. */
+/** Which workspace files a tool call produced that are images or PDFs; the same rule as the web UI's `image-view.js`. */
 object WorkspaceImages {
     const val MAX_SHOWN = 12
     val EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg")
@@ -359,7 +365,11 @@ object WorkspaceImages {
     val FILE_TOOLS = setOf("write_file", "generate_chart", "download_file")
     const val CHANGED_HEADING = "\n[files created or modified]\n"
 
-    fun producedBy(call: ToolCall): List<String> {
+    /** The images [call] produced. */
+    fun producedBy(call: ToolCall): List<String> = filesProducedBy(call).filter(::isImage)
+
+    /** Every workspace file [call] wrote or changed. */
+    fun filesProducedBy(call: ToolCall): List<String> {
         val paths = mutableListOf<String>()
         if (call.name in FILE_TOOLS) {
             call.input["path"].str?.let(paths::add)
@@ -372,7 +382,7 @@ object WorkspaceImages {
                 }
             }
         }
-        return paths.mapNotNull(::workspacePath).filter(::isImage)
+        return paths.mapNotNull(::workspacePath)
     }
 
     /** A path relative to the workspace, or null if `path` points elsewhere. */
@@ -384,10 +394,28 @@ object WorkspaceImages {
         return p
     }
 
-    fun isImage(path: String): Boolean {
+    fun isImage(path: String): Boolean = extension(path) in EXTENSIONS
+
+    fun isPdf(path: String): Boolean = extension(path) == "pdf"
+
+    /** What follows the path's last dot, lowercased, or null when it has none. */
+    fun extension(path: String): String? {
         val dot = path.lastIndexOf('.')
-        if (dot < 0) return false
-        return path.substring(dot + 1).lowercase() in EXTENSIONS
+        if (dot < 0) return null
+        return path.substring(dot + 1).lowercase()
+    }
+}
+
+/** How the app shows a workspace file: an image, a PDF, or null for files it leaves to the web UI (SVG among them, which Android doesn't decode). */
+enum class WorkspaceFileKind {
+    IMAGE, PDF;
+
+    companion object {
+        fun of(path: String): WorkspaceFileKind? = when {
+            WorkspaceImages.isPdf(path) -> PDF
+            WorkspaceImages.isImage(path) && WorkspaceImages.extension(path) != "svg" -> IMAGE
+            else -> null
+        }
     }
 }
 
