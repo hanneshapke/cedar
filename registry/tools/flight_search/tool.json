@@ -1,0 +1,125 @@
+{
+  "description": "Search flights on Google Flights (through SerpApi): one-way or round trips between airports on given dates, for up to 9 passengers, in economy, premium economy, business or first, with optional limits on stops, price, airlines and carry-on bags, sorted by Google's best picks, price, times, duration or emissions. Returns each option's price, airlines, flight numbers, times, stops and layovers, duration, aircraft, legroom and CO2, Google's verdict on whether prices are low or high for the route, and a Google Flights link. Use it when the user asks for flights, fares or the cheapest or fastest way to fly somewhere. Give airports as IATA codes; for a city with several airports list them comma-separated (London: LHR,LGW,STN,LTN,LCY; New York: JFK,EWR,LGA). If the user hasn't said where from, when, or how many travel, ask with ask_user first rather than guessing. For a round trip, the first call lists outbound options priced for the whole trip; to show return flights, call again with the same search plus the chosen option's departure_token. To show where to book an option, call with the same search plus its booking_token. Turn the result into a short answer: lead with the best two or three options and why (price, time, stops), mention the price verdict, and give the Google Flights link. Prices change quickly and seats aren't held: say they are as of now, and that the user books on the airline's or agency's site; never claim a booking was made. Its output ends with a [chart] line, which the chat draws for the user (the route's recent price history with the typical range shaded): don't repeat those numbers or redraw them with generate_chart unless the user asks for an image file.",
+  "version": "1.0.0",
+  "author": "Hannes Hapke",
+  "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/flight_search",
+  "license": "Apache-2.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "origin": {
+        "type": "string",
+        "description": "Where from: one or more IATA airport codes, comma-separated, such as \"SFO\" or \"JFK,EWR,LGA\"."
+      },
+      "destination": {
+        "type": "string",
+        "description": "Where to: one or more IATA airport codes, comma-separated, such as \"MUC\" or \"LHR,LGW\"."
+      },
+      "departure_date": {
+        "type": "string",
+        "format": "date",
+        "description": "The day of the outbound flight (YYYY-MM-DD)."
+      },
+      "return_date": {
+        "type": "string",
+        "format": "date",
+        "description": "The day of the return flight (YYYY-MM-DD) for a round trip; leave out for one way."
+      },
+      "adults": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9,
+        "default": 1,
+        "description": "Adults (12 and older)."
+      },
+      "children": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9,
+        "default": 0,
+        "description": "Children (2 to 11)."
+      },
+      "infants_in_seat": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9,
+        "default": 0,
+        "description": "Infants under 2 with a seat of their own."
+      },
+      "infants_on_lap": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9,
+        "default": 0,
+        "description": "Infants under 2 on an adult's lap (at most one per adult)."
+      },
+      "cabin": {
+        "type": "string",
+        "enum": ["economy", "premium_economy", "business", "first"],
+        "default": "economy"
+      },
+      "max_stops": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2,
+        "description": "At most this many stops each way: 0 for nonstop only. Leave out for any number."
+      },
+      "max_price": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Only options up to this price, in the search's currency, for all passengers."
+      },
+      "include_airlines": {
+        "type": "string",
+        "description": "Only these airlines: two-character IATA codes, comma-separated, such as \"LH,UA\"."
+      },
+      "exclude_airlines": {
+        "type": "string",
+        "description": "Not these airlines: two-character IATA codes, comma-separated."
+      },
+      "carry_on_bags": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2,
+        "description": "Carry-on bags per passenger to include in the price."
+      },
+      "sort": {
+        "type": "string",
+        "enum": ["best", "price", "departure", "arrival", "duration", "emissions"],
+        "default": "best",
+        "description": "best (Google's top picks first), price, departure or arrival time, duration, or emissions."
+      },
+      "currency": {
+        "type": "string",
+        "description": "Three-letter currency code for the prices, such as USD or EUR; defaults to the user's region's."
+      },
+      "max_results": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 30,
+        "default": 8,
+        "description": "How many options to list."
+      },
+      "departure_token": {
+        "type": "string",
+        "description": "From a round trip's outbound option: lists the return flights that go with it. Repeat the rest of the search unchanged."
+      },
+      "booking_token": {
+        "type": "string",
+        "description": "From an option: lists where to book it and for how much. Repeat the rest of the search unchanged."
+      }
+    },
+    "required": ["origin", "destination", "departure_date"]
+  },
+  "timeout_secs": 120,
+  "network": [
+    "serpapi.com"
+  ],
+  "secrets": [
+    {
+      "name": "SERPAPI_API_KEY",
+      "description": "Your SerpApi API key (serpapi.com → Dashboard → Private API Key); the free plan covers a limited number of searches a month"
+    }
+  ],
+  "health_data": false
+}

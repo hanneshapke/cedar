@@ -1,0 +1,24 @@
+{
+  "summary": "Search flights on Google Flights by route, dates, passengers, cabin and stops, with price insights and booking links",
+  "category": "productivity",
+  "translations": {
+    "de": {
+      "summary": "Flüge auf Google Flights nach Strecke, Datum, Reisenden, Klasse und Stopps suchen, mit Preistrend und Buchungslinks",
+      "secrets": {
+        "SERPAPI_API_KEY": "Dein SerpApi-API-Schlüssel (serpapi.com → Dashboard → Private API Key); der kostenlose Tarif reicht für eine begrenzte Zahl Suchen im Monat"
+      }
+    },
+    "fr": {
+      "summary": "Vols sur Google Flights par trajet, dates, voyageurs, classe et escales, avec tendance des prix et liens de réservation",
+      "secrets": {
+        "SERPAPI_API_KEY": "Votre clé d'API SerpApi (serpapi.com → Dashboard → Private API Key) ; l'offre gratuite couvre un nombre limité de recherches par mois"
+      }
+    },
+    "es": {
+      "summary": "Busca vuelos en Google Flights por ruta, fechas, pasajeros, clase y escalas, con tendencia de precios y enlaces",
+      "secrets": {
+        "SERPAPI_API_KEY": "Tu clave de API de SerpApi (serpapi.com → Dashboard → Private API Key); el plan gratuito incluye un número limitado de búsquedas al mes"
+      }
+    }
+  }
+}
