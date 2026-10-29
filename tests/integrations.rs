@@ -211,7 +211,10 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
     );
     let products = group(&catalog, "products");
     assert_eq!(products["available"], false);
-    assert_eq!(products["reason"], "Needs a Brave Search or Best Buy API key");
+    assert_eq!(
+        products["reason"],
+        "Needs a Brave Search or Best Buy API key"
+    );
 
     let search = group(&catalog, "web_search");
     assert_eq!(search["available"], false);
@@ -802,13 +805,23 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
         json!({
             "max_image_side": null,
             "sandbox_idle_minutes": null,
+            "sandbox_runtime": null,
+            "openshell_supported": cfg!(not(windows)),
             "defaults": {
+                "sandbox_runtime": "docker",
                 "max_image_side": 1568, "min_max_image_side": 256, "max_max_image_side": 8192,
                 "sandbox_idle_minutes": 10, "max_sandbox_idle_minutes": 1440,
             },
         })
     );
-    let put = |side: Value| app.json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(json!({ "max_image_side": side })));
+    let put = |side: Value| {
+        app.json(
+            Method::PUT,
+            "/v1/admin/settings",
+            Some(KEY_B),
+            Some(json!({ "max_image_side": side })),
+        )
+    };
     let (status, body) = put(json!(100)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     let (status, body) = put(json!(512)).await;
@@ -818,12 +831,19 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
     assert_eq!(defaults["attachments"]["max_image_side"], 512);
 
     let mut png = Vec::new();
-    image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(2000, 1000, image::Rgb([9, 99, 199])))
-        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-        .unwrap();
+    image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+        2000,
+        1000,
+        image::Rgb([9, 99, 199]),
+    ))
+    .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+    .unwrap();
     let photo = json!({ "name": "photo.png", "media_type": "image/png", "data": b64.encode(&png) });
     let run = app
-        .create_run_with(KEY_A, json!({ "prompt": "what is this?", "attachments": [photo] }))
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "what is this?", "attachments": [photo] }),
+        )
         .await;
     let id = run["id"].as_str().unwrap().to_string();
     app.wait_status(KEY_A, &id, "completed").await;
@@ -832,7 +852,9 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
     let block = &app.llm.requests()[0]["messages"][0]["content"][0];
     assert_eq!(block["title"], "photo.jpg");
     assert_eq!(block["source"]["media_type"], "image/jpeg");
-    let small = b64.decode(block["source"]["data"].as_str().unwrap()).unwrap();
+    let small = b64
+        .decode(block["source"]["data"].as_str().unwrap())
+        .unwrap();
     let img = image::load_from_memory(&small).unwrap();
     assert_eq!((img.width(), img.height()), (512, 256));
     {
@@ -855,25 +877,144 @@ async fn an_admin_sets_how_long_an_idle_sandbox_keeps_running() {
     let put = |body: Value| app.json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(body));
     let (status, body) = put(json!({ "sandbox_idle_minutes": 5000 })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body["error"]["message"].as_str().unwrap().contains("sandbox_idle_minutes"));
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("sandbox_idle_minutes"));
     // Nothing is saved when any field is refused.
     let (status, body) = put(json!({ "max_image_side": 512, "sandbox_idle_minutes": 5000 })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert_eq!(app.get("/v1/admin/settings", KEY_B).await.1["max_image_side"], Value::Null);
+    assert_eq!(
+        app.get("/v1/admin/settings", KEY_B).await.1["max_image_side"],
+        Value::Null
+    );
 
     let (status, body) = put(json!({ "sandbox_idle_minutes": 30, "max_image_side": 512 })).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!((body["sandbox_idle_minutes"].clone(), body["max_image_side"].clone()), (json!(30), json!(512)));
-    assert_eq!(cedar::manager::idle_minutes(&app.state.store).await.unwrap(), 30);
+    assert_eq!(
+        (
+            body["sandbox_idle_minutes"].clone(),
+            body["max_image_side"].clone()
+        ),
+        (json!(30), json!(512))
+    );
+    assert_eq!(
+        cedar::manager::idle_minutes(&app.state.store)
+            .await
+            .unwrap(),
+        30
+    );
 
     // A field left out keeps its value; `null` goes back to the default.
     let (_, body) = put(json!({ "max_image_side": null })).await;
-    assert_eq!((body["sandbox_idle_minutes"].clone(), body["max_image_side"].clone()), (json!(30), Value::Null));
+    assert_eq!(
+        (
+            body["sandbox_idle_minutes"].clone(),
+            body["max_image_side"].clone()
+        ),
+        (json!(30), Value::Null)
+    );
     let (_, body) = put(json!({ "sandbox_idle_minutes": 0 })).await;
-    assert_eq!(body["sandbox_idle_minutes"], 0, "0 pauses as soon as a turn ends");
+    assert_eq!(
+        body["sandbox_idle_minutes"], 0,
+        "0 pauses as soon as a turn ends"
+    );
     let (_, body) = put(json!({ "sandbox_idle_minutes": null })).await;
     assert_eq!(body["sandbox_idle_minutes"], Value::Null);
-    assert_eq!(cedar::manager::idle_minutes(&app.state.store).await.unwrap(), 10);
+    assert_eq!(
+        cedar::manager::idle_minutes(&app.state.store)
+            .await
+            .unwrap(),
+        10
+    );
+}
+
+#[tokio::test]
+async fn an_admin_turns_openshell_on_for_the_next_runs_sandboxes() {
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(text("one")),
+            Step::Reply(text("two")),
+            Step::Reply(text("three")),
+        ],
+        &admin_env(&[]),
+    )
+    .await;
+    cedar::manager::set_idle_minutes(&app.state.store, Some(30))
+        .await
+        .unwrap();
+    let put = |body: Value| app.json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(body));
+    let runtime = |run: &Value| run["id"].as_str().unwrap().to_string();
+    let started = |events: &[SseEvent]| {
+        events
+            .iter()
+            .find(|e| e.data["type"] == "run.started")
+            .unwrap()
+            .data["data"]["sandbox"]["runtime"]
+            .clone()
+    };
+
+    // Docker by default.
+    let first = app.create_run(KEY_A, "1").await;
+    app.wait_status(KEY_A, &runtime(&first), "completed").await;
+    let events = app.events(KEY_A, &runtime(&first), None).await;
+    assert_eq!(started(&events), "docker");
+
+    let (status, body) = put(json!({ "sandbox_runtime": "podman" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    // Without a gateway that answers, nothing is switched.
+    app.factory
+        .openshell_down
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let (status, body) =
+        put(json!({ "sandbox_runtime": "openshell", "sandbox_idle_minutes": 5 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let message = body["error"]["message"].as_str().unwrap();
+    if cfg!(windows) {
+        assert!(message.contains("Windows"), "{message}");
+        return;
+    }
+    assert!(message.contains("gateway is not answering"), "{message}");
+    let (_, body) = app.get("/v1/admin/settings", KEY_B).await;
+    assert_eq!(
+        (
+            body["sandbox_runtime"].clone(),
+            body["sandbox_idle_minutes"].clone()
+        ),
+        (Value::Null, json!(30))
+    );
+    app.factory
+        .openshell_down
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+
+    let (status, body) = put(json!({ "sandbox_runtime": "openshell" })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["sandbox_runtime"], "openshell");
+
+    // The conversation's kept Docker sandbox is replaced by an OpenShell one on the same workspace.
+    let second = app
+        .create_run_with(KEY_A, json!({ "prompt": "2", "parent_id": first["id"] }))
+        .await;
+    let done = app.wait_status(KEY_A, &runtime(&second), "completed").await;
+    assert_eq!(done["workspace_reused"], true);
+    let events = app.events(KEY_A, &runtime(&second), None).await;
+    assert_eq!(started(&events), "openshell");
+    assert_eq!(app.factory.created.lock().unwrap().len(), 2);
+    assert!(app
+        .factory
+        .sandbox(0)
+        .destroyed
+        .load(std::sync::atomic::Ordering::SeqCst));
+    assert!(app.factory.sandbox(1).openshell);
+
+    // Off again: Docker is the default, so nothing is saved.
+    let (_, body) = put(json!({ "sandbox_runtime": "docker" })).await;
+    assert_eq!(body["sandbox_runtime"], Value::Null);
+    let third = app
+        .create_run_with(KEY_A, json!({ "prompt": "3", "parent_id": second["id"] }))
+        .await;
+    app.wait_status(KEY_A, &runtime(&third), "completed").await;
+    assert!(!app.factory.sandbox(2).openshell);
 }
 
 #[derive(Default)]
@@ -1037,8 +1178,14 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
             "gpu",
             json!({ "base_url": server_url, "model": "m-1", "reasoning_levels": ["low"], "default_reasoning": "high" }),
         ),
-        ("gpu", json!({ "base_url": server_url, "model": "m-1", "max_tokens": 0 })),
-        ("gpu", json!({ "base_url": server_url, "model": "m-1", "max_tokens": 2_000_000 })),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "max_tokens": 0 }),
+        ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "max_tokens": 2_000_000 }),
+        ),
     ] {
         let (code, resp) = put_model(&app, id, body.clone()).await;
         assert_eq!(code, StatusCode::BAD_REQUEST, "{body} -> {resp}");
@@ -1062,7 +1209,10 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(body["reasoning_levels"], json!(["none", "high"]));
     assert_eq!(body["default_reasoning"], Value::Null);
     assert_eq!(body["multimodal"], true);
-    assert_eq!(body["max_tokens"], 16384, "a new entry gets the default reply limit");
+    assert_eq!(
+        body["max_tokens"], 16384,
+        "a new entry gets the default reply limit"
+    );
     assert_eq!(body["listed_models"], json!(["m-1"]));
     let (_, _, raw) = app
         .call(Method::GET, "/v1/admin/models", Some(KEY_B), None)
@@ -1111,12 +1261,20 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["multimodal"], false);
     assert_eq!(body["max_tokens"], 2048);
-    let (code, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1" })).await;
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1" }),
+    )
+    .await;
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["max_tokens"], 2048, "absent keeps the saved limit");
     // The next model call takes the entry's new limit.
-    let run = app.create_run_with(KEY_A, json!({ "prompt": "again" })).await;
-    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "again" }))
+        .await;
+    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed")
+        .await;
     let (_, body) = server.completions.lock().unwrap().last().unwrap().clone();
     assert_eq!(body["max_tokens"], 2048);
     // An empty api_key removes it (and the server then refuses the check).

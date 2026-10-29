@@ -1,12 +1,14 @@
 //! Which tool calls wait for the user's OK before they run, in runs whose client answers
 //! (`interactive`). The rules are a heuristic on the tool and its input: sending email, saving
-//! files from the web, installing packages (when the sandbox's policy reaches a network at all),
-//! deleting files, and every call of a community tool installed from the marketplace. One rule
-//! asks afterwards instead: when the sandbox's OpenShell policy refused a connection a command
-//! tried to make, the user can let that program reach that host from then on (`network`).
+//! files from the web, installing packages (when the sandbox reaches a network at all), deleting
+//! files, and every call of a community tool installed from the marketplace. The `network` rule
+//! depends on the sandbox's runtime: a Docker sandbox with a network asks before running any code,
+//! since that code can reach anything; an OpenShell sandbox asks afterwards, when its policy
+//! refused a connection, whether to let that program reach that host from then on.
 //! `TOOL_APPROVALS` picks the rules; `off` turns the gate off.
 
 use crate::policy::Endpoint;
+use crate::sandbox::Reach;
 use crate::tools::{group_of, writes, PythonTool};
 use anyhow::{bail, Result};
 use serde_json::Value;
@@ -23,7 +25,8 @@ pub enum Rule {
     Installs,
     /// `rm` and friends in `bash`.
     Deletes,
-    /// A connection the sandbox's policy refused, which the user may allow from then on.
+    /// Docker: any `bash` or `run_python` call while the sandbox has a network. OpenShell: a
+    /// connection the sandbox's policy refused, which the user may allow from then on.
     Network,
     /// A community tool installed from the marketplace. "Always" covers that release only, so an
     /// update asks again.
@@ -116,9 +119,9 @@ pub struct Gate {
     pub grants: Vec<String>,
 }
 
-/// Whether calling `name` with `input` needs the user's OK under `rules`, given whether the
-/// sandbox's policy lets anything reach the network.
-pub fn check(rules: &Rules, name: &str, input: &Value, networked: bool) -> Option<Gate> {
+/// Whether calling `name` with `input` needs the user's OK under `rules`, given what the run's
+/// sandbox can reach.
+pub fn check(rules: &Rules, name: &str, input: &Value, reach: &Reach) -> Option<Gate> {
     match name {
         "download_file" if rules.has(Rule::Downloads) => {
             let url = input["url"].as_str().unwrap_or_default();
@@ -152,12 +155,26 @@ pub fn check(rules: &Rules, name: &str, input: &Value, networked: bool) -> Optio
             }
             // Without a network an install can't fetch anything, so there is nothing to ask.
             let packages = installs(code);
-            if networked && rules.has(Rule::Installs) && !packages.is_empty() {
+            if reach.any() && rules.has(Rule::Installs) && !packages.is_empty() {
                 return Some(Gate {
                     rule: Rule::Installs,
                     reason: format!("Install {} from the internet.", packages.join(", ")),
                     scope: Some(packages.join(", ")),
                     grants: packages,
+                });
+            }
+            // On Docker the code can reach the whole network, so it is asked about up front.
+            if matches!(reach, Reach::Network(_)) && rules.has(Rule::Network) {
+                let what = if name == "bash" {
+                    "Run a command"
+                } else {
+                    "Run Python"
+                };
+                return Some(Gate {
+                    rule: Rule::Network,
+                    reason: format!("{what} with internet access: {}", one_line(code)),
+                    scope: Some("code with internet access".into()),
+                    grants: vec!["sandbox".into()],
                 });
             }
             None
@@ -378,6 +395,10 @@ fn installs(code: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hosts() -> Reach {
+        Reach::Hosts(vec!["pypi.org".into()])
+    }
     use serde_json::json;
 
     fn all() -> Rules {
@@ -399,7 +420,7 @@ mod tests {
             &all(),
             "download_file",
             &json!({ "url": "https://www.example.com/r/x.pdf", "path": "attachments/x.pdf" }),
-            false,
+            &Reach::Nothing,
         )
         .unwrap();
         assert_eq!(gate.rule, Rule::Downloads);
@@ -417,7 +438,7 @@ mod tests {
             &all(),
             "gmail_send_message",
             &json!({ "to": ["a@x.org"], "subject": "Q3 numbers" }),
-            false,
+            &Reach::Nothing,
         )
         .unwrap();
         assert_eq!(gate.rule, Rule::Email);
@@ -426,13 +447,13 @@ mod tests {
             gate.reason,
             "Send message in your Gmail to a@x.org: \"Q3 numbers\"."
         );
-        assert!(check(&all(), "gmail_search_threads", &json!({}), false).is_none());
-        assert!(check(&all(), "calendar_create_event", &json!({}), false).is_none());
+        assert!(check(&all(), "gmail_search_threads", &json!({}), &Reach::Nothing).is_none());
+        assert!(check(&all(), "calendar_create_event", &json!({}), &Reach::Nothing).is_none());
     }
 
     #[test]
     fn deletes_are_caught_as_commands_only() {
-        let rm = |c: &str| check(&all(), "bash", &json!({ "command": c }), false);
+        let rm = |c: &str| check(&all(), "bash", &json!({ "command": c }), &Reach::Nothing);
         assert_eq!(rm("rm -rf out/").unwrap().rule, Rule::Deletes);
         assert_eq!(rm("cd x && rm a.txt").unwrap().rule, Rule::Deletes);
         assert_eq!(
@@ -446,8 +467,8 @@ mod tests {
     #[test]
     fn installs_need_a_network_and_name_their_packages() {
         let input = json!({ "command": "pip install -q pandas==2.2 'numpy>=1' && python a.py" });
-        assert!(check(&all(), "bash", &input, false).is_none());
-        let gate = check(&all(), "bash", &input, true).unwrap();
+        assert!(check(&all(), "bash", &input, &Reach::Nothing).is_none());
+        let gate = check(&all(), "bash", &input, &hosts()).unwrap();
         assert_eq!(gate.rule, Rule::Installs);
         assert_eq!(gate.grants, ["pandas", "numpy"]);
         assert_eq!(gate.scope.as_deref(), Some("pandas, numpy"));
@@ -465,11 +486,11 @@ mod tests {
     }
 
     #[test]
-    fn code_runs_without_asking_and_a_blocked_connection_asks_afterwards() {
+    fn on_openshell_code_runs_without_asking_and_a_blocked_connection_asks_afterwards() {
         // The policy decides where code can go, so running it needs no OK of its own.
         let input = json!({ "code": "print(1)" });
-        assert!(check(&all(), "run_python", &input, true).is_none());
-        assert!(check(&all(), "run_python", &input, false).is_none());
+        assert!(check(&all(), "run_python", &input, &hosts()).is_none());
+        assert!(check(&all(), "run_python", &input, &Reach::Nothing).is_none());
 
         let blocked = Endpoint {
             binary: "/usr/bin/python3.11".into(),
@@ -491,16 +512,28 @@ mod tests {
     }
 
     #[test]
+    fn on_docker_code_with_a_network_asks_unless_that_rule_is_off() {
+        let input = json!({ "code": "print(1)" });
+        let bridge = Reach::Network("bridge".into());
+        let gate = check(&all(), "run_python", &input, &bridge).unwrap();
+        assert_eq!(gate.rule, Rule::Network);
+        assert_eq!(gate.grants, ["sandbox"]);
+        assert!(check(&all(), "run_python", &input, &Reach::Nothing).is_none());
+        let rules = Rules::parse("email,downloads,installs,deletes").unwrap();
+        assert!(check(&rules, "run_python", &input, &bridge).is_none());
+    }
+
+    #[test]
     fn nothing_is_asked_with_the_gate_off() {
         let off = Rules::none();
         assert!(check(
             &off,
             "download_file",
             &json!({ "url": "https://a.b/c" }),
-            false
+            &Reach::Nothing
         )
         .is_none());
-        assert!(check(&off, "bash", &json!({ "command": "rm x" }), false).is_none());
+        assert!(check(&off, "bash", &json!({ "command": "rm x" }), &Reach::Nothing).is_none());
     }
 
     #[test]

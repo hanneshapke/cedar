@@ -2,10 +2,10 @@
 #
 #     docker build -t cedar-sandbox sandbox/
 #
-# Keep it small and unprivileged. cedar runs it as an OpenShell sandbox (see src/sandbox.rs):
-# non-root, no capabilities, Landlock on the filesystem, and every connection checked against the
-# OpenShell policy SANDBOX_POLICY names (`offline` by default: no network at all). Anything the
-# agent should be able to run offline has to be installed here; with the `packages` policy it can
+# Keep it small and unprivileged. cedar starts it with dropped capabilities and memory/CPU/pid
+# limits (see src/sandbox/), as a Docker container or, when an admin turns it on, an OpenShell
+# sandbox, and without network unless SANDBOX_NETWORK or SANDBOX_POLICY says otherwise. Anything
+# the agent should be able to run offline has to be installed here; with network access it can
 # also `pip install` packages itself (see below).
 FROM debian:bookworm-slim
 
@@ -34,10 +34,11 @@ COPY --chmod=0755 render_chart.py /usr/local/bin/cedar-render-chart
 COPY --chmod=0755 read_document.py /usr/local/bin/cedar-read-document
 COPY --chmod=0755 render_pages.py /usr/local/bin/cedar-render-pages
 
-# OpenShell runs the image's (non-root) USER. /workspace is created and owned by that user so the
-# conversation's named volume mounted there inherits the right ownership. It is not the image's
-# working directory: OpenShell won't mount a volume over that, so the working directory is
-# /sandbox (OpenShell's own convention) and cedar runs every command in /workspace explicitly.
+# uid/gid 1000 must match the `--user` cedar passes to `docker run` (OpenShell runs the image's
+# USER). /workspace is created and owned by that user so the conversation's named volume mounted
+# there inherits the right ownership. It is not the image's working directory: OpenShell won't
+# mount a volume over that, so the working directory is /sandbox (OpenShell's own convention) and
+# cedar runs every command in /workspace explicitly, on either runtime.
 RUN groupadd --gid 1000 agent \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/sh agent \
     && mkdir /workspace /sandbox \

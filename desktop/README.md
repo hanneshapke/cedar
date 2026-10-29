@@ -2,15 +2,10 @@
 
 A menu bar app (a tray app on Windows) that runs cedar and cedar-chat from a single download: a
 DMG for the Mac, an MSI installer for Windows. It bundles both server binaries, starts them as
-child processes, pulls the sandbox image, and shows the chat UI in its window. Three things stay
+child processes, pulls the sandbox image, and shows the chat UI in its window. Two things stay
 outside the app:
 
-- **OpenShell.** cedar runs every conversation's tools in an
-  [OpenShell](https://github.com/NVIDIA/OpenShell) sandbox, whose policy decides which program may
-  reach which host (by default none may reach any). The app doesn't install OpenShell or check for
-  it yet: without a running gateway the app starts, but every message fails with "could not start
-  the sandbox for this run". See [Setting up OpenShell](#setting-up-openshell).
-- **Docker.** OpenShell runs its sandboxes as Docker containers, so Docker must be installed and
+- **Docker.** Each agent run's tools execute in a container, so Docker must be installed and
   running: Docker Desktop, OrbStack, Colima, or Rancher Desktop on a Mac; Docker Desktop (with
   its WSL 2 backend) or Rancher Desktop on Windows. The sandbox is a Linux image either way. The
   app finds the `docker` command in the usual places and tells you when it can't. It can also
@@ -25,7 +20,7 @@ outside the app:
 ```
 Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080 ──▶ model server (yours)
                           │       ▲                      │
-                          └── window (WKWebView / WebView2) ──▶ openshell … (one sandbox per conversation, on Docker)
+                          └── window (WKWebView / WebView2) ──▶ docker run … (one container per conversation)
 ```
 
 ## Installing
@@ -69,9 +64,15 @@ A newer MSI installs over the older one and keeps your settings and conversation
 your user profile (see [Where things are](#where-things-are)), which neither an upgrade nor
 uninstalling touches.
 
-### Setting up OpenShell
+### OpenShell sandboxes (optional, macOS)
 
-On a Mac, install OpenShell with its own installer, which puts its Homebrew formula in a local tap
+By default each conversation's tools run in a Docker container. On a Mac you can run them in
+[OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes instead, whose network policy decides
+which program may reach which host and asks in the chat before letting a blocked connection
+through. The app doesn't install OpenShell; set it up once by hand, then turn it on in Settings →
+Advanced settings (after unlocking Settings → Server).
+
+Install OpenShell with its own installer, which puts its Homebrew formula in a local tap
 (`nvidia/openshell`) and runs the gateway with `brew services`. Homebrew's core `openshell`
 formula is only the command-line tool, without a gateway, so `brew install openshell` alone
 isn't enough.
@@ -101,9 +102,8 @@ Cedar finds the `openshell` command in Homebrew's folder (set `OPENSHELL_BIN` in
 environment otherwise). To let the agent `pip install` packages, set `SANDBOX_POLICY=packages`
 there too.
 
-**Windows** has no supported OpenShell yet: OpenShell's native Windows support is a development
-branch, and running it inside WSL 2 is experimental and not something the app sets up. Cedar for
-Windows can't run its sandboxes until then.
+**Windows** has no OpenShell support, so the switch in Settings → Advanced settings stays off
+there and sandboxes run on Docker.
 
 ### Setting it up
 
@@ -361,7 +361,7 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "check_updates": true,
   "dismissed_update": "",
   "locale": "de-CH",
-  "cedar_env": { "SANDBOX_POLICY": "packages", "RUN_TIMEOUT_SECS": "1800" },
+  "cedar_env": { "SANDBOX_NETWORK": "bridge", "RUN_TIMEOUT_SECS": "1800" },
   "chat_env": {},
   "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…", "chat_admin_token": "…" }
 }

@@ -32,10 +32,11 @@ Community tools) or with the admin API (see [the README](../README.md#community-
   instructions, whatever the tool's description says: no dosing advice, safety first, and point to
   the care team.
 
-The `network` hosts are enforced: each call runs in an OpenShell sandbox whose policy lets the
-tool's Python reach those hosts, on ports 80 and 443, and nothing else. A tool that installs
-packages while it runs would need PyPI among its hosts; list them under `pip` in `tool.json`
-instead, which cedar installs when the tool is set up.
+One limit to know: on cedar's default Docker sandboxes, the `network` hosts are shown and
+approved but not enforced host by host. A tool that declares any host gets the network
+`TOOLS_NETWORK` gives it (`bridge` by default). That is why reviews read the code. Where an admin
+has turned on OpenShell sandboxes, a tool reaches its declared hosts (from Python, on ports 80 and
+443) and nothing else.
 
 ## Layout
 

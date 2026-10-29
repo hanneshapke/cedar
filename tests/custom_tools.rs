@@ -1,6 +1,6 @@
 //! Personal Python tools from `TOOLS_DIR`: how they reach the model, how a call runs in the
 //! sandbox, and how the `custom` group behaves in the catalog and a run's tool selection.
-//! Real execution in OpenShell is covered by `tests/openshell.rs`.
+//! Real execution in Docker is covered by `tests/docker.rs`.
 
 mod common;
 

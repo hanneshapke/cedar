@@ -1,6 +1,6 @@
 //! `bash`, `run_python`, `read_document`, and `generate_chart` against the fake sandbox: what gets staged,
 //! what gets run, and which input errors the model hears about. Real execution is covered by
-//! `tests/openshell.rs`.
+//! `tests/docker.rs`.
 
 mod common;
 

@@ -77,7 +77,7 @@ async fn reasoning_cost_and_the_sandbox_are_reported() {
     let started = of_kind(&events, "run.started")[0];
     assert_eq!(
         started["sandbox"],
-        json!({ "runtime": "openshell", "network": "none", "policy": "offline", "hosts": [], "memory": "1g", "cpus": 1.0 })
+        json!({ "runtime": "docker", "network": "none", "policy": "offline", "hosts": [], "memory": "1g", "cpus": 1.0 })
     );
     assert_eq!(started["interactive"], false);
     let reasoning = of_kind(&events, "assistant.reasoning");
@@ -597,6 +597,7 @@ async fn a_blocked_connection_is_reported_and_the_model_told() {
         Step::Reply(text("Couldn't reach it.")),
     ])
     .await;
+    app.use_openshell().await;
     let run = app.create_run(KEY_A, "fetch it").await;
     let id = id_of(&run);
     app.wait_status(KEY_A, &id, "completed").await;
@@ -637,6 +638,7 @@ async fn a_blocked_connection_can_be_allowed_and_always_is_remembered_for_the_ke
         Step::Reply(text("Fetched.")),
     ])
     .await;
+    app.use_openshell().await;
     let run = app
         .create_run_with(KEY_A, json!({ "prompt": "fetch it", "interactive": true }))
         .await;
@@ -705,6 +707,7 @@ async fn a_declined_connection_stays_blocked() {
         Step::Reply(text("Left it.")),
     ])
     .await;
+    app.use_openshell().await;
     let run = app
         .create_run_with(KEY_A, json!({ "prompt": "fetch it", "interactive": true }))
         .await;

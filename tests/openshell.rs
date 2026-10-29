@@ -1,4 +1,4 @@
-//! Tests of the real sandbox: OpenShell sandboxes on Docker. They need a running Docker daemon,
+//! Tests of the real OpenShell runtime (opt-in; see `tests/docker.rs` for the default one). They need a running Docker daemon,
 //! an OpenShell gateway the `openshell` command is registered with (its Docker driver with
 //! `allow_driver_config = true`), and the sandbox image:
 //!
@@ -23,9 +23,11 @@ fn config(policy: Policy) -> SandboxConfig {
         image: std::env::var("CEDAR_TEST_SANDBOX_IMAGE")
             .unwrap_or_else(|_| "cedar-sandbox:latest".into()),
         policy,
+        network: "bridge".into(),
         memory: "256m".into(),
         cpus: "1".into(),
         tools_dir: None,
+        tools_network: "bridge".into(),
     }
 }
 
@@ -1224,4 +1226,41 @@ async fn large_files_are_written_in_parts_and_a_workspace_from_before_openshell_
     assert!(back.bytes == big, "the file came back as written");
 
     teardown(&factory, id, &sb).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
+async fn a_workspace_moves_between_the_runtimes_an_admin_switches() {
+    use cedar::sandbox::{set_runtime, Runtime, Sandboxes};
+    let store = cedar::store::Store::connect_memory().await.unwrap();
+    let sandboxes = Sandboxes::new(config(Policy::offline()), store.clone());
+    let ws = Uuid::new_v4();
+    let read = |sb: Arc<dyn Sandbox>| async move {
+        let out = sb.exec("cat notes.txt", 10 * SECOND, 1000).await.unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    // Docker by default.
+    assert_eq!(sandboxes.runtime().await, Runtime::Docker);
+    let first = sandboxes.create(Uuid::new_v4(), ws).await.unwrap();
+    assert_eq!(first.runtime(), Runtime::Docker);
+    first.write_file("notes.txt", b"from docker").await.unwrap();
+    first.destroy().await;
+
+    // The same workspace, now in an OpenShell sandbox.
+    set_runtime(&store, Some(Runtime::OpenShell)).await.unwrap();
+    sandboxes.check_runtime(Runtime::OpenShell).await.unwrap();
+    let second = sandboxes.create(Uuid::new_v4(), ws).await.unwrap();
+    assert_eq!(second.runtime(), Runtime::OpenShell);
+    assert_eq!(read(second.clone()).await, "from docker");
+    second.write_file("notes.txt", b"from openshell").await.unwrap();
+    second.destroy().await;
+
+    // And back.
+    set_runtime(&store, None).await.unwrap();
+    let third = sandboxes.create(Uuid::new_v4(), ws).await.unwrap();
+    assert_eq!(third.runtime(), Runtime::Docker);
+    assert_eq!(read(third.clone()).await, "from openshell");
+    third.destroy().await;
+    sandboxes.remove_workspace(ws).await.unwrap();
 }

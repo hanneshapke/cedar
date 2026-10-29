@@ -563,10 +563,102 @@ const cedarSettings = (() => {
     section.replaceChildren(...parts);
   }
 
+  // -- Settings: advanced (admin) ----------------------------------------------------------------
+
+  let advancedSection = null;
+  /** cedar's server settings as last loaded for the Advanced page, for its nav line. */
+  let advancedSettings = null;
+
+  /** Server-wide options most setups leave alone: for now, what runs the sandboxes. */
+  async function renderAdvanced(section = advancedSection) {
+    if (!section) return;
+    advancedSection = section;
+    const cfg = deps.config();
+    if (!cfg.admin_enabled || !unlocked()) {
+      advancedSettings = null;
+      const card = el('div', 'cedar-set-help');
+      card.append(note(tr(cfg.admin_enabled ? 'settings.advanced.locked' : 'settings.advanced.noAdmin')));
+      if (cfg.admin_enabled) card.append(button(tr('settings.advanced.unlock'), () => shell()?.go('server'), 'primary'));
+      section.replaceChildren(card);
+      shell()?.refresh('advanced');
+      return;
+    }
+    section.replaceChildren(note(tr('settings.loading')));
+    try {
+      advancedSettings = await adminApi('GET', '/integrations/settings');
+    } catch (e) {
+      advancedSettings = null;
+      if (e.status === 403) {
+        // A wrong token: the Server page asks for it again.
+        setAdminToken('');
+        return renderAdvanced(section);
+      }
+      section.replaceChildren(note(e.message, 'cedar-set-error'));
+      shell()?.refresh('advanced');
+      return;
+    }
+    const b = el('div', 'cedar-set-block');
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', tr('settings.server.sandbox')));
+    b.append(head, openShellRow(advancedSettings));
+    section.replaceChildren(b);
+    shell()?.refresh('advanced');
+  }
+
+  /** The switch between Docker (off, the default) and OpenShell (on) for conversations' sandboxes. */
+  function openShellRow(settings) {
+    const supported = settings.openshell_supported !== false;
+    const on = settings.sandbox_runtime === 'openshell';
+    const { row, main, side } = integrationRow(tr('settings.advanced.openshell.title'), tr('settings.advanced.openshell.desc'));
+    const sw = el('button', 'cedar-set-switch');
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-checked', String(on));
+    sw.setAttribute('aria-label', tr('settings.advanced.openshell.title'));
+    sw.disabled = !supported;
+    const state = badge(on ? 'OpenShell' : 'Docker', 'ok');
+    const problem = el('small', 'cedar-set-error');
+    problem.hidden = true;
+    if (!supported) main.append(el('small', 'cedar-set-hint', tr('settings.advanced.openshell.unsupported')));
+    main.append(problem);
+    const show = (now) => {
+      sw.setAttribute('aria-checked', String(now));
+      state.textContent = now ? 'OpenShell' : 'Docker';
+    };
+    sw.addEventListener('click', async () => {
+      const was = sw.getAttribute('aria-checked') === 'true';
+      sw.disabled = true;
+      problem.hidden = true;
+      state.textContent = tr('settings.advanced.openshell.checking');
+      try {
+        advancedSettings = await adminApi('PUT', '/integrations/settings', { sandbox_runtime: was ? null : 'openshell' });
+        const now = advancedSettings.sandbox_runtime === 'openshell';
+        show(now);
+        deps.toast(tr(now ? 'settings.advanced.openshell.savedOn' : 'settings.advanced.openshell.savedOff'));
+      } catch (err) {
+        show(was);
+        problem.textContent = err.message;
+        problem.hidden = false;
+      } finally {
+        sw.disabled = !supported;
+        shell()?.refresh('advanced');
+      }
+    });
+    side.append(state, sw);
+    return row;
+  }
+
+  /** The Advanced page's nav line: the sandbox runtime, once known. */
+  function advancedSummary() {
+    if (!deps?.config()?.admin_enabled || !unlocked()) return tr('shell.tag.ADMIN');
+    if (!advancedSettings) return null;
+    return advancedSettings.sandbox_runtime === 'openshell' ? 'OpenShell' : 'Docker';
+  }
+
   /** The page head's Lock button, when the admin token is in. */
   function serverActions() {
     if (!deps?.config()?.admin_enabled || !unlocked()) return null;
-    return [button(tr('settings.server.lock'), () => { setAdminToken(''); renderIntegrations(); shell()?.refresh('server'); }, 'settings-ghost')];
+    return [button(tr('settings.server.lock'), () => { setAdminToken(''); renderIntegrations(); renderAdvanced(); shell()?.refresh('server'); }, 'settings-ghost')];
   }
 
   /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
@@ -613,6 +705,7 @@ const cedarSettings = (() => {
       if (!input.value.trim()) return;
       setAdminToken(input.value.trim());
       renderIntegrations();
+      renderAdvanced();
       refreshTools();
     });
     const wrap = el('div', 'cedar-set-unlock-card');
@@ -1389,6 +1482,11 @@ const cedarSettings = (() => {
         render: renderIntegrations, summary: () => null,
         tag: () => (deps?.config()?.admin_enabled && unlocked() ? 'UNLOCKED' : 'ADMIN'),
         actions: serverActions, footer: false,
+      });
+      s.register({
+        id: 'advanced', label: tr('settings.advanced.title'), title: tr('settings.advanced.title'),
+        description: tr('settings.advanced.description'),
+        render: renderAdvanced, summary: advancedSummary, footer: false,
       });
     }
     if (deps.anchor) {

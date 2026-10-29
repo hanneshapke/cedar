@@ -17,7 +17,9 @@ use crate::models::{
     Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
 };
-use crate::sandbox::{check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing};
+use crate::sandbox::{
+    self, check_workspace_path, SandboxFactory, WorkspaceListing, WorkspaceMissing,
+};
 use crate::sse;
 use crate::store::{InsertRefused, Store};
 use crate::webhooks::{self, Webhooks};
@@ -103,17 +105,7 @@ impl AppState {
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
         let env = AgentEnv {
             llm: llm.clone(),
-            sandbox_policy: cfg.sandbox.policy.clone(),
-            sandbox_info: json!({
-                "runtime": "openshell",
-                // `none` when nothing can be reached, else the policy's name.
-                "network": if cfg.sandbox.policy.networked() { cfg.sandbox.policy.name.as_str() } else { "none" },
-                "policy": cfg.sandbox.policy.name,
-                "hosts": cfg.sandbox.policy.hosts(),
-                "memory": cfg.sandbox.memory,
-                // A number when it is one ("1", "0.5"), as Docker takes it.
-                "cpus": cfg.sandbox.cpus.parse::<f64>().map_or_else(|_| json!(cfg.sandbox.cpus), |n| json!(n)),
-            }),
+            sandbox: cfg.sandbox.clone(),
             approvals: cfg.tool_approvals.clone(),
             approval_timeout: cfg.approval_timeout,
             waits: Arc::default(),
@@ -616,13 +608,20 @@ struct SettingsBody {
     /// How many minutes a conversation's sandbox keeps running after a turn before it is paused.
     #[serde(default, deserialize_with = "crate::integrations::present")]
     sandbox_idle_minutes: Option<Option<u32>>,
+    /// What runs conversations' sandboxes: `docker` (the default) or `openshell`.
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    sandbox_runtime: Option<Option<String>>,
 }
 
 async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> {
     Ok(json!({
         "max_image_side": images::saved_max_side(&state.store).await?,
         "sandbox_idle_minutes": manager::saved_idle_minutes(&state.store).await?,
+        "sandbox_runtime": sandbox::saved_runtime(&state.store).await?.map(sandbox::Runtime::as_str),
+        // Where OpenShell can't run (Windows), sandboxes always run on Docker.
+        "openshell_supported": sandbox::OPENSHELL_SUPPORTED,
         "defaults": {
+            "sandbox_runtime": sandbox::Runtime::Docker.as_str(),
             "max_image_side": images::DEFAULT_MAX_SIDE,
             "min_max_image_side": images::MIN_MAX_SIDE,
             "max_max_image_side": images::MAX_MAX_SIDE,
@@ -653,11 +652,39 @@ async fn put_settings(
     if let Some(Some(minutes)) = body.sandbox_idle_minutes {
         manager::check_idle_minutes(minutes).map_err(AppError::BadRequest)?;
     }
+    let runtime = match &body.sandbox_runtime {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(name)) => {
+            let runtime = sandbox::Runtime::parse(name).ok_or_else(|| {
+                AppError::BadRequest("sandbox_runtime must be \"docker\" or \"openshell\"".into())
+            })?;
+            sandbox::check_platform(runtime).map_err(AppError::BadRequest)?;
+            // Switching to a runtime that can't start a sandbox would fail every run after it.
+            if let Err(e) = state.sandboxes.check_runtime(runtime).await {
+                tracing::warn!(error = %format!("{e:#}"), runtime = runtime.as_str(), "refused to switch the sandbox runtime");
+                return Err(AppError::BadRequest(format!(
+                    "{} can't run sandboxes here yet: {e:#}",
+                    if runtime == sandbox::Runtime::OpenShell {
+                        "OpenShell"
+                    } else {
+                        "Docker"
+                    }
+                )));
+            }
+            Some(Some(runtime))
+        }
+    };
     if let Some(side) = body.max_image_side {
         images::set_max_side(&state.store, side).await?;
     }
     if let Some(minutes) = body.sandbox_idle_minutes {
         manager::set_idle_minutes(&state.store, minutes).await?;
+    }
+    if let Some(runtime) = runtime {
+        // Docker is the default, so it is saved as no setting at all.
+        let runtime = runtime.filter(|r| *r != sandbox::Runtime::Docker);
+        sandbox::set_runtime(&state.store, runtime).await?;
     }
     Ok(Json(settings_json(&state).await?))
 }

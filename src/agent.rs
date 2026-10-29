@@ -4,13 +4,14 @@
 use crate::approvals::{self, Gate, Rules};
 use crate::attachments;
 use crate::browser::BrowserSession;
+use crate::config::SandboxConfig;
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmRouter, MessageRequest};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
-use crate::policy::{Endpoint, Policy};
-use crate::sandbox::{Sandbox, SandboxFatal};
+use crate::policy::Endpoint;
+use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER};
@@ -32,11 +33,9 @@ pub struct AgentEnv {
     pub store: Store,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
-    /// The base policy of a conversation's sandbox, for the note on what the sandbox can reach
-    /// and for which calls need approval.
-    pub sandbox_policy: Policy,
-    /// What `run.started` says about the sandbox: `{runtime, network, policy, hosts, memory, cpus}`.
-    pub sandbox_info: Value,
+    /// How sandboxes are set up: what they may reach depends on it and on the runtime (see
+    /// [`Reach`]), for the note on what the sandbox can reach and for which calls need approval.
+    pub sandbox: SandboxConfig,
     /// Which calls wait for approval in interactive runs.
     pub approvals: Rules,
     /// How long a run waits for an answer to its plan or an approval.
@@ -95,14 +94,18 @@ pub async fn run_agent(
         }),
         locale: run.locale.clone(),
     };
-    // Connections the key's owner always allows, which the sandbox's base policy doesn't.
-    let allowed: Vec<Endpoint> = env
-        .store
-        .grants(&run.owner, approvals::Rule::Network.as_str())
-        .await?
-        .iter()
-        .filter_map(|g| Endpoint::from_grant(g))
-        .collect();
+    // Connections the key's owner always allows, which the sandbox's base policy doesn't. Only an
+    // OpenShell policy can let them through one by one.
+    let allowed: Vec<Endpoint> = if sandbox.runtime() == Runtime::OpenShell {
+        env.store
+            .grants(&run.owner, approvals::Rule::Network.as_str())
+            .await?
+            .iter()
+            .filter_map(|g| Endpoint::from_grant(g))
+            .collect()
+    } else {
+        Vec::new()
+    };
     if !allowed.is_empty() {
         if let Err(e) = sandbox.allow(&allowed).await {
             tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not apply the connections this key always allows");
@@ -117,7 +120,7 @@ pub async fn run_agent(
     }
     let tools = tool_set.select(run.tools.as_deref());
     let mut tool_defs = tools.definitions();
-    let mut note = tools.environment_note(&env.sandbox_policy);
+    let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // In `tool` mode the model decides whether a request needs a plan.
     let offers_plan = run.plan == PlanMode::Tool;
     if offers_plan {
@@ -525,6 +528,7 @@ const NOT_APPROVED: &str = "No one approved this call in time, so it did not run
 async fn approve(
     env: &AgentEnv,
     tools: &ToolView<'_>,
+    reach: &Reach,
     run: &Run,
     events: &Emitter,
     cancel: &CancellationToken,
@@ -539,9 +543,7 @@ async fn approve(
         .get(name)
         .and_then(|t| t.personal())
         .and_then(|t| approvals::check_personal(&env.approvals, t));
-    let Some(gate) =
-        approvals::check(&env.approvals, name, input, env.sandbox_policy.networked()).or(personal)
-    else {
+    let Some(gate) = approvals::check(&env.approvals, name, input, reach).or(personal) else {
         return Ok(None);
     };
     let rule = gate.rule.as_str();
@@ -744,7 +746,8 @@ async fn execute_tool_call(
     let input = &block["input"];
     // A call to a tool the run doesn't have fails below without running, so it needs no OK.
     let refused = if tools.get(name).is_some() {
-        approve(env, tools, run, events, cancel, id, name, input).await?
+        let reach = Reach::of(ctx.sandbox.runtime(), &env.sandbox);
+        approve(env, tools, &reach, run, events, cancel, id, name, input).await?
     } else {
         None
     };

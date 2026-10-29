@@ -6,7 +6,7 @@
 // register here:
 //
 //   cedarSettingsShell.register({
-//     id, label,            // 'interface' | 'tools' | 'model' | 'notify' | 'iphone' | 'server', and the nav name
+//     id, label,            // 'interface' | 'tools' | 'model' | 'notify' | 'iphone' | 'advanced' | 'server', and the nav name
 //     title, description,   // the page head
 //     render(sectionEl),    // draw the page; called every time the dialog opens
 //     summary() -> string | {text, kind} | null   the nav's second line (null: none yet, shows "…")
@@ -22,7 +22,7 @@
 // in Settings" asks for 'notify', the Google redirect for 'server').
 
 const cedarSettingsShell = (() => {
-  const ORDER = ['interface', 'language', 'tools', 'model', 'notify', 'iphone', 'server'];
+  const ORDER = ['interface', 'language', 'tools', 'model', 'notify', 'iphone', 'advanced', 'server'];
   const PAGE_KEY = 'cedar-chat-settings-page';
 
   const pages = new Map();

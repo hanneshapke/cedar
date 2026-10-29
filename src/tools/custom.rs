@@ -5,12 +5,12 @@
 //! tool) or installed from the community registry (see `marketplace`), which leaves an
 //! [`INSTALL_RECEIPT`] in its folder.
 //!
-//! Every call runs in an OpenShell sandbox of its own (see [`crate::sandbox::ToolRun`]): it sees
-//! the run's workspace, a read-only copy of its own folder at [`MOUNT`], and its own environment,
-//! where its packages live, but not the other tools' folders, their secrets, or their packages.
-//! Its policy lets it reach the hosts its manifest declares (from Python, on ports 80 and 443) and
-//! nothing else, and it gets only the secrets its manifest declares (saved through the admin API,
-//! encrypted). The call's input arrives as JSON on stdin, stdout is
+//! Every call runs in a container (or OpenShell sandbox) of its own (see
+//! [`crate::sandbox::ToolRun`]): it sees the run's workspace, its own folder read-only at
+//! [`MOUNT`], and its own environment, where its packages live, but not the other tools' folders,
+//! their secrets, or their packages. It gets a network only if its manifest declares the hosts it
+//! reaches (on OpenShell, only those hosts), and only the secrets its manifest declares (saved
+//! through the admin API, encrypted). The call's input arrives as JSON on stdin, stdout is
 //! the result, and a non-zero exit turns stderr into an error the model sees.
 //!
 //! The manifests are read on the host, every time the tool set is built, so a tool added or
@@ -61,7 +61,8 @@ struct Manifest {
     author: Option<String>,
     homepage: Option<String>,
     license: Option<String>,
-    /// The hosts the tool reaches; its calls can reach these and nothing else.
+    /// The hosts the tool reaches. Declaring any gives its calls `TOOLS_NETWORK` on Docker; on
+    /// OpenShell they reach these and nothing else.
     #[serde(default)]
     network: Vec<String>,
     /// The environment variables it reads its credentials from.
@@ -553,7 +554,10 @@ impl Tool for PythonTool {
         // The locale is cedar's to set: `CEDAR_*` names are reserved, so no secret can take them.
         let mut env = self.env.clone();
         env.push(("CEDAR_LOCALE".into(), ctx.locale.clone()));
-        env.push(("CEDAR_LANGUAGE".into(), crate::locale::language(&ctx.locale).into()));
+        env.push((
+            "CEDAR_LANGUAGE".into(),
+            crate::locale::language(&ctx.locale).into(),
+        ));
         let call = ToolRun {
             name: &self.name,
             dir: &self.dir,

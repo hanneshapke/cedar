@@ -10,14 +10,13 @@ see the [desktop app](desktop/README.md): one DMG or MSI, no systemd.
 laptop browser ──SSH tunnel───────────┐
 phones / any device ───Tailscale HTTPS┴─▶ cedar-chat :3000 ──▶ cedar :8080 ──▶ vLLM :8000 (DeepSeek V4)
                                                                      │
-                                                                     └──▶ one OpenShell sandbox per conversation (the agent's tools)
+                                                                     └──▶ one Docker container per conversation (the agent's tools)
 ```
 
 | Service | What it is | Listens on | Started by |
 | --- | --- | --- | --- |
 | vLLM | Serves the model over an OpenAI-compatible API | `127.0.0.1:8000` | you (see [step 2](#2-make-sure-vllm-is-ready-for-cedar)) |
 | `cedar` | The agent server: runs the loop and the sandboxes | `127.0.0.1:8080` | systemd |
-| `openshell-gateway` | Runs the sandboxes and checks every connection they open against their policy | `127.0.0.1:17670` | systemd |
 | `cedar-chat` | The web UI | `127.0.0.1:3000` | systemd |
 
 Only `cedar-chat` needs to be reachable from outside the Spark. Keep `cedar` and vLLM on
@@ -49,9 +48,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustc --version
 ```
 
-cedar runs each agent's tools in [OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes,
-which are Docker containers whose every connection OpenShell checks against a policy. Docker 28
-or newer must work for your user:
+cedar runs each agent's tools in Docker containers, so Docker must work for your user:
 
 ```sh
 docker info --format '{{.ServerVersion}}'    # prints a version number
@@ -61,22 +58,6 @@ If that says "permission denied", add yourself to the `docker` group, then log o
 
 ```sh
 sudo usermod -aG docker "$USER"
-```
-
-OpenShell also needs Landlock in the kernel (DGX OS's is new enough; this prints `landlock`
-among others):
-
-```sh
-cat /sys/kernel/security/lsm
-```
-
-Install OpenShell's packages (the `openshell` CLI and the `openshell-gateway` binary). The
-installer also starts a gateway for your own user, which this setup doesn't use (step 4 runs one
-for the `cedar` user), so stop it again:
-
-```sh
-curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
-systemctl --user disable --now openshell-gateway
 ```
 
 Get the code:
@@ -102,8 +83,7 @@ fail one process.
 
 With a model that large on one Spark, run few agents at once (`MAX_CONCURRENT_RUNS=2` or even `1`
 in step 4). Each sandbox is capped at `SANDBOX_MEMORY` (512 MB by default), so concurrent runs add
-up to `MAX_CONCURRENT_RUNS × SANDBOX_MEMORY` on top of the model. Each sandbox also has an
-OpenShell supervisor container beside it (about 20 MB idle), and the gateway itself takes around 400 MB.
+up to `MAX_CONCURRENT_RUNS × SANDBOX_MEMORY` on top of the model.
 
 ## 2. Make sure vLLM is ready for cedar
 
@@ -174,12 +154,12 @@ tar -xzf Cedar-$V-linux-arm64.tar.gz
 sudo install -m 0755 Cedar-$V-linux-arm64/cedar Cedar-$V-linux-arm64/cedar-chat /usr/local/bin/
 ```
 
-By default the sandbox reaches nothing, so the agent can only use what the image ships with; add
+By default the sandbox has no network, so the agent can only use what the image ships with; add
 tools to `sandbox/Dockerfile` and rebuild the image if your tasks need more. To let the agent
-`pip install` packages itself, set `SANDBOX_POLICY=packages` in cedar's environment file (step 4):
-Python and Node.js can then download from PyPI and npm, and nothing in the sandbox reaches any
-other host, vLLM and the rest of your network included. In an interactive chat, the user is asked
-when something tries to reach a host the policy doesn't allow, and can let it through. Installed packages live in the run's workspace
+`pip install` packages itself, set `SANDBOX_NETWORK=bridge` in cedar's environment file (step 4).
+That gives the container outbound access to whatever the Docker bridge network can reach, so
+only do it on a machine where that is acceptable, or run the sandboxes in OpenShell, which limits
+them to PyPI and npm (see "OpenShell sandboxes" after step 6). Installed packages live in the run's workspace
 and survive follow-up messages until the workspace expires. Web search is separate: the optional
 `web_search` tool (see `BRAVE_API_KEY` in step 4) runs in the cedar process, so the host needs
 outbound HTTPS to `api.search.brave.com`. So do `fetch_url` and `download_file`, which are on by
@@ -208,9 +188,183 @@ MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')   # or ty
 echo "model: ${MODEL:?vLLM is not reachable; set MODEL to the name it serves}"
 
 sudo install -d -m 0755 /etc/cedar
+
+sudo tee /etc/cedar/cedar.env >/dev/null <<EOF
+CEDAR_API_KEYS=$CEDAR_KEY
+CEDAR_ADMIN_KEYS=$CEDAR_KEY           # lets the chat UI register models and save keys
+CEDAR_SECRET_KEY=$SECRET_KEY
+BIND_ADDR=127.0.0.1:8080
+DATABASE_URL=sqlite:///var/lib/cedar/cedar.db
+
+# The model server is registered through the chat UI (step 5), not here.
+# BRAVE_API_KEY=          # enables the web_search tool (key from api-dashboard.search.brave.com)
+
+# Tuned for one Spark running a large model (see "Memory" above)
+MAX_CONCURRENT_RUNS=2
+RUN_TIMEOUT_SECS=1800
+RUST_LOG=info,sqlx=warn
+EOF
+
+sudo tee /etc/cedar/chat.env >/dev/null <<EOF
+CEDAR_URL=http://127.0.0.1:8080
+CEDAR_API_KEY=$CEDAR_KEY
+CHAT_BIND_ADDR=127.0.0.1:3000
+CHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db
+CHAT_ACCESS_TOKEN=$CHAT_TOKEN
+CHAT_ADMIN_TOKEN=$ADMIN_TOKEN
+EOF
+
+sudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env   # systemd reads them as root
+echo "Chat access token (you type this in the browser): $CHAT_TOKEN"
+echo "Admin token (unlocks the model settings in the browser): $ADMIN_TOKEN"
 ```
 
-### The OpenShell gateway
+Keep the printed tokens. The chat page asks for the access token on first load; the admin token
+unlocks Settings → Server, where the vLLM server is registered (step 5 does it
+with curl first). The full list of settings is in
+the [README](README.md#configuration) and [chat/README.md](chat/README.md#configuration).
+
+Settings worth knowing on this hardware:
+
+| Setting | Why |
+| --- | --- |
+| `RUN_TIMEOUT_SECS` | A whole run, across all its model turns, must finish within this (default 600). A local model is slower than a hosted one, so give it room. |
+| `MAX_CONCURRENT_RUNS` | How many agents run at once; the rest queue. |
+| `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox container. |
+| `WEB_FETCH` | `on` by default. `off` removes `fetch_url` and `download_file`, for a host that should make no outbound requests on the agent's behalf. |
+| `WEATHER` | `on` by default. `off` removes `weather_forecast`. It uses the public Open-Meteo API, which is free for non-commercial use only; for commercial use set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to a self-hosted or commercial Open-Meteo endpoint. Place names and coordinates the agent asks about are sent to that service. |
+| `GMAIL` / `CALENDAR` | `off` by default. `on` offers the Gmail or Calendar tools for one Google account, which also needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` (see "Gmail and Calendar" in the README). `GOOGLE_BACKEND` picks Google's REST APIs (`api`, the default, for any account) or its MCP servers (`mcp`, only for Cloud projects in the Workspace Developer Preview). Mail and calendar contents the agent reads are stored with the run and sent to the model. The default tools can't send, delete, or change anything. |
+| `MAPS` | `on` by default. `off` removes `show_map`. It finds places by name with the same Open-Meteo geocoding endpoint (`WEATHER_GEOCODING_BASE_URL`), so the same non-commercial terms apply. |
+
+## 5. Try it by hand first
+
+Run each service in the foreground to confirm everything is wired up before using systemd. Use
+two terminals on the Spark.
+
+```sh
+# terminal 1
+sudo -u cedar env $(sudo cat /etc/cedar/cedar.env | grep -v '^#' | xargs) /usr/local/bin/cedar
+```
+
+```sh
+# terminal 2
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/readyz     # 200
+
+CEDAR_KEY=$(sudo grep ^CEDAR_API_KEYS= /etc/cedar/cedar.env | cut -d= -f2)
+MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')
+
+# Register vLLM as the model "deepseek" (cedar lists the server's models first to check the
+# address). DeepSeek V4 takes these reasoning levels; leave the list out for a model that has none.
+curl -s -X PUT http://127.0.0.1:8080/v1/admin/models/deepseek -H "Authorization: Bearer $CEDAR_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"base_url": "http://127.0.0.1:8000/v1", "model": "'"$MODEL"'", "label": "DeepSeek V4",
+       "reasoning_levels": ["none", "low", "high", "max"]}'
+
+curl -s http://127.0.0.1:8080/v1/runs -H "Authorization: Bearer $CEDAR_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "Write hello.txt containing the word hi, then read it back."}' | tee /tmp/run.json
+RUN=$(jq -r .id /tmp/run.json)
+curl -N http://127.0.0.1:8080/v1/runs/$RUN/events -H "Authorization: Bearer $CEDAR_KEY"
+```
+
+`/readyz` returns 200 only if the database and Docker (including the `cedar-sandbox` image) are
+available. It does not check vLLM, but it says how many models are registered (`"models": 1`
+after the `PUT`). The registration is kept in cedar's database, so it survives restarts; the chat
+UI shows and edits it under Settings → Server. The event stream should show
+`tool.call`, `tool.result`, `assistant.text`, and finally `run.completed`. If it ends in
+`run.failed`, see [Troubleshooting](#troubleshooting).
+
+**Reply length.** Each model caps one reply at its `max_tokens`, 16384 unless set (add
+`"max_tokens": 8192` to the `PUT` above, or change **Max tokens per reply** under Settings →
+Server). A model that reasons before it answers spends this on its thinking too, so a reply can
+end before any text; chat then says it was cut off at the limit. Raise it if you see that. cedar
+waits for the full reply and gives up on a single request after **300 seconds** (fixed in
+`src/llm.rs`). If your Spark generates slowly enough that the limit takes longer than that, lower
+it. The old `MAX_TOKENS` setting is ignored, with a warning in the log.
+
+Stop cedar with Ctrl-C and move on to systemd.
+
+## 6. Run both services under systemd
+
+```sh
+sudo tee /etc/systemd/system/cedar.service >/dev/null <<'EOF'
+[Unit]
+Description=cedar agent server
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+User=cedar
+Group=cedar
+EnvironmentFile=/etc/cedar/cedar.env
+WorkingDirectory=/var/lib/cedar
+ExecStart=/usr/local/bin/cedar
+Restart=on-failure
+RestartSec=5
+# On SIGTERM cedar cancels active runs and gives them up to 10 s to record their state.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/cedar-chat.service >/dev/null <<'EOF'
+[Unit]
+Description=cedar chat UI
+After=network-online.target cedar.service
+Wants=cedar.service
+
+[Service]
+User=cedar
+Group=cedar
+EnvironmentFile=/etc/cedar/chat.env
+WorkingDirectory=/var/lib/cedar
+ExecStart=/usr/local/bin/cedar-chat
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now cedar cedar-chat
+systemctl status cedar cedar-chat --no-pager
+```
+
+cedar does not check the LLM at startup, so it comes up fine even if vLLM is still loading. Runs
+started before vLLM is ready fail after a few retries. If vLLM is also a systemd unit, order cedar
+after it:
+
+```sh
+sudo systemctl edit cedar      # add:  [Unit]  After=vllm.service  Wants=vllm.service
+```
+
+### Optional: OpenShell sandboxes
+
+By default each conversation's sandbox is a Docker container: with `SANDBOX_NETWORK=bridge` it
+reaches whatever that network reaches. [OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes
+check every connection against a policy instead (by program and host), and ask in the chat before
+letting a blocked one through. Setting it up takes a gateway run as the `cedar` user, and then one
+switch in the browser.
+
+OpenShell needs Docker 28 or newer and Landlock in the kernel (DGX OS's is new enough; this prints
+`landlock` among others):
+
+```sh
+cat /sys/kernel/security/lsm
+```
+
+Install OpenShell's packages (the `openshell` CLI and the `openshell-gateway` binary). The
+installer also starts a gateway for your own user, which this setup doesn't use, so stop it again:
+
+```sh
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+systemctl --user disable --now openshell-gateway
+```
+
+#### The gateway
 
 The gateway runs as the `cedar` user too, so cedar's `openshell` calls reach it with that user's
 credentials. It keeps its state, certificates and configuration under `/var/lib/cedar`. The
@@ -269,161 +423,20 @@ sudo -u cedar HOME=/var/lib/cedar openshell status    # Status: Connected, Authe
 The first sandbox pulls OpenShell's own runtime images (`ghcr.io/nvidia/openshell/supervisor` and
 `.../sandbox`), so the machine needs to reach `ghcr.io` once, or have them loaded.
 
-### cedar's settings
+Order cedar after the gateway, so a reboot starts them in turn:
 
 ```sh
-sudo tee /etc/cedar/cedar.env >/dev/null <<EOF
-CEDAR_API_KEYS=$CEDAR_KEY
-CEDAR_ADMIN_KEYS=$CEDAR_KEY           # lets the chat UI register models and save keys
-CEDAR_SECRET_KEY=$SECRET_KEY
-BIND_ADDR=127.0.0.1:8080
-DATABASE_URL=sqlite:///var/lib/cedar/cedar.db
-
-# The model server is registered through the chat UI (step 5), not here.
-# BRAVE_API_KEY=          # enables the web_search tool (key from api-dashboard.search.brave.com)
-
-# Tuned for one Spark running a large model (see "Memory" above)
-MAX_CONCURRENT_RUNS=2
-RUN_TIMEOUT_SECS=1800
-RUST_LOG=info,sqlx=warn
-EOF
-
-sudo tee /etc/cedar/chat.env >/dev/null <<EOF
-CEDAR_URL=http://127.0.0.1:8080
-CEDAR_API_KEY=$CEDAR_KEY
-CHAT_BIND_ADDR=127.0.0.1:3000
-CHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db
-CHAT_ACCESS_TOKEN=$CHAT_TOKEN
-CHAT_ADMIN_TOKEN=$ADMIN_TOKEN
-EOF
-
-sudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env   # systemd reads them as root
-echo "Chat access token (you type this in the browser): $CHAT_TOKEN"
-echo "Admin token (unlocks the model settings in the browser): $ADMIN_TOKEN"
+sudo systemctl edit cedar      # add:  [Unit]  After=openshell-gateway.service  Wants=openshell-gateway.service
+sudo systemctl restart cedar
 ```
 
-Keep the printed tokens. The chat page asks for the access token on first load; the admin token
-unlocks Settings → Server, where the vLLM server is registered (step 5 does it
-with curl first). The full list of settings is in
-the [README](README.md#configuration) and [chat/README.md](chat/README.md#configuration).
-
-Settings worth knowing on this hardware:
-
-| Setting | Why |
-| --- | --- |
-| `RUN_TIMEOUT_SECS` | A whole run, across all its model turns, must finish within this (default 600). A local model is slower than a hosted one, so give it room. |
-| `MAX_CONCURRENT_RUNS` | How many agents run at once; the rest queue. |
-| `BRAVE_API_KEY` | Optional. Turns on the `web_search` tool. Search queries are sent to Brave; the key never enters a sandbox. |
-| `SANDBOX_POLICY` | What the agent's sandbox may reach: `offline` (default), `packages` (pip and npm downloads), or a JSON policy file of your own (see the README's "The sandbox and its network policy"). |
-| `WEB_FETCH` | `on` by default. `off` removes `fetch_url` and `download_file`, for a host that should make no outbound requests on the agent's behalf. |
-| `WEATHER` | `on` by default. `off` removes `weather_forecast`. It uses the public Open-Meteo API, which is free for non-commercial use only; for commercial use set `WEATHER_BASE_URL` and `WEATHER_GEOCODING_BASE_URL` to a self-hosted or commercial Open-Meteo endpoint. Place names and coordinates the agent asks about are sent to that service. |
-| `GMAIL` / `CALENDAR` | `off` by default. `on` offers the Gmail or Calendar tools for one Google account, which also needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` (see "Gmail and Calendar" in the README). `GOOGLE_BACKEND` picks Google's REST APIs (`api`, the default, for any account) or its MCP servers (`mcp`, only for Cloud projects in the Workspace Developer Preview). Mail and calendar contents the agent reads are stored with the run and sent to the model. The default tools can't send, delete, or change anything. |
-| `MAPS` | `on` by default. `off` removes `show_map`. It finds places by name with the same Open-Meteo geocoding endpoint (`WEATHER_GEOCODING_BASE_URL`), so the same non-commercial terms apply. |
-
-## 5. Try it by hand first
-
-Run each service in the foreground to confirm everything is wired up before using systemd. Use
-two terminals on the Spark.
-
-```sh
-# terminal 1
-sudo -u cedar env $(sudo cat /etc/cedar/cedar.env | grep -v '^#' | xargs) /usr/local/bin/cedar
-```
-
-```sh
-# terminal 2
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/readyz     # 200
-
-CEDAR_KEY=$(sudo grep ^CEDAR_API_KEYS= /etc/cedar/cedar.env | cut -d= -f2)
-MODEL=$(curl -s http://127.0.0.1:8000/v1/models | jq -r '.data[0].id')
-
-# Register vLLM as the model "deepseek" (cedar lists the server's models first to check the
-# address). DeepSeek V4 takes these reasoning levels; leave the list out for a model that has none.
-curl -s -X PUT http://127.0.0.1:8080/v1/admin/models/deepseek -H "Authorization: Bearer $CEDAR_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{"base_url": "http://127.0.0.1:8000/v1", "model": "'"$MODEL"'", "label": "DeepSeek V4",
-       "reasoning_levels": ["none", "low", "high", "max"]}'
-
-curl -s http://127.0.0.1:8080/v1/runs -H "Authorization: Bearer $CEDAR_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt": "Write hello.txt containing the word hi, then read it back."}' | tee /tmp/run.json
-RUN=$(jq -r .id /tmp/run.json)
-curl -N http://127.0.0.1:8080/v1/runs/$RUN/events -H "Authorization: Bearer $CEDAR_KEY"
-```
-
-`/readyz` returns 200 only if the database, Docker (including the `cedar-sandbox` image) and the
-OpenShell gateway are available. It does not check vLLM, but it says how many models are registered (`"models": 1`
-after the `PUT`). The registration is kept in cedar's database, so it survives restarts; the chat
-UI shows and edits it under Settings → Server. The event stream should show
-`tool.call`, `tool.result`, `assistant.text`, and finally `run.completed`. If it ends in
-`run.failed`, see [Troubleshooting](#troubleshooting).
-
-**Reply length.** Each model caps one reply at its `max_tokens`, 16384 unless set (add
-`"max_tokens": 8192` to the `PUT` above, or change **Max tokens per reply** under Settings →
-Server). A model that reasons before it answers spends this on its thinking too, so a reply can
-end before any text; chat then says it was cut off at the limit. Raise it if you see that. cedar
-waits for the full reply and gives up on a single request after **300 seconds** (fixed in
-`src/llm.rs`). If your Spark generates slowly enough that the limit takes longer than that, lower
-it. The old `MAX_TOKENS` setting is ignored, with a warning in the log.
-
-Stop cedar with Ctrl-C and move on to systemd.
-
-## 6. Run both services under systemd
-
-```sh
-sudo tee /etc/systemd/system/cedar.service >/dev/null <<'EOF'
-[Unit]
-Description=cedar agent server
-After=network-online.target docker.service openshell-gateway.service
-Wants=network-online.target openshell-gateway.service
-Requires=docker.service
-
-[Service]
-User=cedar
-Group=cedar
-EnvironmentFile=/etc/cedar/cedar.env
-WorkingDirectory=/var/lib/cedar
-ExecStart=/usr/local/bin/cedar
-Restart=on-failure
-RestartSec=5
-# On SIGTERM cedar cancels active runs and gives them up to 10 s to record their state.
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo tee /etc/systemd/system/cedar-chat.service >/dev/null <<'EOF'
-[Unit]
-Description=cedar chat UI
-After=network-online.target cedar.service
-Wants=cedar.service
-
-[Service]
-User=cedar
-Group=cedar
-EnvironmentFile=/etc/cedar/chat.env
-WorkingDirectory=/var/lib/cedar
-ExecStart=/usr/local/bin/cedar-chat
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now cedar cedar-chat
-systemctl status cedar cedar-chat --no-pager
-```
-
-cedar does not check the LLM at startup, so it comes up fine even if vLLM is still loading. Runs
-started before vLLM is ready fail after a few retries. If vLLM is also a systemd unit, order cedar
-after it:
-
-```sh
-sudo systemctl edit cedar      # add:  [Unit]  After=vllm.service  Wants=vllm.service
-```
+Then open the chat, unlock Settings → Server with the admin token, and turn on **Run sandboxes
+with OpenShell** under Settings → Advanced settings. cedar checks the gateway first and says why if
+it can't use it; from the next message on, each conversation runs in an OpenShell sandbox, keeping
+its files. `SANDBOX_POLICY=packages` in `cedar.env` lets them reach PyPI and npm (with
+`SANDBOX_NETWORK=bridge` set and `SANDBOX_POLICY` unset, that is what they get). Each sandbox has an
+OpenShell supervisor container beside it (about 20 MB idle), and the gateway itself takes around
+400 MB.
 
 ## 7. Open the UI from your laptop and phone
 
@@ -598,9 +611,10 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 | Run fails: `run exceeded the Ns time limit` | The whole run took longer than `RUN_TIMEOUT_SECS`. Raise it, or lower the model's **Max tokens per reply** so each model turn is shorter. |
 | Run fails: `run did not finish within N turns` | The task needed more model turns than allowed. Raise `max_turns` in the request (capped by `MAX_TURNS_CAP`, 25 by default) or give the agent a smaller task. |
 | Run fails: `sending API request` after a long wait | A single model reply took longer than the 300 s request limit (see "Reply length" above), and cedar retried it. Lower the model's **Max tokens per reply**. |
-| `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`), the `cedar-sandbox` image is missing, or the OpenShell gateway isn't running or doesn't accept the cedar user's certificate (`sudo -u cedar HOME=/var/lib/cedar openshell status`). The log says which. |
-| Run fails: "could not start the sandbox for this run" | cedar's log has OpenShell's reason. `external resource not admitted` or `driver config is disabled`: the gateway's `allow_driver_config = true` is missing (see step 4). `ControlSupervisorStartFailed`: OpenShell's runtime images couldn't be pulled, or the kernel lacks Landlock (`journalctl -u openshell-gateway`). |
-| A command says it couldn't connect | The sandbox's policy blocked it; the run's `sandbox.denied` events name the program and host. Allow it from the chat, or widen `SANDBOX_POLICY`. |
+| `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`), the `cedar-sandbox` image is missing, or (with OpenShell sandboxes on) the gateway isn't running or doesn't accept the cedar user's certificate (`sudo -u cedar HOME=/var/lib/cedar openshell status`). The log says which. |
+| Settings won't turn OpenShell on | The message says why: usually the gateway isn't running for the `cedar` user, or its CLI isn't registered (see "OpenShell sandboxes" after step 6). |
+| With OpenShell on, a run fails: "could not start the sandbox for this run" | cedar's log has OpenShell's reason. `external resource not admitted` or `driver config is disabled`: the gateway's `allow_driver_config = true` is missing. `ControlSupervisorStartFailed`: OpenShell's runtime images couldn't be pulled, or the kernel lacks Landlock (`journalctl -u openshell-gateway`). |
+| With OpenShell on, a command says it couldn't connect | The sandbox's policy blocked it; the run's `sandbox.denied` events name the program and host. Allow it from the chat, or widen `SANDBOX_POLICY`. |
 | Chat page shows a 502 error | `cedar-chat` can't reach cedar, or `CEDAR_API_KEY` in `chat.env` doesn't match `CEDAR_API_KEYS` in `cedar.env`. |
 | Chat page asks for a token and rejects it | Use the value of `CHAT_ACCESS_TOKEN` from `/etc/cedar/chat.env`, not the cedar key. |
 | The iOS or Android app can't connect | It needs HTTPS: use the `https://<spark>.<tailnet>.ts.net` address from step 7, not `http://…:3000`, and check that the phone is logged in to Tailscale (`tailscale serve status` on the Spark shows what is served). |

@@ -72,27 +72,47 @@ anywhere they didn't ask for.";
 
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
-    /// The `openshell` command: a name looked up on `PATH` or an absolute path (`OPENSHELL_BIN`).
-    /// Every sandbox is an OpenShell sandbox; see `sandbox`.
+    /// The `openshell` command: a name looked up on `PATH` or an absolute path (`OPENSHELL_BIN`),
+    /// for when an admin turns the OpenShell runtime on (see `sandbox::Runtime`).
     pub openshell_bin: String,
     /// The OpenShell workspace cedar's sandboxes live in (`OPENSHELL_WORKSPACE`, `default`). The
     /// `openshell` command reads the same variable; cedar needs it to label the volumes it hands
     /// to OpenShell.
     pub openshell_workspace: String,
-    /// The `docker` command (`DOCKER_BIN`), for the volumes that hold workspaces and personal
-    /// tools' packages, and for reading a finished run's files.
+    /// The `docker` command (`DOCKER_BIN`): it runs the Docker runtime's containers, and for
+    /// either runtime holds the volumes of workspaces and personal tools' packages.
     pub docker_bin: String,
     pub image: String,
     /// What a conversation's sandbox may reach (`SANDBOX_POLICY`): `offline` (the default),
-    /// `packages`, or a policy file. See `policy`.
+    /// `packages`, or a policy file. See `policy`. OpenShell enforces it host by host; Docker
+    /// gives a policy that reaches anything the whole of `network`.
     pub policy: Policy,
+    /// The Docker network a conversation's container gets when its policy reaches anything
+    /// (`SANDBOX_NETWORK`, `bridge` by default). Docker runtime only; see [`Self::docker_network`].
+    pub network: String,
     /// Docker-style sizes (`512m`, `1g`), converted for OpenShell.
     pub memory: String,
     pub cpus: String,
     /// A directory of personal tools written in Python (`TOOLS_DIR`). Each call of one runs in a
-    /// sandbox of its own that sees only that tool's folder, and reaches only the hosts its
-    /// manifest declares. See `tools::custom`.
+    /// sandbox of its own that sees only that tool's folder. On OpenShell it reaches only the hosts
+    /// its manifest declares. See `tools::custom`.
     pub tools_dir: Option<PathBuf>,
+    /// Docker network for the calls of personal tools whose manifest declares `network` hosts
+    /// (`TOOLS_NETWORK`), `bridge` by default; tools that declare none always get `none`. Docker
+    /// runtime only: OpenShell lets a tool reach exactly the hosts it declares.
+    pub tools_network: String,
+}
+
+impl SandboxConfig {
+    /// The Docker network of a conversation's container: [`Self::network`] when the policy
+    /// reaches anything, else `none`.
+    pub fn docker_network(&self) -> &str {
+        if self.policy.networked() {
+            &self.network
+        } else {
+            "none"
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -284,26 +304,17 @@ fn absolute(p: PathBuf) -> PathBuf {
     }
 }
 
-/// The base policy of a conversation's sandbox: `SANDBOX_POLICY`, or what the `SANDBOX_NETWORK`
-/// of a configuration from before OpenShell meant (`none` is `offline`; a network that reached the
-/// internet becomes `packages`, which reaches the package registries only).
+/// The base policy of a conversation's sandbox: `SANDBOX_POLICY`, or what `SANDBOX_NETWORK` says
+/// when that is unset (`none`, the default, is `offline`; any network is `packages`, so that on
+/// OpenShell the sandbox reaches the package registries, and on Docker that network, as before).
 fn sandbox_policy(get: &impl Fn(&str) -> Option<String>) -> Result<Policy> {
     if let Some(setting) = get("SANDBOX_POLICY") {
         return Policy::from_setting(Some(&setting));
     }
-    match get("SANDBOX_NETWORK").map(|v| v.trim().to_string()) {
-        None => Ok(Policy::offline()),
-        Some(v) if v == "none" => Ok(Policy::offline()),
-        Some(v) => {
-            tracing::warn!(
-                setting = "SANDBOX_NETWORK",
-                value = %v,
-                "the sandbox's network is now its OpenShell policy: using SANDBOX_POLICY=packages \
-                 (pip and npm downloads only); set SANDBOX_POLICY to choose"
-            );
-            Ok(Policy::packages())
-        }
-    }
+    Ok(match get("SANDBOX_NETWORK").as_deref().map(str::trim) {
+        None | Some("none") => Policy::offline(),
+        Some(_) => Policy::packages(),
+    })
 }
 
 impl Config {
@@ -461,12 +472,6 @@ impl Config {
                 );
             }
         }
-        if get("TOOLS_NETWORK").is_some() {
-            tracing::warn!(
-                setting = "TOOLS_NETWORK",
-                "ignored: a personal tool's calls reach exactly the hosts its manifest declares"
-            );
-        }
         if get("MAX_TOKENS").is_some() {
             tracing::warn!(
                 setting = "MAX_TOKENS",
@@ -585,9 +590,13 @@ impl Config {
                 docker_bin: docker_bin.clone(),
                 image: get("SANDBOX_IMAGE").unwrap_or_else(|| "cedar-sandbox:latest".into()),
                 policy: sandbox_policy(&get)?,
+                network: get("SANDBOX_NETWORK")
+                    .filter(|n| n.trim() != "none")
+                    .unwrap_or_else(|| "bridge".into()),
                 memory: get("SANDBOX_MEMORY").unwrap_or_else(|| "512m".into()),
                 cpus: get("SANDBOX_CPUS").unwrap_or_else(|| "1".into()),
                 tools_dir: get("TOOLS_DIR").map(|d| absolute(PathBuf::from(d))),
+                tools_network: get("TOOLS_NETWORK").unwrap_or_else(|| "bridge".into()),
             },
             browser: BrowserConfig {
                 enabled: flag("BROWSER", false)?,
@@ -666,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn the_sandbox_policy_is_chosen_and_old_network_settings_map_onto_it() {
+    fn the_sandbox_policy_and_docker_networks_are_chosen() {
         let with = |pairs: &[(&str, &str)]| {
             let mut all = vec![("CEDAR_API_KEYS", "a")];
             all.extend_from_slice(pairs);
@@ -688,15 +697,15 @@ mod tests {
                 .name,
             "offline"
         );
-        // A network that reached the internet becomes the package registries, not the internet.
-        assert_eq!(
-            with(&[("SANDBOX_NETWORK", "bridge")])
-                .unwrap()
-                .sandbox
-                .policy
-                .name,
-            "packages"
-        );
+        // Any network means `packages`: the registries on OpenShell, that network on Docker.
+        let cfg = with(&[("SANDBOX_NETWORK", "cedar-net")]).unwrap();
+        assert_eq!(cfg.sandbox.policy.name, "packages");
+        assert_eq!(cfg.sandbox.docker_network(), "cedar-net");
+        let cfg = with(&[]).unwrap();
+        assert_eq!(cfg.sandbox.docker_network(), "none");
+        assert_eq!(cfg.sandbox.tools_network, "bridge");
+        let cfg = with(&[("SANDBOX_POLICY", "packages")]).unwrap();
+        assert_eq!(cfg.sandbox.docker_network(), "bridge");
         // SANDBOX_POLICY wins over the old setting.
         let cfg = with(&[("SANDBOX_POLICY", "offline"), ("SANDBOX_NETWORK", "bridge")]).unwrap();
         assert_eq!(cfg.sandbox.policy.name, "offline");

@@ -236,7 +236,12 @@ impl Integrations {
         Ok(json!({
             "tools_dir": self.cfg.sandbox.tools_dir.is_some(),
             "storage": self.secrets.is_some(),
-            "network": "declared",
+            // What a tool that declares hosts gets: on OpenShell exactly those hosts, on Docker
+            // the whole `TOOLS_NETWORK`.
+            "network": match crate::sandbox::runtime(&self.store).await? {
+                crate::sandbox::Runtime::OpenShell => "declared",
+                crate::sandbox::Runtime::Docker => self.cfg.sandbox.tools_network.as_str(),
+            },
             "tools": tools,
         }))
     }
