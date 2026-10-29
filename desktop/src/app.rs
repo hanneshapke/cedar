@@ -45,7 +45,10 @@ pub enum SetupStatus {
     Idle,
     /// The step it is on.
     Running(String),
+    /// Only the Windows setup (winsetup.rs) ends in these two; elsewhere they are only read.
+    #[cfg_attr(not(windows), allow(dead_code))]
     NeedsSignOut,
+    #[cfg_attr(not(windows), allow(dead_code))]
     NeedsRestart,
     /// Virtualization is off in the firmware, which only the user can turn on.
     NeedsVirtualization,

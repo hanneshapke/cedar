@@ -5,14 +5,15 @@
 //! A run that completes keeps its sandbox for the next run in its workspace (the conversation's
 //! next turn), so what it left running and installed is still there. Once the conversation has
 //! been idle for the `sandbox_idle_minutes` setting (an admin sets it with
-//! `PUT /v1/admin/settings`), the sandbox is paused; the next run resumes it. It is destroyed with
-//! its workspace, when the server stops, or when a run that used it doesn't complete.
+//! `PUT /v1/admin/settings`), the sandbox is paused (an OpenShell one is stopped, keeping its
+//! files); the next run resumes it. It is destroyed with its workspace, when the server stops, or when a run that
+//! used it doesn't complete.
 
 use crate::agent::{run_agent, AgentEnv, AgentError, Completion};
 use crate::browser::{BrowserFactory, BrowserSession};
 use crate::events::{Emitter, EventHub};
 use crate::models::{event, Run, RunStatus};
-use crate::sandbox::{Sandbox, SandboxFactory};
+use crate::sandbox::{self, Runtime, Sandbox, SandboxFactory};
 use crate::store::{Finish, Store};
 use anyhow::Result;
 use futures_util::future::join_all;
@@ -151,9 +152,9 @@ impl RunManager {
             Ok(0) => {}
             Ok(n) => tracing::warn!(
                 count = n,
-                "removed sandbox containers left over from a previous process"
+                "removed sandboxes left over from a previous process"
             ),
-            // Docker may simply be down right now; /readyz reports that.
+            // Docker or the OpenShell gateway may simply be down right now; /readyz reports that.
             Err(e) => {
                 tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover sandboxes")
             }
@@ -347,6 +348,8 @@ impl Inner {
 
         let events = Emitter::new(self.store.clone(), self.hub.clone(), run.id);
         self.store.mark_running(run.id).await?;
+        // Read once, so `run.started` names the runtime the sandbox is then started (or kept) on.
+        let runtime = self.sandboxes.runtime().await;
         events
             .emit(
                 event::RUN_STARTED,
@@ -358,7 +361,7 @@ impl Inner {
                     "parent_id": run.parent_id,
                     "workspace_id": run.workspace_id,
                     "workspace_reused": run.workspace_reused,
-                    "sandbox": self.env.sandbox_info,
+                    "sandbox": sandbox::describe(runtime, &self.env.sandbox),
                     "plan": run.plan,
                     "interactive": run.interactive,
                 }),
@@ -366,7 +369,7 @@ impl Inner {
             .await?;
 
         // Parked in `slot` so `execute` can destroy it whichever way this function ends.
-        let sandbox = match self.resume(run).await {
+        let sandbox = match self.resume(run, runtime).await {
             Some(sandbox) => Ok(sandbox),
             None => self.sandboxes.create(run.id, run.workspace_id).await,
         };
@@ -443,10 +446,17 @@ impl Inner {
         Some(parked.take().await)
     }
 
-    /// The sandbox kept for the run's workspace, resumed; `None` if there is none or it can't be
-    /// resumed, so a new one is started on the same workspace.
-    async fn resume(&self, run: &Run) -> Option<Arc<dyn Sandbox>> {
+    /// The sandbox kept for the run's workspace, resumed; `None` if there is none, it can't be
+    /// resumed, or it runs on another runtime than `runtime` (an admin switched since), so a new
+    /// one is started on the same workspace.
+    async fn resume(&self, run: &Run, runtime: Runtime) -> Option<Arc<dyn Sandbox>> {
         let sandbox = self.unpark(run.workspace_id).await?;
+        if sandbox.runtime() != runtime {
+            tracing::info!(run_id = %run.id, from = sandbox.runtime().as_str(), to = runtime.as_str(), "the sandbox runtime changed; replacing the kept sandbox");
+            // Gone before the new one starts, so the workspace volume is free to mount.
+            sandbox.destroy().await;
+            return None;
+        }
         match sandbox.resume().await {
             Ok(()) => Some(sandbox),
             Err(e) => {

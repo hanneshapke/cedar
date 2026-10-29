@@ -158,7 +158,8 @@ By default the sandbox has no network, so the agent can only use what the image 
 tools to `sandbox/Dockerfile` and rebuild the image if your tasks need more. To let the agent
 `pip install` packages itself, set `SANDBOX_NETWORK=bridge` in cedar's environment file (step 4).
 That gives the container outbound access to whatever the Docker bridge network can reach, so
-only do it on a machine where that is acceptable. Installed packages live in the run's workspace
+only do it on a machine where that is acceptable, or run the sandboxes in OpenShell, which limits
+them to PyPI and npm (see "OpenShell sandboxes" after step 6). Installed packages live in the run's workspace
 and survive follow-up messages until the workspace expires. Web search is separate: the optional
 `web_search` tool (see `BRAVE_API_KEY` in step 4) runs in the cedar process, so the host needs
 outbound HTTPS to `api.search.brave.com`. So do `fetch_url` and `download_file`, which are on by
@@ -340,6 +341,103 @@ after it:
 sudo systemctl edit cedar      # add:  [Unit]  After=vllm.service  Wants=vllm.service
 ```
 
+### Optional: OpenShell sandboxes
+
+By default each conversation's sandbox is a Docker container: with `SANDBOX_NETWORK=bridge` it
+reaches whatever that network reaches. [OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes
+check every connection against a policy instead (by program and host), and ask in the chat before
+letting a blocked one through. Setting it up takes a gateway run as the `cedar` user, and then one
+switch in the browser.
+
+OpenShell needs Docker 28 or newer and Landlock in the kernel (DGX OS's is new enough; this prints
+`landlock` among others):
+
+```sh
+cat /sys/kernel/security/lsm
+```
+
+Install OpenShell's packages (the `openshell` CLI and the `openshell-gateway` binary). The
+installer also starts a gateway for your own user, which this setup doesn't use, so stop it again:
+
+```sh
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+systemctl --user disable --now openshell-gateway
+```
+
+#### The gateway
+
+The gateway runs as the `cedar` user too, so cedar's `openshell` calls reach it with that user's
+credentials. It keeps its state, certificates and configuration under `/var/lib/cedar`. The
+configuration lets it attach the Docker volumes cedar keeps workspaces in, which is off by
+default; the gateway stays on loopback, so only this machine's users can ask it for anything.
+
+```sh
+sudo -u cedar install -d -m 0700 /var/lib/cedar/.config/openshell /var/lib/cedar/.local/state/openshell/tls
+sudo -u cedar tee /var/lib/cedar/.config/openshell/gateway.toml >/dev/null <<'EOF'
+[openshell]
+version = 2
+
+[openshell.gateway]
+compute_driver = "docker"
+
+[openshell.drivers.docker]
+allow_driver_config = true
+EOF
+
+sudo tee /etc/systemd/system/openshell-gateway.service >/dev/null <<'EOF'
+[Unit]
+Description=OpenShell gateway for cedar's sandboxes
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+User=cedar
+Group=cedar
+Environment=HOME=/var/lib/cedar
+Environment=OPENSHELL_LOCAL_TLS_DIR=/var/lib/cedar/.local/state/openshell/tls
+Environment=OPENSHELL_TELEMETRY_ENABLED=false
+ExecStartPre=/usr/bin/openshell-gateway config preflight
+ExecStartPre=/usr/bin/openshell-gateway generate-certs --output-dir ${OPENSHELL_LOCAL_TLS_DIR} --server-san host.openshell.internal
+ExecStart=/usr/bin/openshell-gateway
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now openshell-gateway
+
+# Register it with the cedar user's CLI, with the client certificate the gateway made.
+sudo -u cedar HOME=/var/lib/cedar openshell gateway add https://127.0.0.1:17670 --local --name openshell
+T=/var/lib/cedar/.local/state/openshell/tls M=/var/lib/cedar/.config/openshell/gateways/openshell/mtls
+sudo -u cedar install -d -m 0700 $M
+sudo -u cedar install -m 0600 $T/ca.crt $M/ca.crt
+sudo -u cedar install -m 0600 $T/client/tls.crt $M/tls.crt
+sudo -u cedar install -m 0600 $T/client/tls.key $M/tls.key
+sudo -u cedar HOME=/var/lib/cedar openshell status    # Status: Connected, Authenticated
+```
+
+The first sandbox pulls OpenShell's own runtime images (`ghcr.io/nvidia/openshell/supervisor` and
+`.../sandbox`), so the machine needs to reach `ghcr.io` once, or have them loaded.
+
+Order cedar after the gateway, so a reboot starts them in turn:
+
+```sh
+sudo systemctl edit cedar      # add:  [Unit]  After=openshell-gateway.service  Wants=openshell-gateway.service
+sudo systemctl restart cedar
+```
+
+Then open the chat, unlock Settings → Server with the admin token, and turn on **Run sandboxes
+with OpenShell** under Settings → Advanced settings. cedar checks the gateway first and says why if
+it can't use it; from the next message on, each conversation runs in an OpenShell sandbox, keeping
+its files. `SANDBOX_POLICY=packages` in `cedar.env` lets them reach PyPI and npm (with
+`SANDBOX_NETWORK=bridge` set and `SANDBOX_POLICY` unset, that is what they get). Each sandbox has an
+OpenShell supervisor container beside it (about 20 MB idle), and the gateway itself takes around
+400 MB.
+
 ## 7. Open the UI from your laptop and phone
 
 `cedar-chat` listens on the Spark's loopback only. The safest way in is an SSH tunnel. Run this on
@@ -513,7 +611,10 @@ Agent workspaces are Docker volumes named `cedar-ws-*`. cedar deletes them after
 | Run fails: `run exceeded the Ns time limit` | The whole run took longer than `RUN_TIMEOUT_SECS`. Raise it, or lower the model's **Max tokens per reply** so each model turn is shorter. |
 | Run fails: `run did not finish within N turns` | The task needed more model turns than allowed. Raise `max_turns` in the request (capped by `MAX_TURNS_CAP`, 25 by default) or give the agent a smaller task. |
 | Run fails: `sending API request` after a long wait | A single model reply took longer than the 300 s request limit (see "Reply length" above), and cedar retried it. Lower the model's **Max tokens per reply**. |
-| `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`) or the `cedar-sandbox` image is missing. The log says which. |
+| `/readyz` returns 503 | Docker isn't reachable by the `cedar` user (`id cedar` should list `docker`), the `cedar-sandbox` image is missing, or (with OpenShell sandboxes on) the gateway isn't running or doesn't accept the cedar user's certificate (`sudo -u cedar HOME=/var/lib/cedar openshell status`). The log says which. |
+| Settings won't turn OpenShell on | The message says why: usually the gateway isn't running for the `cedar` user, or its CLI isn't registered (see "OpenShell sandboxes" after step 6). |
+| With OpenShell on, a run fails: "could not start the sandbox for this run" | cedar's log has OpenShell's reason. `external resource not admitted` or `driver config is disabled`: the gateway's `allow_driver_config = true` is missing. `ControlSupervisorStartFailed`: OpenShell's runtime images couldn't be pulled, or the kernel lacks Landlock (`journalctl -u openshell-gateway`). |
+| With OpenShell on, a command says it couldn't connect | The sandbox's policy blocked it; the run's `sandbox.denied` events name the program and host. Allow it from the chat, or widen `SANDBOX_POLICY`. |
 | Chat page shows a 502 error | `cedar-chat` can't reach cedar, or `CEDAR_API_KEY` in `chat.env` doesn't match `CEDAR_API_KEYS` in `cedar.env`. |
 | Chat page asks for a token and rejects it | Use the value of `CHAT_ACCESS_TOKEN` from `/etc/cedar/chat.env`, not the cedar key. |
 | The iOS or Android app can't connect | It needs HTTPS: use the `https://<spark>.<tailnet>.ts.net` address from step 7, not `http://…:3000`, and check that the phone is logged in to Tailscale (`tailscale serve status` on the Spark shows what is served). |

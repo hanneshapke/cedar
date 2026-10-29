@@ -115,7 +115,9 @@ pub fn desktop_app() -> Option<PathBuf> {
     app.is_file().then_some(app)
 }
 
+/// Only Linux asks (see `provider_app`); a Mac finds the app from the CLI instead.
 #[cfg(not(windows))]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn desktop_app() -> Option<PathBuf> {
     None
 }

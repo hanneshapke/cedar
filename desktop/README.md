@@ -64,6 +64,88 @@ A newer MSI installs over the older one and keeps your settings and conversation
 your user profile (see [Where things are](#where-things-are)), which neither an upgrade nor
 uninstalling touches.
 
+### OpenShell sandboxes (optional, macOS)
+
+By default each conversation's tools run in a Docker container. On a Mac you can run them in
+[OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes instead, whose network policy decides
+which program may reach which host and asks in the chat before letting a blocked connection
+through. The app doesn't install OpenShell; set it up once by hand, then turn it on in Settings →
+Advanced settings (after unlocking Settings → Server).
+
+Install OpenShell with its own installer, which puts its Homebrew formula in a local tap
+(`nvidia/openshell`) and runs the gateway with `brew services`. Homebrew's core `openshell`
+formula is only the command-line tool, without a gateway, so `brew install openshell` alone
+isn't enough.
+
+```sh
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+```
+
+Then let the gateway attach the Docker volumes that hold cedar's workspaces, and put its
+supervisor on Docker Desktop's bridge network (Docker Desktop has no host networking unless it is
+turned on in its settings). This adds both settings to the configuration file Homebrew's service
+reads: `~/.config/openshell/gateway.toml` if you have one, otherwise
+`$(brew --prefix)/var/openshell/gateway.toml`. If that file has a `[openshell.drivers.docker]`
+section already, it changes nothing and says so; set the two settings in that section by hand.
+A file without the `[openshell]` header and `version = 2` (an empty one, say) gets them first:
+without them the gateway refuses the whole file and doesn't start. Paste it into the terminal as it is: the
+TOML itself is not a command, and zsh answers it with `no matches found`.
+
+```sh
+F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"
+[ -f "$F" ] || F="$(brew --prefix)/var/openshell/gateway.toml"
+mkdir -p "$(dirname "$F")"
+if ! grep -qs '^\[openshell\]' "$F"; then
+  { printf '[openshell]\nversion = 2\n'; [ ! -f "$F" ] || cat "$F"; } > "$F.new" && mv "$F.new" "$F"
+fi
+if grep -qs '^\[openshell\.drivers\.docker\]' "$F"; then
+  echo "$F already has [openshell.drivers.docker]; make sure it sets: allow_driver_config = true, supervisor_network_mode = \"bridge\""
+else
+  cat >> "$F" <<'EOF'
+
+[openshell.drivers.docker]
+allow_driver_config = true
+supervisor_network_mode = "bridge"
+EOF
+fi
+```
+
+Restart the gateway and check it. It takes a few seconds to listen, so `openshell status` right
+after the restart can say `Connection refused`; after the wait it should say Connected and
+Authenticated:
+
+```sh
+brew services restart nvidia/openshell/openshell
+sleep 5
+openshell status
+```
+
+If it still says `Connection refused`, the gateway stopped. Its log says why, often a mistake in
+the configuration, which `openshell-gateway config preflight --path <file>` checks:
+
+```sh
+tail -n 30 "$(brew --prefix)/var/log/openshell/openshell-gateway.err.log"
+```
+
+OpenShell needs a sandbox image whose working directory isn't `/workspace` (it mounts the
+workspace volume there). The image published for Cedar 0.2.3 and earlier works in `/workspace`,
+so until a release ships the new one, build it from this repository and point the app at it:
+set `"sandbox_image": "cedar-sandbox:latest"` in [`config.json`](#configjson), then quit and
+reopen Cedar. An image that is already there is
+used as it is, not pulled. Settings → Advanced settings refuses to turn OpenShell on with the old
+image, and says so.
+
+```sh
+docker build -t cedar-sandbox:latest sandbox/
+```
+
+Cedar finds the `openshell` command in Homebrew's folder (set `OPENSHELL_BIN` in cedar's
+environment otherwise). To let the agent `pip install` packages, set `SANDBOX_POLICY=packages`
+there too.
+
+**Windows** has no OpenShell support, so the switch in Settings → Advanced settings stays off
+there and sandboxes run on Docker.
+
 ### Setting it up
 
 The setup window shows three steps:

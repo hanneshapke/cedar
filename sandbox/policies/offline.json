@@ -1,0 +1,31 @@
+{
+  "filesystem_policy": {
+    "include_workdir": true,
+    "read_only": [
+      "/bin",
+      "/sbin",
+      "/usr",
+      "/lib",
+      "/lib64",
+      "/etc",
+      "/opt",
+      "/proc",
+      "/var/log",
+      "/var/cache/fontconfig",
+      "/dev/urandom",
+      "/dev/random",
+      "/dev/zero",
+      "/dev/full"
+    ],
+    "read_write": [
+      "/tmp",
+      "/dev/null",
+      "/dev/shm",
+      "/home/agent"
+    ]
+  },
+  "landlock": {
+    "compatibility": "best_effort"
+  },
+  "version": 1
+}

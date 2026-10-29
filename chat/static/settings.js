@@ -563,10 +563,204 @@ const cedarSettings = (() => {
     section.replaceChildren(...parts);
   }
 
+  // -- Settings: advanced (admin) ----------------------------------------------------------------
+
+  let advancedSection = null;
+  /** cedar's server settings as last loaded for the Advanced page, for its nav line. */
+  let advancedSettings = null;
+
+  /** Server-wide options most setups leave alone: for now, what runs the sandboxes. */
+  async function renderAdvanced(section = advancedSection) {
+    if (!section) return;
+    advancedSection = section;
+    const cfg = deps.config();
+    if (!cfg.admin_enabled || !unlocked()) {
+      advancedSettings = null;
+      const card = el('div', 'cedar-set-help');
+      card.append(note(tr(cfg.admin_enabled ? 'settings.advanced.locked' : 'settings.advanced.noAdmin')));
+      if (cfg.admin_enabled) card.append(button(tr('settings.advanced.unlock'), () => shell()?.go('server'), 'primary'));
+      section.replaceChildren(card);
+      shell()?.refresh('advanced');
+      return;
+    }
+    section.replaceChildren(note(tr('settings.loading')));
+    try {
+      advancedSettings = await adminApi('GET', '/integrations/settings');
+    } catch (e) {
+      advancedSettings = null;
+      if (e.status === 403) {
+        // A wrong token: the Server page asks for it again.
+        setAdminToken('');
+        return renderAdvanced(section);
+      }
+      section.replaceChildren(note(e.message, 'cedar-set-error'));
+      shell()?.refresh('advanced');
+      return;
+    }
+    const b = el('div', 'cedar-set-block');
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', tr('settings.server.sandbox')));
+    b.append(head, openShellRow(advancedSettings));
+    section.replaceChildren(b);
+    shell()?.refresh('advanced');
+  }
+
+  /** The switch between Docker (off, the default) and OpenShell (on) for conversations' sandboxes. */
+  function openShellRow(settings) {
+    const supported = settings.openshell_supported !== false;
+    const on = settings.sandbox_runtime === 'openshell';
+    const { row, main, side } = integrationRow(tr('settings.advanced.openshell.title'), tr('settings.advanced.openshell.desc'));
+    const sw = el('button', 'cedar-set-switch');
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-checked', String(on));
+    sw.setAttribute('aria-label', tr('settings.advanced.openshell.title'));
+    sw.disabled = !supported;
+    const state = badge(on ? 'OpenShell' : 'Docker', 'ok');
+    const problem = el('small', 'cedar-set-error');
+    problem.hidden = true;
+    if (!supported) {
+      // Greyed out: OpenShell has no Windows release, so there is nothing to switch to.
+      row.classList.add('unavailable');
+      sw.title = tr('settings.advanced.openshell.unsupported');
+    }
+    main.append(problem);
+    row.append(installSteps(settings.server_os || '', supported && !on));
+    const show = (now) => {
+      sw.setAttribute('aria-checked', String(now));
+      state.textContent = now ? 'OpenShell' : 'Docker';
+    };
+    sw.addEventListener('click', async () => {
+      const was = sw.getAttribute('aria-checked') === 'true';
+      sw.disabled = true;
+      problem.hidden = true;
+      state.textContent = tr('settings.advanced.openshell.checking');
+      try {
+        advancedSettings = await adminApi('PUT', '/integrations/settings', { sandbox_runtime: was ? null : 'openshell' });
+        const now = advancedSettings.sandbox_runtime === 'openshell';
+        show(now);
+        deps.toast(tr(now ? 'settings.advanced.openshell.savedOn' : 'settings.advanced.openshell.savedOff'));
+      } catch (err) {
+        show(was);
+        problem.textContent = err.message;
+        problem.hidden = false;
+      } finally {
+        sw.disabled = !supported;
+        shell()?.refresh('advanced');
+      }
+    });
+    side.append(state, sw);
+    return row;
+  }
+
+  /** The commands that set OpenShell up for cedar, for the OS cedar runs on (not the browser's). */
+  const OPENSHELL_INSTALL = 'curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh';
+  // Each block is pasted into a terminal as it is (zsh on a Mac), so: no shell comments, which
+  // interactive zsh runs as commands, and the TOML only inside a heredoc. A config file that has
+  // the section already is left alone, since a second one would stop the gateway from starting.
+  // The file needs `[openshell]` and `version = 2` on top, or the gateway refuses all of it: an
+  // empty file (or none) gets them first.
+  const openShellConfig = (pick, settings) => [
+    ...pick,
+    'mkdir -p "$(dirname "$F")"',
+    'if ! grep -qs \'^\\[openshell\\]\' "$F"; then',
+    '  { printf \'[openshell]\\nversion = 2\\n\'; [ ! -f "$F" ] || cat "$F"; } > "$F.new" && mv "$F.new" "$F"',
+    'fi',
+    'if grep -qs \'^\\[openshell\\.drivers\\.docker\\]\' "$F"; then',
+    '  echo "$F already has [openshell.drivers.docker]; make sure it sets: ' + settings.join(', ').replace(/"/g, '\\"') + '"',
+    'else',
+    '  cat >> "$F" <<\'EOF\'',
+    '',
+    '[openshell.drivers.docker]',
+    ...settings,
+    'EOF',
+    'fi',
+  ].join('\n');
+  const OPENSHELL_STEPS = {
+    macos: {
+      name: 'macOS',
+      // Docker Desktop has no host networking unless it is turned on in its settings.
+      // Homebrew's service reads ~/.config/openshell/gateway.toml when there is one, and its own
+      // file under the Homebrew prefix only otherwise.
+      config: openShellConfig([
+        'F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"',
+        '[ -f "$F" ] || F="$(brew --prefix)/var/openshell/gateway.toml"',
+      ], ['allow_driver_config = true', 'supervisor_network_mode = "bridge"']),
+      // The gateway takes a few seconds to listen after a restart.
+      restart: 'brew services restart nvidia/openshell/openshell\nsleep 5\nopenshell status',
+    },
+    linux: {
+      name: 'Linux',
+      // As the user cedar runs as; the file needs its header if the installer made none.
+      config: openShellConfig([
+        'F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"',
+      ], ['allow_driver_config = true']),
+      restart: 'systemctl --user restart openshell-gateway\nsleep 5\nopenshell status',
+    },
+  };
+  const OPENSHELL_GUIDE = 'https://github.com/hanneshapke/cedar#openshell-sandboxes-opt-in';
+
+  /** A command to copy, with a Copy button. */
+  function codeBlock(text) {
+    const wrap = el('div', 'cedar-set-install-code');
+    const pre = el('pre');
+    pre.append(el('code', '', text));
+    const copy = button(tr('settings.advanced.install.copy'), async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        copy.textContent = tr('settings.advanced.install.copied');
+      } catch { /* not over plain HTTP from another machine; the text can still be selected */ }
+    });
+    wrap.append(pre, copy);
+    return wrap;
+  }
+
+  /** "How to install OpenShell", under the switch: the steps for the server's OS (open while
+   *  OpenShell is off), or why there are none on Windows. */
+  function installSteps(os, open) {
+    const steps = OPENSHELL_STEPS[os];
+    const box = el('details', 'cedar-set-install');
+    // Open while there is something to do: OpenShell is off, or (on Windows) to say why not.
+    box.open = steps ? open : true;
+    box.append(el('summary', '', steps ? tr('settings.advanced.install.title', { os: steps.name }) : tr('settings.advanced.install.titleAny')));
+    if (!steps) {
+      box.append(el('p', '', os === 'windows' ? tr('settings.advanced.install.windows') : tr('settings.advanced.install.other')));
+      return box;
+    }
+    const list = el('ol');
+    const step = (text, code) => {
+      const li = el('li');
+      li.append(el('p', '', text));
+      if (code) li.append(codeBlock(code));
+      list.append(li);
+    };
+    step(tr('settings.advanced.install.get'), OPENSHELL_INSTALL);
+    step(tr('settings.advanced.install.config'), steps.config);
+    step(tr('settings.advanced.install.restart'), steps.restart);
+    const last = el('li');
+    const p = el('p', '', `${tr('settings.advanced.install.done')} `);
+    const link = el('a', '', tr('settings.advanced.install.guide'));
+    link.href = OPENSHELL_GUIDE;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    p.append(link);
+    last.append(p);
+    list.append(last);
+    box.append(list);
+    return box;
+  }
+
+  /** The Advanced page's nav line: the sandbox runtime, once known. */
+  function advancedSummary() {
+    if (!deps?.config()?.admin_enabled || !unlocked()) return tr('shell.tag.ADMIN');
+    if (!advancedSettings) return null;
+    return advancedSettings.sandbox_runtime === 'openshell' ? 'OpenShell' : 'Docker';
+  }
+
   /** The page head's Lock button, when the admin token is in. */
   function serverActions() {
     if (!deps?.config()?.admin_enabled || !unlocked()) return null;
-    return [button(tr('settings.server.lock'), () => { setAdminToken(''); renderIntegrations(); shell()?.refresh('server'); }, 'settings-ghost')];
+    return [button(tr('settings.server.lock'), () => { setAdminToken(''); renderIntegrations(); renderAdvanced(); shell()?.refresh('server'); }, 'settings-ghost')];
   }
 
   /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
@@ -613,6 +807,7 @@ const cedarSettings = (() => {
       if (!input.value.trim()) return;
       setAdminToken(input.value.trim());
       renderIntegrations();
+      renderAdvanced();
       refreshTools();
     });
     const wrap = el('div', 'cedar-set-unlock-card');
@@ -1405,6 +1600,11 @@ const cedarSettings = (() => {
         render: renderIntegrations, summary: () => null,
         tag: () => (deps?.config()?.admin_enabled && unlocked() ? 'UNLOCKED' : 'ADMIN'),
         actions: serverActions, footer: false,
+      });
+      s.register({
+        id: 'advanced', label: tr('settings.advanced.title'), title: tr('settings.advanced.title'),
+        description: tr('settings.advanced.description'),
+        render: renderAdvanced, summary: advancedSummary, footer: false,
       });
     }
     if (deps.anchor) {

@@ -6,17 +6,27 @@
 //! Set CEDAR_TEST_SANDBOX_IMAGE to use a different image.
 
 use cedar::config::SandboxConfig;
+use cedar::policy::Policy;
 use cedar::sandbox::{DockerSandboxFactory, Sandbox, SandboxFactory, SandboxFatal};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+/// A sandbox on `network`: `none` is the `offline` policy, any other network the `packages` one,
+/// which on Docker gives the container that network.
 fn config(network: &str) -> SandboxConfig {
     SandboxConfig {
+        openshell_bin: "openshell".into(),
+        openshell_workspace: "default".into(),
         docker_bin: "docker".into(),
         image: std::env::var("CEDAR_TEST_SANDBOX_IMAGE")
             .unwrap_or_else(|_| "cedar-sandbox:latest".into()),
+        policy: if network == "none" {
+            Policy::offline()
+        } else {
+            Policy::packages()
+        },
         network: network.into(),
         memory: "256m".into(),
         cpus: "1".into(),
