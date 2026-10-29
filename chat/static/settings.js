@@ -7,7 +7,7 @@
 //     get, the default model, turn limit and system prompt (GET/PUT /api/settings). Both edit one
 //     draft and save it through the dialog's footer.
 //   - The "Server" page, for admins only (CHAT_ADMIN_TOKEN): the models cedar has registered
-//     (each with its server, API key and reasoning levels), its Brave Search and Best Buy keys and its Google
+//     (each with its server, API key and reasoning levels), its Brave Search, Best Buy and SerpApi keys and its Google
 //     account. The admin token is kept for this browser session and sent as X-Admin-Token. A
 //     change to the models reloads cedarModels (models.js) and dispatches `cedar-models-changed`
 //     on `document`, so the apps refill their pickers.
@@ -555,7 +555,7 @@ const cedarSettings = (() => {
     const models = await modelsBlock(status);
     const modelsBlockEl = block(tr('settings.server.models'), models.wrap);
     modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
-    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
+    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
     const tools = await personalToolsBlock();
     if (tools) parts.push(block(tr('settings.server.personalTools'), tools));
     const market = await marketplaceBlock();
@@ -920,6 +920,22 @@ const cedarSettings = (() => {
       path: '/integrations/bestbuy',
       saved: tr('settings.bestbuy.saved'),
       removeAsk: tr('settings.bestbuy.remove'),
+    });
+  }
+
+  function serpapiRow(status) {
+    const k = status.serpapi || {};
+    if (k.enabled === false) {
+      const { row, side } = integrationRow('SerpApi', tr('settings.serpapi.off'));
+      side.append(badge(tr('settings.off')));
+      return row;
+    }
+    return keyRow(k, status.storage, {
+      name: 'SerpApi',
+      what: tr('settings.serpapi.what'),
+      path: '/integrations/serpapi',
+      saved: tr('settings.serpapi.saved'),
+      removeAsk: tr('settings.serpapi.remove'),
     });
   }
 

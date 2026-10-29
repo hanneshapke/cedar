@@ -1,0 +1,693 @@
+/* The flights card for the search_flights tool (see flight-view.js), shared by every UI. Like the
+   other cards it relies only on --accent and --muted from the page and uses translucent greys for
+   edges, so it reads in the light and dark themes alike. Its own status colors (the price level,
+   the flags) are set for both; each always comes with a word. */
+
+.cedar-flights {
+  --fl-line: rgba(128, 128, 128, .26);
+  --fl-soft: rgba(128, 128, 128, .07);
+  --fl-muted: var(--muted, #6f6d66);
+  --fl-accent: var(--accent, #c96442);
+  --fl-good: #1d7a3e;
+  --fl-warn: #a35a00;
+  --fl-bad: #b23a2e;
+  --fl-on-accent: #fff;
+  container-type: inline-size;
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .04);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cedar-flights {
+    --fl-good: #5fc77f;
+    --fl-warn: #e0a046;
+    --fl-bad: #ef7676;
+    /* Dark themes use a light accent: dark text on it reads better than white. */
+    --fl-on-accent: #10140f;
+  }
+}
+
+.cedar-flights :focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: -2px;
+}
+
+.cedar-flights-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* -- the head ------------------------------------------------------------------------------- */
+
+.cedar-flights-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 11px 14px 10px;
+}
+
+.cedar-flights-badge {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fl-accent);
+  color: var(--fl-on-accent);
+}
+
+.cedar-flights-badge .cedar-flights-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.cedar-flights-titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.cedar-flights-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.cedar-flights-kind {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fl-muted);
+}
+
+.cedar-flights-names,
+.cedar-flights-meta {
+  font-size: 12px;
+  color: var(--fl-muted);
+  overflow-wrap: anywhere;
+}
+
+.cedar-flights-meta {
+  margin-top: 1px;
+}
+
+/* -- the price insight ---------------------------------------------------------------------- */
+
+.cedar-flights-insight {
+  --level: var(--fl-muted);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--fl-line);
+  background: color-mix(in srgb, var(--level) 9%, transparent);
+}
+
+.cedar-flights-insight.low { --level: var(--fl-good); }
+.cedar-flights-insight.high { --level: var(--fl-bad); }
+
+.cedar-flights-insight-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.cedar-flights-insight strong {
+  color: var(--level);
+  font-weight: 600;
+}
+
+.cedar-flights-insight.typical strong {
+  color: inherit;
+}
+
+.cedar-flights-insight-sub {
+  font-size: 12px;
+  color: var(--fl-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-flights-spark {
+  flex: none;
+  width: 140px;
+  height: 36px;
+  overflow: visible;
+}
+
+.cedar-flights-spark .band {
+  fill: rgba(128, 128, 128, .16);
+}
+
+.cedar-flights-spark .line {
+  fill: none;
+  stroke: var(--level);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.cedar-flights-insight.typical .cedar-flights-spark .line {
+  stroke: var(--fl-accent);
+}
+
+.cedar-flights-spark .dot {
+  fill: var(--level);
+}
+
+.cedar-flights-insight.typical .cedar-flights-spark .dot {
+  fill: var(--fl-accent);
+}
+
+/* -- the flights ---------------------------------------------------------------------------- */
+
+.cedar-flights-list {
+  border-top: 1px solid var(--fl-line);
+}
+
+.cedar-flights-row {
+  border-bottom: 1px solid rgba(128, 128, 128, .16);
+}
+
+.cedar-flights-row:last-child {
+  border-bottom: 0;
+}
+
+.cedar-flights-row.open {
+  background: var(--fl-soft);
+}
+
+.cedar-flights-sum {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto 16px;
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  padding: 10px 12px 10px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cedar-flights-sum:hover {
+  background: rgba(128, 128, 128, .07);
+}
+
+.cedar-flights-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(128, 128, 128, .2);
+}
+
+.cedar-flights-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.cedar-flights-logo.empty {
+  background: rgba(128, 128, 128, .14);
+  color: var(--fl-muted);
+}
+
+.cedar-flights-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cedar-flights-times {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cedar-flights-dash {
+  color: var(--fl-muted);
+  font-weight: 400;
+}
+
+.cedar-flights-plus {
+  margin-left: 1px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--fl-warn);
+  vertical-align: super;
+  line-height: 0;
+}
+
+.cedar-flights-sub {
+  font-size: 12px;
+  color: var(--fl-muted);
+  overflow-wrap: anywhere;
+}
+
+.cedar-flights-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.cedar-flights-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px 0 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, .32);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--fl-muted);
+  white-space: nowrap;
+}
+
+.cedar-flights-flag:not(:has(svg)) {
+  padding-left: 7px;
+}
+
+.cedar-flights-flag .cedar-flights-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.cedar-flights-flag.pick {
+  border-color: transparent;
+  background: var(--fl-accent);
+  color: var(--fl-on-accent);
+  font-weight: 600;
+}
+
+.cedar-flights-flag.warn {
+  border-color: color-mix(in srgb, var(--fl-warn) 45%, transparent);
+  color: var(--fl-warn);
+}
+
+.cedar-flights-flag.good {
+  border-color: color-mix(in srgb, var(--fl-good) 45%, transparent);
+  color: var(--fl-good);
+}
+
+.cedar-flights-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-flights-stopcount {
+  font-size: 12px;
+  color: var(--fl-muted);
+}
+
+.cedar-flights-stopcount.nonstop {
+  color: var(--fl-good);
+}
+
+.cedar-flights-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 72px;
+  text-align: right;
+}
+
+.cedar-flights-amount {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cedar-flights-row.top .cedar-flights-amount {
+  color: var(--fl-accent);
+}
+
+.cedar-flights-amount.none {
+  color: var(--fl-muted);
+  font-weight: 400;
+}
+
+.cedar-flights-price-hint {
+  font-size: 11px;
+  color: var(--fl-muted);
+  white-space: nowrap;
+}
+
+.cedar-flights-chev {
+  color: var(--fl-muted);
+  transition: transform .15s ease;
+}
+
+.cedar-flights-row.open .cedar-flights-chev {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cedar-flights-chev {
+    transition: none;
+  }
+}
+
+/* -- a flight's segments and layovers, as a rail ------------------------------------------- */
+
+.cedar-flights-detail {
+  padding: 2px 14px 12px 56px;
+}
+
+.cedar-flights-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cedar-flights-seg {
+  position: relative;
+  padding-left: 18px;
+}
+
+/* The rail from departure to arrival, with a stop at each end. */
+.cedar-flights-seg::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fl-accent);
+}
+
+.cedar-flights-stop {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.cedar-flights-stop::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--fl-accent);
+  background: var(--sheet, var(--bg, #fff));
+}
+
+.cedar-flights-stop .cedar-flights-time {
+  flex: none;
+  min-width: 58px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-flights-where {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.cedar-flights-where span {
+  color: var(--fl-muted);
+}
+
+.cedar-flights-seg-info {
+  margin: 4px 0 6px 68px;
+  font-size: 12px;
+  color: var(--fl-muted);
+}
+
+.cedar-flights-seg-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+}
+
+.cedar-flights-seg-line .cedar-flights-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.cedar-flights-seg-facts {
+  overflow-wrap: anywhere;
+}
+
+.cedar-flights-layover {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 4px 18px;
+  padding: 5px 10px;
+  border: 1px dashed var(--fl-line);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--fl-muted);
+}
+
+.cedar-flights-layover > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+
+.cedar-flights-layover.overnight {
+  border-color: color-mix(in srgb, var(--fl-warn) 45%, transparent);
+}
+
+.cedar-flights-lay-tag {
+  color: var(--fl-warn);
+  font-weight: 600;
+}
+
+.cedar-flights-co2 {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--fl-muted);
+}
+
+/* -- more, nothing found, booking ----------------------------------------------------------- */
+
+.cedar-flights-more,
+.cedar-flights-empty {
+  padding: 8px 14px;
+  border-top: 1px solid var(--fl-line);
+  font-size: 12.5px;
+  color: var(--fl-muted);
+}
+
+.cedar-flights-empty {
+  padding: 14px;
+}
+
+.cedar-flights-section {
+  border-top: 1px solid var(--fl-line);
+}
+
+.cedar-flights-section .cedar-flights-list {
+  border-top: 0;
+}
+
+.cedar-flights-section .cedar-flights-empty {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.cedar-flights-label {
+  padding: 8px 14px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fl-muted);
+}
+
+.cedar-flights-sellers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cedar-flights-seller {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(128, 128, 128, .16);
+}
+
+.cedar-flights-seller:last-child {
+  border-bottom: 0;
+}
+
+.cedar-flights-seller-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.cedar-flights-seller-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cedar-flights-bags {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  font-size: 12px;
+  color: var(--fl-muted);
+}
+
+.cedar-flights-bags li {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.cedar-flights-bags .cedar-flights-icon {
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+}
+
+/* -- the foot ------------------------------------------------------------------------------- */
+
+.cedar-flights-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--fl-line);
+}
+
+.cedar-flights-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: 1px solid var(--fl-line);
+  border-radius: 8px;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.cedar-flights-link:hover {
+  background: rgba(128, 128, 128, .08);
+}
+
+.cedar-flights-link.primary {
+  border-color: transparent;
+  background: var(--fl-accent);
+  color: var(--fl-on-accent);
+}
+
+.cedar-flights-link.primary:hover {
+  background: color-mix(in srgb, var(--fl-accent) 88%, #000);
+}
+
+.cedar-flights-link .cedar-flights-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.cedar-flights-asof {
+  font-size: 11.5px;
+  color: var(--fl-muted);
+}
+
+/* -- narrow cards (phones, side panels) ----------------------------------------------------- */
+
+@container (max-width: 480px) {
+  .cedar-flights-sum {
+    grid-template-columns: 28px minmax(0, 1fr) auto 14px;
+    grid-template-areas:
+      "logo main price chev"
+      "logo mid price chev";
+    column-gap: 10px;
+    row-gap: 2px;
+    padding: 10px 10px 10px 12px;
+  }
+
+  .cedar-flights-sum > .cedar-flights-logo { grid-area: logo; align-self: start; }
+  .cedar-flights-main { grid-area: main; }
+  .cedar-flights-price { grid-area: price; align-self: start; min-width: 0; }
+  .cedar-flights-chev { grid-area: chev; }
+
+  /* Duration and stops run on as one line of text, wrapping like one. */
+  .cedar-flights-mid {
+    grid-area: mid;
+    display: block;
+    white-space: normal;
+  }
+
+  .cedar-flights-mid > * + *::before {
+    content: " · ";
+    color: var(--fl-muted);
+  }
+
+  .cedar-flights-head,
+  .cedar-flights-insight,
+  .cedar-flights-foot,
+  .cedar-flights-seller {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .cedar-flights-spark {
+    width: 96px;
+    height: 32px;
+  }
+
+  .cedar-flights-detail {
+    padding-left: 14px;
+    padding-right: 12px;
+  }
+
+  .cedar-flights-seg-info {
+    margin-left: 0;
+  }
+}
