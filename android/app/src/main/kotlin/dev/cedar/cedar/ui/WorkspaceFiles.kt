@@ -96,6 +96,9 @@ import dev.cedar.core.WorkspaceFile
 import dev.cedar.core.WorkspaceFileKind
 import dev.cedar.core.WorkspaceFiles
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.File
@@ -317,7 +320,8 @@ private suspend fun load(context: Context, client: ChatClient, conversationId: S
     if (bytes.size > MAX_VIEWED_BYTES) {
         return Shown.Failed(context.getString(R.string.viewer_too_large, OutgoingAttachment.format(MAX_VIEWED_BYTES.toLong())))
     }
-    return withContext(Dispatchers.IO) {
+    // Not cancelled halfway, so an opened PDF is never dropped without being closed; see below.
+    val shown = withContext(NonCancellable + Dispatchers.IO) {
         val dir = File(context.cacheDir, "shared/viewer/${UUID.randomUUID()}").apply { mkdirs() }
         val file = File(dir, path.substringAfterLast('/')).apply { writeBytes(bytes) }
         val shown = when (kind) {
@@ -333,6 +337,15 @@ private suspend fun load(context: Context, client: ChatClient, conversationId: S
         if (shown is Shown.Failed) dir.deleteRecursively()
         shown
     }
+    if (!currentCoroutineContext().isActive) {
+        // The viewer went away meanwhile.
+        if (shown is Shown.Loaded) {
+            shown.close()
+            shown.file.parentFile?.deleteRecursively()
+        }
+        throw kotlinx.coroutines.CancellationException()
+    }
+    return shown
 }
 
 /** The image in [bytes], halved until neither side is over 4096 pixels, which a canvas draws. */
@@ -402,17 +415,24 @@ private fun ZoomableImage(image: ImageBitmap, description: String) {
  */
 private class PdfPages(file: File) : Closeable {
     private val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-    private val renderer = try {
-        PdfRenderer(descriptor)
-    } catch (e: Exception) {
-        descriptor.close()
-        throw e
-    }
+    private val renderer: PdfRenderer
     private var closed = false
 
     /** Each page's height over its width. */
-    val ratios: List<Float> = synchronized(this) {
-        (0 until renderer.pageCount).map { i -> renderer.openPage(i).use { it.height.toFloat() / it.width.coerceAtLeast(1) } }
+    val ratios: List<Float>
+
+    init {
+        var opened: PdfRenderer? = null
+        try {
+            val pdf = PdfRenderer(descriptor)
+            opened = pdf
+            ratios = (0 until pdf.pageCount).map { i -> pdf.openPage(i).use { it.height.toFloat() / it.width.coerceAtLeast(1) } }
+            renderer = pdf
+        } catch (e: Exception) {
+            opened?.close()
+            descriptor.close()
+            throw e
+        }
     }
 
     /** Page `index` drawn `width` pixels wide on white, or null once closed. */
