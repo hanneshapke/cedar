@@ -18,6 +18,35 @@ import java.util.TimeZone
 data class ServerConfig(
     @SerialName("auth_required") val authRequired: Boolean = false,
     @SerialName("admin_enabled") val adminEnabled: Boolean = false,
+    /** The server has `/api/memory`; an older one leaves it out, so Settings hides Memory. */
+    val memory: Boolean = false,
+)
+
+/** One fact cedar remembers about the user across conversations (`GET /api/memory`). */
+@Serializable
+data class MemoryItem(
+    val id: String,
+    val text: String,
+    /** The conversation it was saved in, while that still exists on this server. */
+    @SerialName("conversation_id") val conversationId: String? = null,
+    /** That conversation's title. */
+    val title: String? = null,
+    @SerialName("created_at") val createdAt: Instant = Instant.EPOCH,
+    @SerialName("updated_at") val updatedAt: Instant = Instant.EPOCH,
+)
+
+@Serializable
+data class MemoryLimits(
+    @SerialName("max_items") val maxItems: Int = 0,
+    @SerialName("max_chars") val maxChars: Int = 0,
+)
+
+/** What cedar remembers, oldest first; `supported` is false on a cedar from before memory. */
+@Serializable
+data class MemoryList(
+    val supported: Boolean = false,
+    val items: List<MemoryItem> = emptyList(),
+    val limits: MemoryLimits? = null,
 )
 
 /** One of the models cedar has registered (`GET /api/models`). */

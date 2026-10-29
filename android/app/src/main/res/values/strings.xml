@@ -426,4 +426,24 @@
         <item quantity="one">%d more option</item>
         <item quantity="other">%d more options</item>
     </plurals>
+    <!-- Memory (Settings → Memory) -->
+    <string name="memory">Memory</string>
+    <string name="memory_settings_row">What Cedar Remembers</string>
+    <string name="memory_settings_footnote">Facts Cedar keeps about you across conversations, like your name, preferences and projects. Deleting one applies from your next message.</string>
+    <string name="memory_delete_all">Delete All</string>
+    <string name="memory_delete_all_title">Forget Everything?</string>
+    <string name="memory_empty_title">Nothing Remembered Yet</string>
+    <string name="memory_empty_text">When you tell Cedar something lasting, like your name, a preference or a project, or ask it to remember something, it appears here.</string>
+    <string name="memory_unsupported">This server doesn\'t remember anything between conversations yet. Update cedar to use memory.</string>
+    <string name="memory_no_source">Not linked to a conversation</string>
+    <string name="memory_count_of">%1$d of %2$d remembered</string>
+    <string name="memory_footnote">This is exactly what Cedar sees. Tap a memory to open the conversation it came from; long-press to delete it. Memory stays on your own server and is never shared with a third party. Settings → Tools in the web UI turns it off.</string>
+    <plurals name="memory_count">
+        <item quantity="one">%d memory</item>
+        <item quantity="other">%d memories</item>
+    </plurals>
+    <plurals name="memory_delete_all_text">
+        <item quantity="one">Cedar will forget %d memory it has about you. This can\'t be undone.</item>
+        <item quantity="other">Cedar will forget all %d memories it has about you. This can\'t be undone.</item>
+    </plurals>
 </resources>

@@ -2,6 +2,30 @@ import XCTest
 @testable import Cedar
 
 final class APITests: XCTestCase {
+    func testDecodesMemoryAndTheConfigFlag() throws {
+        // A server from before memory leaves the flag out.
+        let old = try JSONDecoder.cedar.decode(ServerConfig.self, from: Data(#"{"auth_required":true,"admin_enabled":false}"#.utf8))
+        XCTAssertFalse(old.memory)
+        let new = try JSONDecoder.cedar.decode(ServerConfig.self, from: Data(#"{"auth_required":false,"admin_enabled":false,"memory":true}"#.utf8))
+        XCTAssertTrue(new.memory)
+
+        let list = try JSONDecoder.cedar.decode(MemoryList.self, from: Data("""
+        {"supported":true,"limits":{"max_items":200,"max_chars":500},"items":[
+          {"id":"m1","text":"Prefers metric units","run_id":"r1","conversation_id":"c1","title":"Units",
+           "created_at":"2026-10-29T08:00:00Z","updated_at":"2026-10-29T08:00:00Z"},
+          {"id":"m2","text":"Has a cat","run_id":null,"conversation_id":null,"title":null,
+           "created_at":"2026-10-29T09:00:00Z","updated_at":"2026-10-29T09:00:00Z"}]}
+        """.utf8))
+        XCTAssertTrue(list.supported)
+        XCTAssertEqual(list.limits?.maxItems, 200)
+        XCTAssertEqual(list.items.map(\.id), ["m1", "m2"])
+        XCTAssertEqual(list.items[0].conversationId, "c1")
+        XCTAssertEqual(list.items[0].title, "Units")
+        XCTAssertNil(list.items[1].conversationId)
+        let unsupported = try JSONDecoder.cedar.decode(MemoryList.self, from: Data(#"{"supported":false,"items":[],"limits":null}"#.utf8))
+        XCTAssertFalse(unsupported.supported)
+    }
+
     func testDecodesConversationsAndTurns() throws {
         let json = """
         {"conversation":{"id":"c1","title":"Trip","model":"m","reasoning":null,"schedule_id":null,"tools":["web_search"],

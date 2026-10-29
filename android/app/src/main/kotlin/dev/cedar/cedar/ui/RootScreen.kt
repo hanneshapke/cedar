@@ -43,6 +43,9 @@ fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         if (app.language == null) {
             LanguageScreen(app)
+        } else if (app.showingMemory) {
+            BackHandler { app.showingMemory = false }
+            MemoryScreen(app)
         } else if (app.showingSettings) {
             BackHandler(enabled = app.settings.isConfigured) { app.showingSettings = false }
             SettingsScreen(app, onAllowNotifications)

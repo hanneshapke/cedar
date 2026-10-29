@@ -68,6 +68,27 @@ struct ChatClient: Sendable {
         return list.models
     }
 
+    // MARK: Memory
+
+    /// What cedar remembers about the user. A server without the route reads as not supported.
+    func memory() async throws -> MemoryList {
+        do {
+            return try await decode(makeRequest("api/memory"))
+        } catch let error as ChatError where error.status == 404 {
+            return .unsupported
+        }
+    }
+
+    /// Forgets one memory; it applies from the next message on, in every conversation.
+    func deleteMemory(id: String) async throws {
+        _ = try await send(makeRequest("api/memory/\(id)", method: "DELETE"))
+    }
+
+    /// Forgets everything cedar remembers about the user.
+    func deleteAllMemory() async throws {
+        _ = try await send(makeRequest("api/memory", method: "DELETE"))
+    }
+
     /// Checks that the server is up and takes the token (or needs none).
     func verify() async throws {
         let config = try await self.config()

@@ -72,6 +72,25 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
 
     suspend fun models(): List<ModelInfo> = decode(request("api/models"), ModelList.serializer()).models
 
+    // Memory
+
+    /** What cedar remembers about the user. A server without the route reads as not supported. */
+    suspend fun memory(): MemoryList = try {
+        decode(request("api/memory"), MemoryList.serializer())
+    } catch (e: ChatException.Api) {
+        if (e.status == 404) MemoryList(supported = false) else throw e
+    }
+
+    /** Forgets one memory; it applies from the next message on, in every conversation. */
+    suspend fun deleteMemory(id: String) {
+        send(request("api/memory/$id", "DELETE"))
+    }
+
+    /** Forgets everything cedar remembers about the user. */
+    suspend fun deleteAllMemory() {
+        send(request("api/memory", "DELETE"))
+    }
+
     /** Checks that the server is up and takes the token (or needs none). */
     suspend fun verify() {
         val config = config()

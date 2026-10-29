@@ -435,4 +435,24 @@
         <item quantity="many">%d opciones más</item>
         <item quantity="other">%d opciones más</item>
     </plurals>
+    <!-- Memory (Settings → Memory) -->
+    <string name="memory">Memoria</string>
+    <string name="memory_settings_row">Lo que Cedar recuerda</string>
+    <string name="memory_settings_footnote">Lo que Cedar recuerda de ti entre conversaciones, como tu nombre, tus preferencias y tus proyectos. Eliminar algo se aplica desde tu próximo mensaje.</string>
+    <string name="memory_delete_all">Eliminar todo</string>
+    <string name="memory_delete_all_title">¿Olvidar todo?</string>
+    <string name="memory_empty_title">Todavía no recuerda nada</string>
+    <string name="memory_empty_text">Cuando le cuentes a Cedar algo duradero, como tu nombre, una preferencia o un proyecto, o le pidas que recuerde algo, aparecerá aquí.</string>
+    <string name="memory_unsupported">Este servidor todavía no recuerda nada entre conversaciones. Actualiza cedar para usar la memoria.</string>
+    <string name="memory_no_source">Sin conversación asociada</string>
+    <string name="memory_count_of">%1$d de %2$d recordados</string>
+    <string name="memory_footnote">Esto es exactamente lo que ve Cedar. Toca un recuerdo para abrir la conversación de la que viene; mantenlo presionado para eliminarlo. La memoria se queda en tu propio servidor y nunca se comparte con terceros. Se desactiva en Configuración → Herramientas de la interfaz web.</string>
+    <plurals name="memory_count">
+        <item quantity="one">%d recuerdo</item>
+        <item quantity="other">%d recuerdos</item>
+    </plurals>
+    <plurals name="memory_delete_all_text">
+        <item quantity="one">Cedar olvidará %d recuerdo que tiene de ti. No se puede deshacer.</item>
+        <item quantity="other">Cedar olvidará los %d recuerdos que tiene de ti. No se puede deshacer.</item>
+    </plurals>
 </resources>

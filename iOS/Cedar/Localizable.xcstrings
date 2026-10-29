@@ -705,6 +705,52 @@
         }
       }
     },
+    "%lld memories" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Erinnerungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld recuerdos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld souvenirs"
+          }
+        }
+      }
+    },
+    "%lld memory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Erinnerung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld recuerdo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld souvenir"
+          }
+        }
+      }
+    },
     "%lld min walk" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -844,6 +890,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld sur %lld terminées"
+          }
+        }
+      }
+    },
+    "%lld of %lld remembered" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld gemerkt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld recordados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur %lld retenus"
           }
         }
       }
@@ -2416,6 +2485,52 @@
         }
       }
     },
+    "Cedar will forget %lld memory it has about you. This can't be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar vergisst %lld Erinnerung, die es über dich hat. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar olvidará %lld recuerdo que tiene de ti. No se puede deshacer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar oubliera %lld souvenir qu'il a de vous. Cette action est irréversible."
+          }
+        }
+      }
+    },
+    "Cedar will forget all %lld memories it has about you. This can't be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar vergisst alle %lld Erinnerungen, die es über dich hat. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar olvidará los %lld recuerdos que tiene de ti. No se puede deshacer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar oubliera les %lld souvenirs qu'il a de vous. Cette action est irréversible."
+          }
+        }
+      }
+    },
     "Cedar's plan" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2949,6 +3064,28 @@
         }
       }
     },
+    "Delete All" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle löschen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar todo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout supprimer"
+          }
+        }
+      }
+    },
     "Denied" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3212,6 +3349,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Excellent"
+          }
+        }
+      }
+    },
+    "Facts Cedar keeps about you across conversations, like your name, preferences and projects. Deleting one applies from your next message." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was Cedar sich über Unterhaltungen hinweg über dich merkt, etwa deinen Namen, Vorlieben und Projekte. Löschen wirkt ab deiner nächsten Nachricht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que Cedar recuerda de ti entre conversaciones, como tu nombre, tus preferencias y tus proyectos. Eliminar algo se aplica desde tu próximo mensaje."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que Cedar retient de vous d'une conversation à l'autre, comme votre nom, vos préférences et vos projets. Une suppression s'applique dès votre prochain message."
           }
         }
       }
@@ -3483,6 +3642,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pour les demandes longues"
+          }
+        }
+      }
+    },
+    "Forget Everything?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles vergessen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Olvidar todo?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout oublier ?"
           }
         }
       }
@@ -4306,6 +4487,28 @@
         }
       }
     },
+    "Memory" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gedächtnis"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memoria"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoire"
+          }
+        }
+      }
+    },
     "Message cedar" : {
       "localizations" : {
         "de" : {
@@ -4910,6 +5113,29 @@
         }
       }
     },
+    "Not linked to a conversation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keiner Unterhaltung zugeordnet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conversación asociada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liée à aucune conversation"
+          }
+        }
+      }
+    },
     "Not rated" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4929,6 +5155,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Non noté"
+          }
+        }
+      }
+    },
+    "Nothing Remembered Yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nichts gemerkt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía no recuerda nada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien de retenu pour l'instant"
           }
         }
       }
@@ -8239,6 +8487,28 @@
         }
       }
     },
+    "This is exactly what Cedar sees. Memory stays on your own server and is never shared with a third party. Settings → Tools in the web UI turns it off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genau das sieht Cedar. Das Gedächtnis bleibt auf deinem eigenen Server und wird nie an Dritte weitergegeben. Unter Einstellungen → Werkzeuge in der Weboberfläche lässt es sich ausschalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto es exactamente lo que ve Cedar. La memoria se queda en tu propio servidor y nunca se comparte con terceros. Se desactiva en Configuración → Herramientas de la interfaz web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "C'est exactement ce que voit Cedar. La mémoire reste sur votre propre serveur et n'est jamais partagée avec des tiers. Réglages → Outils dans l'interface web permet de la désactiver."
+          }
+        }
+      }
+    },
     "This response no longer exists on the server." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8258,6 +8528,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette réponse n'existe plus sur le serveur."
+          }
+        }
+      }
+    },
+    "This server doesn't remember anything between conversations yet. Update cedar to use memory." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Server merkt sich noch nichts zwischen Unterhaltungen. Aktualisiere cedar, um das Gedächtnis zu nutzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor todavía no recuerda nada entre conversaciones. Actualiza cedar para usar la memoria."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur ne retient encore rien d'une conversation à l'autre. Mettez cedar à jour pour utiliser la mémoire."
           }
         }
       }
@@ -8934,6 +9226,28 @@
         }
       }
     },
+    "What Cedar Remembers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was Cedar sich merkt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que Cedar recuerda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que Cedar retient"
+          }
+        }
+      }
+    },
     "What should the agent do?" : {
       "localizations" : {
         "de" : {
@@ -8997,6 +9311,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quand Cedar le juge utile"
+          }
+        }
+      }
+    },
+    "When you tell Cedar something lasting, like your name, a preference or a project, or ask it to remember something, it appears here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du Cedar etwas Dauerhaftes erzählst, etwa deinen Namen, eine Vorliebe oder ein Projekt, oder es bittest, sich etwas zu merken, erscheint es hier."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando le cuentes a Cedar algo duradero, como tu nombre, una preferencia o un proyecto, o le pidas que recuerde algo, aparecerá aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lorsque vous dites à Cedar quelque chose de durable, comme votre nom, une préférence ou un projet, ou lui demandez de s'en souvenir, cela apparaît ici."
           }
         }
       }

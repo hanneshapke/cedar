@@ -423,4 +423,24 @@
         <item quantity="one">%d weitere Option</item>
         <item quantity="other">%d weitere Optionen</item>
     </plurals>
+    <!-- Memory (Settings → Memory) -->
+    <string name="memory">Gedächtnis</string>
+    <string name="memory_settings_row">Was Cedar sich merkt</string>
+    <string name="memory_settings_footnote">Was Cedar sich über Unterhaltungen hinweg über dich merkt, etwa deinen Namen, Vorlieben und Projekte. Löschen wirkt ab deiner nächsten Nachricht.</string>
+    <string name="memory_delete_all">Alle löschen</string>
+    <string name="memory_delete_all_title">Alles vergessen?</string>
+    <string name="memory_empty_title">Noch nichts gemerkt</string>
+    <string name="memory_empty_text">Wenn du Cedar etwas Dauerhaftes erzählst, etwa deinen Namen, eine Vorliebe oder ein Projekt, oder es bittest, sich etwas zu merken, erscheint es hier.</string>
+    <string name="memory_unsupported">Dieser Server merkt sich noch nichts zwischen Unterhaltungen. Aktualisiere cedar, um das Gedächtnis zu nutzen.</string>
+    <string name="memory_no_source">Keiner Unterhaltung zugeordnet</string>
+    <string name="memory_count_of">%1$d von %2$d gemerkt</string>
+    <string name="memory_footnote">Genau das sieht Cedar. Tippe auf eine Erinnerung, um die Unterhaltung zu öffnen, aus der sie stammt; halte sie gedrückt, um sie zu löschen. Das Gedächtnis bleibt auf deinem eigenen Server und wird nie an Dritte weitergegeben. Unter Einstellungen → Werkzeuge in der Weboberfläche lässt es sich ausschalten.</string>
+    <plurals name="memory_count">
+        <item quantity="one">%d Erinnerung</item>
+        <item quantity="other">%d Erinnerungen</item>
+    </plurals>
+    <plurals name="memory_delete_all_text">
+        <item quantity="one">Cedar vergisst %d Erinnerung, die es über dich hat. Das lässt sich nicht rückgängig machen.</item>
+        <item quantity="other">Cedar vergisst alle %d Erinnerungen, die es über dich hat. Das lässt sich nicht rückgängig machen.</item>
+    </plurals>
 </resources>

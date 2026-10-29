@@ -14,6 +14,8 @@ import dev.cedar.core.ChatClient
 import dev.cedar.core.ChatException
 import dev.cedar.core.Conversation
 import dev.cedar.core.Inbox
+import dev.cedar.core.MemoryItem
+import dev.cedar.core.MemoryLimits
 import dev.cedar.core.ModelInfo
 import dev.cedar.core.Notice
 import dev.cedar.core.Schedule
@@ -99,6 +101,24 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var starredLoaded by mutableStateOf(false)
         private set
     var starredError by mutableStateOf<String?>(null)
+
+    /** The server has `/api/memory` (its `/api/config` says so); Settings shows Memory only then. */
+    var serverHasMemory by mutableStateOf(false)
+        private set
+
+    /** What cedar remembers about the user, oldest first, once loaded (Settings → Memory). */
+    var memoryItems by mutableStateOf<List<MemoryItem>>(emptyList())
+        private set
+    var memoryLoaded by mutableStateOf(false)
+        private set
+    var memoryError by mutableStateOf<String?>(null)
+
+    /** False when the chat server's cedar has no memory yet. */
+    var memorySupported by mutableStateOf(true)
+        private set
+    var memoryLimits by mutableStateOf<MemoryLimits?>(null)
+        private set
+    var showingMemory by mutableStateOf(false)
 
     /** Conversations the list leaves out (a schedule's runs), as their chats loaded them. */
     private val otherConversations = mutableStateMapOf<String, Conversation>()
@@ -189,6 +209,13 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             schedulesLoaded = false
             models = emptyList()
             modelsLoaded = false
+            serverHasMemory = false
+            memoryItems = emptyList()
+            memoryLoaded = false
+            memoryError = null
+            memorySupported = true
+            memoryLimits = null
+            showingMemory = false
             selection = null
             inboxUnread = 0
             push.serverChanged(old, new)
@@ -203,6 +230,42 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         scope.launch { refresh() }
         startNotices()
         syncLocale()
+    }
+
+    // Memory
+
+    suspend fun refreshMemory() {
+        val client = client ?: return
+        try {
+            val list = client.memory()
+            memorySupported = list.supported
+            memoryItems = list.items
+            memoryLimits = list.limits
+            memoryLoaded = true
+            memoryError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            memoryError = describe(e)
+        }
+    }
+
+    /** Forgets one memory at once (no Save): the next message, in any conversation, goes without it. */
+    suspend fun deleteMemory(item: MemoryItem) {
+        val client = client ?: throw ChatException.NotConfigured
+        try {
+            client.deleteMemory(item.id)
+        } catch (e: ChatException.Api) {
+            // Already gone (another device): the list catches up below.
+            if (e.status != 404) throw e
+        }
+        memoryItems = memoryItems.filter { it.id != item.id }
+    }
+
+    suspend fun deleteAllMemory() {
+        val client = client ?: throw ChatException.NotConfigured
+        client.deleteAllMemory()
+        memoryItems = emptyList()
     }
 
     // Conversations
@@ -232,6 +295,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             if (!modelsLoaded) {
                 modelsLoaded = true
                 models = runCatching { client.models() }.getOrDefault(emptyList())
+                serverHasMemory = runCatching { client.config().memory }.getOrDefault(false)
             }
         } catch (e: CancellationException) {
             throw e

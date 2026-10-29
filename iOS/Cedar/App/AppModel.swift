@@ -35,6 +35,15 @@ final class AppModel {
     private(set) var starred: [Conversation] = []
     private(set) var starredLoaded = false
     var starredError: String?
+    /// The server has `/api/memory` (its `/api/config` says so); Settings shows Memory only then.
+    private(set) var serverHasMemory = false
+    /// What cedar remembers about the user, oldest first, once loaded (Settings → Memory).
+    private(set) var memoryItems: [MemoryItem] = []
+    private(set) var memoryLoaded = false
+    var memoryError: String?
+    /// False when the chat server's cedar has no memory yet.
+    private(set) var memorySupported = true
+    private(set) var memoryLimits: MemoryList.Limits?
     /// Conversations the list leaves out (a schedule's runs), as their chats loaded them.
     private var otherConversations: [String: Conversation] = [:]
     /// The selected conversation id, or a draft chat's key.
@@ -78,6 +87,12 @@ final class AppModel {
             schedulesLoaded = false
             models = []
             modelsLoaded = false
+            serverHasMemory = false
+            memoryItems = []
+            memoryLoaded = false
+            memoryError = nil
+            memorySupported = true
+            memoryLimits = nil
             selection = nil
             inboxUnread = 0
             PushRegistrar.shared?.serverChanged(from: old, to: new)
@@ -132,6 +147,41 @@ final class AppModel {
         }
     }
 
+    // MARK: Memory
+
+    func refreshMemory() async {
+        guard let client else { return }
+        do {
+            let list = try await client.memory()
+            memorySupported = list.supported
+            memoryItems = list.items
+            memoryLimits = list.limits
+            memoryLoaded = true
+            memoryError = nil
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            memoryError = error.localizedDescription
+        }
+    }
+
+    /// Forgets one memory at once (no Save): the next message, in any conversation, goes without it.
+    func deleteMemory(_ item: MemoryItem) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        do {
+            try await client.deleteMemory(id: item.id)
+        } catch let error as ChatError where error.status == 404 {
+            // Already gone (another device).
+        }
+        memoryItems.removeAll { $0.id == item.id }
+    }
+
+    func deleteAllMemory() async throws {
+        guard let client else { throw ChatError.notConfigured }
+        try await client.deleteAllMemory()
+        memoryItems = []
+    }
+
     // MARK: Conversations
 
     func refresh() async {
@@ -161,6 +211,7 @@ final class AppModel {
             if !modelsLoaded {
                 modelsLoaded = true
                 models = (try? await client.models()) ?? []
+                serverHasMemory = (try? await client.config())?.memory ?? false
             }
         } catch is CancellationError {
         } catch {

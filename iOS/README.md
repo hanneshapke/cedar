@@ -46,6 +46,10 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered
+- Settings → Memory: what Cedar remembers about you across conversations (see
+  [Memory](../README.md#memory)), newest first, with when each fact was saved and a tap to open
+  the conversation it came from. Swipe to delete one, or **Delete All**; deletions apply at once.
+  Shown only when the server has memory (`memory` in `GET /api/config`)
 - Markdown rendering: headings, lists, quotes, tables, and code blocks with a copy button
 - Connecting by scanning the QR code the chat's Settings → Phone page, the Cedar desktop app or
   `scripts/cedar-stack.sh --pair` shows
@@ -139,6 +143,9 @@ into `production` for distribution builds.
   ordinary message in the same text form the web page sends.
 - Images are fetched from `GET /api/conversations/{id}/files/{path}` with the access token.
 - The device token goes to `POST /api/notifications/apns/devices`.
+- Settings → Memory reads `GET /api/memory` and deletes with `DELETE /api/memory/{id}` and
+  `DELETE /api/memory`. A server whose `GET /api/config` has no `memory` flag, or that answers
+  `/api/memory` with 404, is older than memory, and the section is hidden or says so.
 - Every message carries the interface language as `locale` (`de-CH`); a language picked in the
   app also goes to `PUT /api/settings/locale` (`null` for Automatic), so scheduled runs and
   notifications follow it. Before a server is set up, it is sent once one is.

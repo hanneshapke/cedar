@@ -420,6 +420,7 @@ struct ToolCallView: View {
         case "search_products": return "bag"
         case "search_flights": return "airplane"
         case "ask_user": return "questionmark.bubble"
+        case "remember", "forget": return "bookmark"
         case "browser": return "safari"
         default: return "wrench.and.screwdriver"
         }

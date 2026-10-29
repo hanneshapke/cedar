@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var scanning = false
     /// Set by a scan, so the connection is tested once the scanner is gone.
     @State private var scanned = false
+    /// The draft was filled in; coming back from Memory doesn't reset what was typed.
+    @State private var started = false
 
     enum CheckState: Equatable {
         case idle, checking, ok
@@ -110,6 +112,25 @@ struct SettingsView: View {
                     Text("Cedar shows its steps and waits for your go-ahead; you can stop it there. With \u{201C}When Cedar thinks it helps\u{201D}, it decides which requests need a plan, so quick questions get none.")
                 }
 
+                if app.serverHasMemory {
+                    Section {
+                        // Its own screen; deletions there apply at once, not on Save.
+                        NavigationLink {
+                            MemoryView()
+                        } label: {
+                            LabeledContent("What Cedar Remembers") {
+                                if app.memoryLoaded && app.memorySupported {
+                                    Text(verbatim: L10n.format(app.memoryItems.count == 1 ? "%lld memory" : "%lld memories", app.memoryItems.count))
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Memory")
+                    } footer: {
+                        Text("Facts Cedar keeps about you across conversations, like your name, preferences and projects. Deleting one applies from your next message.")
+                    }
+                }
+
                 Section {
                     Button("Allow Notifications") {
                         Task {
@@ -156,8 +177,14 @@ struct SettingsView: View {
                 }
             }
             .onAppear {
+                guard !started else { return }
+                started = true
                 draft = app.settings
                 models = app.models
+            }
+            // For the count on the Memory row.
+            .task(id: app.serverHasMemory) {
+                if app.serverHasMemory { await app.refreshMemory() }
             }
             .onChange(of: draft.serverURL) { check = .idle }
             .onChange(of: draft.accessToken) { check = .idle }
