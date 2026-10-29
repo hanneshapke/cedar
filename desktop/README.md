@@ -86,12 +86,18 @@ supervisor on Docker Desktop's bridge network (Docker Desktop has no host networ
 turned on in its settings). This adds both settings to the configuration file Homebrew's service
 reads: `~/.config/openshell/gateway.toml` if you have one, otherwise
 `$(brew --prefix)/var/openshell/gateway.toml`. If that file has a `[openshell.drivers.docker]`
-section already, it changes nothing and says so; set the two settings in that section by hand. Paste it into the terminal as it is: the
+section already, it changes nothing and says so; set the two settings in that section by hand.
+A file without the `[openshell]` header and `version = 2` (an empty one, say) gets them first:
+without them the gateway refuses the whole file and doesn't start. Paste it into the terminal as it is: the
 TOML itself is not a command, and zsh answers it with `no matches found`.
 
 ```sh
 F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"
 [ -f "$F" ] || F="$(brew --prefix)/var/openshell/gateway.toml"
+mkdir -p "$(dirname "$F")"
+if ! grep -qs '^\[openshell\]' "$F"; then
+  { printf '[openshell]\nversion = 2\n'; [ ! -f "$F" ] || cat "$F"; } > "$F.new" && mv "$F.new" "$F"
+fi
 if grep -qs '^\[openshell\.drivers\.docker\]' "$F"; then
   echo "$F already has [openshell.drivers.docker]; make sure it sets: allow_driver_config = true, supervisor_network_mode = \"bridge\""
 else

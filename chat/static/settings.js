@@ -658,8 +658,14 @@ const cedarSettings = (() => {
   // Each block is pasted into a terminal as it is (zsh on a Mac), so: no shell comments, which
   // interactive zsh runs as commands, and the TOML only inside a heredoc. A config file that has
   // the section already is left alone, since a second one would stop the gateway from starting.
+  // The file needs `[openshell]` and `version = 2` on top, or the gateway refuses all of it: an
+  // empty file (or none) gets them first.
   const openShellConfig = (pick, settings) => [
     ...pick,
+    'mkdir -p "$(dirname "$F")"',
+    'if ! grep -qs \'^\\[openshell\\]\' "$F"; then',
+    '  { printf \'[openshell]\\nversion = 2\\n\'; [ ! -f "$F" ] || cat "$F"; } > "$F.new" && mv "$F.new" "$F"',
+    'fi',
     'if grep -qs \'^\\[openshell\\.drivers\\.docker\\]\' "$F"; then',
     '  echo "$F already has [openshell.drivers.docker]; make sure it sets: ' + settings.join(', ').replace(/"/g, '\\"') + '"',
     'else',
@@ -688,7 +694,6 @@ const cedarSettings = (() => {
       // As the user cedar runs as; the file needs its header if the installer made none.
       config: openShellConfig([
         'F="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateway.toml"',
-        'mkdir -p "$(dirname "$F")"; [ -s "$F" ] || printf \'[openshell]\\nversion = 2\\n\' > "$F"',
       ], ['allow_driver_config = true']),
       restart: 'systemctl --user restart openshell-gateway\nsleep 5\nopenshell status',
     },
