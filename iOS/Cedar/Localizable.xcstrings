@@ -2208,6 +2208,28 @@
         }
       }
     },
+    "Could Not Load the Files" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien konnten nicht geladen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron cargar los archivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de charger les fichiers"
+          }
+        }
+      }
+    },
     "Could not load %@" : {
       "localizations" : {
         "de" : {
@@ -2739,6 +2761,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Peu d'avis"
+          }
+        }
+      }
+    },
+    "Files" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichiers"
+          }
+        }
+      }
+    },
+    "Files the agent writes in this conversation appear here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien, die der Agent in dieser Unterhaltung schreibt, erscheinen hier."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los archivos que el agente escriba en esta conversación aparecen aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les fichiers que l'agent écrit dans cette conversation apparaissent ici."
           }
         }
       }
@@ -3829,6 +3895,28 @@
         }
       }
     },
+    "No Files Yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Dateien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay archivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun fichier pour l'instant"
+          }
+        }
+      }
+    },
     "No Scheduled Agents" : {
       "localizations" : {
         "de" : {
@@ -4159,6 +4247,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sur le web, le bouton « Planifier » transforme une conversation terminée en un agent qui s'exécute tout seul."
+          }
+        }
+      }
+    },
+    "Only the first 1,000 files are listed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur die ersten 1000 Dateien werden aufgeführt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo se muestran los primeros 1000 archivos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seuls les 1000 premiers fichiers sont listés."
+          }
+        }
+      }
+    },
+    "Open %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir %@"
           }
         }
       }
@@ -5113,6 +5245,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recommandé"
+          }
+        }
+      }
+    },
+    "Refresh" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiser"
           }
         }
       }
@@ -6535,6 +6689,29 @@
         }
       }
     },
+    "The app shows images and PDFs. Open this file on the web instead." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die App zeigt Bilder und PDFs. Öffne diese Datei stattdessen im Web."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La app muestra imágenes y PDF. Abre este archivo en la web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'app affiche les images et les PDF. Ouvrez plutôt ce fichier sur le web."
+          }
+        }
+      }
+    },
     "The cedar-chat server's URL (where you open the web UI) and its CHAT_ACCESS_TOKEN, if it is set. Running Cedar on a Mac? Turn on iPhone & iPad sharing in the Mac app and scan the QR code it shows. The token is stored in the Keychain; cedar's own key stays on the server." : {
       "localizations" : {
         "de" : {
@@ -6559,6 +6736,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'URL du serveur cedar-chat (là où vous ouvrez l'interface web) et son CHAT_ACCESS_TOKEN, s'il est défini. Cedar tourne sur un Mac ? Activez le partage iPhone & iPad dans l'app Mac et scannez le code QR qu'elle affiche. Le jeton est stocké dans le trousseau ; la clé de cedar reste sur le serveur."
+          }
+        }
+      }
+    },
+    "The file isn't a PDF the app can show." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei ist kein PDF, das die App anzeigen kann."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El archivo no es un PDF que la app pueda mostrar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier n'est pas un PDF que l'app peut afficher."
+          }
+        }
+      }
+    },
+    "The file isn't an image the app can show." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei ist kein Bild, das die App anzeigen kann."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El archivo no es una imagen que la app pueda mostrar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier n'est pas une image que l'app peut afficher."
           }
         }
       }
@@ -6682,6 +6905,29 @@
         }
       }
     },
+    "The server answered %lld." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server antwortete mit %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor respondió %lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a répondu %lld."
+          }
+        }
+      }
+    },
     "This conversation no longer exists on the server." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6723,6 +6969,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cet appareil n'a pas d'appareil photo pour scanner. Saisissez plutôt l'adresse et le jeton."
+          }
+        }
+      }
+    },
+    "This file is over %@, more than the app shows. Open it on the web instead." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Datei ist über %@ – mehr, als die App anzeigt. Öffne sie stattdessen im Web."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo supera %@, más de lo que muestra la app. Ábrelo en la web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier dépasse %@, plus que ce que l'app affiche. Ouvrez-le plutôt sur le web."
           }
         }
       }
@@ -7001,6 +7270,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transports en commun"
+          }
+        }
+      }
+    },
+    "Try Again" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneut versuchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reintentar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessayer"
           }
         }
       }

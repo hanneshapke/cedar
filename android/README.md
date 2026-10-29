@@ -31,7 +31,10 @@ The same as the iOS app:
   requests, always, or never; a plan Cedar chose to make partway through (`propose_plan`) is
   marked as such
 - Clarifying questions (`ask_user`) as a form; plans to agree to and tool calls to allow or deny
-- The agent's images under the reply, with the Android share sheet
+- The agent's images under the reply, with the Android share sheet; tap one to see it full
+  screen and zoom in. PDFs it wrote are listed under the reply too
+- The conversation's workspace files from the folder button in the chat's top bar, with their
+  sizes: images and PDFs open in a viewer (pinch to zoom, share), other files are left to the web
 - Cards drawn natively: charts (legend that hides series, touch to read values, the data as a
   table), maps on **OpenStreetMap** (numbered pins, route lines, full screen when tapped, OSM's
   attribution), recipes to tick off, routes with each leg, stock comparisons with ratings, returns
@@ -184,7 +187,7 @@ You can also open `android/` in Android Studio and run the `app` configuration.
 | `core/` | Plain Kotlin, no Android: the `/api` types, the event-to-transcript reducer, the cards' parsers, the Markdown block parser, the attachment rules, the connection code, the locales, the SSE parser and the OkHttp client. Builds and tests without the Android SDK |
 | `core/src/test` | Unit tests ported from `iOS/CedarTests`, plus the client against a mock server |
 | `app/…/AppModel.kt`, `ChatModel.kt` | App state (settings, the lists, the inbox count, live notices, open chats) and one conversation's turns and streams, as the iOS app's models |
-| `app/…/ui/` | Compose screens: root (list and chat side by side when wide), list (chats, starred, scheduled), chat (turns, questions, approvals, images, composer), settings (with the QR scanner), cards |
+| `app/…/ui/` | Compose screens: root (list and chat side by side when wide), list (chats, starred, scheduled), chat (turns, questions, approvals, images, workspace files and the PDF/image viewer, composer), settings (with the QR scanner), cards |
 | `app/…/push/` | `PushManager` (FCM or UnifiedPush, registration with the server), the two services, and `Notifier`, which fetches the text and shows the notification |
 | `app/…/storage/` | Settings, with the token encrypted by an Android Keystore key |
 | `app/…/Language.kt`, `ui/Text.kt` | The app's language (AppCompat per-app locales) and the app's words for what `core` names by key |

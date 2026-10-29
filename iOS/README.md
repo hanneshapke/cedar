@@ -16,7 +16,10 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   rename, delete, and open on the web
 - Replies stream in as the agent works: the model's reasoning (folded), text, tool calls with
   their input, output, duration and sources, token usage and cost
-- The agent's images (charts, pictures it saved or drew) shown under the reply, with sharing
+- The agent's images (charts, pictures it saved or drew) shown under the reply, with sharing; tap
+  one to see it full screen and zoom in. PDFs it wrote are listed under the reply too
+- The conversation's workspace files from the folder button in the chat's toolbar, with their
+  sizes: images and PDFs open in a viewer (pinch to zoom, share), other files are left to the web
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
 - Plans to agree to and tool calls to allow or deny, when the server asks (`TOOL_APPROVALS`); a
   plan Cedar chose to make partway through (`propose_plan`) is marked as such

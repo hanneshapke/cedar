@@ -88,6 +88,7 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var starError by remember { mutableStateOf<String?>(null) }
+    var showingFiles by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(chat) { chat.start() }
@@ -136,6 +137,9 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
                             }
                         }
                     }
+                    if (conversationId != null && chat.client != null) {
+                        IconButton(onClick = { showingFiles = true }) { Icon(Icons.Outlined.Folder, stringResource(R.string.files)) }
+                    }
                     if (webURL != null) {
                         IconButton(onClick = { openUrl(context, webURL) }) { Icon(Icons.Outlined.OpenInBrowser, stringResource(R.string.open_on_the_web)) }
                     }
@@ -182,6 +186,10 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
         }
     }
     ErrorDialog(stringResource(R.string.could_not_change_star), starError) { starError = null }
+    val client = chat.client
+    if (showingFiles && conversationId != null && client != null) {
+        WorkspaceFilesDialog(client, conversationId) { showingFiles = false }
+    }
 }
 
 @Composable
