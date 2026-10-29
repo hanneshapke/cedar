@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **A calmer top bar in Ledger.** The bar had eleven controls of equal weight; it now reads in three zones. On the left the conversation's title (no more *Cedar /* breadcrumb inside a conversation; the brand stays on the home page), with the star and a small *Scheduled run* chip beside it. In the middle one muted line, *Done · 128K tokens*, with the in/out split in its tooltip. On the right borderless icons for Files, Schedule and finished responses, a new *More* menu (⋯) with Rename, Settings, the run's details (date, tokens in and out, price) and Delete conversation, and *New*, the only framed button. Delete is no longer one click away in the bar. In a narrow window the token count goes first, then the chip shrinks to its clock.
+- The other interfaces get the same bar. In Cedar style and Dossier the labelled, framed Star, Schedule and Files buttons become borderless icons (the star sits beside the title), the date moves into the new More menu with Rename, Settings and Delete conversation, and New is the only framed button; Dossier's bar no longer runs off the edge in a narrow window. Claude style keeps its quiet icon row, with Delete and Settings moved into the More menu. The menu's behaviour is shared by all four interfaces (`/more-menu.js`).
 
 ## 0.3.0
 

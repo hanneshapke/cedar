@@ -380,6 +380,7 @@ function setHeader() {
   els.main.classList.toggle('empty', !c);
   els.title.textContent = c ? (c.title || tr('v1.newChat')) : '';
   els.deleteChat.hidden = !c;
+  document.getElementById('rename-item').hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
   cedarStar.setCurrent(c);
@@ -1196,6 +1197,7 @@ els.thread.addEventListener('click', (e) => {
   if (button) copyText(button.closest('.code').querySelector('code').textContent, button);
 });
 els.title.addEventListener('click', startRename);
+document.getElementById('rename-item').addEventListener('click', startRename); // More › Rename
 els.titleInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') finishRename(true);
   if (e.key === 'Escape') finishRename(false);

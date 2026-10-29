@@ -28,7 +28,7 @@ const els = {
   chatsBtn: $('chats-btn'), drawer: $('drawer'), drawerClose: $('drawer-close'), backdrop: $('backdrop'), recents: $('recents'),
   tabs: $('tabs'), stageBadge: $('stage-badge'),
   cost: $('cost'), costFull: $('cost-full'), runDetails: $('run-details'),
-  moreBtn: $('more-btn'), moreMenu: $('more-menu'), renameItem: $('rename-item'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
+  renameItem: $('rename-item'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
   talk: $('talk'), notes: $('notes'), splitter: $('splitter'),
   stage: $('stage'), stageBody: $('stage-body'), stageEmpty: $('stage-empty'),
   composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
@@ -1657,51 +1657,9 @@ async function finishRename(save) {
 }
 
 // -- the More menu ---------------------------------------------------------------------------
-// Rename, Settings, the run's details and Delete, kept out of the bar. Settings and Delete keep
-// their ids (#settings-btn, #delete-chat), so the code that opens Settings or deletes still finds them.
+// Rename, Settings, the run's details and Delete live in the More menu (more-menu.js opens and
+// closes it). Settings and Delete keep their ids, so the code that opens or deletes still finds them.
 
-function menuItems() {
-  return [...els.moreMenu.querySelectorAll('[role="menuitem"]')].filter((b) => !b.hidden);
-}
-
-function openMenu() {
-  els.moreMenu.hidden = false;
-  els.moreBtn.setAttribute('aria-expanded', 'true');
-  menuItems()[0]?.focus();
-  document.addEventListener('pointerdown', onMenuOutside, true);
-  document.addEventListener('keydown', onMenuKey, true);
-}
-
-function closeMenu(restoreFocus) {
-  if (els.moreMenu.hidden) return;
-  els.moreMenu.hidden = true;
-  els.moreBtn.setAttribute('aria-expanded', 'false');
-  document.removeEventListener('pointerdown', onMenuOutside, true);
-  document.removeEventListener('keydown', onMenuKey, true);
-  if (restoreFocus) els.moreBtn.focus();
-}
-
-function onMenuOutside(e) {
-  if (!e.target.closest('.more')) closeMenu(false);
-}
-
-function onMenuKey(e) {
-  if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
-  if (e.key === 'Tab') { closeMenu(false); return; }
-  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
-  e.preventDefault();
-  const items = menuItems();
-  if (!items.length) return;
-  const i = items.indexOf(document.activeElement);
-  const step = e.key === 'ArrowDown' ? 1 : -1;
-  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
-    : i < 0 ? (step > 0 ? 0 : items.length - 1) : (i + step + items.length) % items.length;
-  items[next].focus();
-}
-
-els.moreBtn.addEventListener('click', () => (els.moreMenu.hidden ? openMenu() : closeMenu(true)));
-// Any item closes the menu; its own handler (rename, Settings, delete) does the rest.
-els.moreMenu.addEventListener('click', (e) => { if (e.target.closest('[role="menuitem"]')) closeMenu(false); });
 els.renameItem.addEventListener('click', startRename);
 
 // -- wiring ------------------------------------------------------------------------------------
