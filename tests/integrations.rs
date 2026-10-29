@@ -103,7 +103,9 @@ async fn without_a_selection_every_tool_is_offered() {
             "show_recipe",
             "plan_trip",
             "compare_stocks",
-            "ask_user"
+            "ask_user",
+            "remember",
+            "forget"
         ])
     );
 }
@@ -204,6 +206,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "stocks",
             "products",
             "ask_user",
+            "memory",
             "browser",
             "gmail",
             "calendar",

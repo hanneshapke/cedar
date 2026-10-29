@@ -3,7 +3,8 @@
 //! `show_recipe`, `plan_trip`, `search_flights`, `compare_stocks`, and `search_products` run in the
 //! cedar process,
 //! because the sandbox has no network; so does `ask_user`, which only checks its questions;
-//! `browser` drives the run's browser container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
+//! `browser` drives the run's browser container; `remember` and `forget` change the owner's memory
+//! (see [`crate::memory`]). The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
 //! in the cedar process too. Personal tools written in Python (`custom`) run in the sandbox like
 //! `run_python`.
 
@@ -23,6 +24,7 @@ mod gmail;
 mod google;
 mod map;
 mod mcp;
+mod memory;
 mod open_meteo;
 mod pdf;
 mod product_page;
@@ -46,6 +48,7 @@ pub use files::{ReadFile, WriteFile};
 pub use flights::SearchFlights;
 pub use map::ShowMap;
 pub use mcp::{McpServer, McpTool};
+pub use memory::{Forget, Remember, FORGET, REMEMBER};
 pub use pdf::GeneratePdf;
 pub use products::SearchProducts;
 pub use python::RunPython;
@@ -60,6 +63,7 @@ use crate::config::Config;
 use crate::config::GoogleOAuthConfig as GoogleCredentials;
 use crate::llm::{LlmClient, MessageRequest};
 use crate::mcp::GoogleOAuth;
+use crate::memory::MemoryContext;
 use crate::models::Usage;
 use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
@@ -83,6 +87,9 @@ pub struct ToolContext {
     pub model: Option<Arc<ToolModel>>,
     /// The run's locale (see [`crate::locale`]), which personal tools see as `CEDAR_LOCALE`.
     pub locale: String,
+    /// The run owner's memory, for `remember` and `forget`. `None` when memory is turned off, or
+    /// outside a run.
+    pub memory: Option<MemoryContext>,
 }
 
 /// The run's model as a tool may use it: one tool-free request at a time, with the tokens it
@@ -204,6 +211,7 @@ impl ToolSet {
     /// `TRANSIT` is off, `search_flights` if a SerpApi key is configured or saved (and `FLIGHTS`
     /// isn't off), `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
     /// Best Buy key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
+    /// `remember` and `forget` unless `MEMORY` is off,
     /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
     /// personal Python tools in `TOOLS_DIR`, if set.
@@ -288,6 +296,10 @@ impl ToolSet {
         }
         if cfg.ask_user {
             set.tools.push(Box::new(AskUser));
+        }
+        if cfg.memory {
+            set.tools.push(Box::new(Remember));
+            set.tools.push(Box::new(Forget));
         }
         if cfg.browser.enabled {
             set.tools
@@ -481,6 +493,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("stocks", "Stocks & markets"),
     ("products", "Shopping"),
     ("ask_user", "Clarifying questions"),
+    ("memory", "Memory"),
     ("browser", "Browser"),
     ("gmail", "Gmail"),
     ("calendar", "Calendar"),
@@ -501,6 +514,7 @@ pub fn group_of(name: &str) -> &'static str {
         "compare_stocks" => "stocks",
         "search_products" => "products",
         "ask_user" => "ask_user",
+        REMEMBER | FORGET => "memory",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
         n if n.starts_with("calendar_") => "calendar",
@@ -963,7 +977,9 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -978,7 +994,9 @@ mod tests {
                 "plan_trip",
                 "compare_stocks",
                 "search_products",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -992,7 +1010,9 @@ mod tests {
                 "plan_trip",
                 "compare_stocks",
                 "search_products",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -1009,7 +1029,9 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ]),
             "a key alone doesn't offer the tool when PRODUCTS is off"
         );
@@ -1021,7 +1043,9 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -1033,7 +1057,9 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -1045,7 +1071,9 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -1057,7 +1085,9 @@ mod tests {
                 "show_map",
                 "plan_trip",
                 "compare_stocks",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -1069,7 +1099,9 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "compare_stocks",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -1081,7 +1113,9 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
-                "ask_user"
+                "ask_user",
+                "remember",
+                "forget"
             ])
         );
         assert_eq!(
@@ -1093,7 +1127,8 @@ mod tests {
                 ("RECIPES", "off"),
                 ("TRANSIT", "off"),
                 ("STOCKS", "off"),
-                ("ASK_USER", "off")
+                ("ASK_USER", "off"),
+                ("MEMORY", "off")
             ])),
             with(&[])
         );
@@ -1108,6 +1143,8 @@ mod tests {
                 "plan_trip",
                 "compare_stocks",
                 "ask_user",
+                "remember",
+                "forget",
                 "browser"
             ])
         );
@@ -1121,6 +1158,8 @@ mod tests {
         assert_eq!(group_of("compare_stocks"), "stocks");
         assert_eq!(group_of("search_products"), "products");
         assert_eq!(group_of("ask_user"), "ask_user");
+        assert_eq!(group_of("remember"), "memory");
+        assert_eq!(group_of("forget"), "memory");
         assert_eq!(group_of("gmail_search_threads"), "gmail");
         assert_eq!(group_of("calendar_list_events"), "calendar");
         assert!(!writes("gmail_search_threads"));

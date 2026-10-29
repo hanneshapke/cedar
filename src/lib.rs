@@ -19,6 +19,7 @@ pub mod llm;
 pub mod locale;
 pub mod manager;
 pub mod marketplace;
+pub mod memory;
 pub mod mcp;
 pub mod models;
 pub mod plan;

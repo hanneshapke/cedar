@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Cedar remembers you.** The agent keeps a short list of facts about you across conversations (your name, preferences, standing instructions, ongoing projects), so a new conversation no longer starts from nothing. It saves one with the new `remember` tool when you tell it something lasting or ask it to remember, updates or drops one with `remember`'s `replaces` and `forget`, and every run is shown the whole list, framed as your facts rather than instructions. Only interactive runs may change memory; scheduled agents read it but cannot write it, and the model is told never to save what a page, email, document or tool said. The list is capped at `MEMORY_MAX_ITEMS` (200) items of 500 characters, and a full list is refused rather than trimmed silently. `GET /v1/memory` shows exactly what the model sees, and `DELETE /v1/memory/{id}` and `DELETE /v1/memory` forget one item or all; `POST /v1/memory` adds one by hand. Memory stays in cedar's database and never goes to a third party (see [PRIVACY.md](PRIVACY.md)). It is a new tool group, `memory`, on by default; `MEMORY=off` removes it.
+- Upgrading: a client that sends an explicit `tools` list (in the chat, anyone who has ever unticked a group in Settings → Tools) leaves the new `memory` group out, so memory stays off for them until they tick *Memory*.
+
 - Release: the DMG and MSI build faster. Every release compiled everything from scratch, since a Rust cache saved by the release pull request is out of reach of the next one; `release-cache.yml` now saves the dmg and msi jobs' caches on `main` (when dependencies change, and twice a week so they aren't evicted), and the release restores them. The desktop app builds with thin instead of fat LTO, which took several single-threaded minutes in each build.
 
 ## 0.2.3

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: October 26, 2026_
+_Last updated: October 29, 2026_
 
 **cedar does not collect any data. Period.**
 
@@ -21,6 +21,16 @@ To find out whether a newer version is out, the Mac and Windows app and the web 
 Only when you click *Set up Docker for me* or *Set up Tailscale for me*, the Mac and Windows app downloads that program's installer from its maker (Docker Desktop from desktop.docker.com, Tailscale from pkgs.tailscale.com) and installs it. Like any download, the request carries nothing about you or your conversations. `scripts/cedar-stack.sh` does the same on Linux (get.docker.com, tailscale.com) when you answer yes. Docker and Tailscale are then governed by their own privacy policies.
 
 Anything you choose to connect cedar to (for example your LLM server, or a third-party tool you install from the community registry) is governed by that service's own privacy policy, not by us.
+
+## Memory
+
+cedar can remember facts about you across conversations, such as your name, your preferences or a project you're working on, so you don't have to repeat them. **You stay in control of your memory, and it is never shared with a third party.**
+
+- Your memory is stored only in the database of the cedar server **you** run. We never see it, and cedar never sends it to us or to anyone else.
+- The only place it goes is the LLM server you configured, as part of each request, like the rest of your conversation. If that is a hosted model provider rather than your own server, its privacy policy applies to what it receives.
+- You can see every remembered fact, and the conversation it came from, and delete one or all of them at any time in Settings → Memory (web chat, desktop, iOS and Android) or through cedar's API (`GET` and `DELETE /v1/memory`). What you see there is exactly what the agent sees.
+- A deleted memory is removed from the database right away and is not used again, starting with your very next message.
+- You can turn memory off under Settings → Tools → Memory, and whoever runs the server can turn it off altogether (`MEMORY=off`).
 
 ## Device permissions
 

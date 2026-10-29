@@ -219,6 +219,11 @@ pub struct Config {
     pub products_api_url: String,
     /// Offer the `ask_user` tool (on by default), which ends a run with clarifying questions.
     pub ask_user: bool,
+    /// Offer the `remember` and `forget` tools and show runs what they remember about the user
+    /// (on by default; see [`crate::memory`]).
+    pub memory: bool,
+    /// How many memories one API key's owner may keep (`MEMORY_MAX_ITEMS`, 200 by default).
+    pub memory_max_items: usize,
     /// The Google account the Gmail and Calendar tools act for. Set when either is on.
     pub google_oauth: Option<GoogleClientConfig>,
     /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
@@ -485,6 +490,12 @@ impl Config {
             products_api_url: get("PRODUCTS_API_URL")
                 .unwrap_or_else(|| DEFAULT_PRODUCTS_API_URL.into()),
             ask_user: flag("ASK_USER", true)?,
+            memory: flag("MEMORY", true)?,
+            memory_max_items: parse(
+                "MEMORY_MAX_ITEMS",
+                get("MEMORY_MAX_ITEMS"),
+                crate::memory::DEFAULT_MAX_ITEMS,
+            )?,
             google_oauth,
             google_apis,
             mcp_servers,
@@ -587,6 +598,9 @@ impl Config {
         }
         if self.max_active_runs_per_key < 1 {
             bail!("MAX_ACTIVE_RUNS_PER_KEY must be at least 1");
+        }
+        if self.memory_max_items == 0 {
+            bail!("MEMORY_MAX_ITEMS must be at least 1; use MEMORY=off to turn memory off");
         }
         if self.workspace_ttl.is_zero() {
             bail!("WORKSPACE_TTL_SECS must be at least 1");
@@ -796,6 +810,25 @@ mod tests {
         let cfg =
             Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("ASK_USER", "off")])).unwrap();
         assert!(!cfg.ask_user);
+    }
+
+    #[test]
+    fn memory_is_on_by_default_with_a_cap() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.memory);
+        assert_eq!(cfg.memory_max_items, 200);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("MEMORY", "off"),
+            ("MEMORY_MAX_ITEMS", "50"),
+        ]))
+        .unwrap();
+        assert!(!cfg.memory);
+        assert_eq!(cfg.memory_max_items, 50);
+        let err =
+            Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MEMORY_MAX_ITEMS", "0")]))
+                .unwrap_err();
+        assert!(err.to_string().contains("MEMORY_MAX_ITEMS"), "{err}");
     }
 
     #[test]

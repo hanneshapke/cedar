@@ -31,11 +31,11 @@ const MODEL_COLS: &str =
     is_default, price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, \
     updated_at";
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
 
-fn to_dt(ms: i64) -> DateTime<Utc> {
+pub(crate) fn to_dt(ms: i64) -> DateTime<Utc> {
     DateTime::from_timestamp_millis(ms).unwrap_or_default()
 }
 

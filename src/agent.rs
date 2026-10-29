@@ -7,12 +7,15 @@ use crate::browser::BrowserSession;
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmRouter, MessageRequest};
+use crate::memory::{self, Memories, MemoryContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
 use crate::sandbox::{Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
-use crate::tools::{question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER};
+use crate::tools::{
+    question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER, REMEMBER,
+};
 use crate::waits::{Answer, Waits};
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
@@ -46,6 +49,8 @@ pub struct AgentEnv {
     pub integrations: Arc<Integrations>,
     /// How many pages of a run's attached PDFs, in all, a model that takes images is shown.
     pub pdf_preview_pages: usize,
+    /// What owners remember across conversations; `None` when memory is turned off.
+    pub memories: Option<Memories>,
 }
 
 #[derive(Debug)]
@@ -93,6 +98,12 @@ pub async fn run_agent(
             ))
         }),
         locale: run.locale.clone(),
+        memory: env.memories.as_ref().map(|memories| MemoryContext {
+            memories: memories.clone(),
+            owner: run.owner.clone(),
+            run_id: run.id,
+            interactive: run.interactive,
+        }),
     };
     let tool_set = env.tools.load_full();
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
@@ -122,6 +133,13 @@ pub async fn run_agent(
     if let Some(directive) = crate::locale::directive(&run.locale) {
         note.push(' ');
         note.push_str(&directive);
+    }
+    // Read per request, so a memory deleted in Settings is gone from the very next run. The
+    // `memory` group switches reading and writing together.
+    if let (Some(memories), true) = (&env.memories, tools.get(REMEMBER).is_some()) {
+        let items = memories.list(&run.owner).await?;
+        note.push_str("\n\n");
+        note.push_str(&memory::note(&items, run.interactive));
     }
     let mut system = with_note(&run.system, &note);
     // A continuation starts with a copy of its parent's conversation (made when it was created).

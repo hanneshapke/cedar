@@ -13,6 +13,7 @@ use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::{self, RunManager};
 use crate::marketplace::{InstallRequest, Marketplace};
+use crate::memory::{self, Memories, Refused};
 use crate::models::{
     Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
@@ -27,7 +28,7 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::response::sse::Sse;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use base64::Engine;
 use futures_util::Stream;
@@ -72,6 +73,9 @@ pub struct AppState {
     pub webhooks: Arc<Webhooks>,
     /// The community tool registry, for admins to install tools from.
     pub marketplace: Arc<Marketplace>,
+    /// What owners remember across conversations. There even with `MEMORY=off`, so people can
+    /// still see and delete what was saved before.
+    pub memories: Memories,
 }
 
 impl AppState {
@@ -101,6 +105,7 @@ impl AppState {
         let hub = Arc::new(EventHub::new());
         let cfg = Arc::new(cfg);
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
+        let memories = Memories::new(store.clone(), cfg.memory_max_items);
         let env = AgentEnv {
             llm: llm.clone(),
             sandbox_network: cfg.sandbox.network.clone(),
@@ -119,6 +124,7 @@ impl AppState {
             tool_output_max_bytes: cfg.tool_output_max_bytes,
             integrations: integrations.clone(),
             pdf_preview_pages: cfg.pdf_preview_pages,
+            memories: cfg.memory.then(|| memories.clone()),
         };
         let manager = RunManager::new(
             store.clone(),
@@ -152,6 +158,7 @@ impl AppState {
             integrations,
             webhooks,
             marketplace,
+            memories,
         })
     }
 }
@@ -178,6 +185,11 @@ pub fn router(state: AppState) -> Router {
         .route("/tools", get(list_tools))
         .route("/models", get(list_models))
         .route("/defaults", get(defaults))
+        .route(
+            "/memory",
+            get(list_memory).post(add_memory).delete(forget_all),
+        )
+        .route("/memory/{id}", delete(forget_memory))
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
         .route("/admin/server-models", post(list_server_models))
@@ -584,7 +596,69 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
             "media_types": ALLOWED_ATTACHMENT_TYPES,
             "max_image_side": images::max_side(&state.store).await?,
         },
+        "memory": cfg.memory.then(|| state.memories.limits()),
     })))
+}
+
+// -- memory ---------------------------------------------------------------------------------
+
+/// What the caller's runs remember about them, oldest first, with how much fits.
+async fn list_memory(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let items = state.memories.list(&owner.0).await?;
+    Ok(Json(
+        json!({ "items": items, "limits": state.memories.limits() }),
+    ))
+}
+
+#[derive(Deserialize)]
+struct AddMemory {
+    text: String,
+}
+
+/// Remember something by hand. Text already remembered isn't added twice: that item comes back,
+/// with 200 instead of 201.
+async fn add_memory(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(req): ApiJson<AddMemory>,
+) -> Result<(StatusCode, Json<memory::Memory>), AppError> {
+    if !state.cfg.memory {
+        return Err(AppError::Conflict(
+            "memory is turned off on this server (MEMORY=off)".into(),
+        ));
+    }
+    match state.memories.remember(&owner.0, &req.text, None, None).await? {
+        Ok((item, memory::Saved::Added)) => Ok((StatusCode::CREATED, Json(item))),
+        Ok((item, _)) => Ok((StatusCode::OK, Json(item))),
+        Err(full @ Refused::Full(_)) => Err(AppError::Conflict(full.to_string())),
+        Err(refused) => Err(AppError::BadRequest(refused.to_string())),
+    }
+}
+
+/// Forget one memory. Another owner's looks like a missing one.
+async fn forget_memory(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    let not_found = || AppError::NotFound("memory not found");
+    let id = Uuid::parse_str(&id).map_err(|_| not_found())?;
+    if !state.memories.forget(&owner.0, id).await? {
+        return Err(not_found());
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Forget everything the caller's runs remember.
+async fn forget_all(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<StatusCode, AppError> {
+    state.memories.forget_all(&owner.0).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn require_admin(admin: Admin) -> Result<(), AppError> {

@@ -74,7 +74,11 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) and the `memory` limits (`{max_items, max_chars}`, or `null` with `MEMORY=off`). |
+| `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [{id, text, run_id, created_at, updated_at}], limits: {max_items, max_chars}}`. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
+| `POST /v1/memory` | Remember something by hand: `{"text"}`. Returns `201` with the item, or `200` with the existing one when the same text (ignoring case and spacing) is already remembered. `409` when the list is full or `MEMORY=off`; `400` for empty text or more than 500 characters. |
+| `DELETE /v1/memory/{id}` | Forget one memory. `204`; `404` if it isn't yours. |
+| `DELETE /v1/memory` | Forget everything your runs remember. `204`. |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked. Never returns a key. |
 | `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
@@ -107,6 +111,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `stocks` | `compare_stocks` |
 | `products` | `search_products` |
 | `ask_user` | `ask_user` |
+| `memory` | `remember`, `forget`, and the list of what the run remembers (see [Memory](#memory)) |
 | `browser` | `browser` |
 | `gmail`, `calendar` | every `gmail_*` or `calendar_*` tool, or name single ones (`gmail_search_threads`) |
 | `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
@@ -382,6 +387,39 @@ It sends the locale with every message, and saves it on its server too, so sched
 notifications use it. Translators: see [docs/i18n-glossary.md](docs/i18n-glossary.md) for the terms
 and tone.
 
+## Memory
+
+A new conversation starts from the system prompt alone, so without memory the user repeats their
+name, their preferences and what they are working on. cedar keeps a short list of facts about the
+person behind each API key instead, in its own database:
+
+- **Reading.** Every run whose tools allow the `memory` group (all runs, unless `tools` leaves it out)
+  is shown the whole list in its note: what they remember about the user, as `[id] text`, oldest
+  first, framed as facts the user told them, not instructions, and never overriding the system
+  prompt. The note is built for each request and never stored, so a memory deleted through the API
+  is gone from the very next run, continuations included.
+- **Writing.** The model saves a fact with `remember` (`{text, replaces?}`) and deletes one with
+  `forget` (`{id}`), ordinary tool calls that show up as tool steps. It is told to save durable facts
+  the user states or asks it to keep (preferences, names, standing instructions, ongoing projects,
+  corrections), and never anything it only read in a tool result, a web page, an email or a document.
+  `replaces` updates an item in place (an address changed); the same text again (ignoring case and
+  spacing) only moves the existing item's `updated_at`. Only [interactive](#plans-and-approvals) runs
+  may write: in a run with `interactive: false` (a scheduled agent) both tools refuse, and the note
+  says memory is read-only, so unattended runs use what the user said but cannot add to it.
+- **Limits.** At most `MEMORY_MAX_ITEMS` items (200) of 500 characters each, about 100 KB at the very
+  most and far less in practice, which is why there is no vector store: the list fits in the prompt
+  whole. When it is full, `remember` is refused and the model is told to forget something or ask the
+  user; nothing is ever dropped silently.
+- **Seeing and deleting it.** `GET /v1/memory` lists exactly what the model sees, with the run each
+  item came from; `DELETE /v1/memory/{id}` forgets one item and `DELETE /v1/memory` all of them. The
+  chat shows this list in Settings → Memory, on the web, the desktop app, iOS and Android
+  ([chat/README.md](chat/README.md#memory)). Deleting a run or a conversation keeps its memories.
+
+Memory belongs to the API key's owner, like runs: another key never sees it. The chat calls cedar
+with one key, so everyone using one chat server shares one memory, and rotating `CEDAR_API_KEY`
+leaves the old memories behind, as it does the old runs. Turn the `memory` group off for a run with
+`tools`, or for the whole server with `MEMORY=off` (what was saved can still be listed and deleted).
+
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
@@ -467,6 +505,8 @@ Settings come from environment variables. The important ones:
 | `RECIPE_WIKIPEDIA_URL` / `RECIPE_COMMONS_URL` | `https://en.wikipedia.org/w/api.php` / `https://commons.wikimedia.org/w/api.php` (the MediaWiki APIs `show_recipe` searches for a photo of the dish) |
 | `TRANSIT` | `on` (set `off` to remove the `plan_trip` tool) |
 | `ASK_USER` | `on` (set `off` to remove the `ask_user` tool, so the model never stops a run to ask a question) |
+| `MEMORY` | `on` (set `off` to remove the `remember` and `forget` tools and stop showing runs what they remember; see [Memory](#memory)) |
+| `MEMORY_MAX_ITEMS` | 200 (how many memories one API key may keep) |
 | `TRANSIT_BASE_URL` / `DRIVING_BASE_URL` | `https://api.transitous.org` / `https://router.project-osrm.org` (the roots of the MOTIS trip planner and the OSRM router `plan_trip` uses; point them at your own instances for anything beyond light use) |
 | `SERPAPI_API_KEY` | empty (set it, or save one in the chat UI's Settings → Server, to offer `search_flights`; a key from [SerpApi](https://serpapi.com), whose free plan covers a limited number of searches a month) |
 | `FLIGHTS` | `on` (set `off` to remove the `search_flights` tool even with a SerpApi key) |
@@ -510,6 +550,8 @@ Settings come from environment variables. The important ones:
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
 | `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
+| `remember` | Saves a durable fact about the user for later conversations. Takes `text` (one fact, at most 500 characters; whitespace is collapsed to one line) and optional `replaces` (the id of the item it updates). Returns `{status: "added" \| "replaced" \| "unchanged", memory: {id, text, run_id, created_at, updated_at}}`. Refused in non-interactive runs and when the list is full. See [Memory](#memory). Unless `MEMORY=off`. |
+| `forget` | Deletes one remembered fact by `id`. Refused in non-interactive runs. Unless `MEMORY=off`. |
 | `weather_forecast` | Current conditions and a daily forecast from [Open-Meteo](https://open-meteo.com) (open source, open data, no API key). Takes a `location` (a place name or postal code, geocoded to its best match) or `latitude` and `longitude`, optional `days` (1–16, default 3) and optional `units` (`metric` or `imperial`). Returns the resolved place, current temperature, conditions, humidity, wind, and precipitation, then per day the conditions, low and high, precipitation and its chance, wind, UV index, and sunrise and sunset. Unless `WEATHER=off`. |
 | `show_map` | Shows the user a map in the chat, with a numbered pin for each place. Takes `markers` (1–25 objects, each with a `location` such as `Berlin` or `Paris, France`, or `latitude` and `longitude`, and an optional `label`) and an optional `title`. Names are looked up with Open-Meteo's geocoding API, which knows cities, towns, and regions but not street addresses or businesses. Returns JSON with the coordinates used; names that could not be found are listed under `not_found`, and a call where none are found is an error. The chat interfaces draw the JSON as a map ([chat/README.md](chat/README.md)); other clients just get the JSON. Unless `MAPS=off`. |
 | `show_recipe` | Shows the user a recipe in the chat: a photo of the dish, the times and servings, the ingredients as a checklist, and the steps as a timeline. Takes `title`, `ingredients` (1–60, each `{quantity?, item}` or a string), `steps` (1–40, each `{title?, text, duration?}` or a string), and optional `description`, `servings`, `prep_time`, `cook_time`, `total_time`, `tips`, and `image_query` (what to search for the photo; defaults to the title). A photo is always looked up: the lead image of the best matching Wikipedia article, else the best matching bitmap on Wikimedia Commons. Returns the checked recipe as JSON with an `image` (`url`, `page_url`, `title`, `source`), or an `image_note` saying why there is none; a missing photo never fails the call. The system prompt asks the model to use it whenever its answer is a recipe. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Unless `RECIPES=off`. |
@@ -886,6 +928,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - Turning networking on for the sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
 - [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
+- [Memory](#memory) outlives the conversation it was saved in, so an instruction planted in it would too. The layers against that: only interactive runs can write it, the model is told never to save what a tool, page, email or document said, the list is shown as the user's facts that don't override the system prompt, every write is a visible tool step, and the whole list can be read and deleted through `/v1/memory` (Settings → Memory in the chat). Memories stay in cedar's database and go to the LLM server with every run that has the `memory` group on, like the conversation itself. Set `MEMORY=off` if that is not acceptable.
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
 ## Operations
