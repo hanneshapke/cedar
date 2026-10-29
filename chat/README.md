@@ -426,6 +426,11 @@ Once a conversation has a finished response, the **Schedule** button (the clock 
    new conversation, a new workspace, no memory of the earlier runs, and no files (a schedule's
    prompt is text only). It checks every 30 seconds, so a run starts within half a minute of its time.
 
+Scheduled runs are not interactive, so they read what cedar [remembers](#memory) about you (your
+units, your language, your projects) but cannot add to it or change it: nobody is there to see a
+memory being saved, and an agent that reads mail or web pages unattended must not be able to plant
+a standing instruction.
+
 Every run lives in a conversation of its own, named after the schedule and the time it was due,
 with the full tool trace and files panel. These conversations stay out of the conversation list;
 **Scheduled agents** in the conversations sidebar lists each schedule with its next run; clicking
@@ -469,6 +474,22 @@ once there is something to choose: more than one model, or a model with levels. 
 sent with every message (as the entry's id and the level), cedar checks them against its registry,
 and the conversation remembers them, so opening it again shows the choice its last message used.
 Until cedar has a model registered, the message box says so and sending is off.
+
+### Memory
+
+cedar remembers short facts about you across conversations (see [Memory](../README.md#memory)):
+your name, preferences, standing instructions and projects, saved when you tell it something
+lasting or ask it to remember something. Saving one shows as a tool step (*Remembered …*).
+**Settings → Memory** lists everything it remembers, newest first, with the date and a link to the
+conversation it was saved in, a **Remove** button on each, and **Forget all**. The list is exactly
+what the model sees, and a removal applies from the next message on, in every conversation. The
+same list is in the iOS and Android apps' Settings.
+
+Memory is the `memory` tool group, so **Settings → Tools** turns it off for new conversations and
+the conversation's **Tools** button for one conversation. If you ever unticked a group there,
+your saved choice predates memory and leaves it off; the Memory page says so. Everyone using this
+chat server shares one memory, since the chat calls cedar with one `CEDAR_API_KEY`. Memory stays
+on your own cedar server and is never shared with a third party (see [PRIVACY.md](../PRIVACY.md)).
 
 ### Pairing the iOS and Android apps
 
@@ -552,7 +573,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/config` | `{auth_required, admin_enabled}` |
+| `GET /api/config` | `{auth_required, admin_enabled, memory}`; `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
@@ -598,6 +619,10 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/pairing` | What the iOS and Android apps connect with (Settings → Phone): `{platform, server, on_tailnet, access_token, link, qr_svg, tailscale: {state, name, detail}}`. `server` (and `link`, `qr_svg`) is `null` unless `CHAT_PUBLIC_URL` is `https://`; `tailscale.state` is `missing`, `unavailable`, `logged_out`, `stopped`, `connecting`, `no_magic_dns`, `no_https` or `ready` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
 | `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
+| `GET /api/memory` | What cedar remembers about the user (`GET /v1/memory`): `{supported, items, limits}`, each item `{id, text, run_id, created_at, updated_at}` plus the `conversation_id` and `title` of the conversation it was saved in (`null` when there is none here). A cedar from before memory gives `supported: false` and no items. See [Memory](#memory) |
+| `POST /api/memory` | `{"text"}`: remember something by hand, relayed to `POST /v1/memory` |
+| `DELETE /api/memory/{id}` | Forget one memory (`404` if cedar has no such item) |
+| `DELETE /api/memory` | Forget everything cedar remembers about the user |
 | `GET /api/integrations` | Admin (`X-Admin-Token`): cedar's integrations, plus the Google `redirect_uri` to register |
 | `GET /api/integrations/models` | Admin: cedar's registered models with their servers (`GET /v1/admin/models`), relayed |
 | `POST /api/integrations/server-models` | Admin: the models a server lists (cedar's `POST /v1/admin/server-models`, body `{"base_url", "api_key"?, "id"?}`), relayed, for the model picker in the form |

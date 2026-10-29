@@ -98,6 +98,7 @@ const PRODUCT_VIEW_CSS: &str = include_str!("../static/product-view.css");
 const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
 const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
+const MEMORY_JS: &str = include_str!("../static/memory.js");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
@@ -289,6 +290,8 @@ pub fn router(state: AppState) -> Router {
         .route("/update/check", post(check_update))
         .route("/tools", get(list_tools))
         .route("/models", get(list_models))
+        .route("/memory", get(list_memory).post(add_memory).delete(delete_all_memory))
+        .route("/memory/{id}", axum::routing::delete(delete_memory))
         .route("/integrations", get(get_integrations))
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
         .route("/integrations/bestbuy", put(put_bestbuy_key).delete(delete_bestbuy_key))
@@ -341,6 +344,7 @@ pub fn router(state: AppState) -> Router {
         .route("/models.js", get(|| async { asset(JS, MODELS_JS) }))
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
         .route("/settings-shell.js", get(|| async { asset(JS, SETTINGS_SHELL_JS) }))
+        .route("/memory.js", get(|| async { asset(JS, MEMORY_JS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))
@@ -478,6 +482,8 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
     Json(json!({
         "auth_required": state.token_digest.is_some(),
         "admin_enabled": state.admin_digest.is_some(),
+        // This chat server has the /api/memory routes (whether cedar has memory is in their answer).
+        "memory": true,
     }))
 }
 
@@ -1450,6 +1456,47 @@ async fn list_tools(State(state): State<AppState>) -> Result<Json<Value>, AppErr
 /// The models cedar has registered, for the pickers.
 async fn list_models(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     Ok(Json(json!({ "models": state.cedar.models().await? })))
+}
+
+// -- memory ---------------------------------------------------------------------------------
+
+/// Settings -> Memory: what cedar remembers about the user, `{supported, items, limits}`, each item
+/// with the `conversation_id` and `title` of the conversation it was saved in, when that still
+/// exists here. A cedar from before memory gives `supported: false` and no items.
+async fn list_memory(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let Some(mut body) = state.cedar.memory().await? else {
+        return Ok(Json(json!({ "supported": false, "items": [], "limits": null })));
+    };
+    let mut items = body["items"].as_array().cloned().unwrap_or_default();
+    let runs: Vec<Uuid> = items.iter().filter_map(|i| i["run_id"].as_str()?.parse().ok()).collect();
+    let sources = state.store.conversations_of_runs(&runs).await?;
+    for item in &mut items {
+        let source = item["run_id"].as_str().and_then(|r| r.parse::<Uuid>().ok()).and_then(|r| sources.get(&r));
+        item["conversation_id"] = json!(source.map(|(id, _)| id));
+        item["title"] = json!(source.and_then(|(_, title)| title.clone()));
+    }
+    Ok(Json(json!({ "supported": true, "items": items, "limits": body["limits"].take() })))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryBody {
+    text: String,
+}
+
+async fn add_memory(State(state): State<AppState>, ApiJson(body): ApiJson<MemoryBody>) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.add_memory(&body.text).await?))
+}
+
+async fn delete_memory(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::NotFound("memory not found"))?;
+    state.cedar.delete_memory(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_all_memory(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+    state.cedar.delete_all_memory().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]

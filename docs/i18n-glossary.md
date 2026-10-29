@@ -58,6 +58,10 @@ server (they are for developers).
 | reasoning (level) | Denkaufwand | niveau de raisonnement | nivel de razonamiento |
 | system prompt | System-Prompt | prompt système | prompt del sistema |
 | settings | Einstellungen | Réglages | Configuración |
+| memory (what Cedar remembers about the user) | Gedächtnis | mémoire | memoria |
+| a memory (one remembered fact) | Erinnerung | souvenir | recuerdo |
+| remember, Remembered | sich merken, Gemerkt | mémoriser, Mémorisé | recordar, Recordado |
+| forget, Forget all | vergessen, Alles vergessen | oublier, Tout oublier | olvidar, Olvidar todo |
 | interface | Oberfläche | Interface | Interfaz |
 | language | Sprache | Langue | Idioma |
 | notifications | Benachrichtigungen | Notifications | Notificaciones |

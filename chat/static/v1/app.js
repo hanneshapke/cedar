@@ -55,6 +55,7 @@ const ICONS = {
   code: '<svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>',
   chart: '<svg viewBox="0 0 24 24"><path d="M4 4v16h16M8 16v-4M12 16V8M16 16v-6"/></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   plane: '<svg viewBox="0 0 24 24"><path d="M12 2c.8 0 1.5.7 1.5 1.5V9l7.5 4.5V16l-7.5-2.5V18l2 1.5V21L12 20l-3.5 1v-1.5l2-1.5v-4.5L3 16v-2.5L10.5 9V3.5C10.5 2.7 11.2 2 12 2z"/></svg>',
 };
 
@@ -717,7 +718,7 @@ const TOOL_ICONS = {
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
   show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', compare_stocks: 'chart',
   show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', ask_user: 'tool',
-  search_products: 'search', search_flights: 'plane',
+  search_products: 'search', search_flights: 'plane', remember: 'bookmark', forget: 'bookmark',
 };
 
 function toolSummary(name, input) {
@@ -726,6 +727,7 @@ function toolSummary(name, input) {
   if (name === 'show_recipe' && typeof input.title === 'string') return input.title;
   if (name === 'compare_stocks') return stocksSubject(input);
   if (name === 'search_flights') return flightsSubject(input);
+  if (name === 'remember' && typeof input.text === 'string') return input.text;
   if (name === 'ask_user' && Array.isArray(input.questions)) {
     return input.questions.map((q) => q?.header || q?.question).filter(Boolean).join(' · ');
   }

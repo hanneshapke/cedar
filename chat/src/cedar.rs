@@ -136,6 +136,32 @@ impl CedarClient {
         Ok(body["models"].as_array().cloned().unwrap_or_default())
     }
 
+    /// What cedar's runs remember about the user (`GET /v1/memory`): `{items, limits}`. `None` from
+    /// a cedar from before memory, which doesn't know the route.
+    pub async fn memory(&self) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url("/memory"))).await {
+            Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
+            other => other.map(Some),
+        }
+    }
+
+    /// Remember `text` by hand; cedar answers with the item.
+    pub async fn add_memory(&self, text: &str) -> Result<Value, AppError> {
+        self.json(self.http.post(self.url("/memory")).json(&json!({ "text": text }))).await
+    }
+
+    /// Forget one memory; a 404 means it isn't there (any more).
+    pub async fn delete_memory(&self, id: Uuid) -> Result<(), AppError> {
+        self.send(self.http.delete(self.url(&format!("/memory/{id}"))).timeout(REQUEST_TIMEOUT)).await?;
+        Ok(())
+    }
+
+    /// Forget everything cedar's runs remember about the user.
+    pub async fn delete_all_memory(&self) -> Result<(), AppError> {
+        self.send(self.http.delete(self.url("/memory")).timeout(REQUEST_TIMEOUT)).await?;
+        Ok(())
+    }
+
     // -- admin: integrations (needs CEDAR_API_KEY to be one of cedar's CEDAR_ADMIN_KEYS) --------
 
     pub async fn integrations(&self) -> Result<Value, AppError> {
