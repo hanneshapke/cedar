@@ -153,7 +153,7 @@ fn main_window(app: &AppHandle) -> Result<WebviewWindow> {
 /// Shows the window and brings it forward. While the window is up the app is a regular one, with
 /// a Dock icon and a Command-Tab entry (a taskbar button on Windows); closing it (see main.rs)
 /// makes it a menu bar (tray) app again.
-fn present(win: &WebviewWindow) -> Result<()> {
+pub fn present(win: &WebviewWindow) -> Result<()> {
     #[cfg(target_os = "macos")]
     win.app_handle()
         .set_activation_policy(tauri::ActivationPolicy::Regular)

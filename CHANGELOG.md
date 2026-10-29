@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: the Mac and Windows app brings its window to the front when it starts. On a Mac it opened behind the frontmost app, as a menu bar app, so you had to click *Open Cedar* in the menu bar to see it.
 - Release: the DMG and MSI build faster. Every release compiled everything from scratch, since a Rust cache saved by the release pull request is out of reach of the next one; `release-cache.yml` now saves the dmg and msi jobs' caches on `main` (when dependencies change, and twice a week so they aren't evicted), and the release restores them. The desktop app builds with thin instead of fat LTO, which took several single-threaded minutes in each build.
 
 ## 0.2.3

@@ -58,7 +58,12 @@ fn main() {
             app.manage(AppState::new(paths, cfg.clone(), exe_dir));
 
             tray::build(&handle)?;
-            window::create(&handle, &cfg)?;
+            let win = window::create(&handle, &cfg)?;
+            // Bring the window forward on launch: a menu bar app's window opens behind the
+            // frontmost app, which left Mac users hunting for Open Cedar in the menu bar.
+            if let Err(e) = window::present(&win) {
+                eprintln!("showing the window: {e:#}");
+            }
             notify::start(handle.clone());
             update::start(handle.clone());
             tauri::async_runtime::spawn(app::bootstrap(handle));
