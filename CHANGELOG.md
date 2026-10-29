@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A calmer top bar in Ledger.** The bar had eleven controls of equal weight; it now reads in three zones. On the left the conversation's title (no more *Cedar /* breadcrumb inside a conversation; the brand stays on the home page), with the star and a small *Scheduled run* chip beside it. In the middle one muted line, *Done · 128K tokens*, with the in/out split in its tooltip. On the right borderless icons for Files, Schedule and finished responses, a new *More* menu (⋯) with Rename, Settings, the run's details (date, tokens in and out, price) and Delete conversation, and *New*, the only framed button. Delete is no longer one click away in the bar. In a narrow window the token count goes first, then the chip shrinks to its clock.
+
 ## 0.3.0
 
 - **Cedar remembers you.** The agent keeps a short list of facts about you across conversations (your name, preferences, standing instructions, ongoing projects), so a new conversation no longer starts from nothing. It saves one with the new `remember` tool when you tell it something lasting or ask it to remember, updates or drops one with `remember`'s `replaces` and `forget`, and every run is shown the whole list, framed as your facts rather than instructions. Only interactive runs may change memory; scheduled agents read it but cannot write it, and the model is told never to save what a page, email, document or tool said. The list is capped at `MEMORY_MAX_ITEMS` (200) items of 500 characters, and a full list is refused rather than trimmed silently. `GET /v1/memory` shows exactly what the model sees, and `DELETE /v1/memory/{id}` and `DELETE /v1/memory` forget one item or all; `POST /v1/memory` adds one by hand. Memory stays in cedar's database and never goes to a third party (see [PRIVACY.md](PRIVACY.md)). It is a new tool group, `memory`, on by default; `MEMORY=off` removes it.

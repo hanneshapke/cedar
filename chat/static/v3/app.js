@@ -27,7 +27,8 @@ const els = {
   scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'), inboxBtn: $('inbox-btn'),
   chatsBtn: $('chats-btn'), drawer: $('drawer'), drawerClose: $('drawer-close'), backdrop: $('backdrop'), recents: $('recents'),
   tabs: $('tabs'), stageBadge: $('stage-badge'),
-  cost: $('cost'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
+  cost: $('cost'), costFull: $('cost-full'), runDetails: $('run-details'),
+  moreBtn: $('more-btn'), moreMenu: $('more-menu'), renameItem: $('rename-item'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
   talk: $('talk'), notes: $('notes'), splitter: $('splitter'),
   stage: $('stage'), stageBody: $('stage-body'), stageEmpty: $('stage-empty'),
   composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
@@ -1195,6 +1196,15 @@ function hasCompletedTurn() {
   return false;
 }
 
+/** 128,397 → "128K" in the page's language. */
+function compactNumber(n) {
+  try {
+    return new Intl.NumberFormat(cedarI18n.locale, { notation: 'compact', maximumFractionDigits: n < 10_000 ? 1 : 0 }).format(n);
+  } catch (e) {
+    return String(n);
+  }
+}
+
 function updateChrome() {
   const c = state.current;
   const busy = Boolean(state.activeTurn);
@@ -1202,6 +1212,7 @@ function updateChrome() {
   els.app.classList.toggle('empty', !c);
   els.title.textContent = c ? (c.title || tr('v3.newChat')) : '';
   els.deleteChat.hidden = !c;
+  els.renameItem.hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
   cedarStar.setCurrent(c);
@@ -1220,7 +1231,14 @@ function updateChrome() {
     total.input += view.usage.input; total.output += view.usage.output;
     if (typeof view.usage.cost_usd === 'number') total.cost_usd = (total.cost_usd || 0) + view.usage.cost_usd;
   }
-  els.cost.textContent = c && (total.input || total.output) ? cedarTrust.cost.text(total) : '';
+  // The bar shows a short total ("128K tokens"); the split and the price are in its tooltip and
+  // in More › Run details.
+  const used = c && (total.input || total.output);
+  const full = used ? cedarTrust.cost.text(total) : '';
+  els.cost.textContent = used ? tr('v3.tokensShort', { n: compactNumber(total.input + total.output) }) : '';
+  els.cost.title = full;
+  els.costFull.textContent = full;
+  els.runDetails.hidden = !c || !(full || els.when.textContent);
   cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
 
@@ -1637,6 +1655,54 @@ async function finishRename(save) {
     renderRecents();
   } catch (e) { toast(e.message); }
 }
+
+// -- the More menu ---------------------------------------------------------------------------
+// Rename, Settings, the run's details and Delete, kept out of the bar. Settings and Delete keep
+// their ids (#settings-btn, #delete-chat), so the code that opens Settings or deletes still finds them.
+
+function menuItems() {
+  return [...els.moreMenu.querySelectorAll('[role="menuitem"]')].filter((b) => !b.hidden);
+}
+
+function openMenu() {
+  els.moreMenu.hidden = false;
+  els.moreBtn.setAttribute('aria-expanded', 'true');
+  menuItems()[0]?.focus();
+  document.addEventListener('pointerdown', onMenuOutside, true);
+  document.addEventListener('keydown', onMenuKey, true);
+}
+
+function closeMenu(restoreFocus) {
+  if (els.moreMenu.hidden) return;
+  els.moreMenu.hidden = true;
+  els.moreBtn.setAttribute('aria-expanded', 'false');
+  document.removeEventListener('pointerdown', onMenuOutside, true);
+  document.removeEventListener('keydown', onMenuKey, true);
+  if (restoreFocus) els.moreBtn.focus();
+}
+
+function onMenuOutside(e) {
+  if (!e.target.closest('.more')) closeMenu(false);
+}
+
+function onMenuKey(e) {
+  if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
+  if (e.key === 'Tab') { closeMenu(false); return; }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
+  e.preventDefault();
+  const items = menuItems();
+  if (!items.length) return;
+  const i = items.indexOf(document.activeElement);
+  const step = e.key === 'ArrowDown' ? 1 : -1;
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+    : i < 0 ? (step > 0 ? 0 : items.length - 1) : (i + step + items.length) % items.length;
+  items[next].focus();
+}
+
+els.moreBtn.addEventListener('click', () => (els.moreMenu.hidden ? openMenu() : closeMenu(true)));
+// Any item closes the menu; its own handler (rename, Settings, delete) does the rest.
+els.moreMenu.addEventListener('click', (e) => { if (e.target.closest('[role="menuitem"]')) closeMenu(false); });
+els.renameItem.addEventListener('click', startRename);
 
 // -- wiring ------------------------------------------------------------------------------------
 
