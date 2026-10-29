@@ -807,6 +807,7 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
             "sandbox_idle_minutes": null,
             "sandbox_runtime": null,
             "openshell_supported": cfg!(not(windows)),
+            "server_os": std::env::consts::OS,
             "defaults": {
                 "sandbox_runtime": "docker",
                 "max_image_side": 1568, "min_max_image_side": 256, "max_max_image_side": 8192,

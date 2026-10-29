@@ -132,6 +132,15 @@
 .cedar-set-switch[aria-checked="mixed"] { background: var(--accent); }
 .cedar-set-switch[aria-checked="mixed"]::after { left: 8px; }
 .cedar-set-switch:disabled { cursor: default; }
+.cedar-set-integration.unavailable .cedar-set-switch:disabled { opacity: .4; cursor: not-allowed; }
+.cedar-set-integration.unavailable .cedar-set-integration-side .cedar-set-badge { opacity: .6; }
+.cedar-set-install { flex: 1 1 100%; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.cedar-set-install summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+.cedar-set-install ol { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.cedar-set-install li > p { margin: 0 0 4px; }
+.cedar-set-install-code { position: relative; }
+.cedar-set-install pre { margin: 0; padding: 8px 10px; padding-right: 64px; border: 1px solid var(--line); border-radius: 8px; background: var(--sheet); color: var(--ink); font: 11.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cedar-set-install-code .copy-btn { position: absolute; top: 4px; right: 4px; padding: 2px 8px; font-size: 11.5px; }
 .cedar-set-single-list { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px 44px; }
 .cedar-set-single-list[hidden] { display: none; }
 

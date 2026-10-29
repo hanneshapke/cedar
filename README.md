@@ -547,8 +547,9 @@ By default each conversation's sandbox is a Docker container, which can have no 
 one. On Linux and macOS an admin can run sandboxes in [OpenShell](https://github.com/NVIDIA/OpenShell)
 instead: in the chat, Settings → Advanced settings → *Run sandboxes with OpenShell* (or
 `PUT /v1/admin/settings` with `{"sandbox_runtime": "openshell"}`). cedar first checks that the
-gateway answers and has the sandbox image, and refuses the switch otherwise; OpenShell has no
-Windows support, so there the switch is off for good. The switch applies from the next message:
+gateway answers and has the sandbox image, and refuses the switch otherwise. Under the switch,
+*How to install OpenShell* lists the commands for the OS cedar runs on. OpenShell has no Windows
+support, so there the switch is greyed out. The switch applies from the next message:
 a conversation's kept container is replaced by a sandbox on the same workspace volume, so its files
 come along, and switching back works the same way.
 

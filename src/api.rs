@@ -620,6 +620,8 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
         "sandbox_runtime": sandbox::saved_runtime(&state.store).await?.map(sandbox::Runtime::as_str),
         // Where OpenShell can't run (Windows), sandboxes always run on Docker.
         "openshell_supported": sandbox::OPENSHELL_SUPPORTED,
+        // The OS cedar runs on (`linux`, `macos`, `windows`), for the steps that set OpenShell up.
+        "server_os": std::env::consts::OS,
         "defaults": {
             "sandbox_runtime": sandbox::Runtime::Docker.as_str(),
             "max_image_side": images::DEFAULT_MAX_SIDE,

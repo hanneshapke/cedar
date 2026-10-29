@@ -619,8 +619,13 @@ const cedarSettings = (() => {
     const state = badge(on ? 'OpenShell' : 'Docker', 'ok');
     const problem = el('small', 'cedar-set-error');
     problem.hidden = true;
-    if (!supported) main.append(el('small', 'cedar-set-hint', tr('settings.advanced.openshell.unsupported')));
+    if (!supported) {
+      // Greyed out: OpenShell has no Windows release, so there is nothing to switch to.
+      row.classList.add('unavailable');
+      sw.title = tr('settings.advanced.openshell.unsupported');
+    }
     main.append(problem);
+    row.append(installSteps(settings.server_os || '', supported && !on));
     const show = (now) => {
       sw.setAttribute('aria-checked', String(now));
       state.textContent = now ? 'OpenShell' : 'Docker';
@@ -646,6 +651,72 @@ const cedarSettings = (() => {
     });
     side.append(state, sw);
     return row;
+  }
+
+  /** The commands that set OpenShell up for cedar, for the OS cedar runs on (not the browser's). */
+  const OPENSHELL_INSTALL = 'curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh';
+  const OPENSHELL_STEPS = {
+    macos: {
+      name: 'macOS',
+      config: '# $(brew --prefix)/var/openshell/gateway.toml\n[openshell.drivers.docker]\nallow_driver_config = true\nsupervisor_network_mode = "bridge"   # with Docker Desktop',
+      restart: 'brew services restart nvidia/openshell/openshell\nopenshell status',
+    },
+    linux: {
+      name: 'Linux',
+      config: '# ~/.config/openshell/gateway.toml of the user cedar runs as\n[openshell]\nversion = 2\n\n[openshell.drivers.docker]\nallow_driver_config = true',
+      restart: 'systemctl --user restart openshell-gateway\nopenshell status',
+    },
+  };
+  const OPENSHELL_GUIDE = 'https://github.com/hanneshapke/cedar#openshell-sandboxes-opt-in';
+
+  /** A command to copy, with a Copy button. */
+  function codeBlock(text) {
+    const wrap = el('div', 'cedar-set-install-code');
+    const pre = el('pre');
+    pre.append(el('code', '', text));
+    const copy = button(tr('settings.advanced.install.copy'), async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        copy.textContent = tr('settings.advanced.install.copied');
+      } catch { /* not over plain HTTP from another machine; the text can still be selected */ }
+    });
+    wrap.append(pre, copy);
+    return wrap;
+  }
+
+  /** "How to install OpenShell", under the switch: the steps for the server's OS (open while
+   *  OpenShell is off), or why there are none on Windows. */
+  function installSteps(os, open) {
+    const steps = OPENSHELL_STEPS[os];
+    const box = el('details', 'cedar-set-install');
+    // Open while there is something to do: OpenShell is off, or (on Windows) to say why not.
+    box.open = steps ? open : true;
+    box.append(el('summary', '', steps ? tr('settings.advanced.install.title', { os: steps.name }) : tr('settings.advanced.install.titleAny')));
+    if (!steps) {
+      box.append(el('p', '', os === 'windows' ? tr('settings.advanced.install.windows') : tr('settings.advanced.install.other')));
+      return box;
+    }
+    const list = el('ol');
+    const step = (text, code) => {
+      const li = el('li');
+      li.append(el('p', '', text));
+      if (code) li.append(codeBlock(code));
+      list.append(li);
+    };
+    step(tr('settings.advanced.install.get'), OPENSHELL_INSTALL);
+    step(tr('settings.advanced.install.config'), steps.config);
+    step(tr('settings.advanced.install.restart'), steps.restart);
+    const last = el('li');
+    const p = el('p', '', `${tr('settings.advanced.install.done')} `);
+    const link = el('a', '', tr('settings.advanced.install.guide'));
+    link.href = OPENSHELL_GUIDE;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    p.append(link);
+    last.append(p);
+    list.append(last);
+    box.append(list);
+    return box;
   }
 
   /** The Advanced page's nav line: the sandbox runtime, once known. */
