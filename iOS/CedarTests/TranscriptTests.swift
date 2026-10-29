@@ -164,6 +164,11 @@ final class TranscriptTests: XCTestCase {
         XCTAssertNil(WorkspaceFileKind(path: "Makefile"))
     }
 
+    func testMemoryStepsShowTheFact() {
+        XCTAssertEqual(ToolCall(id: "1", name: "remember", input: .object(["text": .string("Prefers metric units")])).summary, "Prefers metric units")
+        XCTAssertEqual(ToolCall(id: "2", name: "forget", input: .object(["id": .string("m1")])).summary, "")
+    }
+
     func testCardTitles() {
         var call = ToolCall(id: "1", name: "compare_stocks", input: .object(["symbols": .array([.string("AAPL"), .string("MSFT")])]))
         XCTAssertEqual(call.summary, "AAPL, MSFT")

@@ -584,6 +584,26 @@ impl Store {
         row.as_ref().map(turn_from_row).transpose()
     }
 
+    /// The conversation each of `run_ids` answered a message in, with its title, for the runs that
+    /// still have a turn here. One query, however many runs.
+    pub async fn conversations_of_runs(&self, run_ids: &[Uuid]) -> Result<std::collections::HashMap<Uuid, (Uuid, Option<String>)>> {
+        let ids: Vec<String> = run_ids.iter().map(Uuid::to_string).collect();
+        let rows = sqlx::query(
+            "SELECT t.run_id, t.conversation_id, c.title FROM turns t JOIN conversations c ON c.id = t.conversation_id \
+             WHERE t.run_id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(serde_json::to_string(&ids)?)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                let run_id = Uuid::parse_str(r.try_get("run_id")?)?;
+                let conversation_id = Uuid::parse_str(r.try_get("conversation_id")?)?;
+                Ok((run_id, (conversation_id, r.try_get("title")?)))
+            })
+            .collect()
+    }
+
     pub async fn list_turns(&self, conversation_id: Uuid) -> Result<Vec<Turn>> {
         let rows = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE conversation_id = ? ORDER BY seq"))
             .bind(conversation_id.to_string())

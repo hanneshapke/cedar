@@ -177,6 +177,12 @@ class TranscriptTest {
     }
 
     @Test
+    fun memoryStepsShowTheFact() {
+        assertEquals("Prefers metric units", ToolCall("1", "remember", j("""{"text":"Prefers metric units"}""")).summary)
+        assertEquals("", ToolCall("2", "forget", j("""{"id":"m1"}""")).summary)
+    }
+
+    @Test
     fun cardTitles() {
         var call = ToolCall("1", "compare_stocks", j("""{"symbols":["AAPL","MSFT"]}"""))
         assertEquals("AAPL, MSFT", call.summary)

@@ -111,6 +111,35 @@ class ChatClientTest {
     }
 
     @Test
+    fun readsAndForgetsMemory() = runBlocking {
+        server.enqueue(json("""{"supported":true,"limits":{"max_items":200,"max_chars":500},"items":[
+            {"id":"m1","text":"Prefers metric units","run_id":"r1","conversation_id":"c1","title":"Units",
+             "created_at":"2026-10-29T08:00:00Z","updated_at":"2026-10-29T08:00:00Z"},
+            {"id":"m2","text":"Has a cat","run_id":null,"conversation_id":null,"title":null,
+             "created_at":"2026-10-29T09:00:00Z","updated_at":"2026-10-29T09:00:00Z"}]}"""))
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(MockResponse().setResponseCode(204))
+        // A chat server from before memory.
+        server.enqueue(json("""{"error":{"code":"not_found","message":"not found"}}""", 404))
+
+        val list = client.memory()
+        assertEquals(true, list.supported)
+        assertEquals(200, list.limits?.maxItems)
+        assertEquals(listOf("m1", "m2"), list.items.map { it.id })
+        assertEquals("c1", list.items[0].conversationId)
+        assertEquals("Units", list.items[0].title)
+        assertEquals(null, list.items[1].conversationId)
+        client.deleteMemory("m1")
+        client.deleteAllMemory()
+        assertEquals(MemoryList(supported = false), client.memory())
+
+        assertEquals("GET /api/memory", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("DELETE /api/memory/m1", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("DELETE /api/memory", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/memory", server.takeRequest().let { "${it.method} ${it.path}" })
+    }
+
+    @Test
     fun errorsCarryTheServersMessage() {
         server.enqueue(json("""{"error":{"code":"conflict","message":"wait for the current response to finish, or stop it"}}""", 409))
         val e = assertFailsWith<ChatException.Api> { runBlocking { client.cancel("t1") } }

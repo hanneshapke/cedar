@@ -54,6 +54,9 @@ struct FakeCedar {
     /// The fake GitHub "latest release": its tag (no release while unset), and how often it was asked.
     release_tag: Mutex<Option<String>>,
     release_lookups: Mutex<u32>,
+    /// What cedar remembers (`/v1/memory`); unset, the routes are unknown, as on a cedar from
+    /// before memory.
+    memory: Mutex<Option<Vec<Value>>>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -362,6 +365,47 @@ async fn tools() -> Json<Value> {
     ] }))
 }
 
+/// An unknown route on cedar: a bare 404, as axum answers it.
+fn no_route() -> axum::response::Response {
+    StatusCode::NOT_FOUND.into_response()
+}
+
+async fn list_memory(State(s): State<Shared>) -> axum::response::Response {
+    match &*s.memory.lock().unwrap() {
+        Some(items) => Json(json!({ "items": items, "limits": { "max_items": 200, "max_chars": 500 } })).into_response(),
+        None => no_route(),
+    }
+}
+
+async fn add_memory(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    let mut memory = s.memory.lock().unwrap();
+    let Some(items) = memory.as_mut() else { return no_route() };
+    let item = json!({ "id": Uuid::new_v4(), "text": body["text"], "run_id": null, "created_at": "2026-10-29T08:00:00Z", "updated_at": "2026-10-29T08:00:00Z" });
+    items.push(item.clone());
+    (StatusCode::CREATED, Json(item)).into_response()
+}
+
+async fn forget_memory(State(s): State<Shared>, Path(id): Path<String>) -> axum::response::Response {
+    let mut memory = s.memory.lock().unwrap();
+    let Some(items) = memory.as_mut() else { return no_route() };
+    let before = items.len();
+    items.retain(|i| i["id"] != id.as_str());
+    if items.len() == before {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "memory not found");
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn forget_all_memory(State(s): State<Shared>) -> axum::response::Response {
+    match s.memory.lock().unwrap().as_mut() {
+        Some(items) => {
+            items.clear();
+            StatusCode::NO_CONTENT.into_response()
+        }
+        None => no_route(),
+    }
+}
+
 async fn admin(s: &Shared, route: &str, body: Value) -> Option<axum::response::Response> {
     s.admin_calls.lock().unwrap().push((route.to_string(), body));
     (*s.not_admin.lock().unwrap()).then(|| cedar_error(StatusCode::FORBIDDEN, "forbidden", "not an admin key"))
@@ -445,6 +489,8 @@ impl Harness {
             .route("/v1/compact", post(compact))
             .route("/v1/tools", get(tools))
             .route("/v1/models", get(models))
+            .route("/v1/memory", get(list_memory).post(add_memory).delete(forget_all_memory))
+            .route("/v1/memory/{id}", axum::routing::delete(forget_memory))
             .route("/v1/defaults", get(|| async { Json(json!({ "model": "org/model-a", "model_id": "model-a", "system": "You are helpful.", "max_turns_cap": 25 })) }))
             .route(
                 "/v1/admin/models",
@@ -901,7 +947,7 @@ async fn validation_and_upstream_errors() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
-    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false }));
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "memory": true }));
     // The pickers take cedar's registry, relayed.
     let (status, listed) = h.json(Method::GET, "/api/models", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1069,6 +1115,10 @@ async fn both_uis_are_served() {
                 page.find("src=\"/settings-shell.js\"") < page.find("src=\"/language.js\""),
                 "{uri} loads the language picker after the Settings frame it registers with"
             );
+            assert!(
+                page.find("src=\"/settings-shell.js\"") < page.find("src=\"/memory.js\""),
+                "{uri} loads the Memory page after the Settings frame it registers with"
+            );
             assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
             assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
             assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
@@ -1137,6 +1187,7 @@ async fn both_uis_are_served() {
         ("/star.js", "text/javascript; charset=utf-8", "cedarStar"),
         ("/star.css", "text/css; charset=utf-8", ".cedar-star"),
         ("/settings-shell.js", "text/javascript; charset=utf-8", "cedarSettingsShell"),
+        ("/memory.js", "text/javascript; charset=utf-8", "id: 'memory'"),
         ("/settings.js", "text/javascript; charset=utf-8", "cedarSettings"),
         ("/settings.css", "text/css; charset=utf-8", ".settings-dialog"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
@@ -2927,4 +2978,53 @@ async fn the_update_status_needs_the_access_token() {
     let (status, page) = h.call(Method::GET, "/update.js", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(page.contains("cedarUpdate"));
+}
+
+#[tokio::test]
+async fn memory_is_relayed_with_the_conversation_it_came_from() {
+    let h = Harness::new(&[]).await;
+    // A cedar from before memory: the page says so instead of failing.
+    let (status, body) = h.json(Method::GET, "/api/memory", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "supported": false, "items": [], "limits": null }));
+
+    let (cid, run_id) = h.finished_conversation("I prefer metric units", "Noted.").await;
+    let other_run = Uuid::new_v4().to_string();
+    let item = |id: &str, text: &str, run: Value| json!({ "id": id, "text": text, "run_id": run, "created_at": "2026-10-29T08:00:00Z", "updated_at": "2026-10-29T08:00:00Z" });
+    let (a, b, c) = (Uuid::new_v4().to_string(), Uuid::new_v4().to_string(), Uuid::new_v4().to_string());
+    *h.cedar.memory.lock().unwrap() = Some(vec![
+        item(&a, "Prefers metric units", json!(run_id)),
+        item(&b, "Has a cat", json!(other_run)),
+        item(&c, "Lives in Zurich", Value::Null),
+    ]);
+
+    let (status, body) = h.json(Method::GET, "/api/memory", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["supported"], true);
+    assert_eq!(body["limits"], json!({ "max_items": 200, "max_chars": 500 }));
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0]["conversation_id"], json!(cid));
+    assert_eq!(items[0]["title"], "I prefer metric units");
+    // A run this chat doesn't know, and a memory without a run, have no conversation.
+    assert_eq!((&items[1]["conversation_id"], &items[1]["title"]), (&Value::Null, &Value::Null));
+    assert_eq!(items[2]["conversation_id"], Value::Null);
+
+    let (status, added) = h.json(Method::POST, "/api/memory", Some(json!({ "text": "Likes jazz" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(added["text"], "Likes jazz");
+
+    let (status, _) = h.call(Method::DELETE, &format!("/api/memory/{b}"), None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, err) = h.json(Method::DELETE, &format!("/api/memory/{b}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["message"], "memory not found");
+    let (status, _) = h.call(Method::DELETE, "/api/memory/not-an-id", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(h.cedar.memory.lock().unwrap().as_ref().unwrap().len(), 3);
+
+    let (status, _) = h.call(Method::DELETE, "/api/memory", None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, body) = h.json(Method::GET, "/api/memory", None).await;
+    assert_eq!(body["items"], json!([]));
 }

@@ -434,4 +434,24 @@
         <item quantity="many">%d autres options</item>
         <item quantity="other">%d autres options</item>
     </plurals>
+    <!-- Memory (Settings → Memory) -->
+    <string name="memory">Mémoire</string>
+    <string name="memory_settings_row">Ce que Cedar retient</string>
+    <string name="memory_settings_footnote">Ce que Cedar retient de vous d\'une conversation à l\'autre, comme votre nom, vos préférences et vos projets. Une suppression s\'applique dès votre prochain message.</string>
+    <string name="memory_delete_all">Tout supprimer</string>
+    <string name="memory_delete_all_title">Tout oublier ?</string>
+    <string name="memory_empty_title">Rien de retenu pour l\'instant</string>
+    <string name="memory_empty_text">Lorsque vous dites à Cedar quelque chose de durable, comme votre nom, une préférence ou un projet, ou lui demandez de s\'en souvenir, cela apparaît ici.</string>
+    <string name="memory_unsupported">Ce serveur ne retient encore rien d\'une conversation à l\'autre. Mettez cedar à jour pour utiliser la mémoire.</string>
+    <string name="memory_no_source">Liée à aucune conversation</string>
+    <string name="memory_count_of">%1$d sur %2$d retenus</string>
+    <string name="memory_footnote">C\'est exactement ce que voit Cedar. Touchez un souvenir pour ouvrir la conversation dont il vient ; appuyez longuement pour le supprimer. La mémoire reste sur votre propre serveur et n\'est jamais partagée avec des tiers. Réglages → Outils dans l\'interface web permet de la désactiver.</string>
+    <plurals name="memory_count">
+        <item quantity="one">%d souvenir</item>
+        <item quantity="other">%d souvenirs</item>
+    </plurals>
+    <plurals name="memory_delete_all_text">
+        <item quantity="one">Cedar oubliera %d souvenir qu\'il a de vous. Cette action est irréversible.</item>
+        <item quantity="other">Cedar oubliera les %d souvenirs qu\'il a de vous. Cette action est irréversible.</item>
+    </plurals>
 </resources>

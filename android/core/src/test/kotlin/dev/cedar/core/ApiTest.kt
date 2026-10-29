@@ -14,6 +14,15 @@ import kotlin.test.assertTrue
 // Ported from iOS/CedarTests/APITests.swift.
 class ApiTest {
     @Test
+    fun configSaysWhetherTheServerHasMemory() {
+        // A server from before memory leaves the field out.
+        val old = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":true,"admin_enabled":false}""")
+        assertFalse(old.memory)
+        val new = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false,"memory":true}""")
+        assertTrue(new.memory)
+    }
+
+    @Test
     fun decodesConversationsAndTurns() {
         val json = """
         {"conversation":{"id":"c1","title":"Trip","model":"m","reasoning":null,"schedule_id":null,"tools":["web_search"],

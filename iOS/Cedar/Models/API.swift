@@ -7,11 +7,56 @@ import Foundation
 struct ServerConfig: Decodable, Sendable {
     let authRequired: Bool
     let adminEnabled: Bool
+    /// The server has `/api/memory`; an older one leaves it out, so Settings hides Memory.
+    let memory: Bool
 
     enum CodingKeys: String, CodingKey {
         case authRequired = "auth_required"
         case adminEnabled = "admin_enabled"
+        case memory
     }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        authRequired = try c.decode(Bool.self, forKey: .authRequired)
+        adminEnabled = try c.decode(Bool.self, forKey: .adminEnabled)
+        memory = try c.decodeIfPresent(Bool.self, forKey: .memory) ?? false
+    }
+}
+
+/// One fact cedar remembers about the user across conversations (`GET /api/memory`).
+struct MemoryItem: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let text: String
+    /// The conversation it was saved in, while that still exists on this server, and its title.
+    let conversationId: String?
+    let title: String?
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, text, title
+        case conversationId = "conversation_id"
+        case createdAt = "created_at"
+    }
+}
+
+/// What cedar remembers, oldest first; `supported` is false on a cedar from before memory.
+struct MemoryList: Decodable, Sendable {
+    struct Limits: Decodable, Sendable {
+        let maxItems: Int
+        let maxChars: Int
+
+        enum CodingKeys: String, CodingKey {
+            case maxItems = "max_items"
+            case maxChars = "max_chars"
+        }
+    }
+
+    let supported: Bool
+    let items: [MemoryItem]
+    let limits: Limits?
+
+    static let unsupported = MemoryList(supported: false, items: [], limits: nil)
 }
 
 /// One of the models cedar has registered (`GET /api/models`).

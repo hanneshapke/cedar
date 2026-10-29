@@ -42,6 +42,8 @@ data class ToolCall(
                 input["path"].str ?: input["url"].str ?: ""
             "fetch_url" -> input["url"].str ?: ""
             "web_search" -> input["query"].str ?: ""
+            "remember" -> input["text"].str ?: ""
+            "forget" -> ""
             "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights" -> cardTitle ?: ""
             else -> input.pretty().replace("\n", " ")
         }

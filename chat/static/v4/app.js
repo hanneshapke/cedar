@@ -314,6 +314,8 @@ const TOOLS = {
   search_products: { doing: 'v4.tool.shopping', did: 'v4.tool.shopped', subject: (i) => (typeof i.query === 'string' ? i.query : ''), icon: 'shop' },
   search_flights: { doing: 'v4.tool.searchingFlights', did: 'v4.tool.searchedFlights', subject: (i) => flightsSubject(i), icon: 'plane' },
   ask_user: { doing: 'v4.tool.asking', did: 'v4.tool.asked', subject: (i) => questionsSubject(i), icon: 'question' },
+  remember: { doing: 'v4.tool.remembering', did: 'v4.tool.remembered', subject: (i) => (typeof i.text === 'string' ? i.text : ''), icon: 'bookmark' },
+  forget: { doing: 'v4.tool.forgetting', did: 'v4.tool.forgot', subject: () => '', icon: 'bookmark' },
 };
 
 /** A step phrase (`key`, e.g. "Ran {subject}") as HTML around `subjectHtml`. */
@@ -341,6 +343,7 @@ const ICONS = {
   stocks: '<path d="M3 17l5-5 4 3 5-7 4 4"/><path d="M17 8h4v4"/>',
   shop: '<path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/>',
   plane: '<path d="M12 2c.8 0 1.5.7 1.5 1.5V9l7.5 4.5V16l-7.5-2.5V18l2 1.5V21L12 20l-3.5 1v-1.5l2-1.5v-4.5L3 16v-2.5L10.5 9V3.5C10.5 2.7 11.2 2 12 2z"/>',
+  bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
   question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-9 8"/>',
   tool: '<path d="M14 4a4 4 0 0 0 5 5l-9 9a2.5 2.5 0 0 1-3.5-3.5l9-9z"/><path d="M5 19l1-1"/>',

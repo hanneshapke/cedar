@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.BackHand
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckBox
@@ -516,6 +517,7 @@ private fun toolIcon(name: String): ImageVector = when (name) {
     "search_products" -> Icons.Outlined.ShoppingBag
     "search_flights" -> Icons.Outlined.Flight
     "ask_user" -> Icons.AutoMirrored.Outlined.HelpOutline
+    "remember", "forget" -> Icons.Outlined.BookmarkBorder
     else -> Icons.Outlined.Build
 }
 

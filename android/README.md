@@ -49,6 +49,10 @@ The same as the iOS app:
   or `scripts/cedar-stack.sh --pair` shows, or by opening a `cedar://connect` link
 - Phone layout, and list and chat side by side on tablets, foldables and in landscape; light and
   dark theme
+- **Settings → Memory**: what Cedar remembers about you across conversations (see
+  [Memory](../README.md#memory)), newest first; tap a fact to open the conversation it came from,
+  long-press to delete it, or **Delete all**. Deletions apply at once. Shown only when the server
+  has memory (`memory` in `GET /api/config`)
 - English, German, French and Spanish (see [Languages](#languages))
 
 ## Requirements
@@ -202,7 +206,8 @@ followed live (reconnecting from the last event), `GET /api/events` while in fro
 `POST /api/conversations/{id}/seen`, stars (`PUT`/`DELETE /api/conversations/{id}/star`,
 `GET /api/starred`), schedules (`GET /api/schedules`, `GET /api/schedules/{id}`,
 `POST /api/schedules/{id}/run`, `PATCH /api/schedules/{id}`), plans and approvals, files, and the
-language (`PUT /api/settings/locale`, and `locale` with each message).
+language (`PUT /api/settings/locale`, and `locale` with each message), and memory
+(`GET /api/memory`, `DELETE /api/memory/{id}`, `DELETE /api/memory`; a 404 means an older server).
 The push token or endpoint goes to `POST /api/notifications/android/devices`.
 
 ## Continuous integration

@@ -19,6 +19,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -117,6 +118,8 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
     }
 
     // A cedar://connect link opened from another app (or the camera's QR reader).
+    // For the count on the Memory row.
+    LaunchedEffect(app.serverHasMemory) { if (app.serverHasMemory) app.refreshMemory() }
     LaunchedEffect(app.pendingConnection) {
         app.pendingConnection?.let {
             app.pendingConnection = null
@@ -260,6 +263,23 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                     options = planModes,
                 ) { draft = draft.copy(plan = it) }
                 Footnote(stringResource(R.string.plans_footnote))
+
+                if (app.serverHasMemory) {
+                    HorizontalDivider()
+                    Section(stringResource(R.string.memory))
+                    // Opens its own screen; deletions there apply at once, not on Save.
+                    Row(
+                        Modifier.fillMaxWidth().clickable { app.showingMemory = true }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.memory_settings_row), Modifier.weight(1f))
+                        if (app.memoryLoaded && app.memorySupported) {
+                            Text(plural(R.plurals.memory_count, app.memoryItems.size, app.memoryItems.size), color = CedarColors.secondaryText)
+                        }
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = CedarColors.secondaryText)
+                    }
+                    Footnote(stringResource(R.string.memory_settings_footnote))
+                }
 
                 HorizontalDivider()
                 Notifications(app, onAllowNotifications, testStatus) { testStatus = it }
