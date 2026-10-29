@@ -4,6 +4,14 @@
 
 - Release: the DMG and MSI build faster. Every release compiled everything from scratch, since a Rust cache saved by the release pull request is out of reach of the next one; `release-cache.yml` now saves the dmg and msi jobs' caches on `main` (when dependencies change, and twice a week so they aren't evicted), and the release restores them. The desktop app builds with thin instead of fat LTO, which took several single-threaded minutes in each build.
 
+## 0.2.3
+
+- Fix: on a Mac, Settings → Phone could show Tailscale as *Not answering* with *The Tailscale GUI failed to start … (Tailscale.CLIError error 3.)* while Tailscale was running. Run from Cedar.app, the binary inside Tailscale.app inherited the app's launch variables and took itself for an app launch instead of the CLI. Cedar now runs it without them (also for `tailscale serve`), follows a symlink to it, and if it still fails, says what to try (#120).
+
+## 0.2.2
+
+- Fix: a tool install could still fail with pip's *Permission denied: '/opt/cedar/env/.local'* on 0.2.1 when the folders *inside* the tool's package volume (`.local`, `.cache`) belonged to root, since 0.2.1 only handed the volume's top folder to the sandbox's user. The install now hands over everything in it (#118).
+
 ## 0.2.1
 
 - **Cedar speaks Spanish.** The web chat (all four interfaces), the Mac and Windows app, the iPhone and Android apps and the website are translated into neutral Latin American Spanish (*tú*), with Spain's words where they differ: Español (España, México, Latinoamérica, Estados Unidos), picked like the other languages in the first step or Settings → Language. Runs take `es`, `es-ES`, `es-MX`, `es-419` and `es-US`, and answers follow the region's dates, numbers and prices. Registry listings have Spanish summaries, and the chart tools draw their labels in Spanish (#116).

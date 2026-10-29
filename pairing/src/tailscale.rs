@@ -45,9 +45,15 @@ pub fn candidates() -> Vec<PathBuf> {
     all
 }
 
-/// The tailscale CLI, if it is installed.
+/// The tailscale CLI, if it is installed, with symlinks resolved. The Mac app's binary only acts as
+/// the CLI when started from inside its bundle: through a symlink to it (a hand-made
+/// `/usr/local/bin/tailscale`, say) it fails with "The Tailscale GUI failed to start".
 pub fn find() -> Option<PathBuf> {
-    candidates().into_iter().find(|p| is_executable(p))
+    first_executable(candidates())
+}
+
+fn first_executable(paths: Vec<PathBuf>) -> Option<PathBuf> {
+    paths.into_iter().find(|p| is_executable(p)).map(|p| std::fs::canonicalize(&p).unwrap_or(p))
 }
 
 fn is_executable(p: &Path) -> bool {
@@ -61,6 +67,26 @@ fn is_executable(p: &Path) -> bool {
     #[cfg(not(unix))]
     {
         p.is_file()
+    }
+}
+
+/// Variables macOS hands a process LaunchServices started (Cedar.app) and its children inherit.
+/// The Mac app's binary reads them to tell whether it was opened as the app or run as the CLI:
+/// inherited from Cedar, it takes itself for an app launch and fails with "The Tailscale GUI
+/// failed to start". Whoever runs the CLI removes them first.
+pub const LAUNCH_ENV: &[&str] = &["__CFBundleIdentifier", "XPC_SERVICE_NAME", "XPC_FLAGS"];
+
+/// What to tell the user when the CLI failed with `msg`: the message, and for the Mac app's
+/// "GUI failed to start" what to try.
+pub fn failure(msg: &str) -> String {
+    if msg.contains("GUI failed to start") {
+        format!(
+            "{msg}. Open Tailscale from Applications (or quit and reopen it from the menu bar) \
+            and try again. If it keeps failing, install the standalone Tailscale from \
+            https://tailscale.com/download/mac in place of the App Store one"
+        )
+    } else {
+        msg.to_string()
     }
 }
 
@@ -220,9 +246,33 @@ mod tests {
     }
 
     #[test]
+    fn a_gui_that_failed_to_start_says_what_to_try() {
+        let gui = "The Tailscale GUI failed to start: (Tailscale.CLIError error 3.)";
+        assert!(failure(gui).starts_with(gui) && failure(gui).contains("reopen"));
+        assert_eq!(failure("permission denied"), "permission denied");
+    }
+
+    #[test]
     fn the_cli_is_looked_for_on_path_too() {
         let all = candidates();
         assert!(all.len() > known().len() || std::env::var_os("PATH").is_none());
         assert!(all.iter().all(|p| p.file_stem().is_some_and(|n| n.eq_ignore_ascii_case("tailscale"))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_cli_is_run_from_where_a_symlink_points() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("cedar-ts-link-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let real = dir.join("Tailscale");
+        std::fs::write(&real, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = dir.join("tailscale");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let found = first_executable(vec![dir.join("missing"), link]);
+        assert_eq!(found, Some(std::fs::canonicalize(&real).unwrap()));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
