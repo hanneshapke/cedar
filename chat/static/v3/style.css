@@ -94,19 +94,26 @@ a { color: var(--accent); }
 
 /* -- top ------------------------------------------------------------------------------------ */
 
-.top { grid-area: top; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 12px; border-bottom: 1px solid var(--line); background: var(--paper); font-size: 13px; color: var(--muted); }
+/* One row in three zones: who (the brand at home, the conversation's title, star and schedule
+   chip elsewhere), how the run went (one muted line), and what you can do (borderless icons, a
+   More menu for the rest, and New, the only labelled button). */
+.top { grid-area: top; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--paper); font-size: 13px; color: var(--muted); }
 .brand { display: flex; align-items: center; gap: 8px; margin-right: 6px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; color: var(--ink); text-decoration: none; }
+.app:not(.empty) .brand { display: none; }
 .mark { display: block; width: 22px; height: 22px; }
-.crumb { color: var(--line); } .app.empty .crumb { display: none; }
-.title-wrap { min-width: 0; display: flex; }
-.title { max-width: 420px; padding: 4px 8px; margin-left: -8px; border: 0; border-radius: 6px; background: none; color: var(--ink); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.title-wrap { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.title { min-width: 0; padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font-weight: 600; font-size: 15px; letter-spacing: -.01em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .title:hover { background: var(--wash); }
 .title:empty { display: none; }
-.title-input { width: min(420px, 100%); padding: 4px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--sheet); outline: none; }
+.title-input { flex: 1; max-width: 520px; padding: 4px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--sheet); font-weight: 600; font-size: 15px; outline: none; }
+.top .cedar-sched-badge { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 22px; padding: 0 9px; margin-left: 4px; border: 0; background: var(--accent-wash); color: var(--accent); font-size: 12px; }
+.top .cedar-sched-badge[hidden] { display: none; }
+.top .cedar-sched-badge svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .when { white-space: nowrap; }
-.status { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
-.pill { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
-.cost { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; } .cost:empty { display: none; }
+.status { flex-shrink: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pill { font-size: 12px; }
+.cost { color: var(--muted); white-space: nowrap; } .cost:empty { display: none; }
+.cost::before { content: "·"; margin-right: 6px; }
 #status-text { max-width: 30ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
 .status.live { color: var(--accent); }
@@ -120,6 +127,28 @@ a { color: var(--accent); }
 .ghost[aria-expanded="true"] { background: var(--wash); }
 #stop { color: var(--error); border-color: var(--error-line); }
 #stop svg { fill: currentColor; stroke: none; }
+
+/* In the bar, buttons are borderless icons; New keeps its frame. */
+.top .ghost.icon { width: 34px; height: 34px; border-color: transparent; background: none; color: var(--ink-2); }
+.top .ghost.icon svg { width: 18px; height: 18px; }
+.top .ghost.icon:hover, .top .ghost.icon[aria-expanded="true"] { background: var(--wash); color: var(--ink); }
+.top .ghost.quiet { width: 28px; height: 28px; color: var(--faint); }
+.top .ghost.quiet svg { width: 16px; height: 16px; }
+.top #new-chat { height: 32px; }
+.actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.divider { width: 1px; height: 20px; margin: 0 8px; background: var(--line); }
+.more { position: relative; }
+.more-menu[hidden] { display: none; }
+.more-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; display: flex; flex-direction: column; min-width: 240px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); box-shadow: var(--shadow-card); font-size: 13.5px; color: var(--ink); }
+.menu-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border: 0; border-radius: 6px; background: none; text-align: left; white-space: nowrap; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--wash); outline: none; }
+.menu-item svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.menu-item.danger, .menu-item.danger svg { color: var(--error); stroke: var(--error); }
+.menu-details { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; padding: 8px 10px; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); }
+.menu-label { font-weight: 600; color: var(--ink-2); }
+.menu-cost { font-family: var(--mono); } .menu-cost:empty { display: none; }
+.when:empty { display: none; }
+.menu-details + .menu-item { margin-top: 0; }
 
 /* -- the conversation column ---------------------------------------------------------------- */
 
@@ -397,7 +426,7 @@ dialog p code { padding: 1px 4px; border-radius: 3px; background: var(--wash); f
 
 /* -- narrow: the panes become tabs ---------------------------------------------------------- */
 
-@media (max-width: 1180px) { .top .when { display: none; } }
+@media (max-width: 900px) { .top .cedar-sched-badge { width: 22px; padding: 0; justify-content: center; } .top .cedar-sched-badge .lbl { display: none; } }
 @media (max-width: 1000px) { .cost { display: none; } }
 @media (max-width: 800px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 52px 40px minmax(0, 1fr); grid-template-areas: "top" "tabs" "pane"; }
@@ -413,7 +442,8 @@ dialog p code { padding: 1px 4px; border-radius: 3px; background: var(--wash); f
   .app[data-pane="talk"] .stage { display: none; }
   .app[data-pane="stage"] .talk { display: none; }
   .top { gap: 8px; padding: 0 12px; }
-  .top .when, .top .lbl, .brand-name { display: none; }
+  .top .lbl, .brand-name { display: none; }
+  .divider { margin: 0 4px; }
   .top .ghost:not(.icon) { width: 30px; padding: 0; justify-content: center; }
   /* only the status dot stays visible; its text is still read out */
   #status-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
