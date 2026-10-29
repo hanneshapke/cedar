@@ -1264,3 +1264,33 @@ async fn a_workspace_moves_between_the_runtimes_an_admin_switches() {
     third.destroy().await;
     sandboxes.remove_workspace(ws).await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs Docker, an OpenShell gateway, and the cedar-sandbox image"]
+async fn an_image_that_works_in_the_workspace_is_refused_with_the_reason() {
+    // Images from before OpenShell (0.2.3 and earlier, as published) work in /workspace, which
+    // OpenShell reserves for the workspace volume.
+    let base = config(Policy::offline()).image;
+    let dir = std::env::temp_dir().join(format!("cedar-oldimg-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("Dockerfile"), format!("FROM {base}\nWORKDIR /workspace\n")).unwrap();
+    let tag = "cedar-sandbox:test-old-workdir";
+    let built = Command::new("docker")
+        .args(["build", "-q", "-t", tag])
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+    let factory = OpenShellSandboxFactory::new(SandboxConfig {
+        image: tag.into(),
+        ..config(Policy::offline())
+    });
+    let err = format!("{:#}", factory.health().await.unwrap_err());
+    assert!(err.contains("works in /workspace") && err.contains("sandbox/Dockerfile"), "{err}");
+    let id = Uuid::new_v4();
+    let err = format!("{:#}", factory.create(id, id).await.err().unwrap());
+    assert!(err.contains("works in /workspace"), "{err}");
+    let _ = Command::new("docker").args(["image", "rm", tag]).output();
+    let _ = std::fs::remove_file(dir.join("Dockerfile"));
+    let _ = std::fs::remove_dir(&dir);
+}

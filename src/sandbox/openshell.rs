@@ -870,10 +870,29 @@ impl OpenShellSandboxFactory {
     }
 }
 
+/// OpenShell won't mount a volume over an image's working directory, and an image built before
+/// cedar ran on OpenShell (0.2.3 and earlier, as published) works in `/workspace`, where the
+/// workspace volume goes. Every sandbox would fail with "mount target '/workspace' is reserved";
+/// this says what to do instead.
+async fn check_workdir(docker: &str, image: &str) -> Result<()> {
+    let inspect = ["image", "inspect", "--format", "{{.Config.WorkingDir}}", image].map(String::from);
+    let workdir = docker_checked(docker, &inspect, DOCKER_CALL_TIMEOUT).await?;
+    let workdir = workdir.trim().trim_end_matches('/');
+    if workdir == WORKSPACE || workdir.starts_with(&format!("{WORKSPACE}/")) {
+        bail!(
+            "sandbox image {image} works in {workdir}, where OpenShell mounts the workspace, so it \
+             can't start an OpenShell sandbox; use an image built from this version's \
+             sandbox/Dockerfile (`docker build -t cedar-sandbox sandbox/`, then SANDBOX_IMAGE)"
+        );
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl SandboxFactory for OpenShellSandboxFactory {
     async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Sandbox>> {
         let ctx = &self.ctx;
+        check_workdir(&ctx.docker, &ctx.cfg.image).await?;
         let volume = volume_name(workspace_id);
         ensure_volume(
             &ctx.docker,
@@ -964,6 +983,7 @@ impl SandboxFactory for OpenShellSandboxFactory {
             .with_context(|| {
                 format!("sandbox image {image} is missing; build it with `docker build -t {image} sandbox/`")
             })?;
+        check_workdir(docker, image).await?;
         self.ctx.shell.status().await
     }
 

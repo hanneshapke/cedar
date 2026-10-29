@@ -127,6 +127,18 @@ the configuration, which `openshell-gateway config preflight --path <file>` chec
 tail -n 30 "$(brew --prefix)/var/log/openshell/openshell-gateway.err.log"
 ```
 
+OpenShell needs a sandbox image whose working directory isn't `/workspace` (it mounts the
+workspace volume there). The image published for Cedar 0.2.3 and earlier works in `/workspace`,
+so until a release ships the new one, build it from this repository and point the app at it:
+set `"sandbox_image": "cedar-sandbox:latest"` in [`config.json`](#configjson), then quit and
+reopen Cedar. An image that is already there is
+used as it is, not pulled. Settings → Advanced settings refuses to turn OpenShell on with the old
+image, and says so.
+
+```sh
+docker build -t cedar-sandbox:latest sandbox/
+```
+
 Cedar finds the `openshell` command in Homebrew's folder (set `OPENSHELL_BIN` in cedar's
 environment otherwise). To let the agent `pip install` packages, set `SANDBOX_POLICY=packages`
 there too.
