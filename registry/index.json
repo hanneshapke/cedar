@@ -306,6 +306,51 @@
           }
         }
       }
+    },
+    {
+      "name": "x_ai_trends",
+      "version": "1.0.0",
+      "summary": "What's trending in AI on X today: topics, rising stories, top posts and shared links",
+      "category": "media",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/x_ai_trends",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "api.x.com"
+        ],
+        "secrets": [
+          "X_BEARER_TOKEN"
+        ],
+        "pip": [],
+        "health_data": false
+      },
+      "base_url": "tools/x_ai_trends/",
+      "files": {
+        "tool.json": "c45104635fdcb892b2c92fd614ea70e693460dc519f50071127895485044bf88",
+        "tool.py": "ece8b49761f1359e0ab99282326e4898b967551ac93cb9e22326aad57fc82c9a"
+      },
+      "reviewed": false,
+      "translations": {
+        "de": {
+          "summary": "Was heute auf X zu KI im Trend ist: Themen, aufsteigende Storys, Top-Posts und geteilte Links",
+          "secrets": {
+            "X_BEARER_TOKEN": "Das Bearer-Token einer App im X-Entwicklerportal (developer.x.com) mit einem Plan, der die Suche nach aktuellen Posts enth\u00e4lt"
+          }
+        },
+        "fr": {
+          "summary": "Les tendances IA du jour sur X : sujets, sujets en hausse, posts phares et liens partag\u00e9s",
+          "secrets": {
+            "X_BEARER_TOKEN": "Le jeton bearer d'une application du portail d\u00e9veloppeur X (developer.x.com), avec une offre qui inclut la recherche r\u00e9cente"
+          }
+        },
+        "es": {
+          "summary": "Lo que es tendencia en IA hoy en X: temas, historias en alza, posts destacados y enlaces compartidos",
+          "secrets": {
+            "X_BEARER_TOKEN": "El token bearer de una app del portal de desarrolladores de X (developer.x.com) con un plan que incluya la b\u00fasqueda reciente"
+          }
+        }
+      }
     }
   ]
 }
