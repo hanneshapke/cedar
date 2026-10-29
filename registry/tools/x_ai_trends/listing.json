@@ -1,0 +1,18 @@
+{
+  "summary": "What's trending in AI on X today: topics, rising stories, top posts and shared links",
+  "category": "media",
+  "translations": {
+    "de": {
+      "summary": "Was heute auf X zu KI im Trend ist: Themen, aufsteigende Storys, Top-Posts und geteilte Links",
+      "secrets": { "X_BEARER_TOKEN": "Das Bearer-Token einer App im X-Entwicklerportal (developer.x.com) mit einem Plan, der die Suche nach aktuellen Posts enthält" }
+    },
+    "fr": {
+      "summary": "Les tendances IA du jour sur X : sujets, sujets en hausse, posts phares et liens partagés",
+      "secrets": { "X_BEARER_TOKEN": "Le jeton bearer d'une application du portail développeur X (developer.x.com), avec une offre qui inclut la recherche récente" }
+    },
+    "es": {
+      "summary": "Lo que es tendencia en IA hoy en X: temas, historias en alza, posts destacados y enlaces compartidos",
+      "secrets": { "X_BEARER_TOKEN": "El token bearer de una app del portal de desarrolladores de X (developer.x.com) con un plan que incluya la búsqueda reciente" }
+    }
+  }
+}
