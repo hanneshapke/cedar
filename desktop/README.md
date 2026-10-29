@@ -440,6 +440,11 @@ pull request from a branch named `release/<version>` is merged into `main`:
 artifacts, without a tag or release, to try the pipeline. The images are pushed under that
 version too.
 
+The dmg and msi jobs start from Rust caches that
+[`release-cache.yml`](../.github/workflows/release-cache.yml) fills on `main`: a cache saved by
+the release pull request couldn't be read by the next one. It runs when a lock file or
+`Cargo.toml` changes and twice a week; *Run workflow* there refreshes them by hand.
+
 One-time setup:
 
 - **Apple secrets.** In the repository's Actions secrets: `APPLE_CERTIFICATE` (a Developer ID

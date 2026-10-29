@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Release: the DMG and MSI build faster. Every release compiled everything from scratch, since a Rust cache saved by the release pull request is out of reach of the next one; `release-cache.yml` now saves the dmg and msi jobs' caches on `main` (when dependencies change, and twice a week so they aren't evicted), and the release restores them. The desktop app builds with thin instead of fat LTO, which took several single-threaded minutes in each build.
+
 ## 0.2.3
 
 - Fix: on a Mac, Settings → Phone could show Tailscale as *Not answering* with *The Tailscale GUI failed to start … (Tailscale.CLIError error 3.)* while Tailscale was running. Run from Cedar.app, the binary inside Tailscale.app inherited the app's launch variables and took itself for an app launch instead of the CLI. Cedar now runs it without them (also for `tailscale serve`), follows a symlink to it, and if it still fails, says what to try (#120).

@@ -53,5 +53,6 @@ tauri-plugin-single-instance = "2"
 
 [profile.release]
 strip = true
-codegen-units = 1
-lto = true
+# Thin, not fat, LTO with the default codegen units: fat LTO into one unit made the final link a
+# single-threaded step of several minutes in each release build, for a slightly smaller binary.
+lto = "thin"
