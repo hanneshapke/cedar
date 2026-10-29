@@ -123,6 +123,7 @@ const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
 const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
 /// The star button and the Starred list in the conversations sidebar; every UI loads it.
 const STAR_JS: &str = include_str!("../static/star.js");
+const MORE_MENU_JS: &str = include_str!("../static/more-menu.js");
 const STAR_CSS: &str = include_str!("../static/star.css");
 /// The inbox of finished responses, the unread count in the title, the Notifications settings and
 /// the push subscription; both UIs load it.
@@ -352,6 +353,7 @@ pub fn router(state: AppState) -> Router {
         .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
         .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
         .route("/star.js", get(|| async { asset(JS, STAR_JS) }))
+        .route("/more-menu.js", get(|| async { asset(JS, MORE_MENU_JS) }))
         .route("/star.css", get(|| async { asset(CSS, STAR_CSS) }))
         .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
         .route("/notify.css", get(|| async { asset(CSS, NOTIFY_CSS) }))

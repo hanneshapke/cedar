@@ -1212,6 +1212,7 @@ function updateChrome() {
   els.app.classList.toggle('empty', !c);
   els.title.textContent = c ? (c.title || tr('v4.newChat')) : '';
   els.deleteChat.hidden = !c;
+  document.getElementById('rename-item').hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
   cedarStar.setCurrent(c);
@@ -1606,6 +1607,7 @@ els.drawerClose.addEventListener('click', closeDrawer);
 els.backdrop.addEventListener('click', closeDrawer);
 $('drawer-new').addEventListener('click', () => { closeDrawer(); if (!state.current) els.input.focus(); });
 els.title.addEventListener('click', startRename);
+document.getElementById('rename-item').addEventListener('click', startRename); // More › Rename
 els.titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') finishRename(true); if (e.key === 'Escape') finishRename(false); });
 els.titleInput.addEventListener('blur', () => finishRename(true));
 document.addEventListener('click', (e) => {
