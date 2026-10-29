@@ -67,7 +67,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -97,6 +96,7 @@ import dev.cedar.core.WorkspaceFileKind
 import dev.cedar.core.WorkspaceFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -250,11 +250,15 @@ private fun WorkspaceFileViewer(client: ChatClient, conversationId: String, path
     val context = LocalContext.current
     val name = path.substringAfterLast('/')
     var attempt by remember { mutableIntStateOf(0) }
-    val shown by produceState<Shown>(Shown.Loading, path, attempt) {
-        value = Shown.Loading
+    var shown by remember { mutableStateOf<Shown>(Shown.Loading) }
+    LaunchedEffect(path, attempt) {
+        shown = Shown.Loading
         val result = load(context, client, conversationId, path)
-        value = result
-        awaitDispose {
+        shown = result
+        // Kept open while shown; closed when the viewer goes away or loads again.
+        try {
+            awaitCancellation()
+        } finally {
             if (result is Shown.Loaded) {
                 result.close()
                 result.file.parentFile?.deleteRecursively()
