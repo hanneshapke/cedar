@@ -334,6 +334,42 @@
     <string name="chart_bin">Bin</string>
     <string name="chart_first_rows">First %1$d of %2$d rows; the saved file has them all.</string>
     <string name="chart_series">Series %1$d</string>
+    <string name="open_flights_on_web">Open the flights on the web</string>
+    <string name="flights_one_way">One way</string>
+    <string name="flights_round_trip_back">Round trip, back %1$s</string>
+    <string name="flights_return_flight">Return flight</string>
+    <string name="cabin_economy">Economy</string>
+    <string name="cabin_premium_economy">Premium economy</string>
+    <string name="cabin_business">Business</string>
+    <string name="cabin_first">First</string>
+    <string name="flights_prices_low">Prices are low for this route</string>
+    <string name="flights_prices_typical">Prices are typical for this route</string>
+    <string name="flights_prices_high">Prices are high for this route</string>
+    <string name="flights_prices_level">Price level for this route: %1$s</string>
+    <string name="flights_prices_lowest">Prices for this route start at %1$s</string>
+    <string name="flights_typical_range">typical %1$s</string>
+    <string name="flights_round_trip_price">Price for the round trip</string>
+    <string name="flights_all_passengers">for all passengers</string>
+    <string name="flights_nonstop">Nonstop</string>
+    <string name="flights_often_delayed">Often delayed</string>
+    <string name="flights_overnight">Overnight</string>
+    <string name="flights_co2_less">%1$s less CO₂</string>
+    <string name="flights_co2_more">%1$s more CO₂</string>
+    <string name="flights_co2_typical">Typical CO₂</string>
+    <string name="flights_co2_kg">%1$s kg CO₂ per passenger</string>
+    <string name="flights_layover">%1$s layover in %2$s</string>
+    <string name="flights_legroom">%1$s legroom</string>
+    <string name="flights_no_results">Google Flights found no flights for this search. Try other dates or airports.</string>
+    <string name="flights_no_booking">Google Flights lists no booking options for this flight any more. Search again for fresh prices.</string>
+    <string name="flights_open_google">Open in Google Flights</string>
+    <string name="flights_book_google">Book on Google Flights</string>
+    <string name="flights_as_of">Prices as of %1$s; they change quickly</string>
+    <string name="flights_chosen">Your flight</string>
+    <string name="flights_where_to_book">Where to book</string>
+    <string name="flights_separate_departing">Separate ticket: departing</string>
+    <string name="flights_separate_returning">Separate ticket: returning</string>
+    <string name="flights_sold_as">Sold as %1$s</string>
+    <string name="flights_price_history">Price history</string>
     <plurals name="attach_too_many">
         <item quantity="one">At most %d file per message</item>
         <item quantity="other">At most %d files per message</item>
@@ -357,5 +393,25 @@
     <plurals name="reviews_average">
         <item quantity="one">%1$s from %2$s review</item>
         <item quantity="other">%1$s from %2$s reviews</item>
+    </plurals>
+    <plurals name="flights_adults">
+        <item quantity="one">%d adult</item>
+        <item quantity="other">%d adults</item>
+    </plurals>
+    <plurals name="flights_children">
+        <item quantity="one">%d child</item>
+        <item quantity="other">%d children</item>
+    </plurals>
+    <plurals name="flights_infants">
+        <item quantity="one">%d infant</item>
+        <item quantity="other">%d infants</item>
+    </plurals>
+    <plurals name="flights_stops">
+        <item quantity="one">%d stop</item>
+        <item quantity="other">%d stops</item>
+    </plurals>
+    <plurals name="flights_more_options">
+        <item quantity="one">%d more option</item>
+        <item quantity="other">%d more options</item>
     </plurals>
 </resources>

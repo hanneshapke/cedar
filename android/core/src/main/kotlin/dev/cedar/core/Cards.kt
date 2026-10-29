@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonObject
 import java.net.URI
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.math.abs
@@ -17,7 +19,7 @@ import kotlin.math.roundToInt
 
 /**
  * A tool result the app draws as a card: `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`,
- * `search_products`, and the data of a `generate_chart` call. Parsed with the same rules as the web
+ * `search_products`, `search_flights`, and the data of a `generate_chart` call. Parsed with the same rules as the web
  * UI's views and iOS/Cedar/Models/Cards.swift. Everything in a result came from the model or the
  * network, so text is clipped, numbers and coordinates are checked, and links are only kept if they
  * are https.
@@ -28,6 +30,7 @@ sealed interface Card {
     data class Trip(val card: TripCard) : Card
     data class Stocks(val card: StocksCard) : Card
     data class Products(val card: ProductsCard) : Card
+    data class Flights(val card: FlightsCard) : Card
     data class Chart(val card: ChartCard) : Card
 
     companion object {
@@ -45,6 +48,7 @@ sealed interface Card {
                 "plan_trip" -> TripCard.parse(value)?.let(::Trip)
                 "compare_stocks" -> StocksCard.parse(value)?.let(::Stocks)
                 "search_products" -> ProductsCard.parse(value)?.let(::Products)
+                "search_flights" -> FlightsCard.parse(value)?.let(::Flights)
                 else -> null
             }
         }
@@ -753,6 +757,328 @@ data class ProductsCard(
                 bestFor = CardParse.text(p["best_for"], 160),
                 sources = p["sources"].arr.orEmpty().mapNotNull { CardParse.amount(it, 1000.0)?.toInt() }.take(6),
                 comparable = p["comparable"].arr.orEmpty().mapNotNull { sku(it) },
+            )
+        }
+    }
+}
+
+// search_flights
+
+/**
+ * A `search_flights` result (src/tools/flights.rs): `{"kind": "flights" | "booking", "leg", "from",
+ * "to", "date", "return_date"?, "passengers", "cabin", "currency", ...}`. A search lists `options`
+ * (flights) with `more`, `insights`, `sort` and `as_of`; a booking lists the chosen `flights` and the
+ * sellers in `options`. Everything in it comes from Google Flights through SerpApi.
+ */
+data class FlightsCard(
+    val kind: Kind,
+    val leg: Leg,
+    /** Three-letter airport codes; for a return leg already swapped (where it starts first). */
+    val from: List<String>,
+    val to: List<String>,
+    /** The day of this leg. */
+    val date: LocalDate?,
+    val returnDate: LocalDate?,
+    val passengers: Passengers,
+    val cabin: Cabin?,
+    /** A three-letter code the prices are in. */
+    val currency: String,
+    /** How Google ordered the options (`best`, `price`, ...), for a search. */
+    val sort: String?,
+    /** A search's flights. */
+    val options: List<Option>,
+    /** The flights a booking is for. */
+    val flights: List<Option>,
+    /** Where a booking can be bought. */
+    val sellers: List<Seller>,
+    /** Options the search found but doesn't list. */
+    val more: Int,
+    /** Why there is nothing to show (English, from the server). */
+    val noResults: String?,
+    val insights: Insights?,
+    val googleFlightsUrl: String?,
+    val asOf: Instant?,
+) {
+    enum class Kind { FLIGHTS, BOOKING }
+
+    enum class Leg(val raw: String) {
+        ONE_WAY("one_way"), OUTBOUND("outbound"), RETURN("return");
+
+        companion object {
+            fun of(raw: String?): Leg? = entries.firstOrNull { it.raw == raw }
+        }
+    }
+
+    enum class Cabin(val raw: String) {
+        ECONOMY("economy"), PREMIUM_ECONOMY("premium_economy"), BUSINESS("business"), FIRST("first");
+
+        companion object {
+            fun of(raw: String?): Cabin? = entries.firstOrNull { it.raw == raw }
+        }
+    }
+
+    data class Passengers(val adults: Int, val children: Int, val infantsInSeat: Int, val infantsOnLap: Int) {
+        val infants: Int get() = infantsInSeat + infantsOnLap
+        val total: Int get() = adults + children + infants
+    }
+
+    /** An airport a flight leaves or reaches, with the local time there (never converted). */
+    data class Stop(val airport: String, val name: String?, val time: LocalDateTime?)
+
+    data class Segment(
+        val flight: String?,
+        val airline: String?,
+        val logo: String?,
+        val from: Stop,
+        val to: Stop,
+        val minutes: Int?,
+        val aircraft: String?,
+        val cabin: String?,
+        val legroom: String?,
+        val overnight: Boolean,
+        val oftenDelayed: Boolean,
+    )
+
+    data class Layover(val airport: String, val name: String?, val minutes: Int?, val overnight: Boolean)
+
+    data class Option(
+        val id: Int,
+        val topPick: Boolean,
+        /** For all passengers together; `null` when Google gives none. */
+        val price: Double?,
+        val airlines: List<String>,
+        val logo: String?,
+        val depart: Stop,
+        val arrive: Stop,
+        val minutes: Int?,
+        val stops: Int,
+        val segments: List<Segment>,
+        val layovers: List<Layover>,
+        /** Per passenger. */
+        val co2Kg: Int?,
+        /** Against a typical flight on the route; negative is less. */
+        val co2VsTypicalPct: Int?,
+    ) {
+        /** How many days after it leaves it lands, by the local dates (the "+1"); 0 when unknown. */
+        val daysLater: Int
+            get() {
+                val a = depart.time?.toLocalDate() ?: return 0
+                val b = arrive.time?.toLocalDate() ?: return 0
+                return ChronoUnit.DAYS.between(a, b).toInt().coerceIn(0, 9)
+            }
+        val oftenDelayed: Boolean get() = segments.any { it.oftenDelayed }
+        val overnight: Boolean get() = segments.any { it.overnight } || layovers.any { it.overnight }
+    }
+
+    enum class Part(val raw: String) {
+        TOGETHER("together"), DEPARTING("departing"), RETURNING("returning");
+
+        companion object {
+            fun of(raw: String?): Part? = entries.firstOrNull { it.raw == raw }
+        }
+    }
+
+    data class Seller(
+        val seller: String,
+        val part: Part,
+        val price: Double?,
+        val fare: String?,
+        val bags: List<String>,
+        val marketedAs: List<String>,
+    )
+
+    data class PricePoint(val date: LocalDate, val price: Double)
+
+    data class Insights(
+        val lowest: Double,
+        /** Google's word: `low`, `typical` or `high` (the app translates these), or another as given. */
+        val level: String?,
+        val typicalLow: Double?,
+        val typicalHigh: Double?,
+        /** Oldest first, at least two points, or empty. */
+        val history: List<PricePoint>,
+    )
+
+    /** "SFO → MUC", several airports joined with "/". */
+    val route: String get() = FlightsCard.route(from, to)
+
+    companion object {
+        const val MAX_OPTIONS = 20
+        const val MAX_SELLERS = 12
+        const val MAX_SEGMENTS = 8
+        const val MAX_AIRPORTS = 7
+        const val MAX_HISTORY = 90
+        /** The most anyone sits in a plane or waits for one, in minutes (a week). */
+        private const val MAX_MINUTES = 7.0 * 24 * 60
+        /** The levels Google words and the app translates. */
+        val LEVELS = listOf("low", "typical", "high")
+
+        /** "SFO → MUC", "SFO/OAK → MUC". */
+        fun route(from: List<String>, to: List<String>): String = "${from.joinToString("/")} → ${to.joinToString("/")}"
+
+        /**
+         * Airport codes given as a list or a comma-separated string, upper-cased, each once: three
+         * letters, as the tool takes them.
+         */
+        fun airports(value: JsonElement?): List<String> {
+            val raw = value.arr?.mapNotNull { it.str } ?: value.str?.split(",") ?: return emptyList()
+            return raw.map { it.trim().uppercase() }
+                .filter { it.length == 3 && it.all { c -> c in 'A'..'Z' } }
+                .distinct()
+                .take(MAX_AIRPORTS)
+        }
+
+        fun parse(value: JsonElement): FlightsCard? {
+            val kind = when (value["kind"].str) {
+                "flights" -> Kind.FLIGHTS
+                "booking" -> Kind.BOOKING
+                else -> return null
+            }
+            val from = airports(value["from"]).takeIf { it.isNotEmpty() } ?: return null
+            val to = airports(value["to"]).takeIf { it.isNotEmpty() } ?: return null
+            val rawOptions = value["options"].arr ?: return null
+            val noResults = CardParse.text(value["no_results"], 400)
+            val p = value["passengers"]
+            fun count(key: String) = (CardParse.amount(p[key], 99.0) ?: 0.0).toInt()
+            val passengers = Passengers(max(1, count("adults")), count("children"), count("infants_in_seat"), count("infants_on_lap"))
+
+            val options: List<Option>
+            val flights: List<Option>
+            val sellers: List<Seller>
+            if (kind == Kind.FLIGHTS) {
+                options = rawOptions.take(MAX_OPTIONS).mapIndexedNotNull { i, o -> option(o, i + 1) }
+                flights = emptyList()
+                sellers = emptyList()
+                if (options.isEmpty() && noResults == null) return null
+            } else {
+                options = emptyList()
+                flights = value["flights"].arr.orEmpty().take(4).mapIndexedNotNull { i, o -> option(o, i + 1) }
+                sellers = rawOptions.take(MAX_SELLERS).mapNotNull(::seller)
+                if (sellers.isEmpty() && flights.isEmpty() && noResults == null) return null
+            }
+            return FlightsCard(
+                kind = kind,
+                leg = Leg.of(value["leg"].str) ?: if (value["return_date"].str != null) Leg.OUTBOUND else Leg.ONE_WAY,
+                from = from, to = to,
+                date = value["date"].str?.let(::day),
+                returnDate = value["return_date"].str?.let(::day),
+                passengers = passengers,
+                cabin = Cabin.of(value["cabin"].str),
+                currency = currency(value["currency"]) ?: "USD",
+                sort = CardParse.text(value["sort"], 20),
+                options = options, flights = flights, sellers = sellers,
+                more = if (kind == Kind.FLIGHTS) (CardParse.amount(value["more"], 1e6) ?: 0.0).toInt() else 0,
+                noResults = noResults,
+                insights = if (kind == Kind.FLIGHTS) insights(value["insights"]) else null,
+                googleFlightsUrl = CardParse.https(value["google_flights_url"]),
+                asOf = CardParse.time(value["as_of"]),
+            )
+        }
+
+        /** A `yyyy-MM-dd` day. */
+        fun day(s: String): LocalDate? {
+            if (s.length != 10) return null
+            return try {
+                LocalDate.parse(s)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        /** A local `yyyy-MM-ddTHH:mm` time, without a zone. */
+        fun localTime(s: String?): LocalDateTime? {
+            if (s == null || s.length < 16 || s.length > 19) return null
+            return try {
+                LocalDateTime.parse(s)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        private fun currency(value: JsonElement?): String? {
+            val c = CardParse.text(value, 4) ?: return null
+            if (c.length != 3 || !c.all { it in 'A'..'Z' || it in 'a'..'z' }) return null
+            return c.uppercase()
+        }
+
+        private fun minutes(value: JsonElement?): Int? = CardParse.amount(value, MAX_MINUTES)?.roundToInt()
+
+        private fun stop(value: JsonElement?): Stop? {
+            val airport = CardParse.text(value["airport"], 8) ?: return null
+            return Stop(airport, CardParse.text(value["name"], 120), localTime(value["time"].str))
+        }
+
+        private fun option(o: JsonElement, fallbackId: Int): Option? {
+            if (o !is JsonObject) return null
+            val depart = stop(o["depart"]) ?: return null
+            val arrive = stop(o["arrive"]) ?: return null
+            val segments = o["segments"].arr.orEmpty().take(MAX_SEGMENTS).mapNotNull { s ->
+                val from = stop(s["from"]) ?: return@mapNotNull null
+                val to = stop(s["to"]) ?: return@mapNotNull null
+                Segment(
+                    flight = CardParse.text(s["flight"], 12), airline = CardParse.text(s["airline"], 80),
+                    logo = CardParse.https(s["logo"]), from = from, to = to, minutes = minutes(s["duration_min"]),
+                    aircraft = CardParse.text(s["aircraft"], 80), cabin = CardParse.text(s["cabin"], 40),
+                    legroom = CardParse.text(s["legroom"], 20),
+                    overnight = s["overnight"].bool == true, oftenDelayed = s["often_delayed"].bool == true,
+                )
+            }
+            val layovers = o["layovers"].arr.orEmpty().take(MAX_SEGMENTS).mapNotNull { l ->
+                val airport = CardParse.text(l["airport"], 8) ?: return@mapNotNull null
+                Layover(airport, CardParse.text(l["name"], 120), minutes(l["duration_min"]), l["overnight"].bool == true)
+            }
+            val airlines = o["airlines"].arr.orEmpty().mapNotNull { CardParse.text(it, 80) }.distinct().take(4)
+                .ifEmpty { segments.mapNotNull { it.airline }.distinct().take(4) }
+            val stops = CardParse.amount(o["stops"], 20.0)?.toInt() ?: max(0, segments.size - 1)
+            return Option(
+                id = CardParse.amount(o["id"], 1e6)?.toInt() ?: fallbackId,
+                topPick = o["top_pick"].bool == true,
+                price = CardParse.amount(o["price"]),
+                airlines = airlines,
+                logo = CardParse.https(o["logo"]),
+                depart = depart, arrive = arrive,
+                minutes = minutes(o["duration_min"]),
+                stops = stops, segments = segments, layovers = layovers,
+                co2Kg = CardParse.amount(o["co2_kg"], 1e6)?.roundToInt(),
+                co2VsTypicalPct = o["co2_vs_typical_pct"].dbl?.takeIf { it >= -100 && it <= 1000 }?.roundToInt(),
+            )
+        }
+
+        private fun seller(s: JsonElement): Seller? {
+            val name = CardParse.text(s["seller"], 80) ?: return null
+            return Seller(
+                seller = name,
+                part = Part.of(s["part"].str) ?: Part.TOGETHER,
+                price = CardParse.amount(s["price"]),
+                fare = CardParse.text(s["fare"], 80),
+                bags = s["bags"].arr.orEmpty().mapNotNull { CardParse.text(it, 120) }.take(6),
+                marketedAs = s["marketed_as"].arr.orEmpty().mapNotNull { CardParse.text(it, 12) }.take(6),
+            )
+        }
+
+        private fun insights(v: JsonElement?): Insights? {
+            val lowest = CardParse.amount(v["lowest"]) ?: return null
+            val typical = v["typical"].arr
+            var low = typical?.getOrNull(0)?.let { CardParse.amount(it) }
+            var high = typical?.getOrNull(1)?.let { CardParse.amount(it) }
+            if (typical?.size != 2 || low == null || high == null) {
+                low = null
+                high = null
+            } else if (low > high) {
+                low = high.also { high = low }
+            }
+            val history = mutableListOf<PricePoint>()
+            for (h in v["history"].arr.orEmpty().takeLast(MAX_HISTORY * 2)) {
+                val date = h["date"].str?.let(::day) ?: continue
+                val price = CardParse.amount(h["price"]) ?: continue
+                if (history.isNotEmpty() && date <= history.last().date) continue
+                history += PricePoint(date, price)
+            }
+            return Insights(
+                lowest = lowest,
+                level = CardParse.text(v["level"], 40)?.lowercase(),
+                typicalLow = low, typicalHigh = high,
+                history = if (history.size >= 2) history.takeLast(MAX_HISTORY) else emptyList(),
             )
         }
     }

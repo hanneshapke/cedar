@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -294,5 +295,169 @@ class CardsTest {
         assertEquals(ChartCard.Band(70.0, 180.0, "Target"), found.charts[0].band)
         assertEquals("Report line\n[chart] {\"kind\":\"donut\"}\n[chart] not json\nThe end", found.text, "lines that aren't drawable charts stay in the text")
         assertTrue(ChartCard.inOutput("no charts here").charts.isEmpty())
+    }
+
+    @Test
+    fun flightsSearch() {
+        val output = """
+        {"kind":"flights","leg":"outbound","from":["SFO","oak"],"to":["MUC"],"date":"2026-12-01","return_date":"2026-12-10",
+         "passengers":{"adults":2,"children":1,"infants_in_seat":0,"infants_on_lap":1},"cabin":"business","currency":"chf","sort":"best",
+         "options":[
+           {"id":1,"top_pick":true,"price":1234.5,"airlines":["Lufthansa","Lufthansa",""],
+            "logo":"https://www.gstatic.com/flights/airline_logos/70px/LH.png",
+            "depart":{"airport":"SFO","name":"San Francisco International Airport","time":"2026-12-01T15:40"},
+            "arrive":{"airport":"MUC","name":"Munich International Airport","time":"2026-12-02T11:30"},
+            "duration_min":650,"stops":1,
+            "segments":[
+              {"flight":"LH 455","airline":"Lufthansa","logo":"http://insecure.example/LH.png",
+               "from":{"airport":"SFO","time":"2026-12-01T15:40"},"to":{"airport":"EWR","time":"2026-12-01T23:59"},
+               "duration_min":320,"aircraft":"Airbus A350","cabin":"Business","legroom":"31 in","overnight":false,"often_delayed":true},
+              {"flight":"LH 401","from":{"airport":"EWR","time":"2026-12-02T02:00"},"to":{"airport":"MUC","time":"bad"},
+               "duration_min":-5,"overnight":true}
+            ],
+            "layovers":[{"airport":"EWR","name":"Newark Liberty International Airport","duration_min":120,"overnight":false},{"name":"no code"}],
+            "co2_kg":512,"co2_vs_typical_pct":-7,"departure_token":"secret","booking_token":"secret"},
+           {"id":2,"price":null,"airlines":["United"],"logo":"javascript:alert(1)",
+            "depart":{"airport":"OAK","time":"2026-12-01T06:00"},"arrive":{"airport":"MUC","time":"2026-12-01T22:00"},
+            "stops":0,"segments":[],"layovers":[],"co2_vs_typical_pct":"12"},
+           {"id":3,"price":900,"airlines":["Nobody"],"depart":{"name":"no code"},"arrive":{"airport":"MUC"}},
+           "nonsense"
+         ],
+         "more":12,
+         "insights":{"lowest":999.0,"level":"Low","typical":[1600.0,1100.0],
+           "history":[{"date":"2026-10-01","price":1300},{"date":"2026-10-02","price":-1},{"date":"2026-09-30","price":1250},{"date":"2026-10-03","price":1200}]},
+         "google_flights_url":"https://www.google.com/travel/flights?q=x",
+         "as_of":"2026-10-29T02:43:00Z","note":"For the model."}
+        """
+        val card = assertIs<Card.Flights>(Card.parse("search_flights", output)).card
+        assertEquals(FlightsCard.Kind.FLIGHTS, card.kind)
+        assertEquals(FlightsCard.Leg.OUTBOUND, card.leg)
+        assertEquals(listOf("SFO", "OAK"), card.from)
+        assertEquals("SFO/OAK → MUC", card.route)
+        assertEquals(java.time.LocalDate.of(2026, 12, 1), card.date)
+        assertEquals(java.time.LocalDate.of(2026, 12, 10), card.returnDate)
+        assertEquals(FlightsCard.Passengers(2, 1, 0, 1), card.passengers)
+        assertEquals(4, card.passengers.total)
+        assertEquals(FlightsCard.Cabin.BUSINESS, card.cabin)
+        assertEquals("CHF", card.currency)
+        assertEquals(12, card.more)
+        assertEquals("https://www.google.com/travel/flights?q=x", card.googleFlightsUrl)
+        assertEquals(java.time.Instant.parse("2026-10-29T02:43:00Z"), card.asOf)
+        assertEquals(listOf(1, 2), card.options.map { it.id }, "an option needs where it leaves from and lands")
+
+        val lh = card.options[0]
+        assertTrue(lh.topPick)
+        assertEquals(1234.5, lh.price)
+        assertEquals(listOf("Lufthansa"), lh.airlines)
+        assertEquals("https://www.gstatic.com/flights/airline_logos/70px/LH.png", lh.logo)
+        assertEquals(java.time.LocalDateTime.of(2026, 12, 1, 15, 40), lh.depart.time)
+        assertEquals(1, lh.daysLater, "it lands the next day, local time")
+        assertEquals(650, lh.minutes)
+        assertEquals(1, lh.stops)
+        assertEquals(2, lh.segments.size)
+        assertNull(lh.segments[0].logo, "https only")
+        assertEquals("Airbus A350", lh.segments[0].aircraft)
+        assertNull(lh.segments[1].minutes, "a negative duration is dropped")
+        assertNull(lh.segments[1].to.time, "a time that doesn't parse is dropped")
+        assertTrue(lh.oftenDelayed)
+        assertTrue(lh.overnight)
+        assertEquals(listOf("EWR"), lh.layovers.map { it.airport })
+        assertEquals(120, lh.layovers[0].minutes)
+        assertEquals(512, lh.co2Kg)
+        assertEquals(-7, lh.co2VsTypicalPct)
+
+        val ua = card.options[1]
+        assertNull(ua.price)
+        assertNull(ua.logo)
+        assertFalse(ua.topPick)
+        assertEquals(0, ua.daysLater)
+        assertNull(ua.co2VsTypicalPct, "a number given as text isn't one")
+        assertFalse(ua.oftenDelayed)
+
+        val insights = assertNotNull(card.insights)
+        assertEquals(999.0, insights.lowest)
+        assertEquals("low", insights.level)
+        assertEquals(1100.0, insights.typicalLow, "the range is put in order")
+        assertEquals(1600.0, insights.typicalHigh)
+        assertEquals(listOf(1300.0, 1200.0), insights.history.map { it.price }, "bad prices and dates out of order are dropped")
+    }
+
+    @Test
+    fun flightsWithoutResultsAndRejects() {
+        val empty = """{"kind":"flights","leg":"one_way","from":["SFO"],"to":["MUC"],"date":"2026-12-01",
+            "passengers":{"adults":1},"cabin":"economy","currency":"EUR","options":[],"more":0,
+            "no_results":"Google Flights found no flights for this search."}"""
+        val card = assertIs<Card.Flights>(Card.parse("search_flights", empty)).card
+        assertEquals(FlightsCard.Leg.ONE_WAY, card.leg)
+        assertTrue(card.options.isEmpty())
+        assertEquals("Google Flights found no flights for this search.", card.noResults)
+        assertNull(card.insights)
+        assertNull(card.googleFlightsUrl)
+
+        val option = """{"depart":{"airport":"SFO"},"arrive":{"airport":"MUC"},"price":100}"""
+        fun parse(body: String) = Card.parse("search_flights", body)
+        assertNotNull(parse("""{"kind":"flights","from":["SFO"],"to":["MUC"],"options":[$option]}"""))
+        assertNull(parse("""{"kind":"flights","from":["SFO"],"to":["MUC"],"options":[]}"""), "nothing to show")
+        assertNull(parse("""{"kind":"hotels","from":["SFO"],"to":["MUC"],"options":[$option]}"""))
+        assertNull(parse("""{"kind":"flights","from":["San Francisco"],"to":["MUC"],"options":[$option]}"""))
+        assertNull(parse("""{"kind":"flights","from":["SFO"],"options":[$option]}"""))
+        assertNull(parse("""{"kind":"flights","from":["SFO"],"to":["MUC"]}"""))
+        assertNull(parse("not json"))
+        val many = (1..30).joinToString(",") { option }
+        assertEquals(FlightsCard.MAX_OPTIONS, assertIs<Card.Flights>(parse("""{"kind":"flights","from":"sfo, oak","to":"MUC","options":[$many]}""")).card.options.size)
+        val odd = assertIs<Card.Flights>(parse(
+            """{"kind":"flights","from":["SFO"],"to":["MUC"],"currency":"€€","passengers":{"adults":-3,"children":1e9},"cabin":"steerage",
+               "insights":{"lowest":"cheap"},"google_flights_url":"http://www.google.com/travel/flights","options":[$option]}""",
+        )).card
+        assertEquals("USD", odd.currency)
+        assertEquals(FlightsCard.Passengers(1, 0, 0, 0), odd.passengers)
+        assertNull(odd.cabin)
+        assertNull(odd.insights)
+        assertNull(odd.googleFlightsUrl, "https only")
+    }
+
+    @Test
+    fun flightsBooking() {
+        val output = """
+        {"kind":"booking","leg":"outbound","from":["SFO"],"to":["MUC"],"date":"2026-12-01","return_date":"2026-12-10",
+         "passengers":{"adults":1},"cabin":"economy","currency":"USD",
+         "flights":[{"id":1,"price":1234,"airlines":["Lufthansa"],"depart":{"airport":"SFO","time":"2026-12-01T15:40"},
+                     "arrive":{"airport":"MUC","time":"2026-12-02T11:30"},"stops":0,"segments":[],"layovers":[]}],
+         "options":[
+           {"seller":"Lufthansa","part":"together","price":1234,"fare":"Economy Light","bags":["1 free carry-on","1st checked bag: 60 USD"],"marketed_as":["LH 455"]},
+           {"seller":"Expedia","part":"departing","price":null,"bags":[],"marketed_as":[]},
+           {"part":"returning","price":10},
+           {"seller":"Odd","part":"sideways","price":5}
+         ],
+         "google_flights_url":"https://www.google.com/travel/flights/booking?x","note":"..."}
+        """
+        val card = assertIs<Card.Flights>(Card.parse("search_flights", output)).card
+        assertEquals(FlightsCard.Kind.BOOKING, card.kind)
+        assertTrue(card.options.isEmpty())
+        assertEquals(1, card.flights.size)
+        assertEquals(1, card.flights[0].daysLater)
+        assertEquals(listOf("Lufthansa", "Expedia", "Odd"), card.sellers.map { it.seller }, "a seller needs a name")
+        val lh = card.sellers[0]
+        assertEquals(FlightsCard.Part.TOGETHER, lh.part)
+        assertEquals(1234.0, lh.price)
+        assertEquals("Economy Light", lh.fare)
+        assertEquals(listOf("1 free carry-on", "1st checked bag: 60 USD"), lh.bags)
+        assertEquals(listOf("LH 455"), lh.marketedAs)
+        assertEquals(FlightsCard.Part.DEPARTING, card.sellers[1].part)
+        assertNull(card.sellers[1].price)
+        assertEquals(FlightsCard.Part.TOGETHER, card.sellers[2].part, "an unknown part is read as the whole trip")
+        assertNull(card.asOf)
+        assertEquals("https://www.google.com/travel/flights/booking?x", card.googleFlightsUrl)
+
+        val gone = """{"kind":"booking","leg":"one_way","from":["SFO"],"to":["MUC"],"flights":[],"options":[],"no_results":"Gone."}"""
+        assertEquals("Gone.", assertIs<Card.Flights>(Card.parse("search_flights", gone)).card.noResults)
+        assertNull(Card.parse("search_flights", """{"kind":"booking","from":["SFO"],"to":["MUC"],"flights":[],"options":[]}"""))
+    }
+
+    @Test
+    fun flightsRouteFromInput() {
+        assertEquals(listOf("SFO", "OAK"), FlightsCard.airports(j("\" sfo, oak ,, SFO\"")))
+        assertEquals(listOf("MUC"), FlightsCard.airports(j("""["muc", "Munich", 3]""")))
+        assertEquals(emptyList(), FlightsCard.airports(j("{}")))
     }
 }

@@ -64,7 +64,7 @@ import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 
-/** The card a tool's result draws: a map, a recipe, a trip, a stock comparison, products, or a chart. */
+/** The card a tool's result draws: a map, a recipe, a trip, a stock comparison, products, flights, or a chart. */
 @Composable
 fun CardView(card: Card) {
     when (card) {
@@ -73,6 +73,7 @@ fun CardView(card: Card) {
         is Card.Trip -> TripCardView(card.card)
         is Card.Stocks -> StocksCardView(card.card)
         is Card.Products -> ProductsCardView(card.card)
+        is Card.Flights -> FlightsCardView(card.card)
         is Card.Chart -> ChartCardView(card.card)
     }
 }
