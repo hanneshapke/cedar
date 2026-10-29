@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Spanish as written in Spain: only the strings where it clearly differs from the neutral Latin
-     American text in values-es (móvil for celular, coche for auto, VTC for a ride-hailing car, añadir, raciones). -->
+     American text in values-es (móvil for celular, coche for auto, VTC for a ride-hailing car, añadir, raciones, billete for boleto). -->
 <resources>
     <string name="error_not_configured">Añade tu servidor cedar-chat en Configuración.</string>
     <string name="scan_not_cedar">Ese código QR no es un código de conexión de Cedar. Escanea el que aparece en Configuración → Móvil en el chat, en la app de escritorio o el de cedar-stack.sh --pair.</string>
@@ -12,4 +12,6 @@
     <string name="trip_take_drive">Ve en coche: %1$s</string>
     <string name="trip_take_rideshare">Pide un VTC: %1$s</string>
     <string name="recipe_serves">Raciones</string>
+    <string name="flights_separate_departing">Billete aparte: ida</string>
+    <string name="flights_separate_returning">Billete aparte: vuelta</string>
 </resources>

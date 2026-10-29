@@ -1,6 +1,7 @@
 //! Tools the model can call. The file, shell, Python, document, and chart tools run inside the
 //! run's sandbox; `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, and
-//! `show_recipe`, `plan_trip`, `compare_stocks`, and `search_products` run in the cedar process,
+//! `show_recipe`, `plan_trip`, `search_flights`, `compare_stocks`, and `search_products` run in the
+//! cedar process,
 //! because the sandbox has no network; so does `ask_user`, which only checks its questions;
 //! `browser` drives the run's browser container. The Gmail and Calendar tools, through Google's REST APIs or remote MCP servers, run
 //! in the cedar process too. Personal tools written in Python (`custom`) run in the sandbox like
@@ -17,6 +18,7 @@ pub mod custom;
 mod document;
 pub(crate) mod fetch;
 mod files;
+mod flights;
 mod gmail;
 mod google;
 mod map;
@@ -41,6 +43,7 @@ pub use custom::PythonTool;
 pub use document::ReadDocument;
 pub use fetch::{DownloadFile, FetchUrl, WebClient};
 pub use files::{ReadFile, WriteFile};
+pub use flights::SearchFlights;
 pub use map::ShowMap;
 pub use mcp::{McpServer, McpTool};
 pub use pdf::GeneratePdf;
@@ -198,7 +201,8 @@ impl ToolSet {
     /// The standard tools, plus `web_search` if a Brave API key is configured, `fetch_url` and
     /// `download_file` unless `WEB_FETCH` is off, `weather_forecast` unless `WEATHER` is off,
     /// `show_map` unless `MAPS` is off, `show_recipe` unless `RECIPES` is off, `plan_trip` unless
-    /// `TRANSIT` is off, `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
+    /// `TRANSIT` is off, `search_flights` if a SerpApi key is configured or saved (and `FLIGHTS`
+    /// isn't off), `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
     /// Best Buy key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
     /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
@@ -248,6 +252,16 @@ impl ToolSet {
             set.tools.push(Box::new(PlanTrip::new(
                 cfg.transit_base_url.clone(),
                 cfg.driving_base_url.clone(),
+            )?));
+        }
+        let serpapi_key = cfg
+            .serpapi_api_key
+            .as_ref()
+            .or(overrides.serpapi_api_key.as_ref());
+        if let (true, Some(key)) = (cfg.flights, serpapi_key) {
+            set.tools.push(Box::new(SearchFlights::new(
+                key.clone(),
+                cfg.flights_api_url.clone(),
             )?));
         }
         if cfg.stocks {
@@ -444,6 +458,7 @@ impl ToolSet {
 pub struct Overrides {
     pub brave_api_key: Option<String>,
     pub bestbuy_api_key: Option<String>,
+    pub serpapi_api_key: Option<String>,
     pub google_refresh_token: Option<String>,
     /// The secrets saved for personal tools.
     pub tool_secrets: custom::SavedSecrets,
@@ -462,6 +477,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("maps", "Maps"),
     ("recipes", "Recipes"),
     ("transit", "Directions & transit"),
+    ("flights", "Flights"),
     ("stocks", "Stocks & markets"),
     ("products", "Shopping"),
     ("ask_user", "Clarifying questions"),
@@ -481,6 +497,7 @@ pub fn group_of(name: &str) -> &'static str {
         "show_map" => "maps",
         "show_recipe" => "recipes",
         "plan_trip" => "transit",
+        "search_flights" => "flights",
         "compare_stocks" => "stocks",
         "search_products" => "products",
         "ask_user" => "ask_user",
@@ -604,6 +621,12 @@ impl<'a> ToolView<'a> {
             note.push_str(
                 " For how to get somewhere (public transit, driving, walking, or a rideshare), use \
                  plan_trip; it shows the routes on a map.",
+            );
+        }
+        if self.get("search_flights").is_some() {
+            note.push_str(
+                " For flights and airfares, use search_flights; it shows the options as a card. \
+                 Do not search the web or airline sites for fares yourself.",
             );
         }
         if self.get("compare_stocks").is_some() {

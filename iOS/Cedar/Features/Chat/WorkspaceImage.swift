@@ -2,24 +2,29 @@ import SwiftUI
 import UIKit
 
 /// The images a response produced, loaded from the conversation's workspace with the access
-/// token (plain `AsyncImage` can't send one).
+/// token (plain `AsyncImage` can't send one). A tap opens one at full size.
 struct ImagesView: View {
     let paths: [String]
     let conversationId: String
     let client: ChatClient
+    @State private var viewing: ViewedFile?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(paths, id: \.self) { path in
-                WorkspaceImageView(request: client.fileRequest(conversationId: conversationId, path: path), caption: path)
+                WorkspaceImageView(request: client.fileRequest(conversationId: conversationId, path: path), caption: path,
+                                   open: WorkspaceFileKind(path: path) == .image ? { viewing = ViewedFile(path: path) } : nil)
             }
         }
+        .workspaceFileSheet($viewing, conversationId: conversationId, client: client)
     }
 }
 
 struct WorkspaceImageView: View {
     let request: URLRequest
     let caption: String
+    /// Opens the image at full size, if it can be.
+    var open: (() -> Void)?
     @State private var image: UIImage?
     @State private var failed = false
 
@@ -32,6 +37,9 @@ struct WorkspaceImageView: View {
                     .frame(maxHeight: 420)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(.separator).opacity(0.5)))
+                    .onTapGesture { open?() }
+                    .accessibilityAddTraits(open == nil ? [] : .isButton)
+                    .accessibilityAction(named: Text("Open \(caption)")) { open?() }
                 HStack {
                     Text(caption)
                         .font(.caption)

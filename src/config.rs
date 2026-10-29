@@ -24,6 +24,8 @@ pub const DEFAULT_TRANSIT_BASE_URL: &str = "https://api.transitous.org";
 /// The OSRM project's public demo router, for driving routes.
 pub const DEFAULT_DRIVING_BASE_URL: &str = "https://router.project-osrm.org";
 /// Yahoo Finance's chart API (daily prices; the symbol goes under it) and search API (news).
+/// SerpApi, whose Google Flights API `search_flights` searches.
+pub const DEFAULT_FLIGHTS_API_URL: &str = "https://serpapi.com";
 pub const DEFAULT_STOCKS_CHART_URL: &str = "https://query1.finance.yahoo.com/v8/finance/chart";
 pub const DEFAULT_STOCKS_NEWS_URL: &str = "https://query1.finance.yahoo.com/v1/finance/search";
 /// Best Buy's Products API (the search filter goes after it in parentheses), which
@@ -227,6 +229,12 @@ pub struct Config {
     pub transit_base_url: String,
     /// Root of the OSRM router `plan_trip` asks for driving routes.
     pub driving_base_url: String,
+    /// Offer the `search_flights` tool (on by default), which still needs `serpapi_api_key`.
+    pub flights: bool,
+    /// SerpApi key. `search_flights` is only offered to the model when this is set (or saved).
+    pub serpapi_api_key: Option<String>,
+    /// SerpApi's root; overridable so tests can point at a mock.
+    pub flights_api_url: String,
     /// Offer the `compare_stocks` tool (on by default).
     pub stocks: bool,
     /// The chart API `compare_stocks` reads prices from, and the search API it reads news from.
@@ -501,6 +509,12 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_TRANSIT_BASE_URL.into()),
             driving_base_url: get("DRIVING_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_DRIVING_BASE_URL.into()),
+            flights: flag("FLIGHTS", true)?,
+            serpapi_api_key: get("SERPAPI_API_KEY")
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty()),
+            flights_api_url: get("FLIGHTS_API_URL")
+                .unwrap_or_else(|| DEFAULT_FLIGHTS_API_URL.into()),
             stocks: flag("STOCKS", true)?,
             stocks_chart_url: get("STOCKS_CHART_URL")
                 .unwrap_or_else(|| DEFAULT_STOCKS_CHART_URL.into()),
@@ -829,6 +843,24 @@ mod tests {
         assert!(!cfg.stocks);
         assert_eq!(cfg.stocks_chart_url, "http://localhost:9999/chart");
         assert_eq!(cfg.stocks_news_url, "http://localhost:9999/search");
+    }
+
+    #[test]
+    fn flight_search_needs_a_key_and_its_api_can_be_moved() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.flights);
+        assert_eq!(cfg.serpapi_api_key, None);
+        assert_eq!(cfg.flights_api_url, DEFAULT_FLIGHTS_API_URL);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("FLIGHTS", "off"),
+            ("SERPAPI_API_KEY", " serp-secret "),
+            ("FLIGHTS_API_URL", "http://localhost:9999/serpapi"),
+        ]))
+        .unwrap();
+        assert!(!cfg.flights);
+        assert_eq!(cfg.serpapi_api_key.as_deref(), Some("serp-secret"));
+        assert_eq!(cfg.flights_api_url, "http://localhost:9999/serpapi");
     }
 
     #[test]

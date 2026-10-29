@@ -276,9 +276,12 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Restores the cache release-cache.yml saves on main: a cache saved here, under the release
+      # pull request's merge ref, would be invisible to the next release, so only main saves one.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          shared-key: release-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: |
             . -> target
             desktop -> target
@@ -394,9 +397,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      # Restores the cache release-cache.yml saves on main (see the dmg job).
       - uses: Swatinem/rust-cache@v2
         with:
-          key: x86_64-pc-windows-msvc
+          shared-key: release-x86_64-pc-windows-msvc
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: |
             . -> target
             desktop -> target

@@ -1,0 +1,122 @@
+name: Release cache
+
+# Fills the Rust caches the release's dmg and msi jobs start from (rust-cache's shared-key
+# release-<target>), by building the same things on main. The release runs on a release/<version>
+# pull request, and a cache saved there belongs to that pull request's merge ref: the next release
+# can't read it, so every release used to compile everything from scratch. Caches main saves are
+# readable from every pull request.
+#
+# rust-cache keeps only dependencies, so this has to run again only when they change (a lock file
+# or a Cargo.toml) or when a new stable Rust comes out, which the schedule picks up. The schedule
+# also restores the caches twice a week, so GitHub doesn't evict them (it drops caches unused for
+# seven days); when the cache is current, the run restores it and builds nothing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - desktop/Cargo.lock
+      - "**/Cargo.toml"
+      - .github/workflows/release-cache.yml
+  schedule:
+    - cron: "23 4 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-cache
+  cancel-in-progress: true
+
+# The same as release.yml's: rust-cache hashes CARGO_* variables into the key.
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    env:
+      TARGET: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        id: cache
+        with:
+          shared-key: release-aarch64-apple-darwin
+          workspaces: |
+            . -> target
+            desktop -> target
+
+      - name: Build cedar and cedar-chat
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo build --release --locked -p cedar -p cedar-chat --target $TARGET
+
+      - name: Put them where the bundler expects sidecars
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          install -m 0755 "target/$TARGET/release/cedar" "desktop/binaries/cedar-$TARGET"
+          install -m 0755 "target/$TARGET/release/cedar-chat" "desktop/binaries/cedar-chat-$TARGET"
+
+      - uses: cargo-bins/cargo-binstall@main
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Install the Tauri CLI
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo binstall -y --locked tauri-cli --version '^2'
+
+      # The app's dependencies, built as the release builds them; no bundle, so nothing to sign.
+      - name: Build Cedar.app's binary
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: desktop
+        run: cargo tauri build --ci --target $TARGET --no-bundle
+
+  msi:
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        id: cache
+        with:
+          shared-key: release-x86_64-pc-windows-msvc
+          workspaces: |
+            . -> target
+            desktop -> target
+
+      # With the MSVC C runtime linked in, as release.yml builds them.
+      - name: Build cedar and cedar-chat
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked -p cedar -p cedar-chat --target $env:TARGET
+
+      - name: Put them where the bundler expects sidecars
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          Copy-Item "target/$env:TARGET/release/cedar.exe" "desktop/binaries/cedar-$env:TARGET.exe"
+          Copy-Item "target/$env:TARGET/release/cedar-chat.exe" "desktop/binaries/cedar-chat-$env:TARGET.exe"
+
+      - uses: cargo-bins/cargo-binstall@main
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Install the Tauri CLI
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo binstall -y --locked tauri-cli --version '^2'
+
+      - name: Build Cedar.exe
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: desktop
+        run: cargo tauri build --ci --target $env:TARGET --no-bundle

@@ -155,6 +155,28 @@ class TranscriptTest {
     }
 
     @Test
+    fun pdfsComeFromFileToolsAndChangedFiles() {
+        var t = TurnTranscript(turn())
+        t = t.apply(event(1, "tool.call", """{"id":"c0","name":"write_file","input":{"path":"/workspace/report.pdf"}}"""))
+        t = t.apply(event(2, "tool.result", result("c0", "ok")))
+        t = t.apply(event(3, "tool.call", """{"id":"c1","name":"bash","input":{"command":"make"}}"""))
+        t = t.apply(event(4, "tool.result", result("c1", "built\n[files created or modified]\n- out/Slides.PDF\n- out/a.png\n- report.pdf")))
+        t = t.apply(event(5, "tool.call", """{"id":"c2","name":"write_file","input":{"path":"failed.pdf"}}"""))
+        t = t.apply(event(6, "tool.result", result("c2", "disk full", isError = true)))
+        assertEquals(listOf("report.pdf", "out/Slides.PDF"), t.documents)
+        assertEquals(listOf("out/a.png"), t.images)
+    }
+
+    @Test
+    fun theViewerShowsImagesAndPdfs() {
+        assertEquals(WorkspaceFileKind.IMAGE, WorkspaceFileKind.of("out/chart.PNG"))
+        assertEquals(WorkspaceFileKind.PDF, WorkspaceFileKind.of("docs/report.pdf"))
+        assertNull(WorkspaceFileKind.of("plot.svg"))
+        assertNull(WorkspaceFileKind.of("notes.md"))
+        assertNull(WorkspaceFileKind.of("Makefile"))
+    }
+
+    @Test
     fun cardTitles() {
         var call = ToolCall("1", "compare_stocks", j("""{"symbols":["AAPL","MSFT"]}"""))
         assertEquals("AAPL, MSFT", call.summary)
@@ -168,6 +190,15 @@ class TranscriptTest {
         val shop = ToolCall("4", "search_products", j("""{"query":"headphones"}"""))
         assertTrue(shop.isCard)
         assertEquals("headphones", shop.summary)
+        val flights = ToolCall("5", "search_flights", j("""{"from":["SFO"],"to":["MUC"],"date":"2026-12-01"}"""))
+        assertTrue(flights.isCard)
+        assertEquals("SFO → MUC", flights.summary)
+        assertEquals("SFO/OAK → MUC/FRA", ToolCall("6", "search_flights", j("""{"from":"sfo, oak","to":["MUC","FRA"]}""")).summary)
+        // A return leg's result names the airports the other way round; the line keeps the route asked for.
+        val back = flights.copy(output = """{"kind":"flights","leg":"return","from":["MUC"],"to":["SFO"],"options":[]}""")
+        assertEquals("SFO → MUC", back.summary)
+        assertEquals("MUC → SFO", ToolCall("7", "search_flights", j("{}"), output = back.output).summary)
+        assertEquals("", ToolCall("8", "search_flights", j("{}")).summary)
     }
 
     @Test

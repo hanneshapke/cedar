@@ -140,6 +140,30 @@ final class TranscriptTests: XCTestCase {
         XCTAssertFalse(WorkspaceImages.isImage("photo"))
     }
 
+    func testPDFsComeFromFileToolsAndChangedFiles() {
+        var transcript = TurnTranscript(turn: turn())
+        let calls: [(String, JSONValue, String, Bool)] = [
+            ("write_file", .object(["path": .string("/workspace/report.pdf")]), "ok", false),
+            ("bash", .object(["command": .string("make")]), "built\n[files created or modified]\n- out/Slides.PDF\n- out/a.png\n- report.pdf", false),
+            ("write_file", .object(["path": .string("failed.pdf")]), "disk full", true),
+        ]
+        for (offset, (name, input, output, isError)) in calls.enumerated() {
+            let id = "c\(offset)"
+            transcript.apply(event(offset * 2 + 1, "tool.call", .object(["id": .string(id), "name": .string(name), "input": input])))
+            transcript.apply(event(offset * 2 + 2, "tool.result", .object(["id": .string(id), "output": .string(output), "is_error": .bool(isError)])))
+        }
+        XCTAssertEqual(transcript.documents, ["report.pdf", "out/Slides.PDF"])
+        XCTAssertEqual(transcript.images, ["out/a.png"])
+    }
+
+    func testTheViewerShowsImagesAndPDFs() {
+        XCTAssertEqual(WorkspaceFileKind(path: "out/chart.PNG"), .image)
+        XCTAssertEqual(WorkspaceFileKind(path: "docs/report.pdf"), .pdf)
+        XCTAssertNil(WorkspaceFileKind(path: "plot.svg"))
+        XCTAssertNil(WorkspaceFileKind(path: "notes.md"))
+        XCTAssertNil(WorkspaceFileKind(path: "Makefile"))
+    }
+
     func testCardTitles() {
         var call = ToolCall(id: "1", name: "compare_stocks", input: .object(["symbols": .array([.string("AAPL"), .string("MSFT")])]))
         XCTAssertEqual(call.summary, "AAPL, MSFT")
@@ -153,6 +177,15 @@ final class TranscriptTests: XCTestCase {
         let shop = ToolCall(id: "4", name: "search_products", input: .object(["query": .string("headphones")]))
         XCTAssertTrue(shop.isCard)
         XCTAssertEqual(shop.summary, "headphones")
+        var flights = ToolCall(id: "5", name: "search_flights",
+                               input: .object(["from": .array([.string("SFO"), .string("OAK")]), "to": .array([.string("MUC")]),
+                                               "date": .string("2026-12-01")]))
+        XCTAssertTrue(flights.isCard)
+        XCTAssertEqual(flights.summary, "SFO/OAK → MUC")
+        flights.output = #"{"kind":"flights","from":["MUC"],"to":["SFO"],"options":[]}"#
+        XCTAssertEqual(flights.summary, "SFO/OAK → MUC", "the route asked for, also for the return flights")
+        let bare = ToolCall(id: "6", name: "search_flights", input: .object([:]), output: #"{"kind":"flights","from":["SFO"],"to":["MUC"]}"#)
+        XCTAssertEqual(bare.summary, "SFO → MUC")
     }
 
     func testAChartDrawnAsACardIsNotShownAgainAsAPicture() {

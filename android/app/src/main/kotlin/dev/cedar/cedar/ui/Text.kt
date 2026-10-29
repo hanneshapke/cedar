@@ -11,6 +11,7 @@ import androidx.compose.ui.res.pluralStringResource
 import dev.cedar.cedar.R
 import dev.cedar.core.ChartCard
 import dev.cedar.core.ChatException
+import dev.cedar.core.FlightsCard
 import dev.cedar.core.OutgoingAttachment
 import dev.cedar.core.ProductsCard
 import dev.cedar.core.RecipeCard
@@ -217,4 +218,21 @@ fun chartKindLabel(kind: ChartCard.Kind): Int = when (kind) {
     ChartCard.Kind.SCATTER -> R.string.chart_scatter
     ChartCard.Kind.PIE -> R.string.chart_pie
     ChartCard.Kind.HISTOGRAM -> R.string.chart_histogram
+}
+
+@StringRes
+fun cabinLabel(cabin: FlightsCard.Cabin): Int = when (cabin) {
+    FlightsCard.Cabin.ECONOMY -> R.string.cabin_economy
+    FlightsCard.Cabin.PREMIUM_ECONOMY -> R.string.cabin_premium_economy
+    FlightsCard.Cabin.BUSINESS -> R.string.cabin_business
+    FlightsCard.Cabin.FIRST -> R.string.cabin_first
+}
+
+/** "Prices are low for this route", for the levels Google words; others are shown as given. */
+@StringRes
+fun priceLevelLabel(level: String): Int? = when (level) {
+    "low" -> R.string.flights_prices_low
+    "typical" -> R.string.flights_prices_typical
+    "high" -> R.string.flights_prices_high
+    else -> null
 }
