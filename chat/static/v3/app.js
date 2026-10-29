@@ -27,7 +27,8 @@ const els = {
   scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'), inboxBtn: $('inbox-btn'),
   chatsBtn: $('chats-btn'), drawer: $('drawer'), drawerClose: $('drawer-close'), backdrop: $('backdrop'), recents: $('recents'),
   tabs: $('tabs'), stageBadge: $('stage-badge'),
-  cost: $('cost'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
+  cost: $('cost'), costFull: $('cost-full'), runDetails: $('run-details'),
+  renameItem: $('rename-item'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
   talk: $('talk'), notes: $('notes'), splitter: $('splitter'),
   stage: $('stage'), stageBody: $('stage-body'), stageEmpty: $('stage-empty'),
   composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
@@ -1195,6 +1196,15 @@ function hasCompletedTurn() {
   return false;
 }
 
+/** 128,397 → "128K" in the page's language. */
+function compactNumber(n) {
+  try {
+    return new Intl.NumberFormat(cedarI18n.locale, { notation: 'compact', maximumFractionDigits: n < 10_000 ? 1 : 0 }).format(n);
+  } catch (e) {
+    return String(n);
+  }
+}
+
 function updateChrome() {
   const c = state.current;
   const busy = Boolean(state.activeTurn);
@@ -1202,6 +1212,7 @@ function updateChrome() {
   els.app.classList.toggle('empty', !c);
   els.title.textContent = c ? (c.title || tr('v3.newChat')) : '';
   els.deleteChat.hidden = !c;
+  els.renameItem.hidden = !c;
   els.filesBtn.hidden = !c;
   els.scheduleBadge.hidden = !c?.schedule_id;
   cedarStar.setCurrent(c);
@@ -1220,7 +1231,14 @@ function updateChrome() {
     total.input += view.usage.input; total.output += view.usage.output;
     if (typeof view.usage.cost_usd === 'number') total.cost_usd = (total.cost_usd || 0) + view.usage.cost_usd;
   }
-  els.cost.textContent = c && (total.input || total.output) ? cedarTrust.cost.text(total) : '';
+  // The bar shows a short total ("128K tokens"); the split and the price are in its tooltip and
+  // in More › Run details.
+  const used = c && (total.input || total.output);
+  const full = used ? cedarTrust.cost.text(total) : '';
+  els.cost.textContent = used ? tr('v3.tokensShort', { n: compactNumber(total.input + total.output) }) : '';
+  els.cost.title = full;
+  els.costFull.textContent = full;
+  els.runDetails.hidden = !c || !(full || els.when.textContent);
   cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
 
@@ -1637,6 +1655,12 @@ async function finishRename(save) {
     renderRecents();
   } catch (e) { toast(e.message); }
 }
+
+// -- the More menu ---------------------------------------------------------------------------
+// Rename, Settings, the run's details and Delete live in the More menu (more-menu.js opens and
+// closes it). Settings and Delete keep their ids, so the code that opens or deletes still finds them.
+
+els.renameItem.addEventListener('click', startRename);
 
 // -- wiring ------------------------------------------------------------------------------------
 

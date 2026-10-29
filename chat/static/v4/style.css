@@ -146,6 +146,35 @@ a { color: var(--accent); }
 #stop { color: var(--error); border-color: var(--error-line); }
 #stop svg { fill: currentColor; stroke: none; }
 
+/* One row in three zones: who (the brand at home, the conversation's title, star and schedule
+   chip elsewhere), how the run is going, and what you can do (borderless icons, a More menu for
+   the rest, and New, the only labelled button). The menu opens with /more-menu.js. */
+.top { min-width: 0; }
+.title-wrap { flex: 1 1 0; min-width: 0; align-items: center; gap: 4px; }
+.title { min-width: 0; max-width: none; margin-left: 0; font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.title-input { flex: 1; width: auto; max-width: 520px; font-weight: 600; font-size: 15px; }
+.top .cedar-sched-badge { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 22px; padding: 0 9px; margin-left: 4px; border: 0; background: var(--accent-wash); color: var(--accent); font-size: 12px; }
+.top .cedar-sched-badge[hidden] { display: none; }
+.top .cedar-sched-badge svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.top .ghost.icon { width: 34px; height: 34px; border-color: transparent; background: none; color: var(--ink-2); }
+.top .ghost.icon svg { width: 18px; height: 18px; }
+.top .ghost.icon:hover, .top .ghost.icon[aria-expanded="true"] { background: var(--wash); color: var(--ink); }
+.top .ghost.quiet { width: 28px; height: 28px; color: var(--faint); }
+.top .ghost.quiet svg { width: 16px; height: 16px; }
+.top #new-chat { height: 32px; }
+.actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.divider { width: 1px; height: 20px; margin: 0 8px; background: var(--line); }
+.more { position: relative; }
+.more-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; display: flex; flex-direction: column; min-width: 240px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); box-shadow: var(--shadow-card); font-size: 13.5px; color: var(--ink); }
+.more-menu[hidden] { display: none; }
+.menu-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border: 0; border-radius: 6px; background: none; text-align: left; white-space: nowrap; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--wash); outline: none; }
+.menu-item svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.menu-item.danger, .menu-item.danger svg { color: var(--error); stroke: var(--error); }
+.menu-details { margin: 6px 0; padding: 8px 10px; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); }
+.menu-details:empty { display: none; }
+@media (max-width: 900px) { .top .cedar-sched-badge { width: 22px; padding: 0; justify-content: center; } .top .cedar-sched-badge .lbl { display: none; } }
+
 /* -- the column ----------------------------------------------------------------------------- */
 
 .scroll { min-height: 0; overflow-y: auto; scroll-behavior: smooth; }
@@ -397,7 +426,7 @@ dialog p code { padding: 1px 4px; border-radius: 3px; background: var(--wash); f
   .side .side-head .side-close { display: inline-flex; }
   .top .menu { display: inline-flex; }
   .top { gap: 8px; padding: 0 12px; }
-  .top .when, .top .lbl { display: none; }
+  .top .lbl { display: none; }
   .top .ghost:not(.icon) { width: 30px; padding: 0; justify-content: center; }
   .column { width: min(var(--col-w), 100% - 32px); padding: 24px 0 40px; gap: 24px; }
   .hero h1 { font-size: 30px; }

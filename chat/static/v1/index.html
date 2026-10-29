@@ -67,22 +67,24 @@
           <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title" data-i18n-attr="aria-label:v1.conversationTitle">
           <span class="cedar-sched-badge" id="schedule-badge" hidden data-i18n="v1.scheduledRun">Scheduled run</span>
         </div>
-        <button class="icon-btn" id="star-btn" type="button" data-star-toggle hidden></button>
+        <button class="icon-btn" id="star-btn" type="button" data-star-toggle hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9l-5.3 2.7 1-5.8-4.2-4.1 5.9-.9z"/></svg></button>
         <button class="icon-btn" id="schedule-btn" type="button" aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly" data-i18n-attr="aria-label:v1.schedule.label; title:v1.schedule.title" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
         </button>
         <button class="icon-btn" id="files-btn" type="button" aria-label="Workspace files" title="Workspace files" data-i18n-attr="aria-label:v1.files.title; title:v1.files.title" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         </button>
-        <button class="icon-btn" id="delete-chat" type="button" aria-label="Delete conversation" title="Delete conversation" data-i18n-attr="aria-label:v1.deleteConversation; title:v1.deleteConversation" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
-        </button>
         <button class="icon-btn" id="inbox-btn" type="button" aria-label="Finished responses" title="Finished responses" data-i18n-attr="aria-label:v1.inbox; title:v1.inbox">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>
         </button>
-        <button class="icon-btn" id="settings-btn" type="button" aria-label="Settings" title="Settings" data-i18n-attr="aria-label:v1.settings.title; title:v1.settings.title">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
-        </button>
+        <div class="more" data-more>
+          <button class="icon-btn" id="more-btn" type="button" aria-label="More" title="More" data-i18n-attr="aria-label:v1.more; title:v1.more" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu" data-more-toggle><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></button>
+          <div class="more-menu" id="more-menu" role="menu" aria-label="More" data-i18n-attr="aria-label:v1.more" hidden>
+            <button class="menu-item" id="rename-item" type="button" role="menuitem" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span data-i18n="v1.rename">Rename</span></button>
+            <button class="menu-item" id="settings-btn" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg><span data-i18n="v1.settings.title">Settings</span></button>
+            <button class="menu-item danger" id="delete-chat" type="button" role="menuitem" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span data-i18n="v1.deleteConversation">Delete conversation</span></button>
+          </div>
+        </div>
       </header>
 
       <section class="scroll" id="scroll">
@@ -210,6 +212,7 @@
   <script src="/product-view.js"></script>
   <script src="/models.js"></script>
   <script src="/schedule.js"></script>
+  <script src="/more-menu.js"></script>
   <script src="/star.js"></script>
   <script src="/notify.js"></script>
   <script src="/update.js"></script>
