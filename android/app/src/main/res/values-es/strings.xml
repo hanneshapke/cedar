@@ -344,6 +344,42 @@
     <string name="chart_bin">Intervalo</string>
     <string name="chart_first_rows">Primeras %1$d de %2$d filas; el archivo guardado las tiene todas.</string>
     <string name="chart_series">Serie %1$d</string>
+    <string name="open_flights_on_web">Abrir los vuelos en la web</string>
+    <string name="flights_one_way">Solo ida</string>
+    <string name="flights_round_trip_back">Ida y vuelta, regreso el %1$s</string>
+    <string name="flights_return_flight">Vuelo de regreso</string>
+    <string name="cabin_economy">Económica</string>
+    <string name="cabin_premium_economy">Económica premium</string>
+    <string name="cabin_business">Business</string>
+    <string name="cabin_first">Primera</string>
+    <string name="flights_prices_low">Los precios están bajos para esta ruta</string>
+    <string name="flights_prices_typical">Los precios son los habituales para esta ruta</string>
+    <string name="flights_prices_high">Los precios están altos para esta ruta</string>
+    <string name="flights_prices_level">Nivel de precios para esta ruta: %1$s</string>
+    <string name="flights_prices_lowest">Precios para esta ruta desde %1$s</string>
+    <string name="flights_typical_range">lo habitual: %1$s</string>
+    <string name="flights_round_trip_price">Precio de ida y vuelta</string>
+    <string name="flights_all_passengers">para todos los pasajeros</string>
+    <string name="flights_nonstop">Directo</string>
+    <string name="flights_often_delayed">Suele retrasarse</string>
+    <string name="flights_overnight">Nocturno</string>
+    <string name="flights_co2_less">%1$s menos de CO₂</string>
+    <string name="flights_co2_more">%1$s más de CO₂</string>
+    <string name="flights_co2_typical">CO₂ habitual</string>
+    <string name="flights_co2_kg">%1$s kg de CO₂ por pasajero</string>
+    <string name="flights_layover">Escala de %1$s en %2$s</string>
+    <string name="flights_legroom">Espacio para las piernas: %1$s</string>
+    <string name="flights_no_results">Google Flights no encontró vuelos para esta búsqueda. Prueba con otras fechas u otros aeropuertos.</string>
+    <string name="flights_no_booking">Google Flights ya no muestra opciones de reserva para este vuelo. Vuelve a buscar para ver precios actuales.</string>
+    <string name="flights_open_google">Abrir en Google Flights</string>
+    <string name="flights_book_google">Reservar en Google Flights</string>
+    <string name="flights_as_of">Precios del %1$s; cambian rápido</string>
+    <string name="flights_chosen">Tu vuelo</string>
+    <string name="flights_where_to_book">Dónde reservar</string>
+    <string name="flights_separate_departing">Boleto aparte: ida</string>
+    <string name="flights_separate_returning">Boleto aparte: vuelta</string>
+    <string name="flights_sold_as">Vendido como %1$s</string>
+    <string name="flights_price_history">Historial de precios</string>
     <plurals name="attach_too_many">
         <item quantity="one">Como máximo %d archivo por mensaje</item>
         <item quantity="many">Como máximo %d archivos por mensaje</item>
@@ -373,5 +409,30 @@
         <item quantity="one">%1$s de %2$s reseña</item>
         <item quantity="many">%1$s de %2$s reseñas</item>
         <item quantity="other">%1$s de %2$s reseñas</item>
+    </plurals>
+    <plurals name="flights_adults">
+        <item quantity="one">%d adulto</item>
+        <item quantity="many">%d adultos</item>
+        <item quantity="other">%d adultos</item>
+    </plurals>
+    <plurals name="flights_children">
+        <item quantity="one">%d niño</item>
+        <item quantity="many">%d niños</item>
+        <item quantity="other">%d niños</item>
+    </plurals>
+    <plurals name="flights_infants">
+        <item quantity="one">%d bebé</item>
+        <item quantity="many">%d bebés</item>
+        <item quantity="other">%d bebés</item>
+    </plurals>
+    <plurals name="flights_stops">
+        <item quantity="one">%d escala</item>
+        <item quantity="many">%d escalas</item>
+        <item quantity="other">%d escalas</item>
+    </plurals>
+    <plurals name="flights_more_options">
+        <item quantity="one">%d opción más</item>
+        <item quantity="many">%d opciones más</item>
+        <item quantity="other">%d opciones más</item>
     </plurals>
 </resources>

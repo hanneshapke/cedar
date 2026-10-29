@@ -115,6 +115,18 @@ Both interfaces have all of these, except where noted:
   see it in turn, with a button back to the option it was compared to. Cedar style puts it on the
   stage as a card, Claude style under the tool call (`product-view.js` and `product-view.css`; see
   [Product photos and privacy](#product-photos-and-privacy))
+- A `search_flights` tool call (when cedar has a SerpApi key) is drawn as a flights card: the route,
+  the day (one way, round trip with the day back, or the return flight), the passengers and the
+  cabin; Google's price insight (low, typical or high for the route, the typical range, the cheapest
+  price now) with a sparkline of the price history; then a row per flight with its price (for the
+  whole trip on a round trip), a Top pick badge, the airline's logo and names, the departure and
+  arrival times as the airports' local times (with "+1" when it lands a day later), the duration,
+  the stops, and flags for flights that are often delayed, overnight, or emit notably less or more
+  CO₂. Click a row to open its segments (flight number, aircraft, legroom) and layovers. After the
+  model picks a flight, the card lists where to book it: each seller with its price, fare and bag
+  fees, and whether it is a separate ticket for one way, with a Book on Google Flights button. Cedar
+  style puts it on the stage as a card, Claude style under the tool call (`flight-view.js` and
+  `flight-view.css`; see [Flight data and privacy](#flight-data-and-privacy))
 - An `ask_user` tool call, when the agent needs a clarification before it goes on, is drawn as a
   form: each question with its options as radio buttons (pick one) or checkboxes (pick any), and
   always a field for an answer in your own words (for an open question, that field alone). Send
@@ -129,7 +141,7 @@ Both interfaces have all of these, except where noted:
   of the registered models with the levels each declares; an optional access token
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
-  [the models](#models) cedar can use, its Brave Search and Best Buy keys and its Google account
+  [the models](#models) cedar can use, its Brave Search, Best Buy and SerpApi keys and its Google account
 - [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - Starred conversations: the star button in the header stars the open conversation, a chat or a
@@ -163,7 +175,7 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
-`stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `clarify-view.js` and `clarify-view.css` for clarifying questions,
+`stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `flight-view.js` and `flight-view.css` for flights, `clarify-view.js` and `clarify-view.css` for clarifying questions,
 `schedule.js` and `schedule.css` for scheduled agents, `star.js` and `star.css` for starred
 conversations, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
@@ -226,6 +238,16 @@ are links that open in a new tab without a referrer. Everything else is set as t
 the tool's result runs in the page. The chat server makes no requests for products; cedar searches
 and reads the pages (see the top-level README). Remove the Brave and Best Buy keys (Settings →
 Server) or set `PRODUCTS=off` on cedar to remove the tool.
+
+### Flight data and privacy
+
+Airline logos are the one thing on a flights card that comes from elsewhere: the browser loads them
+from the `https` addresses in the result (Google's `gstatic.com`), without a referrer; a logo that
+fails to load leaves a plane icon. The Google Flights button is a link that opens in a new tab
+without a referrer. Everything else is set as text, so nothing in the tool's result runs in the
+page. The chat server makes no requests for flights; cedar asks SerpApi's Google Flights API (see
+the top-level README). Remove the SerpApi key (Settings → Server) or set `FLIGHTS=off` on cedar to
+remove the tool.
 
 ## Configuration
 
@@ -487,7 +509,7 @@ and the error is relayed.
 Settings → **Server** is where the models and the API keys go. Without
 `CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
 the page is unlocked with that token for the browser session and manages cedar's
-[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (which also turns on product search) and its Best Buy key, which adds Best Buy's catalog to it (each checked with one search before it is saved, then shown
+[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's
@@ -583,6 +605,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET` / `PUT /api/integrations/settings` | Admin: cedar's server-wide settings (`GET` / `PUT /v1/admin/settings`, body `{"max_image_side"?, "sandbox_idle_minutes"?}`), relayed; the Server page's "Max image size" and "Pause when idle" |
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `PUT` / `DELETE /api/integrations/bestbuy` | Admin: save (`{"api_key"}`) or remove cedar's Best Buy key |
+| `PUT` / `DELETE /api/integrations/serpapi` | Admin: save (`{"api_key"}`) or remove cedar's SerpApi key, which turns on `search_flights` |
 | `GET /api/integrations/tools` | Admin: cedar's personal tools with their permissions and which secrets are saved (`GET /v1/admin/tools`), relayed |
 | `PUT` / `DELETE /api/integrations/tools/{name}/secrets/{secret}` | Admin: save (`{"value"}`) or remove a secret a personal tool declares |
 | `POST /api/integrations/tools/{name}/setup` | Admin: install a personal tool's packages again |

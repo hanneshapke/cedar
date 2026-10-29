@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Flight
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.OpenInBrowser
@@ -494,6 +495,7 @@ private fun openCardOnWeb(name: String): Int = when (name) {
     "plan_trip" -> R.string.open_route_on_web
     "compare_stocks" -> R.string.open_comparison_on_web
     "search_products" -> R.string.open_products_on_web
+    "search_flights" -> R.string.open_flights_on_web
     "generate_chart" -> R.string.open_chart_on_web
     else -> R.string.open_result_on_web
 }
@@ -512,6 +514,7 @@ private fun toolIcon(name: String): ImageVector = when (name) {
     "plan_trip" -> Icons.Outlined.Train
     "compare_stocks" -> Icons.Outlined.ShowChart
     "search_products" -> Icons.Outlined.ShoppingBag
+    "search_flights" -> Icons.Outlined.Flight
     "ask_user" -> Icons.AutoMirrored.Outlined.HelpOutline
     else -> Icons.Outlined.Build
 }

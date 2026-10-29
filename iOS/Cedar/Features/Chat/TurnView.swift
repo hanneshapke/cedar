@@ -418,6 +418,7 @@ struct ToolCallView: View {
         case "plan_trip": return "tram"
         case "compare_stocks": return "chart.line.uptrend.xyaxis"
         case "search_products": return "bag"
+        case "search_flights": return "airplane"
         case "ask_user": return "questionmark.bubble"
         case "browser": return "safari"
         default: return "wrench.and.screwdriver"
@@ -432,6 +433,7 @@ struct ToolCallView: View {
         case "plan_trip": return L10n.string("Open the route on the web")
         case "compare_stocks": return L10n.string("Open the comparison on the web")
         case "search_products": return L10n.string("Open the products on the web")
+        case "search_flights": return L10n.string("Open the flights on the web")
         case "generate_chart": return L10n.string("Open the chart on the web")
         default: return L10n.string("Open the result on the web")
         }

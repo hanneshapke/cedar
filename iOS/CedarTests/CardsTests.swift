@@ -209,6 +209,163 @@ final class CardsTests: XCTestCase {
         XCTAssertNil(Card.parse(name: "search_products", output: #"{"options":[]}"#))
     }
 
+    func testFlights() throws {
+        let output = #"""
+        {"kind":"flights","leg":"outbound","from":["sfo"],"to":["MUC"],"date":"2026-12-01","return_date":"2026-12-10",
+         "passengers":{"adults":2,"children":1,"infants_in_seat":0,"infants_on_lap":"1"},"cabin":"premium_economy",
+         "currency":"chf","sort":"best",
+         "options":[
+           {"id":1,"top_pick":true,"price":1234.0,"airlines":["Lufthansa",""],
+            "logo":"https://www.gstatic.com/flights/airline_logos/70px/LH.png",
+            "depart":{"airport":"SFO","name":"San Francisco International Airport","time":"2026-12-01T15:40"},
+            "arrive":{"airport":"MUC","name":"Munich International Airport","time":"2026-12-02T11:30"},
+            "duration_min":650,"stops":0,
+            "segments":[{"flight":"LH 455","airline":"Lufthansa","logo":"http://example.com/lh.png",
+              "from":{"airport":"SFO","time":"2026-12-01T15:40"},"to":{"airport":"MUC","time":"2026-12-02T11:30"},
+              "duration_min":650,"aircraft":"Airbus A350","cabin":"Economy","legroom":"31 in",
+              "overnight":true,"often_delayed":true}],
+            "layovers":[],"co2_kg":512,"co2_vs_typical_pct":-7,"departure_token":"DEP1"},
+           {"id":2,"top_pick":false,"price":null,"airlines":["United"],
+            "depart":{"airport":"SFO","time":"2026-12-01T07:00"},"arrive":{"airport":"MUC","time":"2026-12-02T25:99"},
+            "stops":1,
+            "segments":[{"flight":"UA 58","from":{"airport":"SFO"},"to":{"airport":"EWR"}},
+                        {"flight":"UA 30","from":{"airport":"EWR"},"to":{"airport":"MUC"}}],
+            "layovers":[{"airport":"EWR","name":"Newark","duration_min":120,"overnight":false}]},
+           {"id":3,"price":-5,"segments":[]},
+           {"id":4,"price":900}
+         ],
+         "more":12,
+         "insights":{"lowest":999.0,"level":"Low","typical":[1600.0,1100.0],
+                     "history":[{"date":"2026-10-01","price":1300},{"date":"2026-10-01","price":1200},
+                                {"date":"bad","price":1},{"date":"2026-10-02","price":1250}]},
+         "google_flights_url":"https://www.google.com/travel/flights?tfs=x",
+         "as_of":"2026-10-29T02:43:00Z","note":"For the model."}
+        """#
+        guard case .flights(let card)? = Card.parse(name: "search_flights", output: output) else { return XCTFail("expected flights") }
+        XCTAssertEqual(card.kind, .flights)
+        XCTAssertEqual(card.leg, .outbound)
+        XCTAssertEqual(card.route, "SFO → MUC")
+        XCTAssertEqual(card.date, StocksCard.day("2026-12-01"))
+        XCTAssertEqual(card.returnDate, StocksCard.day("2026-12-10"))
+        XCTAssertEqual(card.passengers, .init(adults: 2, children: 1, infantsInSeat: 0, infantsOnLap: 0), "counts must be numbers")
+        XCTAssertEqual(card.cabin, .premiumEconomy)
+        XCTAssertEqual(card.currency, "CHF")
+        XCTAssertEqual(card.more, 12)
+        XCTAssertFalse(card.noResults)
+        XCTAssertEqual(card.googleFlightsURL?.absoluteString, "https://www.google.com/travel/flights?tfs=x")
+        XCTAssertNotNil(card.asOf)
+        XCTAssertEqual(card.options.map(\.id), [0, 1], "an option needs its flights")
+
+        let lh = card.options[0]
+        XCTAssertTrue(lh.topPick)
+        XCTAssertEqual(lh.price, 1234)
+        XCTAssertEqual(lh.airlines, ["Lufthansa"])
+        XCTAssertEqual(lh.logo?.absoluteString, "https://www.gstatic.com/flights/airline_logos/70px/LH.png")
+        XCTAssertNil(lh.segments[0].logo, "only https logos")
+        XCTAssertEqual(lh.depart.code, "SFO")
+        XCTAssertEqual(lh.depart.name, "San Francisco International Airport")
+        XCTAssertEqual(lh.depart.time?.clock, "15:40")
+        XCTAssertEqual(lh.arrive.time?.clock, "11:30")
+        XCTAssertEqual(lh.arrivalDayOffset, 1)
+        XCTAssertEqual(lh.minutes, 650)
+        XCTAssertEqual(lh.stops, 0)
+        XCTAssertEqual(lh.segments[0].flight, "LH 455")
+        XCTAssertEqual(lh.segments[0].legroom, "31 in")
+        XCTAssertTrue(lh.oftenDelayed)
+        XCTAssertTrue(lh.overnight)
+        XCTAssertEqual(lh.co2Kg, 512)
+        XCTAssertEqual(lh.co2VsTypicalPct, -7)
+
+        let ua = card.options[1]
+        XCTAssertNil(ua.price)
+        XCTAssertFalse(ua.topPick)
+        XCTAssertNil(ua.arrive.time, "an impossible time is dropped")
+        XCTAssertEqual(ua.arrivalDayOffset, 0)
+        XCTAssertEqual(ua.stops, 1)
+        XCTAssertEqual(ua.stopAirports, ["EWR"])
+        XCTAssertEqual(ua.layovers, [.init(airport: "EWR", name: "Newark", minutes: 120, overnight: false)])
+        XCTAssertNil(ua.minutes)
+
+        let insights = try XCTUnwrap(card.insights)
+        XCTAssertEqual(insights.lowest, 999)
+        XCTAssertEqual(insights.level, "low")
+        XCTAssertEqual(insights.typicalLow, 1100)
+        XCTAssertEqual(insights.typicalHigh, 1600)
+        XCTAssertEqual(insights.history.map(\.price), [1300, 1250], "bad and repeated days are skipped")
+    }
+
+    func testFlightsBooking() throws {
+        let output = #"""
+        {"kind":"booking","leg":"one_way","from":["SFO"],"to":["MUC"],"date":"2026-12-01",
+         "passengers":{"adults":1},"cabin":"business","currency":"USD",
+         "flights":[{"id":1,"price":1234,"airlines":["Lufthansa"],
+           "depart":{"airport":"SFO","time":"2026-12-01T15:40"},"arrive":{"airport":"MUC","time":"2026-12-02T11:30"},
+           "stops":0,"segments":[{"flight":"LH 455","from":{"airport":"SFO"},"to":{"airport":"MUC"}}],"layovers":[]}],
+         "options":[
+           {"seller":"Lufthansa","part":"together","price":1234,"fare":"Economy Light",
+            "bags":["1 free carry-on","","1st checked bag: 60 USD"],"marketed_as":["LH 455"]},
+           {"seller":"Expedia","part":"departing","price":null,"bags":[],"marketed_as":[]},
+           {"seller":"","part":"returning","price":10},
+           {"part":"returning","price":10}
+         ],
+         "google_flights_url":"http://www.google.com/travel/flights","note":"..."}
+        """#
+        guard case .flights(let card)? = Card.parse(name: "search_flights", output: output) else { return XCTFail("expected a booking") }
+        XCTAssertEqual(card.kind, .booking)
+        XCTAssertEqual(card.leg, .oneWay)
+        XCTAssertEqual(card.cabin, .business)
+        XCTAssertEqual(card.passengers.adults, 1)
+        XCTAssertTrue(card.options.isEmpty)
+        XCTAssertNil(card.insights)
+        XCTAssertEqual(card.chosen.count, 1)
+        XCTAssertEqual(card.chosen[0].segments[0].flight, "LH 455")
+        XCTAssertEqual(card.sellers.map(\.name), ["Lufthansa", "Expedia"], "a seller needs a name")
+        XCTAssertEqual(card.sellers[0].part, .together)
+        XCTAssertEqual(card.sellers[0].price, 1234)
+        XCTAssertEqual(card.sellers[0].fare, "Economy Light")
+        XCTAssertEqual(card.sellers[0].bags, ["1 free carry-on", "1st checked bag: 60 USD"])
+        XCTAssertEqual(card.sellers[0].marketedAs, ["LH 455"])
+        XCTAssertEqual(card.sellers[1].part, .departing)
+        XCTAssertNil(card.sellers[1].price)
+        XCTAssertFalse(card.noResults)
+        XCTAssertNil(card.googleFlightsURL, "only https links")
+    }
+
+    func testFlightsWithoutResultsOrUsableData() throws {
+        let none = #"{"kind":"flights","leg":"one_way","from":["SFO"],"to":["MUC"],"currency":"EUR","options":[],"more":0,"no_results":"Google Flights found no flights."}"#
+        guard case .flights(let card)? = Card.parse(name: "search_flights", output: none) else { return XCTFail("expected flights") }
+        XCTAssertTrue(card.noResults)
+        XCTAssertTrue(card.options.isEmpty)
+
+        let soldOut = #"{"kind":"booking","flights":[],"options":[],"no_results":"Gone."}"#
+        guard case .flights(let booking)? = Card.parse(name: "search_flights", output: soldOut) else { return XCTFail("expected a booking") }
+        XCTAssertTrue(booking.noResults)
+        XCTAssertEqual(booking.currency, "USD", "a missing currency falls back")
+
+        XCTAssertNil(Card.parse(name: "search_flights", output: #"{"kind":"flights","options":[]}"#), "nothing to show")
+        XCTAssertNil(Card.parse(name: "search_flights", output: #"{"kind":"flights","options":[{"price":1,"segments":[]}]}"#))
+        XCTAssertNil(Card.parse(name: "search_flights", output: #"{"kind":"hotels","options":[]}"#))
+        XCTAssertNil(Card.parse(name: "search_flights", output: #"{"options":[{"segments":[{}]}]}"#), "a result needs its kind")
+        XCTAssertNil(Card.parse(name: "search_flights", output: #"{"kind":"booking","flights":[],"options":[{"price":1}]}"#))
+        XCTAssertNil(Card.parse(name: "search_flights", output: "Error: no SerpApi key"))
+
+        let many = (0..<30).map { _ in #"{"segments":[{"from":{"airport":"SFO"},"to":{"airport":"MUC"}}]}"# }.joined(separator: ",")
+        guard case .flights(let capped)? = Card.parse(name: "search_flights", output: #"{"kind":"flights","options":[\#(many)],"more":1e9}"#)
+        else { return XCTFail("expected flights") }
+        XCTAssertEqual(capped.options.count, FlightsCard.maxOptions)
+        XCTAssertEqual(capped.more, 0, "an impossible count is dropped")
+        XCTAssertEqual(capped.leg, .oneWay)
+        XCTAssertNil(capped.cabin)
+    }
+
+    func testFlightsRoute() {
+        XCTAssertEqual(FlightsCard.subject(.object(["from": .array([.string("SFO"), .string("oak")]), "to": .array([.string("MUC")])])),
+                       "SFO/OAK → MUC")
+        XCTAssertEqual(FlightsCard.subject(.object(["from": .string(" sfo, oak "), "to": .string("MUC,muc")])), "SFO/OAK → MUC")
+        XCTAssertNil(FlightsCard.subject(.object(["from": .string("SFO")])))
+        XCTAssertEqual(FlightsCard.airports(.array([.string("San Francisco"), .string("SFO"), .number(1)])), ["SFO"])
+    }
+
     func testCardIsParsedWhenTheResultArrives() throws {
         var transcript = TurnTranscript(turn: Turn(id: "t1", conversationId: "c1", runId: "r1", prompt: "map", status: .running))
         transcript.apply(RunEvent(seq: 1, type: "tool.call", data: .object(["id": .string("m"), "name": .string("show_map"), "input": .object([:])])))

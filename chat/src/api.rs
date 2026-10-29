@@ -83,6 +83,10 @@ const TRANSIT_VIEW_CSS: &str = include_str!("../static/transit-view.css");
 /// Draws the `compare_stocks` tool's result as quotes, a chart, the ratings and the news; both UIs load it.
 const STOCK_VIEW_JS: &str = include_str!("../static/stock-view.js");
 const STOCK_VIEW_CSS: &str = include_str!("../static/stock-view.css");
+/// Draws the `search_flights` tool's result as a flights card (prices, times, stops, segments) or the
+/// places to book a chosen flight; every UI loads it.
+const FLIGHT_VIEW_JS: &str = include_str!("../static/flight-view.js");
+const FLIGHT_VIEW_CSS: &str = include_str!("../static/flight-view.css");
 /// Draws a `generate_chart` call's data as an interactive chart card; every UI loads it.
 const CHART_VIEW_JS: &str = include_str!("../static/chart-view.js");
 const CHART_VIEW_CSS: &str = include_str!("../static/chart-view.css");
@@ -288,6 +292,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations", get(get_integrations))
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
         .route("/integrations/bestbuy", put(put_bestbuy_key).delete(delete_bestbuy_key))
+        .route("/integrations/serpapi", put(put_serpapi_key).delete(delete_serpapi_key))
         .route("/integrations/models", get(get_models))
         .route("/integrations/server-models", post(list_server_models))
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
@@ -327,6 +332,8 @@ pub fn router(state: AppState) -> Router {
         .route("/transit-view.css", get(|| async { asset(CSS, TRANSIT_VIEW_CSS) }))
         .route("/stock-view.js", get(|| async { asset(JS, STOCK_VIEW_JS) }))
         .route("/stock-view.css", get(|| async { asset(CSS, STOCK_VIEW_CSS) }))
+        .route("/flight-view.js", get(|| async { asset(JS, FLIGHT_VIEW_JS) }))
+        .route("/flight-view.css", get(|| async { asset(CSS, FLIGHT_VIEW_CSS) }))
         .route("/chart-view.js", get(|| async { asset(JS, CHART_VIEW_JS) }))
         .route("/chart-view.css", get(|| async { asset(CSS, CHART_VIEW_CSS) }))
         .route("/product-view.js", get(|| async { asset(JS, PRODUCT_VIEW_JS) }))
@@ -1577,6 +1584,21 @@ async fn put_bestbuy_key(
 async fn delete_bestbuy_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_bestbuy_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn put_serpapi_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.set_serpapi_key(&body.api_key).await?))
+}
+
+async fn delete_serpapi_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_serpapi_key().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

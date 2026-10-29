@@ -1,7 +1,7 @@
 import Foundation
 
 /// A tool result the app draws as a card: `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`,
-/// `search_products`, and the data of a `generate_chart` call. Parsed with the same rules as the web UI's
+/// `search_products`, `search_flights`, and the data of a `generate_chart` call. Parsed with the same rules as the web UI's
 /// views (chat/static/map-view.js, recipe-view.js, transit-view.js, stock-view.js, product-view.js,
 /// chart-view.js). Everything in a result came from the model or the network, so
 /// text is clipped, numbers and coordinates are checked, and links are only kept if they are https.
@@ -11,6 +11,7 @@ enum Card: Hashable, Sendable {
     case trip(TripCard)
     case stocks(StocksCard)
     case products(ProductsCard)
+    case flights(FlightsCard)
     case chart(ChartCard)
 
     /// The card for a finished call, or `nil` when it isn't a card tool or its result isn't usable.
@@ -25,6 +26,7 @@ enum Card: Hashable, Sendable {
         case "plan_trip": return TripCard.parse(value).map(Card.trip)
         case "compare_stocks": return StocksCard.parse(value).map(Card.stocks)
         case "search_products": return ProductsCard.parse(value).map(Card.products)
+        case "search_flights": return FlightsCard.parse(value).map(Card.flights)
         default: return nil
         }
     }
@@ -828,6 +830,379 @@ struct ProductsCard: Hashable, Sendable {
             sources: Array((p["sources"]?.arrayValue ?? []).compactMap { CardParse.amount($0, max: 1000).map { Int($0) } }.prefix(6)),
             comparable: (p["comparable"]?.arrayValue ?? []).compactMap { sku($0) }
         )
+    }
+}
+
+// MARK: - search_flights
+
+/// `{"kind": "flights", "leg", "from": [codes], "to": [codes], "date", "return_date"?, "passengers",
+/// "cabin", "currency", "sort", "options": [{"id", "top_pick", "price", "airlines", "logo"?, "depart",
+/// "arrive", "duration_min"?, "stops", "segments", "layovers", "co2_kg"?, "co2_vs_typical_pct"?}],
+/// "more", "no_results"?, "insights"?, "google_flights_url"?, "as_of"}`, or for one chosen option
+/// `{"kind": "booking", ..., "flights": [options], "options": [{"seller", "part", "price", "fare"?,
+/// "bags", "marketed_as"}], "no_results"?, "google_flights_url"?}`. The data is Google Flights'
+/// through SerpApi; the tokens and the note are for the model and aren't kept.
+struct FlightsCard: Hashable, Sendable {
+    enum Kind: String, Hashable, Sendable {
+        case flights, booking
+    }
+
+    /// Which way the listed flights go: one way, a round trip's outbound flights (priced for the
+    /// whole trip), or the return flights that go with a chosen outbound one.
+    enum Leg: String, Hashable, Sendable {
+        case oneWay = "one_way"
+        case outbound
+        case returning = "return"
+    }
+
+    enum Cabin: String, Hashable, Sendable {
+        case economy
+        case premiumEconomy = "premium_economy"
+        case business, first
+
+        var label: String {
+            switch self {
+            case .economy: return L10n.string("Economy")
+            case .premiumEconomy: return L10n.string("Premium economy")
+            case .business: return L10n.string("Business class")
+            case .first: return L10n.string("First class")
+            }
+        }
+    }
+
+    struct Passengers: Hashable, Sendable {
+        var adults = 1
+        var children = 0
+        var infantsInSeat = 0
+        var infantsOnLap = 0
+
+        static func parse(_ value: JSONValue?) -> Passengers {
+            func count(_ key: String) -> Int { Int(CardParse.amount(value?[key], max: 9) ?? 0) }
+            return Passengers(adults: count("adults"), children: count("children"),
+                              infantsInSeat: count("infants_in_seat"), infantsOnLap: count("infants_on_lap"))
+        }
+    }
+
+    /// A time as the airport's clock shows it, without a zone: never converted.
+    struct LocalTime: Hashable, Sendable {
+        /// `yyyy-MM-dd`, at midnight UTC.
+        let day: Date
+        /// `HH:mm`, as given.
+        let clock: String
+
+        /// `2026-12-01T15:40` (seconds, if any, are dropped).
+        static func parse(_ value: JSONValue?) -> LocalTime? {
+            guard let s = value?.stringValue, s.count >= 16, s.count <= 25 else { return nil }
+            let chars = Array(s)
+            guard chars[10] == "T" || chars[10] == " ", let day = StocksCard.day(String(chars[0..<10])),
+                  chars[13] == ":", let h = Int(String(chars[11..<13])), let m = Int(String(chars[14..<16])),
+                  (chars[11..<13] + chars[14..<16]).allSatisfy({ $0.isASCII && $0.isNumber }),
+                  (0...23).contains(h), (0...59).contains(m) else { return nil }
+            return LocalTime(day: day, clock: String(chars[11..<16]))
+        }
+
+        /// How many days after `other` this is (`+1` for an arrival the next morning).
+        func days(after other: LocalTime) -> Int {
+            Int((day.timeIntervalSince(other.day) / 86_400).rounded())
+        }
+    }
+
+    /// Where a flight leaves from or lands.
+    struct Airport: Hashable, Sendable {
+        /// The IATA code; empty when Google gave none.
+        let code: String
+        let name: String?
+        let time: LocalTime?
+
+        /// The code, or the name when there is no code.
+        var label: String { code.isEmpty ? (name ?? "?") : code }
+
+        static func parse(_ value: JSONValue?) -> Airport {
+            Airport(code: FlightsCard.code(value?["airport"]) ?? "", name: CardParse.text(value?["name"], max: 120),
+                    time: LocalTime.parse(value?["time"]))
+        }
+    }
+
+    /// One flight of an option.
+    struct Segment: Hashable, Sendable {
+        let flight: String?
+        let airline: String?
+        let logo: URL?
+        let from: Airport
+        let to: Airport
+        let minutes: Int?
+        let aircraft: String?
+        let cabin: String?
+        let legroom: String?
+        let overnight: Bool
+        let oftenDelayed: Bool
+    }
+
+    struct Layover: Hashable, Sendable {
+        let airport: String
+        let name: String?
+        let minutes: Int?
+        let overnight: Bool
+    }
+
+    /// A way to fly the leg: one or more flights, with the price for all passengers.
+    struct Option: Hashable, Sendable, Identifiable {
+        /// Its place in the card.
+        let id: Int
+        let topPick: Bool
+        /// `nil` when Google gave no price.
+        let price: Double?
+        let airlines: [String]
+        let logo: URL?
+        let depart: Airport
+        let arrive: Airport
+        let minutes: Int?
+        let stops: Int
+        let segments: [Segment]
+        let layovers: [Layover]
+        /// Per passenger.
+        let co2Kg: Int?
+        /// Against a typical flight on the route; negative is less.
+        let co2VsTypicalPct: Int?
+
+        /// Days between departure and arrival, local dates (0 when unknown).
+        var arrivalDayOffset: Int {
+            guard let d = depart.time, let a = arrive.time else { return 0 }
+            return a.days(after: d)
+        }
+
+        /// The airports it stops at: the layovers', else where its flights land on the way.
+        var stopAirports: [String] {
+            let codes = layovers.map(\.airport).filter { !$0.isEmpty }
+            if !codes.isEmpty { return codes }
+            return segments.dropLast().map(\.to.code).filter { !$0.isEmpty }
+        }
+
+        var oftenDelayed: Bool { segments.contains(where: \.oftenDelayed) }
+        var overnight: Bool { segments.contains(where: \.overnight) || layovers.contains(where: \.overnight) }
+    }
+
+    struct PricePoint: Hashable, Sendable {
+        let date: Date
+        let price: Double
+    }
+
+    /// Google's verdict on the prices.
+    struct Insights: Hashable, Sendable {
+        let lowest: Double
+        /// `low`, `typical`, `high`, or another word of Google's.
+        let level: String?
+        let typicalLow: Double?
+        let typicalHigh: Double?
+        /// Oldest first, at least two points.
+        let history: [PricePoint]
+    }
+
+    /// Who sells a chosen flight, for how much.
+    struct Seller: Hashable, Sendable, Identifiable {
+        enum Part: String, Hashable, Sendable {
+            /// The whole trip on one ticket.
+            case together
+            /// One way, on a ticket of its own.
+            case departing, returning
+        }
+
+        let id: Int
+        let name: String
+        let part: Part
+        let price: Double?
+        let fare: String?
+        let bags: [String]
+        let marketedAs: [String]
+    }
+
+    static let maxOptions = 20
+    static let maxSellers = 12
+    static let maxAirports = 7
+
+    let kind: Kind
+    let leg: Leg
+    let from: [String]
+    let to: [String]
+    /// The day of this leg, at midnight UTC.
+    let date: Date?
+    let returnDate: Date?
+    let passengers: Passengers
+    let cabin: Cabin?
+    let currency: String
+    /// A search's options; empty for a booking.
+    let options: [Option]
+    /// Options the search found that aren't listed.
+    let more: Int
+    let noResults: Bool
+    let insights: Insights?
+    let googleFlightsURL: URL?
+    let asOf: Date?
+    /// A booking's chosen flight(s).
+    let chosen: [Option]
+    let sellers: [Seller]
+
+    /// "SFO/OAK → MUC"
+    var route: String { Self.route(from: from, to: to) }
+
+    static func route(from: [String], to: [String]) -> String {
+        "\(from.joined(separator: "/")) → \(to.joined(separator: "/"))"
+    }
+
+    /// The route a `search_flights` call asks for, from its input, or `nil` without both ends.
+    static func subject(_ input: JSONValue) -> String? {
+        let from = airports(input["from"]), to = airports(input["to"])
+        guard !from.isEmpty, !to.isEmpty else { return nil }
+        return route(from: from, to: to)
+    }
+
+    /// Airport codes, as a list or a comma-separated string, upper-cased.
+    static func airports(_ value: JSONValue?) -> [String] {
+        let raw: [JSONValue]
+        if let list = value?.arrayValue {
+            raw = list
+        } else if let s = value?.stringValue {
+            raw = s.split(separator: ",").map { JSONValue.string(String($0)) }
+        } else {
+            raw = []
+        }
+        var out: [String] = []
+        for code in raw.compactMap(code) where !out.contains(code) && out.count < maxAirports {
+            out.append(code)
+        }
+        return out
+    }
+
+    /// An airport code: letters and digits, at most 4, upper-cased.
+    static func code(_ value: JSONValue?) -> String? {
+        guard let s = CardParse.text(value, max: 5), s.count <= 4,
+              s.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
+        return s.uppercased()
+    }
+
+    static func parse(_ value: JSONValue) -> FlightsCard? {
+        guard let kind = value["kind"]?.stringValue.flatMap(Kind.init(rawValue:)),
+              let rawOptions = value["options"]?.arrayValue else { return nil }
+        let noResults = CardParse.text(value["no_results"]) != nil || value["no_results"]?.boolValue == true
+        var options: [Option] = []
+        var chosen: [Option] = []
+        var sellers: [Seller] = []
+        switch kind {
+        case .flights:
+            options = rawOptions.prefix(maxOptions).compactMap(option).enumerated().map { i, o in o.with(id: i) }
+            guard !options.isEmpty || noResults else { return nil }
+        case .booking:
+            chosen = (value["flights"]?.arrayValue ?? []).prefix(4).compactMap(option).enumerated().map { i, o in o.with(id: i) }
+            sellers = rawOptions.prefix(maxSellers).compactMap(seller).enumerated().map { i, s in
+                Seller(id: i, name: s.name, part: s.part, price: s.price, fare: s.fare, bags: s.bags, marketedAs: s.marketedAs)
+            }
+            guard !chosen.isEmpty || !sellers.isEmpty || noResults else { return nil }
+        }
+        return FlightsCard(
+            kind: kind,
+            leg: value["leg"]?.stringValue.flatMap(Leg.init(rawValue:)) ?? .oneWay,
+            from: airports(value["from"]), to: airports(value["to"]),
+            date: value["date"]?.stringValue.flatMap(StocksCard.day),
+            returnDate: value["return_date"]?.stringValue.flatMap(StocksCard.day),
+            passengers: Passengers.parse(value["passengers"]),
+            cabin: value["cabin"]?.stringValue.flatMap(Cabin.init(rawValue:)),
+            currency: currencyCode(value["currency"]) ?? "USD",
+            options: options,
+            more: kind == .flights ? Int(CardParse.amount(value["more"], max: 1000) ?? 0) : 0,
+            noResults: noResults && options.isEmpty && sellers.isEmpty,
+            insights: kind == .flights ? insights(value["insights"]) : nil,
+            googleFlightsURL: CardParse.https(value["google_flights_url"]),
+            asOf: CardParse.time(value["as_of"]),
+            chosen: chosen, sellers: sellers
+        )
+    }
+
+    /// A three-letter currency code, upper-cased.
+    private static func currencyCode(_ value: JSONValue?) -> String? {
+        guard let c = CardParse.text(value, max: 4), c.count == 3, c.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+        return c.uppercased()
+    }
+
+    private static func minutes(_ value: JSONValue?) -> Int? {
+        CardParse.amount(value, max: 10_000).map { Int($0.rounded()) }
+    }
+
+    private static func strings(_ value: JSONValue?, max: Int, count: Int) -> [String] {
+        Array((value?.arrayValue ?? []).compactMap { CardParse.text($0, max: max) }.prefix(count))
+    }
+
+    private static func option(_ o: JSONValue) -> Option? {
+        guard case .object = o, let rawSegments = o["segments"]?.arrayValue else { return nil }
+        let segments = rawSegments.prefix(8).compactMap { s -> Segment? in
+            guard case .object = s else { return nil }
+            return Segment(
+                flight: CardParse.text(s["flight"], max: 20), airline: CardParse.text(s["airline"], max: 80),
+                logo: CardParse.https(s["logo"]),
+                from: Airport.parse(s["from"]), to: Airport.parse(s["to"]),
+                minutes: minutes(s["duration_min"]), aircraft: CardParse.text(s["aircraft"], max: 80),
+                cabin: CardParse.text(s["cabin"], max: 40), legroom: CardParse.text(s["legroom"], max: 20),
+                overnight: s["overnight"]?.boolValue == true, oftenDelayed: s["often_delayed"]?.boolValue == true
+            )
+        }
+        guard let first = segments.first, let last = segments.last else { return nil }
+        let layovers = (o["layovers"]?.arrayValue ?? []).prefix(8).compactMap { l -> Layover? in
+            guard case .object = l else { return nil }
+            return Layover(airport: code(l["airport"]) ?? "", name: CardParse.text(l["name"], max: 120),
+                           minutes: minutes(l["duration_min"]), overnight: l["overnight"]?.boolValue == true)
+        }
+        var airlines = strings(o["airlines"], max: 80, count: 4)
+        if airlines.isEmpty {
+            for a in segments.compactMap(\.airline) where !airlines.contains(a) && airlines.count < 4 { airlines.append(a) }
+        }
+        let depart = o["depart"].map { Airport.parse($0) } ?? first.from
+        let arrive = o["arrive"].map { Airport.parse($0) } ?? last.to
+        return Option(
+            id: 0, topPick: o["top_pick"]?.boolValue == true, price: CardParse.amount(o["price"]),
+            airlines: airlines, logo: CardParse.https(o["logo"]) ?? first.logo,
+            depart: depart, arrive: arrive, minutes: minutes(o["duration_min"]),
+            stops: Int(CardParse.amount(o["stops"], max: 10) ?? Double(segments.count - 1)),
+            segments: Array(segments), layovers: Array(layovers),
+            co2Kg: CardParse.amount(o["co2_kg"], max: 1e6).map { Int($0.rounded()) },
+            co2VsTypicalPct: o["co2_vs_typical_pct"]?.doubleValue.flatMap { abs($0) <= 1000 ? Int($0.rounded()) : nil }
+        )
+    }
+
+    private static func seller(_ s: JSONValue) -> Seller? {
+        guard let name = CardParse.text(s["seller"], max: 80) else { return nil }
+        return Seller(
+            id: 0, name: name,
+            part: s["part"]?.stringValue.flatMap(Seller.Part.init(rawValue:)) ?? .together,
+            price: CardParse.amount(s["price"]), fare: CardParse.text(s["fare"], max: 80),
+            bags: strings(s["bags"], max: 120, count: 6), marketedAs: strings(s["marketed_as"], max: 20, count: 6)
+        )
+    }
+
+    private static func insights(_ v: JSONValue?) -> Insights? {
+        guard let v, let lowest = CardParse.amount(v["lowest"]) else { return nil }
+        var low: Double?
+        var high: Double?
+        if let typical = v["typical"]?.arrayValue, typical.count == 2,
+           let a = CardParse.amount(typical[0]), let b = CardParse.amount(typical[1]) {
+            low = min(a, b)
+            high = max(a, b)
+        }
+        var history: [PricePoint] = []
+        for p in (v["history"]?.arrayValue ?? []).suffix(90) {
+            guard let date = p["date"]?.stringValue.flatMap(StocksCard.day), let price = CardParse.amount(p["price"]) else { continue }
+            if let last = history.last, date <= last.date { continue }
+            history.append(PricePoint(date: date, price: price))
+        }
+        return Insights(lowest: lowest, level: CardParse.text(v["level"], max: 40)?.lowercased(),
+                        typicalLow: low, typicalHigh: high, history: history.count >= 2 ? history : [])
+    }
+}
+
+extension FlightsCard.Option {
+    /// The same option at place `id` in the card.
+    func with(id: Int) -> FlightsCard.Option {
+        FlightsCard.Option(id: id, topPick: topPick, price: price, airlines: airlines, logo: logo, depart: depart,
+                           arrive: arrive, minutes: minutes, stops: stops, segments: segments, layovers: layovers,
+                           co2Kg: co2Kg, co2VsTypicalPct: co2VsTypicalPct)
     }
 }
 

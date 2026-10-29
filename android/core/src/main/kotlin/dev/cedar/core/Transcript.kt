@@ -42,13 +42,14 @@ data class ToolCall(
                 input["path"].str ?: input["url"].str ?: ""
             "fetch_url" -> input["url"].str ?: ""
             "web_search" -> input["query"].str ?: ""
-            "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products" -> cardTitle ?: ""
+            "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights" -> cardTitle ?: ""
             else -> input.pretty().replace("\n", " ")
         }
 
     /** What a card is about, from its result when it has one, else its input. */
     val cardTitle: String?
         get() {
+            if (name == "search_flights") return flightsRoute
             val result = output?.let(::parseJson)
             if (result != null) {
                 result["title"].str?.takeIf { it.isNotEmpty() }?.let { return it }
@@ -72,9 +73,20 @@ data class ToolCall(
             return null
         }
 
+    /** "SFO → MUC" for a flight search: the route it was asked for, else the one its result names. */
+    private val flightsRoute: String?
+        get() {
+            for (value in listOfNotNull(input, output?.let(::parseJson))) {
+                val from = FlightsCard.airports(value["from"])
+                val to = FlightsCard.airports(value["to"])
+                if (from.isNotEmpty() && to.isNotEmpty()) return FlightsCard.route(from, to)
+            }
+            return null
+        }
+
     companion object {
-        /** Tools whose result is drawn as a card (map, recipe, route, stocks, products, and a chart from its data). */
-        val CARD_TOOLS = setOf("show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "generate_chart")
+        /** Tools whose result is drawn as a card (map, recipe, route, stocks, products, flights, and a chart from its data). */
+        val CARD_TOOLS = setOf("show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "generate_chart")
     }
 }
 

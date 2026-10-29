@@ -55,6 +55,7 @@ const ICONS = {
   code: '<svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>',
   chart: '<svg viewBox="0 0 24 24"><path d="M4 4v16h16M8 16v-4M12 16V8M16 16v-6"/></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
+  plane: '<svg viewBox="0 0 24 24"><path d="M12 2c.8 0 1.5.7 1.5 1.5V9l7.5 4.5V16l-7.5-2.5V18l2 1.5V21L12 20l-3.5 1v-1.5l2-1.5v-4.5L3 16v-2.5L10.5 9V3.5C10.5 2.7 11.2 2 12 2z"/></svg>',
 };
 
 function escapeHtml(s) {
@@ -716,7 +717,7 @@ const TOOL_ICONS = {
   generate_chart: 'chart', fetch_url: 'globe', download_file: 'download', weather_forecast: 'globe',
   show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', compare_stocks: 'chart',
   show_map: 'globe', show_recipe: 'document', plan_trip: 'globe', ask_user: 'tool',
-  search_products: 'search',
+  search_products: 'search', search_flights: 'plane',
 };
 
 function toolSummary(name, input) {
@@ -724,6 +725,7 @@ function toolSummary(name, input) {
   if (typeof input.command === 'string') return input.command.split('\n')[0];
   if (name === 'show_recipe' && typeof input.title === 'string') return input.title;
   if (name === 'compare_stocks') return stocksSubject(input);
+  if (name === 'search_flights') return flightsSubject(input);
   if (name === 'ask_user' && Array.isArray(input.questions)) {
     return input.questions.map((q) => q?.header || q?.question).filter(Boolean).join(' · ');
   }
@@ -746,6 +748,13 @@ function tripSubject(input) {
   if (input.title) return input.title;
   const end = (e) => (typeof e === 'string' ? e : e?.label || e?.location || (e ? `${e.latitude}, ${e.longitude}` : '?'));
   return `${end(input.from)} → ${end(input.to)}`;
+}
+
+/** What a search_flights call is about: "SFO → MUC", several airports joined with "/". */
+function flightsSubject(input) {
+  const side = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : [])
+    .map((c) => (typeof c === 'string' ? c.trim() : '')).filter(Boolean).join('/');
+  return `${side(input.from) || '?'} → ${side(input.to) || '?'}`;
 }
 
 /** What a compare_stocks call is about: its symbols. */
@@ -805,10 +814,11 @@ function toolResult(view, d) {
   }
   details.querySelector('.tool-body').append(label, out);
   // A map is the point of show_map, a recipe card of show_recipe, the stock card of
-  // compare_stocks, the product card of search_products, and the chart card of generate_chart
+  // compare_stocks, the product card of search_products, the flights card of search_flights, and
+  // the chart card of generate_chart
   // (drawn from the call's data), so each sits under the call instead of inside the collapsed
   // details.
-  const card = { show_map: cedarMap, show_recipe: cedarRecipe, compare_stocks: cedarStocks, search_products: cedarProducts, generate_chart: cedarChart }[details.dataset.tool];
+  const card = { show_map: cedarMap, show_recipe: cedarRecipe, compare_stocks: cedarStocks, search_products: cedarProducts, search_flights: cedarFlights, generate_chart: cedarChart }[details.dataset.tool];
   let carded = false;
   if (card && !d.is_error) {
     const spec = card.parse(text, details.cedarInput);

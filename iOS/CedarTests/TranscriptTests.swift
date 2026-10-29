@@ -177,6 +177,15 @@ final class TranscriptTests: XCTestCase {
         let shop = ToolCall(id: "4", name: "search_products", input: .object(["query": .string("headphones")]))
         XCTAssertTrue(shop.isCard)
         XCTAssertEqual(shop.summary, "headphones")
+        var flights = ToolCall(id: "5", name: "search_flights",
+                               input: .object(["from": .array([.string("SFO"), .string("OAK")]), "to": .array([.string("MUC")]),
+                                               "date": .string("2026-12-01")]))
+        XCTAssertTrue(flights.isCard)
+        XCTAssertEqual(flights.summary, "SFO/OAK → MUC")
+        flights.output = #"{"kind":"flights","from":["MUC"],"to":["SFO"],"options":[]}"#
+        XCTAssertEqual(flights.summary, "SFO/OAK → MUC", "the route asked for, also for the return flights")
+        let bare = ToolCall(id: "6", name: "search_flights", input: .object([:]), output: #"{"kind":"flights","from":["SFO"],"to":["MUC"]}"#)
+        XCTAssertEqual(bare.summary, "SFO → MUC")
     }
 
     func testAChartDrawnAsACardIsNotShownAgainAsAPicture() {

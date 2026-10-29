@@ -343,6 +343,42 @@
     <string name="chart_bin">Klasse</string>
     <string name="chart_first_rows">Die ersten %1$d von %2$d Zeilen; die gespeicherte Datei hat alle.</string>
     <string name="chart_series">Reihe %1$d</string>
+    <string name="open_flights_on_web">Die Flüge im Web öffnen</string>
+    <string name="flights_one_way">Nur Hinflug</string>
+    <string name="flights_round_trip_back">Hin- und Rückflug, zurück am %1$s</string>
+    <string name="flights_return_flight">Rückflug</string>
+    <string name="cabin_economy">Economy</string>
+    <string name="cabin_premium_economy">Premium Economy</string>
+    <string name="cabin_business">Business</string>
+    <string name="cabin_first">First</string>
+    <string name="flights_prices_low">Die Preise für diese Strecke sind niedrig</string>
+    <string name="flights_prices_typical">Die Preise für diese Strecke sind üblich</string>
+    <string name="flights_prices_high">Die Preise für diese Strecke sind hoch</string>
+    <string name="flights_prices_level">Preisniveau für diese Strecke: %1$s</string>
+    <string name="flights_prices_lowest">Preise für diese Strecke ab %1$s</string>
+    <string name="flights_typical_range">üblich %1$s</string>
+    <string name="flights_round_trip_price">Preis für Hin- und Rückflug</string>
+    <string name="flights_all_passengers">für alle Reisenden</string>
+    <string name="flights_nonstop">Nonstop</string>
+    <string name="flights_often_delayed">Oft verspätet</string>
+    <string name="flights_overnight">Über Nacht</string>
+    <string name="flights_co2_less">%1$s weniger CO₂</string>
+    <string name="flights_co2_more">%1$s mehr CO₂</string>
+    <string name="flights_co2_typical">Übliches CO₂</string>
+    <string name="flights_co2_kg">%1$s kg CO₂ pro Person</string>
+    <string name="flights_layover">%1$s Aufenthalt in %2$s</string>
+    <string name="flights_legroom">Beinfreiheit %1$s</string>
+    <string name="flights_no_results">Google Flights hat für diese Suche keine Flüge gefunden. Versuch es mit anderen Daten oder Flughäfen.</string>
+    <string name="flights_no_booking">Google Flights listet für diesen Flug keine Buchungsoptionen mehr. Such erneut nach aktuellen Preisen.</string>
+    <string name="flights_open_google">In Google Flights öffnen</string>
+    <string name="flights_book_google">Bei Google Flights buchen</string>
+    <string name="flights_as_of">Preise vom %1$s; sie ändern sich schnell</string>
+    <string name="flights_chosen">Dein Flug</string>
+    <string name="flights_where_to_book">Wo du buchen kannst</string>
+    <string name="flights_separate_departing">Eigenes Ticket: Hinflug</string>
+    <string name="flights_separate_returning">Eigenes Ticket: Rückflug</string>
+    <string name="flights_sold_as">Verkauft als %1$s</string>
+    <string name="flights_price_history">Preisverlauf</string>
     <plurals name="attach_too_many">
         <item quantity="one">Höchstens %d Datei pro Nachricht</item>
         <item quantity="other">Höchstens %d Dateien pro Nachricht</item>
@@ -366,5 +402,25 @@
     <plurals name="reviews_average">
         <item quantity="one">%1$s aus %2$s Bewertung</item>
         <item quantity="other">%1$s aus %2$s Bewertungen</item>
+    </plurals>
+    <plurals name="flights_adults">
+        <item quantity="one">%d Erwachsener</item>
+        <item quantity="other">%d Erwachsene</item>
+    </plurals>
+    <plurals name="flights_children">
+        <item quantity="one">%d Kind</item>
+        <item quantity="other">%d Kinder</item>
+    </plurals>
+    <plurals name="flights_infants">
+        <item quantity="one">%d Kleinkind</item>
+        <item quantity="other">%d Kleinkinder</item>
+    </plurals>
+    <plurals name="flights_stops">
+        <item quantity="one">%d Zwischenstopp</item>
+        <item quantity="other">%d Zwischenstopps</item>
+    </plurals>
+    <plurals name="flights_more_options">
+        <item quantity="one">%d weitere Option</item>
+        <item quantity="other">%d weitere Optionen</item>
     </plurals>
 </resources>

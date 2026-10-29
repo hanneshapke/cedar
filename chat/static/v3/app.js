@@ -321,6 +321,7 @@ const TOOLS = {
   plan_trip: { doing: 'v3.tool.planning', did: 'v3.tool.planned', subject: (i) => tripSubject(i), icon: 'trip' },
   compare_stocks: { doing: 'v3.tool.lookingUp', did: 'v3.tool.lookedUp', subject: (i) => stocksSubject(i), icon: 'stocks' },
   search_products: { doing: 'v3.tool.shopping', did: 'v3.tool.shopped', subject: (i) => (typeof i.query === 'string' ? i.query : ''), icon: 'shop' },
+  search_flights: { doing: 'v3.tool.searchingFlights', did: 'v3.tool.searchedFlights', subject: (i) => flightsSubject(i), icon: 'plane' },
   ask_user: { doing: 'v3.tool.asking', did: 'v3.tool.asked', subject: (i) => questionsSubject(i), icon: 'question' },
 };
 
@@ -348,11 +349,19 @@ const ICONS = {
   trip: '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 17h5a3 3 0 0 0 0-6h-2a3 3 0 0 1 0-6h5"/>',
   stocks: '<path d="M3 17l5-5 4 3 5-7 4 4"/><path d="M17 8h4v4"/>',
   shop: '<path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/>',
+  plane: '<path d="M12 2c.8 0 1.5.7 1.5 1.5V9l7.5 4.5V16l-7.5-2.5V18l2 1.5V21L12 20l-3.5 1v-1.5l2-1.5v-4.5L3 16v-2.5L10.5 9V3.5C10.5 2.7 11.2 2 12 2z"/>',
   question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-9 8"/>',
   tool: '<path d="M14 4a4 4 0 0 0 5 5l-9 9a2.5 2.5 0 0 1-3.5-3.5l9-9z"/><path d="M5 19l1-1"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.tool}</svg>`;
+
+/** What a search_flights call is about: "SFO → MUC", several airports joined with "/". */
+function flightsSubject(input) {
+  const side = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : [])
+    .map((c) => (typeof c === 'string' ? c.trim() : '')).filter(Boolean).join('/');
+  return `${side(input.from) || '?'} → ${side(input.to) || '?'}`;
+}
 
 /** What a compare_stocks call is about: its symbols. */
 function stocksSubject(input) {
@@ -389,6 +398,11 @@ const WIDGETS = {
   plan_trip: { lib: () => cedarTransit, waiting: 'v3.widget.findingRoutes', count: (s) => tr('v3.count.ways', { count: s.options.length }) },
   compare_stocks: { lib: () => cedarStocks, waiting: 'v3.widget.readingPrices', count: (s) => tr('v3.count.stocks', { count: s.stocks.length }) },
   search_products: { lib: () => cedarProducts, waiting: 'v3.widget.searchingStore', count: (s) => tr('v3.count.options', { count: s.options.length }) },
+  search_flights: {
+    lib: () => cedarFlights,
+    waiting: 'v3.widget.searchingFlights',
+    count: (s) => (s.kind === 'booking' ? tr('v3.count.sellers', { count: s.sellers.length }) : tr('v3.count.flights', { count: s.options.length })),
+  },
   // Drawn from the call's data rather than its output, which only says where the picture went.
   generate_chart: { lib: () => cedarChart, waiting: 'v3.widget.drawing', count: () => tr('v3.saved') },
 };

@@ -190,6 +190,15 @@ class TranscriptTest {
         val shop = ToolCall("4", "search_products", j("""{"query":"headphones"}"""))
         assertTrue(shop.isCard)
         assertEquals("headphones", shop.summary)
+        val flights = ToolCall("5", "search_flights", j("""{"from":["SFO"],"to":["MUC"],"date":"2026-12-01"}"""))
+        assertTrue(flights.isCard)
+        assertEquals("SFO → MUC", flights.summary)
+        assertEquals("SFO/OAK → MUC/FRA", ToolCall("6", "search_flights", j("""{"from":"sfo, oak","to":["MUC","FRA"]}""")).summary)
+        // A return leg's result names the airports the other way round; the line keeps the route asked for.
+        val back = flights.copy(output = """{"kind":"flights","leg":"return","from":["MUC"],"to":["SFO"],"options":[]}""")
+        assertEquals("SFO → MUC", back.summary)
+        assertEquals("MUC → SFO", ToolCall("7", "search_flights", j("{}"), output = back.output).summary)
+        assertEquals("", ToolCall("8", "search_flights", j("{}")).summary)
     }
 
     @Test

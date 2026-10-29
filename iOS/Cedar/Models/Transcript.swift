@@ -32,9 +32,10 @@ struct ToolCall: Identifiable, Hashable, Sendable {
 
     var isFinished: Bool { output != nil }
 
-    /// Tools whose result is drawn as a card (map, recipe, route, stocks, products, and a chart from its
-    /// data), here and in the web UI.
-    static let cardTools: Set<String> = ["show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "generate_chart"]
+    /// Tools whose result is drawn as a card (map, recipe, route, stocks, products, flights, and a chart
+    /// from its data), here and in the web UI.
+    static let cardTools: Set<String> = ["show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products",
+                                         "search_flights", "generate_chart"]
 
     var isCard: Bool { Self.cardTools.contains(name) }
 
@@ -52,7 +53,7 @@ struct ToolCall: Identifiable, Hashable, Sendable {
             return input["url"]?.stringValue ?? ""
         case "web_search":
             return input["query"]?.stringValue ?? ""
-        case "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products":
+        case "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights":
             return cardTitle ?? ""
         default:
             return input.prettyPrinted.replacingOccurrences(of: "\n", with: " ")
@@ -61,6 +62,14 @@ struct ToolCall: Identifiable, Hashable, Sendable {
 
     /// What a card is about, from its result when it has one, else its input.
     var cardTitle: String? {
+        // The route the call asked for, "SFO/OAK → MUC"; a return search's result has it swapped.
+        if name == "search_flights" {
+            if let subject = FlightsCard.subject(input) { return subject }
+            if let output, let result = try? JSONDecoder().decode(JSONValue.self, from: Data(output.utf8)) {
+                return FlightsCard.subject(result)
+            }
+            return nil
+        }
         if let output, let result = try? JSONDecoder().decode(JSONValue.self, from: Data(output.utf8)) {
             if let title = result["title"]?.stringValue, !title.isEmpty { return title }
             if name == "compare_stocks", case .array(let symbols)? = result["symbols"] {

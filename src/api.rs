@@ -195,6 +195,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(put_bestbuy_key).delete(delete_bestbuy_key),
         )
         .route(
+            "/admin/integrations/serpapi",
+            axum::routing::put(put_serpapi_key).delete(delete_serpapi_key),
+        )
+        .route(
             "/admin/integrations/google",
             axum::routing::delete(delete_google),
         )
@@ -808,6 +812,26 @@ async fn delete_bestbuy_key(
 ) -> Result<StatusCode, AppError> {
     require_admin(admin)?;
     state.integrations.remove_bestbuy_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Save a SerpApi key (`{"api_key"}`, the same body as the Brave key's) once SerpApi knows it.
+async fn put_serpapi_key(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    state.integrations.set_serpapi_key(&body.api_key).await?;
+    Ok(Json(state.integrations.status().await?))
+}
+
+async fn delete_serpapi_key(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state.integrations.remove_serpapi_key().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

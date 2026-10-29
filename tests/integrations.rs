@@ -200,6 +200,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "maps",
             "recipes",
             "transit",
+            "flights",
             "stocks",
             "products",
             "ask_user",
@@ -212,6 +213,11 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
     let products = group(&catalog, "products");
     assert_eq!(products["available"], false);
     assert_eq!(products["reason"], "Needs a Brave Search or Best Buy API key");
+
+    assert_eq!(
+        group(&catalog, "flights")["reason"],
+        "Needs a SerpApi API key"
+    );
 
     let search = group(&catalog, "web_search");
     assert_eq!(search["available"], false);
@@ -296,6 +302,12 @@ async fn admin_routes_need_an_admin_key() {
             Some(json!({ "api_key": "k" })),
         ),
         (Method::DELETE, "/v1/admin/integrations/bestbuy", None),
+        (
+            Method::PUT,
+            "/v1/admin/integrations/serpapi",
+            Some(json!({ "api_key": "k" })),
+        ),
+        (Method::DELETE, "/v1/admin/integrations/serpapi", None),
         (
             Method::POST,
             "/v1/admin/integrations/google/authorize",

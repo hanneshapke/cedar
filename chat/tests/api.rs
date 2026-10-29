@@ -384,6 +384,13 @@ async fn put_brave(State(s): State<Shared>, Json(body): Json<Value>) -> axum::re
     Json(json!({ "brave": { "configured": true, "source": "ui", "last4": "1234" } })).into_response()
 }
 
+async fn put_serpapi(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "put_serpapi", body.clone()).await {
+        return refused;
+    }
+    Json(json!({ "serpapi": { "configured": true, "source": "ui", "last4": "5678", "enabled": true } })).into_response()
+}
+
 async fn delete_integration(s: Shared, which: &str) -> axum::response::Response {
     if let Some(refused) = admin(&s, &format!("delete_{which}"), Value::Null).await {
         return refused;
@@ -495,6 +502,10 @@ impl Harness {
             .route(
                 "/v1/admin/integrations/brave",
                 axum::routing::put(put_brave).delete(|State(s): State<Shared>| delete_integration(s, "brave")),
+            )
+            .route(
+                "/v1/admin/integrations/serpapi",
+                axum::routing::put(put_serpapi).delete(|State(s): State<Shared>| delete_integration(s, "serpapi")),
             )
             .route("/v1/admin/integrations/google", axum::routing::delete(|State(s): State<Shared>| delete_integration(s, "google")))
             .route("/v1/admin/integrations/google/authorize", post(authorize))
@@ -1040,6 +1051,8 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/transit-view.css\""), "{uri} loads the trip styles");
             assert!(page.contains("<script src=\"/stock-view.js\">"), "{uri} loads the stock view");
             assert!(page.contains("href=\"/stock-view.css\""), "{uri} loads the stock styles");
+            assert!(page.contains("<script src=\"/flight-view.js\">"), "{uri} loads the flights view");
+            assert!(page.contains("href=\"/flight-view.css\""), "{uri} loads the flights styles");
             assert!(page.contains("<script src=\"/chart-view.js\">"), "{uri} loads the chart view");
             assert!(page.contains("href=\"/chart-view.css\""), "{uri} loads the chart styles");
             assert!(page.contains("<script src=\"/models.js\">"), "{uri} loads the model registry script");
@@ -1109,6 +1122,8 @@ async fn both_uis_are_served() {
         ("/transit-view.css", "text/css; charset=utf-8", ".cedar-trip"),
         ("/stock-view.js", "text/javascript; charset=utf-8", "cedarStocks"),
         ("/stock-view.css", "text/css; charset=utf-8", ".cedar-stocks"),
+        ("/flight-view.js", "text/javascript; charset=utf-8", "cedarFlights"),
+        ("/flight-view.css", "text/css; charset=utf-8", ".cedar-flights"),
         ("/chart-view.js", "text/javascript; charset=utf-8", "cedarChart"),
         ("/chart-view.css", "text/css; charset=utf-8", ".cedar-chart"),
         ("/image-view.js", "text/javascript; charset=utf-8", "cedarImages"),
@@ -1796,6 +1811,14 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(saved["brave"]["last4"], "1234");
     let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/brave", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    // The SerpApi key for search_flights goes the same way.
+    let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/serpapi", Some("admin"), Some(json!({ "api_key": "serp-5678" }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["serpapi"]["last4"], "5678");
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/serpapi", None, Some(json!({ "api_key": "serp-5678" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/serpapi", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/google", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, listed) = admin_call(&h, Method::GET, "/api/integrations/models", Some("admin"), None).await;
@@ -1838,9 +1861,10 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "delete_google", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings"]);
-    assert_eq!(calls[6].1, query, "the body goes through as it is");
-    assert_eq!(calls[8].1, spec, "the body goes through as it is");
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings"]);
+    assert_eq!(calls[4].1, json!({ "api_key": "serp-5678" }), "the key goes through");
+    assert_eq!(calls[8].1, query, "the body goes through as it is");
+    assert_eq!(calls[10].1, spec, "the body goes through as it is");
 
     let (status, connect) = admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK);
