@@ -155,6 +155,28 @@ class TranscriptTest {
     }
 
     @Test
+    fun pdfsComeFromFileToolsAndChangedFiles() {
+        var t = TurnTranscript(turn())
+        t = t.apply(event(1, "tool.call", """{"id":"c0","name":"write_file","input":{"path":"/workspace/report.pdf"}}"""))
+        t = t.apply(event(2, "tool.result", result("c0", "ok")))
+        t = t.apply(event(3, "tool.call", """{"id":"c1","name":"bash","input":{"command":"make"}}"""))
+        t = t.apply(event(4, "tool.result", result("c1", "built\n[files created or modified]\n- out/Slides.PDF\n- out/a.png\n- report.pdf")))
+        t = t.apply(event(5, "tool.call", """{"id":"c2","name":"write_file","input":{"path":"failed.pdf"}}"""))
+        t = t.apply(event(6, "tool.result", result("c2", "disk full", isError = true)))
+        assertEquals(listOf("report.pdf", "out/Slides.PDF"), t.documents)
+        assertEquals(listOf("out/a.png"), t.images)
+    }
+
+    @Test
+    fun theViewerShowsImagesAndPdfs() {
+        assertEquals(WorkspaceFileKind.IMAGE, WorkspaceFileKind.of("out/chart.PNG"))
+        assertEquals(WorkspaceFileKind.PDF, WorkspaceFileKind.of("docs/report.pdf"))
+        assertNull(WorkspaceFileKind.of("plot.svg"))
+        assertNull(WorkspaceFileKind.of("notes.md"))
+        assertNull(WorkspaceFileKind.of("Makefile"))
+    }
+
+    @Test
     fun cardTitles() {
         var call = ToolCall("1", "compare_stocks", j("""{"symbols":["AAPL","MSFT"]}"""))
         assertEquals("AAPL, MSFT", call.summary)
