@@ -42,7 +42,7 @@ from typing import Any
 import yaml
 
 from . import __version__, grading, timeutil
-from .client import Cedar
+from .client import Cedar, CedarError
 from .pdfgen import make_pdf
 from .schema import Task
 from .user import ScriptedUser
@@ -179,8 +179,11 @@ class Server:
 
     def __init__(self, spec: dict):
         self.url = spec["url"]
-        self.client = Cedar(spec["url"], os.environ[spec.get("key_env", "CEDAR_BENCH_KEY")],
-                            os.environ.get(spec.get("admin_key_env", "CEDAR_BENCH_ADMIN_KEY")))
+        self.key_env = spec.get("key_env", "CEDAR_BENCH_KEY")
+        self.admin_env = spec.get("admin_key_env", "CEDAR_BENCH_ADMIN_KEY")
+        if self.key_env not in os.environ:
+            raise SystemExit(f"{self.key_env} is not set: export the cedar API key for {self.url}")
+        self.client = Cedar(spec["url"], os.environ[self.key_env], os.environ.get(self.admin_env))
         self.zone: str | None = spec.get("timezone")
 
 
@@ -231,7 +234,18 @@ def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, perso
     servers = [Server(s) for s in specs]
     if register:
         for server in servers:
-            register_models(server.client, cfg)
+            try:
+                register_models(server.client, cfg)
+            except CedarError as e:
+                if e.status not in (401, 403):
+                    raise
+                used = server.admin_env if os.environ.get(server.admin_env) else server.key_env
+                raise SystemExit(
+                    f"{server.url} refused to register models ({e.status}): the key in ${used} "
+                    f"{'is not one of its CEDAR_API_KEYS' if e.status == 401 else 'is not in its CEDAR_ADMIN_KEYS'}. "
+                    "Start that cedar with the key in both CEDAR_API_KEYS and CEDAR_ADMIN_KEYS, set "
+                    f"${server.admin_env} to one of its admin keys, or pass --no-register if the "
+                    "models are already registered.") from None
     zones = persona_zones(personas_dir, tasks)
     # Tasks of one time zone together, so a server without a fixed zone isn't claimed by a stray one.
     tasks = sorted(tasks, key=lambda t: (zones.get(t.persona, ""), t.id))
