@@ -13,6 +13,7 @@ struct ScheduleRows: View {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
                     .font(.footnote)
+                    .sidebarRow()
             }
         }
         ForEach(app.schedules) { schedule in
@@ -57,6 +58,8 @@ struct ScheduleRows: View {
                         }
                     }
             }
+            .tint(Color.secondary)
+            .sidebarRow()
         }
     }
 
@@ -67,12 +70,14 @@ struct ScheduleRows: View {
                 Text("No runs yet")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .sidebarRow()
             }
             ForEach(runs) { run in
                 if let conversationId = run.conversationId {
                     let starred = app.isStarred(conversationId: conversationId)
                     RunRow(run: run, starred: starred)
                         .tag(conversationId)
+                        .sidebarRow(selected: app.selection == conversationId)
                         .swipeActions {
                             StarButton(starred: starred) { setStarred(conversationId, !starred) }
                         }
@@ -82,11 +87,13 @@ struct ScheduleRows: View {
                 } else {
                     // It never started: nothing to open (or star).
                     RunRow(run: run, starred: false)
+                        .sidebarRow()
                 }
             }
         } else {
             ProgressView()
                 .frame(maxWidth: .infinity)
+                .sidebarRow()
         }
     }
 
@@ -140,22 +147,18 @@ private struct ScheduleRow: View {
     let unread: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 8, height: 8)
-                .padding(.top, 7)
-                .opacity(unread ? 1 : 0)
-                .accessibilityHidden(true)
+        HStack(alignment: .center, spacing: 12) {
+            RowIcon(systemImage: schedule.enabled ? "clock" : "pause",
+                    tint: schedule.enabled ? Theme.green : .secondary,
+                    isActive: schedule.lastRun?.isActive ?? false)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(schedule.title)
                         .lineLimit(1)
-                        .font(unread ? .body.weight(.semibold) : .body)
-                    if schedule.lastRun?.isActive ?? false {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
+                        .font(.body.weight(unread ? .semibold : .regular))
+                        .foregroundStyle(Color.primary)
+                    Spacer(minLength: 4)
+                    if unread { UnreadDot() }
                 }
                 Group {
                     Text(schedule.cadence)
@@ -179,7 +182,7 @@ private struct ScheduleRow: View {
             }
             .opacity(schedule.enabled ? 1 : 0.7)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityValue(unread ? L10n.string("Unread") : "")
     }
@@ -192,8 +195,8 @@ private struct RunRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Circle()
-                .fill(Color.accentColor)
-                .frame(width: 6, height: 6)
+                .fill(Theme.green)
+                .frame(width: 7, height: 7)
                 .padding(.top, 7)
                 .opacity(run.unread ? 1 : 0)
                 .accessibilityHidden(true)
@@ -233,7 +236,7 @@ private struct RunOutcomeLabel: View {
         case .needsAnswer:
             Label("Needs answer", systemImage: "questionmark.bubble")
                 .labelStyle(.titleAndIcon)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.clay)
         case .failed:
             Label("Failed", systemImage: "xmark.octagon")
                 .labelStyle(.titleAndIcon)

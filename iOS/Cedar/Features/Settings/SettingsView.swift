@@ -149,6 +149,8 @@ struct SettingsView: View {
                     Text("Pushes come from the server: set up iPhone push under Settings → Notifications in the web UI, with your Apple team id and APNs key. This phone registers itself there.")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.canvas)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

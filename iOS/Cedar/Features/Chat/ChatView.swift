@@ -47,6 +47,7 @@ struct ChatView: View {
                 .frame(maxWidth: 820)
                 .frame(maxWidth: .infinity)
             }
+            .background(Theme.canvas)
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
             .onChange(of: scrollSignature) {
@@ -58,6 +59,7 @@ struct ChatView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.canvas, for: .navigationBar)
         .toolbar {
             if let id = chat.conversationId {
                 let starred = app.isStarred(conversationId: id)
@@ -137,19 +139,20 @@ struct ChatView: View {
 
 private struct Greeting: View {
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "leaf")
-                .font(.system(size: 40))
-                .foregroundStyle(.tint)
+        VStack(spacing: 16) {
+            CedarBadge()
+                .padding(.bottom, 4)
             Text("What should the agent do?")
                 .font(.title2.weight(.semibold))
+                .multilineTextAlignment(.center)
             Text("It can search the web, write files and run code in its own sandbox. Follow-ups keep its files.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 80)
+        .padding(.top, 72)
         .padding(.horizontal)
     }
 }
@@ -172,14 +175,18 @@ struct UserBubble: View {
                                 .lineLimit(1)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color(.tertiarySystemBackground), in: Capsule())
+                                .background(Color.white.opacity(0.18), in: Capsule())
                         }
                     }
                 }
             }
-            .padding(.horizontal, 14)
+            .foregroundStyle(Theme.onGreen)
+            .tint(Theme.onGreen)
+            .padding(.horizontal, 15)
             .padding(.vertical, 10)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+            .background(Theme.green, in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20,
+                                                                bottomTrailingRadius: 6, topTrailingRadius: 20,
+                                                                style: .continuous))
         }
     }
 }
@@ -201,7 +208,8 @@ private struct ErrorBanner: View {
         .font(.footnote)
         .foregroundStyle(.red)
         .padding(12)
-        .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.red.opacity(0.25)))
     }
 }
 
@@ -225,11 +233,18 @@ private struct Composer: View {
             }
             row
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
-        .background(.bar)
+        // The conversation fades out under the composer rather than stopping at a bar.
+        .background {
+            LinearGradient(colors: [Theme.canvas.opacity(0), Theme.canvas, Theme.canvas],
+                           startPoint: .top, endPoint: .bottom)
+                .padding(.top, -16)
+                .ignoresSafeArea(edges: .bottom)
+        }
         .photosPicker(isPresented: $showingPhotos, selection: $photos,
                       maxSelectionCount: OutgoingAttachment.maxFiles, matching: .images)
         .onChange(of: photos) {
@@ -251,34 +266,46 @@ private struct Composer: View {
     }
 
     private var row: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 4) {
             attachMenu
             TextField(chat.openQuestions == nil ? "Message cedar" : "Or answer in your own words", text: $chat.draft, axis: .vertical)
                 .lineLimit(1...8)
                 .focused(focused)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
+                .padding(.vertical, 9)
+                .padding(.horizontal, 2)
             if chat.isActive {
                 Button {
                     Task { await chat.stop() }
                 } label: {
-                    Image(systemName: "stop.circle.fill")
-                        .font(.system(size: 34))
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.canvas)
+                        .frame(width: 36, height: 36)
+                        .background(Color.primary, in: Circle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Stop")
                 .disabled(chat.pendingPrompt != nil)
             } else {
                 Button {
                     Task { await chat.send() }
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 34))
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(chat.canSend ? Theme.onGreen : Color.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(chat.canSend ? Theme.green : Theme.raised, in: Circle())
+                        .animation(.snappy(duration: 0.15), value: chat.canSend)
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Send")
                 .disabled(!chat.canSend)
             }
         }
+        .padding(5)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Theme.line))
+        .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
     }
 
     /// Photos (when the model takes images) and PDFs or images from Files.
@@ -301,11 +328,13 @@ private struct Composer: View {
                 if chat.isAddingAttachments {
                     ProgressView()
                 } else {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 20))
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 34, height: 34)
+            .frame(width: 36, height: 36)
+            .background(Theme.raised, in: Circle())
         }
         .accessibilityLabel(chat.acceptsImages ? "Attach images or PDFs" : "Attach PDFs")
         .disabled(chat.isActive || chat.isAddingAttachments || chat.attachments.count >= OutgoingAttachment.maxFiles)
@@ -351,7 +380,8 @@ private struct AttachmentChip: View {
         .padding(.leading, 4)
         .padding(.trailing, 8)
         .padding(.vertical, 4)
-        .background(Color(.secondarySystemBackground), in: Capsule())
+        .background(Theme.surface, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.line))
         .task(id: file.id) {
             guard file.isImage else { return }
             let data = file.data
