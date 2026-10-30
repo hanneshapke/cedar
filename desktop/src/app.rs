@@ -489,6 +489,19 @@ pub async fn set_share(app: AppHandle, enabled: bool) -> Result<()> {
     Ok(())
 }
 
+/// The Phone page's "Turn on sharing" (chat/static/pairing.js, through the window): the same as
+/// ticking the switch on the setup page. The chat can't show the outcome, since turning sharing
+/// on restarts it, so when it can't be turned on the setup page says why instead.
+pub async fn share_from_chat(app: AppHandle) {
+    if let Err(e) = set_share(app.clone(), true).await {
+        let state = app.state::<AppState>();
+        state.set_share(ShareStatus::Failed(format!("{e:#}")));
+        if let Err(e) = window::show_setup(&app) {
+            eprintln!("showing the setup page: {e:#}");
+        }
+    }
+}
+
 /// Stops the servers and runs the launch sequence again.
 pub async fn restart(app: AppHandle) {
     let state = app.state::<AppState>();
