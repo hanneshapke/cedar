@@ -6,7 +6,10 @@
 // tailnet address `tailscale serve` gives it), the QR code the app scans, the access token, and
 // whether Tailscale on this computer is ready, with the steps on each kind of phone. The Cedar desktop app
 // (macOS, Windows) serves the chat on the tailnet from its setup page and scripts/cedar-stack.sh
-// does it on Linux; this page only says how, it changes nothing.
+// does it on Linux. Inside the desktop app, once Tailscale is ready, the page offers to turn
+// sharing on: the button sends the window to /__cedar-app/share/on, which the app catches
+// instead of loading (see desktop/src/window.rs), the same as ticking the switch on its setup
+// page. That restarts the chat once. Anywhere else the page only says how, it changes nothing.
 //
 // The app hands over its helpers through cedarPairing.init():
 //
@@ -16,6 +19,8 @@
 const cedarPairing = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
   const COMPUTER = { macos: 'pairing.computer.mac', windows: 'pairing.computer.pc' };
+  // Where the desktop app's window catches the request to turn sharing on (never loaded).
+  const SHARE_ON_PATH = '/__cedar-app/share/on';
 
   let deps = null;
   let info = null;  // /api/pairing, as last loaded
@@ -87,6 +92,21 @@ const cedarPairing = (() => {
     return Boolean(window.__CEDAR_DESKTOP_APP__);
   }
 
+  /** The desktop app can turn sharing on from here, once Tailscale is ready for it. */
+  function canTurnOn(p) {
+    return !p.server && inDesktopApp() && p.tailscale.state === 'ready';
+  }
+
+  /** Asks the desktop app to share the chat. It restarts the chat, so the page just waits. */
+  function turnOnButton() {
+    const b = button(tr('pairing.turnOn'), () => {
+      b.disabled = true;
+      b.textContent = tr('pairing.turningOn');
+      window.location.href = SHARE_ON_PATH;
+    }, 'primary');
+    return b;
+  }
+
   function adminToken() {
     try { return sessionStorage.getItem(ADMIN_KEY) || ''; } catch { return ''; }
   }
@@ -128,7 +148,9 @@ const cedarPairing = (() => {
     const order = ['missing', 'unavailable', 'logged_out', 'stopped', 'connecting', 'no_magic_dns', 'no_https', 'ready'];
     const at = Math.max(0, order.indexOf(p.tailscale.state));
     const past = (state) => at > order.indexOf(state);
-    const serveHow = inDesktopApp()
+    const serveHow = canTurnOn(p)
+      ? rich('pairing.serveButton', { button: el('b', '', tr('pairing.turnOn')) })
+      : inDesktopApp()
       ? rich('pairing.serveDesktop', { share: el('b', '', tr('pairing.shareLabel')), menu: el('b', '', tr('pairing.phoneAccess')) })
       : rich('pairing.serveLinux', {
         script: code('scripts/cedar-stack.sh'), auto: code('TAILSCALE_SERVE=auto'), on: code('on'), env: code('.env'),
@@ -213,6 +235,7 @@ const cedarPairing = (() => {
       addr.side.append(badge('HTTPS', 'ok'), button(tr('pairing.copy'), () => copy(p.server, tr('pairing.address'))));
     } else {
       addr.side.append(badge(tr('pairing.notShared'), 'warn'));
+      if (canTurnOn(p)) addr.side.append(turnOnButton());
     }
     pair.push(addr.row);
     if (p.access_token) {

@@ -282,8 +282,11 @@ own address, which the window catches instead of loading (`src/window.rs`).
 
 The [iOS app](../iOS/README.md) and the Android app connect over HTTPS only, so the setup page's
 **iPhone, iPad & Android** section (*Phone Access…* in the menu) can serve the chat on your
-[Tailscale](https://tailscale.com) network. Tick *Share with the phone apps over Tailscale* and
-the app runs `tailscale serve --bg --https=443 http://127.0.0.1:<chat_port>`. Tailscale gets a
+[Tailscale](https://tailscale.com) network. Tick *Share with the phone apps over Tailscale*, or
+click *Turn on sharing* on the chat's Settings → Phone page (offered once Tailscale is ready; it
+sends the window to `/__cedar-app/share/on`, which the window catches like the update banner's
+requests, and does the same as the switch), and the app runs
+`tailscale serve --bg --https=443 http://127.0.0.1:<chat_port>`. Tailscale gets a
 Let's Encrypt certificate for the computer's tailnet name and proxies
 `https://<computer>.<tailnet>.ts.net` to the chat. Only devices on your tailnet can reach it, and
 both servers stay on loopback.
