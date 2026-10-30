@@ -291,7 +291,8 @@ def _commit() -> str | None:
     """The checkout's git commit, so a report says which tasks and harness produced it."""
     import subprocess
     try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).parent,
+        from .paths import bench_dir
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=bench_dir(),
                               capture_output=True, text=True, timeout=5).stdout.strip() or None
     except (OSError, subprocess.SubprocessError):
         return None

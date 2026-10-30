@@ -26,10 +26,28 @@ bench/scripts/stack.sh stop
 The run prints one line per trial and ends with a headline and the paths of `report.pdf` and
 `report.md`, in `bench/results/<timestamp>/`.
 
-uv installs cedar-bench and its dependencies (PyYAML, pypdf, matplotlib, reportlab) into
-`bench/.venv` on first use, from `bench/pyproject.toml`. Every command works from any directory:
-`uv run --project bench cedar-bench <command>` from the repo root, or `uv run cedar-bench
-<command>` inside `bench/`. `python -m cedar_bench` is the same program.
+## Installing
+
+cedar-bench is a Python package (3.11+) defined by `bench/pyproject.toml`: its dependencies
+(PyYAML, pypdf, matplotlib, reportlab), its `cedar-bench` command, and its version. Two ways to use
+it:
+
+- **With uv** (what `stack.sh` and `smoke.sh` do): nothing to install. `uv run --project bench
+  cedar-bench <command>` from the repo root, or `uv run cedar-bench <command>` inside `bench/`,
+  creates `bench/.venv` from `pyproject.toml` and `uv.lock` on first use and keeps it in sync.
+- **With pip**, in an environment you manage: `pip install -e bench`, then `cedar-bench <command>`.
+  This is what CI does.
+
+The rest of this README writes plain `cedar-bench <command>`; prefix it with `uv run --project
+bench` if you use uv. `python -m cedar_bench` is the same program.
+
+The package holds only code; the benchmark data (`tasks/`, `personas/`, `fixtures/`) stays in
+`bench/`. cedar-bench finds it beside the package when it runs from the checkout (uv, or an
+editable install), else in the current directory or a parent of it, so run it from inside the
+cedar checkout. Set `CEDAR_BENCH_DIR` to the `bench/` folder to run it from anywhere else.
+
+To change a dependency, edit `pyproject.toml` and run `uv lock` (in `bench/`) to update
+`uv.lock`; the version lives in `cedar_bench/__init__.py`.
 
 ## Configuring models
 
@@ -248,12 +266,12 @@ Check it with `cedar-bench validate`, then try it with `stack.sh run --filter we
 ## Developing the harness
 
 ```sh
-uv run --project bench cedar-bench validate                      # every task and persona
+uv run --project bench cedar-bench validate                        # every task and persona
 uv run --project bench python -m unittest discover -s bench/tests  # no Docker or network needed
 bench/scripts/smoke.sh                                           # end to end, with real cedar
 ```
 
-CI runs the first two (the `bench` job in `.github/workflows/ci.yml`).
+CI runs the first two (the `bench` job in `.github/workflows/ci.yml`), after `pip install -e bench`.
 
 ```
 bench/
@@ -271,6 +289,7 @@ bench/
     report_pdf.py     report.pdf
     charts.py         the report's charts
     pdfgen.py         text-only PDFs for task attachments
+    paths.py          where the benchmark data is, for an installed package
   personas/<id>/persona.yaml
   fixtures/           web pages and search index, weather, stocks, recorded replies
   tasks/<category>/<name>.yaml
@@ -280,7 +299,8 @@ bench/
     smoke.sh          end-to-end check with a scripted fake model
     fake_llm.py       that scripted model
   models.example.yaml
-  pyproject.toml, uv.lock, requirements.txt (for pip, as CI uses)
+  pyproject.toml      the package: dependencies, the cedar-bench command, metadata
+  uv.lock             the exact dependency versions uv installs
 ```
 
 ## Releasing

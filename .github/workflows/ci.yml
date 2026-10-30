@@ -117,9 +117,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - run: pip install -r bench/requirements.txt
-      - run: PYTHONPATH=bench python3 -m cedar_bench validate
-      - run: PYTHONPATH=bench python3 -m unittest discover -s bench/tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e bench          # the dependencies come from bench/pyproject.toml
+      - run: cedar-bench validate
+      - run: python -m unittest discover -s bench/tests
 
   registry:
     runs-on: ubuntu-latest

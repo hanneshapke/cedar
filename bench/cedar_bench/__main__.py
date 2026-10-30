@@ -24,14 +24,12 @@ from pathlib import Path
 import yaml
 
 from . import CANARY, __version__, fixtures, personas, report, runner, schema, timeutil
-
-BENCH = Path(__file__).resolve().parent.parent
-REPO = BENCH.parent
+from .paths import bench_dir, repo_dir
 
 
 def _tasks(args) -> list[schema.Task]:
-    dirs = [Path(d) for d in args.tasks] if args.tasks else [BENCH / "tasks"]
-    tasks = schema.load_tasks(dirs, BENCH / "personas")
+    dirs = [Path(d) for d in args.tasks] if args.tasks else [bench_dir() / "tasks"]
+    tasks = schema.load_tasks(dirs, bench_dir() / "personas")
     if getattr(args, "filter", None):
         tasks = [t for t in tasks if any(fnmatch.fnmatchcase(t.id, f) for f in args.filter)]
     if getattr(args, "split", None):
@@ -41,7 +39,7 @@ def _tasks(args) -> list[schema.Task]:
 
 def cmd_serve(args):
     record = dict(r.split("=", 1) for r in args.record)
-    fixtures.serve(BENCH / "fixtures", BENCH / "personas", args.host, args.port,
+    fixtures.serve(bench_dir() / "fixtures", bench_dir() / "personas", args.host, args.port,
                    args.public_url, record)
 
 
@@ -58,7 +56,10 @@ def cmd_validate(args):
         sys.exit(1)
     anchor = dt.date.today()
     for p in sorted({t.persona for t in tasks if t.persona}):
-        personas.load(personas.find(BENCH / "personas", p), anchor)
+        personas.load(personas.find(bench_dir() / "personas", p), anchor)
+    if not tasks:
+        print("no tasks found", file=sys.stderr)
+        sys.exit(1)
     by_cat: dict[str, int] = {}
     for t in tasks:
         by_cat[t.category] = by_cat.get(t.category, 0) + 1
@@ -67,10 +68,10 @@ def cmd_validate(args):
 
 def cmd_persona(args):
     if args.action == "new":
-        path = personas.write_new(BENCH / "personas", args.id, args.name, args.seed, args.timezone)
+        path = personas.write_new(bench_dir() / "personas", args.id, args.name, args.seed, args.timezone)
         print(f"wrote {path}")
         return
-    p = personas.load(personas.find(BENCH / "personas", args.id), timeutil.parse_anchor(args.anchor))
+    p = personas.load(personas.find(bench_dir() / "personas", args.id), timeutil.parse_anchor(args.anchor))
     print(json.dumps(personas.summary(p), indent=2))
     for m in p.messages[-args.limit:]:
         print(f"  mail  {m.date:%a %Y-%m-%d %H:%M}  {m.sender:45.45}  {m.subject}  {m.labels}")
@@ -79,7 +80,10 @@ def cmd_persona(args):
 
 
 def cmd_run(args):
-    cfg = runner.load_config(Path(args.config))
+    config = Path(args.config) if args.config else bench_dir() / "models.yaml"
+    if not config.exists():
+        sys.exit(f"no run config at {config}: copy models.example.yaml there and edit it")
+    cfg = runner.load_config(config)
     if args.repeats:
         cfg["repeats"] = args.repeats
     if args.fixtures_url:
@@ -87,8 +91,8 @@ def cmd_run(args):
     tasks = _tasks(args)
     if not tasks:
         sys.exit("no tasks match")
-    out = Path(args.out) if args.out else BENCH / "results" / dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = runner.sweep(cfg, tasks, out, BENCH / "fixtures", BENCH / "personas", args.resume,
+    out = Path(args.out) if args.out else bench_dir() / "results" / dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    path = runner.sweep(cfg, tasks, out, bench_dir() / "fixtures", bench_dir() / "personas", args.resume,
                         not args.no_register, args.keep_trace)
     _write_reports(path, out)
 
@@ -121,7 +125,7 @@ def cmd_bundle(args):
     tasks = _tasks(args)
     if not args.include_heldout:
         tasks = [t for t in tasks if t.split == "public"]
-    out = Path(args.out)
+    out = Path(args.out) if args.out else bench_dir() / "dist" / f"cedar-bench-{__version__}"
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -130,9 +134,9 @@ def cmd_bundle(args):
             f.write(json.dumps(t.raw, ensure_ascii=False) + "\n")
     used = sorted({t.persona for t in tasks if t.persona})
     for p in used:
-        shutil.copytree(BENCH / "personas" / p, out / "personas" / p)
-    shutil.copytree(BENCH / "fixtures", out / "fixtures")
-    cargo = (REPO / "Cargo.toml").read_text() if (REPO / "Cargo.toml").exists() else ""
+        shutil.copytree(bench_dir() / "personas" / p, out / "personas" / p)
+    shutil.copytree(bench_dir() / "fixtures", out / "fixtures")
+    cargo = (repo_dir() / "Cargo.toml").read_text() if (repo_dir() / "Cargo.toml").exists() else ""
     m = re.search(r'^version\s*=\s*"([^"]+)"', cargo, re.M)
     manifest = {
         "name": "cedar-bench", "bench_version": __version__, "canary": CANARY,
@@ -185,7 +189,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_persona)
 
     p = sub.add_parser("run", help="run tasks against cedar and grade them")
-    p.add_argument("--config", default=str(BENCH / "models.yaml"))
+    p.add_argument("--config", help="the run config (default bench/models.yaml)")
     p.add_argument("--out", help="results directory (default bench/results/<timestamp>)")
     p.add_argument("--repeats", type=int)
     p.add_argument("--fixtures-url")
@@ -201,7 +205,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_report)
 
     p = sub.add_parser("bundle", help="write the dataset release")
-    p.add_argument("--out", default=str(BENCH / "dist" / f"cedar-bench-{__version__}"))
+    p.add_argument("--out", help=f"default bench/dist/cedar-bench-{__version__}")
     p.add_argument("--include-heldout", action="store_true")
     with_tasks(p)
     p.set_defaults(fn=cmd_bundle)
