@@ -6,6 +6,12 @@ sweep resumes where it stopped (`--resume`).
 The run config (see bench/models.example.yaml):
 
     cedar: {url: http://127.0.0.1:8080, key_env: CEDAR_BENCH_KEY, admin_key_env: CEDAR_BENCH_ADMIN_KEY}
+    # or several servers: cedar looks up the calendar time zone once per process, so personas in
+    # different time zones need different cedar processes (all pointed at the same fixtures).
+    # A server with a `timezone` takes only personas in it; one without takes the first it gets.
+    # cedar:
+    #   - {url: http://127.0.0.1:8080, key_env: CEDAR_BENCH_KEY, timezone: America/Los_Angeles}
+    #   - {url: http://127.0.0.1:8081, key_env: CEDAR_BENCH_KEY, timezone: Europe/Berlin}
     fixtures_url: http://127.0.0.1:8765
     repeats: 3
     trial_timeout_secs: 900
@@ -27,6 +33,7 @@ import dataclasses
 import datetime as dt
 import json
 import os
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -145,9 +152,54 @@ def run_trial(cedar: Cedar, fixtures_url: str, fixtures_dir: Path, task: Task, m
         fixture_state=_fixtures(fixtures_url, "/_admin/state"), error=error,
     )
     result = grading.grade(task, trial)
+    wrong = wrong_zone(events, state.get("timezone"))
+    if wrong:
+        result.update(passed=False, error=f"harness: cedar's calendar answered in {wrong}, the "
+                      f"persona is in {state['timezone']} (one cedar process per time zone)")
     result.update({"anchor": anchor.isoformat(), "run_ids": [r["id"] for r in runs],
                    "duration_secs": round(time.monotonic() - started, 1)})
     return result, trial
+
+
+def wrong_zone(events: list[dict], zone: str | None) -> str | None:
+    """The time zone a calendar tool answered in, if it isn't the persona's."""
+    if not zone:
+        return None
+    names = {e["data"]["id"]: e["data"]["name"] for e in events if e["type"] == "tool.call"}
+    for e in events:
+        if e["type"] == "tool.result" and names.get(e["data"].get("id"), "").startswith("calendar_"):
+            m = re.search(r'"timeZone":\s*"([^"]+)"', str(e["data"].get("output", "")))
+            if m and m.group(1) != zone:
+                return m.group(1)
+    return None
+
+
+class Server:
+    """One cedar process, and the time zone its calendar tools are (or will be) fixed to."""
+
+    def __init__(self, spec: dict):
+        self.url = spec["url"]
+        self.client = Cedar(spec["url"], os.environ[spec.get("key_env", "CEDAR_BENCH_KEY")],
+                            os.environ.get(spec.get("admin_key_env", "CEDAR_BENCH_ADMIN_KEY")))
+        self.zone: str | None = spec.get("timezone")
+
+
+def pick(servers: list[Server], zone: str | None) -> Server | None:
+    if zone is None:
+        return servers[0]
+    for s in servers:
+        if s.zone == zone:
+            return s
+    for s in servers:
+        if s.zone is None:
+            s.zone = zone
+            return s
+    return None
+
+
+def persona_zones(personas_dir: Path, tasks: list[Task]) -> dict[str, str]:
+    return {t.persona: yaml.safe_load((personas_dir / t.persona / "persona.yaml").read_text())["timezone"]
+            for t in tasks if t.persona}
 
 
 def load_config(path: Path) -> dict:
@@ -173,13 +225,16 @@ def _key(r: dict) -> tuple:
     return (r["task"], r["task_version"], r["model"], r["reasoning"], r["repeat"])
 
 
-def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, resume: bool,
-          register: bool, keep_trace: bool) -> Path:
-    c = cfg["cedar"]
-    cedar = Cedar(c["url"], os.environ[c.get("key_env", "CEDAR_BENCH_KEY")],
-                  os.environ.get(c.get("admin_key_env", "CEDAR_BENCH_ADMIN_KEY")))
+def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, personas_dir: Path,
+          resume: bool, register: bool, keep_trace: bool) -> Path:
+    specs = cfg["cedar"] if isinstance(cfg["cedar"], list) else [cfg["cedar"]]
+    servers = [Server(s) for s in specs]
     if register:
-        register_models(cedar, cfg)
+        for server in servers:
+            register_models(server.client, cfg)
+    zones = persona_zones(personas_dir, tasks)
+    # Tasks of one time zone together, so a server without a fixed zone isn't claimed by a stray one.
+    tasks = sorted(tasks, key=lambda t: (zones.get(t.persona, ""), t.id))
     out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / "results.jsonl"
     done = set()
@@ -187,7 +242,7 @@ def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, resum
         done = {_key(json.loads(line)) for line in results_path.read_text().splitlines() if line}
     (out_dir / "meta.json").write_text(json.dumps({
         "bench_version": __version__, "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "cedar_url": c["url"], "tasks": len(tasks), "repeats": cfg["repeats"],
+        "cedar_urls": {s.url: s.zone for s in servers}, "tasks": len(tasks), "repeats": cfg["repeats"],
         "models": [{k: v for k, v in m.items() if k != "register"} | {
             "model": (m.get("register") or {}).get("model"),
             "price": (m.get("register") or {}).get("price")} for m in cfg["models"]],
@@ -203,9 +258,14 @@ def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, resum
                                 "category": task.category, "tags": task.tags, "split": task.split}
                         if _key(meta) in done:
                             continue
-                        result, trial = run_trial(cedar, cfg["fixtures_url"], fixtures_dir, task,
-                                                  m["id"], reasoning, cfg["trial_timeout_secs"])
-                        result = meta | result
+                        server = pick(servers, zones.get(task.persona))
+                        if server is None:
+                            print(f"skip {task.id}: no cedar server for {zones[task.persona]} "
+                                  "(add one to the config's cedar list)", flush=True)
+                            continue
+                        result, trial = run_trial(server.client, cfg["fixtures_url"], fixtures_dir,
+                                                  task, m["id"], reasoning, cfg["trial_timeout_secs"])
+                        result = meta | result | {"cedar_url": server.url}
                         if keep_trace:
                             result["events"] = trial.events
                         out.write(json.dumps(result, ensure_ascii=False) + "\n")

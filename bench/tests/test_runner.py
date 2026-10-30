@@ -139,3 +139,26 @@ class RunnerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TimeZoneRoutingTest(unittest.TestCase):
+    def server(self, zone):
+        s = runner.Server.__new__(runner.Server)
+        s.url, s.client, s.zone = f"http://{zone}", None, zone
+        return s
+
+    def test_each_zone_gets_its_own_server(self):
+        la, free = self.server("America/Los_Angeles"), self.server(None)
+        servers = [la, free]
+        self.assertIs(runner.pick(servers, "America/Los_Angeles"), la)
+        self.assertIs(runner.pick(servers, None), la)
+        self.assertIs(runner.pick(servers, "Europe/Berlin"), free)
+        self.assertEqual(free.zone, "Europe/Berlin")
+        self.assertIsNone(runner.pick(servers, "America/Chicago"))
+
+    def test_a_calendar_answer_in_another_zone_is_caught(self):
+        events = [{"type": "tool.call", "data": {"id": "c1", "name": "calendar_suggest_time"}},
+                  {"type": "tool.result", "data": {"id": "c1", "output": '{"timeZone":"America/Los_Angeles"}'}}]
+        self.assertEqual(runner.wrong_zone(events, "Europe/Berlin"), "America/Los_Angeles")
+        self.assertIsNone(runner.wrong_zone(events, "America/Los_Angeles"))
+        self.assertIsNone(runner.wrong_zone(events, None))

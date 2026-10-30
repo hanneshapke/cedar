@@ -88,8 +88,8 @@ def cmd_run(args):
     if not tasks:
         sys.exit("no tasks match")
     out = Path(args.out) if args.out else BENCH / "results" / dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = runner.sweep(cfg, tasks, out, BENCH / "fixtures", args.resume, not args.no_register,
-                        args.keep_trace)
+    path = runner.sweep(cfg, tasks, out, BENCH / "fixtures", BENCH / "personas", args.resume,
+                        not args.no_register, args.keep_trace)
     md = report.markdown(report.load(path))
     (out / "report.md").write_text(md)
     print(f"\n{md}\nresults in {out}")

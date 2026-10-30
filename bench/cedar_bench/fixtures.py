@@ -84,6 +84,7 @@ class Fixtures:
     def state(self) -> dict:
         return {
             "persona": self.persona_id,
+            "timezone": self.google.persona.timezone if self.google else None,
             "anchor": self.anchor.isoformat(),
             "base": self.public_url,
             "drafts": self.google.drafts if self.google else [],
@@ -131,9 +132,11 @@ class Fixtures:
     # -- weather --------------------------------------------------------------------------------
 
     def geocode(self, query: dict[str, str]) -> dict:
-        name = query.get("name", "").split(",")[0].strip().lower()
+        # Any comma-separated part may name the place: "Boulder, CO" or "Logan Square Market, Chicago".
+        parts = [p.strip().lower() for p in query.get("name", "").split(",")]
         for loc in self.locations:
-            if name in [loc["name"].lower(), *[a.lower() for a in loc.get("aliases", [])]]:
+            names = [loc["name"].lower(), *[a.lower() for a in loc.get("aliases", [])]]
+            if any(p in names for p in parts):
                 return {"results": [{"name": loc["name"], "latitude": loc["latitude"],
                                      "longitude": loc["longitude"], "country": loc.get("country", ""),
                                      "admin1": loc.get("admin1", ""), "timezone": loc["timezone"]}]}

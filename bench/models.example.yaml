@@ -1,8 +1,13 @@
 # Copy to models.yaml (git-ignored) and adjust. Keys come from the environment, never this file.
+# One cedar process per persona time zone: cedar looks up the calendar time zone once per process.
+# All of them use the fixture server below. A single server works for tasks in one time zone.
 cedar:
-  url: http://127.0.0.1:8080
-  key_env: CEDAR_BENCH_KEY              # a cedar API key for the runs
-  admin_key_env: CEDAR_BENCH_ADMIN_KEY  # an admin key, to register the models (defaults to the key)
+  - url: http://127.0.0.1:8080
+    timezone: America/Los_Angeles       # maya
+    key_env: CEDAR_BENCH_KEY              # a cedar API key for the runs
+    admin_key_env: CEDAR_BENCH_ADMIN_KEY  # an admin key, to register the models (defaults to the key)
+  - {url: http://127.0.0.1:8081, timezone: Europe/Berlin, key_env: CEDAR_BENCH_KEY}     # theo
+  - {url: http://127.0.0.1:8082, timezone: America/Chicago, key_env: CEDAR_BENCH_KEY}   # rosa
 fixtures_url: http://127.0.0.1:8765     # where the runner resets and reads the fixture server
 repeats: 3                              # trials per task, for pass^k
 trial_timeout_secs: 900

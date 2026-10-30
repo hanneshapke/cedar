@@ -62,7 +62,10 @@ python -m cedar_bench serve --port 8765
 # 2. cedar, with its tools pointed at the fixtures (see the top-level README for the sandbox image)
 set -a; eval "$(python -m cedar_bench env --fixtures-url http://127.0.0.1:8765 --dotenv)"; set +a
 export CEDAR_API_KEYS=$(openssl rand -hex 24) CEDAR_ADMIN_KEYS=$CEDAR_API_KEYS
-cargo run --release
+cargo build --release
+for port in 8080 8081 8082; do      # one per persona time zone, matching models.yaml
+  BIND_ADDR=127.0.0.1:$port DATABASE_URL=sqlite://bench-$port.db target/release/cedar &
+done
 
 # 3. The sweep: registers the models in models.yaml (with prices, so cost comes for free),
 #    runs every task x model x reasoning level x repeat, and writes results.jsonl and report.md
@@ -72,11 +75,20 @@ python -m cedar_bench run --filter 'email_calendar/*' --out bench/results/email 
 python -m cedar_bench report bench/results/<stamp>/results.jsonl
 ```
 
-The fixture server holds one persona at a time, so trials against one server run one after
-another. For parallel runs, start several cedar and fixture-server pairs and split the tasks
-between them with `--filter`.
+**One cedar per time zone.** cedar looks up the calendar time zone once per process (it serves
+one real account), so personas in different time zones need separate cedar processes, all pointed
+at the same fixture server. List them in the config's `cedar` section, each with its `timezone`, and
+the runner sends each trial to the right one. The personas are in America/Los_Angeles (maya),
+Europe/Berlin (theo) and America/Chicago (rosa). A trial whose calendar tools answer in another
+zone is marked as a harness error rather than graded, and a task with no server for its zone is
+skipped with a message.
 
-`bench/scripts/smoke.sh` runs the whole loop against a real cedar built from this checkout. A
+The fixture server holds one persona at a time, so trials run one after another. For parallel
+runs, start several fixture-server and cedar sets and split the tasks between them with
+`--filter`.
+
+`bench/scripts/smoke.sh` runs the whole loop against real cedar processes (one per time zone)
+built from this checkout. A
 scripted fake model (`scripts/fake_llm.py`) stands in for a real one, so you can check the plumbing
 after changing a tool without a GPU.
 
@@ -132,11 +144,19 @@ Keep the held-out split (`split: heldout`) in `bench/tasks-heldout/` (git-ignore
 
 ## Status
 
-This is the scaffold: 11 seed tasks over one persona, covering web, documents, weather, stocks,
-email and calendar, and safety. The first milestone is about 40 tasks over 3 personas, run on
-DeepSeek V4 and two other models. Still to do:
+This is the scaffold: 16 seed tasks over three personas, covering web, documents, weather,
+stocks, email and calendar, and safety.
 
-- two more personas, and tasks seeded from real cedar-chat usage (abstracted, with no PII);
+| Persona | Who | Time zone | Plot the tasks use |
+| --- | --- | --- | --- |
+| `maya` | freelance product designer | America/Los_Angeles | scheduling with a busy client, two contacts called Sam, an injected instruction in a phishing mail, a calendar conflict |
+| `theo` | PhD student | Europe/Berlin | a 45-minute slot with his advisor, a workshop's camera-ready checklist |
+| `rosa` | bakery owner | America/Chicago | a catering quote from her own price list, a supplier bank-details scam, a market stall that needs a forecast |
+
+The first milestone is about 40 tasks over these personas, run on DeepSeek V4 and two other
+models. Still to do:
+
+- more tasks per persona, seeded from real cedar-chat usage (abstracted, with no PII);
 - LLM-generated variants of seed tasks, each verified by a person before it is merged;
 - recordings for `plan_trip` (transit) and `show_recipe`, and fixtures for flights and products;
 - a "live" track that runs without the fixture server, for freshness.

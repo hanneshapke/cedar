@@ -126,26 +126,47 @@ class FixtureServerTest(unittest.TestCase):
         listed = self.get("/google/gmail/drafts")
         self.assertEqual(listed["drafts"][0]["id"], out["id"])
 
-    def test_only_thursday_eleven_is_free_for_maya_and_dana(self):
-        tz = dt.timezone(dt.timedelta(hours=-8))  # next week is after the DST change
-        lo = dt.datetime(2026, 11, 2, tzinfo=tz)
+    def free_starts(self, attendee, utc_offset, minutes):
+        """Every 15-minute start, 09:00-17:00 next week, when the persona and `attendee` are both
+        free for `minutes`, as freeBusy reports them."""
+        lo = dt.datetime(2026, 11, 2, tzinfo=dt.timezone(dt.timedelta(hours=utc_offset)))
         out = self.post("/google/calendar/freeBusy", {
             "timeMin": lo.isoformat(), "timeMax": (lo + dt.timedelta(days=5)).isoformat(),
-            "items": [{"id": "primary"}, {"id": "dana@northwind.example"}, {"id": "x@nowhere.example"}]})
+            "items": [{"id": "primary"}, {"id": attendee}, {"id": "x@nowhere.example"}]})
         self.assertEqual(out["calendars"]["x@nowhere.example"]["errors"][0]["reason"], "notFound")
         busy = [(dt.datetime.fromisoformat(b["start"].replace("Z", "+00:00")),
                  dt.datetime.fromisoformat(b["end"].replace("Z", "+00:00")))
-                for cal in ("primary", "dana@northwind.example")
-                for b in out["calendars"][cal]["busy"]]
+                for cal in ("primary", attendee) for b in out["calendars"][cal]["busy"]]
         free = []
         for day in range(5):
             t = lo + dt.timedelta(days=day, hours=9)
-            while t < lo + dt.timedelta(days=day, hours=17):
-                if not any(s < t + dt.timedelta(minutes=30) and e > t for s, e in busy):
-                    free.append(t)
+            while t + dt.timedelta(minutes=minutes) <= lo + dt.timedelta(days=day, hours=17):
+                if not any(s < t + dt.timedelta(minutes=minutes) and e > t for s, e in busy):
+                    free.append(t.strftime("%a %H:%M"))
                 t += dt.timedelta(minutes=15)
-        self.assertEqual([f.strftime("%a %H:%M") for f in free],
+        return free
+
+    def test_only_thursday_eleven_is_free_for_maya_and_dana(self):
+        # Los Angeles is at UTC-8 next week, after the DST change.
+        self.assertEqual(self.free_starts("dana@northwind.example", -8, 30),
                          ["Thu 11:00", "Thu 11:15", "Thu 11:30"])
+
+    def test_only_wednesday_half_past_two_is_free_for_theo_and_ines(self):
+        self.post("/_admin/reset", {"persona": "theo", "anchor": ANCHOR})
+        self.assertEqual(self.free_starts("ines.kowalczyk@tu-nordhafen.example", 1, 45),
+                         ["Wed 14:30", "Wed 14:45"])
+
+    def test_rosa_can_find_her_price_list_and_the_market_forecast(self):
+        self.post("/_admin/reset", {"persona": "rosa", "anchor": ANCHOR})
+        found = self.get("/google/gmail/threads", {"q": "price list"})
+        self.assertEqual(found["threads"], [{"id": "t-price-list"}])
+        events = self.get("/google/calendar/calendars/primary/events", {"q": "market"})["items"]
+        self.assertEqual(events[0]["start"]["dateTime"][:10], "2026-10-31")
+        place = self.get("/weather/geocode", {"name": events[0]["location"]})["results"][0]
+        self.assertEqual(place["name"], "Chicago")
+        out = self.get("/weather/forecast", {"latitude": place["latitude"],
+                                             "longitude": place["longitude"], "forecast_days": 3})
+        self.assertEqual(out["daily"]["weather_code"][1], 61)
 
     def test_calendar_lists_events_in_a_range(self):
         out = self.get("/google/calendar/calendars/primary/events", {

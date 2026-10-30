@@ -28,3 +28,20 @@
   longitude: -124.8
   timezone: America/Vancouver
   base: {max: 11, min: 5}
+- name: Chicago
+  aliases: ["chicago il", "chicago, illinois"]
+  country: United States
+  admin1: Illinois
+  latitude: 41.88
+  longitude: -87.63
+  timezone: America/Chicago
+  base: {max: 10, min: 3}
+  days:
+    "{{sat}}": {code: 61, max: 9.0, min: 4.5, precip: 4.2, precip_prob: 80, wind: 24}
+- name: Nordhafen
+  country: Germany
+  admin1: Schleswig-Holstein
+  latitude: 54.32
+  longitude: 10.13
+  timezone: Europe/Berlin
+  base: {max: 9, min: 4}

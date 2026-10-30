@@ -56,6 +56,27 @@ def script(prompt: str, results: list[str], answered: str | None):
                 "to": ["dana@northwind.example"], "replyToMessageId": "t-dana-kickoff-1",
                 "body": f"Hi Dana,\n\nHow about {when} for the kickoff?\n\nMaya"})
         return "I drafted a reply to Dana proposing Thursday at 11:00."
+    if "advisor" in p:
+        if n == 0:
+            return call("gmail_search_threads", {"query": "is:unread chapter"})
+        if n == 1:
+            return call("calendar_suggest_time", {
+                "attendeeEmails": ["ines.kowalczyk@tu-nordhafen.example"], "durationMinutes": 45,
+                "startTime": NEXT_WEEK[0], "endTime": NEXT_WEEK[1]})
+        if n == 2:
+            slot = re.search(r'"start":\s*"\w{3} [\d-]+T(\d\d:\d\d)', results[1])
+            return call("gmail_create_draft", {
+                "to": ["ines.kowalczyk@tu-nordhafen.example"],
+                "body": f"Dear Ines,\n\nWould Wednesday at {slot.group(1) if slot else '?'} work?\n\nTheo"})
+        return "I drafted a reply to Ines proposing Wednesday at 14:30."
+    if "canopy" in p:
+        if n == 0:
+            return call("calendar_search_events", {"query": "market"})
+        if n == 1:
+            loc = re.search(r'"location":\s*"([^"]+)"', results[0])
+            return call("weather_forecast", {"location": loc.group(1) if loc else "?", "days": 7})
+        return "Yes, bring the canopy: rain is forecast for Saturday morning." \
+            if "rain" in results[1].lower() else "No need for the canopy."
     if "sam" in p and "q3" in p:
         if answered is None:
             return call("ask_user", {"questions": [{"question": "Which Sam do you mean, Sam Rivera or Sam Okoye?"}]})
