@@ -99,6 +99,8 @@ const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
 const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
 const MEMORY_JS: &str = include_str!("../static/memory.js");
+const TRACE_VIEW_JS: &str = include_str!("../static/trace-view.js");
+const TRACE_VIEW_CSS: &str = include_str!("../static/trace-view.css");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
@@ -278,6 +280,7 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/files", get(list_files))
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
+        .route("/turns/{id}/trace", get(turn_trace))
         .route("/turns/{id}/cancel", post(cancel_turn))
         .route("/turns/{id}/plan", post(approve_plan))
         .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))
@@ -346,6 +349,8 @@ pub fn router(state: AppState) -> Router {
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
         .route("/settings-shell.js", get(|| async { asset(JS, SETTINGS_SHELL_JS) }))
         .route("/memory.js", get(|| async { asset(JS, MEMORY_JS) }))
+        .route("/trace-view.js", get(|| async { asset(JS, TRACE_VIEW_JS) }))
+        .route("/trace-view.css", get(|| async { asset(CSS, TRACE_VIEW_CSS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))
@@ -2074,6 +2079,13 @@ async fn turn_events(
         Body::from_stream(upstream.bytes_stream()),
     )
         .into_response())
+}
+
+/// The trace of a turn's run, for the expert view: every model call with what it was sent and
+/// what came back, beside the run's conversation and events.
+async fn turn_trace(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    let turn = find_turn(&state, &id).await?;
+    Ok(Json(state.cedar.trace(turn.run_id).await?))
 }
 
 async fn cancel_turn(State(state): State<AppState>, Path(id): Path<String>) -> Result<(StatusCode, Json<Turn>), AppError> {

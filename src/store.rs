@@ -6,6 +6,7 @@ use crate::models::{
     event, Attachment, Event, ModelEntry, NewRun, Notification, PlanMode, Run, RunStatus,
     StoredMessage, Usage,
 };
+use crate::trace::{LlmCall, NewCall};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -821,6 +822,86 @@ impl Store {
             .collect()
     }
 
+    // -- traces -----------------------------------------------------------------------------
+
+    /// Keep the system prompt and tool definitions the run's agent calls are sent.
+    pub async fn record_sent_prompt(
+        &self,
+        run_id: Uuid,
+        system: &str,
+        tools: &[Value],
+    ) -> Result<()> {
+        sqlx::query("UPDATE runs SET sent_system = ?, sent_tools = ? WHERE id = ?")
+            .bind(system)
+            .bind(serde_json::to_string(tools)?)
+            .bind(run_id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// The system prompt and tool definitions kept by [`Store::record_sent_prompt`], if any.
+    pub async fn sent_prompt(&self, run_id: Uuid) -> Result<(Option<String>, Option<Value>)> {
+        let row = sqlx::query("SELECT sent_system, sent_tools FROM runs WHERE id = ?")
+            .bind(run_id.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some(row) = row else {
+            return Ok((None, None));
+        };
+        let tools = row
+            .try_get::<Option<&str>, _>("sent_tools")?
+            .map(serde_json::from_str)
+            .transpose()?;
+        Ok((row.try_get("sent_system")?, tools))
+    }
+
+    /// Record one call to the model and return its per-run sequence number.
+    pub async fn record_llm_call(&self, run_id: Uuid, call: &NewCall<'_>) -> Result<i64> {
+        let row = sqlx::query(
+            "INSERT INTO llm_calls (run_id, seq, turn, purpose, request, response, error, started_at, duration_ms) \
+             SELECT ?1, COALESCE(MAX(seq), 0) + 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 FROM llm_calls WHERE run_id = ?1 RETURNING seq",
+        )
+        .bind(run_id.to_string())
+        .bind(call.turn as i64)
+        .bind(call.purpose)
+        .bind(serde_json::to_string(&call.request)?)
+        .bind(call.response.as_ref().map(serde_json::to_string).transpose()?)
+        .bind(call.error.as_deref())
+        .bind(call.started_at.timestamp_millis())
+        .bind(call.duration_ms as i64)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.try_get("seq")?)
+    }
+
+    pub async fn list_llm_calls(&self, run_id: Uuid) -> Result<Vec<LlmCall>> {
+        let rows = sqlx::query(
+            "SELECT seq, turn, purpose, request, response, error, started_at, duration_ms \
+             FROM llm_calls WHERE run_id = ? ORDER BY seq",
+        )
+        .bind(run_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(LlmCall {
+                    seq: r.try_get("seq")?,
+                    turn: r.try_get::<i64, _>("turn")? as u32,
+                    purpose: r.try_get("purpose")?,
+                    request: serde_json::from_str(r.try_get::<&str, _>("request")?)?,
+                    response: r
+                        .try_get::<Option<&str>, _>("response")?
+                        .map(serde_json::from_str)
+                        .transpose()?,
+                    error: r.try_get("error")?,
+                    started_at: to_dt(r.try_get("started_at")?),
+                    duration_ms: r.try_get::<i64, _>("duration_ms")? as u64,
+                })
+            })
+            .collect()
+    }
+
     // -- the model registry ------------------------------------------------------------------
 
     /// Every registered model, in picker order.
@@ -1332,6 +1413,59 @@ mod tests {
         let msgs = store.list_messages(run.id).await.unwrap();
         assert_eq!(msgs.iter().map(|m| m.seq).collect::<Vec<_>>(), [1, 2]);
         assert_eq!(msgs[1].content, blocks);
+    }
+
+    #[tokio::test]
+    async fn llm_calls_and_the_sent_prompt_are_kept_with_the_run() {
+        let store = Store::connect_memory().await.unwrap();
+        let run = store
+            .insert_run_limited(&new_run("a"), 5)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.sent_prompt(run.id).await.unwrap(), (None, None));
+        let tools = [json!({ "name": "bash" })];
+        store
+            .record_sent_prompt(run.id, "sys + note", &tools)
+            .await
+            .unwrap();
+        assert_eq!(
+            store.sent_prompt(run.id).await.unwrap(),
+            (Some("sys + note".into()), Some(json!(tools)))
+        );
+
+        let call = |turn, error: Option<&str>| NewCall {
+            turn,
+            purpose: crate::trace::AGENT,
+            request: json!({ "message_count": turn }),
+            response: error
+                .is_none()
+                .then(|| json!({ "stop_reason": "end_turn" })),
+            error: error.map(String::from),
+            started_at: to_dt(1_000),
+            duration_ms: 42,
+        };
+        assert_eq!(
+            store.record_llm_call(run.id, &call(1, None)).await.unwrap(),
+            1
+        );
+        assert_eq!(
+            store
+                .record_llm_call(run.id, &call(2, Some("boom")))
+                .await
+                .unwrap(),
+            2
+        );
+        let calls = store.list_llm_calls(run.id).await.unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0].response,
+            Some(json!({ "stop_reason": "end_turn" }))
+        );
+        assert_eq!(calls[0].duration_ms, 42);
+        assert_eq!(calls[1].turn, 2);
+        assert_eq!(calls[1].response, None);
+        assert_eq!(calls[1].error.as_deref(), Some("boom"));
     }
 
     #[tokio::test]

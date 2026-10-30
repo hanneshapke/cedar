@@ -170,6 +170,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/runs/{id}", get(get_run).delete(delete_run))
         .route("/runs/{id}/messages", get(get_messages))
+        .route("/runs/{id}/trace", get(get_trace))
         .route("/runs/{id}/events", get(stream_events))
         .route("/runs/{id}/cancel", post(cancel_run))
         .route("/runs/{id}/plan", post(answer_plan))
@@ -1086,6 +1087,15 @@ async fn get_messages(
     let run = owned_run(&state, &owner, &id).await?;
     let messages: Vec<StoredMessage> = state.store.list_messages(run.id).await?;
     Ok(Json(json!({ "messages": messages })))
+}
+
+async fn get_trace(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let run = owned_run(&state, &owner, &id).await?;
+    Ok(Json(crate::trace::build(&state.store, &run).await?))
 }
 
 async fn cancel_run(

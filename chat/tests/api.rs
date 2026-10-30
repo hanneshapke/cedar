@@ -315,6 +315,13 @@ async fn events(Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract:
 }
 
 /// Every run's workspace holds `out/report.pdf`, unless the run has been marked `expired`.
+async fn trace(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::response::Response {
+    if !s.runs.lock().unwrap().contains_key(&id) {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "run not found");
+    }
+    Json(json!({ "run": { "id": id }, "calls": [{ "seq": 1, "purpose": "agent" }], "events": [] })).into_response()
+}
+
 async fn list_files(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::response::Response {
     if !s.runs.lock().unwrap().contains_key(&id) {
         return cedar_error(StatusCode::NOT_FOUND, "not_found", "run not found");
@@ -485,6 +492,7 @@ impl Harness {
             .route("/v1/runs/{id}/events", get(events))
             .route("/v1/events", get(notifications))
             .route("/v1/runs/{id}/files", get(list_files))
+            .route("/v1/runs/{id}/trace", get(trace))
             .route("/v1/runs/{id}/files/{*path}", get(download_file))
             .route("/v1/compact", post(compact))
             .route("/v1/tools", get(tools))
@@ -892,6 +900,21 @@ async fn events_are_relayed_from_cedar() {
     assert!(body.contains("event: run.completed"));
 
     let (status, _) = h.call(Method::GET, &format!("/api/turns/{}/events", Uuid::new_v4()), None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_turn_trace_is_relayed_from_cedar() {
+    let h = Harness::new(&[]).await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "hi" }))).await;
+    let (status, trace) = h.json(Method::GET, &format!("/api/turns/{}/trace", turn["id"].as_str().unwrap()), None).await;
+    assert_eq!(status, StatusCode::OK, "{trace}");
+    assert_eq!(trace["run"]["id"], turn["run_id"]);
+    assert_eq!(trace["calls"][0]["purpose"], "agent");
+
+    let (status, _) = h.json(Method::GET, &format!("/api/turns/{}/trace", Uuid::new_v4()), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 

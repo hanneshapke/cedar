@@ -788,6 +788,7 @@ function addTurn(turn) {
   brief.dataset.screenLabel = `Turn ${state.order.length}`;
   const prompt = h('div', 'prompt');
   prompt.append(t('div', 'who', tr('v4.you', { day: new Date(turn.created_at || Date.now()).toLocaleDateString(cedarI18n.locale, { weekday: 'long' }), time: fmtTime(turn.created_at) })));
+  prompt.lastChild.append(cedarTrace.button(turn.id));
   const text = h('p', 'text');
   if (turn.attachments?.length) text.append(cedarAttach.chips(turn.attachments));
   text.append(document.createTextNode(turn.prompt));

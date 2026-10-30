@@ -1,0 +1,142 @@
+/* Expert mode's Trace button and trace dialog (trace-view.js), shared by every UI. It draws with
+   the variables each UI defines (--sheet, --ink, --muted, --line, --wash, --accent, --error,
+   --warn, --sans, --mono), with fallbacks, and translucent greys for edges, so it takes each UI's
+   colours and reads in the light and dark themes alike. */
+
+/* -- the button on each message, only in expert mode ------------------------------------------ */
+
+.trace-btn { display: none; }
+:root[data-expert] .trace-btn {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px;
+  border: 1px solid rgba(128, 128, 128, .35); border-radius: 999px; background: none;
+  color: var(--muted, #6b685f); font: 500 11px/1.6 var(--mono, ui-monospace, monospace);
+  letter-spacing: .02em; vertical-align: middle; cursor: pointer;
+}
+:root[data-expert] .trace-btn:hover { border-color: var(--accent, #1f7a5c); color: var(--accent, #1f7a5c); }
+/* Claude style puts it beside the message bubble rather than in a header line. */
+:root[data-expert] .user-msg > .trace-btn { align-self: center; margin: 0 8px 0 0; }
+.trace-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+/* -- the dialog -------------------------------------------------------------------------------- */
+
+.cedar-trace {
+  --tr-line: rgba(128, 128, 128, .28);
+  --tr-soft: rgba(128, 128, 128, .07);
+  --tr-accent: var(--accent, #1f7a5c);
+  --tr-muted: var(--muted, #6b685f);
+  --tr-error: var(--error, #a3352b);
+  --tr-warn: var(--warn, #8a6a1f);
+  --tr-mono: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  width: min(1120px, calc(100vw - 32px));
+  max-width: none;
+  height: min(860px, calc(100dvh - 32px));
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--tr-line);
+  border-radius: 14px;
+  background: var(--sheet, var(--surface, Canvas));
+  color: var(--ink, CanvasText);
+  font: 13.5px/1.45 var(--sans, ui-sans-serif, system-ui, sans-serif);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  overflow: hidden;
+}
+.cedar-trace[open] { display: flex; flex-direction: column; }
+.cedar-trace::backdrop { background: rgba(20, 18, 14, .45); }
+
+.cedar-trace-head { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--tr-line); }
+.cedar-trace-heading { flex: 1; min-width: 0; }
+.cedar-trace-heading h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.cedar-trace-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cedar-trace-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+
+.cedar-trace-btn {
+  padding: 4px 10px; border: 1px solid var(--tr-line); border-radius: 8px; background: none;
+  color: inherit; font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap;
+}
+.cedar-trace-btn:hover { border-color: var(--tr-accent); color: var(--tr-accent); }
+.cedar-trace-btn:disabled { opacity: .5; cursor: default; }
+.cedar-trace-btn.small { padding: 1px 8px; font-size: 11.5px; }
+.cedar-trace-btn.close { padding: 0 9px; font-size: 18px; line-height: 1.4; }
+
+.cedar-trace-tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--tr-line); overflow-x: auto; }
+.cedar-trace-tab {
+  padding: 8px 12px; border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--tr-muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.cedar-trace-tab:hover { color: inherit; }
+.cedar-trace-tab[aria-selected="true"] { border-bottom-color: var(--tr-accent); color: inherit; font-weight: 600; }
+
+.cedar-trace-body { flex: 1; min-height: 0; padding: 12px 16px 24px; overflow: auto; }
+
+/* -- pieces ------------------------------------------------------------------------------------ */
+
+.cedar-trace-chip {
+  display: inline-block; padding: 0 7px; border: 1px solid var(--tr-line); border-radius: 999px;
+  background: var(--tr-soft); font: 500 11px/1.7 var(--tr-mono); white-space: nowrap;
+}
+.cedar-trace-chip:empty { display: none; }
+.cedar-trace-chip.accent { border-color: color-mix(in srgb, var(--tr-accent) 45%, transparent); color: var(--tr-accent); }
+.cedar-trace-chip.tool { border-color: rgba(128, 128, 128, .5); }
+.cedar-trace-chip.ok { color: var(--tr-accent); }
+.cedar-trace-chip.warn { border-color: color-mix(in srgb, var(--tr-warn) 45%, transparent); color: var(--tr-warn); }
+.cedar-trace-chip.error { border-color: color-mix(in srgb, var(--tr-error) 45%, transparent); color: var(--tr-error); }
+.cedar-trace-chip.user { color: var(--tr-accent); }
+.cedar-trace-chip.assistant { color: var(--tr-warn); }
+
+.cedar-trace-dim { color: var(--tr-muted); font-size: 12px; }
+.cedar-trace-title { font-weight: 600; }
+.cedar-trace .mono { font-family: var(--tr-mono); }
+.cedar-trace-grow { flex: 1; }
+.cedar-trace-time { min-width: 56px; text-align: right; font: 500 12px var(--tr-mono); }
+.cedar-trace-ellipsis { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cedar-trace-note { margin: 6px 0 10px; color: var(--tr-muted); }
+.cedar-trace-note.warn { color: var(--tr-warn); }
+
+.cedar-trace-pre {
+  margin: 4px 0 8px; padding: 8px 10px; max-height: 420px; overflow: auto;
+  border: 1px solid var(--tr-line); border-radius: 8px; background: var(--tr-soft);
+  font: 12px/1.5 var(--tr-mono); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cedar-trace-pre.raw { max-height: none; }
+.cedar-trace-pre.error { border-color: color-mix(in srgb, var(--tr-error) 40%, transparent); color: var(--tr-error); }
+
+.cedar-trace-fold { margin: 6px 0; border: 1px solid var(--tr-line); border-radius: 10px; background: var(--sheet, var(--surface, Canvas)); }
+.cedar-trace-fold > summary {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; list-style: none;
+  min-width: 0;
+}
+.cedar-trace-fold > summary::-webkit-details-marker { display: none; }
+.cedar-trace-fold > summary::before { content: "▸"; flex: none; color: var(--tr-muted); font-size: 11px; transition: transform .12s; }
+.cedar-trace-fold[open] > summary::before { transform: rotate(90deg); }
+.cedar-trace-fold > summary:hover { background: var(--tr-soft); }
+.cedar-trace-fold-body { padding: 4px 12px 10px; border-top: 1px solid var(--tr-line); }
+.cedar-trace-fold-body .cedar-trace-fold { margin: 8px 0; }
+
+.cedar-trace-fold.call { border-left: 3px solid var(--tr-accent); }
+.cedar-trace-fold.tool { margin-left: 18px; }
+.cedar-trace-fold.failed { border-left: 3px solid var(--tr-error); }
+.cedar-trace-fold.event { margin-left: 18px; border-style: dashed; }
+.cedar-trace-fold.event > summary { padding: 4px 10px; }
+.cedar-trace-event { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cedar-trace-event-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tr-muted); font-size: 12.5px; }
+
+.cedar-trace-sec { margin: 8px 0 12px; }
+.cedar-trace-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.cedar-trace-sec-head h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tr-muted); }
+
+.cedar-trace-params { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 4px 0 8px; font-size: 12.5px; }
+.cedar-trace-params dt { color: var(--tr-muted); font-family: var(--tr-mono); }
+.cedar-trace-params dd { margin: 0; font-family: var(--tr-mono); overflow-wrap: anywhere; }
+
+.cedar-trace-msg { margin: 8px 0; padding: 6px 10px 2px; border-left: 2px solid var(--tr-line); }
+.cedar-trace-msg.fresh { border-left-color: var(--tr-accent); }
+.cedar-trace-msg-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.cedar-trace-block { margin: 2px 0; }
+.cedar-trace-label { color: var(--tr-muted); font: 11.5px var(--tr-mono); }
+
+@media (max-width: 640px) {
+  .cedar-trace { width: 100vw; height: 100dvh; border-radius: 0; }
+  .cedar-trace-head { flex-direction: column; }
+  .cedar-trace-fold.tool, .cedar-trace-fold.event { margin-left: 8px; }
+  .cedar-trace-fold > summary { flex-wrap: wrap; }
+}

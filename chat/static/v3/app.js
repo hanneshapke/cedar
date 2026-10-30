@@ -800,6 +800,7 @@ function addTurn(turn) {
   state.views.set(turn.id, view);
   state.order.push(turn.id);
   const user = note('user', escapeHtml(tr('v3.you', { time: fmtTime(turn.created_at) })));
+  user.firstChild.append(cedarTrace.button(turn.id));
   if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
   user.lastChild.append(document.createTextNode(turn.prompt));
   cedarClarify.settle(els.notes); // this message answers any question still open above it

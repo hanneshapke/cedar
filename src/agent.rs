@@ -7,7 +7,7 @@ use crate::browser::BrowserSession;
 use crate::config::SandboxConfig;
 use crate::events::Emitter;
 use crate::integrations::Integrations;
-use crate::llm::{LlmRouter, MessageRequest};
+use crate::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
 use crate::memory::{self, Memories, MemoryContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
@@ -18,9 +18,11 @@ use crate::store::Store;
 use crate::tools::{
     question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER, REMEMBER,
 };
+use crate::trace;
 use crate::waits::{Answer, Waits};
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
+use chrono::Utc;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -201,6 +203,9 @@ pub async fn run_agent(
         }
     }
     push_message(env, run, &mut messages, "user", opening).await?;
+    env.store
+        .record_sent_prompt(run.id, &system, &tool_defs)
+        .await?;
     let mut sources = Sources::default();
 
     for turn in 1..=run.max_turns {
@@ -218,11 +223,7 @@ pub async fn run_agent(
             AgentError::Failed(format!("model {:?} is no longer registered", run.model_id))
         })?;
         let started = Instant::now();
-        let resp = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-            r = llm.create_message(&req) => r?,
-        };
+        let resp = call_model(env, run, llm.as_ref(), &req, trace::AGENT, turn, cancel).await??;
         if let Some(text) = &resp.reasoning {
             events
                 .emit(
@@ -385,6 +386,37 @@ pub fn with_attachments(opening: Value, blocks: Vec<Value>) -> Value {
     Value::Array(parts)
 }
 
+/// Call the model and record the call for the run's trace. The outer error is a cancellation or a
+/// failure to record it; the inner one is the call's own.
+async fn call_model(
+    env: &AgentEnv,
+    run: &Run,
+    llm: &dyn LlmClient,
+    req: &MessageRequest<'_>,
+    purpose: &str,
+    turn: u32,
+    cancel: &CancellationToken,
+) -> Result<Result<LlmResponse>, AgentError> {
+    let started_at = Utc::now();
+    let started = Instant::now();
+    let resp = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+        r = llm.create_message(req) => r,
+    };
+    let call = trace::NewCall {
+        turn,
+        purpose,
+        request: trace::request(req, purpose),
+        response: resp.as_ref().ok().map(trace::response),
+        error: resp.as_ref().err().map(|e| format!("{e:#}")),
+        started_at,
+        duration_ms: started.elapsed().as_millis() as u64,
+    };
+    env.store.record_llm_call(run.id, &call).await?;
+    Ok(resp)
+}
+
 /// The most tokens one reply of the run's model may take: the registered entry's limit, or the
 /// default when the entry is gone.
 fn max_tokens(env: &AgentEnv, run: &Run) -> u32 {
@@ -434,12 +466,7 @@ async fn make_plan(
         tools: &[],
         messages: &messages,
     };
-    let resp = tokio::select! {
-        biased;
-        _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-        r = llm.create_message(&req) => r,
-    };
-    let resp = match resp {
+    let resp = match call_model(env, run, llm.as_ref(), &req, trace::PLAN, 0, cancel).await? {
         Ok(resp) => resp,
         Err(e) => {
             tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "planning call failed; going on without a plan");
