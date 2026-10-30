@@ -205,3 +205,13 @@ class ModelKeyTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as e:
                 self.regs(register)
             self.assertNotIn(self.KEY[3:], str(e.exception))
+
+
+class ModelIdTest(unittest.TestCase):
+    def test_ids_cedar_would_refuse_are_caught_with_a_suggestion(self):
+        for bad, slug in (("deepseek-ai/DeepSeek-V4-Pro", "deepseek-v4-pro"), ("My Model", "my-model")):
+            with self.assertRaises(SystemExit) as e:
+                runner.check_model_ids({"models": [{"id": bad}]})
+            self.assertIn(f"- id: {slug}", str(e.exception))
+            self.assertIn(f"model: {bad}", str(e.exception))
+        runner.check_model_ids({"models": [{"id": "deepseek-v4-pro"}, {"id": "qwen3.5_32b"}]})

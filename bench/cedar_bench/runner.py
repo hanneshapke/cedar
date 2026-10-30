@@ -213,6 +213,21 @@ def load_config(path: Path) -> dict:
 
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# What cedar accepts as a registry id (src/integrations.rs); runs name their model by it.
+MODEL_ID = re.compile(r"[a-z0-9._-]{1,64}")
+
+
+def check_model_ids(cfg: dict) -> None:
+    for m in cfg["models"]:
+        mid = str(m.get("id", ""))
+        if MODEL_ID.fullmatch(mid):
+            continue
+        slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9._-]", "-", mid.lower().split("/")[-1])).strip("-")[:64]
+        raise SystemExit(
+            f"model id {mid!r} won't work with cedar: an id uses lowercase letters, digits, '.', "
+            f"'_' and '-' (at most 64 characters). The id is only cedar's short name for the model; "
+            f"the provider's model name goes in register.model. For example:\n"
+            f"  - id: {slug or 'my-model'}\n    register:\n      model: {mid}")
 
 
 def registrations(cfg: dict) -> list[tuple[str, dict]]:
@@ -258,16 +273,16 @@ def register_models(cedar: Cedar, entries: list[tuple[str, dict]]) -> None:
         try:
             cedar.register_model(model_id, entry)
         except CedarError as e:
-            if e.status != 400:
+            if e.status in (401, 403):
                 raise
             # cedar checks a model server by listing its models first; this is that server's answer.
             try:
                 why = json.loads(e.body)["error"]["message"]
             except (ValueError, KeyError, TypeError):
                 why = e.body[:300]
-            hint = (" Check the model's API key (api_key_env) for that server."
+            hint = (" Check the model's API key for that server."
                     if re.search(r"\b40[13]\b", why) else "")
-            raise SystemExit(f"model {model_id}: cedar could not use {entry.get('base_url')}: "
+            raise SystemExit(f"model {model_id}: cedar refused to register it ({e.status}): "
                              f"{why}.{hint}") from None
         print(f"registered {model_id} ({entry.get('model')}) on {cedar.base}", flush=True)
 
@@ -288,6 +303,7 @@ def _key(r: dict) -> tuple:
 
 def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, personas_dir: Path,
           resume: bool, register: bool, keep_trace: bool) -> Path:
+    check_model_ids(cfg)
     specs = cfg["cedar"] if isinstance(cfg["cedar"], list) else [cfg["cedar"]]
     servers = [Server(s) for s in specs]
     for server in servers:
