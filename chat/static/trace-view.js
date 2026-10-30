@@ -1,7 +1,7 @@
 'use strict';
 
 // Expert mode: the trace of a response, shared by every UI. Turned on per browser under Settings →
-// Expert mode (localStorage, key `cedar-chat-expert`), it shows a Trace button on each message
+// Advanced settings → Expert mode (localStorage, key `cedar-chat-expert`), it shows a Trace button on each message
 // you sent, which opens a dialog with everything the agent did for the response, from cedar's
 // `GET /v1/runs/{id}/trace` (through `/api/turns/{id}/trace`):
 //
@@ -563,10 +563,14 @@ const cedarTrace = (() => {
     return b;
   }
 
-  // -- Settings → Expert mode --------------------------------------------------------------------
+  // -- Settings → Advanced settings → Expert mode ------------------------------------------------
 
-  function renderSettings(section) {
-    section.textContent = '';
+  /** The Expert mode block that settings.js puts at the top of the Advanced settings page. It needs
+   *  no admin token, since it only changes this browser. */
+  function settingsBlock() {
+    const block = el('div', 'cedar-set-block');
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', tr('trace.settings.title')));
     const row = el('div', 'cedar-set-integration');
     const main = el('div', 'cedar-set-integration-main');
     main.append(el('strong', '', tr('trace.settings.switch')), el('small', '', tr('trace.settings.switchDesc')));
@@ -579,40 +583,15 @@ const cedarTrace = (() => {
     sw.addEventListener('click', () => {
       set(!enabled());
       sw.setAttribute('aria-checked', String(enabled()));
-      cedarSettingsShell.refresh('expert');
+      if (typeof cedarSettingsShell !== 'undefined') cedarSettingsShell.refresh('advanced');
     });
     side.append(sw);
     row.append(main, side);
-    section.append(row);
-  }
-
-  function bindSettings() {
-    apply();
-    if (typeof cedarSettingsShell === 'undefined') return;
-    const body = document.getElementById('settings-body');
-    if (!body) return;
-    let section = body.querySelector('.settings-page[data-page="expert"]');
-    if (!section) {
-      section = el('section', 'settings-page');
-      section.dataset.page = 'expert';
-      section.id = 'expert-section';
-      section.hidden = true;
-      body.append(section);
-    }
-    cedarSettingsShell.register({
-      id: 'expert',
-      label: tr('trace.settings.title'),
-      title: tr('trace.settings.title'),
-      description: tr('trace.settings.description'),
-      render: renderSettings,
-      summary: () => tr(enabled() ? 'trace.settings.on' : 'trace.settings.off'),
-      footer: false,
-    });
+    block.append(head, row);
+    return block;
   }
 
   apply();
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindSettings);
-  else bindSettings();
 
-  return { enabled, set, button, open };
+  return { enabled, set, button, open, settingsBlock };
 })();

@@ -569,21 +569,23 @@ const cedarSettings = (() => {
   /** cedar's server settings as last loaded for the Advanced page, for its nav line. */
   let advancedSettings = null;
 
-  /** Server-wide options most setups leave alone: for now, what runs the sandboxes. */
+  /** Expert mode (trace-view.js), for this browser and so open to everyone, then the server-wide
+   *  options most setups leave alone: for now, what runs the sandboxes, which need the admin token. */
   async function renderAdvanced(section = advancedSection) {
     if (!section) return;
     advancedSection = section;
+    const expert = typeof cedarTrace === 'undefined' ? [] : [cedarTrace.settingsBlock()];
     const cfg = deps.config();
     if (!cfg.admin_enabled || !unlocked()) {
       advancedSettings = null;
       const card = el('div', 'cedar-set-help');
       card.append(note(tr(cfg.admin_enabled ? 'settings.advanced.locked' : 'settings.advanced.noAdmin')));
       if (cfg.admin_enabled) card.append(button(tr('settings.advanced.unlock'), () => shell()?.go('server'), 'primary'));
-      section.replaceChildren(card);
+      section.replaceChildren(...expert, sandboxBlock(card));
       shell()?.refresh('advanced');
       return;
     }
-    section.replaceChildren(note(tr('settings.loading')));
+    section.replaceChildren(...expert, note(tr('settings.loading')));
     try {
       advancedSettings = await adminApi('GET', '/integrations/settings');
     } catch (e) {
@@ -593,16 +595,21 @@ const cedarSettings = (() => {
         setAdminToken('');
         return renderAdvanced(section);
       }
-      section.replaceChildren(note(e.message, 'cedar-set-error'));
+      section.replaceChildren(...expert, sandboxBlock(note(e.message, 'cedar-set-error')));
       shell()?.refresh('advanced');
       return;
     }
+    section.replaceChildren(...expert, sandboxBlock(openShellRow(advancedSettings)));
+    shell()?.refresh('advanced');
+  }
+
+  /** The Advanced page's Sandbox block around `content`. */
+  function sandboxBlock(content) {
     const b = el('div', 'cedar-set-block');
     const head = el('div', 'cedar-set-block-head');
     head.append(el('span', 'settings-eyebrow', tr('settings.server.sandbox')));
-    b.append(head, openShellRow(advancedSettings));
-    section.replaceChildren(b);
-    shell()?.refresh('advanced');
+    b.append(head, content);
+    return b;
   }
 
   /** The switch between Docker (off, the default) and OpenShell (on) for conversations' sandboxes. */
@@ -752,9 +759,11 @@ const cedarSettings = (() => {
 
   /** The Advanced page's nav line: the sandbox runtime, once known. */
   function advancedSummary() {
-    if (!deps?.config()?.admin_enabled || !unlocked()) return tr('shell.tag.ADMIN');
-    if (!advancedSettings) return null;
-    return advancedSettings.sandbox_runtime === 'openshell' ? 'OpenShell' : 'Docker';
+    const expert = typeof cedarTrace !== 'undefined' && cedarTrace.enabled() ? tr('trace.settings.summaryOn') : null;
+    let sandbox = null;
+    if (!deps?.config()?.admin_enabled || !unlocked()) sandbox = tr('shell.tag.ADMIN');
+    else if (advancedSettings) sandbox = advancedSettings.sandbox_runtime === 'openshell' ? 'OpenShell' : 'Docker';
+    return [expert, sandbox].filter(Boolean).join(' · ') || null;
   }
 
   /** The page head's Lock button, when the admin token is in. */

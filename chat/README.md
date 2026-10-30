@@ -33,7 +33,7 @@ Both interfaces have all of these, except where noted:
   document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
 - A stop button cancels the running response
-- Expert mode (Settings → Expert mode, saved in this browser) adds a Trace button to each message
+- Expert mode (Settings → Advanced settings → Expert mode, saved in this browser) adds a Trace button to each message
   you send. It opens a dialog with everything the agent did for that response, from cedar's
   `GET /v1/runs/{id}/trace` (`/api/turns/{id}/trace` here): a timeline of each model call (the
   parameters and messages it was sent, with the ones new since the previous call marked, and the
