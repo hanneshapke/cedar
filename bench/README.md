@@ -63,8 +63,9 @@ python -m cedar_bench serve --port 8765
 set -a; eval "$(python -m cedar_bench env --fixtures-url http://127.0.0.1:8765 --dotenv)"; set +a
 export CEDAR_API_KEYS=$(openssl rand -hex 24) CEDAR_ADMIN_KEYS=$CEDAR_API_KEYS
 cargo build --release
+CEDAR_BIN=$(git rev-parse --show-toplevel)/target/release/cedar   # works from any directory
 for port in 8080 8081 8082; do      # one per persona time zone, matching models.yaml
-  BIND_ADDR=127.0.0.1:$port DATABASE_URL=sqlite://bench-$port.db target/release/cedar &
+  BIND_ADDR=127.0.0.1:$port DATABASE_URL=sqlite://bench-$port.db "$CEDAR_BIN" &
 done
 
 # 3. The sweep: registers the models in models.yaml (with prices, so cost comes for free),

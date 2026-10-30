@@ -232,6 +232,12 @@ def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, perso
           resume: bool, register: bool, keep_trace: bool) -> Path:
     specs = cfg["cedar"] if isinstance(cfg["cedar"], list) else [cfg["cedar"]]
     servers = [Server(s) for s in specs]
+    for server in servers:
+        try:
+            server.client.ready()
+        except OSError as e:
+            raise SystemExit(f"can't reach cedar at {server.url} ({getattr(e, 'reason', e)}): is it "
+                             "running? Start one per `cedar` entry in the config.") from None
     if register:
         for server in servers:
             try:

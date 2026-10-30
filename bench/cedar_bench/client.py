@@ -104,6 +104,13 @@ class Cedar:
             # Dropped, or closed without a terminal event (cedar restarted?): resume after `after`.
             time.sleep(1)
 
+    def ready(self) -> dict:
+        """`GET /readyz`; raises OSError (URLError) when nothing answers at the address."""
+        try:
+            return self._request("GET", "/readyz", timeout=10)
+        except CedarError as e:  # 503: up, but the database or Docker isn't usable
+            raise ConnectionError(f"not ready: {e.body[:300]}") from None
+
     # -- admin ---------------------------------------------------------------------------------
 
     def register_model(self, model_id: str, entry: dict) -> dict:
