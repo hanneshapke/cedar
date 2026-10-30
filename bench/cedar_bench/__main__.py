@@ -5,7 +5,7 @@
     validate   check every task file
     persona    create a persona, or show one expanded
     run        run tasks against cedar and grade them
-    report     summarize a results.jsonl
+    report     write report.pdf and report.md for a results.jsonl
     bundle     write the dataset release (tasks, personas, fixtures, manifest)
 """
 

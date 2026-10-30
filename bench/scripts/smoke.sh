@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end check of the harness without a GPU: the fixture server, a scripted fake model, real
 # cedar processes (built from this checkout) pointed at both, and the runner over the tasks the
-# fake model knows. Needs Docker and the cedar-sandbox image (see the top-level README's Quick start).
+# fake model knows. Needs uv, Docker and the cedar-sandbox image (see the top-level README's Quick
+# start).
 #
 #     bench/scripts/smoke.sh            # builds cedar --release first if needed
 set -euo pipefail
@@ -17,11 +18,13 @@ trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
 [ -x target/release/cedar ] || cargo build --release
 
-export PYTHONPATH=$BENCH
-python3 -m cedar_bench serve --port "$FX_PORT" >"$WORK/fixtures.log" 2>&1 &
-python3 $BENCH/scripts/fake_llm.py --port "$LLM_PORT" >"$WORK/llm.log" 2>&1 &
+command -v uv >/dev/null || { echo "smoke.sh needs uv: https://docs.astral.sh/uv/" >&2; exit 1; }
+py() { uv run --quiet --project "$BENCH" python "$@"; }
+PYTHON=$(py -c 'import sys; print(sys.executable)')  # the server runs on it directly, so it stops
+"$PYTHON" -m cedar_bench serve --port "$FX_PORT" >"$WORK/fixtures.log" 2>&1 &
+"$PYTHON" $BENCH/scripts/fake_llm.py --port "$LLM_PORT" >"$WORK/llm.log" 2>&1 &
 
-KEY=$(python3 -c 'import secrets; print(secrets.token_hex(24))')
+KEY=$(py -c 'import secrets; print(secrets.token_hex(24))')
 # cedar looks up the calendar time zone once per process, so each persona time zone gets its own
 # cedar, all pointed at the same fixture server.
 ZONES=(America/Los_Angeles Europe/Berlin America/Chicago)
@@ -42,7 +45,7 @@ ZONES=(America/Los_Angeles Europe/Berlin America/Chicago)
 for i in "${!ZONES[@]}"; do
   (
     set -a
-    eval "$(python3 -m cedar_bench env --fixtures-url "$FX" --dotenv)"
+    eval "$(py -m cedar_bench env --fixtures-url "$FX" --dotenv)"
     CEDAR_API_KEYS=$KEY CEDAR_ADMIN_KEYS=$KEY BIND_ADDR=127.0.0.1:$((CEDAR_PORT + i))
     DATABASE_URL=sqlite://$WORK/cedar-$i.db
     set +a
@@ -58,10 +61,10 @@ for i in "${!ZONES[@]}"; do
   curl -sf "$url" >/dev/null || { cat "$WORK/cedar-$i.log"; exit 1; }
 done
 
-SMOKE_KEY=$KEY python3 -m cedar_bench run --config "$WORK/models.yaml" --out "$WORK/results" \
+SMOKE_KEY=$KEY py -m cedar_bench run --config "$WORK/models.yaml" --out "$WORK/results" \
   --keep-trace --filter "${TASKS[@]}" || { tail -50 "$WORK"/cedar-*.log; exit 1; }
 
-python3 - "$WORK/results/results.jsonl" "${#TASKS[@]}" <<'PY'
+py - "$WORK/results/results.jsonl" "${#TASKS[@]}" <<'PY'
 import json, sys
 trials = [json.loads(line) for line in open(sys.argv[1])]
 failed = [t for t in trials if not t["passed"]]

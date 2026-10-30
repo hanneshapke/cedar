@@ -1,8 +1,10 @@
-# Copy to models.yaml (git-ignored) and adjust. A model's API key goes in `api_key`, or, to keep
-# it out of the file, in an environment variable whose NAME goes in `api_key_env`. Keys are never
-# written to results.
-# One cedar process per persona time zone: cedar looks up the calendar time zone once per process.
-# All of them use the fixture server below. A single server works for tasks in one time zone.
+# Copy to models.yaml (git-ignored) and adjust; "Configuring models" in bench/README.md explains
+# every field. A model's API key goes in `api_key`, or, to keep it out of the file, in an
+# environment variable whose NAME goes in `api_key_env`. Keys are never written to results.
+#
+# One cedar process per persona time zone (cedar looks up the calendar time zone once per process),
+# all using the fixture server below. bench/scripts/stack.sh starts exactly these three and sets
+# CEDAR_BENCH_KEY for `stack.sh run`; set it yourself only for cedar servers you start.
 cedar:
   - url: http://127.0.0.1:8080
     timezone: America/Los_Angeles       # maya
@@ -15,11 +17,11 @@ repeats: 3                              # trials per task, for pass^k
 trial_timeout_secs: 900
 
 models:
-  - id: deepseek-v4
-    reasoning: [none, high]
+  - id: deepseek-v4                     # cedar's short name: lowercase, digits, . _ - (<= 64)
+    reasoning: [none, high]               # levels to sweep, each one of reasoning_levels
     register:
       base_url: http://localhost:8000/v1
-      model: deepseek-ai/DeepSeek-V4-Flash
+      model: deepseek-ai/DeepSeek-V4-Flash  # the provider's own name for the model
       reasoning_levels: [none, low, high, max]
       price: {input_usd_per_m: 0.27, output_usd_per_m: 1.10}   # placeholder: set your real price
   - id: other-model

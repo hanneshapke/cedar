@@ -16,7 +16,7 @@ The run config (see bench/models.example.yaml):
     repeats: 3
     trial_timeout_secs: 900
     models:
-      - id: deepseek                      # the registry id runs name
+      - id: deepseek                      # cedar's id: lowercase, digits, . _ - (<= 64 chars)
         reasoning: [none, high]           # levels to sweep; omit for the model's default
         register:                         # optional: PUT /v1/admin/models/{id} before the sweep
           base_url: http://localhost:8000/v1
