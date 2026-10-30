@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -196,9 +197,9 @@ private fun StatusFooter(turn: TurnTranscript) {
                 }
                 if (turn.turn.needsAnswer) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(14.dp), tint = CedarColors.orange)
+                        Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(14.dp), tint = CedarColors.clay)
                         Spacer(Modifier.width(3.dp))
-                        Text(stringResource(R.string.needs_your_answer), style = MaterialTheme.typography.labelSmall, color = CedarColors.orange)
+                        Text(stringResource(R.string.needs_your_answer), style = MaterialTheme.typography.labelSmall, color = CedarColors.clay)
                     }
                 } else if (turn.turn.stopReason == "max_tokens") {
                     Text(stringResource(R.string.cut_short), style = MaterialTheme.typography.labelSmall, color = secondary)
@@ -244,24 +245,24 @@ private fun ReasoningView(text: String, durationMs: Int?) {
 /** A bordered box for plans, approvals and questions. */
 @Composable
 private fun Panel(tint: androidx.compose.ui.graphics.Color? = null, content: @Composable () -> Unit) {
-    val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(tint?.copy(alpha = 0.12f) ?: MaterialTheme.colorScheme.surfaceContainer)
-            .border(1.dp, tint?.copy(alpha = 0.5f) ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), shape)
-            .padding(12.dp),
+            .surfaceCard(
+                fill = tint?.copy(alpha = 0.08f) ?: MaterialTheme.colorScheme.surfaceContainer,
+                stroke = tint?.copy(alpha = 0.45f) ?: MaterialTheme.colorScheme.outlineVariant,
+            )
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) { content() }
 }
 
 @Composable
-private fun PanelTitle(icon: ImageVector, text: String) {
+private fun PanelTitle(icon: ImageVector, text: String, color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(18.dp))
+        Icon(icon, null, Modifier.size(18.dp), tint = color)
         Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.titleSmall)
+        Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = color)
     }
 }
 
@@ -301,10 +302,11 @@ private fun PlanView(plan: Plan, canAgree: Boolean, agree: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ApprovalView(approval: Approval, canDecide: Boolean, decide: (String) -> Unit) {
-    Panel(tint = if (approval.isPending) CedarColors.orange else CedarColors.orange.copy(alpha = 0.4f)) {
+    Panel(tint = if (approval.isPending) CedarColors.clay else CedarColors.clay.copy(alpha = 0.4f)) {
         PanelTitle(
             Icons.Outlined.BackHand,
             if (approval.isPending) stringResource(R.string.approval_question) else stringResource(R.string.approval_asked, approval.reason),
+            color = if (approval.isPending) CedarColors.clay else MaterialTheme.colorScheme.onSurface,
         )
         if (approval.isPending) Text(approval.reason, style = MaterialTheme.typography.bodyMedium)
         val summary = when (approval.tool) {
@@ -345,7 +347,7 @@ fun QuestionsView(questions: Questions, submit: (List<ClarifyAnswer.Answer>) -> 
     val answers = remember(questions) { mutableStateListOf(*Array(questions.questions.size) { ClarifyAnswer.Answer() }) }
     var sent by remember(questions) { mutableStateOf(false) }
     Panel {
-        PanelTitle(Icons.AutoMirrored.Outlined.HelpOutline, stringResource(R.string.cedar_asks))
+        PanelTitle(Icons.AutoMirrored.Outlined.HelpOutline, stringResource(R.string.cedar_asks), color = CedarColors.clay)
         questions.questions.forEachIndexed { index, question ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 question.header?.takeIf { it.isNotEmpty() }?.let {
@@ -403,21 +405,21 @@ fun QuestionsView(questions: Questions, submit: (List<ClarifyAnswer.Answer>) -> 
 fun ToolCallView(call: ToolCall, webURL: String?) {
     val context = LocalContext.current
     var expanded by rememberSaveable(call.id) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), shape)
+            .surfaceCard()
             .animateContentSize(),
     ) {
         Row(
-            Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(toolIcon(call.name), null, Modifier.size(18.dp), tint = CedarColors.secondaryText)
-            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(toolIcon(call.name), null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
+            Spacer(Modifier.width(10.dp))
             Text(call.name, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.width(8.dp))
             Text(
@@ -432,7 +434,7 @@ fun ToolCallView(call: ToolCall, webURL: String?) {
             when {
                 !call.isFinished -> CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                 call.isError -> Icon(Icons.Outlined.Error, stringResource(R.string.failed), Modifier.size(16.dp), tint = CedarColors.red)
-                else -> Icon(Icons.Outlined.CheckCircle, stringResource(R.string.outcome_done), Modifier.size(16.dp), tint = CedarColors.green)
+                else -> Icon(Icons.Outlined.CheckCircle, stringResource(R.string.outcome_done), Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
             }
             Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp).rotate(if (expanded) 90f else 0f), tint = CedarColors.secondaryText)
         }
@@ -529,7 +531,7 @@ fun CodeBox(label: String?, text: String, isError: Boolean = false) {
     val limit = 20_000
     val more = text.length - limit
     val shown = if (more > 0) text.take(limit) + "\n" + plural(R.plurals.more_characters, more, more) else text
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
         Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 6.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (label != null) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = if (isError) CedarColors.red else CedarColors.secondaryText)

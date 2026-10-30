@@ -6,6 +6,11 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,14 +32,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Eco
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.OpenInBrowser
@@ -49,7 +53,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -194,16 +198,22 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
 
 @Composable
 private fun Greeting() {
-    Column(Modifier.fillMaxWidth().padding(top = 80.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Outlined.Eco, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.size(12.dp))
-        Text(stringResource(R.string.greeting_title), style = MaterialTheme.typography.titleLarge)
+    Column(Modifier.fillMaxWidth().padding(top = 72.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CedarBadge()
+        Spacer(Modifier.size(20.dp))
+        Text(
+            stringResource(R.string.greeting_title),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
         Spacer(Modifier.size(8.dp))
         Text(
             stringResource(R.string.greeting_text),
             style = MaterialTheme.typography.bodyMedium,
             color = CedarColors.secondaryText,
             textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 340.dp),
         )
     }
 }
@@ -214,23 +224,26 @@ fun UserBubble(text: String, attachments: List<AttachmentInfo> = emptyList()) {
         Spacer(Modifier.size(48.dp))
         Column(
             Modifier
-                .clip(RoundedCornerShape(18.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 6.dp, bottomStart = 20.dp))
+                .background(MaterialTheme.colorScheme.primary)
+                .padding(horizontal = 15.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            SelectionContainer { Text(text) }
+            SelectionContainer { Text(text, color = MaterialTheme.colorScheme.onPrimary) }
             if (attachments.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     attachments.forEach { file ->
                         Row(
-                            Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 4.dp),
+                            Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(if (file.mediaType == OutgoingAttachment.PDF) Icons.Outlined.Description else Icons.Outlined.Image, null, Modifier.size(14.dp))
+                            Icon(
+                                if (file.mediaType == OutgoingAttachment.PDF) Icons.Outlined.Description else Icons.Outlined.Image, null, Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                            )
                             Spacer(Modifier.size(4.dp))
-                            Text(file.name, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            Text(file.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
                 }
@@ -242,7 +255,12 @@ fun UserBubble(text: String, attachments: List<AttachmentInfo> = emptyList()) {
 @Composable
 private fun ErrorBanner(message: String, dismiss: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CedarColors.red.copy(alpha = 0.1f)).padding(12.dp),
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(CedarColors.red.copy(alpha = 0.1f))
+            .border(1.dp, CedarColors.red.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+            .padding(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Icon(Icons.Outlined.WarningAmber, null, Modifier.size(18.dp), tint = CedarColors.red)
@@ -262,9 +280,9 @@ private fun Composer(chat: ChatModel) {
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         chat.addFiles(context, uris)
     }
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
+    Surface(color = MaterialTheme.colorScheme.background) {
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (chat.attachments.isNotEmpty()) {
@@ -272,17 +290,28 @@ private fun Composer(chat: ChatModel) {
                     chat.attachments.forEach { file -> AttachmentChip(file) { chat.removeAttachment(file) } }
                 }
             }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // A floating field: attach, the text, and send in one rounded card.
+            Row(
+                Modifier.fillMaxWidth().surfaceCard(radius = 24.dp).padding(5.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 Box {
-                    IconButton(
+                    FilledIconButton(
                         onClick = { menu = true },
                         enabled = !chat.isActive && !chat.isAddingAttachments && chat.attachments.size < OutgoingAttachment.MAX_FILES,
+                        modifier = Modifier.size(36.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = CedarColors.secondaryText,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        ),
                     ) {
                         if (chat.isAddingAttachments) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         } else {
                             Icon(
-                                Icons.Outlined.AttachFile,
+                                Icons.Filled.Add,
                                 stringResource(if (chat.acceptsImages) R.string.attach_images_or_pdfs else R.string.attach_pdfs),
                             )
                         }
@@ -309,23 +338,45 @@ private fun Composer(chat: ChatModel) {
                         )
                     }
                 }
-                OutlinedTextField(
+                val placeholder = stringResource(if (chat.openQuestions == null) R.string.message_placeholder else R.string.answer_placeholder)
+                val textStyle = MaterialTheme.typography.bodyLarge
+                BasicTextField(
                     value = chat.draft,
                     onValueChange = { chat.draft = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = {
-                        Text(stringResource(if (chat.openQuestions == null) R.string.message_placeholder else R.string.answer_placeholder))
-                    },
+                    modifier = Modifier.weight(1f).padding(vertical = 7.dp),
+                    textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     maxLines = 8,
-                    shape = RoundedCornerShape(20.dp),
+                    decorationBox = { field ->
+                        Box {
+                            if (chat.draft.isEmpty()) Text(placeholder, style = textStyle, color = CedarColors.secondaryText, maxLines = 1)
+                            field()
+                        }
+                    },
                 )
                 if (chat.isActive) {
-                    FilledIconButton(onClick = { chat.stop() }, enabled = chat.pendingPrompt == null) {
-                        Icon(Icons.Filled.Stop, stringResource(R.string.stop))
+                    FilledIconButton(
+                        onClick = { chat.stop() },
+                        enabled = chat.pendingPrompt == null,
+                        modifier = Modifier.size(36.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.onSurface,
+                            contentColor = MaterialTheme.colorScheme.background,
+                        ),
+                    ) {
+                        Icon(Icons.Filled.Stop, stringResource(R.string.stop), Modifier.size(18.dp))
                     }
                 } else {
-                    FilledIconButton(onClick = { chat.send() }, enabled = chat.canSend) {
-                        Icon(Icons.Filled.ArrowUpward, stringResource(R.string.send))
+                    FilledIconButton(
+                        onClick = { chat.send() },
+                        enabled = chat.canSend,
+                        modifier = Modifier.size(36.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            disabledContentColor = CedarColors.secondaryText,
+                        ),
+                    ) {
+                        Icon(Icons.Filled.ArrowUpward, stringResource(R.string.send), Modifier.size(20.dp))
                     }
                 }
             }
@@ -347,7 +398,7 @@ private fun AttachmentChip(file: OutgoingAttachment, remove: () -> Unit) {
         }
     }
     Row(
-        Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceContainerHighest).padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        Modifier.surfaceCard(radius = 50.dp).padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val image = thumbnail
