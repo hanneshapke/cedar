@@ -45,4 +45,4 @@ members = [".", "chat", "pairing"]
 exclude = ["desktop"]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
