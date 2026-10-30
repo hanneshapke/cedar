@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4
+
+- **Settings → Phone turns sharing on.** In the desktop app, the Phone page showed Tailscale as *Ready* with every step ticked and the address as *Not shared*, and the only way on was the switch on the app's setup page, named in the last checklist item below the fold. Sharing is off by default, so the page read as HTTPS failing to turn on. The Address row now offers *Turn on sharing* once Tailscale is ready, and the last step says to click it. It does the same as the switch: Cedar restarts once so the chat learns its tailnet address, then runs `tailscale serve`; when it can't be turned on, the setup page says why. Outside the desktop app the page keeps its instructions (#141).
+
 ## 0.3.3
 
 - **A new look for the iPhone and Android apps.** Both apps now wear cedar's own colours: the mark's forest green and clay on warm paper in light mode and deep charcoal in dark mode, the same palette on both platforms (`iOS/Cedar/App/Theme.swift`, `android/.../ui/Theme.kt`).
