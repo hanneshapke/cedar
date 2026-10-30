@@ -43,3 +43,5 @@ bench/models.yaml
 bench/results/
 bench/dist/
 bench/tasks-heldout/
+bench/.stack/
+bench/.venv/

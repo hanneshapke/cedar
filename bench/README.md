@@ -52,29 +52,39 @@ bench/
 
 ## Running it
 
+You need [uv](https://docs.astral.sh/uv/), Docker with the `cedar-sandbox` image (see the
+top-level README), and a cedar build:
+
 ```sh
-pip install -r bench/requirements.txt
-export PYTHONPATH=$PWD/bench
-
-# 1. The fixture server (keep it running)
-python -m cedar_bench serve --port 8765
-
-# 2. cedar, with its tools pointed at the fixtures (see the top-level README for the sandbox image)
-set -a; eval "$(python -m cedar_bench env --fixtures-url http://127.0.0.1:8765 --dotenv)"; set +a
-export CEDAR_API_KEYS=$(openssl rand -hex 24) CEDAR_ADMIN_KEYS=$CEDAR_API_KEYS
 cargo build --release
-CEDAR_BIN=$(git rev-parse --show-toplevel)/target/release/cedar   # works from any directory
-for port in 8080 8081 8082; do      # one per persona time zone, matching models.yaml
-  BIND_ADDR=127.0.0.1:$port DATABASE_URL=sqlite://bench-$port.db "$CEDAR_BIN" &
-done
+cp bench/models.example.yaml bench/models.yaml       # then edit: your models, prices, api_key_env
+export MY_PROVIDER_API_KEY=...                       # whatever api_key_env names; must be exported
 
-# 3. The sweep: registers the models in models.yaml (with prices, so cost comes for free),
-#    runs every task x model x reasoning level x repeat, and writes results.jsonl and report.md
-cp bench/models.example.yaml bench/models.yaml   # then edit
-CEDAR_BENCH_KEY=$CEDAR_API_KEYS python -m cedar_bench run --repeats 3
-python -m cedar_bench run --filter 'email_calendar/*' --out bench/results/email --resume
-python -m cedar_bench report bench/results/<stamp>/results.jsonl
+bench/scripts/stack.sh start            # the fixture server, and one cedar per persona time zone
+bench/scripts/stack.sh run --repeats 3  # registers the models, runs the sweep, writes the report
+bench/scripts/stack.sh stop
 ```
+
+`stack.sh start` stops the stack it started before, refuses ports another program holds (and
+says which), and waits until every server is ready. Every cedar gets one fresh API key (also its
+admin key), a fresh `CEDAR_SECRET_KEY` so it can save the models' API keys, and a fresh database.
+Logs, pids and the key are in `bench/.stack/`; `stack.sh status` and `stack.sh logs` show them.
+`stack.sh run` passes any flags on to `python -m cedar_bench run`, with the stack's key:
+
+```sh
+bench/scripts/stack.sh run --filter 'email_calendar/*' --out bench/results/email --resume
+uv run --project bench cedar-bench report bench/results/<stamp>/results.jsonl
+```
+
+Python runs through uv with `bench/pyproject.toml`, which installs cedar-bench (editable) and
+its dependencies into `bench/.venv` on first use. The other commands work the same way, from any
+directory: `uv run --project bench cedar-bench validate` from the repo root, or
+`uv run cedar-bench validate` inside `bench/` (`python -m cedar_bench` works too).
+
+To run against cedar servers you start yourself, the runner needs `CEDAR_BENCH_KEY` (in their
+`CEDAR_API_KEYS` and `CEDAR_ADMIN_KEYS`) and, for models with an API key, `CEDAR_SECRET_KEY` set
+on them (64 hex characters). `python -m cedar_bench env` prints the settings that point their
+tools at the fixture server.
 
 **One cedar per time zone.** cedar looks up the calendar time zone once per process (it serves
 one real account), so personas in different time zones need separate cedar processes, all pointed
@@ -89,8 +99,7 @@ runs, start several fixture-server and cedar sets and split the tasks between th
 `--filter`.
 
 `bench/scripts/smoke.sh` runs the whole loop against real cedar processes (one per time zone)
-built from this checkout. A
-scripted fake model (`scripts/fake_llm.py`) stands in for a real one, so you can check the plumbing
+built from this checkout. A scripted fake model (`scripts/fake_llm.py`) stands in for a real one, so you can check the plumbing
 after changing a tool without a GPU.
 
 The report gives, per model and reasoning level: **success** (pass^1), **pass^k** (the chance that

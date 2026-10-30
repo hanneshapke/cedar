@@ -162,3 +162,19 @@ class TimeZoneRoutingTest(unittest.TestCase):
         self.assertEqual(runner.wrong_zone(events, "Europe/Berlin"), "America/Los_Angeles")
         self.assertIsNone(runner.wrong_zone(events, "America/Los_Angeles"))
         self.assertIsNone(runner.wrong_zone(events, None))
+
+
+class RegistrationTest(unittest.TestCase):
+    def test_a_missing_model_key_stops_the_sweep_before_cedar_sees_it(self):
+        import os
+        cfg = {"models": [{"id": "m", "register": {"base_url": "https://x/v1", "model": "x",
+                                                   "api_key_env": "CEDAR_BENCH_TEST_NO_SUCH_KEY"}}]}
+        os.environ.pop("CEDAR_BENCH_TEST_NO_SUCH_KEY", None)
+        with self.assertRaises(SystemExit) as e:
+            runner.registrations(cfg)
+        self.assertIn("CEDAR_BENCH_TEST_NO_SUCH_KEY", str(e.exception))
+        os.environ["CEDAR_BENCH_TEST_NO_SUCH_KEY"] = "secret"
+        try:
+            self.assertEqual(runner.registrations(cfg)[0][1]["api_key"], "secret")
+        finally:
+            del os.environ["CEDAR_BENCH_TEST_NO_SUCH_KEY"]

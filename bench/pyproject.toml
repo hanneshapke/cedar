@@ -1,0 +1,20 @@
+# Lets uv manage cedar-bench's environment. From the repo root:
+#     uv run --project bench cedar-bench validate     (or: ... python -m cedar_bench validate)
+# and inside bench/ plain `uv run cedar-bench ...`. uv installs the package (editable) and its
+# dependencies into bench/.venv on first use.
+[project]
+name = "cedar-bench"
+version = "0.1.0"
+description = "A hermetic benchmark for agents running on cedar"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0", "pypdf>=4.0"]
+
+[project.scripts]
+cedar-bench = "cedar_bench.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cedar_bench"]

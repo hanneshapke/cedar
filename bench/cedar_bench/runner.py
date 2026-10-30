@@ -212,16 +212,44 @@ def load_config(path: Path) -> dict:
     return cfg
 
 
-def register_models(cedar: Cedar, cfg: dict) -> None:
+def registrations(cfg: dict) -> list[tuple[str, dict]]:
+    """The `PUT /v1/admin/models/{id}` bodies, with each `api_key_env` read from the environment.
+    A missing variable is an error: cedar would take an empty key as "remove the saved key"."""
+    out = []
     for m in cfg["models"]:
         entry = dict(m.get("register") or {})
         if not entry:
             continue
         key_env = entry.pop("api_key_env", None)
         if key_env:
-            entry["api_key"] = os.environ.get(key_env, "")
-        cedar.register_model(m["id"], entry)
-        print(f"registered {m['id']} ({entry.get('model')})", flush=True)
+            key = os.environ.get(key_env, "").strip()
+            if not key:
+                raise SystemExit(
+                    f"model {m['id']}: ${key_env} is empty or not exported, so there is no API key "
+                    f"for {entry.get('base_url')}. Run `export {key_env}=...` in the shell that "
+                    "starts the runner.")
+            entry["api_key"] = key
+        out.append((m["id"], entry))
+    return out
+
+
+def register_models(cedar: Cedar, entries: list[tuple[str, dict]]) -> None:
+    for model_id, entry in entries:
+        try:
+            cedar.register_model(model_id, entry)
+        except CedarError as e:
+            if e.status != 400:
+                raise
+            # cedar checks a model server by listing its models first; this is that server's answer.
+            try:
+                why = json.loads(e.body)["error"]["message"]
+            except (ValueError, KeyError, TypeError):
+                why = e.body[:300]
+            hint = (" Check the model's API key (api_key_env) for that server."
+                    if re.search(r"\b40[13]\b", why) else "")
+            raise SystemExit(f"model {model_id}: cedar could not use {entry.get('base_url')}: "
+                             f"{why}.{hint}") from None
+        print(f"registered {model_id} ({entry.get('model')}) on {cedar.base}", flush=True)
 
 
 def _key(r: dict) -> tuple:
@@ -235,13 +263,17 @@ def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, perso
     for server in servers:
         try:
             server.client.ready()
+        except ConnectionError as e:  # it answered, but isn't ready
+            raise SystemExit(f"cedar at {server.url} is up but {e} (a failed sandbox check usually "
+                             "means Docker isn't running or the cedar-sandbox image is missing)") from None
         except OSError as e:
             raise SystemExit(f"can't reach cedar at {server.url} ({getattr(e, 'reason', e)}): is it "
                              "running? Start one per `cedar` entry in the config.") from None
     if register:
+        entries = registrations(cfg)
         for server in servers:
             try:
-                register_models(server.client, cfg)
+                register_models(server.client, entries)
             except CedarError as e:
                 if e.status not in (401, 403):
                     raise
