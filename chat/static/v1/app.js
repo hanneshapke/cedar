@@ -508,7 +508,7 @@ function addTurn(turn) {
   const bubble = h('div', 'bubble');
   if (turn.attachments?.length) bubble.append(cedarAttach.chips(turn.attachments));
   bubble.append(document.createTextNode(turn.prompt));
-  user.append(bubble);
+  user.append(cedarTrace.button(turn.id), bubble);
   const body = h('div', 'assistant');
   const thinking = h('div', 'thinking', `${ICONS.logo}<span>${escapeHtml(tr('v1.thinking'))}</span>`);
   body.append(thinking);

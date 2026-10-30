@@ -31,5 +31,6 @@ pub mod sources;
 pub mod sse;
 pub mod store;
 pub mod tools;
+pub mod trace;
 pub mod waits;
 pub mod webhooks;

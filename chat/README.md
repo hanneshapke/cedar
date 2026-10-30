@@ -33,6 +33,14 @@ Both interfaces have all of these, except where noted:
   document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
 - A stop button cancels the running response
+- Expert mode (Settings → Expert mode, saved in this browser) adds a Trace button to each message
+  you send. It opens a dialog with everything the agent did for that response, from cedar's
+  `GET /v1/runs/{id}/trace` (`/api/turns/{id}/trace` here): a timeline of each model call (the
+  parameters and messages it was sent, with the ones new since the previous call marked, and the
+  response with its reasoning, tool calls, stop reason, tokens and time) and each tool call (input,
+  output, time) in between, with the plan, approvals and blocked connections where they happened;
+  the conversation as the model sees it; the system prompt and tool definitions; the event log;
+  and the whole trace as JSON to copy or download (`trace-view.js` and `trace-view.css`)
 - A files panel (the folder button in the header) lists what the agent saved under `/workspace`
   and downloads any of it; finished `write_file`, `generate_pdf`, `generate_chart`, and
   `download_file` calls get a download button too

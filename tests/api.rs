@@ -290,6 +290,55 @@ async fn llm_errors_fail_the_run_with_the_message() {
 }
 
 #[tokio::test]
+async fn the_trace_lists_each_model_call_with_what_it_was_sent() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("t1", "bash", json!({ "command": "echo hi" }))),
+        Step::Reply(text("all done")),
+    ])
+    .await;
+    let id = id_of(&app.create_run(KEY_A, "say hi").await);
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let (status, trace) = app.get(&format!("/v1/runs/{id}/trace"), KEY_A).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(trace["run"]["id"], id);
+    assert!(trace["system"].is_string());
+    assert!(trace["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "bash"));
+    assert_eq!(trace["messages"].as_array().unwrap().len(), 4);
+    let calls = trace["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 2);
+    // The first call was sent the prompt; the second, the tool call and its result as well.
+    assert_eq!(calls[0]["purpose"], "agent");
+    assert_eq!(calls[0]["turn"], 1);
+    assert_eq!(calls[0]["request"]["message_count"], 1);
+    assert_eq!(calls[0]["response"]["stop_reason"], "tool_use");
+    assert_eq!(calls[0]["response"]["content"][0]["name"], "bash");
+    assert_eq!(calls[1]["request"]["message_count"], 3);
+    assert_eq!(calls[1]["response"]["content"][0]["text"], "all done");
+    assert_eq!(calls[1]["error"], Value::Null);
+    assert_eq!(trace["events"].as_array().unwrap().len(), 7);
+
+    let (status, _) = app.get(&format!("/v1/runs/{id}/trace"), KEY_B).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_failed_model_call_is_in_the_trace_with_its_error() {
+    let app = TestApp::new(vec![Step::Error("LLM API error 400: bad model")]).await;
+    let id = id_of(&app.create_run(KEY_A, "x").await);
+    app.wait_status(KEY_A, &id, "failed").await;
+    let (_, trace) = app.get(&format!("/v1/runs/{id}/trace"), KEY_A).await;
+    let calls = trace["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["response"], Value::Null);
+    assert_eq!(calls[0]["error"], "LLM API error 400: bad model");
+}
+
+#[tokio::test]
 async fn a_broken_sandbox_fails_the_run_instead_of_confusing_the_model() {
     let app = TestApp::new(vec![Step::Reply(tool_use(
         "t",

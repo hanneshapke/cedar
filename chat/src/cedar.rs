@@ -346,6 +346,12 @@ impl CedarClient {
         Ok(())
     }
 
+    /// Everything the run sent to the model and got back, with its conversation and events
+    /// (`GET /v1/runs/{id}/trace`).
+    pub async fn trace(&self, id: Uuid) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url(&format!("/runs/{id}/trace")))).await
+    }
+
     /// Open the run's Server-Sent Events stream, starting after event `after`.
     pub async fn events(&self, id: Uuid, after: i64) -> Result<reqwest::Response, AppError> {
         self.send(self.http.get(self.url(&format!("/runs/{id}/events"))).query(&[("after", after)])).await
