@@ -1,6 +1,11 @@
 package dev.cedar.cedar.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,12 +42,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -97,8 +99,9 @@ fun ConversationListScreen(app: AppModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.brand)) },
+            CenterAlignedTopAppBar(
+                // The wordmark stands in for the title.
+                title = { CedarWordmark() },
                 navigationIcon = {
                     IconButton(onClick = { app.showingSettings = true }) { Icon(Icons.Outlined.Settings, stringResource(R.string.settings)) }
                 },
@@ -115,25 +118,12 @@ fun ConversationListScreen(app: AppModel) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                val modes = listOf(
-                    SidebarMode.CHATS to stringResource(R.string.tab_chats),
-                    SidebarMode.STARRED to stringResource(R.string.tab_starred),
-                    SidebarMode.SCHEDULED to if (app.scheduledUnread > 0) {
-                        stringResource(R.string.tab_scheduled_count, app.scheduledUnread)
-                    } else {
-                        stringResource(R.string.tab_scheduled)
-                    },
-                )
-                modes.forEachIndexed { index, (mode, label) ->
-                    SegmentedButton(
-                        selected = app.sidebarMode == mode,
-                        onClick = { app.sidebarMode = mode },
-                        shape = SegmentedButtonDefaults.itemShape(index, modes.size),
-                        icon = {},
-                    ) { Text(label, maxLines = 1) }
-                }
-            }
+            SidebarSwitch(
+                mode = app.sidebarMode,
+                scheduledUnread = app.scheduledUnread,
+                onSelect = { app.sidebarMode = it },
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+            )
             PullToRefreshBox(
                 isRefreshing = app.isRefreshing,
                 onRefresh = { scope.launch { app.refresh() } },
@@ -272,7 +262,9 @@ fun MenuRow(
         Box(
             Modifier
                 .fillMaxWidth()
-                .background(if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else androidx.compose.ui.graphics.Color.Transparent)
+                .padding(horizontal = 8.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
                 .combinedClickable(
                     onClick = { onClick?.invoke() ?: run { if (menu.isNotEmpty()) open = true } },
                     onLongClick = if (menu.isNotEmpty()) ({ open = true }) else null,
@@ -305,38 +297,60 @@ private fun ConversationRow(
     menu: List<MenuAction>,
 ) {
     MenuRow(selected, onClick, menu) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
-            UnreadDot(conversation.unread, Modifier.padding(top = 7.dp))
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            RowIcon(
+                if (conversation.scheduleId != null) Icons.Outlined.Schedule else Icons.AutoMirrored.Outlined.Chat,
+                tint = if (conversation.needsAnswer) CedarColors.clay else MaterialTheme.colorScheme.primary,
+                running = running,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val small = MaterialTheme.typography.bodySmall
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            conversation.titleOr(stringResource(R.string.new_chat)),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = if (conversation.unread) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (starred) StarMark()
+                    }
                     Text(
-                        conversation.titleOr(stringResource(R.string.new_chat)),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        relative(conversation.updatedAt),
+                        style = small,
                         fontWeight = if (conversation.unread) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier = Modifier.weight(1f, fill = false),
+                        color = if (conversation.unread) MaterialTheme.colorScheme.primary else CedarColors.secondaryText,
+                        maxLines = 1,
                     )
-                    if (starred) StarMark()
-                    if (running) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val small = MaterialTheme.typography.bodySmall
-                    if (conversation.scheduleId != null) {
-                        Icon(Icons.Outlined.Schedule, null, Modifier.size(12.dp), tint = CedarColors.secondaryText)
-                        Text(
-                            "${conversation.scheduleTitle ?: stringResource(R.string.tab_scheduled)} ·",
-                            style = small, color = CedarColors.secondaryText, maxLines = 1,
-                        )
+                    Row(
+                        Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (conversation.scheduleId != null) {
+                            Icon(Icons.Outlined.Schedule, null, Modifier.size(12.dp), tint = CedarColors.secondaryText)
+                            Text(
+                                conversation.scheduleTitle ?: stringResource(R.string.tab_scheduled),
+                                style = small, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                        conversation.model?.takeIf { it.isNotEmpty() }?.let {
+                            Text(
+                                if (conversation.scheduleId != null) "· $it" else it,
+                                style = small, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
                     }
-                    Text(relative(conversation.updatedAt), style = small, color = CedarColors.secondaryText, maxLines = 1)
                     if (conversation.needsAnswer) {
                         NeedsAnswerChip()
                     } else if (conversation.unread) {
-                        Text(stringResource(R.string.unread), style = small, color = CedarColors.secondaryText)
-                    }
-                    conversation.model?.takeIf { it.isNotEmpty() }?.let {
-                        Text("· $it", style = small, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        UnreadDot(true, size = 9)
                     }
                 }
             }
@@ -360,11 +374,11 @@ fun NeedsAnswerChip() {
         stringResource(R.string.needs_answer),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold,
-        color = CedarColors.orange,
+        color = CedarColors.clay,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(CedarColors.orange.copy(alpha = 0.18f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .background(CedarColors.clay.copy(alpha = 0.15f))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }
 
@@ -378,4 +392,62 @@ private fun RenameDialog(initial: String, onDismiss: () -> Unit, onSave: (String
         confirmButton = { TextButton(onClick = { onSave(title) }) { Text(stringResource(R.string.save)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
+}
+
+/** The list's Chats | Starred | Scheduled switch: a pill with the picked one raised. */
+@Composable
+private fun SidebarSwitch(mode: SidebarMode, scheduledUnread: Int, onSelect: (SidebarMode) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(3.dp)
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        listOf(
+            SidebarMode.CHATS to R.string.tab_chats,
+            SidebarMode.STARRED to R.string.tab_starred,
+            SidebarMode.SCHEDULED to R.string.tab_scheduled,
+        ).forEach { (value, label) ->
+            val selected = mode == value
+            val fill by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.surfaceContainer else androidx.compose.ui.graphics.Color.Transparent,
+                label = "segment",
+            )
+            Row(
+                Modifier
+                    .weight(1f)
+                    .then(if (selected) Modifier.shadow(2.dp, RoundedCornerShape(50)) else Modifier)
+                    .clip(RoundedCornerShape(50))
+                    .background(fill)
+                    .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(value) })
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(label),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else CedarColors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (value == SidebarMode.SCHEDULED && scheduledUnread > 0) {
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "$scheduledUnread",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(CedarColors.clay)
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
+            }
+        }
+    }
 }

@@ -8,13 +8,11 @@ struct LanguageOnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                Image(systemName: "globe")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.tint)
-                    .accessibilityHidden(true)
+            VStack(spacing: 10) {
+                CedarBadge()
+                    .padding(.bottom, 10)
                 Text("Choose your language")
-                    .font(.title2.weight(.semibold))
+                    .font(.title2.weight(.bold))
                     .accessibilityAddTraits(.isHeader)
                 // The same in the other languages, for whoever can't read the first line yet.
                 Text(verbatim: "Sprache wählen · Choisissez votre langue · Elige tu idioma")
@@ -30,21 +28,19 @@ struct LanguageOnboardingView: View {
                 LanguageList(selection: $selection)
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
 
             Button {
                 done(selection)
             } label: {
                 Text("Continue")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(ProminentButtonStyle())
             .padding()
         }
         .frame(maxWidth: 620)
         .frame(maxWidth: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.canvas)
         .environment(\.locale, Locale(identifier: selection))
     }
 }
@@ -71,6 +67,7 @@ private struct LanguageList: View {
                 }
                 .contentShape(Rectangle())
             }
+            .listRowBackground(Theme.surface)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
     }

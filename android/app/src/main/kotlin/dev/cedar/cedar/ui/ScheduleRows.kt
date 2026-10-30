@@ -1,6 +1,7 @@
 package dev.cedar.cedar.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -108,7 +109,7 @@ fun ScheduleRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                     runs == null -> item(key = "loading-${schedule.id}") { Loading() }
                     runs.isEmpty() -> item(key = "none-${schedule.id}") {
                         Text(stringResource(R.string.no_runs_yet), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText,
-                            modifier = Modifier.padding(start = 48.dp, top = 4.dp, bottom = 8.dp))
+                            modifier = Modifier.padding(start = 66.dp, top = 4.dp, bottom = 8.dp))
                     }
                     else -> items(runs, key = { "run-${it.id}" }) { run ->
                         val conversationId = run.conversationId
@@ -128,7 +129,7 @@ fun ScheduleRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                             ) { RunRow(run, starred) }
                         } else {
                             // It never started: nothing to open (or star).
-                            RunRow(run, starred = false)
+                            Box(Modifier.padding(horizontal = 8.dp)) { RunRow(run, starred = false) }
                         }
                     }
                 }
@@ -153,14 +154,18 @@ fun ScheduleRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
 
 @Composable
 private fun ScheduleRow(schedule: Schedule, unread: Boolean, expanded: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
-        UnreadDot(unread, Modifier.padding(top = 7.dp))
-        Spacer(Modifier.width(8.dp))
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        RowIcon(
+            if (schedule.enabled) Icons.Outlined.Schedule else Icons.Outlined.Pause,
+            tint = if (schedule.enabled) MaterialTheme.colorScheme.primary else CedarColors.secondaryText,
+            running = schedule.lastRun?.isActive == true,
+        )
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f).alpha(if (schedule.enabled) 1f else 0.7f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(schedule.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.weight(1f, fill = false))
-                if (schedule.lastRun?.isActive == true) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                if (unread) UnreadDot(true, size = 9)
             }
             val small = MaterialTheme.typography.bodySmall
             Text(LocalContext.current.cadence(schedule), style = small, color = CedarColors.secondaryText, maxLines = 1)
@@ -187,8 +192,8 @@ private fun runDate(run: ScheduleRun): String = skeletonDate(run.dueAt, "EEEdMMM
 
 @Composable
 private fun RunRow(run: ScheduleRun, starred: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(start = 40.dp, end = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Top) {
-        UnreadDot(run.unread, Modifier.padding(top = 7.dp), size = 6)
+    Row(Modifier.fillMaxWidth().padding(start = 50.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Top) {
+        UnreadDot(run.unread, Modifier.padding(top = 7.dp), size = 7)
         Spacer(Modifier.width(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -214,7 +219,7 @@ private fun RunOutcomeLabel(outcome: ScheduleRun.Outcome) {
         ScheduleRun.Outcome.QUEUED -> Triple(Icons.Outlined.HourglassEmpty, R.string.outcome_queued, secondary)
         ScheduleRun.Outcome.RUNNING -> Triple(Icons.Outlined.Sync, R.string.outcome_running, secondary)
         ScheduleRun.Outcome.COMPLETED -> Triple(Icons.Outlined.CheckCircle, R.string.outcome_done, secondary)
-        ScheduleRun.Outcome.NEEDS_ANSWER -> Triple(Icons.Outlined.HelpOutline, R.string.needs_answer, CedarColors.orange)
+        ScheduleRun.Outcome.NEEDS_ANSWER -> Triple(Icons.Outlined.HelpOutline, R.string.needs_answer, CedarColors.clay)
         ScheduleRun.Outcome.FAILED -> Triple(Icons.Outlined.Cancel, R.string.failed, CedarColors.red)
         ScheduleRun.Outcome.CANCELLED -> Triple(Icons.Outlined.StopCircle, R.string.outcome_stopped, secondary)
         ScheduleRun.Outcome.NOT_STARTED -> Triple(Icons.Outlined.WarningAmber, R.string.outcome_not_started, CedarColors.red)

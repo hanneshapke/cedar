@@ -30,18 +30,26 @@ struct RootView: View {
                 ChatView(chat: chat)
                     .id(chat.key)
             } else {
-                ContentUnavailableView {
-                    Label {
-                        Text(verbatim: "cedar")
-                    } icon: {
-                        Image(systemName: "leaf")
-                    }
-                } description: {
+                VStack(spacing: 18) {
+                    CedarBadge(size: 88)
+                    CedarWordmark(size: 28)
                     Text("Ask the agent to search, write and run code, and build things in its sandbox.")
-                } actions: {
-                    Button("New Chat") { app.newChat() }
-                        .buttonStyle(.borderedProminent)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
+                    Button {
+                        app.newChat()
+                    } label: {
+                        Label("New Chat", systemImage: "square.and.pencil")
+                    }
+                    .buttonStyle(ProminentButtonStyle())
+                    .frame(maxWidth: 240)
+                    .padding(.top, 6)
                 }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.canvas)
             }
         }
         .sheet(isPresented: $app.showingSettings) {

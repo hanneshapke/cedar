@@ -23,8 +23,7 @@ extension View {
     func cardStyle() -> some View {
         padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color(.separator).opacity(0.5)))
+            .surfaceCard()
     }
 }
 

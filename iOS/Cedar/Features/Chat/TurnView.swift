@@ -99,7 +99,7 @@ private struct StatusFooter: View {
                 }
                 if turn.turn.needsAnswer {
                     Label("Needs your answer", systemImage: "questionmark.bubble")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.clay)
                 } else if turn.turn.stopReason == "max_tokens" {
                     Text("Cut short")
                 }
@@ -154,7 +154,8 @@ private struct PlanView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: "list.number")
-                .font(.subheadline.weight(.medium))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.green)
             ForEach(Array(plan.steps.enumerated()), id: \.offset) { offset, step in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(verbatim: "\(offset + 1).")
@@ -174,10 +175,9 @@ private struct PlanView: View {
                 .padding(.top, 4)
             }
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(.separator).opacity(0.5)))
+        .surfaceCard()
     }
 }
 
@@ -190,7 +190,8 @@ private struct ApprovalView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(approval.isPending ? "May the agent do this?" : "Asked: \(approval.reason)", systemImage: "hand.raised")
-                .font(.subheadline.weight(.medium))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(approval.isPending ? Theme.clay : Color.primary)
             if approval.isPending {
                 Text(approval.reason)
                     .font(.subheadline)
@@ -216,8 +217,8 @@ private struct ApprovalView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(approval.isPending ? 0.12 : 0.05), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.orange.opacity(approval.isPending ? 0.5 : 0.2)))
+        .surfaceCard(fill: approval.isPending ? Theme.clay.opacity(0.08) : Theme.surface,
+                   stroke: Theme.clay.opacity(approval.isPending ? 0.45 : 0.2))
     }
 
     private var summary: String {
@@ -256,7 +257,8 @@ struct QuestionsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Cedar asks", systemImage: "questionmark.bubble")
-                .font(.subheadline.weight(.medium))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.clay)
             ForEach(Array(questions.questions.enumerated()), id: \.offset) { index, question in
                 VStack(alignment: .leading, spacing: 8) {
                     if let header = question.header, !header.isEmpty {
@@ -290,7 +292,9 @@ struct QuestionsView: View {
                     }
                     TextField(question.options.isEmpty ? "Your answer" : "Other", text: $answers[index].own, axis: .vertical)
                         .lineLimit(1...4)
-                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
             if let note = questions.note, !note.isEmpty {
@@ -305,10 +309,9 @@ struct QuestionsView: View {
             .buttonStyle(.borderedProminent)
             .disabled(sent)
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(.separator).opacity(0.5)))
+        .surfaceCard()
     }
 
     private func toggle(_ label: String, at index: Int, multi: Bool) {
@@ -338,8 +341,10 @@ struct ToolCallView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: icon)
-                        .frame(width: 18)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.green)
+                        .frame(width: 28, height: 28)
+                        .background(Theme.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     Text(call.name)
                         .font(.subheadline.weight(.medium))
                     Text(call.summary)
@@ -355,8 +360,8 @@ struct ToolCallView: View {
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
                 .contentShape(Rectangle())
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
             .buttonStyle(.plain)
 
@@ -398,8 +403,7 @@ struct ToolCallView: View {
                 .padding(12)
             }
         }
-        .background(Color(.secondarySystemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(.separator).opacity(0.5)))
+        .surfaceCard()
     }
 
     private var icon: String {
@@ -446,7 +450,7 @@ struct ToolCallView: View {
         } else if call.isError {
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
         } else {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
         }
     }
 
@@ -503,7 +507,7 @@ struct CodeBox: View {
                     .padding(10)
             }
         }
-        .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var displayText: String {

@@ -12,9 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Eco
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -91,17 +92,22 @@ private fun Placeholder(onNewChat: () -> Unit) {
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Outlined.Eco, null, Modifier.size(44.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.brand), style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(6.dp))
+        CedarBadge(88.dp)
+        Spacer(Modifier.height(18.dp))
+        CedarWordmark(28.sp)
+        Spacer(Modifier.height(10.dp))
         Text(
             stringResource(R.string.placeholder_text),
             style = MaterialTheme.typography.bodyMedium,
             color = CedarColors.secondaryText,
             textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 360.dp),
         )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onNewChat) { Text(stringResource(R.string.new_chat)) }
+        Spacer(Modifier.height(22.dp))
+        ProminentButton(onClick = onNewChat, modifier = Modifier.widthIn(min = 200.dp)) {
+            Icon(Icons.Outlined.EditNote, null, Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.new_chat))
+        }
     }
 }
