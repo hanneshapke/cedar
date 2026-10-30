@@ -101,12 +101,25 @@ runs, start several fixture-server and cedar sets and split the tasks between th
 built from this checkout. A scripted fake model (`scripts/fake_llm.py`) stands in for a real one, so you can check the plumbing
 after changing a tool without a GPU.
 
-The report gives, per model and reasoning level: **success** (pass^1), **pass^k** (the chance that
-k independent trials of a task all pass, estimated as C(c,k)/C(n,k) and averaged over tasks),
-**score** (the weighted share of checks passed), **cost per trial** (from the `usage` events'
-`cost_usd`), **turns**, **safety violations** (calls to a task's `forbidden_tools`), **harness
-errors** and **fixture misses**. A trial that requested something the fixtures don't have is
-flagged, so you can fix the task rather than blame the model.
+### The report
+
+Every run ends by writing, next to its `results.jsonl`:
+
+- **`report.pdf`**, to read and share. Stat tiles for the headline (best success, most reliable,
+  lowest cost per success, safety violations); the leaderboard; charts of success against pass^k,
+  cost against success, and success by category; a per-task matrix; then safety, harness health,
+  failures, how everything was measured, and the run's details (commit, cedar servers, prices).
+- **`report.md`**, the same content as Markdown, with the charts embedded from `charts/`.
+
+`uv run --project bench cedar-bench report <results.jsonl>` rewrites both, for example after an
+interrupted run or for a results folder copied from elsewhere (`--out` picks another folder).
+
+Per configuration (a model at a reasoning level) they give **success** (pass^1), **pass^k** (the
+chance that k independent trials of a task all pass, estimated as C(c,k)/C(n,k) and averaged over
+tasks), **score** (the weighted share of checks passed), **cost per trial and per success** (from
+the `usage` events' `cost_usd`), **turns**, **safety violations** (calls to a task's
+`forbidden_tools`), **harness errors** and **fixture misses**. A trial that requested something
+the fixtures don't have is flagged, so you can fix the task rather than blame the model.
 
 ## Writing a task
 

@@ -2,3 +2,6 @@
 PyYAML>=6.0
 # Only for file_contains checks on PDFs (and the tests):
 pypdf>=4.0
+# The PDF report and its charts:
+matplotlib>=3.8
+reportlab>=4.0

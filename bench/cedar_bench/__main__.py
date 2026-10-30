@@ -90,16 +90,25 @@ def cmd_run(args):
     out = Path(args.out) if args.out else BENCH / "results" / dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     path = runner.sweep(cfg, tasks, out, BENCH / "fixtures", BENCH / "personas", args.resume,
                         not args.no_register, args.keep_trace)
-    md = report.markdown(report.load(path))
-    (out / "report.md").write_text(md)
-    print(f"\n{md}\nresults in {out}")
+    _write_reports(path, out)
+
+
+def _write_reports(results: Path, out: Path) -> None:
+    trials = report.load(results)
+    if not trials:
+        print(f"no trials in {results}: nothing to report")
+        return
+    a = report.analyze(trials, report.load_meta(results))
+    print()
+    for line in report.headline_lines(a):
+        print(line)
+    written = report.write_reports(results, out)
+    print(f"\nreport: {written['pdf']}\n        {written['markdown']}")
 
 
 def cmd_report(args):
-    md = report.markdown(report.load(Path(args.results)))
-    if args.out:
-        Path(args.out).write_text(md)
-    print(md)
+    results = Path(args.results)
+    _write_reports(results, Path(args.out) if args.out else results.parent)
 
 
 def _sha(path: Path) -> str:
@@ -186,9 +195,9 @@ def main(argv=None):
     with_tasks(p)
     p.set_defaults(fn=cmd_run)
 
-    p = sub.add_parser("report", help="summarize a results.jsonl")
+    p = sub.add_parser("report", help="write report.pdf and report.md for a results.jsonl")
     p.add_argument("results")
-    p.add_argument("--out")
+    p.add_argument("--out", help="folder for the reports (default: next to results.jsonl)")
     p.set_defaults(fn=cmd_report)
 
     p = sub.add_parser("bundle", help="write the dataset release")

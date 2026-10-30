@@ -272,6 +272,16 @@ def register_models(cedar: Cedar, entries: list[tuple[str, dict]]) -> None:
         print(f"registered {model_id} ({entry.get('model')}) on {cedar.base}", flush=True)
 
 
+def _commit() -> str | None:
+    """The checkout's git commit, so a report says which tasks and harness produced it."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).parent,
+                              capture_output=True, text=True, timeout=5).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def _key(r: dict) -> tuple:
     return (r["task"], r["task_version"], r["model"], r["reasoning"], r["repeat"])
 
@@ -313,7 +323,7 @@ def sweep(cfg: dict, tasks: list[Task], out_dir: Path, fixtures_dir: Path, perso
     if resume and results_path.exists():
         done = {_key(json.loads(line)) for line in results_path.read_text().splitlines() if line}
     (out_dir / "meta.json").write_text(json.dumps({
-        "bench_version": __version__, "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "bench_version": __version__, "commit": _commit(), "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "cedar_urls": {s.url: s.zone for s in servers}, "tasks": len(tasks), "repeats": cfg["repeats"],
         "models": [{k: v for k, v in m.items() if k != "register"} | {
             "model": (m.get("register") or {}).get("model"),

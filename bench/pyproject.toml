@@ -7,7 +7,7 @@ name = "cedar-bench"
 version = "0.1.0"
 description = "A hermetic benchmark for agents running on cedar"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0", "pypdf>=4.0"]
+dependencies = ["PyYAML>=6.0", "pypdf>=4.0", "matplotlib>=3.8", "reportlab>=4.0"]
 
 [project.scripts]
 cedar-bench = "cedar_bench.__main__:main"
