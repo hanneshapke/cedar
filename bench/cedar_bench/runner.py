@@ -233,10 +233,12 @@ def registrations(cfg: dict) -> list[tuple[str, dict]]:
         if key_env is not None:
             key_env = str(key_env)
             if not ENV_NAME.fullmatch(key_env):
-                raise SystemExit(
-                    f"{where}: api_key_env must be the NAME of an environment variable (like "
-                    "DOUBLEWORD_API_KEY), and this value isn't one; it may be the key itself. Put "
-                    "the key in `api_key:` instead, or export it and name the variable here.")
+                # Not a variable name, so it is the key itself: use it as such.
+                print(f"{where}: api_key_env holds the key itself, not a variable name; using it "
+                      "as the key (`api_key:` is the field for that)", flush=True)
+                entry["api_key"] = key_env.strip()
+                out.append((m["id"], entry))
+                continue
             key = os.environ.get(key_env, "").strip()
             if not key:
                 raise SystemExit(f"{where}: ${key_env} is empty or not exported. Run "

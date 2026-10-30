@@ -190,11 +190,15 @@ class ModelKeyTest(unittest.TestCase):
     def test_the_key_can_go_in_the_file(self):
         self.assertEqual(self.regs({"api_key": f" {self.KEY} "})[0][1]["api_key"], self.KEY)
 
-    def test_a_key_in_api_key_env_is_refused_without_being_shown(self):
-        with self.assertRaises(SystemExit) as e:
-            self.regs({"api_key_env": self.KEY})
-        self.assertIn("api_key:", str(e.exception))
-        self.assertNotIn(self.KEY[3:], str(e.exception))
+    def test_a_key_in_api_key_env_is_used_as_the_key_without_being_shown(self):
+        import contextlib, io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            entry = self.regs({"api_key_env": self.KEY})[0][1]
+        self.assertEqual(entry["api_key"], self.KEY)
+        self.assertNotIn("api_key_env", entry)
+        self.assertIn("api_key_env holds the key itself", out.getvalue())
+        self.assertNotIn(self.KEY[3:], out.getvalue())
 
     def test_empty_and_doubled_keys_are_refused(self):
         for register in ({"api_key": ""}, {"api_key": self.KEY, "api_key_env": "X"}):
