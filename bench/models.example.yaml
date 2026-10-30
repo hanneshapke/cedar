@@ -1,0 +1,24 @@
+# Copy to models.yaml (git-ignored) and adjust. Keys come from the environment, never this file.
+cedar:
+  url: http://127.0.0.1:8080
+  key_env: CEDAR_BENCH_KEY              # a cedar API key for the runs
+  admin_key_env: CEDAR_BENCH_ADMIN_KEY  # an admin key, to register the models (defaults to the key)
+fixtures_url: http://127.0.0.1:8765     # where the runner resets and reads the fixture server
+repeats: 3                              # trials per task, for pass^k
+trial_timeout_secs: 900
+
+models:
+  - id: deepseek-v4
+    reasoning: [none, high]
+    register:
+      base_url: http://localhost:8000/v1
+      model: deepseek-ai/DeepSeek-V4-Flash
+      reasoning_levels: [none, low, high, max]
+      price: {input_usd_per_m: 0.27, output_usd_per_m: 1.10}   # placeholder: set your real price
+  - id: other-model
+    reasoning: [null]                   # the model's default
+    register:
+      base_url: https://api.example.com/v1
+      model: vendor/model-name
+      api_key_env: OTHER_MODEL_API_KEY
+      price: {input_usd_per_m: 1.00, output_usd_per_m: 4.00}

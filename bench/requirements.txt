@@ -1,0 +1,4 @@
+# cedar-bench needs Python 3.11+ and these:
+PyYAML>=6.0
+# Only for file_contains checks on PDFs (and the tests):
+pypdf>=4.0
