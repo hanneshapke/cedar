@@ -25,15 +25,40 @@ listener() {  # the pid listening on a port, if any
   lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null | head -1 || true
 }
 
+ours() {  # whether a pid is this checkout's cedar or a cedar-bench fixture server
+  local cmd
+  cmd=$(ps -o command= -p "$1" 2>/dev/null || true)
+  case "$cmd" in
+    "$CEDAR_BIN"*|*"-m cedar_bench serve"*) return 0 ;;
+  esac
+  return 1
+}
+
 stop() {
-  local f stopped=0
+  local f pid port pids=""
   for f in "$STATE"/*.pid; do
     [ -e "$f" ] || continue
-    if alive "$f"; then kill "$(cat "$f")" 2>/dev/null || true; stopped=1; fi
+    alive "$f" && pids="$pids $(cat "$f")"
     rm -f "$f"
   done
-  [ "$stopped" = 1 ] && sleep 1
-  return 0
+  # Also ours on the bench ports that this script didn't start (started by hand, or by an
+  # earlier stack whose pid files are gone). Anything else on those ports is left alone.
+  for port in $FX_PORT $CEDAR_PORTS; do
+    pid=$(listener "$port")
+    if [ -n "$pid" ] && ours "$pid"; then
+      case " $pids " in *" $pid "*) ;; *) echo "stopping pid $pid on port $port (started outside stack.sh)"; pids="$pids $pid" ;; esac
+    fi
+  done
+  [ -n "$pids" ] || return 0
+  kill $pids 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do  # cedar cancels active runs before it exits
+    alive_any=""
+    for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive_any=1; done
+    [ -z "$alive_any" ] && return 0
+    sleep 1
+  done
+  echo "still running after 10s, killing:$pids" >&2
+  kill -9 $pids 2>/dev/null || true
 }
 
 wait_ready() {  # name pidfile url
@@ -42,6 +67,7 @@ wait_ready() {  # name pidfile url
     if ! alive "$2"; then
       echo "$1 exited while starting; its log:" >&2
       tail -20 "$STATE/$1.log" >&2
+      stop
       exit 1
     fi
     if curl -sf "$3" >/dev/null; then echo "$1 ready"; return; fi
@@ -50,21 +76,27 @@ wait_ready() {  # name pidfile url
   echo "$1 is running but not ready after 90s ($3):" >&2
   curl -s "$3" >&2 || true
   echo >&2
+  echo "(a failed sandbox check usually means Docker isn't running or the cedar-sandbox image is missing)" >&2
+  stop
   exit 1
 }
 
 start() {
   [ -x "$CEDAR_BIN" ] || { echo "no cedar binary at $CEDAR_BIN: run cargo build --release" >&2; exit 1; }
   stop
-  local port pid
+  local port pid busy=""
   for port in $FX_PORT $CEDAR_PORTS; do
     pid=$(listener "$port")
     if [ -n "$pid" ]; then
-      echo "port $port is already used by pid $pid ($(ps -o comm= -p "$pid" 2>/dev/null || echo '?'))." >&2
-      echo "Stop it (kill $pid), or pick other ports with FX_PORT / CEDAR_PORTS." >&2
-      exit 1
+      echo "port $port is used by pid $pid: $(ps -o command= -p "$pid" 2>/dev/null | cut -c1-100)" >&2
+      busy="$busy $pid"
     fi
   done
+  if [ -n "$busy" ]; then
+    echo "These aren't cedar-bench's, so they were left alone. Stop them (kill$busy), or pick" >&2
+    echo "other ports with FX_PORT / CEDAR_PORTS (and the same ports in models.yaml)." >&2
+    exit 1
+  fi
   mkdir -p "$STATE"
   rm -f "$STATE"/*.db "$STATE"/*.db-* "$STATE"/*.log
   KEY=$(py -c 'import secrets; print(secrets.token_hex(24))')
