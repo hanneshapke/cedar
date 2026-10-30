@@ -1,4 +1,6 @@
-# Copy to models.yaml (git-ignored) and adjust. Keys come from the environment, never this file.
+# Copy to models.yaml (git-ignored) and adjust. A model's API key goes in `api_key`, or, to keep
+# it out of the file, in an environment variable whose NAME goes in `api_key_env`. Keys are never
+# written to results.
 # One cedar process per persona time zone: cedar looks up the calendar time zone once per process.
 # All of them use the fixture server below. A single server works for tasks in one time zone.
 cedar:
@@ -25,5 +27,5 @@ models:
     register:
       base_url: https://api.example.com/v1
       model: vendor/model-name
-      api_key_env: OTHER_MODEL_API_KEY
+      api_key: sk-your-key-here         # or: api_key_env: OTHER_MODEL_API_KEY
       price: {input_usd_per_m: 1.00, output_usd_per_m: 4.00}

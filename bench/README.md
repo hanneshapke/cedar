@@ -57,8 +57,7 @@ top-level README), and a cedar build:
 
 ```sh
 cargo build --release
-cp bench/models.example.yaml bench/models.yaml       # then edit: your models, prices, api_key_env
-export MY_PROVIDER_API_KEY=...                       # whatever api_key_env names; must be exported
+cp bench/models.example.yaml bench/models.yaml       # then edit: your models, prices, api_key
 
 bench/scripts/stack.sh start            # the fixture server, and one cedar per persona time zone
 bench/scripts/stack.sh run --repeats 3  # registers the models, runs the sweep, writes the report

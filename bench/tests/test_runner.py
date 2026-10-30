@@ -178,3 +178,26 @@ class RegistrationTest(unittest.TestCase):
             self.assertEqual(runner.registrations(cfg)[0][1]["api_key"], "secret")
         finally:
             del os.environ["CEDAR_BENCH_TEST_NO_SUCH_KEY"]
+
+
+class ModelKeyTest(unittest.TestCase):
+    KEY = "sk-NotARealKey-1234567890abcdef"
+
+    def regs(self, register):
+        return runner.registrations({"models": [{"id": "m", "register": {
+            "base_url": "https://x/v1", "model": "x", **register}}]})
+
+    def test_the_key_can_go_in_the_file(self):
+        self.assertEqual(self.regs({"api_key": f" {self.KEY} "})[0][1]["api_key"], self.KEY)
+
+    def test_a_key_in_api_key_env_is_refused_without_being_shown(self):
+        with self.assertRaises(SystemExit) as e:
+            self.regs({"api_key_env": self.KEY})
+        self.assertIn("api_key:", str(e.exception))
+        self.assertNotIn(self.KEY[3:], str(e.exception))
+
+    def test_empty_and_doubled_keys_are_refused(self):
+        for register in ({"api_key": ""}, {"api_key": self.KEY, "api_key_env": "X"}):
+            with self.assertRaises(SystemExit) as e:
+                self.regs(register)
+            self.assertNotIn(self.KEY[3:], str(e.exception))

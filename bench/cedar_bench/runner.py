@@ -21,7 +21,7 @@ The run config (see bench/models.example.yaml):
         register:                         # optional: PUT /v1/admin/models/{id} before the sweep
           base_url: http://localhost:8000/v1
           model: deepseek-ai/DeepSeek-V4-Flash
-          api_key_env: DEEPSEEK_API_KEY   # read from the environment, never stored in the config
+          api_key: sk-...                 # or api_key_env: NAME_OF_AN_ENV_VAR
           reasoning_levels: [none, low, high, max]
           price: {input_usd_per_m: 0.27, output_usd_per_m: 1.10}
 """
@@ -212,23 +212,41 @@ def load_config(path: Path) -> dict:
     return cfg
 
 
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
 def registrations(cfg: dict) -> list[tuple[str, dict]]:
-    """The `PUT /v1/admin/models/{id}` bodies, with each `api_key_env` read from the environment.
-    A missing variable is an error: cedar would take an empty key as "remove the saved key"."""
+    """The `PUT /v1/admin/models/{id}` bodies. A model's API key is `api_key` (models.yaml is
+    git-ignored, and the `register` block never goes into results) or, to keep it out of the file,
+    `api_key_env`: the name of an environment variable holding it. A key that is missing or empty
+    is an error, since cedar takes an empty key as "remove the saved key". Error messages never
+    show a key."""
     out = []
     for m in cfg["models"]:
         entry = dict(m.get("register") or {})
         if not entry:
             continue
+        where = f"model {m['id']} ({entry.get('base_url')})"
         key_env = entry.pop("api_key_env", None)
-        if key_env:
+        if key_env is not None and "api_key" in entry:
+            raise SystemExit(f"{where}: set api_key or api_key_env, not both")
+        if key_env is not None:
+            key_env = str(key_env)
+            if not ENV_NAME.fullmatch(key_env):
+                raise SystemExit(
+                    f"{where}: api_key_env must be the NAME of an environment variable (like "
+                    "DOUBLEWORD_API_KEY), and this value isn't one; it may be the key itself. Put "
+                    "the key in `api_key:` instead, or export it and name the variable here.")
             key = os.environ.get(key_env, "").strip()
             if not key:
-                raise SystemExit(
-                    f"model {m['id']}: ${key_env} is empty or not exported, so there is no API key "
-                    f"for {entry.get('base_url')}. Run `export {key_env}=...` in the shell that "
-                    "starts the runner.")
+                raise SystemExit(f"{where}: ${key_env} is empty or not exported. Run "
+                                 f"`export {key_env}=...` in the shell that starts the runner, or "
+                                 "put the key in `api_key:` in models.yaml.")
             entry["api_key"] = key
+        elif "api_key" in entry:
+            entry["api_key"] = str(entry["api_key"] or "").strip()
+            if not entry["api_key"]:
+                raise SystemExit(f"{where}: api_key is empty")
         out.append((m["id"], entry))
     return out
 
