@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+- **A new look for the iPhone and Android apps.** Both apps now wear cedar's own colours: the mark's forest green and clay on warm paper in light mode and deep charcoal in dark mode, the same palette on both platforms (`iOS/Cedar/App/Theme.swift`, `android/.../ui/Theme.kt`).
+- The conversation list shows the cedar mark and name in the top bar. On iPhone the name was missing: the Chats | Starred | Scheduled switch sat in a strip whose bar background covered the large title. The switch is now a rounded pill, with the count of unread scheduled runs as a badge instead of *Scheduled (2)*.
+- Rows in the list have an icon tile (a spinner while the agent runs), the title and time on one line, the model and schedule under it, a green dot for unread and a clay *Needs answer* chip. The open conversation gets a soft green highlight. Scheduled agents and their runs follow the same layout.
+- In a conversation your messages are green bubbles, the welcome shows the cedar mark, and the composer is a floating rounded bar with round attach (+) and send buttons. Tool calls, plans, questions and cards (charts, maps, flights, products, ...) share one card style, and what waits on you (approvals, questions) is clay instead of orange.
+- The language screen on first launch, the empty detail pane on iPad and Android tablets, and Settings on iPhone use the same background, mark and a larger green button.
+
 ## 0.3.2
 
 - **Expert mode: see what the agent did for a response.** Turn it on under Settings → *Advanced settings* → *Show traces* (per browser, no admin token needed) and each message you send gets a *Trace* button, in all four interfaces. It opens a dialog with a timeline of every call to the model and, between them, every tool call. For a model call it shows the parameters and the messages it was sent (the ones new since the previous call are marked), and the response with its reasoning, tool calls, stop reason, tokens and time. For a tool call it shows the input, output and time. The plan, approvals and blocked connections appear where they happened. Further tabs show the conversation as the model sees it, the system prompt and tool definitions, the event log, and the whole trace as JSON to copy or download. A trace can be opened while the response is still running.
