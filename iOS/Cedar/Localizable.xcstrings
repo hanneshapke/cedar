@@ -1444,48 +1444,48 @@
         }
       }
     },
-    "%lld turn" : {
+    "%lld turn in the bundle" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld Runde"
+            "value" : "%lld Runde im Bündel"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld turno"
+            "value" : "%lld turno en el paquete"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld tour"
+            "value" : "%lld tour dans le lot"
           }
         }
       }
     },
-    "%lld turns" : {
+    "%lld turns in the bundle" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld Runden"
+            "value" : "%lld Runden im Bündel"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld turnos"
+            "value" : "%lld turnos en el paquete"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld tours"
+            "value" : "%lld tours dans le lot"
           }
         }
       }

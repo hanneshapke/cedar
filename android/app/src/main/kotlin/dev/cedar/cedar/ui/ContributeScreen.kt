@@ -49,6 +49,9 @@ import androidx.compose.ui.window.DialogProperties
 import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.R
 import dev.cedar.core.ContributionPreview
+import dev.cedar.core.bool
+import dev.cedar.core.get
+import dev.cedar.core.int
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 

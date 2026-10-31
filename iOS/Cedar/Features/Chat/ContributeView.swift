@@ -175,7 +175,7 @@ struct ContributeView: View {
     private func summary(_ p: ContributionPreview) -> String {
         var parts: [String] = []
         let turns = p.turns().count
-        parts.append(L10n.format(turns == 1 ? "%lld turn" : "%lld turns", turns))
+        parts.append(L10n.format(turns == 1 ? "%lld turn in the bundle" : "%lld turns in the bundle", turns))
         parts.append(p.modelName)
         parts.append(L10n.format(p.standInCount == 1 ? "%lld stand-in" : "%lld stand-ins", p.standInCount))
         if p.dropped?["memory"]?.boolValue == true { parts.append(L10n.string("memory list removed")) }

@@ -134,8 +134,13 @@ fun ContributeSettingsScreen(app: AppModel) {
                         if (s.available && app.contributions.any { it.withdrawnAt == null }) {
                             TextButton(enabled = !refreshing, onClick = {
                                 refreshing = true
-                                act { app.refreshContributions(askCorpus = true) }
-                                refreshing = false
+                                act {
+                                    try {
+                                        app.refreshContributions(askCorpus = true)
+                                    } finally {
+                                        refreshing = false
+                                    }
+                                }
                             }) { Text(stringResource(R.string.contribute_refresh_status)) }
                         }
                     }
