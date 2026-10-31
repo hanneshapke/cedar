@@ -45,3 +45,4 @@ bench/dist/
 bench/tasks-heldout/
 bench/.stack/
 bench/.venv/
+contrib/training/.venv/

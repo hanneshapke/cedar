@@ -132,8 +132,9 @@ look at these numbers.
 
 ## Training on a release
 
-`scripts/train_qwen_rl.py` is a worked example of reinforcement learning on a release with a
-small Qwen model (TRL, PEFT), in two stages. `rft` turns every trajectory into a chat with tool
+[`training/`](training/README.md) is a worked example of reinforcement learning on a release
+with a small Qwen model (TRL, PEFT), a uv project like `bench/`, in two stages
+(`uv run --project contrib/training cedar-contrib-train ...`). `rft` turns every trajectory into a chat with tool
 calls in Qwen's own format, scores it from the person's outcome and thumbs and how the run ended,
 discounted by the contributor's label weight, and fine-tunes on the good ones (rejection-sampling
 fine-tuning; the best count twice). `grpo` makes tasks of the successful trajectories' prompts and

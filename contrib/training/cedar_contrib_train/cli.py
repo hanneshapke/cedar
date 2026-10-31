@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Train a small Qwen model on a cedar-contrib release, in two stages.
 
 A release (`cedar-contrib release --out DIR`, or the Hugging Face mirror) is
@@ -22,15 +21,15 @@ single-step: the model's first move, not a whole episode. A whole episode needs 
 which is what cedar-bench's hermetic stack is for; `sandbox_only` trajectories are the ones that
 can be replayed there, and `--only-sandbox` keeps those.
 
-    pip install "trl>=0.17" "transformers>=4.46" "peft>=0.13" datasets accelerate torch
-
-    # look at the data, no GPU
-    python contrib/scripts/train_qwen_rl.py rft --release out/v2026.11 --dry-run
-    # stage 1
-    python contrib/scripts/train_qwen_rl.py rft --release out/v2026.11 --model Qwen/Qwen2.5-1.5B-Instruct --out ckpt/rft
+    # look at the data, no GPU (the base install is the standard library only)
+    uv run --project contrib/training cedar-contrib-train rft --release out/v2026.11 --dry-run
+    # stage 1 (the `train` extra brings torch, transformers, TRL and PEFT)
+    uv run --project contrib/training --extra train cedar-contrib-train rft \\
+      --release out/v2026.11 --model Qwen/Qwen2.5-1.5B-Instruct --out ckpt/rft
     # stage 2, from stage 1's weights, with a judge
     CONTRIB_JUDGE_URL=http://localhost:8000/v1 CONTRIB_JUDGE_MODEL=judge \\
-      python contrib/scripts/train_qwen_rl.py grpo --release out/v2026.11 --model ckpt/rft --out ckpt/grpo
+      uv run --project contrib/training --extra train cedar-contrib-train grpo \\
+      --release out/v2026.11 --model ckpt/rft --out ckpt/grpo
 
 The script never strips the canary string from a bundle, honours the manifest's `excluded_sha256`
 (withdrawn contributions), and takes only the licenses you name (`--licenses cc0,cc-by-4.0`).
