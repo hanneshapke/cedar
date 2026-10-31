@@ -70,25 +70,45 @@ struct ContributionPreview: Decodable, Sendable {
     /// The stand-ins the redaction wrote, by kind: values a reader may take for real and shouldn't.
     var standIns: [String: [String]] {
         guard case .object(let kinds)? = bundle["redactions"] else { return [:] }
-        return kinds.mapValues { ($0.arrayValue ?? []).compactMap(\.stringValue) }
+        var out: [String: [String]] = [:]
+        for (kind, list) in kinds {
+            let values: [JSONValue] = list.arrayValue ?? []
+            out[kind] = values.compactMap { $0.stringValue }
+        }
+        return out
     }
 
-    var standInCount: Int { standIns.values.reduce(0) { $0 + $1.count } }
+    var standInCount: Int {
+        var n = 0
+        for (_, values) in standIns { n += values.count }
+        return n
+    }
 
     /// What was left out: `{attachments, memory, fetched_bodies, reasoning}`.
     var dropped: JSONValue? { bundle["dropped"] }
 
     func turns() -> [TurnSummary] {
-        (bundle["turns"]?.arrayValue ?? []).map { t in
-            let messages = t["messages"]?.arrayValue ?? []
-            let agentText = messages.dropFirst().filter { $0["role"]?.stringValue == "assistant" }
-                .flatMap { $0["content"]?.arrayValue ?? [] }
-                .filter { $0["type"]?.stringValue == "text" }
-                .compactMap { $0["text"]?.stringValue }
-            let toolCalls = messages.flatMap { $0["content"]?.arrayValue ?? [] }
-                .filter { $0["type"]?.stringValue == "tool_use" }
-                .map { (name: $0["name"]?.stringValue ?? "?", input: $0["input"]?.prettyPrinted ?? "") }
-            return TurnSummary(
+        let turnValues: [JSONValue] = bundle["turns"]?.arrayValue ?? []
+        var out: [TurnSummary] = []
+        for t in turnValues {
+            let messages: [JSONValue] = t["messages"]?.arrayValue ?? []
+            var agentText: [String] = []
+            var toolCalls: [(name: String, input: String)] = []
+            for (index, m) in messages.enumerated() {
+                let role: String = m["role"]?.stringValue ?? ""
+                let blocks: [JSONValue] = m["content"]?.arrayValue ?? []
+                for b in blocks {
+                    let type: String = b["type"]?.stringValue ?? ""
+                    if type == "text", role == "assistant", index > 0 {
+                        if let text = b["text"]?.stringValue { agentText.append(text) }
+                    } else if type == "tool_use" {
+                        let name: String = b["name"]?.stringValue ?? "?"
+                        let input: String = b["input"]?.prettyPrinted ?? ""
+                        toolCalls.append((name: name, input: input))
+                    }
+                }
+            }
+            let summary = TurnSummary(
                 seq: t["seq"]?.intValue ?? 0,
                 prompt: t["prompt"]?.stringValue ?? "",
                 status: t["status"]?.stringValue ?? "",
@@ -97,7 +117,9 @@ struct ContributionPreview: Decodable, Sendable {
                 agentText: agentText,
                 toolCalls: toolCalls
             )
+            out.append(summary)
         }
+        return out
     }
 
     /// The bundle with the person's outcome and the turns' ratings applied, as Send posts it.
@@ -105,19 +127,27 @@ struct ContributionPreview: Decodable, Sendable {
         guard case .object(var map) = bundle else { return bundle }
         if let outcome {
             var o: [String: JSONValue] = ["result": .string(outcome)]
-            if let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                o["notes"] = .string(notes)
-            }
+            let trimmed: String = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmed.isEmpty { o["notes"] = .string(trimmed) }
             map["outcome"] = .object(o)
         } else {
             map.removeValue(forKey: "outcome")
         }
         if !ratings.isEmpty, let turns = map["turns"]?.arrayValue {
-            map["turns"] = .array(turns.map { t in
-                guard case .object(var tm) = t, let seq = t["seq"]?.intValue, let rating = ratings[seq] else { return t }
-                if let rating { tm["rating"] = .number(Double(rating)) } else { tm.removeValue(forKey: "rating") }
-                return .object(tm)
-            })
+            var updated: [JSONValue] = []
+            for t in turns {
+                guard case .object(var tm) = t, let seq = t["seq"]?.intValue, let chosen = ratings[seq] else {
+                    updated.append(t)
+                    continue
+                }
+                if let rating = chosen {
+                    tm["rating"] = .number(Double(rating))
+                } else {
+                    tm.removeValue(forKey: "rating")
+                }
+                updated.append(.object(tm))
+            }
+            map["turns"] = .array(updated)
         }
         return .object(map)
     }

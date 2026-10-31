@@ -131,9 +131,8 @@ struct ContributeSettingsView: View {
     private func receiptRow(_ c: Contribution) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(c.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? c.title! : L10n.string("Untitled conversation"))
-                let released = c.releasedIn.isEmpty ? "" : " · " + c.releasedIn.joined(separator: ", ")
-                Text(verbatim: "\(c.submittedAt.formatted(.relative(presentation: .named).locale(L10n.locale))) · \(c.license) · \(c.id)\(released)")
+                Text(verbatim: receiptTitle(c))
+                Text(verbatim: receiptDetail(c))
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Spacer()
@@ -146,6 +145,18 @@ struct ContributeSettingsView: View {
                 Button("Withdraw", role: .destructive) { withdrawing = c }.buttonStyle(.borderless).font(.footnote)
             }
         }
+    }
+
+    private func receiptTitle(_ c: Contribution) -> String {
+        let title: String = c.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return title.isEmpty ? L10n.string("Untitled conversation") : title
+    }
+
+    private func receiptDetail(_ c: Contribution) -> String {
+        let when: String = c.submittedAt.formatted(.relative(presentation: .named).locale(L10n.locale))
+        var detail: String = "\(when) · \(c.license) · \(c.id)"
+        if !c.releasedIn.isEmpty { detail += " · " + c.releasedIn.joined(separator: ", ") }
+        return detail
     }
 
     private func statusText(_ status: String) -> String {

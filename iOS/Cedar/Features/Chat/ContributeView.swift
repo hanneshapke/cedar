@@ -123,7 +123,7 @@ struct ContributeView: View {
     }
 
     private func rating(_ turn: ContributionPreview.TurnSummary) -> Int? {
-        if let chosen = ratings[turn.seq] { return chosen }
+        if let chosen: Int? = ratings[turn.seq] { return chosen }
         return turn.rating
     }
 
@@ -164,24 +164,56 @@ struct ContributeView: View {
                 Text(text).font(.footnote.monospaced())
             }
         }
-        let marked = preview.standIns.values.flatMap { $0 }.filter { s in
-            turn.prompt.contains(s) || turn.agentText.contains { $0.contains(s) } || turn.toolCalls.contains { $0.input.contains(s) }
-        }
+        let marked: [String] = standInsIn(turn, preview)
         if !marked.isEmpty {
             Text(L10n.format("Stand-ins here: %@", marked.joined(separator: ", "))).font(.caption).foregroundStyle(Theme.green)
         }
     }
 
+    /// The stand-ins that occur in this turn's text.
+    private func standInsIn(_ turn: ContributionPreview.TurnSummary, _ preview: ContributionPreview) -> [String] {
+        var out: [String] = []
+        for (_, values) in preview.standIns {
+            for value in values {
+                var found = turn.prompt.contains(value)
+                if !found {
+                    for text in turn.agentText where text.contains(value) { found = true; break }
+                }
+                if !found {
+                    for call in turn.toolCalls where call.input.contains(value) { found = true; break }
+                }
+                if found { out.append(value) }
+            }
+        }
+        return out
+    }
+
     private func summary(_ p: ContributionPreview) -> String {
         var parts: [String] = []
-        let turns = p.turns().count
-        parts.append(L10n.format(turns == 1 ? "%lld turn in the bundle" : "%lld turns in the bundle", turns))
+        let turns: Int = p.turns().count
+        let turnsKey: String = turns == 1 ? "%lld turn in the bundle" : "%lld turns in the bundle"
+        parts.append(L10n.format(turnsKey, turns))
         parts.append(p.modelName)
-        parts.append(L10n.format(p.standInCount == 1 ? "%lld stand-in" : "%lld stand-ins", p.standInCount))
-        if p.dropped?["memory"]?.boolValue == true { parts.append(L10n.string("memory list removed")) }
-        if let n = p.dropped?["attachments"]?.intValue, n > 0 { parts.append(L10n.format(n == 1 ? "%lld attachment left out" : "%lld attachments left out", n)) }
-        if let n = p.dropped?["fetched_bodies"]?.intValue, n > 0 { parts.append(L10n.format(n == 1 ? "%lld fetched page left out" : "%lld fetched pages left out", n)) }
-        if let n = p.dropped?["reasoning"]?.intValue, n > 0 { parts.append(L10n.format(n == 1 ? "reasoning of %lld call left out" : "reasoning of %lld calls left out", n)) }
+        let standIns: Int = p.standInCount
+        let standInsKey: String = standIns == 1 ? "%lld stand-in" : "%lld stand-ins"
+        parts.append(L10n.format(standInsKey, standIns))
+        let dropped: JSONValue? = p.dropped
+        if dropped?["memory"]?.boolValue == true { parts.append(L10n.string("memory list removed")) }
+        let attachments: Int = dropped?["attachments"]?.intValue ?? 0
+        if attachments > 0 {
+            let key: String = attachments == 1 ? "%lld attachment left out" : "%lld attachments left out"
+            parts.append(L10n.format(key, attachments))
+        }
+        let fetched: Int = dropped?["fetched_bodies"]?.intValue ?? 0
+        if fetched > 0 {
+            let key: String = fetched == 1 ? "%lld fetched page left out" : "%lld fetched pages left out"
+            parts.append(L10n.format(key, fetched))
+        }
+        let reasoning: Int = dropped?["reasoning"]?.intValue ?? 0
+        if reasoning > 0 {
+            let key: String = reasoning == 1 ? "reasoning of %lld call left out" : "reasoning of %lld calls left out"
+            parts.append(L10n.format(key, reasoning))
+        }
         parts.append(L10n.string(p.blocked.isEmpty ? "ready" : "can't be sent"))
         return parts.joined(separator: " · ")
     }
