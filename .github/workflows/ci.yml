@@ -47,6 +47,7 @@ jobs:
               - '!android/**'
               - '!iOS/**'
               - '!*.md'
+              - '!bench/**'
               - '!.github/workflows/android.yml'
               - '!.github/workflows/ios.yml'
               - '!.github/workflows/pages.yml'
@@ -109,6 +110,20 @@ jobs:
 
   # The community tool registry (registry/): every tool follows the rules and the index is up to
   # date. cedar's own checks run on the tools too, in `tests/registry.rs` under `test`.
+  # cedar-bench: every task file valid, and the fixture server, graders and runner tested (no Docker,
+  # no network; bench/scripts/smoke.sh is the end-to-end check against a real cedar).
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e bench          # the dependencies come from bench/pyproject.toml
+      - run: cedar-bench validate
+      - run: python -m unittest discover -s bench/tests
+
   registry:
     runs-on: ubuntu-latest
     timeout-minutes: 10

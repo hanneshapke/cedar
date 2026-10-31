@@ -1,0 +1,19 @@
+# What /brave/search answers. Results are ranked by how many query words appear in the title,
+# description and keywords. `{base}` is the fixture server's address; `age` may use date tokens.
+- title: Halvorsen Bridge - Port Alder Heritage Trust
+  url: "{base}/web/port-alder-heritage/halvorsen-bridge.html"
+  description: The official history of the Halvorsen Bridge, Port Alder's steel arch over the Alder Narrows, from the Port Alder Heritage Trust.
+  keywords: [halvorsen, bridge, port, alder, history, opened, designer, engineer, heritage]
+- title: "10 things to do in Port Alder (2026 guide)"
+  url: "{base}/web/wanderlog-blog/port-alder-guide.html"
+  description: Our favorite spots in Port Alder, from the waterfront market to the Halvorsen Bridge walk.
+  keywords: [port, alder, travel, guide, halvorsen, bridge, things, do]
+  age: "{{today-40}}"
+- title: Port Alder Heritage Trust - Landmarks
+  url: "{base}/web/port-alder-heritage/index.html"
+  description: Protected landmarks of Port Alder, with histories and visiting information.
+  keywords: [port, alder, landmarks, heritage, trust]
+- title: Orbit Cloud pricing - plans for teams
+  url: "{base}/web/orbit-cloud/pricing.html"
+  description: Compare Orbit Cloud's Basic, Pro and Enterprise plans for file storage and sharing.
+  keywords: [orbit, cloud, pricing, plans, basic, pro, storage]

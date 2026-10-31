@@ -1,0 +1,30 @@
+# Synthetic tickers for /stocks/chart and /stocks/news. Closes are a seeded random walk ending at
+# `price` on the last trading day up to the anchor, drifting toward `annual_return` a year.
+# The names are invented so a model can't answer from memory.
+- symbol: QZRB
+  name: Quartz Robotics Inc.
+  exchange: NasdaqGS
+  price: 148.20
+  annual_return: 0.55
+  volatility: 0.18
+  seed: 1
+  news:
+    - {title: "Quartz Robotics wins warehouse automation contract", date: "{{today-2}}T13:00", publisher: Bench Wire}
+    - {title: "Quartz Robotics raises full-year guidance", date: "{{today-20}}T12:30", publisher: Bench Wire}
+- symbol: QZLG
+  name: Quartz Logistics Corp.
+  exchange: NYSE
+  price: 31.75
+  annual_return: -0.30
+  volatility: 0.18
+  seed: 2
+  news:
+    - {title: "Quartz Logistics cuts forecast as freight volumes slump", date: "{{today-5}}T14:00", publisher: Bench Wire}
+- symbol: "^GSPC"
+  name: S&P 500
+  exchange: SNP
+  type: INDEX
+  price: 6120.0
+  annual_return: 0.08
+  volatility: 0.12
+  seed: 3

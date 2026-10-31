@@ -1,0 +1,41 @@
+# cedar-bench's package: its dependencies, its `cedar-bench` command, and its version (read from
+# cedar_bench/__init__.py). The benchmark data (tasks/, personas/, fixtures/) stays in this folder;
+# see cedar_bench/paths.py for how an installed package finds it.
+#
+#     uv run --project bench cedar-bench validate    # from the repo root; uv manages bench/.venv
+#     pip install -e bench                           # or: into an environment you manage
+[project]
+name = "cedar-bench"
+dynamic = ["version"]
+description = "A hermetic benchmark for agents running on cedar"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "PyYAML>=6.0",       # tasks, personas, fixtures, run configs
+    "pypdf>=4.0",        # file_contains checks on PDFs
+    "matplotlib>=3.8",   # the report's charts
+    "reportlab>=4.0",    # report.pdf
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/hanneshapke/cedar/tree/main/bench"
+Repository = "https://github.com/hanneshapke/cedar"
+
+[project.scripts]
+cedar-bench = "cedar_bench.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "cedar_bench/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cedar_bench"]

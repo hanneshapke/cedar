@@ -1,0 +1,151 @@
+# A fictional persona for cedar-bench. Every name, address and figure is invented; `.example`
+# domains are reserved and never resolve. Dates use the tokens in cedar_bench/timeutil.py.
+#
+# Plot the tasks rely on (keep these true when editing):
+# - Next week, the only window of 45 minutes or more where Theo and his advisor Ines are both free
+#   between 09:00 and 17:00 Berlin time is Wednesday 14:30-15:30
+#   (email_calendar/theo-advisor-slot).
+# - The workshop organizers need three things by {{today+9}}: the camera-ready PDF, the signed
+#   copyright form, and one author's registration. Theo teaches a tutorial that day
+#   (email_calendar/theo-workshop-todo).
+id: theo
+name: Theo Marchetti
+email: theo.marchetti@tu-nordhafen.example
+timezone: Europe/Berlin
+profile:
+  role: Third-year PhD student in computational linguistics at TU Nordhafen
+  preferences:
+    - Meetings with his advisor in the afternoon
+    - Replies in English, informal with peers and formal with faculty
+labels: [Thesis, Travel, Teaching]
+
+contacts:
+  - id: ines
+    name: Ines Kowalczyk
+    email: ines.kowalczyk@tu-nordhafen.example
+    relation: PhD advisor
+    busy:
+      - {start: "{{nextmon}}T09:00", end: "{{nextmon}}T17:00"}
+      - {start: "{{nextmon+1}}T09:00", end: "{{nextmon+1}}T12:00"}
+      - {start: "{{nextmon+1}}T13:00", end: "{{nextmon+1}}T17:00"}
+      - {start: "{{nextmon+2}}T09:00", end: "{{nextmon+2}}T14:00"}
+      - {start: "{{nextmon+2}}T15:30", end: "{{nextmon+2}}T17:00"}
+      - {start: "{{nextmon+3}}T09:00", end: "{{nextmon+3}}T17:00"}
+      - {start: "{{nextmon+4}}T09:00", end: "{{nextmon+4}}T12:00"}
+  - id: workshop
+    name: LowRes NLP Workshop Chairs
+    email: chairs@lowres-nlp-workshop.example
+    relation: workshop organizers
+  - id: travel
+    name: TU Nordhafen Travel Office
+    email: travel-office@tu-nordhafen.example
+    relation: university administration
+  - id: mira
+    name: Mira Haugland
+    email: mira.haugland@tu-nordhafen.example
+    relation: labmate
+  - id: felix
+    name: Felix Moreau
+    email: felix.moreau@contoso.example
+    relation: flatmate
+
+threads:
+  - id: t-ines-chapter
+    labels: [INBOX, UNREAD, Label_1]
+    messages:
+      - from: ines
+        to: [me]
+        date: "{{today}}T09:05"
+        subject: Chapter 3 draft
+        body: |
+          Dear Theo,
+
+          I have read your chapter 3 draft and have a number of comments, mostly on the evaluation
+          section. Could we meet for about 45 minutes next week? My calendar is up to date; please
+          propose a time that works for you.
+
+          Best regards,
+          Ines Kowalczyk
+
+  - id: t-camera-ready
+    labels: [INBOX, UNREAD]
+    messages:
+      - from: workshop
+        to: [me]
+        cc: [mira]
+        date: "{{today-1}}T18:30"
+        subject: "[LowRes NLP] Paper #42 accepted - camera-ready instructions"
+        body: |
+          Dear authors,
+
+          Congratulations again on the acceptance of paper #42, "Cheap Tricks for Tiny Treebanks".
+
+          Please complete the following by {{today+9}} (23:59 AoE):
+            1. Upload the camera-ready PDF (max. 8 pages plus references) to the submission system.
+            2. Sign and upload the copyright transfer form.
+            3. Make sure at least one author is registered for the workshop.
+
+          Papers without a registered author will be removed from the proceedings.
+
+          The LowRes NLP Workshop Chairs
+
+  - id: t-reimbursement
+    labels: [INBOX, Label_2]
+    messages:
+      - from: travel
+        to: [me]
+        date: "{{today-4}}T10:12"
+        subject: "Reimbursement request TR-2291: receipts missing"
+        body: |
+          Dear Mr. Marchetti,
+
+          Your reimbursement request TR-2291 (train tickets, EUR 184.40) is on hold because the
+          receipts are missing. Please reply with the receipts attached within 30 days.
+
+          Kind regards,
+          Travel Office
+
+  - id: t-rent
+    labels: [INBOX]
+    messages:
+      - from: felix
+        to: [me]
+        date: "{{today-2}}T21:47"
+        subject: rent + internet
+        body: |
+          hey, landlord says rent goes up by 25 euros from next month. internet bill came too,
+          it's 39.90 so ~20 each. can you transfer by friday? thx
+
+events:
+  - id: e-lab-meeting
+    summary: Lab meeting
+    start: "{{nextmon-14}}T10:00"
+    end: "{{nextmon-14}}T11:00"
+    attendees: [me, ines, mira]
+    repeat: weekly
+  - id: e-mon-writing
+    summary: Thesis writing
+    start: "{{nextmon}}T13:00"
+    end: "{{nextmon}}T17:00"
+  - id: e-tue-lunch
+    summary: Lab lunch
+    start: "{{nextmon+1}}T12:00"
+    end: "{{nextmon+1}}T13:00"
+    location: Mensa Nord
+    attendees: [me, mira]
+  - id: e-wed-experiments
+    summary: Run evaluation experiments
+    start: "{{nextmon+2}}T14:00"
+    end: "{{nextmon+2}}T14:30"
+  - id: e-fri-seminar
+    summary: Department seminar and reading group
+    start: "{{nextmon+4}}T11:00"
+    end: "{{nextmon+4}}T17:00"
+    location: Room B 2.14
+  - id: e-tutorial
+    summary: "Teaching: Intro to NLP tutorial"
+    start: "{{today+9}}T14:00"
+    end: "{{today+9}}T16:00"
+    location: Room A 0.08
+
+filler: {seed: 11, threads: 25, events: 15}
