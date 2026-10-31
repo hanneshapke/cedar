@@ -130,6 +130,46 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun setStarred(conversationId: String, starred: Boolean): Conversation =
         decode(request("api/conversations/$conversationId/star", if (starred) "PUT" else "DELETE"), Conversation.serializer())
 
+    // Contributing a conversation
+
+    /** The conversation as it would be contributed; `reasoning` and `fetched` include what is left out by default. */
+    suspend fun contributionPreview(conversationId: String, reasoning: Boolean = false, fetched: Boolean = false): ContributionPreview {
+        val query = buildMap {
+            if (reasoning) put("reasoning", "true")
+            if (fetched) put("fetched", "true")
+        }
+        return decode(request("api/conversations/$conversationId/contribution", query = query), ContributionPreview.serializer())
+    }
+
+    /** Send the bundle as shown (`bundle`, outcome inside); answers the receipt. */
+    suspend fun sendContribution(conversationId: String, bundle: JsonObject): Contribution {
+        val body = buildJsonObject {
+            put("bundle", bundle)
+            bundle["outcome"]?.let { put("outcome", it) }
+        }
+        return decode(request("api/conversations/$conversationId/contribution", "POST", body), Contribution.serializer())
+    }
+
+    /** The person's thumb on a response: 1, -1 or null. */
+    suspend fun rateTurn(turnId: String, rating: Int?): Turn =
+        decode(request("api/turns/$turnId/rating", "PUT", buildJsonObject { put("rating", rating) }), Turn.serializer())
+
+    suspend fun contributions(): List<Contribution> = decode(request("api/contributions"), ContributionList.serializer()).contributions
+
+    /** Ask the corpus what became of each contribution; answers the list with statuses. */
+    suspend fun refreshContributions(): List<Contribution> =
+        decode(request("api/contributions/refresh", "POST"), ContributionList.serializer()).contributions
+
+    suspend fun withdrawContribution(id: String): Contribution =
+        decode(request("api/contributions/$id", "DELETE"), Contribution.serializer())
+
+    suspend fun contributionSettings(): ContributionSettings =
+        decode(request("api/settings/contributions"), ContributionSettings.serializer())
+
+    /** Any of `license`, `pseudonym` ("new" makes one, "" drops it), `include_reasoning`, `include_fetched`, `enabled`. */
+    suspend fun updateContributionSettings(patch: JsonObject): ContributionSettings =
+        decode(request("api/settings/contributions", "PUT", patch), ContributionSettings.serializer())
+
     // Schedules
 
     suspend fun schedules(): List<Schedule> = decode(request("api/schedules"), ScheduleList.serializer()).schedules

@@ -1,6 +1,6 @@
 # Design: contributing conversations to a training corpus (opt-in)
 
-_Status: phases 1 to 5 are built (October 2026); see "Status" at the end for what differs from
+_Status: phases 1 to 6 are built (October 2026); see "Status" at the end for what differs from
 this text and what is still to come._
 
 cedar's privacy policy is one sentence: **cedar does not collect any data. Period.** This design
@@ -290,6 +290,12 @@ What differs from the text above, on purpose, for now:
   back in. Restoring is a later addition to the dialog.
 - **Per-turn thumbs** live in the review dialog rather than on every message in the four
   interfaces; they are stored on the turn either way.
+- **The iOS and Android apps** have the per-conversation Contribute action and Settings →
+  Contribute as native screens rather than web views of the chat's dialog. They show the same
+  review (turns, stand-ins, outcome, thumbs, Send) and the same settings and receipts, but do
+  not offer phrase redaction; the review says to use the web chat for that. Neither app was
+  compiled in the session that wrote them: there was no Xcode and no Android SDK, so they are
+  written to the apps' existing patterns and await their CI.
 - **Health tools** are not recognised: the thread is blocked only for Gmail and Calendar tool
   calls, by name. A community tool's `health_data` flag is not visible in a trace.
 - **A thread that switched models** is reported under the model of its last turn.

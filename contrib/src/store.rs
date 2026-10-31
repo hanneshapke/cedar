@@ -125,6 +125,10 @@ pub trait Store: Send + Sync {
     async fn put_audit(&self, entry: &serde_json::Value) -> Result<()>;
     /// A file of a release (`releases/<version>/...`).
     async fn put_release_file(&self, path: &str, bytes: &[u8]) -> Result<()>;
+    /// The audit lines from `since_day` on (`YYYY-MM-DD`, inclusive).
+    async fn list_audit(&self, since_day: &str) -> Result<Vec<serde_json::Value>>;
+    /// A statistics snapshot (`stats/<day>.json`).
+    async fn put_stats(&self, day: &str, bytes: &[u8]) -> Result<()>;
 }
 
 // -- memory -------------------------------------------------------------------------------------
@@ -139,6 +143,7 @@ pub struct MemoryStore {
     pub withdrawn: Mutex<Vec<String>>,
     pub audit: Mutex<Vec<serde_json::Value>>,
     pub releases: Mutex<BTreeMap<String, Vec<u8>>>,
+    pub stats: Mutex<BTreeMap<String, Vec<u8>>>,
 }
 
 #[async_trait]
@@ -203,6 +208,13 @@ impl Store for MemoryStore {
     }
     async fn put_release_file(&self, path: &str, bytes: &[u8]) -> Result<()> {
         self.releases.lock().unwrap().insert(path.to_string(), bytes.to_vec());
+        Ok(())
+    }
+    async fn list_audit(&self, since_day: &str) -> Result<Vec<serde_json::Value>> {
+        Ok(self.audit.lock().unwrap().iter().filter(|e| e["day"].as_str().unwrap_or_default() >= since_day).cloned().collect())
+    }
+    async fn put_stats(&self, day: &str, bytes: &[u8]) -> Result<()> {
+        self.stats.lock().unwrap().insert(day.to_string(), bytes.to_vec());
         Ok(())
     }
 }
@@ -316,6 +328,26 @@ impl Store for GcsStore {
     async fn put_release_file(&self, path: &str, bytes: &[u8]) -> Result<()> {
         let content_type = if path.ends_with(".json") { JSON } else { "application/octet-stream" };
         self.gcs.upload(&format!("releases/{path}"), bytes, content_type, &BTreeMap::new(), false).await?;
+        Ok(())
+    }
+    async fn list_audit(&self, since_day: &str) -> Result<Vec<serde_json::Value>> {
+        let mut out = Vec::new();
+        for name in self.gcs.list("audit/").await? {
+            // audit/<day>/<receipt>-<ms>.json
+            let day = name.strip_prefix("audit/").and_then(|n| n.split('/').next()).unwrap_or_default();
+            if day < since_day {
+                continue;
+            }
+            if let Some(bytes) = self.gcs.get(&name).await? {
+                if let Ok(v) = serde_json::from_slice(&bytes) {
+                    out.push(v);
+                }
+            }
+        }
+        Ok(out)
+    }
+    async fn put_stats(&self, day: &str, bytes: &[u8]) -> Result<()> {
+        self.gcs.upload(&format!("stats/{day}.json"), bytes, JSON, &BTreeMap::new(), false).await?;
         Ok(())
     }
 }

@@ -345,3 +345,63 @@ resource "google_cloud_scheduler_job" "release" {
   }
   depends_on = [google_project_service.jobs_apis]
 }
+
+# -- the quarterly pass: screen everything accepted or held again with the current checks ---
+
+resource "google_cloud_scheduler_job" "rescreen" {
+  name      = "contrib-rescreen"
+  region    = var.region
+  # The first day of January, April, July and October, 03:41 UTC.
+  schedule  = "41 3 1 1,4,7,10 *"
+  time_zone = "Etc/UTC"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project}/locations/${var.region}/jobs/${google_cloud_run_v2_job.screener.name}:run"
+    body = base64encode(jsonencode({
+      overrides = { containerOverrides = [{ args = ["screen", "--rescreen", "--force", "--batch", "5000"] }] }
+    }))
+    headers = { "Content-Type" = "application/json" }
+    oauth_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+  depends_on = [google_project_service.jobs_apis]
+}
+
+# -- the ablation job, started by hand before a release when a hook is configured --------------
+
+resource "google_cloud_run_v2_job" "ablation" {
+  count    = var.ablation_hook == "" ? 0 : 1
+  name     = "contrib-ablation"
+  location = var.region
+  template {
+    template {
+      service_account = google_service_account.api.email
+      timeout         = "21600s"
+      max_retries     = 0
+      containers {
+        image = var.image
+        args  = ["ablation", "--apply", "--out", "/tmp/ablation"]
+        resources {
+          limits = { cpu = "2", memory = "4Gi" }
+        }
+        dynamic "env" {
+          for_each = merge(local.job_env, { CONTRIB_ABLATION_HOOK = var.ablation_hook })
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+        env {
+          name = "CONTRIB_HMAC_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.hmac.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+    }
+  }
+}

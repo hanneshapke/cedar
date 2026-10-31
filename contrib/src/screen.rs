@@ -513,14 +513,18 @@ pub async fn screen_one(store: &dyn Store, judge: Option<&dyn Judge>, receipt: &
     Ok(verdict)
 }
 
-/// Screen every quarantined bundle (at most `batch`), and every bundle judged by an older
-/// checks version when `rescreen` is set. Returns how many were screened.
-pub async fn run(store: &dyn Store, judge: Option<&dyn Judge>, batch: usize, rescreen: bool) -> Result<usize> {
+/// Screen every quarantined bundle (at most `batch`); with `rescreen`, also every accepted or
+/// held bundle judged by an older checks version, and with `force` every accepted or held bundle
+/// whatever its version (the quarterly pass). Returns how many were screened.
+pub async fn run(store: &dyn Store, judge: Option<&dyn Judge>, batch: usize, rescreen: bool, force: bool) -> Result<usize> {
     let all = store.list_receipts().await?;
     let mut done = 0;
     let due: Vec<Receipt> = all
         .iter()
-        .filter(|r| r.status == "quarantined" || (rescreen && matches!(r.status.as_str(), "accepted" | "held") && r.verdict.as_ref().is_some_and(|v| v.checks_version < CHECKS_VERSION)))
+        .filter(|r| {
+            r.status == "quarantined"
+                || (matches!(r.status.as_str(), "accepted" | "held") && (force || (rescreen && r.verdict.as_ref().is_some_and(|v| v.checks_version < CHECKS_VERSION))))
+        })
         .take(batch)
         .cloned()
         .collect();

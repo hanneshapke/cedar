@@ -54,3 +54,21 @@ variable "aging_days" {
   default     = 14
   description = "How long an accepted bundle waits before a release may take it."
 }
+
+variable "ablation_hook" {
+  type        = string
+  default     = ""
+  description = "The command the ablation job runs per training set (see contrib/README.md, Ablation). Empty: no ablation job."
+}
+
+variable "edge" {
+  type        = bool
+  default     = false
+  description = "Put a global load balancer with Cloud Armor (rate limit, WAF) in front of the service (edge.tf)."
+}
+
+variable "edge_domain" {
+  type        = string
+  default     = "contrib.example.org"
+  description = "The hostname the edge answers on; a managed certificate is issued for it."
+}

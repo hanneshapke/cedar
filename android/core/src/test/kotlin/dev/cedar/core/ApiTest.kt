@@ -198,4 +198,61 @@ class ApiTest {
         assertTrue(ServerSettings("https://a", "t").sameServer(ServerSettings(" https://a ", "t ", model = "m")))
         assertFalse(ServerSettings("https://a", "t").sameServer(ServerSettings("https://a", "u")))
     }
+
+    @Test
+    fun decodesAContributionPreviewAndRebuildsTheBundleToSend() {
+        val json = """
+        {"bundle":{"schema_version":1,"model":{"id":"m","name":"org/model-a"},"redactions":{"EMAIL":["maya.lindqvist@example.net"],"USER":["theo"]},
+          "dropped":{"attachments":1,"memory":true,"fetched_bodies":0,"reasoning":1},
+          "turns":[{"seq":1,"prompt":"list my files, I am maya.lindqvist@example.net","status":"completed","day":"2026-10-31","rating":1,
+            "messages":[{"role":"user","content":[{"type":"text","text":"list my files"}]},
+                        {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{"command":"ls /Users/theo"}}]},
+                        {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"a.txt"}]},
+                        {"role":"assistant","content":[{"type":"text","text":"One file."}]}]}]},
+         "blocked":[],"secrets":[],"problems":[],"can_send":true,"accepted":false,"private_tools":[],"turn_ids":["turn-1"]}
+        """
+        val p = CedarJson.decodeFromString(ContributionPreview.serializer(), json)
+        assertTrue(p.canSend)
+        assertFalse(p.accepted)
+        assertEquals("org/model-a", p.modelName)
+        assertEquals(2, p.standInCount)
+        assertEquals(listOf("maya.lindqvist@example.net"), p.standIns["EMAIL"])
+        val turns = p.turns()
+        assertEquals(1, turns.size)
+        assertEquals(1, turns[0].rating)
+        assertEquals(listOf("One file."), turns[0].agentText)
+        assertEquals("bash", turns[0].toolCalls[0].first)
+        val sent = p.bundleWith("partly", " it missed b.txt ", mapOf(1 to -1))
+        assertEquals("partly", sent["outcome"]["result"].str)
+        assertEquals("it missed b.txt", sent["outcome"]["notes"].str)
+        assertEquals(-1, sent["turns"].arr!![0]["rating"].int)
+        assertEquals(1, sent["schema_version"].int)
+        val cleared = p.bundleWith(null, null, mapOf(1 to null))
+        assertNull(cleared["outcome"])
+        assertNull(cleared["turns"].arr!![0]["rating"])
+    }
+
+    @Test
+    fun decodesContributionSettingsAndReceipts() {
+        val s = CedarJson.decodeFromString(
+            ContributionSettings.serializer(),
+            """{"license":"cc-by-4.0","pseudonym":"p_0123456789abcdef","include_reasoning":false,"include_fetched":true,
+                "accepted_at":"2026-10-31T10:00:00Z","available":true,"host":"contrib.example.org","licenses":["cc0","cc-by-4.0"]}""",
+        )
+        assertTrue(s.enabled)
+        assertEquals("contrib.example.org", s.host)
+        val off = CedarJson.decodeFromString(ContributionSettings.serializer(), """{"license":"cc0","available":false,"licenses":[]}""")
+        assertFalse(off.enabled)
+        assertNull(off.host)
+        val list = CedarJson.decodeFromString(
+            ContributionList.serializer(),
+            """{"contributions":[{"id":"r-1","conversation_id":"c1","title":"Files","content_sha256":"ab","license":"cc0","url":"https://x",
+                "submitted_at":"2026-10-31T10:00:00Z","withdrawn_at":null,"status":"released","released_in":["v2026.11"],"checked_at":"2026-11-03T00:00:00Z"}]}""",
+        )
+        assertEquals("released", list.contributions[0].status)
+        assertEquals(listOf("v2026.11"), list.contributions[0].releasedIn)
+        assertNull(list.contributions[0].withdrawnAt)
+        val cfg = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false,"memory":true,"contributions":true}""")
+        assertTrue(cfg.contributions)
+    }
 }

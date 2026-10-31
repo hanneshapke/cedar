@@ -1,7 +1,8 @@
 # Design: the contribution ingest on Google Cloud Run, with poisoning defenses
 
-_Status: the request path (§3–4), the screener (§5), the review page and the release job (§6)
-are built as `contrib/` (October 2026); see "Status" at the end._
+_Status: the request path (§3–4), the screener (§5), the review page, the release job (§6), the
+ablation job and the statistics of the steady state are built as `contrib/` (October 2026); see
+"Status" at the end._
 _
 Companion to [contributions.md](contributions.md), which defines the bundle, the consent model and
 the client side. This document is the server: `cedar-contrib`, the service a cedar-chat points
@@ -332,9 +333,12 @@ What differs from the text above, for now:
 - **No Firestore.** Everything is objects in the quarantine bucket; the jobs list every receipt.
   Fine for the first releases; the point at which Firestore comes in is when listing receipts is
   what a screener run spends its time on.
-- **No load balancer and no Cloud Armor** in the Terraform: the frugal variant.
-- **The ablation evaluation** (§6.5) is not built: it needs cedar-bench's safety suite to be
-  stable, and a GPU job. The manifest and tags are what it would consume.
+- **The load balancer and Cloud Armor** are in the Terraform behind `edge = true`, off by
+  default: the frugal variant until floods are real.
+- **The ablation evaluation** (§6.5) is built as a job that writes the training sets (the batch,
+  and the batch minus each cluster) and runs a hook per set; the trainer and the bench live in the
+  hook. Until cedar-bench's safety suite is stable the job runs without a hook and only writes
+  the sets.
 - **The review page** is a token-protected page in the same service rather than a separate
   IAP-protected one; redact-and-accept is not offered (accept or reject only).
 - **The manifest is signed with HMAC**, not KMS; the format allows swapping the signature.

@@ -128,12 +128,12 @@ async fn the_job_screens_quarantined_bundles_and_scores_label_trust() {
     let r2 = receipt("l", &liar, Some("p_trust00000000"), "2026-10-02");
     put(&store, &r2, &liar).await;
     let j = ScriptedJudge { answers: vec![("sandbox refused".into(), Judgement { outcome: "failed".into(), outcome_confidence: 0.9, ..Default::default() })] };
-    let n = screen::run(&store, Some(&j), 100, false).await.unwrap();
+    let n = screen::run(&store, Some(&j), 100, false, false).await.unwrap();
     assert_eq!(n, 2);
     assert_eq!(store.get_receipt("g").await.unwrap().unwrap().status, "accepted");
     assert_eq!(store.get_receipt("l").await.unwrap().unwrap().status, "accepted");
     let ledger = store.ledger("p_trust00000000").await.unwrap().unwrap();
     assert_eq!((ledger.judged, ledger.disagreements), (1, 1));
     // Nothing left to screen; a rescreen pass finds nothing older than the current checks either.
-    assert_eq!(screen::run(&store, Some(&j), 100, true).await.unwrap(), 0);
+    assert_eq!(screen::run(&store, Some(&j), 100, true, false).await.unwrap(), 0);
 }

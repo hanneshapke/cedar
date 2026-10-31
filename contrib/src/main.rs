@@ -1,12 +1,13 @@
-//! cedar-contrib: the ingest (`cedar-contrib`, the default), the screener (`cedar-contrib
-//! screen`) and the release job (`cedar-contrib release`). See contrib/README.md.
+//! cedar-contrib: the ingest (`cedar-contrib`, the default), the screener (`screen`), the
+//! release job (`release`), the ablation evaluation (`ablation`) and the statistics (`stats`).
+//! See contrib/README.md.
 
 use anyhow::{bail, Context, Result};
 use cedar_contrib::config::Config;
 use cedar_contrib::gcs::Gcs;
 use cedar_contrib::judge::{HttpJudge, Judge};
 use cedar_contrib::store::{GcsStore, MemoryStore, Store};
-use cedar_contrib::{release, router, screen, AppState};
+use cedar_contrib::{ablation, release, router, screen, stats, AppState};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
@@ -35,12 +36,33 @@ async fn main() -> Result<()> {
     match args.first().map(String::as_str) {
         Some("screen") => {
             let rescreen = args.iter().any(|a| a == "--rescreen");
+            let force = args.iter().any(|a| a == "--force");
             let batch = arg_value(&args, "--batch").map(|v| v.parse()).transpose()?.unwrap_or(cfg.screen_batch);
             if judge.is_none() {
                 tracing::warn!("no judge (CONTRIB_JUDGE_URL): deterministic checks only; injected results are held for review");
             }
-            let n = screen::run(store.as_ref(), judge.as_deref(), batch, rescreen).await?;
+            let n = screen::run(store.as_ref(), judge.as_deref(), batch, rescreen, force).await?;
             println!("screened {n}");
+        }
+        Some("ablation") => {
+            let mut release_opts = release::Options { aging_days: cfg.aging_days, dry_run: true, ..Default::default() };
+            if let Some(v) = arg_value(&args, "--version") {
+                release_opts.version = v.to_string();
+            }
+            let opts = ablation::AblationOptions {
+                release: release_opts,
+                out_dir: arg_value(&args, "--out").map(Into::into).unwrap_or_else(|| std::env::temp_dir().join("cedar-contrib-ablation")),
+                hook: arg_value(&args, "--hook").map(String::from).or_else(|| cfg.ablation_hook.clone()),
+                delta: arg_value(&args, "--delta").map(|v| v.parse()).transpose()?.unwrap_or(0.02),
+                apply: args.iter().any(|a| a == "--apply"),
+            };
+            let report = ablation::run(store.as_ref(), judge.as_deref(), &opts).await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        Some("stats") => {
+            let days = arg_value(&args, "--days").map(|v| v.parse()).transpose()?.unwrap_or(30);
+            let save = args.iter().any(|a| a == "--save");
+            println!("{}", serde_json::to_string_pretty(&stats::run(store.as_ref(), days, save).await?)?);
         }
         Some("release") => {
             let mut opts = release::Options { aging_days: cfg.aging_days, release_key: cfg.release_key.clone(), ..Default::default() };
@@ -58,7 +80,7 @@ async fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&summary)?);
         }
         Some(other) if other.starts_with('-') || other == "serve" => serve(cfg, store).await?,
-        Some(other) => bail!("unknown command {other:?}; use: serve (default), screen [--batch N] [--rescreen], release [--version vYYYY.MM] [--out DIR] [--dry-run]"),
+        Some(other) => bail!("unknown command {other:?}; use: serve (default), screen [--batch N] [--rescreen] [--force], release [--version vYYYY.MM] [--out DIR] [--dry-run], ablation [--version V] [--out DIR] [--hook CMD] [--delta D] [--apply], stats [--days N] [--save]"),
         None => serve(cfg, store).await?,
     }
     Ok(())

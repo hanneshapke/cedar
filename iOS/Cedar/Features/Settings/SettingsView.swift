@@ -131,6 +131,25 @@ struct SettingsView: View {
                     }
                 }
 
+                if app.serverHasContributions {
+                    Section {
+                        // Its own screen; its choices save at once, not on Save.
+                        NavigationLink {
+                            ContributeSettingsView()
+                        } label: {
+                            LabeledContent("Contribute Conversations") {
+                                if let settings = app.contributionSettings {
+                                    Text(settings.enabled ? "On" : "Off")
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Contribute")
+                    } footer: {
+                        Text("Give single conversations to a shared corpus for training open-weight agent models. Opt-in, one conversation at a time, after you read exactly what goes.")
+                    }
+                }
+
                 Section {
                     Button("Allow Notifications") {
                         Task {
@@ -183,6 +202,10 @@ struct SettingsView: View {
                 started = true
                 draft = app.settings
                 models = app.models
+            }
+            // For the On/Off on the Contribute row.
+            .task(id: app.serverHasContributions) {
+                if app.serverHasContributions { await app.refreshContributions() }
             }
             // For the count on the Memory row.
             .task(id: app.serverHasMemory) {

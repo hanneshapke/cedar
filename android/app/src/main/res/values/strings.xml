@@ -446,4 +446,99 @@
         <item quantity="one">Cedar will forget %d memory it has about you. This can\'t be undone.</item>
         <item quantity="other">Cedar will forget all %d memories it has about you. This can\'t be undone.</item>
     </plurals>
+
+    <!-- Contributing a conversation (Settings → Contribute, and the review from a chat) -->
+    <string name="contribute">Contribute</string>
+    <string name="contribute_settings_row">Contribute Conversations</string>
+    <string name="contribute_on">On</string>
+    <string name="contribute_off">Off</string>
+    <string name="contribute_settings_footnote">Give single conversations to a shared corpus for training open-weight agent models. Opt-in, one conversation at a time, after you read exactly what goes.</string>
+    <string name="contribute_this_conversation">Contribute this conversation</string>
+    <string name="contribute_send">Send</string>
+    <string name="contribute_sending">Sending…</string>
+    <string name="contribute_sent">Sent. Receipt %1$s; you can withdraw it any time under Settings → Contribute.</string>
+    <string name="contribute_export_only">This server has no corpus to send to, so nothing can be sent from here.</string>
+    <string name="contribute_turn_on">Contributing is off. Read the explanation and turn it on under Settings → Contribute before sending.</string>
+    <string name="contribute_open_settings">Open Settings → Contribute</string>
+    <string name="contribute_intro">This is exactly what would leave your server. Read it: the values listed as stand-ins are made up for what was redacted, the same stand-in for the same thing throughout. To redact more, use the web chat.</string>
+    <string name="contribute_include_reasoning">Include the model\'s reasoning</string>
+    <string name="contribute_include_fetched">Include the pages and files the agent fetched</string>
+    <string name="contribute_outcome_title">Did the agent do what you asked?</string>
+    <string name="contribute_outcome_yes">Yes</string>
+    <string name="contribute_outcome_partly">Partly</string>
+    <string name="contribute_outcome_no">No</string>
+    <string name="contribute_outcome_notes">What was wrong? (optional)</string>
+    <string name="contribute_turn">Turn %1$d</string>
+    <string name="contribute_you">You</string>
+    <string name="contribute_agent">Agent</string>
+    <string name="contribute_rate_good">Good response</string>
+    <string name="contribute_rate_bad">Bad response</string>
+    <string name="contribute_stand_ins_legend">Stand-ins in this contribution (made up, not real):</string>
+    <string name="contribute_stand_ins_here">Stand-ins here: %1$s</string>
+    <string name="contribute_memory_removed">memory list removed</string>
+    <string name="contribute_ready">ready</string>
+    <string name="contribute_cannot_send">can\'t be sent</string>
+    <string name="contribute_blocked_scheduled">A scheduled agent\'s conversation can\'t be contributed.</string>
+    <string name="contribute_blocked_active">Wait for the current response to finish, or stop it.</string>
+    <string name="contribute_blocked_no_turns">There is no finished response to contribute yet.</string>
+    <string name="contribute_blocked_private_tools">This conversation used %1$s, whose results are other people\'s data, so it can\'t be contributed.</string>
+    <string name="contribute_blocked_run_gone">A response\'s run is no longer on the cedar server, so the conversation can\'t be rebuilt.</string>
+    <string name="contribute_blocked_secrets">A secret is still in the text. Redact it in the web chat.</string>
+    <string name="contribute_blocked_not_consistent">The bundle fails the corpus\'s checks:</string>
+    <string name="contribute_blocked_model">The corpus doesn\'t take conversations from this model (%1$s).</string>
+    <string name="contribute_settings_description">Give single conversations to a shared corpus for training open-weight agent models. Opt-in, one conversation at a time, after you read exactly what goes.</string>
+    <string name="contribute_unavailable">Whoever runs this server has not named a corpus, so nothing can be sent from here.</string>
+    <string name="contribute_corpus">Corpus: %1$s</string>
+    <string name="contribute_what">What a contribution contains</string>
+    <string name="contribute_what1">Your prompts, the agent\'s replies and tool calls, the system prompt and tool definitions it ran with, how the run ended, and the outcome you report.</string>
+    <string name="contribute_what2">Never: attached files and their names, your memory list, run and key identifiers, exact times, your region. Emails, phone and account numbers, IP addresses, keys and home-directory names become made-up stand-ins of the same shape, consistent within the conversation and random otherwise.</string>
+    <string name="contribute_what3">Conversations that used Gmail or Calendar can\'t be contributed. Redaction is best effort: the review is where you read for what it can\'t catch.</string>
+    <string name="contribute_what4">No account, no identity. A pseudonym, if you choose one, is a random id made on your server; you can rotate or drop it. You can withdraw a contribution below.</string>
+    <string name="contribute_license">License for what you wrote</string>
+    <string name="contribute_license_cc0">CC0 (public domain)</string>
+    <string name="contribute_license_ccby">CC BY 4.0 (credit by pseudonym)</string>
+    <string name="contribute_pseudonym">Pseudonym</string>
+    <string name="contribute_pseudonym_desc">Links your contributions to each other, and to nothing else. Without one, each stands alone.</string>
+    <string name="contribute_unlinked">none (unlinked)</string>
+    <string name="contribute_new_pseudonym">New</string>
+    <string name="contribute_drop_pseudonym">Drop</string>
+    <string name="contribute_default_reasoning">Include the model\'s reasoning by default</string>
+    <string name="contribute_default_reasoning_desc">It often quotes your prompt and is left out unless you include it.</string>
+    <string name="contribute_default_fetched">Include fetched pages by default</string>
+    <string name="contribute_default_fetched_desc">Pages and files the agent read are other people\'s text; left out unless you include them.</string>
+    <string name="contribute_enabled">Contributing is on</string>
+    <string name="contribute_enabled_desc">Turning it on only makes Send available in the review. Nothing is ever sent on its own.</string>
+    <string name="contribute_receipts">Your contributions</string>
+    <string name="contribute_no_receipts">Nothing sent yet.</string>
+    <string name="contribute_refresh_status">Refresh status</string>
+    <string name="contribute_withdraw">Withdraw</string>
+    <string name="contribute_withdrawn">Withdrawn</string>
+    <string name="contribute_withdraw_confirm">Withdraw this contribution? It is deleted from the corpus\'s intake and left out of future releases.</string>
+    <string name="contribute_untitled">Untitled conversation</string>
+    <string name="contribute_status_quarantined">received, not yet screened</string>
+    <string name="contribute_status_accepted">accepted</string>
+    <string name="contribute_status_held">held for review</string>
+    <string name="contribute_status_rejected">rejected</string>
+    <string name="contribute_status_released">released</string>
+    <string name="contribute_status_unknown">unknown to the corpus</string>
+    <plurals name="contribute_turns">
+        <item quantity="one">%d turn</item>
+        <item quantity="other">%d turns</item>
+    </plurals>
+    <plurals name="contribute_stand_ins">
+        <item quantity="one">%d stand-in</item>
+        <item quantity="other">%d stand-ins</item>
+    </plurals>
+    <plurals name="contribute_attachments_left_out">
+        <item quantity="one">%d attachment left out</item>
+        <item quantity="other">%d attachments left out</item>
+    </plurals>
+    <plurals name="contribute_fetched_left_out">
+        <item quantity="one">%d fetched page left out</item>
+        <item quantity="other">%d fetched pages left out</item>
+    </plurals>
+    <plurals name="contribute_reasoning_left_out">
+        <item quantity="one">reasoning of %d call left out</item>
+        <item quantity="other">reasoning of %d calls left out</item>
+    </plurals>
 </resources>

@@ -44,6 +44,9 @@ pub struct Config {
     pub screen_batch: usize,
     /// `CONTRIB_AGING_DAYS`: how long an accepted bundle waits before a release may take it.
     pub aging_days: u32,
+    /// `CONTRIB_ABLATION_HOOK`: the command the ablation job runs per training set (see
+    /// `ablation`). Unset, the job writes the sets and stops.
+    pub ablation_hook: Option<String>,
 }
 
 impl Config {
@@ -91,6 +94,7 @@ impl Config {
             release_key: get("CONTRIB_RELEASE_KEY").map(String::into_bytes),
             screen_batch: num("CONTRIB_SCREEN_BATCH", get("CONTRIB_SCREEN_BATCH"), 200)? as usize,
             aging_days: num("CONTRIB_AGING_DAYS", get("CONTRIB_AGING_DAYS"), 14)?,
+            ablation_hook: get("CONTRIB_ABLATION_HOOK"),
         })
     }
 

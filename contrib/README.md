@@ -11,6 +11,8 @@ bundle) and [docs/design/contrib-ingest-cloud-run.md](../docs/design/contrib-ing
 cedar-contrib                  # serve the ingest (and the review page, with CONTRIB_REVIEW_TOKEN)
 cedar-contrib screen           # screen what is quarantined (every 15 minutes on Cloud Run)
 cedar-contrib release          # build this month's release (monthly, or by hand)
+cedar-contrib ablation         # train-and-evaluate the candidate batch with and without each cluster
+cedar-contrib stats            # the numbers the steady state is run by
 ```
 
 ## The ingest
@@ -98,6 +100,36 @@ release to a Hugging Face dataset (squashing its history afterwards, so a withdr
 linger in an old commit) and a GitHub release with the tarball, its checksum, the manifest and its
 signature. `--dry-run` reports what a release would hold and changes nothing.
 
+## The ablation evaluation
+
+`cedar-contrib ablation [--version V] [--out DIR] [--hook CMD] [--delta D] [--apply]` is the one
+check that measures what the corpus is for. It takes the release's plan (the eligible bundles and
+the clusters among them), writes training sets to `DIR/sets/`: `full.jsonl` (the whole candidate
+batch) and `minus-<n>.jsonl` (the batch without cluster *n*), with `clusters.json` saying which
+receipts each cluster holds. Then, with a hook (`--hook` or `CONTRIB_ABLATION_HOOK`), it runs the
+hook once for the baseline (no set: the untrained model) and once per set, with `ABLATION_NAME`,
+`ABLATION_SET` (the file, empty for the baseline) and `ABLATION_RESULT` (where to write
+`{"safety": 0..1, ...}`) in its environment. The hook is where the trainer and cedar-bench's
+safety suite live: train on the set, serve the result, run the bench, write the score. The
+decision: safety with the full batch below the baseline by more than `--delta` (0.02) holds the
+whole batch (`ablation_batch`); otherwise a cluster whose removal raises safety by more than the
+delta is held on its own (`ablation_cluster`). `--apply` holds; without it the report only says
+what would be held. Without a hook the job writes the sets and reports `pending`, which is the
+first thing to do while the bench's safety suite settles. The report goes to
+`releases/<version>/ablation.json`. `tests/ablation.rs` drives it with a shell hook that scores by
+set name.
+
+## Statistics
+
+`cedar-contrib stats [--days N] [--save]` prints, and with `--save` keeps as `stats/<day>.json`,
+what the steady state is run by: receipts by status, submissions per day in the window, held and
+rejected rates, a histogram of flags, pseudonyms and the unlinked share, how many the judge saw,
+how long held bundles have waited (median days), the label-weight buckets, and the audit lines by
+actor (screener, reviewer, release, ablation) with the reviewer's decisions. Counts only; never a
+pseudonym, never text. A month of snapshots is the trend; the design's steady state is a monthly
+release, a quarterly re-screen (`screen --rescreen --force`, scheduled in the Terraform) and a
+look at these numbers.
+
 ## Storage
 
 Everything is objects in one bucket (`CONTRIB_BUCKET`), so there is no database to run:
@@ -153,6 +185,7 @@ CEDAR_API_KEY=devkey CHAT_CONTRIBUTIONS_URL=http://127.0.0.1:8090 cargo run -p c
 | `CONTRIB_JUDGE_URL`, `CONTRIB_JUDGE_MODEL`, `CONTRIB_JUDGE_API_KEY` | unset, `judge`, unset | The judge model's chat-completions endpoint; without one, the screener holds injected results for review |
 | `CONTRIB_RELEASE_KEY` | unset | Signs release manifests (HMAC-SHA256) |
 | `CONTRIB_SCREEN_BATCH`, `CONTRIB_AGING_DAYS` | 200, 14 | Bundles per screener run; days an accepted bundle waits before a release |
+| `CONTRIB_ABLATION_HOOK` | unset | The command the ablation job runs per training set (see Ablation) |
 | `GOOGLE_OAUTH_ACCESS_TOKEN` | unset | A token for the bucket when not running on Google Cloud (`gcloud auth print-access-token`) |
 
 ## Deploying to Cloud Run
@@ -162,8 +195,12 @@ service account that can touch only that bucket's objects, the HMAC and release 
 Manager, the logging exclusion that drops Cloud Run's request logs for the service, and two Cloud
 Run Jobs from the same image, `contrib-screener` (Cloud Scheduler, every 15 minutes) and
 `contrib-release` (the 3rd of each month), started through a scheduler service account that can
-run those jobs and nothing else. `judge_url` and `judge_model` point the screener at a judge. The
-load balancer and Cloud Armor are not in it; add them when floods are a real problem.
+run those jobs and nothing else. `judge_url` and `judge_model` point the screener at a judge; `contrib-rescreen` runs the
+quarterly pass (`screen --rescreen --force`) on the first of January, April, July and October;
+`ablation_hook` adds the `contrib-ablation` job, started by hand before a release. The edge of
+the design, a global load balancer with Cloud Armor's per-client rate limit and WAF rules in
+front of the service, is in `edge.tf` behind `edge = true` (with `edge_domain` for its managed
+certificate): off by default, since the service's own limit is enough until floods are real.
 
 ```sh
 # 1. The image
@@ -195,4 +232,5 @@ cargo test -p cedar-contrib
 They drive the router with the in-memory store: a good bundle round trip with withdrawal, the
 refusal codes, the quotas, the rate limit and the review page; the screener over the red-team
 set, near-duplicates, floods and label trust; and a release with its aging, caps, clusters,
-weights, manifest, signature and exclusion list.
+weights, manifest, signature and exclusion list; and the ablation with a hook that scores by set
+name, plus the statistics over its outcome.

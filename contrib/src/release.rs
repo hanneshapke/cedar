@@ -137,16 +137,25 @@ pub fn clusters(items: &[(String, u64)], max: u32) -> Vec<Vec<String>> {
     groups.into_values().collect()
 }
 
-pub async fn run(store: &dyn Store, judge: Option<&dyn Judge>, opts: &Options) -> Result<Summary> {
+/// What a release would take, before caps: the eligible bundles (re-screened where needed) and
+/// the clusters among them, with the suspicious ones named. The ablation job reads the same plan.
+pub struct Plan {
+    pub eligible: Vec<(Receipt, Bundle)>,
+    pub rescreened: usize,
+    /// Every cluster of `min_cluster` or more, as receipt ids.
+    pub clusters: Vec<Vec<String>>,
+    /// The clusters a release holds as a set, with why.
+    pub suspicious: Vec<(Vec<String>, &'static str)>,
+    pub excluded_hashes: usize,
+}
+
+pub async fn plan(store: &dyn Store, judge: Option<&dyn Judge>, opts: &Options) -> Result<Plan> {
     let today = Utc::now();
     let cutoff = (today - Duration::days(opts.aging_days as i64)).format("%Y-%m-%d").to_string();
-    let mut summary = Summary { version: opts.version.clone(), dry_run: opts.dry_run, ..Default::default() };
     let all = store.list_receipts().await?;
     let withdrawn: HashSet<String> = store.list_withdrawn().await?.into_iter().collect();
-    summary.excluded_hashes = withdrawn.len();
-
-    // 1. Eligible, re-screened where the checks moved on.
     let mut eligible: Vec<(Receipt, Bundle)> = Vec::new();
+    let mut rescreened = 0;
     for r in all.iter().filter(|r| r.status == "accepted" && r.day <= cutoff && !withdrawn.contains(&r.sha256)) {
         let Some(bytes) = store.get_bundle(r).await? else { continue };
         let Ok(bundle) = serde_json::from_slice::<Bundle>(&bytes) else { continue };
@@ -155,7 +164,7 @@ pub async fn run(store: &dyn Store, judge: Option<&dyn Judge>, opts: &Options) -
             if opts.dry_run {
                 continue;
             }
-            summary.rescreened += 1;
+            rescreened += 1;
             let v = screen::screen_one(store, judge, &mut r, &bundle, &all, "release").await?;
             if v.status != "accepted" {
                 continue;
@@ -163,48 +172,67 @@ pub async fn run(store: &dyn Store, judge: Option<&dyn Judge>, opts: &Options) -
         }
         eligible.push((r, bundle));
     }
-    summary.eligible = eligible.len();
-    let n = eligible.len();
-    if n == 0 {
-        return Ok(summary);
-    }
-
-    // 3. Clusters, before caps: a cluster is a set however it is spread over pseudonyms.
     let items: Vec<(String, u64)> = eligible.iter().map(|(r, _)| (r.receipt_id.clone(), u64::from_str_radix(&r.fingerprint, 16).unwrap_or(0))).collect();
     let by_id: HashMap<&str, &Receipt> = eligible.iter().map(|(r, _)| (r.receipt_id.as_str(), r)).collect();
-    let mut held: HashSet<String> = HashSet::new();
-    for group in clusters(&items, opts.cluster_hamming) {
-        if group.len() < opts.min_cluster {
-            continue;
-        }
+    let clusters: Vec<Vec<String>> = clusters(&items, opts.cluster_hamming).into_iter().filter(|g| g.len() >= opts.min_cluster).collect();
+    let mut suspicious = Vec::new();
+    for group in &clusters {
         let pseudonyms: HashSet<Option<&str>> = group.iter().map(|id| by_id[id.as_str()].pseudonym.as_deref()).collect();
-        let suspicious = pseudonyms.len() == 1; // all one pseudonym, or all unlinked
-        if !suspicious {
-            continue;
+        if pseudonyms.len() == 1 {
+            let why = if pseudonyms.contains(&None) { "all unlinked" } else { "all one pseudonym" };
+            suspicious.push((group.clone(), why));
         }
-        let why = if pseudonyms.contains(&None) { "all unlinked" } else { "all one pseudonym" };
-        for id in &group {
-            held.insert(id.clone());
-            if opts.dry_run {
-                continue;
-            }
-            let mut r = by_id[id.as_str()].clone();
-            r.status = "held".into();
-            let mut v = r.verdict.clone().unwrap_or(Verdict { status: "held".into(), flags: vec![], scores: BTreeMap::new(), notes: vec![], checks_version: CHECKS_VERSION, by: "release".into(), decided_day: String::new() });
-            v.status = "held".into();
-            v.flags.push("cluster".into());
-            v.notes.push(format!("cluster of {} within {} bits, {why} ({})", group.len(), opts.cluster_hamming, opts.version));
-            v.by = "release".into();
-            v.decided_day = today.format("%Y-%m-%d").to_string();
-            r.verdict = Some(v);
-            store.update_receipt(&r).await?;
-            store
-                .put_audit(&json!({ "day": today.format("%Y-%m-%d").to_string(), "receipt_id": r.receipt_id, "sha256": r.sha256, "by": "release", "status": "held", "flags": ["cluster"], "notes": [format!("cluster of {} ({why})", group.len())], "release": opts.version }))
-                .await?;
+    }
+    Ok(Plan { eligible, rescreened, clusters, suspicious, excluded_hashes: withdrawn.len() })
+}
+
+/// Hold a set of eligible bundles as a group, with a flag and a note, for a reviewer.
+pub async fn hold_group(store: &dyn Store, receipts: &[&Receipt], flag: &str, note: &str, by: &str) -> Result<()> {
+    let day = Utc::now().format("%Y-%m-%d").to_string();
+    for r in receipts {
+        let mut r = (*r).clone();
+        r.status = "held".into();
+        let mut v = r.verdict.clone().unwrap_or(Verdict { status: "held".into(), flags: vec![], scores: BTreeMap::new(), notes: vec![], checks_version: CHECKS_VERSION, by: by.into(), decided_day: String::new() });
+        v.status = "held".into();
+        if !v.flags.iter().any(|f| f == flag) {
+            v.flags.push(flag.into());
+        }
+        v.notes.push(note.to_string());
+        v.by = by.into();
+        v.decided_day = day.clone();
+        r.verdict = Some(v);
+        store.update_receipt(&r).await?;
+        store
+            .put_audit(&json!({ "day": day, "receipt_id": r.receipt_id, "sha256": r.sha256, "by": by, "status": "held", "flags": [flag], "notes": [note] }))
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn run(store: &dyn Store, judge: Option<&dyn Judge>, opts: &Options) -> Result<Summary> {
+    let today = Utc::now();
+    let mut summary = Summary { version: opts.version.clone(), dry_run: opts.dry_run, ..Default::default() };
+    let plan = plan(store, judge, opts).await?;
+    summary.excluded_hashes = plan.excluded_hashes;
+    summary.rescreened = plan.rescreened;
+    summary.eligible = plan.eligible.len();
+    if plan.eligible.is_empty() {
+        return Ok(summary);
+    }
+    let withdrawn: HashSet<String> = store.list_withdrawn().await?.into_iter().collect();
+
+    // 3. Clusters, before caps: a cluster is a set however it is spread over pseudonyms.
+    let by_id: HashMap<&str, &Receipt> = plan.eligible.iter().map(|(r, _)| (r.receipt_id.as_str(), r)).collect();
+    let mut held: HashSet<String> = HashSet::new();
+    for (group, why) in &plan.suspicious {
+        held.extend(group.iter().cloned());
+        if !opts.dry_run {
+            let receipts: Vec<&Receipt> = group.iter().map(|id| by_id[id.as_str()]).collect();
+            hold_group(store, &receipts, "cluster", &format!("cluster of {} within {} bits, {why} ({})", group.len(), opts.cluster_hamming, opts.version), "release").await?;
         }
     }
     summary.held_in_clusters = held.len();
-    let mut eligible: Vec<(Receipt, Bundle)> = eligible.into_iter().filter(|(r, _)| !held.contains(&r.receipt_id)).collect();
+    let mut eligible: Vec<(Receipt, Bundle)> = plan.eligible.into_iter().filter(|(r, _)| !held.contains(&r.receipt_id)).collect();
 
     // 2. Caps: per pseudonym, and for the unlinked together.
     let n = eligible.len();

@@ -454,4 +454,99 @@
         <item quantity="one">Cedar oubliera %d souvenir qu\'il a de vous. Cette action est irréversible.</item>
         <item quantity="other">Cedar oubliera les %d souvenirs qu\'il a de vous. Cette action est irréversible.</item>
     </plurals>
+
+    <!-- Contributing a conversation (Settings → Contribute, and the review from a chat) -->
+    <string name="contribute">Contribuer</string>
+    <string name="contribute_settings_row">Contribuer des conversations</string>
+    <string name="contribute_on">Activée</string>
+    <string name="contribute_off">Désactivée</string>
+    <string name="contribute_settings_footnote">Donnez des conversations, une par une, à un corpus partagé pour entraîner des modèles d\'agents à poids ouverts. Sur choix explicite, après avoir lu exactement ce qui part.</string>
+    <string name="contribute_this_conversation">Contribuer cette conversation</string>
+    <string name="contribute_send">Envoyer</string>
+    <string name="contribute_sending">Envoi…</string>
+    <string name="contribute_sent">Envoyé. Reçu %1$s ; vous pouvez le retirer à tout moment dans Réglages → Contribuer.</string>
+    <string name="contribute_export_only">Ce serveur n\'a pas de corpus où envoyer.</string>
+    <string name="contribute_turn_on">La contribution est désactivée. Lisez l\'explication et activez-la dans Réglages → Contribuer avant d\'envoyer.</string>
+    <string name="contribute_open_settings">Ouvrir Réglages → Contribuer</string>
+    <string name="contribute_intro">Voici exactement ce qui quitterait votre serveur. Lisez-le : les valeurs listées comme substituts sont inventées pour ce qui a été caviardé, le même substitut pour la même chose d\'un bout à l\'autre. Pour caviarder davantage, utilisez le chat web.</string>
+    <string name="contribute_include_reasoning">Inclure le raisonnement du modèle</string>
+    <string name="contribute_include_fetched">Inclure les pages et fichiers que l\'agent a récupérés</string>
+    <string name="contribute_outcome_title">L\'agent a-t-il fait ce que vous avez demandé ?</string>
+    <string name="contribute_outcome_yes">Oui</string>
+    <string name="contribute_outcome_partly">En partie</string>
+    <string name="contribute_outcome_no">Non</string>
+    <string name="contribute_outcome_notes">Qu\'est-ce qui n\'allait pas ? (facultatif)</string>
+    <string name="contribute_turn">Tour %1$d</string>
+    <string name="contribute_you">Vous</string>
+    <string name="contribute_agent">Agent</string>
+    <string name="contribute_rate_good">Bonne réponse</string>
+    <string name="contribute_rate_bad">Mauvaise réponse</string>
+    <string name="contribute_stand_ins_legend">Substituts dans cette contribution (inventés, pas réels) :</string>
+    <string name="contribute_stand_ins_here">Substituts ici : %1$s</string>
+    <string name="contribute_memory_removed">mémoire retirée</string>
+    <string name="contribute_ready">prête</string>
+    <string name="contribute_cannot_send">ne peut pas être envoyée</string>
+    <string name="contribute_blocked_scheduled">La conversation d\'un agent planifié ne peut pas être contribuée.</string>
+    <string name="contribute_blocked_active">Attendez la fin de la réponse en cours, ou arrêtez-la.</string>
+    <string name="contribute_blocked_no_turns">Il n\'y a pas encore de réponse terminée à contribuer.</string>
+    <string name="contribute_blocked_private_tools">Cette conversation a utilisé %1$s, dont les résultats sont les données d\'autres personnes ; elle ne peut pas être contribuée.</string>
+    <string name="contribute_blocked_run_gone">L\'exécution d\'une réponse n\'est plus sur le serveur cedar ; la conversation ne peut pas être reconstituée.</string>
+    <string name="contribute_blocked_secrets">Un secret est encore dans le texte. Caviardez-le dans le chat web.</string>
+    <string name="contribute_blocked_not_consistent">Le lot échoue aux vérifications du corpus :</string>
+    <string name="contribute_blocked_model">Le corpus n\'accepte pas les conversations de ce modèle (%1$s).</string>
+    <string name="contribute_settings_description">Donnez des conversations, une par une, à un corpus partagé pour entraîner des modèles d\'agents à poids ouverts. Sur choix explicite, après avoir lu exactement ce qui part.</string>
+    <string name="contribute_unavailable">La personne qui gère ce serveur n\'a pas indiqué de corpus ; rien ne peut donc être envoyé d\'ici.</string>
+    <string name="contribute_corpus">Corpus : %1$s</string>
+    <string name="contribute_what">Ce qu\'une contribution contient</string>
+    <string name="contribute_what1">Vos demandes, les réponses et appels d\'outils de l\'agent, l\'invite système et les définitions d\'outils avec lesquelles il a tourné, la fin de l\'exécution, et le résultat que vous indiquez.</string>
+    <string name="contribute_what2">Jamais : les fichiers joints et leurs noms, votre mémoire, les identifiants d\'exécution et de clé, les heures exactes, votre région. Les e-mails, numéros de téléphone et de compte, adresses IP, clés et noms de dossiers personnels deviennent des substituts inventés de même forme, cohérents dans la conversation et aléatoires sinon.</string>
+    <string name="contribute_what3">Les conversations qui ont utilisé Gmail ou l\'agenda ne peuvent pas être contribuées. Le caviardage est au mieux : la relecture est là pour lire ce qu\'il ne peut pas repérer.</string>
+    <string name="contribute_what4">Ni compte, ni identité. Un pseudonyme, si vous en choisissez un, est un identifiant aléatoire créé sur votre serveur ; vous pouvez le changer ou le retirer. Vous pouvez retirer une contribution ci-dessous.</string>
+    <string name="contribute_license">Licence de ce que vous avez écrit</string>
+    <string name="contribute_license_cc0">CC0 (domaine public)</string>
+    <string name="contribute_license_ccby">CC BY 4.0 (attribution par pseudonyme)</string>
+    <string name="contribute_pseudonym">Pseudonyme</string>
+    <string name="contribute_pseudonym_desc">Relie vos contributions entre elles, et à rien d\'autre. Sans pseudonyme, chacune est isolée.</string>
+    <string name="contribute_unlinked">aucun (non relié)</string>
+    <string name="contribute_new_pseudonym">Nouveau</string>
+    <string name="contribute_drop_pseudonym">Retirer</string>
+    <string name="contribute_default_reasoning">Inclure le raisonnement du modèle par défaut</string>
+    <string name="contribute_default_reasoning_desc">Il cite souvent votre demande et est omis sauf si vous l\'incluez.</string>
+    <string name="contribute_default_fetched">Inclure les pages récupérées par défaut</string>
+    <string name="contribute_default_fetched_desc">Les pages et fichiers lus par l\'agent sont le texte d\'autres personnes ; omis sauf si vous les incluez.</string>
+    <string name="contribute_enabled">La contribution est activée</string>
+    <string name="contribute_enabled_desc">L\'activer rend seulement Envoyer disponible dans la relecture. Rien n\'est jamais envoyé tout seul.</string>
+    <string name="contribute_receipts">Vos contributions</string>
+    <string name="contribute_no_receipts">Rien d\'envoyé pour l\'instant.</string>
+    <string name="contribute_refresh_status">Actualiser l\'état</string>
+    <string name="contribute_withdraw">Retirer</string>
+    <string name="contribute_withdrawn">Retirée</string>
+    <string name="contribute_withdraw_confirm">Retirer cette contribution ? Elle est supprimée de la réception du corpus et exclue des publications futures.</string>
+    <string name="contribute_untitled">Conversation sans titre</string>
+    <string name="contribute_status_quarantined">reçue, pas encore examinée</string>
+    <string name="contribute_status_accepted">acceptée</string>
+    <string name="contribute_status_held">en attente de relecture</string>
+    <string name="contribute_status_rejected">refusée</string>
+    <string name="contribute_status_released">publiée</string>
+    <string name="contribute_status_unknown">inconnue du corpus</string>
+    <plurals name="contribute_turns">
+        <item quantity="one">%d tour</item>
+        <item quantity="other">%d tours</item>
+    </plurals>
+    <plurals name="contribute_stand_ins">
+        <item quantity="one">%d substitut</item>
+        <item quantity="other">%d substituts</item>
+    </plurals>
+    <plurals name="contribute_attachments_left_out">
+        <item quantity="one">%d pièce jointe omise</item>
+        <item quantity="other">%d pièces jointes omises</item>
+    </plurals>
+    <plurals name="contribute_fetched_left_out">
+        <item quantity="one">%d page récupérée omise</item>
+        <item quantity="other">%d pages récupérées omises</item>
+    </plurals>
+    <plurals name="contribute_reasoning_left_out">
+        <item quantity="one">raisonnement de %d appel omis</item>
+        <item quantity="other">raisonnement de %d appels omis</item>
+    </plurals>
 </resources>

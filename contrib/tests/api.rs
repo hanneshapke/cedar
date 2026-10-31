@@ -195,7 +195,7 @@ async fn the_review_page_lists_held_bundles_and_takes_decisions() {
     let (status, receipt) = h.submit(&b).await;
     assert_eq!(status, StatusCode::CREATED, "{receipt}");
     let id = receipt["receipt_id"].as_str().unwrap().to_string();
-    let n = cedar_contrib::screen::run(h.store.as_ref(), None, 10, false).await.unwrap();
+    let n = cedar_contrib::screen::run(h.store.as_ref(), None, 10, false, false).await.unwrap();
     assert_eq!(n, 1);
     let (status, held) = h.call(Method::GET, "/review/api/held", Some("review-secret"), None).await;
     assert_eq!(status, StatusCode::OK);

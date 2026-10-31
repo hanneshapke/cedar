@@ -9,6 +9,7 @@
 //! The service keeps no request logs and never stores an address: the only per-request line it
 //! writes is the receipt id and what became of it.
 
+pub mod ablation;
 pub mod api;
 pub mod config;
 pub mod gcs;
@@ -18,6 +19,7 @@ pub mod redteam;
 pub mod release;
 pub mod review;
 pub mod screen;
+pub mod stats;
 pub mod store;
 
 pub use api::{router, AppState};

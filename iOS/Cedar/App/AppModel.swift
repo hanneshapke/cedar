@@ -44,6 +44,11 @@ final class AppModel {
     /// False when the chat server's cedar has no memory yet.
     private(set) var memorySupported = true
     private(set) var memoryLimits: MemoryList.Limits?
+    /// The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then.
+    private(set) var serverHasContributions = false
+    private(set) var contributionSettings: ContributionSettings?
+    private(set) var contributions: [Contribution] = []
+    var contributionsError: String?
     /// Conversations the list leaves out (a schedule's runs), as their chats loaded them.
     private var otherConversations: [String: Conversation] = [:]
     /// The selected conversation id, or a draft chat's key.
@@ -88,6 +93,10 @@ final class AppModel {
             models = []
             modelsLoaded = false
             serverHasMemory = false
+            serverHasContributions = false
+            contributionSettings = nil
+            contributions = []
+            contributionsError = nil
             memoryItems = []
             memoryLoaded = false
             memoryError = nil
@@ -182,6 +191,49 @@ final class AppModel {
         memoryItems = []
     }
 
+    // MARK: Contributing a conversation
+
+    func refreshContributions(askCorpus: Bool = false) async {
+        guard let client else { return }
+        do {
+            contributionSettings = try await client.contributionSettings()
+            contributions = try await (askCorpus ? client.refreshContributions() : client.contributions())
+            contributionsError = nil
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            contributionsError = error.localizedDescription
+        }
+    }
+
+    func updateContributionSettings(_ patch: ContributionSettingsPatch) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        contributionSettings = try await client.updateContributionSettings(patch)
+    }
+
+    func withdrawContribution(id: String) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        let updated = try await client.withdrawContribution(id: id)
+        contributions = contributions.map { $0.id == id ? updated : $0 }
+    }
+
+    func contributionPreview(conversationId: String, reasoning: Bool, fetched: Bool) async throws -> ContributionPreview {
+        guard let client else { throw ChatError.notConfigured }
+        return try await client.contributionPreview(conversationId: conversationId, reasoning: reasoning, fetched: fetched)
+    }
+
+    func sendContribution(conversationId: String, bundle: JSONValue) async throws -> Contribution {
+        guard let client else { throw ChatError.notConfigured }
+        let receipt = try await client.sendContribution(conversationId: conversationId, bundle: bundle)
+        contributions.insert(receipt, at: 0)
+        return receipt
+    }
+
+    func rateTurn(turnId: String, rating: Int?) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        _ = try await client.rateTurn(turnId: turnId, rating: rating)
+    }
+
     // MARK: Conversations
 
     func refresh() async {
@@ -211,7 +263,9 @@ final class AppModel {
             if !modelsLoaded {
                 modelsLoaded = true
                 models = (try? await client.models()) ?? []
-                serverHasMemory = (try? await client.config())?.memory ?? false
+                let config = try? await client.config()
+                serverHasMemory = config?.memory ?? false
+                serverHasContributions = config?.contributions ?? false
             }
         } catch is CancellationError {
         } catch {
