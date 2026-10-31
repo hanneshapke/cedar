@@ -32,24 +32,13 @@ The service cannot know who a contributor is, so every defense is about **conten
 
 ## 2. Architecture
 
-```
-cedar-chat ──HTTPS──▶ Global external HTTPS LB ──▶ Cloud Run: contrib-api
-                       (Cloud Armor: WAF, rate limits)      │
-                                                             ├─ Firestore: receipts, pseudonym ledger, quotas
-                                                             ├─ GCS: contrib-quarantine (private)
-                                                             └─ Pub/Sub: contrib.submitted
-                                                                       │
-                                                       Cloud Run: contrib-screener (push subscription)
-                                                             ├─ Vertex AI (judge model) or self-hosted vLLM
-                                                             ├─ Firestore: verdicts, flags
-                                                             └─ GCS: contrib-quarantine (status in metadata)
+![cedar-contrib on Google Cloud: submit, screen, release](contrib-ingest-architecture.svg)
 
-Cloud Scheduler ──▶ Cloud Run Job: contrib-release (monthly)
-                        ├─ reads quarantine (aged ≥ 14 days, status accepted)
-                        ├─ batch analysis: near-dup, clusters, per-contributor caps
-                        ├─ ablation eval with cedar-bench (Cloud Run Job with GPU, optional)
-                        └─ writes GCS: contrib-releases (public, versioned) → Hugging Face, GitHub Releases
-```
+Three lanes, each a different speed. A submission passes the load balancer and `contrib-api`'s
+synchronous checks into the quarantine bucket, with a receipt in Firestore. A scheduled screener
+job scores what is in quarantine and holds doubtful bundles for a reviewer. A monthly release job
+re-screens, caps, clusters and publishes signed releases, mirrored to Hugging Face and GitHub.
+There is no queue between the lanes: the stores are the queue (§2.1).
 
 Resources, by name:
 
@@ -57,9 +46,10 @@ Resources, by name:
   (`allUsers`), min instances 1 so the first upload of the day does not wait, max instances small
   (10) so a flood costs the attacker effort and us little. Concurrency 80, CPU throttled outside
   requests. Memory 512 MiB. Request body cap 8 MiB at the LB and in the service.
-- **`contrib-screener`** (Cloud Run service, private). Invoked by the Pub/Sub push subscription
-  with an OIDC token. Runs the slow checks (§5). Max instances 3; it is allowed to lag.
-- **`contrib-release`** (Cloud Run Job). Triggered by Cloud Scheduler monthly and by hand.
+- **`contrib-screener`** (Cloud Run Job). Started by Cloud Scheduler every 15 minutes; lists
+  quarantine objects with `status=quarantined` and runs the slow checks (§5) on a batch of at most
+  200. One run at a time; it is allowed to lag.
+- **`contrib-release`** (Cloud Run Job). Started by Cloud Scheduler monthly, and by hand.
 - **Global external Application Load Balancer** in front of `contrib-api`, which is what makes
   Cloud Armor available. The LB terminates TLS at a fixed hostname (`contrib.<project domain>`)
   that cedar-chat pins.
@@ -81,6 +71,18 @@ Resources, by name:
 - **Cloud Build** from the `cedar-contrib` repo with Binary Authorization requiring its attestor,
   so only images built from the repo can run. The pipeline is public: the defense should survive
   the attacker reading it.
+
+### 2.1 Why there is no queue
+
+An earlier draft put Pub/Sub between `contrib-api` and the screener. It is not needed: the release
+job re-screens every eligible bundle with the current checks anyway, so the screener only exists
+to give reviewers an early look at held bundles, and that is a polling problem. A scheduled job
+that lists `status=quarantined` objects does the same work with fewer parts: no topic, no push
+subscription and its invoker identity, no dead-letter topic, no duplicate-delivery handling.
+Retries fall out of the next run; backpressure is the batch cap; and the verdict delay is a
+feature (§8). If reviewers ever need held bundles within a minute, or the judge needs per-item
+throttling, Cloud Tasks fits better than Pub/Sub: rate-limited, retried delivery to one HTTP
+target.
 
 ## 3. API
 
@@ -137,15 +139,14 @@ a bundle that *could* be admitted and to refuse the obvious, without being an or
      identity: the same actor's threads look alike;
    - the Cloud Armor per-IP limit above is the backstop for raw floods and is deliberately loose.
 7. **Store.** Write the object to `contrib-quarantine/<yyyy-mm>/<receipt_id>.json` with metadata
-   `status=quarantined`, `sha256`, `pseudonym`, `submitted_day`. Create the receipt. Publish
-   `{receipt_id}` to `contrib.submitted`. Return the receipt.
+   `status=quarantined`, `sha256`, `pseudonym`, `submitted_day`. Create the receipt. Return it.
 
 The order matters for privacy: nothing is written to disk until step 7, so a refused bundle
 leaves no trace beyond a counter.
 
 ## 5. The screener: slow, probabilistic, asynchronous
 
-`contrib-screener` runs within minutes of submission and writes a **verdict** per bundle:
+`contrib-screener` runs every 15 minutes over what is still `quarantined` and writes a **verdict** per bundle:
 `accepted`, `held` (a human looks) or `rejected`, with a score vector it keeps for the batch
 analysis. It never deletes; the release job and lifecycle rules do that. Checks, roughly in cost
 order:
@@ -273,7 +274,7 @@ don't, so the configuration must make it true and reviewable:
   router with a field exclusion. Application logs (`tracing`) never include headers or bodies;
   the only per-request line at `info` is the receipt id and the verdict.
 - Cloud Armor rule logging off (it would log IPs of rate-limited clients).
-- Pub/Sub, Firestore and GCS audit logs (`DATA_READ`/`DATA_WRITE`) stay **off**; admin activity
+- Firestore and GCS audit logs (`DATA_READ`/`DATA_WRITE`) stay **off**; admin activity
   logs stay on (they record our changes, not users' requests).
 - Terraform for all of the above lives in the `cedar-contrib` repo, and PRIVACY.md links to the
   file, so "we don't log IPs" is a line someone can check.
