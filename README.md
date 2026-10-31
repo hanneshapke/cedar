@@ -63,7 +63,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
-| `GET /v1/runs/{id}/trace` | Everything the run sent to the model and got back, for debugging: `{run, system, tools, messages, calls, events}`. `system` and `tools` are the system prompt (with cedar's notes) and tool definitions the agent's calls were sent; `messages` the conversation as in `/messages`, with attached files' base64 replaced by their size (`source.bytes`); `calls` one entry per model call, `{seq, turn, purpose, request, response, error, started_at, duration_ms}`, where `purpose` is `agent` or `plan`, an agent call's `request` is `{model, max_tokens, reasoning_effort, message_count}` (it was sent the first `message_count` messages) and a planning call's also has its own `system`, `tools` and `messages`, and `response` is `{content, stop_reason, usage, reasoning}` (`null`, with `error`, when the call failed); `events` the run's event log. `system`, `tools` and `calls` are empty for runs from before traces were kept. |
+| `GET /v1/runs/{id}/trace` | Everything the run sent to the model and got back, for debugging: `{run, system, tools, messages, calls, events}`. `system` and `tools` are the system prompt (with cedar's notes) and tool definitions the agent's calls were sent, and `memory_note` (`{start, end}`, byte offsets into `system`, or `null`) where the user's memories sit in it, so a client passing the prompt on can cut exactly that; `messages` the conversation as in `/messages`, with attached files' base64 replaced by their size (`source.bytes`); `calls` one entry per model call, `{seq, turn, purpose, request, response, error, started_at, duration_ms}`, where `purpose` is `agent` or `plan`, an agent call's `request` is `{model, max_tokens, reasoning_effort, message_count}` (it was sent the first `message_count` messages) and a planning call's also has its own `system`, `tools` and `messages`, and `response` is `{content, stop_reason, usage, reasoning}` (`null`, with `error`, when the call failed); `events` the run's event log. `system`, `tools` and `calls` are empty for runs from before traces were kept. |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
 | `POST /v1/runs/{id}/plan` | Agree to the plan an interactive run is waiting on: `{"steps": [{"id", "title"}, ...]}` (1–12, edited, reordered, added or removed as you like). Returns `202`; `409` if the run isn't waiting for its plan. |
@@ -1054,7 +1054,11 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 
 ## Privacy
 
-cedar collects no data. See [PRIVACY.md](PRIVACY.md).
+cedar collects no data. See [PRIVACY.md](PRIVACY.md). A person can choose to give single
+conversations to a training corpus from the chat, after reading exactly what goes; that is
+opt-in three times over and described there, in [chat/README.md](chat/README.md#contributing-a-conversation)
+and in [docs/design/contributions.md](docs/design/contributions.md). The ingest such a corpus
+runs is [contrib/](contrib/README.md).
 
 ## License
 

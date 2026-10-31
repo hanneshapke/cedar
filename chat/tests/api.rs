@@ -57,6 +57,11 @@ struct FakeCedar {
     /// What cedar remembers (`/v1/memory`); unset, the routes are unknown, as on a cedar from
     /// before memory.
     memory: Mutex<Option<Vec<Value>>>,
+    /// The fake corpus: every bundle it took, the chat version header each came with, and
+    /// every withdrawal (receipt id, Authorization header).
+    ingested: Mutex<Vec<Value>>,
+    ingest_headers: Mutex<Vec<String>>,
+    withdrawn: Mutex<Vec<(String, String)>>,
 }
 
 type Shared = Arc<FakeCedar>;
@@ -315,11 +320,73 @@ async fn events(Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract:
 }
 
 /// Every run's workspace holds `out/report.pdf`, unless the run has been marked `expired`.
+/// A run's trace, as cedar builds one: the run, its system prompt (ending in the memory note,
+/// marked), its tools, a conversation with one tool call (`bash`, or a Gmail or fetch tool when
+/// the prompt says `EMAIL TOOL` or `FETCH`), the model calls with plausible usage, and events.
 async fn trace(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::response::Response {
-    if !s.runs.lock().unwrap().contains_key(&id) {
+    let Some(run) = s.runs.lock().unwrap().get(&id).cloned() else {
         return cedar_error(StatusCode::NOT_FOUND, "not_found", "run not found");
+    };
+    let prompt = run["prompt"].as_str().unwrap_or_default().to_string();
+    let tool = if prompt.contains("EMAIL TOOL") { "gmail_search_threads" } else if prompt.contains("FETCH") { "fetch_url" } else { "bash" };
+    let note = "You don't remember anything about this user from earlier conversations yet. Use remember to save facts.";
+    let system = format!("You are helpful. The user is hannes@example.org.\n\n{note}");
+    let memory_start = system.len() - note.len() - 2;
+    let result = if tool == "fetch_url" { "<html>The page, with ana@example.org on it</html>" } else { "a.txt\nb.txt\n" };
+    let messages = json!([
+        { "seq": 1, "role": "user", "content": [{ "type": "text", "text": prompt }] },
+        { "seq": 2, "role": "assistant", "content": [{ "type": "tool_use", "id": "t1", "name": tool, "input": { "command": "ls /Users/hannes" } }] },
+        { "seq": 3, "role": "user", "content": [{ "type": "tool_result", "tool_use_id": "t1", "content": result }] },
+        { "seq": 4, "role": "assistant", "content": [{ "type": "text", "text": run["final_text"].as_str().unwrap_or("done") }] },
+    ]);
+    Json(json!({
+        "run": { "id": id, "status": run["status"], "model_id": "model-a", "model": "org/model-a", "reasoning": "high", "stop_reason": run["stop_reason"] },
+        "system": system,
+        "memory_note": { "start": memory_start, "end": system.len() },
+        "tools": [
+            { "name": "bash", "description": "run", "input_schema": { "type": "object" } },
+            { "name": "fetch_url", "description": "fetch", "input_schema": { "type": "object" } },
+            { "name": "gmail_search_threads", "description": "mail", "input_schema": { "type": "object" } },
+        ],
+        "messages": messages,
+        "calls": [
+            { "seq": 1, "turn": 1, "purpose": "agent", "request": { "model": "org/model-a", "message_count": 1 },
+              "response": { "stop_reason": "tool_use", "usage": { "input_tokens": 60, "output_tokens": 20 }, "reasoning": "I should list the files for hannes@example.org." },
+              "error": null, "started_at": "2026-10-31T10:00:00Z", "duration_ms": 900 },
+            { "seq": 2, "turn": 2, "purpose": "agent", "request": { "model": "org/model-a", "message_count": 3 },
+              "response": { "stop_reason": "end_turn", "usage": { "input_tokens": 120, "output_tokens": 10 }, "reasoning": null },
+              "error": null, "started_at": "2026-10-31T10:00:02Z", "duration_ms": 700 },
+        ],
+        "events": [
+            { "seq": 1, "type": "run.started", "data": { "model": "org/model-a" }, "created_at": "2026-10-31T10:00:00Z" },
+            { "seq": 2, "type": "tool.call", "data": { "id": "t1", "name": tool, "input": {} }, "created_at": "2026-10-31T10:00:01Z" },
+            { "seq": 3, "type": "tool.result", "data": { "id": "t1", "output": result, "is_error": false, "duration_ms": 5 }, "created_at": "2026-10-31T10:00:01Z" },
+            { "seq": 4, "type": "run.completed", "data": { "final_text": run["final_text"], "stop_reason": "end_turn" }, "created_at": "2026-10-31T10:00:03Z" },
+        ],
+    }))
+    .into_response()
+}
+
+// -- the fake corpus (cedar-contrib's ingest), on the same port ---------------------------------
+
+async fn ingest_policy() -> Json<Value> {
+    Json(json!({ "schema_versions": [1], "models": ["org/*"], "licenses": ["cc0", "cc-by-4.0"], "max_bundle_bytes": 8388608 }))
+}
+
+async fn ingest_submit(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
+    s.ingest_headers.lock().unwrap().push(headers.get("x-cedar-chat-version").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string());
+    if body["turns"][0]["prompt"].as_str().unwrap_or_default().contains("REFUSE ME") {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": { "code": "secret_detected", "message": "a key in turn 1" } }))).into_response();
     }
-    Json(json!({ "run": { "id": id }, "calls": [{ "seq": 1, "purpose": "agent" }], "events": [] })).into_response()
+    let n = s.ingested.lock().unwrap().len() + 1;
+    s.ingested.lock().unwrap().push(body);
+    (StatusCode::CREATED, Json(json!({ "receipt_id": format!("r-{n}"), "withdraw_token": format!("w-{n}"), "status": "quarantined" }))).into_response()
+}
+
+async fn ingest_withdraw(State(s): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> StatusCode {
+    let token = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    s.withdrawn.lock().unwrap().push((id, token));
+    StatusCode::NO_CONTENT
 }
 
 async fn list_files(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::response::Response {
@@ -589,6 +656,9 @@ impl Harness {
             .route("/fcm/v1/projects/{project}/{action}", post(fcm_service))
             .route("/google/token", post(google_token))
             .route("/github/releases/latest", get(latest_release))
+            .route("/contrib/v1/policy", get(ingest_policy))
+            .route("/contrib/v1/contributions", post(ingest_submit))
+            .route("/contrib/v1/contributions/{id}", axum::routing::delete(ingest_withdraw))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -612,7 +682,9 @@ impl Harness {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
         for (k, v) in extra {
-            env.insert(k.to_string(), v.to_string());
+            // "self" points the chat at the fake corpus on this same port (its URL is only known now).
+            let v = if *k == "CHAT_CONTRIBUTIONS_URL" && *v == "self" { format!("{url}/contrib") } else { v.to_string() };
+            env.insert(k.to_string(), v);
         }
         let cfg = Config::from_lookup(|k| env.get(k).cloned()).unwrap();
         let state = AppState::new(cfg, Store::connect_memory().await.unwrap()).unwrap();
@@ -970,7 +1042,7 @@ async fn validation_and_upstream_errors() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
-    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "memory": true }));
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "memory": true, "contributions": false }));
     // The pickers take cedar's registry, relayed.
     let (status, listed) = h.json(Method::GET, "/api/models", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -3052,4 +3124,193 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (_, body) = h.json(Method::GET, "/api/memory", None).await;
     assert_eq!(body["items"], json!([]));
+}
+
+// -- contributions --------------------------------------------------------------------------
+
+/// A harness whose chat can send to the fake corpus.
+async fn contributing_harness() -> Harness {
+    Harness::new(&[("CHAT_CONTRIBUTIONS_URL", "self")]).await
+}
+
+#[tokio::test]
+async fn a_contribution_preview_redacts_and_leaves_out_what_the_design_says() {
+    let h = contributing_harness().await;
+    let (cid, _) = h.finished_conversation("list my files, I am hannes@example.org, key sk-abcdefghijklmnopqrstuvwxyz", "Two files.").await;
+    let (status, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    let b = &preview["bundle"];
+    assert_eq!(b["schema_version"], 1);
+    assert_eq!(b["model"], json!({ "id": "model-a", "name": "org/model-a", "reasoning": "high" }));
+    assert_eq!(b["tools"], json!(["bash"]));
+    assert_eq!(b["language"], "en");
+    let t = &b["turns"][0];
+    // The memory note is cut, the email in the prompt and the system prompt is one placeholder,
+    // the key another, the home directory a third.
+    assert_eq!(t["system"], "You are helpful. The user is [EMAIL_1].");
+    assert_eq!(t["prompt"], "list my files, I am [EMAIL_1], key [KEY_1]");
+    assert_eq!(t["messages"][1]["content"][0]["input"]["command"], "ls /Users/[USER_1]");
+    assert_eq!(t["messages"][0]["content"][0]["text"], t["prompt"]);
+    assert_eq!(b["redactions"], json!({ "EMAIL": 1, "KEY": 1, "USER": 1 }));
+    assert_eq!(b["dropped"]["memory"], true);
+    assert_eq!(b["dropped"]["reasoning"], 1);
+    assert!(t["calls"][0].get("reasoning").is_none(), "{}", t["calls"][0]);
+    assert_eq!(t["events"], json!([{ "type": "run.completed", "data": { "stop_reason": "end_turn" } }]));
+    assert_eq!(t["status"], "completed");
+    assert_eq!(t["day"].as_str().unwrap().len(), 10);
+    assert!(b["contributor"].is_null());
+    // Sendable: the checks pass, the corpus allows the model, nothing is blocked.
+    assert_eq!(preview["blocked"], json!([]), "{preview}");
+    assert_eq!(preview["problems"], json!([]));
+    assert_eq!(preview["can_send"], true);
+    assert_eq!(preview["accepted"], false);
+
+    // Reasoning comes along when asked for, redacted too.
+    let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution?reasoning=true"), None).await;
+    assert_eq!(preview["bundle"]["turns"][0]["calls"][0]["reasoning"], "I should list the files for [EMAIL_1].");
+    assert_eq!(preview["bundle"]["dropped"]["reasoning"], 0);
+}
+
+#[tokio::test]
+async fn fetched_bodies_are_stubbed_and_private_tools_block_a_contribution() {
+    let h = contributing_harness().await;
+    let (cid, _) = h.finished_conversation("FETCH the page", "Done.").await;
+    let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    let result = &preview["bundle"]["turns"][0]["messages"][2]["content"][0];
+    let stub = result["content"].as_str().unwrap();
+    assert!(stub.starts_with("[FETCHED BODY LEFT OUT: 49 bytes, sha256 "), "{stub}");
+    assert_eq!(preview["bundle"]["dropped"]["fetched_bodies"], 1);
+    assert_eq!(preview["blocked"], json!([]));
+    let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution?fetched=true"), None).await;
+    assert_eq!(preview["bundle"]["turns"][0]["messages"][2]["content"][0]["content"], "<html>The page, with [EMAIL_2] on it</html>");
+
+    let (cid, _) = h.finished_conversation("EMAIL TOOL: find the invoice", "Found it.").await;
+    let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    assert_eq!(preview["blocked"], json!(["private_tools"]));
+    assert_eq!(preview["private_tools"], json!(["gmail_search_threads"]));
+
+    // A conversation still being answered can't be contributed either.
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap();
+    h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "hi" }))).await;
+    let (status, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preview["blocked"], json!(["active", "no_turns"]));
+}
+
+#[tokio::test]
+async fn ratings_are_kept_on_turns_and_sent_with_a_contribution() {
+    let h = contributing_harness().await;
+    let (cid, _) = h.finished_conversation("list", "ok").await;
+    let (_, conv) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    let tid = conv["turns"][0]["id"].as_str().unwrap();
+    let (status, turn) = h.json(Method::PUT, &format!("/api/turns/{tid}/rating"), Some(json!({ "rating": -1 }))).await;
+    assert_eq!(status, StatusCode::OK, "{turn}");
+    assert_eq!(turn["rating"], -1);
+    let (status, _) = h.json(Method::PUT, &format!("/api/turns/{tid}/rating"), Some(json!({ "rating": 3 }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    assert_eq!(preview["bundle"]["turns"][0]["rating"], -1);
+    let (_, turn) = h.json(Method::PUT, &format!("/api/turns/{tid}/rating"), Some(json!({ "rating": null }))).await;
+    assert!(turn["rating"].is_null());
+}
+
+#[tokio::test]
+async fn contributing_needs_the_settings_turned_on_and_then_keeps_a_receipt() {
+    let h = contributing_harness().await;
+    let (status, cfg) = h.json(Method::GET, "/api/config", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cfg["contributions"], true);
+    let (cid, _) = h.finished_conversation("list the files", "Two files.").await;
+    let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    let bundle = preview["bundle"].clone();
+
+    // Not turned on yet.
+    let (status, err) = h.json(Method::POST, &format!("/api/conversations/{cid}/contribution"), Some(json!({ "bundle": bundle }))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{err}");
+
+    // Settings: a pseudonym, CC BY, on.
+    let (status, settings) = h.json(Method::GET, "/api/settings/contributions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["available"], true);
+    assert_eq!(settings["license"], "cc0");
+    assert!(settings["pseudonym"].is_null());
+    assert!(settings["host"].as_str().unwrap().starts_with("127.0.0.1:"));
+    let (status, settings) = h
+        .json(Method::PUT, "/api/settings/contributions", Some(json!({ "license": "cc-by-4.0", "pseudonym": "new", "enabled": true })))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{settings}");
+    let pseudonym = settings["pseudonym"].as_str().unwrap().to_string();
+    assert!(pseudonym.starts_with("p_"), "{pseudonym}");
+    assert!(settings["accepted_at"].is_string());
+    let (status, _) = h.json(Method::PUT, "/api/settings/contributions", Some(json!({ "license": "wtfpl" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Sent with the settings' license and pseudonym, whatever the body said, plus the outcome.
+    let mut tampered = bundle.clone();
+    tampered["contributor"] = json!("someone-else");
+    tampered["license"] = json!("cc0");
+    let (status, receipt) = h
+        .json(Method::POST, &format!("/api/conversations/{cid}/contribution"), Some(json!({ "bundle": tampered, "outcome": { "result": "partly", "notes": "it missed b.txt" } })))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{receipt}");
+    assert_eq!(receipt["id"], "r-1");
+    assert_eq!(receipt["license"], "cc-by-4.0");
+    assert!(receipt.get("withdraw_token").is_none());
+    let sent = h.cedar.ingested.lock().unwrap()[0].clone();
+    assert_eq!(sent["contributor"], pseudonym);
+    assert_eq!(sent["license"], "cc-by-4.0");
+    assert_eq!(sent["outcome"], json!({ "result": "partly", "notes": "it missed b.txt" }));
+    assert_eq!(sent["turns"][0]["prompt"], "list the files");
+    assert!(h.cedar.ingest_headers.lock().unwrap()[0].starts_with(char::is_numeric));
+
+    // A secret put back by hand is refused here, before anything is sent.
+    let mut leaky = bundle.clone();
+    leaky["turns"][0]["prompt"] = json!("my key is sk-abcdefghijklmnopqrstuvwxyz");
+    let (status, err) = h.json(Method::POST, &format!("/api/conversations/{cid}/contribution"), Some(json!({ "bundle": leaky }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert!(err["error"]["message"].as_str().unwrap().contains("secret"));
+    // A bundle that fails the checks too.
+    let mut broken = bundle.clone();
+    broken["turns"][0]["messages"][2]["content"][0]["tool_use_id"] = json!("nope");
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{cid}/contribution"), Some(json!({ "bundle": broken }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // The corpus's own refusal is relayed.
+    let (cid2, _) = h.finished_conversation("REFUSE ME please", "ok").await;
+    let (_, p2) = h.json(Method::GET, &format!("/api/conversations/{cid2}/contribution"), None).await;
+    let (status, err) = h.json(Method::POST, &format!("/api/conversations/{cid2}/contribution"), Some(json!({ "bundle": p2["bundle"] }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["message"], "secret_detected: a key in turn 1");
+
+    // Receipts are listed, and withdrawn with the token the ingest gave.
+    let (_, list) = h.json(Method::GET, "/api/contributions", None).await;
+    assert_eq!(list["contributions"].as_array().unwrap().len(), 1);
+    assert_eq!(list["contributions"][0]["conversation_id"], cid);
+    let (status, withdrawn) = h.json(Method::DELETE, "/api/contributions/r-1", None).await;
+    assert_eq!(status, StatusCode::OK, "{withdrawn}");
+    assert!(withdrawn["withdrawn_at"].is_string());
+    assert_eq!(*h.cedar.withdrawn.lock().unwrap(), vec![("r-1".to_string(), "Bearer w-1".to_string())]);
+    let (status, _) = h.json(Method::DELETE, "/api/contributions/r-9", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // Deleting the conversation keeps the receipt.
+    h.json(Method::DELETE, &format!("/api/conversations/{cid}"), None).await;
+    let (_, list) = h.json(Method::GET, "/api/contributions", None).await;
+    assert_eq!(list["contributions"][0]["id"], "r-1");
+}
+
+#[tokio::test]
+async fn without_a_corpus_the_preview_still_works_but_nothing_can_be_sent() {
+    let h = Harness::new(&[]).await;
+    let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
+    assert_eq!(cfg["contributions"], false);
+    let (cid, _) = h.finished_conversation("list", "ok").await;
+    let (status, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preview["can_send"], false);
+    assert_eq!(preview["blocked"], json!([]));
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{cid}/contribution"), Some(json!({ "bundle": preview["bundle"] }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, settings) = h.json(Method::GET, "/api/settings/contributions", None).await;
+    assert_eq!(settings["available"], false);
+    assert!(settings["host"].is_null());
 }

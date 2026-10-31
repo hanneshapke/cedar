@@ -1,0 +1,30 @@
+[package]
+name = "cedar-contrib"
+version.workspace = true
+edition = "2021"
+description = "The ingest a cedar-chat sends contributed conversations to: checks them, stores them in quarantine, hands out receipts and takes withdrawals (docs/design/contrib-ingest-cloud-run.md)"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
+cedar-contrib-schema = { path = "../contrib-schema" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+hex = "0.4"
+hmac = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }

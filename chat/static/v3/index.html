@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="/settings.css">
   <link rel="stylesheet" href="/models.css">
   <link rel="stylesheet" href="/trace-view.css">
+  <link rel="stylesheet" href="/contrib-view.css">
   <link rel="stylesheet" href="/attach.css">
 </head>
 <body>
@@ -77,6 +78,7 @@
               <span class="when" id="when"></span>
               <span class="menu-cost" id="cost-full"></span>
             </div>
+            <button class="menu-item" id="contribute-item" type="button" role="menuitem" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg><span data-i18n="contrib.menu">Contribute this conversation…</span></button>
             <button class="menu-item danger" id="delete-chat" type="button" role="menuitem" hidden>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span data-i18n="v3.deleteConversation">Delete conversation</span>
             </button>
@@ -256,6 +258,7 @@
   <script src="/language.js"></script>
   <script src="/memory.js"></script>
   <script src="/trace-view.js"></script>
+  <script src="/contrib-view.js"></script>
   <script src="/image-view.js"></script>
   <script src="/file-viewer.js"></script>
   <script src="/map-view.js"></script>

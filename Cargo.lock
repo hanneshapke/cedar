@@ -311,10 +311,12 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
+ "cedar-contrib-schema",
  "cedar-pairing",
  "chrono",
  "chrono-tz",
  "futures-util",
+ "hex",
  "http-body-util",
  "jwt-simple",
  "lettre",
@@ -334,6 +336,43 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "web-push",
+]
+
+[[package]]
+name = "cedar-contrib"
+version = "0.3.4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "cedar-contrib-schema",
+ "chrono",
+ "hex",
+ "hmac",
+ "http-body-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "cedar-contrib-schema"
+version = "0.3.4"
+dependencies = [
+ "hex",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -1639,6 +1639,7 @@ async function init() {
     current: () => state.current,
     anchor: els.reasoning,
   });
+  cedarContrib.init({ api, toast, config: () => state.config, current: () => state.current });
   // The paperclip goes after the Tools button that settings.js puts after the model picker; the
   // row of chosen files sits above the message box.
   cedarAttach.init({

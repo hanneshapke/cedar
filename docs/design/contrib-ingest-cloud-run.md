@@ -1,8 +1,9 @@
 # Design: the contribution ingest on Google Cloud Run, with poisoning defenses
 
-_Status: proposal. Companion to [contributions.md](contributions.md), which defines the bundle, the
-consent model and the client side. This document is the server: `cedar-contrib`, the service a
-cedar-chat points `CHAT_CONTRIBUTIONS_URL` at._
+_Status: the request path (§3–4) is built as `contrib/` (October 2026); see "Status" at the end.
+Companion to [contributions.md](contributions.md), which defines the bundle, the consent model and
+the client side. This document is the server: `cedar-contrib`, the service a cedar-chat points
+`CHAT_CONTRIBUTIONS_URL` at._
 
 The service has two jobs that pull against each other. It must accept bundles from people it
 cannot identify, because the client side promises no accounts and no identity. And it must keep a
@@ -309,3 +310,23 @@ bounded by max instances and the LB rate limit, not by the attacker.
 3. The judge checks (3, 4, 5) and the pseudonym ledger.
 4. `contrib-release` with aging, caps, manifest signing and publication.
 5. Cluster analysis, then the ablation job once cedar-bench has a stable safety suite.
+
+## 13. Status
+
+Built, in `contrib/`: `contrib-api` with the four routes of §3 and the checks of §4, the
+in-memory per-client limit, the quotas, the derived withdraw token, a Dockerfile, Terraform for
+the frugal variant (Cloud Run exposed directly, the bucket, the service account, the key in Secret
+Manager, the request-log exclusion), and tests against an in-memory store.
+
+What differs from the text above, for now:
+
+- **No Firestore.** Receipts, the pseudonym ledgers, the hash claims, the cluster counters and
+  the withdrawn list are all objects in the quarantine bucket (`contrib/README.md` has the
+  layout). A hash is claimed with a create-only upload, which is the one atomic step the request
+  path needs. Firestore comes with the screener, which needs queries.
+- **No load balancer and no Cloud Armor** in the Terraform: the frugal variant from the cost
+  estimate. The design's `rate_based_ban` is the service's own per-minute limit for now.
+- **The screener (§5) and the release job (§6) are not built**, nor the review page, the audit
+  log (§7) or the ablation. Every bundle stays `quarantined`.
+- **The unlinked cluster** is the first 16 bits of the prompts' SimHash: coarse, which is what a
+  daily allowance needs; the precise grouping is the release job's.

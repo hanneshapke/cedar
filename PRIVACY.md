@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: October 29, 2026_
+_Last updated: October 31, 2026_
 
 **cedar does not collect any data. Period.**
 
@@ -31,6 +31,17 @@ cedar can remember facts about you across conversations, such as your name, your
 - You can see every remembered fact, and the conversation it came from, and delete one or all of them at any time in Settings → Memory (web chat, desktop, iOS and Android) or through cedar's API (`GET` and `DELETE /v1/memory`). What you see there is exactly what the agent sees.
 - A deleted memory is removed from the database right away and is not used again, starting with your very next message.
 - You can turn memory off under Settings → Tools → Memory, and whoever runs the server can turn it off altogether (`MEMORY=off`).
+
+## Contributing a conversation (opt-in)
+
+cedar can let you *give* one conversation to a shared corpus used to train open-weight agent models. This is a proposal in progress (see `docs/design/contributions.md`); what exists today is described here so the first sentence of this policy stays true as it is built.
+
+- **Nothing is sent unless you send it.** Whoever runs your cedar-chat server has to point it at a corpus first (`CHAT_CONTRIBUTIONS_URL`); without that, the feature does not exist. You then choose, once, a license and whether to use a random pseudonym. After that, every contribution is one conversation, chosen by you, after a page that shows exactly what will leave your server. There is no "share everything" switch, no background collection, and no reminders.
+- **What a contribution contains.** Your prompts, the agent's replies and tool calls, the system prompt and tool definitions it ran with, how the run ended, and the outcome you reported. Before you see it, cedar-chat removes attachments' contents and names, your memory list, run and key identifiers, timestamps (keeping the day), and your region (keeping the language), and replaces emails, phone and account numbers, IP addresses, keys and home-directory names with placeholders. Conversations that used your Gmail or Calendar, or a health tool, cannot be contributed at all.
+- **Redaction is best effort.** The scan catches what has a shape. A fact stated in your own words is not caught; the review page is where you read for that, and it lets you redact more and restore what the scan got wrong.
+- **No identity.** A contribution carries no account, email, key, device or address of yours. Its pseudonym, if you chose one, is a random id generated on your server that you can rotate or drop. The corpus operator sees the connection like any web server does and commits in its own policy not to keep request logs.
+- **You can withdraw.** Your server keeps a receipt for each contribution, with a token only it knows, and Settings → Contribute lets you withdraw one. A withdrawn contribution is deleted from the corpus's intake and left out of every later release; a release already published is an immutable snapshot and cannot be recalled from people who downloaded it.
+- **Licensing.** You license what you wrote under the license you chose (CC0 or CC BY 4.0). The agent's replies are the output of the model your server ran; the corpus publishes only models whose terms allow it.
 
 ## Device permissions
 

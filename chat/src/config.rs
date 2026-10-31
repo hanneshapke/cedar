@@ -44,6 +44,10 @@ pub struct Config {
     /// The directory the root `cedar-update` unit watches (see `update`); without it the page
     /// only shows how to update by hand.
     pub update_dir: Option<std::path::PathBuf>,
+    /// The corpus a conversation can be contributed to (`CHAT_CONTRIBUTIONS_URL`, the base URL
+    /// of a cedar-contrib ingest; see `contrib`). Unset, nothing can be sent; the review dialog
+    /// still exports a bundle to a file.
+    pub contributions_url: Option<String>,
 }
 
 impl Config {
@@ -91,7 +95,13 @@ impl Config {
             },
             update_url: get("CHAT_UPDATE_URL").map(|u| u.trim().to_string()).unwrap_or_else(|| crate::update::DEFAULT_URL.into()),
             update_dir: get("CHAT_UPDATE_DIR").map(|d| std::path::PathBuf::from(d.trim())),
+            contributions_url: get("CHAT_CONTRIBUTIONS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
         };
+        if let Some(u) = &cfg.contributions_url {
+            if !(u.starts_with("http://") || u.starts_with("https://")) {
+                bail!("CHAT_CONTRIBUTIONS_URL must start with http:// or https://");
+            }
+        }
         if cfg.history_max_bytes > 60_000 {
             // cedar rejects prompts over 100 KB; leave room for the new message itself.
             bail!("CHAT_HISTORY_MAX_BYTES must be at most 60000");

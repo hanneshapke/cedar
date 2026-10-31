@@ -277,6 +277,7 @@ remove the tool.
 | `CHAT_UPDATE_CHECK` | `on` | Look up the latest GitHub Release a minute after the start and every six hours, and show a banner when it is newer (see [Updates](#updates)). `off` makes no requests to GitHub. The desktop app sets it `off`, it updates itself |
 | `CHAT_UPDATE_DIR` | unset | The directory the root `cedar-update` unit watches (`/var/lib/cedar/update` in [DEPLOYMENT.md](../DEPLOYMENT.md#updates)). When set, an admin's *Update* in the banner installs the release; otherwise the banner shows the commands to run |
 | `CHAT_UPDATE_URL` | `https://api.github.com/repos/hanneshapke/cedar/releases/latest` | Where the latest release is looked up (for tests) |
+| `CHAT_CONTRIBUTIONS_URL` | unset | The base URL of a [cedar-contrib](../contrib/README.md) ingest that a conversation can be [contributed](#contributing-a-conversation) to. Unset, nothing can be sent; the review dialog still exports a bundle to a file |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -499,6 +500,46 @@ your saved choice predates memory and leaves it off; the Memory page says so. Ev
 chat server shares one memory, since the chat calls cedar with one `CEDAR_API_KEY`. Memory stays
 on your own cedar server and is never shared with a third party (see [PRIVACY.md](../PRIVACY.md)).
 
+### Contributing a conversation
+
+A conversation can be given, one at a time and on purpose, to a corpus for training open-weight
+agent models (the design is in [docs/design/contributions.md](../docs/design/contributions.md);
+what it means for you is in [PRIVACY.md](../PRIVACY.md#contributing-a-conversation-opt-in)).
+Three things have to be true before anything leaves this server:
+
+1. Whoever runs it has pointed it at a corpus (`CHAT_CONTRIBUTIONS_URL`). Without that, the
+   More menu offers *Export for contribution…* only in expert mode, and only as a download.
+2. You have read **Settings → Contribute** and turned it on there. The page says what a
+   contribution contains, names the corpus, and takes your one-time choices: the license for
+   what you wrote (CC0 or CC BY 4.0), a pseudonym (a random id made here, which you can rotate or
+   drop; without one each contribution stands alone), and whether the model's reasoning and the
+   pages the agent fetched are included by default (both off).
+3. You chose *Contribute this conversation…* in the More menu and clicked *Send* in the review
+   dialog.
+
+The review dialog shows exactly what would be sent, built from the traces of the conversation's
+runs: your prompts, the agent's replies and tool calls, the system prompt and tool definitions,
+the model calls' counts and tokens, and the events that matter for training (plans and your edits
+to them, approvals and denials, how each run ended). Before you see it, the chat cuts your memory
+list out of the system prompt, drops attached files (their bytes and names), replaces the bodies
+of fetched pages with their size and hash, leaves reasoning out, drops identifiers and exact
+times, and replaces emails, phone and account numbers, IP addresses, keys and home-directory names
+with placeholders such as `[EMAIL_1]` (the same for the same value throughout). Every placeholder
+is marked. You can include reasoning or fetched pages for this one conversation, redact any phrase
+you type (`[CUSTOM_n]`), rate each response with a thumb (saved on the turn, sent as its rating),
+and say whether the agent did what you asked. The *Exactly what is sent* tab is the document that
+*Send* posts, byte for byte, and *Download JSON* saves it.
+
+Some conversations can't be contributed, and the dialog says why: one still being answered, a
+scheduled agent's, one that called a Gmail or Calendar tool (other people's data), one whose run
+cedar no longer has, one from a model the corpus doesn't publish, or one in which a secret is still
+in the text after redaction. The checks the corpus runs are run here first, so a bundle the dialog
+shows as ready is one the corpus will take.
+
+Each contribution leaves a receipt in **Settings → Contribute**, with *Withdraw*: the corpus deletes
+it from its intake and leaves it out of every later release. Deleting the conversation keeps the
+receipt. The withdraw token is kept in the chat's database like its other credentials.
+
 ### Pairing the iOS and Android apps
 
 **Settings → Phone** has what the [iOS app](../iOS/README.md) and the Android app need to connect: the chat's
@@ -581,7 +622,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/config` | `{auth_required, admin_enabled, memory}`; `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
+| `GET /api/config` | `{auth_required, admin_enabled, memory, contributions}`; `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set; `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
@@ -595,6 +636,12 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
 | `GET /api/conversations/{id}/files/{path}` | Download one file, relayed from cedar with its type, length, and file name |
 | `POST /api/conversations/{id}/compact` | Have cedar write one prompt for the conversation so far: `{prompt, source}` where `source` is `run` or, when cedar has lost the run, `history`. Returns 409 while a response is running, 404 without a finished response |
+| `GET /api/conversations/{id}/contribution` | The conversation as it would be [contributed](#contributing-a-conversation): `{bundle, blocked, secrets, problems, can_send, accepted, private_tools, turn_ids}`. `?reasoning=true` and `?fetched=true` include what is left out by default. `blocked` lists why it can't be sent (`scheduled`, `active`, `no_turns`, `private_tools`, `run_gone`, `secrets`, `not_consistent`, `model_not_allowed`), empty when it can |
+| `POST /api/conversations/{id}/contribution` | Send `{"bundle", "outcome"?}` (the bundle as the dialog holds it; `outcome` is `{result: succeeded\|partly\|failed, notes?}`) to `CHAT_CONTRIBUTIONS_URL`. The license and pseudonym come from Settings whatever the body says; the checks run again first. `201` with the receipt; `409` without a corpus or while contributing is off in Settings; `400` for a bundle that fails the checks or still holds a secret, or that the corpus refused (its code and message) |
+| `GET /api/contributions` | `{contributions}`: every receipt, newest first, each `{id, conversation_id, title, content_sha256, license, url, submitted_at, withdrawn_at}` (never the withdraw token) |
+| `DELETE /api/contributions/{id}` | Withdraw it from the corpus; answers the receipt with `withdrawn_at`. `404` for an unknown receipt |
+| `GET` / `PUT /api/settings/contributions` | The one-time choices: `{license, pseudonym, include_reasoning, include_fetched, accepted_at, available, host, licenses}`. `PUT` takes any of `license`, `pseudonym` (`"new"` makes one, `""` drops it), `include_reasoning`, `include_fetched` and `enabled` (sets or clears `accepted_at`) |
+| `PUT /api/turns/{id}/rating` | `{"rating": 1 \| -1 \| null}`: your thumb on a response; answers the turn |
 | `PUT` / `DELETE /api/conversations/{id}/star` | Star or unstar the conversation (a chat or a scheduled run) for every client. Both are idempotent; starring again keeps the first `starred_at`. Returns the conversation |
 | `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, scheduled runs included, each with `schedule_title` (the schedule a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |

@@ -10,7 +10,8 @@ use crate::schedule::{self, Timing};
 use crate::notify;
 use crate::pairing;
 use crate::update;
-use crate::store::{AttachmentInfo, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, StarredConversation, Store, Turn};
+use crate::contrib;
+use crate::store::{AttachmentInfo, Contribution, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, StarredConversation, Store, Turn};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use chrono::Utc;
 use futures_util::Stream;
@@ -52,6 +53,9 @@ const MAX_ATTACHMENTS: usize = 10;
 const MAX_ATTACHMENT_BYTES: usize = 20 << 20;
 const MAX_ATTACHMENTS_TOTAL_BYTES: usize = 32 << 20;
 const MAX_MESSAGE_BODY_BYTES: usize = 48 << 20;
+/// A contribution as the dialog sends it back (the bundle plus the outcome); the corpus takes
+/// 8 MiB bundles.
+const MAX_BUNDLE_BODY_BYTES: usize = 9 << 20;
 const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
 const ATTACHMENT_TYPES: [&str; 5] = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
 /// Where Google sends the browser back after "Connect Google" (under `CHAT_PUBLIC_URL`).
@@ -101,6 +105,9 @@ const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
 const MEMORY_JS: &str = include_str!("../static/memory.js");
 const TRACE_VIEW_JS: &str = include_str!("../static/trace-view.js");
 const TRACE_VIEW_CSS: &str = include_str!("../static/trace-view.css");
+/// Contributing a conversation (contrib.rs): the review dialog and Settings → Contribute.
+const CONTRIB_VIEW_JS: &str = include_str!("../static/contrib-view.js");
+const CONTRIB_VIEW_CSS: &str = include_str!("../static/contrib-view.css");
 const SETTINGS_JS: &str = include_str!("../static/settings.js");
 const SETTINGS_CSS: &str = include_str!("../static/settings.css");
 /// Attaching images and PDFs to a message (button, drag-and-drop, paste); both UIs load it.
@@ -263,6 +270,11 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/messages", post(send_message).layer(DefaultBodyLimit::max(MAX_MESSAGE_BODY_BYTES)))
         .route("/conversations/{id}/tools", put(set_conversation_tools))
         .route("/conversations/{id}/compact", post(compact_conversation))
+        .route("/conversations/{id}/contribution", get(contribution_preview).post(send_contribution).layer(DefaultBodyLimit::max(MAX_BUNDLE_BODY_BYTES)))
+        .route("/contributions", get(list_contributions))
+        .route("/contributions/{id}", axum::routing::delete(withdraw_contribution))
+        .route("/settings/contributions", get(get_contribution_settings).put(put_contribution_settings))
+        .route("/turns/{id}/rating", put(rate_turn))
         .route("/conversations/{id}/seen", post(mark_seen))
         .route("/conversations/{id}/star", put(star_conversation).delete(unstar_conversation))
         .route("/starred", get(list_starred))
@@ -351,6 +363,8 @@ pub fn router(state: AppState) -> Router {
         .route("/memory.js", get(|| async { asset(JS, MEMORY_JS) }))
         .route("/trace-view.js", get(|| async { asset(JS, TRACE_VIEW_JS) }))
         .route("/trace-view.css", get(|| async { asset(CSS, TRACE_VIEW_CSS) }))
+        .route("/contrib-view.js", get(|| async { asset(JS, CONTRIB_VIEW_JS) }))
+        .route("/contrib-view.css", get(|| async { asset(CSS, CONTRIB_VIEW_CSS) }))
         .route("/settings.js", get(|| async { asset(JS, SETTINGS_JS) }))
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))
@@ -491,6 +505,9 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
         "admin_enabled": state.admin_digest.is_some(),
         // This chat server has the /api/memory routes (whether cedar has memory is in their answer).
         "memory": true,
+        // Whether a conversation can be sent to a corpus (CHAT_CONTRIBUTIONS_URL); the review
+        // dialog exports to a file either way.
+        "contributions": state.cfg.contributions_url.is_some(),
     }))
 }
 
@@ -1786,6 +1803,128 @@ async fn compact_conversation(State(state): State<AppState>, Path(id): Path<Stri
         }
         Err(e) => Err(e),
     }
+}
+
+// -- contributions --------------------------------------------------------------------------
+
+/// The conversation as it would be contributed, with why it can't be, if it can't (see
+/// `contrib::preview`). `?reasoning=1` and `?fetched=1` include what is left out by default.
+async fn contribution_preview(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiQuery(opts): ApiQuery<contrib::Options>,
+) -> Result<Json<contrib::Preview>, AppError> {
+    let conversation = find_conversation(&state, &id).await?;
+    Ok(Json(contrib::preview(&state, &conversation, opts).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SendBody {
+    /// The bundle as the dialog shows it, placeholders and all.
+    bundle: cedar_contrib_schema::Bundle,
+    #[serde(default)]
+    outcome: Option<cedar_contrib_schema::Outcome>,
+}
+
+/// Send the bundle the dialog holds to the corpus; answers with the receipt.
+async fn send_contribution(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<SendBody>,
+) -> Result<(StatusCode, Json<Contribution>), AppError> {
+    let conversation = find_conversation(&state, &id).await?;
+    let saved = contrib::send(&state, &conversation, body.bundle, body.outcome).await?;
+    Ok((StatusCode::CREATED, Json(saved)))
+}
+
+#[derive(Serialize)]
+struct ContributionList {
+    contributions: Vec<Contribution>,
+}
+
+async fn list_contributions(State(state): State<AppState>) -> Result<Json<ContributionList>, AppError> {
+    Ok(Json(ContributionList { contributions: state.store.list_contributions().await? }))
+}
+
+async fn withdraw_contribution(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Contribution>, AppError> {
+    if id.len() > 100 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(AppError::NotFound("no such contribution"));
+    }
+    Ok(Json(contrib::withdraw(&state, &id).await?))
+}
+
+async fn get_contribution_settings(State(state): State<AppState>) -> Result<Json<contrib::SettingsView>, AppError> {
+    let settings = state.store.contribution_settings().await?;
+    Ok(Json(contrib::settings_view(&state, settings)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContributionSettingsBody {
+    #[serde(default)]
+    license: Option<String>,
+    /// `"new"` makes a fresh pseudonym, `null` or `""` drops it, anything else keeps the current one.
+    #[serde(default)]
+    pseudonym: Option<String>,
+    #[serde(default)]
+    include_reasoning: Option<bool>,
+    #[serde(default)]
+    include_fetched: Option<bool>,
+    /// Turn contributing on (the person read the page) or off.
+    #[serde(default)]
+    enabled: Option<bool>,
+}
+
+async fn put_contribution_settings(
+    State(state): State<AppState>,
+    ApiJson(body): ApiJson<ContributionSettingsBody>,
+) -> Result<Json<contrib::SettingsView>, AppError> {
+    let mut settings = state.store.contribution_settings().await?;
+    if let Some(l) = body.license {
+        if cedar_contrib_schema::License::parse(&l).is_none() {
+            return Err(AppError::BadRequest(format!("license {l:?} is not offered")));
+        }
+        settings.license = l;
+    }
+    match body.pseudonym.as_deref() {
+        Some("new") => settings.pseudonym = Some(contrib::new_pseudonym()),
+        Some("") => settings.pseudonym = None,
+        Some(other) if Some(other) != settings.pseudonym.as_deref() => {
+            return Err(AppError::BadRequest("pseudonym must be \"new\", \"\" or the current one".into()));
+        }
+        _ => {}
+    }
+    if let Some(r) = body.include_reasoning {
+        settings.include_reasoning = r;
+    }
+    if let Some(f) = body.include_fetched {
+        settings.include_fetched = f;
+    }
+    match body.enabled {
+        Some(true) if settings.accepted_at.is_none() => settings.accepted_at = Some(Utc::now()),
+        Some(false) => settings.accepted_at = None,
+        _ => {}
+    }
+    state.store.set_contribution_settings(&settings).await?;
+    Ok(Json(contrib::settings_view(&state, settings)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RatingBody {
+    /// 1, -1, or null to clear.
+    rating: Option<i8>,
+}
+
+/// The person's thumbs on a response.
+async fn rate_turn(State(state): State<AppState>, Path(id): Path<String>, ApiJson(body): ApiJson<RatingBody>) -> Result<Json<Turn>, AppError> {
+    if body.rating.is_some_and(|r| r != 1 && r != -1) {
+        return Err(AppError::BadRequest("rating must be 1, -1 or null".into()));
+    }
+    let turn = find_turn(&state, &id).await?;
+    state.store.set_turn_rating(turn.id, body.rating).await?;
+    Ok(Json(state.store.get_turn(turn.id).await?.ok_or(AppError::NotFound("no such turn"))?))
 }
 
 // -- schedules ------------------------------------------------------------------------------

@@ -219,6 +219,8 @@ pub struct Turn {
     pub seen: bool,
     /// The files sent with the message (name, type and size only; the bytes are in cedar's run).
     pub attachments: Vec<AttachmentInfo>,
+    /// The person's thumbs on the response: 1, -1, or none.
+    pub rating: Option<i8>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -353,12 +355,67 @@ fn turn_from_row(r: &SqliteRow) -> Result<Turn> {
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
         seen: r.try_get::<i64, _>("seen")? != 0,
         attachments: opt_json(r, "attachments")?.unwrap_or_default(),
+        rating: r.try_get::<Option<i64>, _>("rating")?.map(|n| n as i8),
         created_at: to_dt(r.try_get("created_at")?),
     })
 }
 
 const TURN_COLS: &str =
-    "id, conversation_id, seq, run_id, prompt, status, final_text, error, stop_reason, finished_at, seen, attachments, created_at";
+    "id, conversation_id, seq, run_id, prompt, status, final_text, error, stop_reason, finished_at, seen, attachments, rating, created_at";
+
+/// What the person chose, once, in Settings → Contribute (the `contributions` settings key).
+/// Nothing is sent until `accepted_at` is set, which the page does when they save it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContributionSettings {
+    /// `cc0` or `cc-by-4.0`.
+    pub license: String,
+    /// A random id generated here, or `None` to send unlinked contributions.
+    #[serde(default)]
+    pub pseudonym: Option<String>,
+    #[serde(default)]
+    pub include_reasoning: bool,
+    #[serde(default)]
+    pub include_fetched: bool,
+    /// When the person read the explanation and turned contributing on; `None` means off.
+    #[serde(default)]
+    pub accepted_at: Option<DateTime<Utc>>,
+}
+
+impl Default for ContributionSettings {
+    fn default() -> Self {
+        ContributionSettings { license: "cc0".into(), pseudonym: None, include_reasoning: false, include_fetched: false, accepted_at: None }
+    }
+}
+
+/// A conversation sent to the corpus: the receipt the ingest answered with.
+#[derive(Debug, Clone, Serialize)]
+pub struct Contribution {
+    pub id: String,
+    pub conversation_id: Option<Uuid>,
+    pub title: Option<String>,
+    /// Never serialized: it withdraws the contribution.
+    #[serde(skip)]
+    pub withdraw_token: String,
+    pub content_sha256: String,
+    pub license: String,
+    pub url: String,
+    pub submitted_at: DateTime<Utc>,
+    pub withdrawn_at: Option<DateTime<Utc>>,
+}
+
+fn contribution_from_row(r: &SqliteRow) -> Result<Contribution> {
+    Ok(Contribution {
+        id: r.try_get("id")?,
+        conversation_id: opt_uuid(r, "conversation_id")?,
+        title: r.try_get("title")?,
+        withdraw_token: r.try_get("withdraw_token")?,
+        content_sha256: r.try_get("content_sha256")?,
+        license: r.try_get("license")?,
+        url: r.try_get("url")?,
+        submitted_at: to_dt(r.try_get("submitted_at")?),
+        withdrawn_at: r.try_get::<Option<i64>, _>("withdrawn_at")?.map(to_dt),
+    })
+}
 
 #[derive(Clone)]
 pub struct Store {
@@ -636,6 +693,94 @@ impl Store {
         .bind(id.to_string())
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    /// The person's thumbs on a response; `None` clears it. False if there is no such turn.
+    pub async fn set_turn_rating(&self, id: Uuid, rating: Option<i8>) -> Result<bool> {
+        let done = sqlx::query("UPDATE turns SET rating = ? WHERE id = ?")
+            .bind(rating.map(i64::from))
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    // -- contributions ----------------------------------------------------------------------
+
+    pub async fn contribution_settings(&self) -> Result<ContributionSettings> {
+        let row = sqlx::query("SELECT value FROM settings WHERE key = 'contributions'").fetch_optional(&self.pool).await?;
+        match row {
+            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
+            None => Ok(ContributionSettings::default()),
+        }
+    }
+
+    pub async fn set_contribution_settings(&self, settings: &ContributionSettings) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('contributions', ?) \
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(serde_json::to_string(settings)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_contribution(
+        &self,
+        id: &str,
+        conversation_id: Uuid,
+        title: Option<&str>,
+        withdraw_token: &str,
+        content_sha256: &str,
+        license: &str,
+        url: &str,
+    ) -> Result<Contribution> {
+        sqlx::query(
+            "INSERT INTO contributions (id, conversation_id, title, withdraw_token, content_sha256, license, url, submitted_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(conversation_id.to_string())
+        .bind(title)
+        .bind(withdraw_token)
+        .bind(content_sha256)
+        .bind(license)
+        .bind(url)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        Ok(self.get_contribution(id).await?.expect("just inserted"))
+    }
+
+    pub async fn get_contribution(&self, id: &str) -> Result<Option<Contribution>> {
+        let row = sqlx::query("SELECT * FROM contributions WHERE id = ?").bind(id).fetch_optional(&self.pool).await?;
+        row.as_ref().map(contribution_from_row).transpose()
+    }
+
+    /// Every contribution, newest first.
+    pub async fn list_contributions(&self) -> Result<Vec<Contribution>> {
+        let rows = sqlx::query("SELECT * FROM contributions ORDER BY submitted_at DESC, id DESC").fetch_all(&self.pool).await?;
+        rows.iter().map(contribution_from_row).collect()
+    }
+
+    /// The contributions of one conversation that were not withdrawn.
+    pub async fn contributions_of(&self, conversation_id: Uuid) -> Result<Vec<Contribution>> {
+        let rows = sqlx::query("SELECT * FROM contributions WHERE conversation_id = ? AND withdrawn_at IS NULL ORDER BY submitted_at DESC")
+            .bind(conversation_id.to_string())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter().map(contribution_from_row).collect()
+    }
+
+    pub async fn mark_withdrawn(&self, id: &str) -> Result<()> {
+        sqlx::query("UPDATE contributions SET withdrawn_at = COALESCE(withdrawn_at, ?) WHERE id = ?")
+            .bind(now_ms())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 

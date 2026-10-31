@@ -1,6 +1,7 @@
 # Design: contributing conversations to a training corpus (opt-in)
 
-_Status: proposal. Nothing here is implemented._
+_Status: phases 1 to 3 are built (October 2026); see "Status" at the end for what differs from
+this text and what is still to come._
 
 cedar's privacy policy is one sentence: **cedar does not collect any data. Period.** This design
 adds a way for a person to *give* a conversation to a shared corpus, used to train an open-weight
@@ -263,3 +264,28 @@ Keep the ingest as dumb as possible so there is little to trust.
   cost, but useless without the trajectory. Leave out.
 - **Bulk review** for people who want to contribute many threads: a queue that opens the review
   dialog for each in turn is acceptable; a list with checkboxes is not.
+
+## 12. Status
+
+Built: the shared schema crate (`contrib-schema/`: bundle v1, canary, the consistency checks of
+§9's request path, the pattern scan and redactor), cedar's `memory_note` in the trace, the chat's
+export (`chat/src/contrib.rs`, `chat/static/contrib-view.js`: the preview, the structural and
+pattern passes, the review dialog with the Raw tab and download, per-turn thumbs, outcome, phrase
+redaction), Settings → Contribute with the one-time choices and receipts, sending and
+withdrawal, and the ingest (`contrib/`, see its own design and README).
+
+What differs from the text above, on purpose, for now:
+
+- **The model pass** (§4, pass 3) is not built: redaction is the structural and pattern passes
+  plus the person's own phrases. The dialog says so.
+- **Un-redacting** a placeholder the scan got wrong is not offered; the person can edit nothing
+  back in. Restoring is a later addition to the dialog.
+- **Per-turn thumbs** live in the review dialog rather than on every message in the four
+  interfaces; they are stored on the turn either way.
+- **Health tools** are not recognised: the thread is blocked only for Gmail and Calendar tool
+  calls, by name. A community tool's `health_data` flag is not visible in a trace.
+- **A thread that switched models** is reported under the model of its last turn.
+- **Workspace file contents** are not included, only what the messages already carry.
+- **The withdraw token** is stored in the chat's database as its other credentials are, not
+  encrypted with a key the chat does not have.
+- **Reasoning and fetched bodies** default to off, as §11 left open.
