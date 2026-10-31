@@ -170,7 +170,9 @@ To change the model server later, choose *Model Server & Setup…* from the menu
 is registered with the running cedar, so nothing restarts. The chat's own Settings page can add
 further models to the registry and manages the Brave Search key and the Google account: cedar
 runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
-admin token, so Settings works without typing anything.
+admin token, so Settings works without typing anything. The app also starts the chat with
+`CHAT_MODELS_ACCESS=users`, so a phone or a browser that connects with the access token can add
+models too; the API keys and the Google account still need the admin token.
 
 **Tools from the registry.** The app runs cedar with personal tools in `~/.cedar/tools`
 (`TOOLS_DIR`) and the [community tool registry](../registry/README.md) in this repository

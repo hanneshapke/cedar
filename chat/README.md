@@ -267,6 +267,7 @@ remove the tool.
 | `CHAT_DATABASE_URL` | `sqlite://cedar-chat.db` | Conversation storage |
 | `CHAT_ACCESS_TOKEN` | unset | If set, the page asks for this token and the API requires it |
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
+| `CHAT_MODELS_ACCESS` | `admins` | Who may add, change and remove [the models](#models): `admins` (the admin token) or `users` (everyone the access token lets in; the desktop app and `scripts/cedar-stack.sh` set this). API keys and the Google account stay with admins either way |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
@@ -546,6 +547,12 @@ encrypted, and take effect on the next message without a restart. This needs thi
 a secret; see [Models](../README.md#models) and [Integrations](../README.md#integrations). Keys set
 in cedar's environment are shown as "Managed by environment" and can't be changed here.
 
+On a personal setup, where whoever chats also picks the models, `CHAT_MODELS_ACCESS=users` opens the
+**Models** block to everyone with the access token, admin token or not: the page, the phone apps and
+any browser can add a server and its model. The API keys, the Google account, the server settings
+and the personal tools still need the admin token. The desktop app and `scripts/cedar-stack.sh` set
+it; a server several people use should leave it at `admins`, the default.
+
 With cedar's `TOOLS_DIR` set, the page also lists the **Personal tools**: each one's source (local
 or community), version, what it asks for (internet hosts, secrets, packages, health data), and a
 field per secret it declares, saved by cedar like the API keys and never shown again. With
@@ -581,7 +588,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/config` | `{auth_required, admin_enabled, memory}`; `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
+| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory}`; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |

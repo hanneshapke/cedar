@@ -2,7 +2,7 @@
 
 use crate::cedar::{self, Attachment, CedarClient, RunOptions};
 use crate::channels::{self, ApnsEnvironment, Method, Reach, Scope, Security};
-use crate::config::Config;
+use crate::config::{Config, ModelsAccess};
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::prompt::{self, Exchange};
@@ -489,6 +489,9 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
     Json(json!({
         "auth_required": state.token_digest.is_some(),
         "admin_enabled": state.admin_digest.is_some(),
+        // Whether the models in Settings -> Server need the admin token ("admins") or are open to
+        // everyone with the access token ("users", CHAT_MODELS_ACCESS).
+        "models_access": state.cfg.models_access.as_str(),
         // This chat server has the /api/memory routes (whether cedar has memory is in their answer).
         "memory": true,
     }))
@@ -1538,6 +1541,16 @@ fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> 
     }
 }
 
+/// The model routes: with `CHAT_MODELS_ACCESS=users` the access token is enough (a personal
+/// setup, where whoever chats also picks the models); otherwise they need the admin token like
+/// the rest of Settings -> Server.
+fn require_models_access(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    match state.cfg.models_access {
+        ModelsAccess::Users => Ok(()),
+        ModelsAccess::Admins => require_admin(state, headers),
+    }
+}
+
 fn redirect_uri(state: &AppState) -> String {
     format!("{}{GOOGLE_CALLBACK_PATH}", state.cfg.public_url)
 }
@@ -1566,14 +1579,14 @@ async fn put_brave_key(
 }
 
 async fn get_models(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     Ok(Json(state.cedar.models_admin().await?))
 }
 
 /// The models a server lists (`{base_url, api_key?, id?}`, cedar's body, passed through), so the
 /// form offers names it serves.
 async fn list_server_models(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     if !body.is_object() {
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
     }
@@ -1589,7 +1602,7 @@ async fn put_model(
     Path(id): Path<String>,
     ApiJson(body): ApiJson<Value>,
 ) -> Result<Json<Value>, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     if !body.is_object() {
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
     }
@@ -1615,7 +1628,7 @@ async fn put_server_settings(State(state): State<AppState>, headers: HeaderMap, 
 }
 
 async fn delete_model(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     state.cedar.remove_model(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

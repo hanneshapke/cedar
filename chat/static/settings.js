@@ -19,7 +19,7 @@
 //   api(method, path, body) -> Promise<json>   the app's /api client (sends the access token)
 //   authHeaders() -> object                    the access token header, for the admin calls
 //   toast(message)                             a short notice
-//   config() -> object                         /api/config (admin_enabled)
+//   config() -> object                         /api/config (admin_enabled, models_access)
 //   current() -> conversation | null           the open conversation
 //   anchor                                     the element the Tools button goes after (the reasoning picker)
 
@@ -511,20 +511,50 @@ const cedarSettings = (() => {
 
   const unlocked = () => Boolean(adminToken() || memoryAdmin);
 
+  /** Whether the server lets everyone with the access token manage the models (CHAT_MODELS_ACCESS=users). */
+  const modelsOpen = () => deps.config().models_access === 'users';
+
+  function block(title, ...children) {
+    const b = el('div', 'cedar-set-block');
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', title));
+    b.append(head, ...children);
+    return b;
+  }
+
+  /** The Models block: the registered models and the form that adds one. `status` is the
+   *  integrations status when the page is unlocked; without it the list's own `storage` is used. */
+  async function modelsSection(status) {
+    const models = await modelsBlock(status);
+    const b = block(tr('settings.server.models'), models.wrap);
+    b.querySelector('.cedar-set-block-head').append(models.add);
+    return b;
+  }
+
+  /** The Server page while the admin token isn't there: the models when the server opens them to
+   *  everyone, then how to turn the rest on (no CHAT_ADMIN_TOKEN) or the unlock form. */
+  async function lockedView(section, error) {
+    const cfg = deps.config();
+    const parts = [];
+    if (modelsOpen()) parts.push(await modelsSection(null));
+    if (!cfg.admin_enabled) {
+      try { await loadCatalog(); } catch { /* the help is shown without the list */ }
+      const card = el('div', 'cedar-set-unlock-card');
+      card.append(setupHelp());
+      parts.push(card);
+    } else {
+      parts.push(unlockForm(error));
+    }
+    section.replaceChildren(...parts);
+  }
+
   async function renderIntegrations(section = integrationsSection) {
     if (!section) return;
     integrationsSection = section;
     const cfg = deps.config();
     shell()?.refresh('server');
-    if (!cfg.admin_enabled) {
-      try { await loadCatalog(); } catch { /* the help is shown without the list */ }
-      const card = el('div', 'cedar-set-unlock-card');
-      card.append(setupHelp());
-      section.replaceChildren(card);
-      return;
-    }
-    if (!unlocked()) {
-      section.replaceChildren(unlockForm());
+    if (!cfg.admin_enabled || !unlocked()) {
+      await lockedView(section);
       return;
     }
     section.replaceChildren(note(tr('settings.loading')));
@@ -535,7 +565,7 @@ const cedarSettings = (() => {
       if (e.status === 403) {
         setAdminToken('');
         shell()?.refresh('server');
-        section.replaceChildren(unlockForm(e.message));
+        await lockedView(section, e.message);
       } else {
         section.replaceChildren(note(e.message, 'cedar-set-error'));
       }
@@ -545,17 +575,7 @@ const cedarSettings = (() => {
     if (!status.storage) {
       parts.push(note(tr('settings.server.noStorage')));
     }
-    const block = (title, ...children) => {
-      const b = el('div', 'cedar-set-block');
-      const head = el('div', 'cedar-set-block-head');
-      head.append(el('span', 'settings-eyebrow', title));
-      b.append(head, ...children);
-      return b;
-    };
-    const models = await modelsBlock(status);
-    const modelsBlockEl = block(tr('settings.server.models'), models.wrap);
-    modelsBlockEl.querySelector('.cedar-set-block-head').append(models.add);
-    parts.push(modelsBlockEl, block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
+    parts.push(await modelsSection(status), block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
     const tools = await personalToolsBlock();
     if (tools) parts.push(block(tr('settings.server.personalTools'), tools));
     const market = await marketplaceBlock();
@@ -775,7 +795,7 @@ const cedarSettings = (() => {
   /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
   function setupHelp() {
     const wrap = el('div', 'cedar-set-help');
-    wrap.append(note(tr('settings.setup.intro')));
+    wrap.append(note(tr(modelsOpen() ? 'settings.setup.introModelsOpen' : 'settings.setup.intro')));
     const list = el('ul');
     const item = (code, text) => {
       const li = el('li');
@@ -787,7 +807,7 @@ const cedarSettings = (() => {
     item('CEDAR_ADMIN_KEYS', tr('settings.setup.adminKeys'));
     wrap.append(list);
     wrap.append(note(tr('settings.setup.where')));
-    if (cedarModels.loaded() && !cedarModels.all().length) {
+    if (!modelsOpen() && cedarModels.loaded() && !cedarModels.all().length) {
       wrap.append(note(tr('settings.setup.noModel'), 'cedar-set-error'));
     }
     const missing = groups().filter((g) => !g.available);
@@ -820,8 +840,8 @@ const cedarSettings = (() => {
       refreshTools();
     });
     const wrap = el('div', 'cedar-set-unlock-card');
-    wrap.append(note(tr('settings.unlock.intro')));
-    if (cedarModels.loaded() && !cedarModels.all().length) {
+    wrap.append(note(tr(modelsOpen() ? 'settings.unlock.introModelsOpen' : 'settings.unlock.intro')));
+    if (!modelsOpen() && cedarModels.loaded() && !cedarModels.all().length) {
       wrap.append(note(tr('settings.unlock.noModel'), 'cedar-set-error'));
     }
     if (error) wrap.append(note(error, 'cedar-set-error'));
@@ -857,13 +877,15 @@ const cedarSettings = (() => {
   async function modelsBlock(status) {
     const wrap = el('div', 'cedar-set-models');
     let entries;
+    let storage;
     try {
-      ({ models: entries } = await adminApi('GET', '/integrations/models'));
+      ({ models: entries, storage } = await adminApi('GET', '/integrations/models'));
     } catch (e) {
       wrap.append(note(tr('settings.models.listFailed', { error: e.message }), 'cedar-set-error'));
       return { wrap, add: el('span') };
     }
     entries = entries || [];
+    status = status || { storage: Boolean(storage) };
     // The button sits in the block's heading, so it is in view however long the list is. The form
     // it opens goes right under the intro, above the first entry.
     const intro = entries.length

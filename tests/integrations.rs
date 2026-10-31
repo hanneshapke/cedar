@@ -1126,8 +1126,8 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
     assert_eq!(status["models"], 0);
     assert_eq!(
-        app.get("/v1/admin/models", KEY_B).await.1,
-        json!({ "models": [] })
+        app.get("/v1/admin/models", KEY_B).await.1["models"],
+        json!([])
     );
     assert_eq!(
         app.get("/v1/models", KEY_A).await.1,
@@ -1311,8 +1311,8 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         .await;
     assert_eq!(code, StatusCode::NOT_FOUND);
     assert_eq!(
-        app.get("/v1/admin/models", KEY_B).await.1,
-        json!({ "models": [] })
+        app.get("/v1/admin/models", KEY_B).await.1["models"],
+        json!([])
     );
     assert!(!app
         .state
@@ -1376,8 +1376,8 @@ async fn an_admin_lists_a_servers_models_before_registering_one() {
         json!({ "base_url": format!("{server_url}/v1"), "models": ["m-1"] })
     );
     assert_eq!(
-        app.get("/v1/admin/models", KEY_B).await.1,
-        json!({ "models": [] })
+        app.get("/v1/admin/models", KEY_B).await.1["models"],
+        json!([])
     );
 
     // A registered model's saved key is used when none is typed.

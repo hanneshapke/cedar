@@ -331,6 +331,9 @@ SANDBOX_NETWORK=bridge
 # (https://<machine>.<tailnet>.ts.net), which the iOS and Android apps and other devices use.
 CHAT_BIND_ADDR=127.0.0.1:3000
 CHAT_ACCESS_TOKEN=$token
+# A personal stack: whoever has the access token (the phone apps, your browser) may add models in
+# Settings -> Server. Set it to "admins" and add a CHAT_ADMIN_TOKEN on a server others use.
+CHAT_MODELS_ACCESS=users
 # auto: serve over Tailscale if it is logged in; on: fail if it can't; off: never.
 TAILSCALE_SERVE=auto
 # ask: offer to install or fix Docker and Tailscale; yes: do it without asking; no: only say so.
