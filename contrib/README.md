@@ -135,8 +135,10 @@ SimHash over the prompts): the one sybil defence that needs no identity. `CONTRI
 ```sh
 # Locally, in memory
 CONTRIB_HMAC_KEY=$(openssl rand -hex 24) cargo run -p cedar-contrib   # listens on 127.0.0.1:8090
-# then, for a cedar-chat on the same machine:
-CHAT_CONTRIBUTIONS_URL=http://127.0.0.1:8090 cargo run -p cedar-chat
+
+# then, for a cedar-chat on the same machine; it needs a cedar behind it and one of its keys
+CEDAR_API_KEYS=devkey cargo run -p cedar                              # see the top-level README
+CEDAR_API_KEY=devkey CHAT_CONTRIBUTIONS_URL=http://127.0.0.1:8090 cargo run -p cedar-chat
 ```
 
 | Variable | Default | Meaning |
