@@ -524,9 +524,12 @@ to them, approvals and denials, how each run ended). Before you see it, the chat
 list out of the system prompt, drops attached files (their bytes and names), replaces the bodies
 of fetched pages with their size and hash, leaves reasoning out, drops identifiers and exact
 times, and replaces emails, phone and account numbers, IP addresses, keys and home-directory names
-with placeholders such as `[EMAIL_1]` (the same for the same value throughout). Every placeholder
-is marked. You can include reasoning or fetched pages for this one conversation, redact any phrase
-you type (`[CUSTOM_n]`), rate each response with a thumb (saved on the turn, sent as its rating),
+with made-up stand-ins of the same shape (`maya.lindqvist@example.net`, `+1 555 0137`,
+`/Users/theo`, `sk-stand1n…`), the same stand-in for the same value throughout the conversation and
+random otherwise, so a trajectory stays coherent and readable rather than full of bracket tokens.
+The bundle lists which values are stand-ins (`redactions`), and the dialog marks each. You can
+include reasoning or fetched pages for this one conversation, redact any phrase you type and say
+what to put in its place (a made-up name reads best; without one, a neutral `redacted-…`), rate each response with a thumb (saved on the turn, sent as its rating),
 and say whether the agent did what you asked. The *Exactly what is sent* tab is the document that
 *Send* posts, byte for byte, and *Download JSON* saves it.
 

@@ -5,9 +5,9 @@
 //
 //   - The review dialog, from the More menu's "Contribute this conversation…" (or "Export for
 //     contribution…" when this server has no corpus to send to). It shows the bundle exactly as
-//     it would be sent (`GET /api/conversations/{id}/contribution`), with every placeholder the
-//     redaction left marked, lets the person include reasoning or fetched pages, redact more
-//     phrases, rate each response, say how it went, download the JSON, and Send: the document in
+//     it would be sent (`GET /api/conversations/{id}/contribution`), with every stand-in the
+//     redaction wrote marked, lets the person include reasoning or fetched pages, redact more
+//     phrases (each by a replacement of their choosing), rate each response, say how it went, download the JSON, and Send: the document in
 //     the "Exactly what is sent" tab is what goes (`POST .../contribution`).
 //   - Settings → Contribute: the one-time choices (license, pseudonym, defaults), the switch
 //     that turns contributing on, and the receipts with Withdraw.
@@ -23,7 +23,6 @@
 // preformatted blocks), plus the few of its own in contrib-view.css.
 
 const cedarContrib = (() => {
-  const PLACEHOLDER = /\[([A-Z]{2,12})_(\d{1,6})\]/g;
   const TABS = ['review', 'raw'];
 
   let deps = null;
@@ -60,18 +59,38 @@ const cedarContrib = (() => {
     return JSON.stringify(value, null, 2);
   }
 
-  /** Text with every `[KIND_n]` placeholder marked. */
+  /** The stand-ins the bundle declares (`redactions`), as one regex over their values, longest
+   *  first, with the kind of each; rebuilt when the bundle changes. */
+  let marker = { source: null, re: null, kinds: new Map() };
+
+  function escapeRe(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function markerFor(bundle) {
+    if (marker.source === bundle) return marker;
+    const kinds = new Map();
+    for (const [kind, values] of Object.entries(bundle?.redactions || {})) for (const v of values || []) kinds.set(v, kind);
+    const values = [...kinds.keys()].sort((a, b) => b.length - a.length);
+    marker = { source: bundle, kinds, re: values.length ? new RegExp(values.map(escapeRe).join('|'), 'g') : null };
+    return marker;
+  }
+
+  /** Text with every stand-in marked (hover for its kind). */
   function marked(text) {
     const frag = document.createDocumentFragment();
+    const str = String(text ?? '');
+    const { re, kinds } = markerFor(current?.shown);
+    if (!re) { frag.append(document.createTextNode(str)); return frag; }
     let at = 0;
-    for (const m of String(text ?? '').matchAll(PLACEHOLDER)) {
-      frag.append(document.createTextNode(text.slice(at, m.index)));
+    for (const m of str.matchAll(re)) {
+      frag.append(document.createTextNode(str.slice(at, m.index)));
       const mark = el('mark', 'cedar-contrib-ph', m[0]);
-      mark.title = m[1];
+      mark.title = kinds.get(m[0]) || '';
       frag.append(mark);
       at = m.index + m[0].length;
     }
-    frag.append(document.createTextNode(String(text ?? '').slice(at)));
+    frag.append(document.createTextNode(str.slice(at)));
     return frag;
   }
 
@@ -123,26 +142,39 @@ const cedarContrib = (() => {
     if (bundle.outcome?.notes) bundle.outcome.notes = f(bundle.outcome.notes);
   }
 
-  /** The server's bundle with the person's own redactions and outcome applied: what Send posts. */
+  /** A neutral stand-in for a phrase the person gives no replacement for. */
+  function neutral() {
+    return `redacted-${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')}`;
+  }
+
+  /** The server's bundle with the person's own redactions and outcome applied: what Send posts.
+   *  Each custom phrase becomes its replacement (or a neutral `redacted-…`), everywhere, and is
+   *  listed under `redactions.CUSTOM` so a reader knows it is a stand-in. */
   function finalBundle() {
     if (!current?.preview) return null;
     const bundle = JSON.parse(JSON.stringify(current.preview.bundle));
     if (current.outcome) bundle.outcome = { result: current.outcome, ...(current.notes.trim() ? { notes: current.notes.trim() } : {}) };
     else delete bundle.outcome;
-    const phrases = current.custom.filter((p) => p.trim());
+    const phrases = current.custom.filter((c) => c.phrase.trim());
     if (phrases.length) {
+      const used = [];
       walkText(bundle, (s) => {
         let out = s;
-        phrases.forEach((p, i) => { if (out.includes(p)) out = out.split(p).join(`[CUSTOM_${i + 1}]`); });
+        for (const c of phrases) {
+          if (!out.includes(c.phrase)) continue;
+          out = out.split(c.phrase).join(c.replacement);
+          if (!used.includes(c.replacement)) used.push(c.replacement);
+        }
         return out;
       });
-      bundle.redactions = { ...(bundle.redactions || {}), CUSTOM: phrases.length };
+      if (used.length) bundle.redactions = { ...(bundle.redactions || {}), CUSTOM: [...(bundle.redactions?.CUSTOM || []), ...used] };
     }
+    current.shown = bundle;
     return bundle;
   }
 
   function counts(bundle) {
-    return Object.values(bundle?.redactions || {}).reduce((n, v) => n + v, 0);
+    return Object.values(bundle?.redactions || {}).reduce((n, v) => n + (v?.length || 0), 0);
   }
 
   // -- the dialog --------------------------------------------------------------------------------
@@ -281,28 +313,34 @@ const cedarContrib = (() => {
     }
     out.push(options);
 
-    // Redact more.
+    // Redact more: a phrase, and what to put in its place (a made-up name reads better in
+    // training data than a bracket; without one, a neutral `redacted-…`).
     const redact = el('div', 'cedar-contrib-redact');
     const label = el('label', 'cedar-trace-label', tr('contrib.redact.label'));
     const input = el('input', 'cedar-contrib-input');
     input.type = 'text';
     input.placeholder = tr('contrib.redact.placeholder');
     input.setAttribute('aria-label', tr('contrib.redact.label'));
+    const repl = el('input', 'cedar-contrib-input');
+    repl.type = 'text';
+    repl.placeholder = tr('contrib.redact.replacement');
+    repl.setAttribute('aria-label', tr('contrib.redact.replacement'));
     const add = () => {
       const phrase = input.value.trim();
-      if (phrase.length < 2 || current.custom.includes(phrase)) return;
-      current.custom.push(phrase);
+      if (phrase.length < 2 || current.custom.some((c) => c.phrase === phrase)) return;
+      current.custom.push({ phrase, replacement: repl.value.trim() || neutral() });
       input.value = '';
+      repl.value = '';
       render();
     };
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
-    redact.append(label, input, btn(tr('contrib.redact.add'), add, 'cedar-trace-btn small'));
-    for (const [i, phrase] of current.custom.entries()) {
-      const c = chip(`[CUSTOM_${i + 1}] = ${phrase}`, 'accent');
+    for (const i of [input, repl]) i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    redact.append(label, input, repl, btn(tr('contrib.redact.add'), add, 'cedar-trace-btn small'));
+    for (const [i, c] of current.custom.entries()) {
+      const chipEl = chip(`${c.phrase} → ${c.replacement}`, 'accent');
       const x = btn('×', () => { current.custom.splice(i, 1); render(); }, 'cedar-contrib-x');
       x.setAttribute('aria-label', tr('contrib.redact.remove'));
-      c.append(' ', x);
-      redact.append(c);
+      chipEl.append(' ', x);
+      redact.append(chipEl);
     }
     out.push(redact);
 

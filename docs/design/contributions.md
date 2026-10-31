@@ -94,10 +94,16 @@ passes, each adding marks that the next can see:
    `ghp_`, `xox`, AWS `AKIA`, JWTs, high-entropy strings in `KEY=`/`Authorization:` positions),
    email addresses, phone numbers, IBANs and card numbers, IP addresses, URLs with query tokens,
    home directory paths (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`), and the server's own
-   hostnames. Each becomes a typed placeholder: `[EMAIL_1]`, `[KEY_1]`, `[PATH_1]`, consistent
-   within the thread so the trajectory still makes sense. Anything the scan flags as a **secret**
-   blocks sending until the person confirms the replacement or edits it; secrets are not something
-   to ship as `[KEY_1]` and hope.
+   hostnames. Each becomes a **synthetic stand-in of the same shape**, not a bracket token: an
+   address at `example.com`, a number in the fictional 555-01xx block, an IP address from the
+   documentation ranges, an invented first name in the path, a key-shaped string whose body says
+   it is a stand-in. The same value gets the same stand-in throughout the thread, so the trajectory
+   stays coherent and executable-looking, and a model trained on it learns the shape of real data
+   rather than to emit `[EMAIL_1]`. Stand-ins come from a seed that is random per bundle and are
+   never derived from the value (a hash of an email is a fingerprint: emails are guessable, and it
+   would link one person's bundles to each other). The bundle lists which values are stand-ins
+   (`redactions`), so a reader and a trainer can tell. Anything the scan flags as a **secret** is
+   replaced the same way, and a real secret left in the text blocks sending.
 3. **Model pass** (on by default, skippable): one call to the person's own registered model, with no
    tools and no sandbox, asking for a list of spans that name a person, an employer, an address, a
    project name or anything else that identifies the author, plus a one-line reason each. The
@@ -246,7 +252,7 @@ Keep the ingest as dumb as possible so there is little to trust.
       "day": "2026-10-31"
     }
   ],
-  "redactions": {"EMAIL": 2, "PATH": 1, "KEY": 0, "model_spans": 3},
+  "redactions": {"EMAIL": ["maya.lindqvist@example.net", "theo.okafor@example.org"], "USER": ["maya"], "CUSTOM": ["Springfield"]},
   "dropped": {"attachments": 2, "memory": true, "fetched_bodies": 4}
 }
 ```

@@ -4,10 +4,8 @@
 //! a careful forger can still pass is the screener's and the release job's business.
 
 use crate::{Bundle, License, CANARY, SCHEMA_VERSION};
-use regex::Regex;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
-use std::sync::OnceLock;
+use std::collections::HashSet;
 
 /// The bundle limits both sides agree on.
 #[derive(Debug, Clone, Copy)]
@@ -66,11 +64,8 @@ fn problem(code: Code, detail: impl Into<String>) -> Problem {
     Problem { code, detail: detail.into() }
 }
 
-/// The placeholders a redaction leaves: `[KIND_n]`.
-pub fn placeholder_regex() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\[([A-Z]{2,12})_(\d{1,6})\]").unwrap())
-}
+/// The kinds a bundle's `redactions` may list.
+pub const REDACTION_KINDS: [&str; 10] = ["EMAIL", "PHONE", "IBAN", "CARD", "IP", "USER", "FILE", "KEY", "TOKEN", "CUSTOM"];
 
 /// Check `bundle` against `limits`; every problem found, or none.
 pub fn validate(bundle: &Bundle, limits: &Limits) -> Vec<Problem> {
@@ -162,7 +157,7 @@ pub fn validate(bundle: &Bundle, limits: &Limits) -> Vec<Problem> {
         check_calls(turn, &at, &mut out);
         check_events(turn, &at, &mut out);
     }
-    check_placeholders(bundle, &mut out);
+    check_redactions(bundle, &mut out);
     out
 }
 
@@ -312,29 +307,28 @@ fn check_events(turn: &crate::Turn, at: &str, out: &mut Vec<Problem>) {
     }
 }
 
-/// `[KIND_n]` placeholders are numbered 1..=n per kind, and `redactions` says so.
-fn check_placeholders(bundle: &Bundle, out: &mut Vec<Problem>) {
-    let mut seen: BTreeMap<String, HashSet<u32>> = BTreeMap::new();
+/// `redactions` lists known kinds, and every stand-in it declares occurs in the text (a declared
+/// stand-in that isn't there would be a way to whitelist a real key).
+fn check_redactions(bundle: &Bundle, out: &mut Vec<Problem>) {
+    let mut text = String::new();
     let mut copy = bundle.clone();
     crate::walk_bundle_text(&mut copy, &mut |s| {
-        for cap in placeholder_regex().captures_iter(s) {
-            let n: u32 = cap[2].parse().unwrap_or(0);
-            seen.entry(cap[1].to_string()).or_default().insert(n);
-        }
+        text.push_str(s);
+        text.push('\n');
     });
-    for (kind, numbers) in &seen {
-        let max = numbers.iter().copied().max().unwrap_or(0);
-        let dense = max as usize == numbers.len() && !numbers.contains(&0);
-        if !dense {
-            out.push(problem(Code::NotConsistent, format!("placeholders [{kind}_n] are not numbered 1 to {max}")));
+    for (kind, values) in &bundle.redactions {
+        if !REDACTION_KINDS.contains(&kind.as_str()) {
+            out.push(problem(Code::Schema, format!("redactions kind {kind:?} is not one of {}", REDACTION_KINDS.join(", "))));
         }
-        if bundle.redactions.get(kind).copied() != Some(max) {
-            out.push(problem(Code::NotConsistent, format!("redactions says {:?} for {kind}, the text has {max}", bundle.redactions.get(kind))));
+        if values.len() > 1000 {
+            out.push(problem(Code::TooLarge, format!("redactions lists {} {kind} values; at most 1000", values.len())));
         }
-    }
-    for (kind, count) in &bundle.redactions {
-        if !seen.contains_key(kind) && *count > 0 {
-            out.push(problem(Code::NotConsistent, format!("redactions lists {kind} but no [{kind}_n] occurs")));
+        for v in values {
+            if v.is_empty() || v.len() > 200 {
+                out.push(problem(Code::Schema, format!("a {kind} stand-in must be 1 to 200 bytes")));
+            } else if !text.contains(v.as_str()) {
+                out.push(problem(Code::NotConsistent, format!("redactions lists {kind} stand-in {v:?}, which the text doesn't contain")));
+            }
         }
     }
 }
@@ -426,15 +420,16 @@ mod tests {
     }
 
     #[test]
-    fn placeholders_are_numbered_densely_and_counted() {
+    fn declared_stand_ins_must_be_known_kinds_and_present_in_the_text() {
         let mut b = bundle();
-        b.turns[0].prompt = "mail [EMAIL_1] and [EMAIL_3]".into();
-        b.redactions.insert("EMAIL".into(), 3);
-        assert!(validate(&b, &Limits::default()).iter().any(|p| p.detail.contains("not numbered 1 to 3")));
-        b.turns[0].prompt = "mail [EMAIL_1] and [EMAIL_2]".into();
-        assert!(validate(&b, &Limits::default()).iter().any(|p| p.detail.contains("redactions says")));
-        b.redactions.insert("EMAIL".into(), 2);
+        b.turns[0].prompt = "mail maya.lindqvist@example.net".into();
+        b.redactions.insert("EMAIL".into(), vec!["maya.lindqvist@example.net".into()]);
         assert_eq!(validate(&b, &Limits::default()), vec![]);
+        b.redactions.insert("EMAIL".into(), vec!["theo.okafor@example.org".into()]);
+        assert!(validate(&b, &Limits::default()).iter().any(|p| p.detail.contains("doesn't contain")));
+        b.redactions.clear();
+        b.redactions.insert("NAME".into(), vec!["x".into()]);
+        assert!(validate(&b, &Limits::default()).iter().any(|p| p.detail.contains("not one of")));
     }
 
     #[test]

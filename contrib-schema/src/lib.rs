@@ -6,11 +6,11 @@
 //!
 //! - [`Bundle`] and its pieces: schema version 1, serialized as JSON.
 //! - [`validate`]: the deterministic consistency checks of the ingest's request path (shape,
-//!   limits, tool-call pairing, call counts, token bands, event order, placeholder numbering).
+//!   limits, tool-call pairing, call counts, token bands, event order, declared stand-ins).
 //!   Both sides run them, so a bundle the chat shows is one the ingest will take.
 //! - [`scan`]: the pattern scan for secrets and personal data, and the [`scan::Redactor`] that
-//!   replaces what it finds with typed placeholders (`[EMAIL_1]`), the same for the same value
-//!   throughout a bundle.
+//!   replaces what it finds with synthetic stand-ins of the same shape (`maya.lindqvist@example.net`),
+//!   the same for the same value throughout a bundle, drawn from a per-bundle random seed.
 //!
 //! Nothing here does I/O.
 
@@ -177,9 +177,11 @@ pub struct Bundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<Outcome>,
     pub turns: Vec<Turn>,
-    /// Placeholders applied, by kind (`EMAIL` → 2 means `[EMAIL_1]` and `[EMAIL_2]` occur).
+    /// The synthetic stand-ins in the text, by kind (`EMAIL`, `PHONE`, `IBAN`, `CARD`, `IP`,
+    /// `USER`, `FILE`, `KEY`, `TOKEN`, `CUSTOM`): the values a reader may take for real and
+    /// shouldn't. Never the originals.
     #[serde(default)]
-    pub redactions: BTreeMap<String, u32>,
+    pub redactions: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub dropped: Dropped,
 }

@@ -330,9 +330,9 @@ async fn trace(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::response:
     let prompt = run["prompt"].as_str().unwrap_or_default().to_string();
     let tool = if prompt.contains("EMAIL TOOL") { "gmail_search_threads" } else if prompt.contains("FETCH") { "fetch_url" } else { "bash" };
     let note = "You don't remember anything about this user from earlier conversations yet. Use remember to save facts.";
-    let system = format!("You are helpful. The user is hannes@example.org.\n\n{note}");
+    let system = format!("You are helpful. The user is hannes@northwind.io.\n\n{note}");
     let memory_start = system.len() - note.len() - 2;
-    let result = if tool == "fetch_url" { "<html>The page, with ana@example.org on it</html>" } else { "a.txt\nb.txt\n" };
+    let result = if tool == "fetch_url" { "<html>The page, with ana@northwind.io on it</html>" } else { "a.txt\nb.txt\n" };
     let messages = json!([
         { "seq": 1, "role": "user", "content": [{ "type": "text", "text": prompt }] },
         { "seq": 2, "role": "assistant", "content": [{ "type": "tool_use", "id": "t1", "name": tool, "input": { "command": "ls /Users/hannes" } }] },
@@ -351,7 +351,7 @@ async fn trace(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::response:
         "messages": messages,
         "calls": [
             { "seq": 1, "turn": 1, "purpose": "agent", "request": { "model": "org/model-a", "message_count": 1 },
-              "response": { "stop_reason": "tool_use", "usage": { "input_tokens": 60, "output_tokens": 20 }, "reasoning": "I should list the files for hannes@example.org." },
+              "response": { "stop_reason": "tool_use", "usage": { "input_tokens": 60, "output_tokens": 20 }, "reasoning": "I should list the files for hannes@northwind.io." },
               "error": null, "started_at": "2026-10-31T10:00:00Z", "duration_ms": 900 },
             { "seq": 2, "turn": 2, "purpose": "agent", "request": { "model": "org/model-a", "message_count": 3 },
               "response": { "stop_reason": "end_turn", "usage": { "input_tokens": 120, "output_tokens": 10 }, "reasoning": null },
@@ -3136,7 +3136,7 @@ async fn contributing_harness() -> Harness {
 #[tokio::test]
 async fn a_contribution_preview_redacts_and_leaves_out_what_the_design_says() {
     let h = contributing_harness().await;
-    let (cid, _) = h.finished_conversation("list my files, I am hannes@example.org, key sk-abcdefghijklmnopqrstuvwxyz", "Two files.").await;
+    let (cid, _) = h.finished_conversation("list my files, I am hannes@northwind.io, key sk-abcdefghijklmnopqrstuvwxyz", "Two files.").await;
     let (status, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
     assert_eq!(status, StatusCode::OK, "{preview}");
     let b = &preview["bundle"];
@@ -3145,13 +3145,20 @@ async fn a_contribution_preview_redacts_and_leaves_out_what_the_design_says() {
     assert_eq!(b["tools"], json!(["bash"]));
     assert_eq!(b["language"], "en");
     let t = &b["turns"][0];
-    // The memory note is cut, the email in the prompt and the system prompt is one placeholder,
-    // the key another, the home directory a third.
-    assert_eq!(t["system"], "You are helpful. The user is [EMAIL_1].");
-    assert_eq!(t["prompt"], "list my files, I am [EMAIL_1], key [KEY_1]");
-    assert_eq!(t["messages"][1]["content"][0]["input"]["command"], "ls /Users/[USER_1]");
+    // The memory note is cut; the email in the prompt and the system prompt is one synthetic
+    // address, the key a key-shaped stand-in, the home directory an invented name, and the
+    // bundle lists the three so a reader knows they are stand-ins.
+    let email = b["redactions"]["EMAIL"][0].as_str().unwrap();
+    let key = b["redactions"]["KEY"][0].as_str().unwrap();
+    let user = b["redactions"]["USER"][0].as_str().unwrap();
+    assert!(email.ends_with("@example.com") || email.ends_with("@example.net") || email.ends_with("@example.org"), "{email}");
+    assert!(key.starts_with("sk-stand1n"), "{key}");
+    assert!(user.chars().all(|c| c.is_ascii_lowercase()), "{user}");
+    assert_eq!(t["system"], format!("You are helpful. The user is {email}."));
+    assert_eq!(t["prompt"], format!("list my files, I am {email}, key {key}"));
+    assert_eq!(t["messages"][1]["content"][0]["input"]["command"], format!("ls /Users/{user}"));
     assert_eq!(t["messages"][0]["content"][0]["text"], t["prompt"]);
-    assert_eq!(b["redactions"], json!({ "EMAIL": 1, "KEY": 1, "USER": 1 }));
+    assert_eq!(b["redactions"].as_object().unwrap().len(), 3);
     assert_eq!(b["dropped"]["memory"], true);
     assert_eq!(b["dropped"]["reasoning"], 1);
     assert!(t["calls"][0].get("reasoning").is_none(), "{}", t["calls"][0]);
@@ -3167,7 +3174,8 @@ async fn a_contribution_preview_redacts_and_leaves_out_what_the_design_says() {
 
     // Reasoning comes along when asked for, redacted too.
     let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution?reasoning=true"), None).await;
-    assert_eq!(preview["bundle"]["turns"][0]["calls"][0]["reasoning"], "I should list the files for [EMAIL_1].");
+    let email = preview["bundle"]["redactions"]["EMAIL"][0].as_str().unwrap();
+    assert_eq!(preview["bundle"]["turns"][0]["calls"][0]["reasoning"], format!("I should list the files for {email}."));
     assert_eq!(preview["bundle"]["dropped"]["reasoning"], 0);
 }
 
@@ -3178,11 +3186,12 @@ async fn fetched_bodies_are_stubbed_and_private_tools_block_a_contribution() {
     let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
     let result = &preview["bundle"]["turns"][0]["messages"][2]["content"][0];
     let stub = result["content"].as_str().unwrap();
-    assert!(stub.starts_with("[FETCHED BODY LEFT OUT: 49 bytes, sha256 "), "{stub}");
+    assert!(stub.starts_with("[FETCHED BODY LEFT OUT: 50 bytes, sha256 "), "{stub}");
     assert_eq!(preview["bundle"]["dropped"]["fetched_bodies"], 1);
     assert_eq!(preview["blocked"], json!([]));
     let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution?fetched=true"), None).await;
-    assert_eq!(preview["bundle"]["turns"][0]["messages"][2]["content"][0]["content"], "<html>The page, with [EMAIL_2] on it</html>");
+    let page_email = preview["bundle"]["redactions"]["EMAIL"][1].as_str().unwrap();
+    assert_eq!(preview["bundle"]["turns"][0]["messages"][2]["content"][0]["content"], format!("<html>The page, with {page_email} on it</html>"));
 
     let (cid, _) = h.finished_conversation("EMAIL TOOL: find the invoice", "Found it.").await;
     let (_, preview) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;

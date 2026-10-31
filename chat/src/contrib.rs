@@ -8,7 +8,8 @@
 //!    left out (unless chosen), run and conversation ids and times go, events are reduced to
 //!    what trains (plans, approvals, how the run ended).
 //! 2. The **pattern scan** of `cedar_contrib_schema::scan` replaces keys, emails, phone and
-//!    account numbers, IP addresses and home directories with placeholders.
+//!    account numbers, IP addresses and home directories with synthetic stand-ins of the same
+//!    shape, consistent within the bundle and drawn from a seed that is random per preview.
 //! 3. The **consistency checks** both sides run, and a second look for secrets: a bundle that
 //!    fails either is shown with its problems and cannot be sent.
 //!
@@ -178,7 +179,7 @@ pub async fn preview(state: &AppState, conversation: &Conversation, opts: Option
             model = Some(ModelInfo { id: id.into(), name: name.into(), reasoning: run["reasoning"].as_str().map(String::from) });
         }
         for a in &turn.attachments {
-            redactor.redact_exact(Kind::File, &a.name, false);
+            redactor.redact_exact(Kind::File, &a.name);
             dropped.attachments += 1;
         }
         let (system, cut) = without_memory(trace["system"].as_str().unwrap_or_default(), trace.get("memory_note"));
@@ -308,7 +309,7 @@ pub async fn preview(state: &AppState, conversation: &Conversation, opts: Option
     cedar_contrib_schema::walk_bundle_text(&mut bundle, &mut |s| {
         redactor.redact(s);
     });
-    bundle.redactions = redactor.counts();
+    bundle.redactions = redactor.surrogates();
 
     let secrets = scan::secrets_in(&bundle);
     if !secrets.is_empty() {
