@@ -459,7 +459,7 @@ for what it does, where it keeps its files on each platform, and how releases ar
 
 ## iOS app
 
-`iOS/` holds a native SwiftUI app for iPhone and iPad. It is a thin client for cedar-chat's API, so
+`iOS/` holds a native SwiftUI app for iPhone, iPad and iPhone Duo (folded and unfolded). It is a thin client for cedar-chat's API, so
 the phone and the browser share the same conversations, unread marks, settings and notifications:
 live tool calls, the agent's images, its clarifying questions and approval prompts, and push
 notifications through APNs when a response ends while you are away. Open `iOS/Cedar.xcodeproj`

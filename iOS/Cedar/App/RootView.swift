@@ -19,9 +19,19 @@ struct RootView: View {
     }
 
     private var main: some View {
+        // The canvas, not the screen: on a foldable or in a window the two differ, and the canvas
+        // can change size while the app runs. A nearly square regular canvas is an unfolded
+        // book-style device, and the divider goes on its fold (see FoldLayout).
+        return GeometryReader { geo in
+            split(sidebarWidth: FoldLayout.sidebarWidth(for: geo.size))
+        }
+    }
+
+    private func split(sidebarWidth: CGFloat?) -> some View {
         @Bindable var app = app
         return NavigationSplitView(preferredCompactColumn: $app.compactColumn) {
             ConversationListView()
+                .splitColumnWidth(sidebarWidth)
         } detail: {
             if let selection = app.selection {
                 let chat = app.chat(for: selection)
@@ -52,10 +62,17 @@ struct RootView: View {
                 .background(Theme.canvas)
             }
         }
+        // The list and the conversation side by side whenever there is room, the same on an iPad,
+        // an unfolded device and a wide window, rather than a list that slides over the conversation.
+        .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $app.showingSettings) {
             SettingsView()
         }
         .onChange(of: app.selection) { _, id in
+            // Which column a compact canvas shows follows the selection, so a conversation opened
+            // on the wide inner display is what the folded outer display shows, and clearing the
+            // selection goes back to the list. In compact width the split view sets this itself.
+            app.compactColumn = id == nil ? .sidebar : .detail
             if let id, app.conversation(id: id) != nil { app.markSeen(conversationId: id) }
         }
         .onChange(of: scenePhase) { _, phase in
