@@ -130,6 +130,21 @@ pseudonym, never text. A month of snapshots is the trend; the design's steady st
 release, a quarterly re-screen (`screen --rescreen --force`, scheduled in the Terraform) and a
 look at these numbers.
 
+## Training on a release
+
+`scripts/train_qwen_rl.py` is a worked example of reinforcement learning on a release with a
+small Qwen model (TRL, PEFT), in two stages. `rft` turns every trajectory into a chat with tool
+calls in Qwen's own format, scores it from the person's outcome and thumbs and how the run ended,
+discounted by the contributor's label weight, and fine-tunes on the good ones (rejection-sampling
+fine-tuning; the best count twice). `grpo` makes tasks of the successful trajectories' prompts and
+runs group-relative policy optimisation on the model's first move, rewarded for well-formed tool
+calls against the task's tool definitions, a judge's comparison with the contributed answer
+(`CONTRIB_JUDGE_URL`, as the screener's), and a safety penalty from the screener's destructive
+and exfiltration patterns. It honours the manifest's exclusion list, takes only the licenses
+named, keeps the canary in every sample, and `--dry-run` shows the converted data without a GPU.
+A whole episode, with the tools running, is what cedar-bench's hermetic stack is for; the
+`sandbox_only` tag marks the trajectories that can be replayed there (`--only-sandbox`).
+
 ## Storage
 
 Everything is objects in one bucket (`CONTRIB_BUCKET`), so there is no database to run:
