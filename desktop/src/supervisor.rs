@@ -309,8 +309,6 @@ impl Runner {
             ("CHAT_ACCESS_TOKEN", cfg.secrets.chat_access_token.clone()),
             // Lets Settings manage cedar's models and integrations; the window seeds the token.
             ("CHAT_ADMIN_TOKEN", cfg.secrets.chat_admin_token.clone()),
-            // One person's Cedar: the phones and any browser with the access token may add models too.
-            ("CHAT_MODELS_ACCESS", "users".to_string()),
             ("PATH", self.docker.path_env.clone()),
             ("CEDAR_EXIT_ON_STDIN_EOF", "1".to_string()),
             // The app updates itself, servers and all (update.rs); the chat's banner shows its state.

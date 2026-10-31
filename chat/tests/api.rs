@@ -970,7 +970,7 @@ async fn validation_and_upstream_errors() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
-    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "admins", "memory": true }));
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "users", "memory": true }));
     // The pickers take cedar's registry, relayed.
     let (status, listed) = h.json(Method::GET, "/api/models", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1858,14 +1858,16 @@ async fn admin_call(h: &Harness, method: Method, uri: &str, admin: Option<&str>,
 
 #[tokio::test]
 async fn integrations_need_the_admin_token() {
-    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access")]).await;
+    // CHAT_MODELS_ACCESS=admins: the models need the admin token like everything else here.
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_MODELS_ACCESS", "admins")]).await;
     let (status, err) = admin_call(&h, Method::GET, "/api/integrations", Some("anything"), None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(err["error"]["message"].as_str().unwrap().contains("CHAT_ADMIN_TOKEN"));
 
-    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_PUBLIC_URL", "https://chat.example")]).await;
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_MODELS_ACCESS", "admins"), ("CHAT_PUBLIC_URL", "https://chat.example")]).await;
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
     assert_eq!(cfg["admin_enabled"], true);
+    assert_eq!(cfg["models_access"], "admins");
     for admin in [None, Some("wrong")] {
         let (status, _) = admin_call(&h, Method::GET, "/api/integrations", admin, None).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -1954,10 +1956,10 @@ async fn integrations_need_the_admin_token() {
 }
 
 #[tokio::test]
-async fn models_can_be_opened_to_everyone_with_the_access_token() {
-    // CHAT_MODELS_ACCESS=users: the model routes take the access token alone, with or without an
-    // admin token on the server. The rest of Settings -> Server stays with admins.
-    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_MODELS_ACCESS", "users")]).await;
+async fn models_are_open_to_everyone_with_the_access_token() {
+    // By default the model routes take the access token alone, with or without an admin token on
+    // the server. The rest of Settings -> Server stays with admins.
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access")]).await;
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
     assert_eq!(cfg["admin_enabled"], false);
     assert_eq!(cfg["models_access"], "users");
@@ -1985,8 +1987,8 @@ async fn models_can_be_opened_to_everyone_with_the_access_token() {
     let routes: Vec<String> = h.cedar.admin_calls.lock().unwrap().iter().map(|(r, _)| r.clone()).collect();
     assert_eq!(routes, ["get_models", "server_models", "put_model:gpu", "delete_model:gpu"]);
 
-    // The default keeps today's rule: no admin token, no models.
-    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access")]).await;
+    // CHAT_MODELS_ACCESS=admins, for a server several people use: no admin token, no models.
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_MODELS_ACCESS", "admins")]).await;
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
     assert_eq!(cfg["models_access"], "admins");
     let (status, _) = admin_call(&h, Method::GET, "/api/integrations/models", None, None).await;

@@ -489,8 +489,8 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
     Json(json!({
         "auth_required": state.token_digest.is_some(),
         "admin_enabled": state.admin_digest.is_some(),
-        // Whether the models in Settings -> Server need the admin token ("admins") or are open to
-        // everyone with the access token ("users", CHAT_MODELS_ACCESS).
+        // Whether the models in Settings -> Server are open to everyone with the access token
+        // ("users", the default) or need the admin token ("admins", CHAT_MODELS_ACCESS).
         "models_access": state.cfg.models_access.as_str(),
         // This chat server has the /api/memory routes (whether cedar has memory is in their answer).
         "memory": true,
@@ -1541,9 +1541,9 @@ fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> 
     }
 }
 
-/// The model routes: with `CHAT_MODELS_ACCESS=users` the access token is enough (a personal
-/// setup, where whoever chats also picks the models); otherwise they need the admin token like
-/// the rest of Settings -> Server.
+/// The model routes: by default the access token is enough (a personal setup, where whoever chats
+/// also picks the models); with `CHAT_MODELS_ACCESS=admins` they need the admin token like the
+/// rest of Settings -> Server.
 fn require_models_access(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
     match state.cfg.models_access {
         ModelsAccess::Users => Ok(()),

@@ -212,9 +212,9 @@ CHAT_BIND_ADDR=127.0.0.1:3000
 CHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db
 CHAT_ACCESS_TOKEN=$CHAT_TOKEN
 CHAT_ADMIN_TOKEN=$ADMIN_TOKEN
-# Models need the admin token (the default). On a server only you use, CHAT_MODELS_ACCESS=users lets
-# everyone with the access token add models; API keys and the Google account stay with the admin token.
-# CHAT_MODELS_ACCESS=admins
+# Models need the admin token too. Without this line everyone with the access token may add
+# models, which suits a server only you use; API keys and the Google account always need the admin token.
+CHAT_MODELS_ACCESS=admins
 EOF
 
 sudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env   # systemd reads them as root

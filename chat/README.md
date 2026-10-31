@@ -267,7 +267,7 @@ remove the tool.
 | `CHAT_DATABASE_URL` | `sqlite://cedar-chat.db` | Conversation storage |
 | `CHAT_ACCESS_TOKEN` | unset | If set, the page asks for this token and the API requires it |
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
-| `CHAT_MODELS_ACCESS` | `admins` | Who may add, change and remove [the models](#models): `admins` (the admin token) or `users` (everyone the access token lets in; the desktop app and `scripts/cedar-stack.sh` set this). API keys and the Google account stay with admins either way |
+| `CHAT_MODELS_ACCESS` | `users` | Who may add, change and remove [the models](#models): `users` (everyone the access token lets in) or `admins` (the admin token; set this on a server several people use). API keys and the Google account stay with admins either way |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
@@ -547,11 +547,12 @@ encrypted, and take effect on the next message without a restart. This needs thi
 a secret; see [Models](../README.md#models) and [Integrations](../README.md#integrations). Keys set
 in cedar's environment are shown as "Managed by environment" and can't be changed here.
 
-On a personal setup, where whoever chats also picks the models, `CHAT_MODELS_ACCESS=users` opens the
-**Models** block to everyone with the access token, admin token or not: the page, the phone apps and
-any browser can add a server and its model. The API keys, the Google account, the server settings
-and the personal tools still need the admin token. The desktop app and `scripts/cedar-stack.sh` set
-it; a server several people use should leave it at `admins`, the default.
+The **Models** block is the exception: by default (`CHAT_MODELS_ACCESS=users`) it is open to everyone
+with the access token, admin token or not, since on a personal setup whoever chats also picks the
+models: the page, the phone apps and any browser can add a server and its model. The API keys, the
+Google account, the server settings and the personal tools still need the admin token. On a server
+several people use, set `CHAT_MODELS_ACCESS=admins` so the models need it too, as
+[DEPLOYMENT.md](../DEPLOYMENT.md) does.
 
 With cedar's `TOOLS_DIR` set, the page also lists the **Personal tools**: each one's source (local
 or community), version, what it asks for (internet hosts, secrets, packages, health data), and a
