@@ -168,3 +168,180 @@ resource "google_logging_project_exclusion" "no_request_logs" {
 # Data-access audit logs for Storage would record every object read with a principal; they are
 # off by default and must stay off. (There is no resource to assert a default; the README's
 # checklist covers it.)
+
+# -- the jobs: screener every 15 minutes, release monthly -----------------------------------
+#
+# Both run the same image with a subcommand. The screener needs the judge's address and key
+# when one is used; the release job the manifest-signing key. Cloud Scheduler starts them
+# through the Run Admin API with the scheduler's own service account.
+
+resource "google_project_service" "jobs_apis" {
+  for_each           = toset(["cloudscheduler.googleapis.com"])
+  service            = each.value
+  disable_on_destroy = false
+}
+
+resource "google_secret_manager_secret" "release" {
+  secret_id = "contrib-release-key"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "random_password" "release" {
+  length  = 48
+  special = false
+}
+
+resource "google_secret_manager_secret_version" "release" {
+  secret      = google_secret_manager_secret.release.id
+  secret_data = random_password.release.result
+}
+
+resource "google_secret_manager_secret_iam_member" "api_reads_release" {
+  secret_id = google_secret_manager_secret.release.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api.email}"
+}
+
+locals {
+  job_env = {
+    CONTRIB_BUCKET     = google_storage_bucket.quarantine.name
+    CONTRIB_MODELS     = join(",", var.models)
+    CONTRIB_JUDGE_URL  = var.judge_url
+    CONTRIB_JUDGE_MODEL = var.judge_model
+    CONTRIB_AGING_DAYS = tostring(var.aging_days)
+  }
+}
+
+resource "google_cloud_run_v2_job" "screener" {
+  name     = "contrib-screener"
+  location = var.region
+  template {
+    template {
+      service_account = google_service_account.api.email
+      timeout         = "1200s"
+      max_retries     = 1
+      containers {
+        image = var.image
+        args  = ["screen"]
+        resources {
+          limits = { cpu = "1", memory = "1Gi" }
+        }
+        dynamic "env" {
+          for_each = local.job_env
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+        env {
+          name = "CONTRIB_HMAC_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.hmac.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+    }
+  }
+  depends_on = [google_secret_manager_secret_iam_member.api_reads_hmac]
+}
+
+resource "google_cloud_run_v2_job" "release" {
+  name     = "contrib-release"
+  location = var.region
+  template {
+    template {
+      service_account = google_service_account.api.email
+      timeout         = "3600s"
+      max_retries     = 0
+      containers {
+        image = var.image
+        args  = ["release"]
+        resources {
+          limits = { cpu = "2", memory = "4Gi" }
+        }
+        dynamic "env" {
+          for_each = local.job_env
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+        env {
+          name = "CONTRIB_HMAC_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.hmac.secret_id
+              version = "latest"
+            }
+          }
+        }
+        env {
+          name = "CONTRIB_RELEASE_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.release.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+    }
+  }
+  depends_on = [google_secret_manager_secret_iam_member.api_reads_release]
+}
+
+resource "google_service_account" "scheduler" {
+  account_id   = "contrib-scheduler"
+  display_name = "starts the cedar-contrib jobs"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "scheduler_runs_screener" {
+  name     = google_cloud_run_v2_job.screener.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler.email}"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "scheduler_runs_release" {
+  name     = google_cloud_run_v2_job.release.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler.email}"
+}
+
+resource "google_cloud_scheduler_job" "screener" {
+  name      = "contrib-screener"
+  region    = var.region
+  schedule  = "*/15 * * * *"
+  time_zone = "Etc/UTC"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project}/locations/${var.region}/jobs/${google_cloud_run_v2_job.screener.name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+  depends_on = [google_project_service.jobs_apis]
+}
+
+resource "google_cloud_scheduler_job" "release" {
+  name      = "contrib-release"
+  region    = var.region
+  # The 3rd of the month, 04:17 UTC: off the hour, and after the month's aging has settled.
+  schedule  = "17 4 3 * *"
+  time_zone = "Etc/UTC"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project}/locations/${var.region}/jobs/${google_cloud_run_v2_job.release.name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+  depends_on = [google_project_service.jobs_apis]
+}

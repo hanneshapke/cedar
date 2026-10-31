@@ -1,13 +1,19 @@
 # cedar-contrib
 
-The ingest that [cedar-chat](../chat/README.md#contributing-a-conversation) sends contributed
-conversations to. The design is in [docs/design/contributions.md](../docs/design/contributions.md)
-(the client side and the bundle) and
-[docs/design/contrib-ingest-cloud-run.md](../docs/design/contrib-ingest-cloud-run.md) (this
-service, the screener and the release job). This crate is the first of those three: the request
-path. The screener and the release job are not built yet.
+The corpus side of contributed conversations: the ingest that
+[cedar-chat](../chat/README.md#contributing-a-conversation) sends to, the screener that checks
+what came in, the review page for what it held, and the release job that publishes. The design
+is in [docs/design/contributions.md](../docs/design/contributions.md) (the client side and the
+bundle) and [docs/design/contrib-ingest-cloud-run.md](../docs/design/contrib-ingest-cloud-run.md)
+(this crate). One binary, three commands:
 
-## What it does
+```sh
+cedar-contrib                  # serve the ingest (and the review page, with CONTRIB_REVIEW_TOKEN)
+cedar-contrib screen           # screen what is quarantined (every 15 minutes on Cloud Run)
+cedar-contrib release          # build this month's release (monthly, or by hand)
+```
+
+## The ingest
 
 | Route | What it does |
 | --- | --- |
@@ -23,20 +29,96 @@ stored. A stolen token withdraws one contribution and nothing else.
 code. The per-client rate limit hashes the address with a per-process salt and keeps it in memory
 for a minute.
 
+## The screener
+
+`cedar-contrib screen [--batch N] [--rescreen]` takes every `quarantined` bundle (at most
+`CONTRIB_SCREEN_BATCH`, 200) and gives it a verdict, `accepted`, `held` or `rejected`, with
+flags, scores and one note per finding, kept on the receipt and written to the audit log. With
+`--rescreen` it also redoes bundles judged by an older checks version (`screen::CHECKS_VERSION`;
+the release job does this itself). The checks, in cost order:
+
+| Check | Flag | What happens |
+| --- | --- | --- |
+| Near-duplicate: a MinHash signature over the conversation's 5-word shingles, against every other receipt's | `near_duplicate` (another contributor), `resubmission` (the same) | held / rejected |
+| Obfuscation: zero-width and bidi characters, words mixing Latin with Cyrillic or Greek, long base64 or hex runs outside tool results | `obfuscation` | held |
+| Injected instructions in a tool result ("ignore all previous instructions", role markers, "do not tell the user", …) | `injection_present`, then the judge says whether the agent complied | `injection_complied`: rejected; `injection_resisted`: accepted and tagged; no judge: `injection_unjudged`, held |
+| Destructive or exfiltrating commands in tool calls (`rm -rf /`, fork bombs, `mkfs`, piping `~/.ssh` or `.aws` to `curl`, `curl … \| sh`) | `destructive_command`, `exfiltration` | held |
+| Label consistency: the self-reported outcome against the run's own ending and the ratings | `label_disagreement` | held |
+| Flood: ten or more bundles from one pseudonym, half alike on average | `flood` | held |
+| Personal data with a shape that the client's scan should have replaced | `pii` | held |
+| Declared language against a stopword count; conversations too thin to train on | `language`, `thin` | held |
+
+Then the **judge**, when `CONTRIB_JUDGE_URL` names an OpenAI-compatible chat-completions
+endpoint (`CONTRIB_JUDGE_MODEL`, `CONTRIB_JUDGE_API_KEY`): one call per bundle with a fixed
+rubric (`judge::RUBRIC`), answered in JSON: whether a tool result addressed the agent and whether
+it complied, a harm score (exfiltration, destruction outside the workspace, deception, excluded
+content; `judge_harm` holds), and its own reading of the outcome. Where that reading disagrees
+with the contributor's, the disagreement is counted on the pseudonym's ledger: over time that
+becomes the bundle's `label_weight`. The judge sees the transcript only, never the pseudonym or
+the receipt, and its answer is parsed as numbers.
+
+The regression suite is the red-team set in `src/redteam.rs`: bundles with a known poison each
+(an injection the agent obeys, one it resists, zero-width and mixed-script triggers, a destructive
+command, an exfiltration, a flipped label, missed personal data, a wrong language, a thin thread)
+and the verdict each must get. `tests/screen.rs` runs them; a check that stops catching its case
+fails the build.
+
+## The review page
+
+With `CONTRIB_REVIEW_TOKEN` set, `/review` serves a one-file page to whoever presents the token
+(put IAP in front of it for org accounts; the token is the floor): the held bundles, oldest first,
+with their flags, scores and the screener's notes, the conversation's turns as they are, and
+**Accept** / **Reject**. Reviewers see a contributor only as an 8-character hash of the pseudonym,
+and never a withdraw token. Every decision is an audit line.
+
+## The release job
+
+`cedar-contrib release [--version vYYYY.MM] [--out DIR] [--dry-run]` builds a release:
+
+1. **Eligible** are `accepted` bundles at least `CONTRIB_AGING_DAYS` (14) old whose hash is not on
+   the withdrawn list; any judged by an older checks version is screened again first.
+2. **Clusters**: bundles whose SimHash fingerprints are within 6 bits form a cluster; one of 5 or
+   more that is all one pseudonym, or all unlinked, is held as a set for a reviewer (`cluster`).
+3. **Caps**: no pseudonym over 1% of the release, the unlinked together no more than 20%; over the
+   cap, a stable sample (by the hash of version and bundle) goes and the rest wait.
+4. **Label weights**: each pseudonym's agreement rate (judged vs disagreed on its ledger) is the
+   bundle's `label_weight`; below 0.5, the self-reported outcome is replaced by the judge's where
+   the judge read one, and the bundle tagged `outcome_from_judge`.
+5. **Files**: `releases/<version>/<license>/<model>/bundles.jsonl` (one line per bundle:
+   `{receipt_id, sha256, tags, label_weight, bundle}`), `manifest.json` (every entry with its
+   license, model, language, day, weight, tags and checks version, the caps, and `excluded_sha256`,
+   the withdrawn hashes a mirror must honour) and `manifest.sig` (HMAC-SHA256 with
+   `CONTRIB_RELEASE_KEY`; `release::verify` checks it; a KMS signature can replace it without
+   changing the format). Tags: `sandbox_only` (only sandbox tools were called, so the trajectory
+   can be replayed in cedar-bench), `injection_resisted`, `plan_edited`, `approval_denied`.
+
+Released bundles get `status: released` and the version in `released_in`, which the person's
+status route shows. `--out DIR` also writes the files to disk; `scripts/publish.sh` then mirrors a
+release to a Hugging Face dataset (squashing its history afterwards, so a withdrawn bundle does not
+linger in an old commit) and a GitHub release with the tarball, its checksum, the manifest and its
+signature. `--dry-run` reports what a release would hold and changes nothing.
+
 ## Storage
 
 Everything is objects in one bucket (`CONTRIB_BUCKET`), so there is no database to run:
 
 ```
-bundles/<yyyy-mm>/<receipt>.json   the bundle as received; status, sha256, pseudonym, day,
-                                   fingerprint in its metadata (the screener and release job
-                                   read and update these)
-receipts/<receipt>.json            what the status route answers from
+bundles/<yyyy-mm>/<receipt>.json   the bundle as received; its status mirrored in the object's
+                                   metadata
+receipts/<receipt>.json            the receipt: status, signature, verdict (flags, scores,
+                                   notes, checks version), tags, label weight, releases
 hashes/<sha256>                    one per stored bundle, created only if new: the dedup
 withdrawn/<sha256>                 the exclusion list for releases
-pseudonyms/<pseudonym>.json        a ledger of days and counts, for the quotas
+pseudonyms/<pseudonym>.json        a ledger of days and counts (quotas), judged and
+                                   disagreed (label trust)
 clusters/<prefix>/<day>/<receipt>  unlinked bundles that look alike, for their quota
+audit/<day>/<receipt>-<ms>.json    one line per decision, by the screener, a reviewer or the
+                                   release job (write-once objects; bucket lock in production)
+releases/<version>/...             what the release job wrote
 ```
+
+The jobs read every receipt (`receipts/` is listed and each object fetched), which is fine for
+the few thousand bundles of the first releases and the point at which Firestore comes in.
 
 Without `CONTRIB_BUCKET` the service keeps all of it in memory, for development.
 
@@ -65,14 +147,21 @@ CHAT_CONTRIBUTIONS_URL=http://127.0.0.1:8090 cargo run -p cedar-chat
 | `CONTRIB_BIND_ADDR` / `PORT` | `127.0.0.1:8090` | Where to listen; Cloud Run sets `PORT` |
 | `CONTRIB_QUOTA_DAY`, `_MONTH`, `_NEW`, `_CLUSTER`, `CONTRIB_IP_PER_MINUTE` | 20, 200, 3, 5, 30 | See Quotas |
 | `CONTRIB_MAX_BUNDLE_BYTES` | 8 MiB | |
+| `CONTRIB_REVIEW_TOKEN` | unset | Serves the review page at `/review` to whoever presents it |
+| `CONTRIB_JUDGE_URL`, `CONTRIB_JUDGE_MODEL`, `CONTRIB_JUDGE_API_KEY` | unset, `judge`, unset | The judge model's chat-completions endpoint; without one, the screener holds injected results for review |
+| `CONTRIB_RELEASE_KEY` | unset | Signs release manifests (HMAC-SHA256) |
+| `CONTRIB_SCREEN_BATCH`, `CONTRIB_AGING_DAYS` | 200, 14 | Bundles per screener run; days an accepted bundle waits before a release |
 | `GOOGLE_OAUTH_ACCESS_TOKEN` | unset | A token for the bucket when not running on Google Cloud (`gcloud auth print-access-token`) |
 
 ## Deploying to Cloud Run
 
 `terraform/` holds the frugal variant of the design: Cloud Run exposed directly, the bucket, a
-service account that can touch only that bucket's objects, the HMAC key in Secret Manager, and
-the logging exclusion that drops Cloud Run's request logs for the service. The load balancer and
-Cloud Armor are not in it; add them when floods are a real problem.
+service account that can touch only that bucket's objects, the HMAC and release keys in Secret
+Manager, the logging exclusion that drops Cloud Run's request logs for the service, and two Cloud
+Run Jobs from the same image, `contrib-screener` (Cloud Scheduler, every 15 minutes) and
+`contrib-release` (the 3rd of each month), started through a scheduler service account that can
+run those jobs and nothing else. `judge_url` and `judge_model` point the screener at a judge. The
+load balancer and Cloud Armor are not in it; add them when floods are a real problem.
 
 ```sh
 # 1. The image
@@ -102,4 +191,6 @@ cargo test -p cedar-contrib
 ```
 
 They drive the router with the in-memory store: a good bundle round trip with withdrawal, the
-refusal codes, the quotas and the rate limit.
+refusal codes, the quotas, the rate limit and the review page; the screener over the red-team
+set, near-duplicates, floods and label trust; and a release with its aging, caps, clusters,
+weights, manifest, signature and exclusion list.

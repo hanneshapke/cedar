@@ -272,6 +272,7 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/compact", post(compact_conversation))
         .route("/conversations/{id}/contribution", get(contribution_preview).post(send_contribution).layer(DefaultBodyLimit::max(MAX_BUNDLE_BODY_BYTES)))
         .route("/contributions", get(list_contributions))
+        .route("/contributions/refresh", post(refresh_contributions))
         .route("/contributions/{id}", axum::routing::delete(withdraw_contribution))
         .route("/settings/contributions", get(get_contribution_settings).put(put_contribution_settings))
         .route("/turns/{id}/rating", put(rate_turn))
@@ -1845,6 +1846,11 @@ struct ContributionList {
 
 async fn list_contributions(State(state): State<AppState>) -> Result<Json<ContributionList>, AppError> {
     Ok(Json(ContributionList { contributions: state.store.list_contributions().await? }))
+}
+
+/// Ask the corpus what became of the contributions (their screening and release status).
+async fn refresh_contributions(State(state): State<AppState>) -> Result<Json<ContributionList>, AppError> {
+    Ok(Json(ContributionList { contributions: contrib::refresh_statuses(&state, 50).await? }))
 }
 
 async fn withdraw_contribution(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Contribution>, AppError> {

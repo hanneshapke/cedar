@@ -28,6 +28,22 @@ pub struct Config {
     pub max_bundle_bytes: usize,
     /// `GOOGLE_OAUTH_ACCESS_TOKEN`: a token for the bucket when not on Google Cloud (development).
     pub access_token: Option<String>,
+    /// `CONTRIB_REVIEW_TOKEN`: with it, the review page is served at `/review` to whoever
+    /// presents it. Without it there is no review page.
+    pub review_token: Option<String>,
+    /// `CONTRIB_JUDGE_URL`, `CONTRIB_JUDGE_MODEL`, `CONTRIB_JUDGE_API_KEY`: an OpenAI-compatible
+    /// chat-completions endpoint the screener asks about trajectories. Without one, the screener
+    /// runs its deterministic checks only and holds what needs a judge.
+    pub judge_url: Option<String>,
+    pub judge_model: String,
+    pub judge_api_key: Option<String>,
+    /// `CONTRIB_RELEASE_KEY`: signs release manifests (HMAC-SHA256). Without it, manifests
+    /// carry no signature.
+    pub release_key: Option<Vec<u8>>,
+    /// `CONTRIB_SCREEN_BATCH`: bundles per screener run.
+    pub screen_batch: usize,
+    /// `CONTRIB_AGING_DAYS`: how long an accepted bundle waits before a release may take it.
+    pub aging_days: u32,
 }
 
 impl Config {
@@ -68,6 +84,13 @@ impl Config {
             ip_per_minute: num("CONTRIB_IP_PER_MINUTE", get("CONTRIB_IP_PER_MINUTE"), 30)?,
             max_bundle_bytes: num("CONTRIB_MAX_BUNDLE_BYTES", get("CONTRIB_MAX_BUNDLE_BYTES"), 8 << 20)? as usize,
             access_token: get("GOOGLE_OAUTH_ACCESS_TOKEN"),
+            review_token: get("CONTRIB_REVIEW_TOKEN"),
+            judge_url: get("CONTRIB_JUDGE_URL").map(|u| u.trim_end_matches('/').to_string()),
+            judge_model: get("CONTRIB_JUDGE_MODEL").unwrap_or_else(|| "judge".into()),
+            judge_api_key: get("CONTRIB_JUDGE_API_KEY"),
+            release_key: get("CONTRIB_RELEASE_KEY").map(String::into_bytes),
+            screen_batch: num("CONTRIB_SCREEN_BATCH", get("CONTRIB_SCREEN_BATCH"), 200)? as usize,
+            aging_days: num("CONTRIB_AGING_DAYS", get("CONTRIB_AGING_DAYS"), 14)?,
         })
     }
 

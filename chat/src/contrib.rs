@@ -452,6 +452,38 @@ pub async fn withdraw(state: &AppState, id: &str) -> Result<Contribution, AppErr
     Ok(state.store.get_contribution(id).await?.expect("still there"))
 }
 
+/// Ask the corpus what became of every contribution not withdrawn (at most `limit`), and
+/// remember the answers. A corpus that no longer knows one is noted as `withdrawn`.
+pub async fn refresh_statuses(state: &AppState, limit: usize) -> Result<Vec<Contribution>, AppError> {
+    let list = state.store.list_contributions().await?;
+    for c in list.iter().filter(|c| c.withdrawn_at.is_none() && c.status.as_deref() != Some("released")).take(limit) {
+        let resp = state
+            .http
+            .get(format!("{}/v1/contributions/{}", c.url, c.id))
+            .bearer_auth(&c.withdraw_token)
+            .timeout(Duration::from_secs(20))
+            .send()
+            .await;
+        match resp {
+            Ok(r) if r.status().is_success() => {
+                let body: Value = r.json().await.unwrap_or(Value::Null);
+                let status = body["status"].as_str().unwrap_or("quarantined").to_string();
+                let released: Vec<String> = body["released_in"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
+                state.store.set_contribution_status(&c.id, &status, &released).await?;
+            }
+            Ok(r) if r.status() == StatusCode::UNAUTHORIZED || r.status() == StatusCode::NOT_FOUND => {
+                state.store.set_contribution_status(&c.id, "unknown", &[]).await?;
+            }
+            Ok(r) => tracing::warn!(id = %c.id, status = %r.status(), "the corpus did not answer about a contribution"),
+            Err(e) => {
+                tracing::warn!(id = %c.id, error = %e, "could not reach the corpus");
+                break;
+            }
+        }
+    }
+    Ok(state.store.list_contributions().await?)
+}
+
 /// The settings page's view of things: the choices, whether this server can send, and where.
 #[derive(Debug, Clone, Serialize)]
 pub struct SettingsView {

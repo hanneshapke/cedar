@@ -579,17 +579,29 @@ const cedarContrib = (() => {
       parts.push(block);
     }
 
-    // Receipts.
+    // Receipts, with what the corpus last said about each (Refresh asks again).
     const rec = el('div', 'cedar-set-block');
-    rec.append(el('span', 'settings-eyebrow', tr('contrib.settings.receipts')));
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', tr('contrib.settings.receipts')));
     const list = receipts?.contributions || [];
+    if (list.some((c) => !c.withdrawn_at) && s.available) {
+      const refresh = btn(tr('contrib.settings.refresh'), async () => {
+        refresh.disabled = true;
+        try { receipts = await deps.api('POST', '/contributions/refresh'); } catch (err) { deps.toast(tr('contrib.settings.loadFailed', { error: err.message })); }
+        drawSettings(section);
+      }, 'settings-ghost');
+      head.append(refresh);
+    }
+    rec.append(head);
     if (!list.length) rec.append(el('p', 'cedar-set-note', tr('contrib.settings.noReceipts')));
     for (const c of list) {
       const row = el('div', 'cedar-set-integration');
       const main = el('div', 'cedar-set-integration-main');
       const when = new Date(c.submitted_at).toLocaleDateString(cedarI18n.locale);
-      main.append(el('strong', '', c.title || tr('contrib.settings.untitled')), el('small', '', `${when} · ${c.license} · ${c.id}`));
+      const released = (c.released_in || []).length ? ` · ${c.released_in.join(', ')}` : '';
+      main.append(el('strong', '', c.title || tr('contrib.settings.untitled')), el('small', '', `${when} · ${c.license} · ${c.id}${released}`));
       const side = el('div', 'cedar-set-integration-side');
+      if (!c.withdrawn_at && c.status) side.append(el('span', `cedar-set-badge${c.status === 'released' ? ' ok' : ''}`, tr(`contrib.status.${c.status}`)));
       if (c.withdrawn_at) side.append(el('span', 'cedar-set-badge', tr('contrib.settings.withdrawn')));
       else side.append(btn(tr('contrib.settings.withdraw'), async () => {
         if (!(await cedarConfirm(tr('contrib.settings.withdrawConfirm'), { ok: tr('contrib.settings.withdraw') }))) return;

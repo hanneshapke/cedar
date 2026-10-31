@@ -540,8 +540,10 @@ in the text after redaction. The checks the corpus runs are run here first, so a
 shows as ready is one the corpus will take.
 
 Each contribution leaves a receipt in **Settings → Contribute**, with *Withdraw*: the corpus deletes
-it from its intake and leaves it out of every later release. Deleting the conversation keeps the
-receipt. The withdraw token is kept in the chat's database like its other credentials.
+it from its intake and leaves it out of every later release. *Refresh status* asks the corpus what
+became of each: received, accepted by its screening, held for a reviewer, rejected, or released
+(with the release's version). Deleting the conversation keeps the receipt. The withdraw token is
+kept in the chat's database like its other credentials.
 
 ### Pairing the iOS and Android apps
 
@@ -642,6 +644,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/conversations/{id}/contribution` | The conversation as it would be [contributed](#contributing-a-conversation): `{bundle, blocked, secrets, problems, can_send, accepted, private_tools, turn_ids}`. `?reasoning=true` and `?fetched=true` include what is left out by default. `blocked` lists why it can't be sent (`scheduled`, `active`, `no_turns`, `private_tools`, `run_gone`, `secrets`, `not_consistent`, `model_not_allowed`), empty when it can |
 | `POST /api/conversations/{id}/contribution` | Send `{"bundle", "outcome"?}` (the bundle as the dialog holds it; `outcome` is `{result: succeeded\|partly\|failed, notes?}`) to `CHAT_CONTRIBUTIONS_URL`. The license and pseudonym come from Settings whatever the body says; the checks run again first. `201` with the receipt; `409` without a corpus or while contributing is off in Settings; `400` for a bundle that fails the checks or still holds a secret, or that the corpus refused (its code and message) |
 | `GET /api/contributions` | `{contributions}`: every receipt, newest first, each `{id, conversation_id, title, content_sha256, license, url, submitted_at, withdrawn_at}` (never the withdraw token) |
+| `POST /api/contributions/refresh` | Ask the corpus what became of each contribution not withdrawn (its screening and release status, with the receipt's token); answers like `GET`, with `status` (`quarantined`, `accepted`, `held`, `rejected`, `released`, or `unknown` when the corpus no longer knows it), `released_in` and `checked_at` filled in |
 | `DELETE /api/contributions/{id}` | Withdraw it from the corpus; answers the receipt with `withdrawn_at`. `404` for an unknown receipt |
 | `GET` / `PUT /api/settings/contributions` | The one-time choices: `{license, pseudonym, include_reasoning, include_fetched, accepted_at, available, host, licenses}`. `PUT` takes any of `license`, `pseudonym` (`"new"` makes one, `""` drops it), `include_reasoning`, `include_fetched` and `enabled` (sets or clears `accepted_at`) |
 | `PUT /api/turns/{id}/rating` | `{"rating": 1 \| -1 \| null}`: your thumb on a response; answers the turn |

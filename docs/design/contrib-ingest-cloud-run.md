@@ -1,6 +1,8 @@
 # Design: the contribution ingest on Google Cloud Run, with poisoning defenses
 
-_Status: the request path (§3–4) is built as `contrib/` (October 2026); see "Status" at the end.
+_Status: the request path (§3–4), the screener (§5), the review page and the release job (§6)
+are built as `contrib/` (October 2026); see "Status" at the end._
+_
 Companion to [contributions.md](contributions.md), which defines the bundle, the consent model and
 the client side. This document is the server: `cedar-contrib`, the service a cedar-chat points
 `CHAT_CONTRIBUTIONS_URL` at._
@@ -313,20 +315,30 @@ bounded by max instances and the LB rate limit, not by the attacker.
 
 ## 13. Status
 
-Built, in `contrib/`: `contrib-api` with the four routes of §3 and the checks of §4, the
-in-memory per-client limit, the quotas, the derived withdraw token, a Dockerfile, Terraform for
-the frugal variant (Cloud Run exposed directly, the bucket, the service account, the key in Secret
-Manager, the request-log exclusion), and tests against an in-memory store.
+Built, in `contrib/`: `contrib-api` with the four routes of §3 and the checks of §4; the screener
+of §5 with the deterministic checks (near-duplicate by MinHash, obfuscation, injection patterns,
+destructive and exfiltrating commands, label consistency, floods, missed personal data, language,
+thinness), the judge behind a trait with an OpenAI-compatible client and a scripted one for
+tests, verdicts with flags, scores and notes, label trust accruing on the pseudonym's ledger, the
+red-team fixture set as the regression suite; the review page with Accept and Reject; the audit
+log as write-once objects; the release job of §6 with aging, re-screening on a newer checks
+version, per-pseudonym and unlinked caps with a stable sample, cluster analysis by SimHash
+distance, label weights with the judge's outcome standing in for untrusted labels, per-license
+and per-model files, a manifest with the exclusion list and an HMAC signature; a publish script
+for the Hugging Face and GitHub mirrors; Terraform with both jobs on Cloud Scheduler.
 
 What differs from the text above, for now:
 
-- **No Firestore.** Receipts, the pseudonym ledgers, the hash claims, the cluster counters and
-  the withdrawn list are all objects in the quarantine bucket (`contrib/README.md` has the
-  layout). A hash is claimed with a create-only upload, which is the one atomic step the request
-  path needs. Firestore comes with the screener, which needs queries.
-- **No load balancer and no Cloud Armor** in the Terraform: the frugal variant from the cost
-  estimate. The design's `rate_based_ban` is the service's own per-minute limit for now.
-- **The screener (§5) and the release job (§6) are not built**, nor the review page, the audit
-  log (§7) or the ablation. Every bundle stays `quarantined`.
-- **The unlinked cluster** is the first 16 bits of the prompts' SimHash: coarse, which is what a
-  daily allowance needs; the precise grouping is the release job's.
+- **No Firestore.** Everything is objects in the quarantine bucket; the jobs list every receipt.
+  Fine for the first releases; the point at which Firestore comes in is when listing receipts is
+  what a screener run spends its time on.
+- **No load balancer and no Cloud Armor** in the Terraform: the frugal variant.
+- **The ablation evaluation** (§6.5) is not built: it needs cedar-bench's safety suite to be
+  stable, and a GPU job. The manifest and tags are what it would consume.
+- **The review page** is a token-protected page in the same service rather than a separate
+  IAP-protected one; redact-and-accept is not offered (accept or reject only).
+- **The manifest is signed with HMAC**, not KMS; the format allows swapping the signature.
+- **The screener's near-duplicate index** is every receipt's stored signature compared in full,
+  not an LSH index; and the flood check compares against the pseudonym's own bundles only.
+- **Coordinated pseudonyms created the same week** (§6.3) are not grouped: a cluster is held
+  when it is all one pseudonym or all unlinked.

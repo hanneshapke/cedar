@@ -401,6 +401,10 @@ pub struct Contribution {
     pub url: String,
     pub submitted_at: DateTime<Utc>,
     pub withdrawn_at: Option<DateTime<Utc>>,
+    /// What the corpus last said: `quarantined`, `accepted`, `held`, `rejected`, `released`.
+    pub status: Option<String>,
+    pub released_in: Vec<String>,
+    pub checked_at: Option<DateTime<Utc>>,
 }
 
 fn contribution_from_row(r: &SqliteRow) -> Result<Contribution> {
@@ -414,6 +418,9 @@ fn contribution_from_row(r: &SqliteRow) -> Result<Contribution> {
         url: r.try_get("url")?,
         submitted_at: to_dt(r.try_get("submitted_at")?),
         withdrawn_at: r.try_get::<Option<i64>, _>("withdrawn_at")?.map(to_dt),
+        status: r.try_get("status")?,
+        released_in: opt_json(r, "released_in")?.unwrap_or_default(),
+        checked_at: r.try_get::<Option<i64>, _>("checked_at")?.map(to_dt),
     })
 }
 
@@ -773,6 +780,18 @@ impl Store {
             .fetch_all(&self.pool)
             .await?;
         rows.iter().map(contribution_from_row).collect()
+    }
+
+    /// What the corpus answered about a contribution.
+    pub async fn set_contribution_status(&self, id: &str, status: &str, released_in: &[String]) -> Result<()> {
+        sqlx::query("UPDATE contributions SET status = ?, released_in = ?, checked_at = ? WHERE id = ?")
+            .bind(status)
+            .bind(serde_json::to_string(released_in)?)
+            .bind(now_ms())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn mark_withdrawn(&self, id: &str) -> Result<()> {

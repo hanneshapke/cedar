@@ -12,7 +12,12 @@
 pub mod api;
 pub mod config;
 pub mod gcs;
+pub mod judge;
 pub mod ratelimit;
+pub mod redteam;
+pub mod release;
+pub mod review;
+pub mod screen;
 pub mod store;
 
 pub use api::{router, AppState};

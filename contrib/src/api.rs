@@ -55,6 +55,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/contributions/{id}", get(status).delete(withdraw))
         .route("/v1/policy", get(policy))
         .route("/healthz", get(|| async { "ok" }))
+        .merge(crate::review::router())
         .fallback(|| async { ApiError::NotFound.into_response() })
         .with_state(state)
 }
@@ -178,7 +179,7 @@ async fn submit(
     let mut ledger: Option<Ledger> = None;
     match &bundle.contributor {
         Some(p) => {
-            let mut l = state.store.ledger(p).await?.unwrap_or(Ledger { created_day: today.clone(), days: Default::default() });
+            let mut l = state.store.ledger(p).await?.unwrap_or(Ledger { created_day: today.clone(), ..Default::default() });
             let today_n = l.days.get(&today).copied().unwrap_or(0);
             if today_n >= state.cfg.quota_day {
                 return Err(refused(StatusCode::TOO_MANY_REQUESTS, "quota", format!("at most {} contributions a day", state.cfg.quota_day)));
@@ -217,6 +218,10 @@ async fn submit(
         status: "quarantined".into(),
         released_in: vec![],
         fingerprint,
+        signature: crate::screen::signature(&bundle),
+        verdict: None,
+        tags: vec![],
+        label_weight: None,
     };
     // Stored as received: the checks passed on these exact bytes.
     state.store.put_bundle(&receipt, &body).await?;

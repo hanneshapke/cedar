@@ -383,6 +383,15 @@ async fn ingest_submit(State(s): State<Shared>, headers: HeaderMap, Json(body): 
     (StatusCode::CREATED, Json(json!({ "receipt_id": format!("r-{n}"), "withdraw_token": format!("w-{n}"), "status": "quarantined" }))).into_response()
 }
 
+async fn ingest_status(State(s): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> axum::response::Response {
+    let token = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default();
+    let n: usize = id.trim_start_matches("r-").parse().unwrap_or(0);
+    if token != format!("Bearer w-{n}") || n == 0 || n > s.ingested.lock().unwrap().len() {
+        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": { "code": "unauthorized", "message": "no" } }))).into_response();
+    }
+    Json(json!({ "status": "released", "submitted_day": "2026-10-01", "released_in": ["v2026.11"] })).into_response()
+}
+
 async fn ingest_withdraw(State(s): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> StatusCode {
     let token = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
     s.withdrawn.lock().unwrap().push((id, token));
@@ -658,7 +667,7 @@ impl Harness {
             .route("/github/releases/latest", get(latest_release))
             .route("/contrib/v1/policy", get(ingest_policy))
             .route("/contrib/v1/contributions", post(ingest_submit))
-            .route("/contrib/v1/contributions/{id}", axum::routing::delete(ingest_withdraw))
+            .route("/contrib/v1/contributions/{id}", get(ingest_status).delete(ingest_withdraw))
             .with_state(cedar.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -3295,6 +3304,13 @@ async fn contributing_needs_the_settings_turned_on_and_then_keeps_a_receipt() {
     let (_, list) = h.json(Method::GET, "/api/contributions", None).await;
     assert_eq!(list["contributions"].as_array().unwrap().len(), 1);
     assert_eq!(list["contributions"][0]["conversation_id"], cid);
+    assert!(list["contributions"][0]["status"].is_null());
+    // Refresh asks the corpus, with the token, what became of each.
+    let (status, list) = h.json(Method::POST, "/api/contributions/refresh", None).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["contributions"][0]["status"], "released");
+    assert_eq!(list["contributions"][0]["released_in"], json!(["v2026.11"]));
+    assert!(list["contributions"][0]["checked_at"].is_string());
     let (status, withdrawn) = h.json(Method::DELETE, "/api/contributions/r-1", None).await;
     assert_eq!(status, StatusCode::OK, "{withdrawn}");
     assert!(withdrawn["withdrawn_at"].is_string());

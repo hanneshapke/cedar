@@ -1,6 +1,6 @@
 # Design: contributing conversations to a training corpus (opt-in)
 
-_Status: phases 1 to 3 are built (October 2026); see "Status" at the end for what differs from
+_Status: phases 1 to 5 are built (October 2026); see "Status" at the end for what differs from
 this text and what is still to come._
 
 cedar's privacy policy is one sentence: **cedar does not collect any data. Period.** This design
@@ -274,11 +274,13 @@ Keep the ingest as dumb as possible so there is little to trust.
 ## 12. Status
 
 Built: the shared schema crate (`contrib-schema/`: bundle v1, canary, the consistency checks of
-§9's request path, the pattern scan and redactor), cedar's `memory_note` in the trace, the chat's
-export (`chat/src/contrib.rs`, `chat/static/contrib-view.js`: the preview, the structural and
-pattern passes, the review dialog with the Raw tab and download, per-turn thumbs, outcome, phrase
-redaction), Settings → Contribute with the one-time choices and receipts, sending and
-withdrawal, and the ingest (`contrib/`, see its own design and README).
+§9's request path, the pattern scan and the redactor with synthetic stand-ins), cedar's
+`memory_note` in the trace, the chat's export (`chat/src/contrib.rs`, `chat/static/contrib-view.js`:
+the preview, the structural and pattern passes, the review dialog with the Raw tab and download,
+per-turn thumbs, outcome, phrase redaction with replacements), Settings → Contribute with the
+one-time choices, the receipts and what the corpus says about each (screened, held, released),
+sending and withdrawal, and the corpus side (`contrib/`: the ingest, the screener, the review
+page and the release job; see its own design and README).
 
 What differs from the text above, on purpose, for now:
 

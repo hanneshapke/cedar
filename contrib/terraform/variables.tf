@@ -36,3 +36,21 @@ variable "min_instances" {
   default     = 0
   description = "1 keeps one instance warm (no cold start for the first upload of the day); 0 is the frugal setting."
 }
+
+variable "judge_url" {
+  type        = string
+  default     = ""
+  description = "An OpenAI-compatible chat-completions base URL the screener asks about trajectories (Vertex AI's OpenAI endpoint, or a vLLM on Cloud Run). Empty: deterministic checks only, injected results are held for review."
+}
+
+variable "judge_model" {
+  type        = string
+  default     = "judge"
+  description = "The model name at judge_url."
+}
+
+variable "aging_days" {
+  type        = number
+  default     = 14
+  description = "How long an accepted bundle waits before a release may take it."
+}
