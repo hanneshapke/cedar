@@ -10,9 +10,11 @@ use url::Url;
 
 pub const MAIN: &str = "main";
 
-/// Where the chat's update banner (update.js) sends the window for Update and Dismiss: never
-/// loaded, the window catches it (see [`create`]). The chat page has no other way to reach the app.
-const UPDATE_PATH: &str = "/__cedar-app/update/";
+/// Where the chat's pages send the window to ask the app for something: the update banner's
+/// Update and Dismiss (update.js), and the Phone page's button that turns sharing with the phone
+/// apps on (pairing.js). Never loaded, the window catches it (see [`create`]). The chat page has
+/// no other way to reach the app.
+const APP_PATH: &str = "/__cedar-app/";
 
 /// The setup page's own URL, where Tauri serves `ui/index.html`: `tauri://localhost` on a Mac,
 /// `http://tauri.localhost` on Windows. Not read back from the window after it is built: on
@@ -46,9 +48,9 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
             }
             NewWindowResponse::Deny
         })
-        .on_navigation(move |url| match update_action(url, &chat) {
+        .on_navigation(move |url| match page_action(url, &chat) {
             Some(action) => {
-                banner_action(&handle, action);
+                run_page_action(&handle, action);
                 false
             }
             None => true,
@@ -92,34 +94,44 @@ fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
     )
 }
 
+/// What a chat page may ask the app for, by sending the window to [`APP_PATH`].
 #[derive(Debug, PartialEq)]
-enum UpdateAction {
+enum PageAction {
+    /// The update banner's Update.
     Install,
+    /// The update banner's Dismiss.
     Dismiss,
+    /// The Phone page's "Turn on sharing".
+    ShareOn,
 }
 
-/// The banner's Update or Dismiss, when `url` is the chat's address for it.
-fn update_action(url: &Url, chat: &str) -> Option<UpdateAction> {
+/// The page's request, when `url` is the chat's address for one.
+fn page_action(url: &Url, chat: &str) -> Option<PageAction> {
     if url.origin().ascii_serialization() != chat {
         return None;
     }
-    match url.path().strip_prefix(UPDATE_PATH)? {
-        "install" => Some(UpdateAction::Install),
-        "dismiss" => Some(UpdateAction::Dismiss),
+    match url.path().strip_prefix(APP_PATH)? {
+        "update/install" => Some(PageAction::Install),
+        "update/dismiss" => Some(PageAction::Dismiss),
+        "share/on" => Some(PageAction::ShareOn),
         _ => None,
     }
 }
 
-fn banner_action(app: &AppHandle, action: UpdateAction) {
+fn run_page_action(app: &AppHandle, action: PageAction) {
     match action {
         // Only does something while a newer release is known; it is the genuine, signed one.
-        UpdateAction::Install => {
+        PageAction::Install => {
             tauri::async_runtime::spawn(crate::update::install(app.clone()));
         }
-        UpdateAction::Dismiss => {
+        PageAction::Dismiss => {
             if let Err(e) = crate::update::dismiss(app) {
                 eprintln!("dismissing the update: {e:#}");
             }
+        }
+        // The same as ticking the switch on the setup page; the page says what happened.
+        PageAction::ShareOn => {
+            tauri::async_runtime::spawn(crate::app::share_from_chat(app.clone()));
         }
     }
 }
@@ -246,15 +258,17 @@ mod tests {
     }
 
     #[test]
-    fn only_the_chats_update_addresses_reach_the_app() {
+    fn only_the_chats_own_requests_reach_the_app() {
         let chat = "http://127.0.0.1:13000";
-        let at = |u: &str| update_action(&Url::parse(u).unwrap(), chat);
-        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), Some(UpdateAction::Install));
-        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/dismiss?x=1"), Some(UpdateAction::Dismiss));
+        let at = |u: &str| page_action(&Url::parse(u).unwrap(), chat);
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), Some(PageAction::Install));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/dismiss?x=1"), Some(PageAction::Dismiss));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/share/on"), Some(PageAction::ShareOn));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/share/off"), None);
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/other"), None);
         assert_eq!(at("http://127.0.0.1:13000/"), None);
         assert_eq!(at("http://127.0.0.1:13001/__cedar-app/update/install"), None);
-        assert_eq!(at("https://example.com/__cedar-app/update/install"), None);
+        assert_eq!(at("https://example.com/__cedar-app/share/on"), None);
     }
 
     #[test]
