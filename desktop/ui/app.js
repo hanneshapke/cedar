@@ -165,7 +165,80 @@ function render(s) {
   $('open-browser').disabled = !running;
 
   renderUpdate(s);
+  renderActivity(s, p);
 }
+
+// The banner under the header: the one thing that is going on, from the whole status. Either
+// Cedar is busy with a step of the launch sequence (see bootstrap in src/app.rs), or it waits on
+// the user to do something, or it is done. The first thing that applies wins, in the order of the
+// launch sequence, so the banner always names the step that holds everything else up.
+function activity(s, p) {
+  const busy = (text, target) => ({ mode: 'busy', text, target });
+  const waiting = (text, target) => ({ mode: 'waiting', text, target });
+  const d = s.docker;
+  const ds = s.docker_setup;
+  const i = s.images;
+  const ts = s.tailscale_setup;
+  const sh = s.share;
+  const sv = s.services;
+  const m = s.model;
+  // Docker, and setting it up from here.
+  if (ds.state === 'running') return busy(tr('activity.dockerSetup', { detail: ds.detail }), 'docker');
+  if (ds.state === 'needs_restart') return waiting(tr('activity.restart'), 'docker');
+  if (ds.state === 'needs_sign_out') return waiting(tr('activity.signOut'), 'docker');
+  if (ds.state === 'needs_virtualization') return waiting(tr('activity.virtualization'), 'docker');
+  if (d.state === 'checking') return busy(tr('docker.looking'), 'docker');
+  if (d.state === 'starting') return busy(tr('docker.firstStart', { starting: p.text('dockerStarting') }), 'docker');
+  if (ds.state === 'failed') return waiting(tr('activity.dockerSetupFailed'), 'docker');
+  if (d.state === 'missing') {
+    const key = s.docker_setup_available ? 'activity.dockerMissingSetup' : 'activity.dockerMissing';
+    return waiting(tr(key, { apps: p.text('dockerApps') }), 'docker');
+  }
+  if (d.state === 'not_running') return waiting(tr('activity.dockerNotRunning', { start: p.text('dockerStart') }), 'docker');
+  // The images.
+  if (i.state === 'pulling') return busy(tr('activity.pulling'), 'images');
+  if (i.state === 'failed') return waiting(tr('activity.pullFailed'), 'images');
+  // Installing Tailscale runs on its own; while it does, it is what the page waits for.
+  if (ts.state === 'running') return busy(tr('activity.tsSetup', { detail: ts.detail }), 'share');
+  // The model server, the servers, and the model in cedar's registry.
+  if (!s.configured) return waiting(tr('activity.chooseModel'), 'model');
+  if (sh.state === 'starting') return busy(tr('share.starting'), 'share');
+  if (sv.state === 'starting') return busy(tr('activity.starting', { detail: sv.detail }), 'services');
+  if (sv.state === 'crashed') return waiting(tr('activity.crashed'), 'services');
+  if (m.state === 'registering') return busy(tr('activity.registering', { model: s.llm_model }), 'model');
+  if (sv.state !== 'running') return waiting(tr('activity.notRunning'), 'services');
+  if (m.state === 'failed') return waiting(tr('activity.modelFailed', { model: s.llm_model }), 'model');
+  // Sharing with the phone apps, only once it was asked for.
+  if (ts.state === 'installed' && sh.state !== 'on') return waiting(tr('activity.tsLogin'), 'share');
+  if (ts.state === 'failed') return waiting(tr('activity.tsFailed'), 'share');
+  if (sh.state === 'failed') return waiting(tr('activity.shareFailed'), 'share');
+  return { mode: 'ready', text: tr('activity.ready'), target: 'services' };
+}
+
+function renderActivity(s, p) {
+  const a = activity(s, p);
+  const el = $('activity');
+  el.className = 'activity ' + a.mode;
+  el.dataset.target = a.target;
+  const titles = { busy: 'activity.busy', waiting: 'activity.waiting', ready: 'activity.readyTitle' };
+  $('activity-title').textContent = tr(titles[a.mode]);
+  $('activity-text').textContent = a.text;
+  $('activity-icon').textContent = a.mode === 'waiting' ? '!' : a.mode === 'ready' ? '✓' : '';
+  $('activity-go').classList.toggle('hidden', a.mode === 'ready');
+}
+
+// Clicking the banner (or pressing Enter on it) scrolls to the step it names.
+function goToActivity() {
+  const target = $('activity').dataset.target;
+  if (target) $(target).scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('activity').addEventListener('click', goToActivity);
+$('activity').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' || ev.key === ' ') {
+    ev.preventDefault();
+    goToActivity();
+  }
+});
 
 // A newer release (see src/update.rs): the banner at the top, and the Updates section.
 function renderUpdate(s) {
