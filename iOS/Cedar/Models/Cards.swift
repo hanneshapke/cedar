@@ -1,9 +1,9 @@
 import Foundation
 
 /// A tool result the app draws as a card: `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`,
-/// `search_products`, `search_flights`, and the data of a `generate_chart` call. Parsed with the same rules as the web UI's
-/// views (chat/static/map-view.js, recipe-view.js, transit-view.js, stock-view.js, product-view.js,
-/// chart-view.js). Everything in a result came from the model or the network, so
+/// `search_products`, `search_flights`, `weather_forecast`, and the data of a `generate_chart` call. Parsed with the
+/// same rules as the web UI's views (chat/static/map-view.js, recipe-view.js, transit-view.js, stock-view.js,
+/// product-view.js, weather-view.js, chart-view.js). Everything in a result came from the model or the network, so
 /// text is clipped, numbers and coordinates are checked, and links are only kept if they are https.
 enum Card: Hashable, Sendable {
     case map(MapCard)
@@ -12,13 +12,16 @@ enum Card: Hashable, Sendable {
     case stocks(StocksCard)
     case products(ProductsCard)
     case flights(FlightsCard)
+    case weather(WeatherCard)
     case chart(ChartCard)
 
     /// The card for a finished call, or `nil` when it isn't a card tool or its result isn't usable.
     /// A chart is drawn from the call's `input`; its output only says where the picture was saved.
+    /// A forecast is the plain-text report the model reads, not JSON.
     static func parse(name: String, output: String, input: JSONValue = .null) -> Card? {
         guard ToolCall.cardTools.contains(name) else { return nil }
         if name == "generate_chart" { return ChartCard.parse(input).map(Card.chart) }
+        if name == "weather_forecast" { return WeatherCard.parse(output).map(Card.weather) }
         guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(output.utf8)) else { return nil }
         switch name {
         case "show_map": return MapCard.parse(value).map(Card.map)

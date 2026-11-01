@@ -1,93 +1,48 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "· Run now" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Manuell gestartet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Ejecutada manualmente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Lancée manuellement"
-          }
-        }
-      }
-    },
-    "(%lld more characters)" : {
+    "%@ (%@ chance)" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(%lld weitere Zeichen)"
+            "value" : "%1$@ (%2$@ Wahrscheinlichkeit)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(%lld caracteres más)"
+            "value" : "%1$@ (%2$@ de probabilidad)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(%lld caractères de plus)"
+            "value" : "%1$@ (%2$@ de risque)"
           }
         }
       }
     },
-    "(no output)" : {
+    "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port)." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(keine Ausgabe)"
+            "value" : "%@ Port %@ liefert vermutlich unverschlüsseltes HTTP. Verwende die HTTPS-Adresse von tailscale serve, z. B. https://<machine>.<tailnet>.ts.net (ohne Port)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(sin salida)"
+            "value" : "%@ El puerto %@ puede servir HTTP sin cifrar. Usa la dirección HTTPS de tailscale serve, p. ej., https://<machine>.<tailnet>.ts.net (sin puerto)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(aucune sortie)"
-          }
-        }
-      }
-    },
-    "%@ × %lld series" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ × %lld Reihen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ × %lld series"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ × %lld séries"
+            "value" : "%@ Le port %@ sert peut-être du HTTP non chiffré. Utilisez l'adresse HTTPS de tailscale serve, par ex. https://<machine>.<tailnet>.ts.net (sans port)."
           }
         }
       }
@@ -235,6 +190,29 @@
         }
       }
     },
+    "%@ local time" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Ortszeit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hora local"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ heure locale"
+          }
+        }
+      }
+    },
     "%@ more" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -277,29 +255,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ étoiles sur 5"
-          }
-        }
-      }
-    },
-    "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port)." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ Port %@ liefert vermutlich unverschlüsseltes HTTP. Verwende die HTTPS-Adresse von tailscale serve, z. B. https://<machine>.<tailnet>.ts.net (ohne Port)."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ El puerto %@ puede servir HTTP sin cifrar. Usa la dirección HTTPS de tailscale serve, p. ej., https://<machine>.<tailnet>.ts.net (sin puerto)."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ Le port %@ sert peut-être du HTTP non chiffré. Utilisez l'adresse HTTPS de tailscale serve, par ex. https://<machine>.<tailnet>.ts.net (sans port)."
           }
         }
       }
@@ -369,6 +324,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ direction %@"
+          }
+        }
+      }
+    },
+    "%@ × %lld series" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ × %lld Reihen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ × %lld series"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ × %lld séries"
+          }
+        }
+      }
+    },
+    "%@%% / yr" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %% / Jahr"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@%% / año"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %% / an"
           }
         }
       }
@@ -481,29 +482,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ : ce modèle accepte les PDF mais pas les images"
-          }
-        }
-      }
-    },
-    "%@%% / yr" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %% / Jahr"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@%% / año"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %% / an"
           }
         }
       }
@@ -1443,17 +1421,126 @@
         }
       }
     },
-    "+%lld" : {
-      "comment" : "A score that is displayed as a number in a bar. The number is positive if the score is positive, negative if the score is negative, and zero if the score is zero.",
-      "isCommentAutoGenerated" : true
+    "%lld-day forecast" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld-Tage-Vorhersage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pronóstico de %lld días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prévisions sur %lld jours"
+          }
+        }
+      }
     },
-    "−%lld" : {
+    "(%lld more characters)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(%lld weitere Zeichen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(%lld caracteres más)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(%lld caractères de plus)"
+          }
+        }
+      }
+    },
+    "(no output)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(keine Ausgabe)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(sin salida)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(aucune sortie)"
+          }
+        }
+      }
+    },
+    "+%lld" : {
       "comment" : "A score that is displayed as a number in a bar. The number is positive if the score is positive, negative if the score is negative, and zero if the score is zero.",
       "isCommentAutoGenerated" : true
     },
     "0" : {
       "comment" : "A score of 0.",
       "isCommentAutoGenerated" : true
+    },
+    "1-day forecast" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1-Tage-Vorhersage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pronóstico de 1 día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prévisions sur 1 jour"
+          }
+        }
+      }
+    },
+    "200-day avg" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "200-Tage-Schnitt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media de 200 días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moyenne 200 jours"
+          }
+        }
+      }
     },
     "50-day avg" : {
       "extractionState" : "manual",
@@ -1501,29 +1588,6 @@
         }
       }
     },
-    "200-day avg" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "200-Tage-Schnitt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Media de 200 días"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Moyenne 200 jours"
-          }
-        }
-      }
-    },
     "A picked file could not be read" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1543,29 +1607,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un fichier choisi n'a pas pu être lu"
-          }
-        }
-      }
-    },
-    "about %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "etwa %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aprox. %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "environ %@"
           }
         }
       }
@@ -2026,28 +2067,6 @@
         }
       }
     },
-    "Attach images or PDFs" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bilder oder PDFs anhängen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adjuntar imágenes o PDF"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Joindre des images ou des PDF"
-          }
-        }
-      }
-    },
     "Attach PDFs" : {
       "localizations" : {
         "de" : {
@@ -2066,6 +2085,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Joindre des PDF"
+          }
+        }
+      }
+    },
+    "Attach images or PDFs" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilder oder PDFs anhängen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjuntar imágenes o PDF"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joindre des images ou des PDF"
           }
         }
       }
@@ -2222,29 +2263,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mieux noté"
-          }
-        }
-      }
-    },
-    "best selling first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bestseller zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "más vendidos primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "meilleures ventes d'abord"
           }
         }
       }
@@ -2611,52 +2629,6 @@
         }
       }
     },
-    "cedar-chat returned HTTP %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat hat HTTP %lld zurückgegeben"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat devolvió HTTP %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat a renvoyé HTTP %lld"
-          }
-        }
-      }
-    },
-    "cedar-chat wants an access token, or rejected this one. Check Settings." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat verlangt ein Zugriffstoken oder hat dieses abgelehnt. Prüfe die Einstellungen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat pide un token de acceso o rechazó este. Revisa la configuración."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat demande un jeton d'accès, ou a refusé celui-ci. Vérifiez les Réglages."
-          }
-        }
-      }
-    },
     "Cedar's plan" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2720,29 +2692,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conversations"
-          }
-        }
-      }
-    },
-    "cheapest first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "günstigste zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "más baratos primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "moins chers d'abord"
           }
         }
       }
@@ -2813,6 +2762,29 @@
         }
       }
     },
+    "Clear sky" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klarer Himmel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cielo despejado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ciel dégagé"
+          }
+        }
+      }
+    },
     "Comparable options" : {
       "localizations" : {
         "de" : {
@@ -2831,6 +2803,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Options comparables"
+          }
+        }
+      }
+    },
+    "Conditions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wetterlage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Condiciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conditions"
           }
         }
       }
@@ -2990,28 +2985,6 @@
         }
       }
     },
-    "Could not load %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ konnte nicht geladen werden"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo cargar %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impossible de charger %@"
-          }
-        }
-      }
-    },
     "Could Not Load the Files" : {
       "localizations" : {
         "de" : {
@@ -3030,6 +3003,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de charger les fichiers"
+          }
+        }
+      }
+    },
+    "Could not load %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ konnte nicht geladen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo cargar %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de charger %@"
           }
         }
       }
@@ -3169,6 +3164,29 @@
         }
       }
     },
+    "Daylight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tageslicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luz del día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jour"
+          }
+        }
+      }
+    },
     "Default" : {
       "localizations" : {
         "de" : {
@@ -3258,6 +3276,52 @@
         }
       }
     },
+    "Dense drizzle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starker Nieselregen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llovizna densa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bruine dense"
+          }
+        }
+      }
+    },
+    "Dense freezing drizzle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starker gefrierender Nieselregen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llovizna helada densa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bruine verglaçante dense"
+          }
+        }
+      }
+    },
     "Deny" : {
       "localizations" : {
         "de" : {
@@ -3298,29 +3362,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Non démarrée"
-          }
-        }
-      }
-    },
-    "direct" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "direkt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "directo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "direct"
           }
         }
       }
@@ -3591,6 +3632,29 @@
         }
       }
     },
+    "Feels like %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gefühlt %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensación de %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ressenti %@"
+          }
+        }
+      }
+    },
     "Ferry" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3795,6 +3859,29 @@
         }
       }
     },
+    "Fog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nebel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niebla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brouillard"
+          }
+        }
+      }
+    },
     "For longer requests" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3863,6 +3950,29 @@
         }
       }
     },
+    "Freezing fog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gefrierender Nebel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niebla helada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brouillard givrant"
+          }
+        }
+      }
+    },
     "Fridays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3882,50 +3992,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tous les vendredis"
-          }
-        }
-      }
-    },
-    "from %@ review" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aus %@ Bewertung"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "de %@ reseña"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sur %@ avis"
-          }
-        }
-      }
-    },
-    "from %@ reviews" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aus %@ Bewertungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "de %@ reseñas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sur %@ avis"
           }
         }
       }
@@ -4088,6 +4154,144 @@
         }
       }
     },
+    "Gusts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Böen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rachas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rafales"
+          }
+        }
+      }
+    },
+    "H %@ · L %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "H %1$@ · T %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máx. %1$@ · Mín. %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Max. %1$@ · Min. %2$@"
+          }
+        }
+      }
+    },
+    "Heavy freezing rain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starker gefrierender Regen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lluvia helada intensa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forte pluie verglaçante"
+          }
+        }
+      }
+    },
+    "Heavy rain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starker Regen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lluvia intensa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forte pluie"
+          }
+        }
+      }
+    },
+    "Heavy snow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starker Schneefall"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nevada intensa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forte neige"
+          }
+        }
+      }
+    },
+    "Heavy snow showers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starke Schneeschauer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chubascos de nieve intensos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortes averses de neige"
+          }
+        }
+      }
+    },
     "Hidden" : {
       "localizations" : {
         "de" : {
@@ -4133,28 +4337,6 @@
         }
       }
     },
-    "high confidence" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "hohe Sicherheit"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confianza alta"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confiance élevée"
-          }
-        }
-      }
-    },
     "High confidence" : {
       "localizations" : {
         "de" : {
@@ -4173,29 +4355,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confiance élevée"
-          }
-        }
-      }
-    },
-    "highest rated first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "am besten bewertet zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mejor valorados primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mieux notés d'abord"
           }
         }
       }
@@ -4241,6 +4400,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conserver"
+          }
+        }
+      }
+    },
+    "Humidity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luftfeuchte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Humedad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Humidité"
           }
         }
       }
@@ -4316,29 +4498,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En magasin"
-          }
-        }
-      }
-    },
-    "index" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Index"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "el índice"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "l'indice"
           }
         }
       }
@@ -4546,6 +4705,167 @@
         }
       }
     },
+    "Light drizzle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leichter Nieselregen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llovizna ligera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bruine légère"
+          }
+        }
+      }
+    },
+    "Light freezing drizzle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leichter gefrierender Nieselregen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llovizna helada ligera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bruine verglaçante légère"
+          }
+        }
+      }
+    },
+    "Light freezing rain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leichter gefrierender Regen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lluvia helada ligera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pluie verglaçante faible"
+          }
+        }
+      }
+    },
+    "Light rain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leichter Regen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lluvia ligera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pluie faible"
+          }
+        }
+      }
+    },
+    "Light rain showers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leichte Regenschauer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chubascos ligeros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Averses faibles"
+          }
+        }
+      }
+    },
+    "Light snow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leichter Schneefall"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nevada ligera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neige faible"
+          }
+        }
+      }
+    },
+    "Light snow showers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leichte Schneeschauer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chubascos de nieve ligeros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Averses de neige faibles"
+          }
+        }
+      }
+    },
     "Line" : {
       "localizations" : {
         "de" : {
@@ -4587,29 +4907,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Graphique en courbes"
-          }
-        }
-      }
-    },
-    "log scale" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "logarithmische Skala"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "escala logarítmica"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "échelle logarithmique"
           }
         }
       }
@@ -4659,28 +4956,6 @@
         }
       }
     },
-    "low confidence" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "geringe Sicherheit"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confianza baja"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confiance faible"
-          }
-        }
-      }
-    },
     "Low confidence" : {
       "localizations" : {
         "de" : {
@@ -4722,6 +4997,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Prix le plus bas"
+          }
+        }
+      }
+    },
+    "Mainly clear" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überwiegend klar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mayormente despejado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plutôt dégagé"
           }
         }
       }
@@ -4790,28 +5088,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'agent peut-il faire ceci ?"
-          }
-        }
-      }
-    },
-    "medium confidence" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mittlere Sicherheit"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confianza media"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confiance moyenne"
           }
         }
       }
@@ -4950,6 +5226,98 @@
         }
       }
     },
+    "Moderate drizzle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mäßiger Nieselregen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llovizna moderada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bruine modérée"
+          }
+        }
+      }
+    },
+    "Moderate rain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mäßiger Regen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lluvia moderada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pluie modérée"
+          }
+        }
+      }
+    },
+    "Moderate rain showers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mäßige Regenschauer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chubascos moderados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Averses modérées"
+          }
+        }
+      }
+    },
+    "Moderate snow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mäßiger Schneefall"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nevada moderada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neige modérée"
+          }
+        }
+      }
+    },
     "Mondays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5063,8 +5431,7 @@
         }
       }
     },
-    "New chat" : {
-      "extractionState" : "manual",
+    "New Chat" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -5086,7 +5453,8 @@
         }
       }
     },
-    "New Chat" : {
+    "New chat" : {
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -5152,6 +5520,94 @@
         }
       }
     },
+    "No Conversations" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Unterhaltungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay conversaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune conversation"
+          }
+        }
+      }
+    },
+    "No Files Yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Dateien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay archivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun fichier pour l'instant"
+          }
+        }
+      }
+    },
+    "No Scheduled Agents" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine geplanten Agenten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay agentes programados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun agent planifié"
+          }
+        }
+      }
+    },
+    "No Starred Conversations" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine markierten Unterhaltungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay conversaciones destacadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune conversation en favori"
+          }
+        }
+      }
+    },
     "No answer in time; not done" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5197,28 +5653,6 @@
         }
       }
     },
-    "No Conversations" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Unterhaltungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay conversaciones"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucune conversation"
-          }
-        }
-      }
-    },
     "No customer rating found" : {
       "localizations" : {
         "de" : {
@@ -5237,28 +5671,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucune note client trouvée"
-          }
-        }
-      }
-    },
-    "No Files Yet" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noch keine Dateien"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no hay archivos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucun fichier pour l'instant"
           }
         }
       }
@@ -5331,29 +5743,6 @@
         }
       }
     },
-    "no reviews" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "keine Bewertungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sin reseñas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aucun avis"
-          }
-        }
-      }
-    },
     "No reviews" : {
       "localizations" : {
         "de" : {
@@ -5398,50 +5787,6 @@
         }
       }
     },
-    "No Scheduled Agents" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine geplanten Agenten"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay agentes programados"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucun agent planifié"
-          }
-        }
-      }
-    },
-    "No Starred Conversations" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine markierten Unterhaltungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay conversaciones destacadas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucune conversation en favori"
-          }
-        }
-      }
-    },
     "Nonstop" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5461,29 +5806,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sans escale"
-          }
-        }
-      }
-    },
-    "not available" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "nicht verfügbar"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "no disponible"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "non disponible"
           }
         }
       }
@@ -5600,25 +5922,25 @@
         }
       }
     },
-    "Often delayed" : {
+    "Now %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oft verspätet"
+            "value" : "Jetzt %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Suele retrasarse"
+            "value" : "Ahora %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Souvent en retard"
+            "value" : "Maintenant %@"
           }
         }
       }
@@ -5641,6 +5963,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
+          }
+        }
+      }
+    },
+    "Often delayed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oft verspätet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suele retrasarse"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Souvent en retard"
           }
         }
       }
@@ -5734,6 +6079,34 @@
         }
       }
     },
+    "Open Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Configuración"
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir les Réglages"
+          }
+        }
+      }
+    },
     "Open in Google Flights" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5753,28 +6126,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvrir dans Google Flights"
-          }
-        }
-      }
-    },
-    "Open on the web" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Im Web öffnen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir en la web"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir sur le web"
           }
         }
       }
@@ -5801,30 +6152,24 @@
         }
       }
     },
-    "Open Settings" : {
+    "Open on the web" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Einstellungen öffnen"
+            "value" : "Im Web öffnen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir Configuración"
-          }
-        },
-        "es-ES" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir Ajustes"
+            "value" : "Abrir en la web"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvrir les Réglages"
+            "value" : "Ouvrir sur le web"
           }
         }
       }
@@ -6013,6 +6358,29 @@
         }
       }
     },
+    "Open the weather on the web" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wetter im Web öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir el tiempo en la web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir la météo sur le web"
+          }
+        }
+      }
+    },
     "Opens in Maps" : {
       "localizations" : {
         "de" : {
@@ -6170,6 +6538,29 @@
         }
       }
     },
+    "Overcast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bedeckt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cubierto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couvert"
+          }
+        }
+      }
+    },
     "Overnight" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6189,6 +6580,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "De nuit"
+          }
+        }
+      }
+    },
+    "Partly cloudy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teilweise bewölkt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parcialmente nublado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partiellement nuageux"
           }
         }
       }
@@ -6528,6 +6942,29 @@
         }
       }
     },
+    "Precipitation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niederschlag"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Precipitación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Précipitations"
+          }
+        }
+      }
+    },
     "Premium economy" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6592,29 +7029,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cours"
-          }
-        }
-      }
-    },
-    "price at the store" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preis im Shop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "precio en la tienda"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "prix en boutique"
           }
         }
       }
@@ -6825,29 +7239,6 @@
         }
       }
     },
-    "priciest first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "teuerste zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "más caros primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "plus chers d'abord"
-          }
-        }
-      }
-    },
     "Products" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6939,6 +7330,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En file d'attente"
+          }
+        }
+      }
+    },
+    "RSI (14)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSI (14)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSI (14)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSI (14)"
           }
         }
       }
@@ -7279,29 +7693,6 @@
         }
       }
     },
-    "RSI (14)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RSI (14)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RSI (14)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RSI (14)"
-          }
-        }
-      }
-    },
     "Run Now" : {
       "localizations" : {
         "de" : {
@@ -7342,29 +7733,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En cours"
-          }
-        }
-      }
-    },
-    "same price" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "gleicher Preis"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mismo precio"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "même prix"
           }
         }
       }
@@ -7942,28 +8310,6 @@
         }
       }
     },
-    "Show all %lld headlines" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle %lld Schlagzeilen anzeigen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar los %lld titulares"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher les %lld titres"
-          }
-        }
-      }
-    },
     "Show Prompt" : {
       "localizations" : {
         "de" : {
@@ -7982,6 +8328,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Afficher le prompt"
+          }
+        }
+      }
+    },
+    "Show all %lld headlines" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle %lld Schlagzeilen anzeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar los %lld titulares"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher les %lld titres"
           }
         }
       }
@@ -8071,6 +8439,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Part"
+          }
+        }
+      }
+    },
+    "Snow grains" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schneegriesel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cinarra"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neige en grains"
           }
         }
       }
@@ -8251,29 +8642,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajoutez une conversation ou une exécution planifiée aux favoris, ici ou sur le web, pour la garder à portée de main sur tous vos appareils."
-          }
-        }
-      }
-    },
-    "starred" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "markiert"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "destacada"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "favori"
           }
         }
       }
@@ -8497,6 +8865,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tous les dimanches"
+          }
+        }
+      }
+    },
+    "Sunrise" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sonnenaufgang"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amanecer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lever du soleil"
+          }
+        }
+      }
+    },
+    "Sunset" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sonnenuntergang"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atardecer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coucher du soleil"
           }
         }
       }
@@ -8864,29 +9278,6 @@
         }
       }
     },
-    "The server answered %lld." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Server antwortete mit %lld."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El servidor respondió %lld."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le serveur a répondu %lld."
-          }
-        }
-      }
-    },
     "The server URL is not valid." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8910,25 +9301,25 @@
         }
       }
     },
-    "the store" : {
+    "The server answered %lld." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shop"
+            "value" : "Der Server antwortete mit %lld."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "la tienda"
+            "value" : "El servidor respondió %lld."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "la boutique"
+            "value" : "Le serveur a répondu %lld."
           }
         }
       }
@@ -9114,6 +9505,75 @@
         }
       }
     },
+    "Thunderstorm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewitter"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tormenta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orage"
+          }
+        }
+      }
+    },
+    "Thunderstorm with heavy hail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewitter mit starkem Hagel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tormenta con granizo fuerte"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orage avec forte grêle"
+          }
+        }
+      }
+    },
+    "Thunderstorm with light hail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewitter mit leichtem Hagel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tormenta con granizo ligero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orage avec grêle faible"
+          }
+        }
+      }
+    },
     "Thursdays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9199,6 +9659,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Titre"
+          }
+        }
+      }
+    },
+    "Today" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heute"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aujourd’hui"
+          }
+        }
+      }
+    },
+    "Tomorrow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Morgen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mañana"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demain"
           }
         }
       }
@@ -9368,29 +9874,6 @@
         }
       }
     },
-    "typical %@–%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "üblich %@–%@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "lo habitual: %@–%@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "habituellement %@–%@"
-          }
-        }
-      }
-    },
     "Typical CO₂" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9414,6 +9897,29 @@
         }
       }
     },
+    "UV index" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UV-Index"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Índice UV"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indice UV"
+          }
+        }
+      }
+    },
     "Unexpected response from cedar-chat: %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9433,29 +9939,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Réponse inattendue de cedar-chat : %@"
-          }
-        }
-      }
-    },
-    "unread" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ungelesen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "no leída"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "non lu"
           }
         }
       }
@@ -9593,6 +10076,29 @@
         }
       }
     },
+    "Violent rain showers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heftige Regenschauer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chubascos violentos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Averses violentes"
+          }
+        }
+      }
+    },
     "Volatility" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9718,24 +10224,71 @@
         }
       }
     },
-    "was %@" : {
+    "Weather code %lld" : {
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "vorher %@"
+            "value" : "Wettercode %lld"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "antes %@"
+            "value" : "Código meteorológico %lld"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "avant %@"
+            "value" : "Code météo %lld"
+          }
+        }
+      }
+    },
+    "Weather data by %@ (CC BY 4.0)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wetterdaten von %@ (CC BY 4.0)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos meteorológicos de %@ (CC BY 4.0)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Données météo de %@ (CC BY 4.0)"
+          }
+        }
+      }
+    },
+    "Weather for %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wetter für %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El tiempo en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Météo pour %@"
           }
         }
       }
@@ -9987,6 +10540,52 @@
         }
       }
     },
+    "Wind" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wind"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vent"
+          }
+        }
+      }
+    },
+    "Wind from %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wind aus %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viento del %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vent du %@"
+          }
+        }
+      }
+    },
     "Working…" : {
       "localizations" : {
         "de" : {
@@ -10142,6 +10741,601 @@
           }
         }
       }
+    },
+    "about %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "etwa %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aprox. %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "environ %@"
+          }
+        }
+      }
+    },
+    "best selling first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestseller zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "más vendidos primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "meilleures ventes d'abord"
+          }
+        }
+      }
+    },
+    "cedar-chat returned HTTP %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat hat HTTP %lld zurückgegeben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat devolvió HTTP %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat a renvoyé HTTP %lld"
+          }
+        }
+      }
+    },
+    "cedar-chat wants an access token, or rejected this one. Check Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat verlangt ein Zugriffstoken oder hat dieses abgelehnt. Prüfe die Einstellungen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat pide un token de acceso o rechazó este. Revisa la configuración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat demande un jeton d'accès, ou a refusé celui-ci. Vérifiez les Réglages."
+          }
+        }
+      }
+    },
+    "cheapest first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "günstigste zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "más baratos primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "moins chers d'abord"
+          }
+        }
+      }
+    },
+    "direct" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "direkt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "directo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "direct"
+          }
+        }
+      }
+    },
+    "from %@ review" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aus %@ Bewertung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %@ reseña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sur %@ avis"
+          }
+        }
+      }
+    },
+    "from %@ reviews" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aus %@ Bewertungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %@ reseñas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sur %@ avis"
+          }
+        }
+      }
+    },
+    "high confidence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hohe Sicherheit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confianza alta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confiance élevée"
+          }
+        }
+      }
+    },
+    "highest rated first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "am besten bewertet zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mejor valorados primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mieux notés d'abord"
+          }
+        }
+      }
+    },
+    "index" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el índice"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "l'indice"
+          }
+        }
+      }
+    },
+    "log scale" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "logarithmische Skala"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "escala logarítmica"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "échelle logarithmique"
+          }
+        }
+      }
+    },
+    "low confidence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "geringe Sicherheit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confianza baja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confiance faible"
+          }
+        }
+      }
+    },
+    "medium confidence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mittlere Sicherheit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confianza media"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confiance moyenne"
+          }
+        }
+      }
+    },
+    "no reviews" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "keine Bewertungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sin reseñas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucun avis"
+          }
+        }
+      }
+    },
+    "not available" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nicht verfügbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non disponible"
+          }
+        }
+      }
+    },
+    "price at the store" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preis im Shop"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "precio en la tienda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "prix en boutique"
+          }
+        }
+      }
+    },
+    "priciest first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "teuerste zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "más caros primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "plus chers d'abord"
+          }
+        }
+      }
+    },
+    "same price" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "gleicher Preis"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mismo precio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "même prix"
+          }
+        }
+      }
+    },
+    "starred" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "markiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "destacada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "favori"
+          }
+        }
+      }
+    },
+    "the store" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shop"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la tienda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la boutique"
+          }
+        }
+      }
+    },
+    "typical %@–%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "üblich %@–%@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "lo habitual: %@–%@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "habituellement %@–%@"
+          }
+        }
+      }
+    },
+    "unread" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ungelesen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no leída"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non lu"
+          }
+        }
+      }
+    },
+    "up to %@, gusts %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "bis %1$@, Böen %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hasta %1$@, rachas %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jusqu’à %1$@, rafales %2$@"
+          }
+        }
+      }
+    },
+    "was %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vorher %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "antes %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "avant %@"
+          }
+        }
+      }
+    },
+    "· Run now" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· Manuell gestartet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· Ejecutada manualmente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· Lancée manuellement"
+          }
+        }
+      }
+    },
+    "−%lld" : {
+      "comment" : "A score that is displayed as a number in a bar. The number is positive if the score is positive, negative if the score is negative, and zero if the score is zero.",
+      "isCommentAutoGenerated" : true
     }
   },
   "version" : "1.1"

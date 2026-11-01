@@ -27,10 +27,13 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   requests, always, or never
 - Charts from `generate_chart` as native Swift Charts cards, drawn from the call's data: a legend
   that hides and shows series, touch to read the values, and the data as a table
-- Maps, recipes, routes, stock comparisons and product searches as native cards: Apple Maps
-  with numbered pins and route lines (tap for full screen), a recipe checklist with steps to
-  tick off, stock charts with ratings, returns and news, and product tiles with photos, prices,
-  the reading of their reviews and comparable options to step through
+- Maps, recipes, routes, stock comparisons, product searches and the weather as native cards:
+  Apple Maps with numbered pins and route lines (tap for full screen), a recipe checklist with
+  steps to tick off, stock charts with ratings, returns and news, product tiles with photos,
+  prices, the reading of their reviews and comparable options to step through, and a weather
+  card with the current conditions (SF Symbols icons, a moon at night), tiles for humidity, wind
+  and daylight, and a row per day with a low-to-high temperature bar that opens to its details,
+  read from the same report the model gets
 - Follow-ups continue the conversation; a stop button cancels the running response
 - Attach PDFs (any model) and photos or images (models registered as multimodal) to a
   message from the paperclip: the photo library or Files. Photos in a type cedar doesn't take,
