@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6
+
+- **The weather card on iPhone and Android.** 0.3.5's weather card comes to both phone apps: a `weather_forecast` call shows the place and its local time, the current conditions with a large icon (a moon at night), the temperature with feels like and the day's high and low, tiles for humidity, wind with its direction, gusts, precipitation, UV and daylight, and a row per day with its icon, chance of rain and a low-to-high temperature bar on a shared scale; tap a day for its details. Conditions are translated (en/de/fr/es) and the Open-Meteo credit is kept. Both apps read the same text report the model gets, as the web does, so conversations from before the update get the card too (`iOS/Cedar/Models/WeatherCard.swift`, `android/core/…/WeatherCard.kt`).
+
 ## 0.3.5
 
 - **The desktop setup page says what Cedar is doing.** While the app starts up (finding Docker, downloading the sandbox image, starting the servers, registering the model), a banner under the header now shows the one thing going on: a spinner while Cedar works, an amber marker with what to do when it waits on you, and a green check once everything is ready. Click it to scroll to that step. In English, German, French and Spanish (#146).

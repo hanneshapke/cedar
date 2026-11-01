@@ -44,13 +44,17 @@ data class ToolCall(
             "web_search" -> input["query"].str ?: ""
             "remember" -> input["text"].str ?: ""
             "forget" -> ""
-            "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights" -> cardTitle ?: ""
+            "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast" -> cardTitle ?: ""
             else -> input.pretty().replace("\n", " ")
         }
 
     /** What a card is about, from its result when it has one, else its input. */
     val cardTitle: String?
         get() {
+            // The place the forecast is for, as the report names it, else as it was asked for.
+            if (name == "weather_forecast") {
+                return output?.let(WeatherCard::parse)?.label?.takeIf { it.isNotEmpty() } ?: input["location"].str
+            }
             if (name == "search_flights") return flightsRoute
             val result = output?.let(::parseJson)
             if (result != null) {
@@ -87,8 +91,8 @@ data class ToolCall(
         }
 
     companion object {
-        /** Tools whose result is drawn as a card (map, recipe, route, stocks, products, flights, and a chart from its data). */
-        val CARD_TOOLS = setOf("show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "generate_chart")
+        /** Tools whose result is drawn as a card (map, recipe, route, stocks, products, flights, weather, and a chart from its data). */
+        val CARD_TOOLS = setOf("show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast", "generate_chart")
     }
 }
 
