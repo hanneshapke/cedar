@@ -19,8 +19,8 @@ import kotlin.math.roundToInt
 
 /**
  * A tool result the app draws as a card: `show_map`, `show_recipe`, `plan_trip`, `compare_stocks`,
- * `search_products`, `search_flights`, and the data of a `generate_chart` call. Parsed with the same rules as the web
- * UI's views and iOS/Cedar/Models/Cards.swift. Everything in a result came from the model or the
+ * `search_products`, `search_flights`, `weather_forecast`, and the data of a `generate_chart` call. Parsed with the
+ * same rules as the web UI's views and iOS/Cedar/Models/Cards.swift. Everything in a result came from the model or the
  * network, so text is clipped, numbers and coordinates are checked, and links are only kept if they
  * are https.
  */
@@ -31,16 +31,19 @@ sealed interface Card {
     data class Stocks(val card: StocksCard) : Card
     data class Products(val card: ProductsCard) : Card
     data class Flights(val card: FlightsCard) : Card
+    data class Weather(val card: WeatherCard) : Card
     data class Chart(val card: ChartCard) : Card
 
     companion object {
         /**
          * The card for a finished call, or `null` when it isn't a card tool or its result isn't usable.
          * A chart is drawn from the call's `input`; its output only says where the picture was saved.
+         * A forecast is the plain-text report the model reads, not JSON.
          */
         fun parse(name: String, output: String, input: JsonElement = JsonNull): Card? {
             if (name !in ToolCall.CARD_TOOLS) return null
             if (name == "generate_chart") return ChartCard.parse(input)?.let(::Chart)
+            if (name == "weather_forecast") return WeatherCard.parse(output)?.let(::Weather)
             val value = parseJson(output) ?: return null
             return when (name) {
                 "show_map" -> MapCard.parse(value)?.let(::Map)

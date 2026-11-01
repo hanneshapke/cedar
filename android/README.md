@@ -38,7 +38,9 @@ The same as the iOS app:
 - Cards drawn natively: charts (legend that hides series, touch to read values, the data as a
   table), maps on **OpenStreetMap** (numbered pins, route lines, full screen when tapped, OSM's
   attribution), recipes to tick off, routes with each leg, stock comparisons with ratings, returns
-  and news, and product searches. Anything the app can't draw opens on the web
+  and news, product searches, and the weather (current conditions, tiles for humidity, wind and
+  daylight, a row per day with a low-to-high temperature bar that opens to its details). Anything
+  the app can't draw opens on the web
 - Attach PDFs (any model) and photos (models registered as multimodal) from the paperclip. Photos
   in a type cedar doesn't take, such as HEIC, are sent as JPEG; the limits are the server's (10
   files, 20 MB each, 32 MB in all)

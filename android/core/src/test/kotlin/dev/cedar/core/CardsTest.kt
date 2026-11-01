@@ -460,4 +460,126 @@ class CardsTest {
         assertEquals(listOf("MUC"), FlightsCard.airports(j("""["muc", "Munich", 3]""")))
         assertEquals(emptyList(), FlightsCard.airports(j("{}")))
     }
+
+    // weather_forecast, as src/tools/weather.rs writes it (ported from iOS/CedarTests/WeatherCardTests.swift).
+    private val report = """
+        Berlin, State of Berlin, Germany (52.52, 13.41), timezone Europe/Berlin
+
+        Now (2026-10-12 21:00): clear sky, 10.2°C (feels 8.3°C), humidity 70%, wind 4.6 km/h from NW, gusts 9.4 km/h, precipitation 0 mm
+
+        Mon 2026-10-12: overcast, low 6.8°C, high 13.7°C, precipitation 0 mm (32% chance), wind up to 14.1 km/h (gusts 31 km/h), UV 2.9, sunrise 07:26, sunset 18:18
+        Tue 2026-10-13: slight rain, low 5.1°C, high 15.1°C, precipitation 0.2 mm (19% chance), wind up to 13.4 km/h (gusts 29.5 km/h), UV 2.8, sunrise 07:28, sunset 18:16
+
+        Weather data by Open-Meteo.com (CC BY 4.0)
+    """.trimIndent()
+
+    @Test
+    fun weatherReadsTheReportBack() {
+        val w = assertIs<Card.Weather>(Card.parse("weather_forecast", report)).card
+        assertEquals("Berlin, State of Berlin, Germany", w.label)
+        assertEquals("Berlin", w.placeName)
+        assertEquals("State of Berlin, Germany", w.region)
+        assertEquals(52.52, w.latitude)
+        assertEquals(13.41, w.longitude)
+        assertEquals("Europe/Berlin", w.timezone)
+        val now = assertNotNull(w.now)
+        assertEquals("2026-10-12", now.date)
+        assertEquals("21:00", now.time)
+        assertEquals(0, now.code)
+        assertEquals(WeatherCard.Quantity(10.2, "°C"), now.temp)
+        assertEquals(WeatherCard.Quantity(8.3, "°C"), now.feels)
+        assertEquals(WeatherCard.Quantity(70.0, "%"), now.humidity)
+        assertEquals(WeatherCard.Quantity(4.6, "km/h"), now.wind)
+        assertEquals("NW", now.from)
+        assertEquals(WeatherCard.Quantity(9.4, "km/h"), now.gusts)
+        assertEquals(WeatherCard.Quantity(0.0, "mm"), now.precip)
+        assertEquals(listOf("2026-10-12", "2026-10-13"), w.days.map { it.date })
+        val monday = w.days[0]
+        assertEquals(3, monday.code)
+        assertEquals(WeatherCard.Quantity(6.8, "°C"), monday.low)
+        assertEquals(WeatherCard.Quantity(13.7, "°C"), monday.high)
+        assertEquals(WeatherCard.Quantity(0.0, "mm"), monday.precip)
+        assertEquals(WeatherCard.Quantity(32.0, "%"), monday.chance)
+        assertEquals(WeatherCard.Quantity(14.1, "km/h"), monday.wind)
+        assertEquals(WeatherCard.Quantity(31.0, "km/h"), monday.gusts)
+        assertEquals(WeatherCard.Quantity(2.9, ""), monday.uv)
+        assertEquals("07:26", monday.sunrise)
+        assertEquals("18:18", monday.sunset)
+        assertEquals(61, w.days[1].code)
+        // 21:00 is after sunset, so the card leads with a moon.
+        assertTrue(w.isNight)
+        assertEquals("2026-10-12", w.today)
+        assertEquals(0, w.leadCode)
+        assertEquals(2, w.forecastDays.size)
+    }
+
+    @Test
+    fun weatherWithCoordinatesOnlyAndMissingParts() {
+        val output = """
+            52.52, 13.41
+
+            Now: weather code 4, 10°F, wind 3 mph
+
+            Wed 2026-10-14: no data
+            Thu 2026-10-15: fog, low 40°F, high 55°F
+
+            Weather data by Open-Meteo.com (CC BY 4.0)
+        """.trimIndent()
+        val w = assertIs<Card.Weather>(Card.parse("weather_forecast", output)).card
+        assertEquals("", w.label)
+        assertEquals("52.52, 13.41", w.placeName)
+        assertNull(w.region)
+        assertNull(w.timezone)
+        assertEquals(4, w.now?.code)
+        assertEquals(WeatherCard.Quantity(10.0, "°F"), w.now?.temp)
+        assertNull(w.now?.feels)
+        assertEquals(WeatherCard.Quantity(3.0, "mph"), w.now?.wind)
+        assertNull(w.now?.from)
+        assertNull(w.now?.time)
+        assertFalse(w.isNight)
+        assertEquals(2, w.days.size)
+        assertNull(w.days[0].code)
+        assertNull(w.days[0].low)
+        assertEquals(45, w.days[1].code)
+        assertEquals(listOf("2026-10-15"), w.forecastDays.map { it.date })
+        assertEquals("2026-10-14", w.today, "without a local time, the first day is today")
+        assertEquals(-12.2, Math.round((w.now?.temp?.celsius ?: 0.0) * 10) / 10.0)
+    }
+
+    @Test
+    fun whatIsNotAForecastIsNoCard() {
+        assertNull(Card.parse("weather_forecast", "Could not find a place named Atlantis."))
+        assertNull(Card.parse("weather_forecast", "Berlin (52.52, 13.41)\n\nWeather data by Open-Meteo.com (CC BY 4.0)"), "no temperatures, nothing to draw")
+        assertNull(Card.parse("weather_forecast", "Nowhere (120, 13.41)\n\nNow: 10°C"))
+        assertNull(Card.parse("bash", report))
+    }
+
+    @Test
+    fun weatherToolCallIsTitledWithThePlace() {
+        var call = ToolCall("1", "weather_forecast", JsonObject(mapOf("location" to JsonPrimitive("Berlin"))))
+        assertTrue(call.isCard)
+        assertEquals("Berlin", call.summary)
+        call = call.copy(output = report)
+        assertEquals("Berlin, State of Berlin, Germany", call.summary)
+    }
+
+    @Test
+    fun weatherSkiesAndColours() {
+        assertEquals(WeatherCard.Sky.CLEAR, WeatherCard.Sky.of(1))
+        assertEquals(WeatherCard.Sky.PARTLY, WeatherCard.Sky.of(2))
+        assertEquals(WeatherCard.Sky.FOG, WeatherCard.Sky.of(48))
+        assertEquals(WeatherCard.Sky.DRIZZLE, WeatherCard.Sky.of(55))
+        assertEquals(WeatherCard.Sky.SLEET, WeatherCard.Sky.of(66))
+        assertEquals(WeatherCard.Sky.RAIN, WeatherCard.Sky.of(81))
+        assertEquals(WeatherCard.Sky.SNOW, WeatherCard.Sky.of(86))
+        assertEquals(WeatherCard.Sky.STORM, WeatherCard.Sky.of(99))
+        assertEquals(WeatherCard.Sky.CLOUD, WeatherCard.Sky.of(4))
+        assertEquals(WeatherCard.Sky.CLOUD, WeatherCard.Sky.of(null))
+        assertEquals("partly cloudy", WeatherCard.conditionWords(2))
+        assertEquals("", WeatherCard.conditionWords(4))
+        // Freezing is blue, mild is green, hot is red.
+        assertEquals(230.0, WeatherCard.hue(-20.0))
+        assertEquals(180.0, WeatherCard.hue(5.0))
+        assertEquals(5.0, WeatherCard.hue(40.0))
+    }
 }
