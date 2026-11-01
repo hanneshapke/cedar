@@ -615,7 +615,8 @@ impl Integrations {
         for entry in self.models.load().iter() {
             out.push(self.model_status(entry).await?);
         }
-        Ok(json!({ "models": out }))
+        // Whether a key can be saved with a model (CEDAR_SECRET_KEY), so a form knows to offer the field.
+        Ok(json!({ "storage": self.secrets.is_some(), "models": out }))
     }
 
     async fn model_status(&self, entry: &ModelEntry) -> Result<Value> {

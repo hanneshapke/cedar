@@ -2,7 +2,7 @@
 
 use crate::cedar::{self, Attachment, CedarClient, RunOptions};
 use crate::channels::{self, ApnsEnvironment, Method, Reach, Scope, Security};
-use crate::config::Config;
+use crate::config::{Config, ModelsAccess};
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::prompt::{self, Exchange};
@@ -74,6 +74,9 @@ const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
 /// Draws the `show_recipe` tool's result as a recipe card with the steps as a timeline; both UIs load it.
 const RECIPE_VIEW_JS: &str = include_str!("../static/recipe-view.js");
 const RECIPE_VIEW_CSS: &str = include_str!("../static/recipe-view.css");
+/// Draws the `weather_forecast` tool's report as a weather card with a row per day; every UI loads it.
+const WEATHER_VIEW_JS: &str = include_str!("../static/weather-view.js");
+const WEATHER_VIEW_CSS: &str = include_str!("../static/weather-view.css");
 /// Draws the `ask_user` tool's result as a form with choices and a free-form answer; both UIs load it.
 const CLARIFY_VIEW_JS: &str = include_str!("../static/clarify-view.js");
 const CLARIFY_VIEW_CSS: &str = include_str!("../static/clarify-view.css");
@@ -333,6 +336,8 @@ pub fn router(state: AppState) -> Router {
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
         .route("/recipe-view.js", get(|| async { asset(JS, RECIPE_VIEW_JS) }))
         .route("/recipe-view.css", get(|| async { asset(CSS, RECIPE_VIEW_CSS) }))
+        .route("/weather-view.js", get(|| async { asset(JS, WEATHER_VIEW_JS) }))
+        .route("/weather-view.css", get(|| async { asset(CSS, WEATHER_VIEW_CSS) }))
         .route("/clarify-view.js", get(|| async { asset(JS, CLARIFY_VIEW_JS) }))
         .route("/clarify-view.css", get(|| async { asset(CSS, CLARIFY_VIEW_CSS) }))
         .route("/transit-view.js", get(|| async { asset(JS, TRANSIT_VIEW_JS) }))
@@ -489,6 +494,9 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
     Json(json!({
         "auth_required": state.token_digest.is_some(),
         "admin_enabled": state.admin_digest.is_some(),
+        // Whether the models in Settings -> Server are open to everyone with the access token
+        // ("users", the default) or need the admin token ("admins", CHAT_MODELS_ACCESS).
+        "models_access": state.cfg.models_access.as_str(),
         // This chat server has the /api/memory routes (whether cedar has memory is in their answer).
         "memory": true,
     }))
@@ -1538,6 +1546,16 @@ fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> 
     }
 }
 
+/// The model routes: by default the access token is enough (a personal setup, where whoever chats
+/// also picks the models); with `CHAT_MODELS_ACCESS=admins` they need the admin token like the
+/// rest of Settings -> Server.
+fn require_models_access(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    match state.cfg.models_access {
+        ModelsAccess::Users => Ok(()),
+        ModelsAccess::Admins => require_admin(state, headers),
+    }
+}
+
 fn redirect_uri(state: &AppState) -> String {
     format!("{}{GOOGLE_CALLBACK_PATH}", state.cfg.public_url)
 }
@@ -1566,14 +1584,14 @@ async fn put_brave_key(
 }
 
 async fn get_models(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     Ok(Json(state.cedar.models_admin().await?))
 }
 
 /// The models a server lists (`{base_url, api_key?, id?}`, cedar's body, passed through), so the
 /// form offers names it serves.
 async fn list_server_models(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     if !body.is_object() {
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
     }
@@ -1589,7 +1607,7 @@ async fn put_model(
     Path(id): Path<String>,
     ApiJson(body): ApiJson<Value>,
 ) -> Result<Json<Value>, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     if !body.is_object() {
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
     }
@@ -1615,7 +1633,7 @@ async fn put_server_settings(State(state): State<AppState>, headers: HeaderMap, 
 }
 
 async fn delete_model(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {
-    require_admin(&state, &headers)?;
+    require_models_access(&state, &headers)?;
     state.cedar.remove_model(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

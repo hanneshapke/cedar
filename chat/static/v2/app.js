@@ -391,6 +391,7 @@ const FILE_TOOLS = new Set(['write_file', 'generate_pdf', 'generate_chart', 'dow
 // Tools whose result is drawn as a widget (map-view.js and friends), which keeps state once built.
 const WIDGETS = {
   show_map: { lib: () => cedarMap, waiting: 'v2.wait.map', count: (s) => tr('v2.count.places', { count: s.markers.length }) },
+  weather_forecast: { lib: () => cedarWeather, waiting: 'v2.wait.weather', count: (s) => tr('v2.count.days', { count: s.days.length }) },
   show_recipe: { lib: () => cedarRecipe, waiting: 'v2.wait.recipe', count: (s) => tr('v2.count.steps', { count: s.steps.length }) },
   plan_trip: { lib: () => cedarTransit, waiting: 'v2.wait.trip', count: (s) => tr('v2.count.ways', { count: s.options.length }) },
   compare_stocks: { lib: () => cedarStocks, waiting: 'v2.wait.stocks', count: (s) => tr('v2.count.stocks', { count: s.stocks.length }) },
@@ -690,7 +691,6 @@ function fillTrace(tool, card, done) {
       break;
     case 'read_file':
     case 'read_document':
-    case 'weather_forecast':
     case 'ask_user':
       if (done) body.append(outputBlock(String(tool.output)));
       break;

@@ -1,0 +1,337 @@
+/* The weather card for the weather_forecast tool (see weather-view.js), shared by every UI. Like
+   the other cards it only relies on --accent and --muted, which every UI defines, and uses
+   translucent tints so it reads in the light and dark themes alike. The sky (data-sky, data-night)
+   tints the top of the card. */
+
+.cedar-weather {
+  --cw-line: rgba(128, 128, 128, .24);
+  --cw-soft: rgba(128, 128, 128, .08);
+  --cw-muted: var(--muted, #6f6d66);
+  --cw-sky: rgba(128, 128, 128, .06);
+  --cw-sun: #f2a516;
+  --cw-rain: #3d8bd9;
+  --cw-snow: #7fb2e5;
+  container-type: inline-size;
+  margin: 12px 0;
+  border: 1px solid rgba(128, 128, 128, .32);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, .04);
+  font-size: 14px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.cedar-weather[data-sky="clear"] { --cw-sky: rgba(242, 165, 22, .16); }
+.cedar-weather[data-sky="partly"] { --cw-sky: rgba(242, 190, 80, .12); }
+.cedar-weather[data-sky="cloud"],
+.cedar-weather[data-sky="fog"] { --cw-sky: rgba(128, 140, 160, .14); }
+.cedar-weather[data-sky="rain"] { --cw-sky: rgba(61, 139, 217, .15); }
+.cedar-weather[data-sky="snow"] { --cw-sky: rgba(127, 178, 229, .18); }
+.cedar-weather[data-sky="storm"] { --cw-sky: rgba(110, 90, 170, .18); }
+.cedar-weather[data-night] { --cw-sky: rgba(70, 80, 160, .18); }
+
+/* ---- now ---- */
+
+.cw-top {
+  padding: 14px 16px 12px;
+  background: linear-gradient(180deg, var(--cw-sky), transparent);
+}
+
+.cw-name {
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.cw-sub {
+  color: var(--cw-muted);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.cw-sub:empty { display: none; }
+
+.cw-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.cw-reading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  min-width: 0;
+}
+
+.cw-temp {
+  font-size: 46px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -.02em;
+}
+
+.cw-temp-unit {
+  font-size: 18px;
+  font-weight: 400;
+  vertical-align: top;
+  margin-left: 2px;
+  color: var(--cw-muted);
+}
+
+.cw-cond {
+  font-size: 15px;
+  font-weight: 550;
+}
+
+.cw-cond:first-letter { text-transform: uppercase; }
+
+.cw-range {
+  color: var(--cw-muted);
+  font-size: 13px;
+}
+
+/* ---- icons ---- */
+
+.cw-icon {
+  display: inline-flex;
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+.cw-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+.cw-hero-icon {
+  width: 64px;
+  height: 64px;
+}
+
+.cw-hero-icon svg { stroke-width: 1.2; }
+
+.cw-icon .cw-i-sun { fill: var(--cw-sun); stroke: var(--cw-sun); }
+.cw-icon .cw-i-ray { stroke: var(--cw-sun); }
+.cw-icon .cw-i-moon { fill: rgba(200, 200, 235, .35); stroke: #8f96d6; }
+.cw-icon .cw-i-cloud { fill: var(--paper, var(--bg, Canvas)); fill-opacity: .9; }
+.cw-icon .cw-i-rain { stroke: var(--cw-rain); }
+.cw-icon .cw-i-snow { stroke: var(--cw-snow); }
+.cw-icon .cw-i-fog { stroke: var(--cw-muted); }
+.cw-icon .cw-i-bolt { stroke: var(--cw-sun); fill: none; }
+
+/* A slow drift so the lead icon feels alive; off for anyone who asks for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .cw-hero-icon .cw-i-ray { transform-origin: 12px 12px; animation: cw-spin 40s linear infinite; }
+  .cw-hero-icon .cw-i-cloud { animation: cw-drift 6s ease-in-out infinite alternate; }
+}
+
+@keyframes cw-spin { to { transform: rotate(360deg); } }
+@keyframes cw-drift { from { transform: translateX(-.6px); } to { transform: translateX(.8px); } }
+
+/* ---- the key numbers ---- */
+
+.cw-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.cw-stat {
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--cw-soft);
+  min-width: 0;
+}
+
+.cw-stat dt {
+  color: var(--cw-muted);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-stat dd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 1px 0 0;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.cw-wind-arrow {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.cw-wind-arrow svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- the days ---- */
+
+.cw-days {
+  border-top: 1px solid var(--cw-line);
+  padding: 6px 8px 4px;
+}
+
+.cw-days-title {
+  padding: 4px 8px 2px;
+  color: var(--cw-muted);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.cw-day + .cw-day { border-top: 1px solid var(--cw-soft); }
+
+.cw-day-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 1.1fr) 52px 26px 38px 34px minmax(60px, 3fr) 34px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cw-day.no-chance .cw-day-row {
+  grid-template-columns: minmax(64px, 1.1fr) 52px 26px 34px minmax(60px, 3fr) 34px;
+}
+
+.cw-day-row:hover { background: var(--cw-soft); }
+
+.cw-day-row:focus-visible {
+  outline: 2px solid var(--accent, #c96442);
+  outline-offset: -2px;
+}
+
+.cw-day-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-day-date {
+  color: var(--cw-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.cw-day-chance {
+  color: var(--cw-rain);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.cw-day-low {
+  color: var(--cw-muted);
+  text-align: right;
+}
+
+.cw-day-high {
+  font-weight: 600;
+}
+
+.cw-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--cw-soft);
+}
+
+.cw-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  min-width: 6px;
+}
+
+.cw-bar-now {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--paper, var(--bg, Canvas));
+  border: 2px solid currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.cw-day-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 2px 8px 10px;
+}
+
+.cw-day-detail[hidden] { display: none; }
+
+.cw-day-detail .cw-stat dd { white-space: normal; }
+
+.cw-day.open .cw-day-row { background: var(--cw-soft); }
+
+/* ---- credit ---- */
+
+.cw-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 8px 16px 10px;
+  border-top: 1px solid var(--cw-line);
+  color: var(--cw-muted);
+  font-size: 12px;
+}
+
+.cw-foot a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+.cw-tz { margin-left: auto; }
+
+/* ---- narrow cards: drop the date and tighten the row ---- */
+
+@container (max-width: 420px) {
+  .cw-day-row,
+  .cw-day.no-chance .cw-day-row {
+    grid-template-columns: minmax(52px, 1fr) 24px 36px 30px minmax(40px, 2fr) 30px;
+    gap: 6px;
+  }
+  .cw-day.no-chance .cw-day-row { grid-template-columns: minmax(52px, 1fr) 24px 30px minmax(40px, 2fr) 30px; }
+  .cw-day-date { display: none; }
+  .cw-temp { font-size: 40px; }
+  .cw-hero-icon { width: 54px; height: 54px; }
+  .cw-tz { margin-left: 0; }
+}
