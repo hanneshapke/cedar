@@ -160,7 +160,7 @@ struct WeatherCard: Hashable, Sendable {
                 now.time = String(stamp[1])
             }
         }
-        for part in line[colon.upperBound...].components(separatedBy: ", ").map(Substring.init) {
+        for part in line[colon.upperBound...].components(separatedBy: ", ").map({ Substring($0) }) {
             if let code = code(of: part) {
                 if now.code == nil { now.code = code }
             } else if let open = part.range(of: " (feels "), part.hasSuffix(")") {
@@ -193,7 +193,7 @@ struct WeatherCard: Hashable, Sendable {
         let head = line[..<colon.lowerBound].split(separator: " ")
         guard head.count == 2, head[0].count == 3, head[0].first?.isUppercase == true, isDate(head[1]) else { return nil }
         var day = Day(date: String(head[1]))
-        for part in line[colon.upperBound...].components(separatedBy: ", ").map(Substring.init) {
+        for part in line[colon.upperBound...].components(separatedBy: ", ").map({ Substring($0) }) {
             if let code = code(of: part) {
                 if day.code == nil { day.code = code }
             } else if let rest = after("low ", in: part) {

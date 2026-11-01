@@ -2,7 +2,7 @@
   "sourceLanguage" : "en",
   "strings" : {
     "CFBundleDisplayName" : {
-      "extractionState" : "extracted_with_value",
+      "comment" : "Bundle display name",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -30,8 +30,20 @@
         }
       }
     },
-    "NSCameraUsageDescription" : {
+    "CFBundleName" : {
+      "comment" : "Bundle name",
       "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cedar"
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription" : {
+      "comment" : "Privacy - Camera Usage Description",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -60,7 +72,7 @@
       }
     },
     "NSLocalNetworkUsageDescription" : {
-      "extractionState" : "extracted_with_value",
+      "comment" : "Privacy - Local Network Usage Description",
       "localizations" : {
         "de" : {
           "stringUnit" : {
