@@ -1,25 +1,93 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port)." : {
-      "extractionState" : "manual",
+    "· Run now" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ Port %@ liefert vermutlich unverschlüsseltes HTTP. Verwende die HTTPS-Adresse von tailscale serve, z. B. https://<machine>.<tailnet>.ts.net (ohne Port)."
+            "value" : "· Manuell gestartet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ El puerto %@ puede servir HTTP sin cifrar. Usa la dirección HTTPS de tailscale serve, p. ej., https://<machine>.<tailnet>.ts.net (sin puerto)."
+            "value" : "· Ejecutada manualmente"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ Le port %@ sert peut-être du HTTP non chiffré. Utilisez l'adresse HTTPS de tailscale serve, par ex. https://<machine>.<tailnet>.ts.net (sans port)."
+            "value" : "· Lancée manuellement"
+          }
+        }
+      }
+    },
+    "(%lld more characters)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(%lld weitere Zeichen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(%lld caracteres más)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(%lld caractères de plus)"
+          }
+        }
+      }
+    },
+    "(no output)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(keine Ausgabe)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(sin salida)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(aucune sortie)"
+          }
+        }
+      }
+    },
+    "%@ × %lld series" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ × %lld Reihen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ × %lld series"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ × %lld séries"
           }
         }
       }
@@ -213,6 +281,29 @@
         }
       }
     },
+    "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Port %@ liefert vermutlich unverschlüsseltes HTTP. Verwende die HTTPS-Adresse von tailscale serve, z. B. https://<machine>.<tailnet>.ts.net (ohne Port)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ El puerto %@ puede servir HTTP sin cifrar. Usa la dirección HTTPS de tailscale serve, p. ej., https://<machine>.<tailnet>.ts.net (sin puerto)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Le port %@ sert peut-être du HTTP non chiffré. Utilisez l'adresse HTTPS de tailscale serve, par ex. https://<machine>.<tailnet>.ts.net (sans port)."
+          }
+        }
+      }
+    },
     "%@ price over %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -278,52 +369,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ direction %@"
-          }
-        }
-      }
-    },
-    "%@ × %lld series" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ × %lld Reihen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ × %lld series"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ × %lld séries"
-          }
-        }
-      }
-    },
-    "%@%% / yr" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %% / Jahr"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@%% / año"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %% / an"
           }
         }
       }
@@ -436,6 +481,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ : ce modèle accepte les PDF mais pas les images"
+          }
+        }
+      }
+    },
+    "%@%% / yr" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %% / Jahr"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@%% / año"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %% / an"
           }
         }
       }
@@ -1375,74 +1443,17 @@
         }
       }
     },
-    "(%lld more characters)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(%lld weitere Zeichen)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(%lld caracteres más)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(%lld caractères de plus)"
-          }
-        }
-      }
+    "+%lld" : {
+      "comment" : "A score that is displayed as a number in a bar. The number is positive if the score is positive, negative if the score is negative, and zero if the score is zero.",
+      "isCommentAutoGenerated" : true
     },
-    "(no output)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(keine Ausgabe)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(sin salida)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(aucune sortie)"
-          }
-        }
-      }
+    "−%lld" : {
+      "comment" : "A score that is displayed as a number in a bar. The number is positive if the score is positive, negative if the score is negative, and zero if the score is zero.",
+      "isCommentAutoGenerated" : true
     },
-    "200-day avg" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "200-Tage-Schnitt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Media de 200 días"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Moyenne 200 jours"
-          }
-        }
-      }
+    "0" : {
+      "comment" : "A score of 0.",
+      "isCommentAutoGenerated" : true
     },
     "50-day avg" : {
       "extractionState" : "manual",
@@ -1490,6 +1501,29 @@
         }
       }
     },
+    "200-day avg" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "200-Tage-Schnitt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media de 200 días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moyenne 200 jours"
+          }
+        }
+      }
+    },
     "A picked file could not be read" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1509,6 +1543,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un fichier choisi n'a pas pu être lu"
+          }
+        }
+      }
+    },
+    "about %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "etwa %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aprox. %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "environ %@"
           }
         }
       }
@@ -1969,28 +2026,6 @@
         }
       }
     },
-    "Attach PDFs" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PDFs anhängen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adjuntar PDF"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Joindre des PDF"
-          }
-        }
-      }
-    },
     "Attach images or PDFs" : {
       "localizations" : {
         "de" : {
@@ -2009,6 +2044,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Joindre des images ou des PDF"
+          }
+        }
+      }
+    },
+    "Attach PDFs" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PDFs anhängen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjuntar PDF"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joindre des PDF"
           }
         }
       }
@@ -2165,6 +2222,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mieux noté"
+          }
+        }
+      }
+    },
+    "best selling first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestseller zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "más vendidos primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "meilleures ventes d'abord"
           }
         }
       }
@@ -2531,6 +2611,52 @@
         }
       }
     },
+    "cedar-chat returned HTTP %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat hat HTTP %lld zurückgegeben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat devolvió HTTP %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat a renvoyé HTTP %lld"
+          }
+        }
+      }
+    },
+    "cedar-chat wants an access token, or rejected this one. Check Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat verlangt ein Zugriffstoken oder hat dieses abgelehnt. Prüfe die Einstellungen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat pide un token de acceso o rechazó este. Revisa la configuración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cedar-chat demande un jeton d'accès, ou a refusé celui-ci. Vérifiez les Réglages."
+          }
+        }
+      }
+    },
     "Cedar's plan" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2594,6 +2720,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conversations"
+          }
+        }
+      }
+    },
+    "cheapest first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "günstigste zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "más baratos primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "moins chers d'abord"
           }
         }
       }
@@ -2841,28 +2990,6 @@
         }
       }
     },
-    "Could Not Load the Files" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dateien konnten nicht geladen werden"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudieron cargar los archivos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impossible de charger les fichiers"
-          }
-        }
-      }
-    },
     "Could not load %@" : {
       "localizations" : {
         "de" : {
@@ -2881,6 +3008,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de charger %@"
+          }
+        }
+      }
+    },
+    "Could Not Load the Files" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien konnten nicht geladen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron cargar los archivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de charger les fichiers"
           }
         }
       }
@@ -3149,6 +3298,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Non démarrée"
+          }
+        }
+      }
+    },
+    "direct" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "direkt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "directo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "direct"
           }
         }
       }
@@ -3714,6 +3886,50 @@
         }
       }
     },
+    "from %@ review" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aus %@ Bewertung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %@ reseña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sur %@ avis"
+          }
+        }
+      }
+    },
+    "from %@ reviews" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aus %@ Bewertungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %@ reseñas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sur %@ avis"
+          }
+        }
+      }
+    },
     "From review or search text, not checked on a store page" : {
       "localizations" : {
         "de" : {
@@ -3917,6 +4133,28 @@
         }
       }
     },
+    "high confidence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hohe Sicherheit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confianza alta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confiance élevée"
+          }
+        }
+      }
+    },
     "High confidence" : {
       "localizations" : {
         "de" : {
@@ -3935,6 +4173,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confiance élevée"
+          }
+        }
+      }
+    },
+    "highest rated first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "am besten bewertet zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mejor valorados primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mieux notés d'abord"
           }
         }
       }
@@ -4055,6 +4316,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En magasin"
+          }
+        }
+      }
+    },
+    "index" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el índice"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "l'indice"
           }
         }
       }
@@ -4307,6 +4591,29 @@
         }
       }
     },
+    "log scale" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "logarithmische Skala"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "escala logarítmica"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "échelle logarithmique"
+          }
+        }
+      }
+    },
     "Long series are thinned here" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4348,6 +4655,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bas"
+          }
+        }
+      }
+    },
+    "low confidence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "geringe Sicherheit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confianza baja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confiance faible"
           }
         }
       }
@@ -4461,6 +4790,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'agent peut-il faire ceci ?"
+          }
+        }
+      }
+    },
+    "medium confidence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mittlere Sicherheit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confianza media"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "confiance moyenne"
           }
         }
       }
@@ -4712,7 +5063,8 @@
         }
       }
     },
-    "New Chat" : {
+    "New chat" : {
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -4734,8 +5086,7 @@
         }
       }
     },
-    "New chat" : {
-      "extractionState" : "manual",
+    "New Chat" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -4801,94 +5152,6 @@
         }
       }
     },
-    "No Conversations" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Unterhaltungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay conversaciones"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucune conversation"
-          }
-        }
-      }
-    },
-    "No Files Yet" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noch keine Dateien"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no hay archivos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucun fichier pour l'instant"
-          }
-        }
-      }
-    },
-    "No Scheduled Agents" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine geplanten Agenten"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay agentes programados"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucun agent planifié"
-          }
-        }
-      }
-    },
-    "No Starred Conversations" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine markierten Unterhaltungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay conversaciones destacadas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucune conversation en favori"
-          }
-        }
-      }
-    },
     "No answer in time; not done" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4934,6 +5197,28 @@
         }
       }
     },
+    "No Conversations" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Unterhaltungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay conversaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune conversation"
+          }
+        }
+      }
+    },
     "No customer rating found" : {
       "localizations" : {
         "de" : {
@@ -4952,6 +5237,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucune note client trouvée"
+          }
+        }
+      }
+    },
+    "No Files Yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Dateien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay archivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun fichier pour l'instant"
           }
         }
       }
@@ -5024,6 +5331,29 @@
         }
       }
     },
+    "no reviews" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "keine Bewertungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sin reseñas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucun avis"
+          }
+        }
+      }
+    },
     "No reviews" : {
       "localizations" : {
         "de" : {
@@ -5068,6 +5398,50 @@
         }
       }
     },
+    "No Scheduled Agents" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine geplanten Agenten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay agentes programados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun agent planifié"
+          }
+        }
+      }
+    },
+    "No Starred Conversations" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine markierten Unterhaltungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay conversaciones destacadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune conversation en favori"
+          }
+        }
+      }
+    },
     "Nonstop" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5087,6 +5461,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sans escale"
+          }
+        }
+      }
+    },
+    "not available" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nicht verfügbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non disponible"
           }
         }
       }
@@ -5203,28 +5600,6 @@
         }
       }
     },
-    "OK" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        }
-      }
-    },
     "Often delayed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5244,6 +5619,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Souvent en retard"
+          }
+        }
+      }
+    },
+    "OK" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
           }
         }
       }
@@ -5337,34 +5734,6 @@
         }
       }
     },
-    "Open Settings" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einstellungen öffnen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir Configuración"
-          }
-        },
-        "es-ES" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir Ajustes"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir les Réglages"
-          }
-        }
-      }
-    },
     "Open in Google Flights" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5384,6 +5753,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvrir dans Google Flights"
+          }
+        }
+      }
+    },
+    "Open on the web" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Im Web öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir en la web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir sur le web"
           }
         }
       }
@@ -5410,24 +5801,30 @@
         }
       }
     },
-    "Open on the web" : {
+    "Open Settings" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Im Web öffnen"
+            "value" : "Einstellungen öffnen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir en la web"
+            "value" : "Abrir Configuración"
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ajustes"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvrir sur le web"
+            "value" : "Ouvrir les Réglages"
           }
         }
       }
@@ -6199,6 +6596,29 @@
         }
       }
     },
+    "price at the store" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preis im Shop"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "precio en la tienda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "prix en boutique"
+          }
+        }
+      }
+    },
     "Price at the store" : {
       "localizations" : {
         "de" : {
@@ -6405,6 +6825,29 @@
         }
       }
     },
+    "priciest first" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "teuerste zuerst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "más caros primero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "plus chers d'abord"
+          }
+        }
+      }
+    },
     "Products" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6496,29 +6939,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En file d'attente"
-          }
-        }
-      }
-    },
-    "RSI (14)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RSI (14)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RSI (14)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RSI (14)"
           }
         }
       }
@@ -6859,6 +7279,29 @@
         }
       }
     },
+    "RSI (14)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSI (14)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSI (14)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSI (14)"
+          }
+        }
+      }
+    },
     "Run Now" : {
       "localizations" : {
         "de" : {
@@ -6899,6 +7342,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En cours"
+          }
+        }
+      }
+    },
+    "same price" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "gleicher Preis"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mismo precio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "même prix"
           }
         }
       }
@@ -7061,6 +7527,7 @@
       }
     },
     "Scheduled (%lld)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7453,6 +7920,7 @@
       }
     },
     "Show" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7470,28 +7938,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Afficher"
-          }
-        }
-      }
-    },
-    "Show Prompt" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prompt anzeigen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar prompt"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher le prompt"
           }
         }
       }
@@ -7514,6 +7960,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Afficher les %lld titres"
+          }
+        }
+      }
+    },
+    "Show Prompt" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prompt anzeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar prompt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher le prompt"
           }
         }
       }
@@ -7783,6 +8251,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajoutez une conversation ou une exécution planifiée aux favoris, ici ou sur le web, pour la garder à portée de main sur tous vos appareils."
+          }
+        }
+      }
+    },
+    "starred" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "markiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "destacada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "favori"
           }
         }
       }
@@ -8373,6 +8864,29 @@
         }
       }
     },
+    "The server answered %lld." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server antwortete mit %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor respondió %lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a répondu %lld."
+          }
+        }
+      }
+    },
     "The server URL is not valid." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8396,25 +8910,25 @@
         }
       }
     },
-    "The server answered %lld." : {
+    "the store" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Server antwortete mit %lld."
+            "value" : "Shop"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El servidor respondió %lld."
+            "value" : "la tienda"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le serveur a répondu %lld."
+            "value" : "la boutique"
           }
         }
       }
@@ -8854,6 +9368,29 @@
         }
       }
     },
+    "typical %@–%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "üblich %@–%@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "lo habitual: %@–%@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "habituellement %@–%@"
+          }
+        }
+      }
+    },
     "Typical CO₂" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8900,7 +9437,31 @@
         }
       }
     },
+    "unread" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ungelesen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no leída"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non lu"
+          }
+        }
+      }
+    },
     "Unread" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -9153,6 +9714,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "À pied jusqu'à %@"
+          }
+        }
+      }
+    },
+    "was %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vorher %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "antes %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "avant %@"
           }
         }
       }
@@ -9559,575 +10142,7 @@
           }
         }
       }
-    },
-    "about %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "etwa %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aprox. %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "environ %@"
-          }
-        }
-      }
-    },
-    "best selling first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bestseller zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "más vendidos primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "meilleures ventes d'abord"
-          }
-        }
-      }
-    },
-    "cedar-chat returned HTTP %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat hat HTTP %lld zurückgegeben"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat devolvió HTTP %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat a renvoyé HTTP %lld"
-          }
-        }
-      }
-    },
-    "cedar-chat wants an access token, or rejected this one. Check Settings." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat verlangt ein Zugriffstoken oder hat dieses abgelehnt. Prüfe die Einstellungen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat pide un token de acceso o rechazó este. Revisa la configuración."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat demande un jeton d'accès, ou a refusé celui-ci. Vérifiez les Réglages."
-          }
-        }
-      }
-    },
-    "cheapest first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "günstigste zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "más baratos primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "moins chers d'abord"
-          }
-        }
-      }
-    },
-    "direct" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "direkt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "directo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "direct"
-          }
-        }
-      }
-    },
-    "from %@ review" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aus %@ Bewertung"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "de %@ reseña"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sur %@ avis"
-          }
-        }
-      }
-    },
-    "from %@ reviews" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aus %@ Bewertungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "de %@ reseñas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sur %@ avis"
-          }
-        }
-      }
-    },
-    "high confidence" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "hohe Sicherheit"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confianza alta"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confiance élevée"
-          }
-        }
-      }
-    },
-    "highest rated first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "am besten bewertet zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mejor valorados primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mieux notés d'abord"
-          }
-        }
-      }
-    },
-    "index" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Index"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "el índice"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "l'indice"
-          }
-        }
-      }
-    },
-    "log scale" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "logarithmische Skala"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "escala logarítmica"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "échelle logarithmique"
-          }
-        }
-      }
-    },
-    "low confidence" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "geringe Sicherheit"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confianza baja"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confiance faible"
-          }
-        }
-      }
-    },
-    "medium confidence" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mittlere Sicherheit"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confianza media"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "confiance moyenne"
-          }
-        }
-      }
-    },
-    "no reviews" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "keine Bewertungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sin reseñas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "aucun avis"
-          }
-        }
-      }
-    },
-    "not available" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "nicht verfügbar"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "no disponible"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "non disponible"
-          }
-        }
-      }
-    },
-    "price at the store" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preis im Shop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "precio en la tienda"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "prix en boutique"
-          }
-        }
-      }
-    },
-    "priciest first" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "teuerste zuerst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "más caros primero"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "plus chers d'abord"
-          }
-        }
-      }
-    },
-    "same price" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "gleicher Preis"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "mismo precio"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "même prix"
-          }
-        }
-      }
-    },
-    "starred" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "markiert"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "destacada"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "favori"
-          }
-        }
-      }
-    },
-    "the store" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "la tienda"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "la boutique"
-          }
-        }
-      }
-    },
-    "typical %@–%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "üblich %@–%@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "lo habitual: %@–%@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "habituellement %@–%@"
-          }
-        }
-      }
-    },
-    "unread" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ungelesen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "no leída"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "non lu"
-          }
-        }
-      }
-    },
-    "was %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "vorher %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "antes %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "avant %@"
-          }
-        }
-      }
-    },
-    "· Run now" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Manuell gestartet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Ejecutada manualmente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Lancée manuellement"
-          }
-        }
-      }
     }
   },
-  "version" : "1.0"
+  "version" : "1.1"
 }
