@@ -199,7 +199,7 @@ of finished responses and the Notifications settings, `sw.js` for the service wo
 push, and
 `models.js` and `models.css` for the send button's model menu, `settings-shell.js` for the Settings
 dialog's frame (its left nav, one page at a time, and the Save footer), `settings.js` and `settings.css` for the
-Tools, Model & prompt, Advanced settings and Server pages, which every interface shares, `vendor/leaflet/` for the map
+Tools, Models, Advanced settings and Server pages, which every interface shares, `vendor/leaflet/` for the map
 library, and
 `index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
@@ -276,6 +276,7 @@ remove the tool.
 | `CHAT_DATABASE_URL` | `sqlite://cedar-chat.db` | Conversation storage |
 | `CHAT_ACCESS_TOKEN` | unset | If set, the page asks for this token and the API requires it |
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
+| `CHAT_MODELS_ACCESS` | `users` | Who may add, change and remove [the models](#models): `users` (everyone the access token lets in) or `admins` (the admin token; set this on a server several people use). API keys and the Google account stay with admins either way |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
@@ -466,7 +467,7 @@ skips the slots missed while it was paused. At most 100 schedules can exist.
 
 **Settings → Tools** sets which of cedar's tool groups every new conversation gets (web search,
 reading web pages, weather, maps, the browser, Gmail and Calendar, the last two down to single
-tools), and **Settings → Model & prompt** the default model (one of those cedar has
+tools), and **Settings → Models** the default model (one of those cedar has
 [registered](#models); unset means cedar's own default), turn limit, and system prompt. The
 system prompt reads as a document showing cedar's own default text until you press **Edit**, and
 "Use the default" puts it back; the default text is saved as "unset", so it keeps following cedar's
@@ -544,16 +545,24 @@ and the error is relayed.
 
 ### Integrations
 
-Settings → **Server** is where the models and the API keys go. Without
-`CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
-the page is unlocked with that token for the browser session and manages cedar's
-[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
+Settings → **Server** is where the API keys go. Without `CHAT_ADMIN_TOKEN` it only explains how
+to turn it on and which tool groups lack a key. With it, the page is unlocked with that token for
+the browser session and manages cedar's Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's
 `CEDAR_API_KEY` in cedar's `CEDAR_ADMIN_KEYS`, and cedar's `CEDAR_SECRET_KEY` for anything that is
 a secret; see [Models](../README.md#models) and [Integrations](../README.md#integrations). Keys set
 in cedar's environment are shown as "Managed by environment" and can't be changed here.
+
+Settings → **Models** holds cedar's [models](#models) (each with its **Max tokens per reply**, 16384
+unless set) above your own defaults for new conversations and the system prompt. By default
+(`CHAT_MODELS_ACCESS=users`) the list is open to everyone with the access token, admin token or
+not, since on a personal setup whoever chats also picks the models: the page, the phone apps and
+any browser can add a server and its model. With `CHAT_MODELS_ACCESS=admins`, for a server several
+people use as [DEPLOYMENT.md](../DEPLOYMENT.md) sets it up, the page shows the models read-only
+until the Server page is unlocked with the admin token. The API keys, the Google account, the
+server settings and the personal tools need the admin token either way.
 
 With cedar's `TOOLS_DIR` set, the page also lists the **Personal tools**: each one's source (local
 or community), version, what it asks for (internet hosts, secrets, packages, health data), and a
@@ -579,7 +588,7 @@ the model name is not one of them. **Edit**, **Make default** and **Remove** cha
 conversations fail at their next message until another model is picked. The first model
 registered is the default, and a fresh cedar has none: the message box says so until an admin adds
 one. Saving an API key needs cedar's `CEDAR_SECRET_KEY`; a server without one can be registered
-without it. The send button's menu, the default model in Model & prompt, and the schedule dialog
+without it. The send button's menu, the default model on the Models page, and the schedule dialog
 all follow the list.
 
 ## API
@@ -590,7 +599,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/config` | `{auth_required, admin_enabled, memory}`; `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
+| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory}`; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
