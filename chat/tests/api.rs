@@ -1116,6 +1116,8 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/map-view.css\""), "{uri} loads the map styles");
             assert!(page.contains("<script src=\"/recipe-view.js\">"), "{uri} loads the recipe view");
             assert!(page.contains("href=\"/recipe-view.css\""), "{uri} loads the recipe styles");
+            assert!(page.contains("<script src=\"/weather-view.js\">"), "{uri} loads the weather view");
+            assert!(page.contains("href=\"/weather-view.css\""), "{uri} loads the weather styles");
             assert!(page.contains("<script src=\"/clarify-view.js\">"), "{uri} loads the question form");
             assert!(page.contains("href=\"/clarify-view.css\""), "{uri} loads the question form styles");
             assert!(page.find("/map-view.js") < page.find("/transit-view.js"), "{uri} loads the trip view after the map view it draws with");
@@ -1191,6 +1193,8 @@ async fn both_uis_are_served() {
         ("/map-view.css", "text/css; charset=utf-8", ".cedar-map"),
         ("/recipe-view.js", "text/javascript; charset=utf-8", "cedarRecipe"),
         ("/recipe-view.css", "text/css; charset=utf-8", ".cedar-recipe"),
+        ("/weather-view.js", "text/javascript; charset=utf-8", "cedarWeather"),
+        ("/weather-view.css", "text/css; charset=utf-8", ".cedar-weather"),
         ("/clarify-view.js", "text/javascript; charset=utf-8", "cedarClarify"),
         ("/clarify-view.css", "text/css; charset=utf-8", ".cedar-clarify"),
         ("/transit-view.js", "text/javascript; charset=utf-8", "cedarTransit"),

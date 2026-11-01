@@ -74,6 +74,9 @@ const MAP_VIEW_CSS: &str = include_str!("../static/map-view.css");
 /// Draws the `show_recipe` tool's result as a recipe card with the steps as a timeline; both UIs load it.
 const RECIPE_VIEW_JS: &str = include_str!("../static/recipe-view.js");
 const RECIPE_VIEW_CSS: &str = include_str!("../static/recipe-view.css");
+/// Draws the `weather_forecast` tool's report as a weather card with a row per day; every UI loads it.
+const WEATHER_VIEW_JS: &str = include_str!("../static/weather-view.js");
+const WEATHER_VIEW_CSS: &str = include_str!("../static/weather-view.css");
 /// Draws the `ask_user` tool's result as a form with choices and a free-form answer; both UIs load it.
 const CLARIFY_VIEW_JS: &str = include_str!("../static/clarify-view.js");
 const CLARIFY_VIEW_CSS: &str = include_str!("../static/clarify-view.css");
@@ -333,6 +336,8 @@ pub fn router(state: AppState) -> Router {
         .route("/map-view.css", get(|| async { asset(CSS, MAP_VIEW_CSS) }))
         .route("/recipe-view.js", get(|| async { asset(JS, RECIPE_VIEW_JS) }))
         .route("/recipe-view.css", get(|| async { asset(CSS, RECIPE_VIEW_CSS) }))
+        .route("/weather-view.js", get(|| async { asset(JS, WEATHER_VIEW_JS) }))
+        .route("/weather-view.css", get(|| async { asset(CSS, WEATHER_VIEW_CSS) }))
         .route("/clarify-view.js", get(|| async { asset(JS, CLARIFY_VIEW_JS) }))
         .route("/clarify-view.css", get(|| async { asset(CSS, CLARIFY_VIEW_CSS) }))
         .route("/transit-view.js", get(|| async { asset(JS, TRANSIT_VIEW_JS) }))

@@ -86,6 +86,15 @@ Both interfaces have all of these, except where noted:
   cedar could not find. Cedar style puts it on the stage as a card, Claude style under the tool
   call. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
   the tool call's raw output is shown
+- A `weather_forecast` tool call is drawn as a weather card, read from the same text report the
+  model gets: the place and its local time, the current conditions with a large icon (a moon at
+  night, between the day's sunset and sunrise), the temperature, feels like and the day's high and
+  low, then tiles for humidity, wind with an arrow for its direction, gusts, precipitation, UV and
+  daylight. Under it one row per day: its icon, chance of rain, and the low and high as a bar on a
+  scale shared by all days (coloured from cold to warm; a dot marks the current temperature on
+  today's bar). Click a day to see its wind, precipitation, UV and sunrise to sunset. Conditions are
+  translated; the Open-Meteo credit its license asks for is at the bottom. If the report can't be
+  read, only the tool call's raw output is shown
 - A `show_recipe` tool call (when cedar offers the tool) is drawn as a recipe card: the photo of the
   dish cedar found (loaded from Wikimedia, see [Recipe photos and privacy](#recipe-photos-and-privacy); credited with a link to its page; the title alone if there
   is none or it fails to load), the times and servings, the ingredients as a checklist, and the steps
