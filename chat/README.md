@@ -199,7 +199,7 @@ of finished responses and the Notifications settings, `sw.js` for the service wo
 push, and
 `models.js` and `models.css` for the send button's model menu, `settings-shell.js` for the Settings
 dialog's frame (its left nav, one page at a time, and the Save footer), `settings.js` and `settings.css` for the
-Tools, Model & prompt, Advanced settings and Server pages, which every interface shares, `vendor/leaflet/` for the map
+Tools, Models, Advanced settings and Server pages, which every interface shares, `vendor/leaflet/` for the map
 library, and
 `index.html`, which sends `/` to the chosen one). It is
 compiled into the binary, so there is no Node build step. Restart the server after you edit those
@@ -467,7 +467,7 @@ skips the slots missed while it was paused. At most 100 schedules can exist.
 
 **Settings → Tools** sets which of cedar's tool groups every new conversation gets (web search,
 reading web pages, weather, maps, the browser, Gmail and Calendar, the last two down to single
-tools), and **Settings → Model & prompt** the default model (one of those cedar has
+tools), and **Settings → Models** the default model (one of those cedar has
 [registered](#models); unset means cedar's own default), turn limit, and system prompt. The
 system prompt reads as a document showing cedar's own default text until you press **Edit**, and
 "Use the default" puts it back; the default text is saved as "unset", so it keeps following cedar's
@@ -545,10 +545,9 @@ and the error is relayed.
 
 ### Integrations
 
-Settings → **Server** is where the models and the API keys go. Without
-`CHAT_ADMIN_TOKEN` it only explains how to turn it on and which tool groups lack a key. With it,
-the page is unlocked with that token for the browser session and manages cedar's
-[models](#models) (each with its **Max tokens per reply**, 16384 unless set), its Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
+Settings → **Server** is where the API keys go. Without `CHAT_ADMIN_TOKEN` it only explains how
+to turn it on and which tool groups lack a key. With it, the page is unlocked with that token for
+the browser session and manages cedar's Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
 as its last four characters) and its Google account ("Connect Google" goes through Google's
 consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's
@@ -556,12 +555,14 @@ encrypted, and take effect on the next message without a restart. This needs thi
 a secret; see [Models](../README.md#models) and [Integrations](../README.md#integrations). Keys set
 in cedar's environment are shown as "Managed by environment" and can't be changed here.
 
-The **Models** block is the exception: by default (`CHAT_MODELS_ACCESS=users`) it is open to everyone
-with the access token, admin token or not, since on a personal setup whoever chats also picks the
-models: the page, the phone apps and any browser can add a server and its model. The API keys, the
-Google account, the server settings and the personal tools still need the admin token. On a server
-several people use, set `CHAT_MODELS_ACCESS=admins` so the models need it too, as
-[DEPLOYMENT.md](../DEPLOYMENT.md) does.
+Settings → **Models** holds cedar's [models](#models) (each with its **Max tokens per reply**, 16384
+unless set) above your own defaults for new conversations and the system prompt. By default
+(`CHAT_MODELS_ACCESS=users`) the list is open to everyone with the access token, admin token or
+not, since on a personal setup whoever chats also picks the models: the page, the phone apps and
+any browser can add a server and its model. With `CHAT_MODELS_ACCESS=admins`, for a server several
+people use as [DEPLOYMENT.md](../DEPLOYMENT.md) sets it up, the page shows the models read-only
+until the Server page is unlocked with the admin token. The API keys, the Google account, the
+server settings and the personal tools need the admin token either way.
 
 With cedar's `TOOLS_DIR` set, the page also lists the **Personal tools**: each one's source (local
 or community), version, what it asks for (internet hosts, secrets, packages, health data), and a
@@ -587,7 +588,7 @@ the model name is not one of them. **Edit**, **Make default** and **Remove** cha
 conversations fail at their next message until another model is picked. The first model
 registered is the default, and a fresh cedar has none: the message box says so until an admin adds
 one. Saving an API key needs cedar's `CEDAR_SECRET_KEY`; a server without one can be registered
-without it. The send button's menu, the default model in Model & prompt, and the schedule dialog
+without it. The send button's menu, the default model on the Models page, and the schedule dialog
 all follow the list.
 
 ## API

@@ -51,7 +51,7 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 curl -N -H "Authorization: Bearer $KEY" localhost:8080/v1/runs/<id>/events
 ```
 
-The chat UI does the same under Settings → Server (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database, Docker (including the sandbox image) and, when sandboxes run on OpenShell, its gateway are usable, and how many models are registered. See `.env.example` for every setting.
+The chat UI does the same under Settings → Models (see [Models](#models)). Until a model is registered, `POST /v1/runs` answers `409`. `GET /readyz` tells you whether the database, Docker (including the sandbox image) and, when sandboxes run on OpenShell, its gateway are usable, and how many models are registered. See `.env.example` for every setting.
 
 ## API
 
@@ -763,7 +763,7 @@ may change.
 ### Models
 
 The models runs can use live in a registry that admins manage through `PUT /v1/admin/models/{id}`,
-which is what the chat UI's Settings → Server does. There is no environment
+which is what the chat UI's Settings → Models does. There is no environment
 setting for the model server: a fresh cedar has no model, says so at startup and in `/readyz`
 (`models: 0`), and refuses runs with `409` until one is registered. Each entry has:
 

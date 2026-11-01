@@ -219,7 +219,7 @@ EOF
 
 sudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env   # systemd reads them as root
 echo "Chat access token (you type this in the browser): $CHAT_TOKEN"
-echo "Admin token (unlocks the model settings in the browser): $ADMIN_TOKEN"
+echo "Admin token (unlocks the models, API keys and server settings in the browser): $ADMIN_TOKEN"
 ```
 
 Keep the printed tokens. The chat page asks for the access token on first load; the admin token

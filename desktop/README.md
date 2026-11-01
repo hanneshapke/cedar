@@ -167,8 +167,8 @@ which *Copy Access Token* puts on the clipboard. Only this computer can reach th
 listen on 127.0.0.1. To use the chat from the iOS or Android app, share it over Tailscale (below).
 
 To change the model server later, choose *Model Server & Setup…* from the menu; the new choice
-is registered with the running cedar, so nothing restarts. The chat's own Settings page can add
-further models to the registry and manages the Brave Search key and the Google account: cedar
+is registered with the running cedar, so nothing restarts. The chat's own Settings → Models page
+adds further models to the registry, and Settings → Server manages the Brave Search key and the Google account: cedar
 runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
 admin token, so Settings works without typing anything. A phone or a browser that connects with
 the access token can add models too (cedar-chat's default, `CHAT_MODELS_ACCESS=users`); the API

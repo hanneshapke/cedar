@@ -370,9 +370,20 @@ const cedarSettings = (() => {
       section.replaceChildren(note(tr('settings.loadFailed', { error: e.message }), 'cedar-set-error'));
       return;
     }
+    await paintModel(section);
+  }
+
+  /** Repaints the Models page after the registry changed, keeping unsaved edits to the defaults. */
+  async function refreshModels() {
+    if (prefs && modelSection?.isConnected) await paintModel(modelSection);
+  }
+
+  /** The Models page from the loaded prefs and `draft`: the models on this server (the registry,
+   *  or the list as the picker sees it while it is locked), your defaults, and the system prompt. */
+  async function paintModel(section) {
     const defaults = prefs.defaults || null;
     const dirty = () => shell()?.setDirty('model', true);
-    const parts = [];
+    const parts = [await registryBlock()];
 
     const fields = el('div', 'cedar-set-fields');
     if (cedarModels.all().length) {
@@ -383,8 +394,6 @@ const cedarSettings = (() => {
       modelSelect.value = cedarModels.byId(draft.model) ? draft.model : '';
       modelSelect.addEventListener('change', () => { draft.model = modelSelect.value || null; dirty(); });
       fields.append(field(tr('settings.model.defaultModel'), modelSelect));
-    } else if (cedarModels.loaded()) {
-      parts.push(note(tr('settings.model.noneRegistered'), 'cedar-set-error'));
     }
     const turns = el('input');
     turns.type = 'number';
@@ -399,14 +408,13 @@ const cedarSettings = (() => {
     plan.value = draft.plan || 'auto';
     plan.addEventListener('change', () => { draft.plan = plan.value; dirty(); });
     fields.append(field(tr('settings.plan.title'), plan));
-    parts.push(fields);
     const notes = el('div', 'cedar-set-field-notes');
     notes.append(el('div', 'cedar-set-field-note', tr('settings.plan.note')));
-    parts.push(notes);
+    parts.push(block(tr('settings.models.yours'), fields, notes));
 
     // The system prompt: read as a document, edited as one. Without a saved prompt it shows
     // cedar's default text, which is saved as "unset" so it keeps following cedar's SYSTEM_PROMPT.
-    const block = el('div', 'cedar-set-prompt-block');
+    const promptBlock = el('div', 'cedar-set-prompt-block');
     const head = el('div', 'cedar-set-prompt-head');
     const headLeft = el('span');
     const tag = el('span', 'cedar-set-badge', tr('settings.model.cedarDefault'));
@@ -438,9 +446,36 @@ const cedarSettings = (() => {
       dirty();
     });
     sync();
-    block.append(head, reading, editor, el('div', 'cedar-set-field-note', tr('settings.prompt.note')));
-    parts.push(block);
+    promptBlock.append(head, reading, editor, el('div', 'cedar-set-field-note', tr('settings.prompt.note')));
+    parts.push(promptBlock);
     section.replaceChildren(...parts);
+  }
+
+  /**
+   * The models on this server. The registry with its form when everyone may manage it
+   * (CHAT_MODELS_ACCESS=users) or the Server page is unlocked; otherwise the list as the picker
+   * sees it, with where to unlock.
+   */
+  async function registryBlock() {
+    const cfg = deps.config();
+    if (modelsOpen() || (cfg.admin_enabled && unlocked())) return modelsSection(null);
+    const wrap = el('div', 'cedar-set-models');
+    const entries = cedarModels.all();
+    wrap.append(note(tr(cfg.admin_enabled ? 'settings.models.locked' : 'settings.models.lockedNoAdmin')));
+    if (cedarModels.loaded() && !entries.length) wrap.append(note(tr('settings.model.noneRegistered'), 'cedar-set-error'));
+    for (const m of entries) {
+      const levels = m.reasoning_levels || [];
+      const { row, side } = integrationRow(m.label || m.id, m.model);
+      if (m.is_default) side.append(badge(tr('settings.models.default'), 'ok'));
+      side.append(badge(levels.length
+        ? (m.default_reasoning
+          ? tr('settings.models.levelsDefault', { levels: levels.join(', '), level: m.default_reasoning })
+          : tr('settings.models.levels', { levels: levels.join(', ') }))
+        : tr('settings.models.noLevels')));
+      wrap.append(row);
+    }
+    wrap.append(button(tr('settings.advanced.unlock'), () => shell()?.go('server'), cfg.admin_enabled ? 'primary' : 'settings-ghost'));
+    return block(tr('settings.models.server'), wrap);
   }
 
   const modelLabel = (m) => {
@@ -522,21 +557,20 @@ const cedarSettings = (() => {
     return b;
   }
 
-  /** The Models block: the registered models and the form that adds one. `status` is the
-   *  integrations status when the page is unlocked; without it the list's own `storage` is used. */
+  /** The registry and the form that adds one, as a block of the Models page. `status` is the
+   *  integrations status when the Server page is unlocked; without it the list's own `storage` is used. */
   async function modelsSection(status) {
     const models = await modelsBlock(status);
-    const b = block(tr('settings.server.models'), models.wrap);
+    const b = block(tr('settings.models.server'), models.wrap);
     b.querySelector('.cedar-set-block-head').append(models.add);
     return b;
   }
 
-  /** The Server page while the admin token isn't there: the models when the server opens them to
-   *  everyone, then how to turn the rest on (no CHAT_ADMIN_TOKEN) or the unlock form. */
+  /** The Server page while the admin token isn't there: how to turn it on (no CHAT_ADMIN_TOKEN)
+   *  or the unlock form. */
   async function lockedView(section, error) {
     const cfg = deps.config();
     const parts = [];
-    if (modelsOpen()) parts.push(await modelsSection(null));
     if (!cfg.admin_enabled) {
       try { await loadCatalog(); } catch { /* the help is shown without the list */ }
       const card = el('div', 'cedar-set-unlock-card');
@@ -575,7 +609,7 @@ const cedarSettings = (() => {
     if (!status.storage) {
       parts.push(note(tr('settings.server.noStorage')));
     }
-    parts.push(await modelsSection(status), block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
+    parts.push(block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
     const tools = await personalToolsBlock();
     if (tools) parts.push(block(tr('settings.server.personalTools'), tools));
     const market = await marketplaceBlock();
@@ -789,13 +823,13 @@ const cedarSettings = (() => {
   /** The page head's Lock button, when the admin token is in. */
   function serverActions() {
     if (!deps?.config()?.admin_enabled || !unlocked()) return null;
-    return [button(tr('settings.server.lock'), () => { setAdminToken(''); renderIntegrations(); renderAdvanced(); shell()?.refresh('server'); }, 'settings-ghost')];
+    return [button(tr('settings.server.lock'), () => { setAdminToken(''); renderIntegrations(); renderAdvanced(); refreshModels(); shell()?.refresh('server'); }, 'settings-ghost')];
   }
 
   /** Where keys go when this page can't manage them (no CHAT_ADMIN_TOKEN). */
   function setupHelp() {
     const wrap = el('div', 'cedar-set-help');
-    wrap.append(note(tr(modelsOpen() ? 'settings.setup.introModelsOpen' : 'settings.setup.intro')));
+    wrap.append(note(tr('settings.setup.intro')));
     const list = el('ul');
     const item = (code, text) => {
       const li = el('li');
@@ -807,9 +841,6 @@ const cedarSettings = (() => {
     item('CEDAR_ADMIN_KEYS', tr('settings.setup.adminKeys'));
     wrap.append(list);
     wrap.append(note(tr('settings.setup.where')));
-    if (!modelsOpen() && cedarModels.loaded() && !cedarModels.all().length) {
-      wrap.append(note(tr('settings.setup.noModel'), 'cedar-set-error'));
-    }
     const missing = groups().filter((g) => !g.available);
     if (missing.length) {
       const l = el('ul');
@@ -837,13 +868,11 @@ const cedarSettings = (() => {
       setAdminToken(input.value.trim());
       renderIntegrations();
       renderAdvanced();
+      refreshModels();
       refreshTools();
     });
     const wrap = el('div', 'cedar-set-unlock-card');
-    wrap.append(note(tr(modelsOpen() ? 'settings.unlock.introModelsOpen' : 'settings.unlock.intro')));
-    if (!modelsOpen() && cedarModels.loaded() && !cedarModels.all().length) {
-      wrap.append(note(tr('settings.unlock.noModel'), 'cedar-set-error'));
-    }
+    wrap.append(note(tr('settings.unlock.intro')));
     if (error) wrap.append(note(error, 'cedar-set-error'));
     wrap.append(form);
     return wrap;
@@ -935,7 +964,7 @@ const cedarSettings = (() => {
           await adminApi('PUT', `/integrations/models/${encodeURIComponent(entry.id)}`, { base_url: entry.base_url, model: entry.model, is_default: true });
           deps.toast(tr('settings.models.isDefault', { name: entry.label || entry.id }));
           await modelsChanged();
-          renderIntegrations();
+          refreshModels();
         } catch (err) { deps.toast(err.message); }
       }));
     }
@@ -944,7 +973,7 @@ const cedarSettings = (() => {
       try {
         await adminApi('DELETE', `/integrations/models/${encodeURIComponent(entry.id)}`);
         await modelsChanged();
-        renderIntegrations();
+        refreshModels();
       } catch (err) { deps.toast(err.message); }
     }));
     return row;
@@ -1112,7 +1141,7 @@ const cedarSettings = (() => {
         const saved = await adminApi('PUT', `/integrations/models/${encodeURIComponent(id.value.trim())}`, body);
         deps.toast(`${saved.label || saved.id}: ${tr('settings.models.at', { model: saved.model, url: saved.base_url })}`);
         await modelsChanged();
-        renderIntegrations();
+        refreshModels();
         refreshTools();
       } catch (err) {
         saveBtn.disabled = false;
