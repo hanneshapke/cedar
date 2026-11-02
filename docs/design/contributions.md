@@ -284,6 +284,13 @@ page and the release job; see its own design and README).
 
 What differs from the text above, on purpose, for now:
 
+- **The operator layer (§3, 1) has a default.** `CHAT_CONTRIBUTIONS_URL` unset means the project's
+  own ingest (`DEFAULT_CONTRIBUTIONS_URL` in `chat/src/config.rs`), not "the feature does not
+  exist"; `off` is what makes it absent. The other two layers are unchanged: nothing leaves a
+  server until the person has turned contributing on and sent a conversation. The trade: a
+  cedar-chat installed from a release can contribute without its operator doing anything, at
+  the price of Settings → Contribute existing everywhere.
+
 - **The model pass** (§4, pass 3) is not built: redaction is the structural and pattern passes
   plus the person's own phrases. The dialog says so.
 - **Un-redacting** a placeholder the scan got wrong is not offered; the person can edit nothing

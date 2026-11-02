@@ -686,6 +686,8 @@ impl Harness {
             ("CHAT_FCM_URL", fcm_url.as_str()),
             ("CHAT_GOOGLE_TOKEN_URL", google_token_url.as_str()),
             ("CHAT_UPDATE_URL", update_url.as_str()),
+            // Tests never reach the default corpus; a test that needs one names "self".
+            ("CHAT_CONTRIBUTIONS_URL", "off"),
         ]
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))

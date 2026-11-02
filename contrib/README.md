@@ -249,7 +249,8 @@ terraform apply -var project=$PROJECT -var region=$REGION -var bucket=$BUCKET -v
 A new build gets a new tag (`0.3.6-1`, …) and the same `apply`: Cloud Run rolls a revision for a
 changed image, and nothing for an image pushed again under the tag it already runs.
 
-The `url` output is what cedar-chat sets as `CHAT_CONTRIBUTIONS_URL`.
+The `url` output is what a cedar-chat sets as `CHAT_CONTRIBUTIONS_URL` to send here instead of
+the project's own ingest (`DEFAULT_CONTRIBUTIONS_URL` in `chat/src/config.rs`).
 
 Checklist for the no-logs promise, after `apply`: the logging exclusion exists (Logs Router →
 Exclusions); Storage data-access audit logs are off for the project (IAM → Audit Logs); nothing

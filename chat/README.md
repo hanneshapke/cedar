@@ -287,7 +287,7 @@ remove the tool.
 | `CHAT_UPDATE_CHECK` | `on` | Look up the latest GitHub Release a minute after the start and every six hours, and show a banner when it is newer (see [Updates](#updates)). `off` makes no requests to GitHub. The desktop app sets it `off`, it updates itself |
 | `CHAT_UPDATE_DIR` | unset | The directory the root `cedar-update` unit watches (`/var/lib/cedar/update` in [DEPLOYMENT.md](../DEPLOYMENT.md#updates)). When set, an admin's *Update* in the banner installs the release; otherwise the banner shows the commands to run |
 | `CHAT_UPDATE_URL` | `https://api.github.com/repos/hanneshapke/cedar/releases/latest` | Where the latest release is looked up (for tests) |
-| `CHAT_CONTRIBUTIONS_URL` | unset | The base URL of a [cedar-contrib](../contrib/README.md) ingest that a conversation can be [contributed](#contributing-a-conversation) to. Unset, nothing can be sent; the review dialog still exports a bundle to a file |
+| `CHAT_CONTRIBUTIONS_URL` | the project's corpus | The base URL of a [cedar-contrib](../contrib/README.md) ingest that a conversation can be [contributed](#contributing-a-conversation) to; unset, the project's own ingest. `off`, and nothing can be sent; the review dialog still exports a bundle to a file |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -517,8 +517,9 @@ agent models (the design is in [docs/design/contributions.md](../docs/design/con
 what it means for you is in [PRIVACY.md](../PRIVACY.md#contributing-a-conversation-opt-in)).
 Three things have to be true before anything leaves this server:
 
-1. Whoever runs it has pointed it at a corpus (`CHAT_CONTRIBUTIONS_URL`). Without that, the
-   More menu offers *Export for contribution…* only in expert mode, and only as a download.
+1. The server has a corpus to send to: the project's own unless whoever runs it named another
+   (`CHAT_CONTRIBUTIONS_URL`) or set it to `off`. Off, the More menu offers *Export for
+   contribution…* only in expert mode, and only as a download.
 2. You have read **Settings → Contribute** and turned it on there. The page says what a
    contribution contains, names the corpus, and takes your one-time choices: the license for
    what you wrote (CC0 or CC BY 4.0), a pseudonym (a random id made here, which you can rotate or
