@@ -15,6 +15,7 @@ mod installer;
 mod macsetup;
 mod models;
 mod notify;
+mod openfile;
 mod paths;
 mod proc;
 mod supervisor;

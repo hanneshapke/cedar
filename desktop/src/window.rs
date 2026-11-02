@@ -2,6 +2,7 @@
 
 use crate::app::AppState;
 use crate::config::Config;
+use crate::openfile::OpenFile;
 use crate::supervisor::ServiceState;
 use anyhow::{anyhow, Context, Result};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
@@ -10,10 +11,10 @@ use url::Url;
 
 pub const MAIN: &str = "main";
 
-/// Where the chat's pages send the window to ask the app for something: the update banner's
-/// Update and Dismiss (update.js), and the Phone page's button that turns sharing with the phone
-/// apps on (pairing.js). Never loaded, the window catches it (see [`create`]). The chat page has
-/// no other way to reach the app.
+/// Where the chat's pages send the window to ask the app for something: the update banner's Update
+/// and Dismiss (update.js), the Phone page's button that turns sharing with the phone apps on
+/// (pairing.js), and the file viewer's "Open in new tab" (file-viewer.js). Never loaded, the window
+/// catches it (see [`create`]). The chat page has no other way to reach the app.
 const APP_PATH: &str = "/__cedar-app/";
 
 /// The setup page's own URL, where Tauri serves `ui/index.html`: `tauri://localhost` on a Mac,
@@ -103,6 +104,9 @@ enum PageAction {
     Dismiss,
     /// The Phone page's "Turn on sharing".
     ShareOn,
+    /// The file viewer's "Open in new tab", with the conversation and the workspace path in the
+    /// query (see openfile.rs). None when they name no file the app opens; still never loaded.
+    OpenFile(Option<OpenFile>),
 }
 
 /// The page's request, when `url` is the chat's address for one.
@@ -114,8 +118,20 @@ fn page_action(url: &Url, chat: &str) -> Option<PageAction> {
         "update/install" => Some(PageAction::Install),
         "update/dismiss" => Some(PageAction::Dismiss),
         "share/on" => Some(PageAction::ShareOn),
+        "open-file" => Some(PageAction::OpenFile(open_file_request(url))),
         _ => None,
     }
+}
+
+/// The file the viewer asks to open, when the query names one the app opens (see
+/// [`OpenFile::parse`]).
+fn open_file_request(url: &Url) -> Option<OpenFile> {
+    let param = |name: &str| {
+        let mut values = url.query_pairs().filter(|(k, _)| k == name).map(|(_, v)| v);
+        let value = values.next()?;
+        values.next().is_none().then_some(value)
+    };
+    OpenFile::parse(&param("conversation")?, &param("path")?)
 }
 
 fn run_page_action(app: &AppHandle, action: PageAction) {
@@ -133,6 +149,10 @@ fn run_page_action(app: &AppHandle, action: PageAction) {
         PageAction::ShareOn => {
             tauri::async_runtime::spawn(crate::app::share_from_chat(app.clone()));
         }
+        PageAction::OpenFile(Some(file)) => {
+            tauri::async_runtime::spawn(crate::openfile::open(app.clone(), file));
+        }
+        PageAction::OpenFile(None) => eprintln!("not a workspace file the app opens"),
     }
 }
 
@@ -269,6 +289,27 @@ mod tests {
         assert_eq!(at("http://127.0.0.1:13000/"), None);
         assert_eq!(at("http://127.0.0.1:13001/__cedar-app/update/install"), None);
         assert_eq!(at("https://example.com/__cedar-app/share/on"), None);
+        assert_eq!(at("https://example.com/__cedar-app/open-file"), None);
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/open-file/x"), None);
+        // Caught even when its query names nothing to open, so the chat never navigates away.
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/open-file"), Some(PageAction::OpenFile(None)));
+    }
+
+    #[test]
+    fn the_open_file_query_names_one_workspace_file() {
+        let id = "0c6f1b2e-8a4d-4f7e-9b1a-2d3c4e5f6a7b";
+        let req = |q: &str| {
+            open_file_request(&Url::parse(&format!("http://127.0.0.1:13000/__cedar-app/open-file?{q}")).unwrap())
+        };
+        let file = req(&format!("conversation={id}&path=out%2Fmy%20chart.png")).unwrap();
+        assert_eq!(file.conversation, id);
+        assert_eq!(file.path, ["out", "my chart.png"]);
+        assert!(req(&format!("conversation={id}&path=report.pdf")).is_some());
+        assert_eq!(req(&format!("conversation={id}&path=..%2Fa.png")), None);
+        assert_eq!(req(&format!("conversation={id}&path=a.svg")), None);
+        assert_eq!(req(&format!("conversation={id}&path=a.png&path=b.png")), None);
+        assert_eq!(req(&format!("conversation={id}")), None);
+        assert_eq!(req("path=a.png"), None);
     }
 
     #[test]

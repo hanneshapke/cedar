@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix: in the Mac and Windows app, *Open in new tab* in the file viewer did nothing for a PDF or image (the log said *not a web link*): the web view opens no tab for the viewer's `blob:` URL, and the default browser can't open one. In the app the button now sends the window to `/__cedar-app/open-file`, which the app catches like the update banner's addresses; it fetches the file from cedar-chat with its access token, checks that it is a PNG, JPEG, GIF, WebP, BMP, AVIF (up to 16 MiB) or PDF (up to 64 MiB) as its name says, saves it under a safe name in a private temporary folder and opens it in the default app. The chat page still gets no way to call the app, and in a browser the button works as before.
+
 ## 0.3.6
 
 - **The iPhone app on iPhone Duo.** The app lays itself out for the canvas it is given rather than the device, so it serves both faces of Apple's foldable: the folded outer display gets the one-column phone layout, the unfolded inner display the list beside the conversation, with the split view's divider pinned to the canvas's centre line, where the fold is, so neither column is cut by the crease (`iOS/Cedar/App/FoldLayout.swift`). Folding or unfolding keeps your place: a conversation opened on the inner display is what the outer display shows, a streaming response carries on, and clearing the selection goes back to the list. With a compact height (either display held sideways) the composer grows to three lines instead of eight. On iPad the list now stays beside the conversation in portrait too, instead of sliding over it. See *iPhone Duo* in [iOS/README.md](iOS/README.md).
