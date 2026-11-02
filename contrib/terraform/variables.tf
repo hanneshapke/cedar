@@ -49,6 +49,20 @@ variable "judge_model" {
   description = "The model name at judge_url."
 }
 
+variable "judge_api_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "The bearer token for judge_url, kept in Secret Manager. Empty: none sent."
+}
+
+variable "review_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "The token that opens the review page at /review, kept in Secret Manager. Empty: no review page."
+}
+
 variable "aging_days" {
   type        = number
   default     = 14

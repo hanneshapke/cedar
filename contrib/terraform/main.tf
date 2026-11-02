@@ -19,7 +19,7 @@ provider "google" {
 }
 
 resource "google_project_service" "apis" {
-  for_each = toset(["run.googleapis.com", "storage.googleapis.com", "secretmanager.googleapis.com", "artifactregistry.googleapis.com", "logging.googleapis.com"])
+  for_each           = toset(["run.googleapis.com", "storage.googleapis.com", "secretmanager.googleapis.com", "artifactregistry.googleapis.com", "logging.googleapis.com"])
   service            = each.value
   disable_on_destroy = false
 }
@@ -87,6 +87,52 @@ resource "google_secret_manager_secret_iam_member" "api_reads_hmac" {
   member    = "serviceAccount:${google_service_account.api.email}"
 }
 
+# -- the operator's own secrets: the review token and the judge's key, only when given -------
+
+resource "google_secret_manager_secret" "review" {
+  count     = var.review_token == "" ? 0 : 1
+  secret_id = "contrib-review-token"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "review" {
+  count       = var.review_token == "" ? 0 : 1
+  secret      = google_secret_manager_secret.review[0].id
+  secret_data = var.review_token
+}
+
+resource "google_secret_manager_secret_iam_member" "api_reads_review" {
+  count     = var.review_token == "" ? 0 : 1
+  secret_id = google_secret_manager_secret.review[0].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api.email}"
+}
+
+resource "google_secret_manager_secret" "judge" {
+  count     = var.judge_api_key == "" ? 0 : 1
+  secret_id = "contrib-judge-api-key"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "judge" {
+  count       = var.judge_api_key == "" ? 0 : 1
+  secret      = google_secret_manager_secret.judge[0].id
+  secret_data = var.judge_api_key
+}
+
+resource "google_secret_manager_secret_iam_member" "api_reads_judge" {
+  count     = var.judge_api_key == "" ? 0 : 1
+  secret_id = google_secret_manager_secret.judge[0].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api.email}"
+}
+
 # -- the image ------------------------------------------------------------------------------
 
 resource "google_artifact_registry_repository" "images" {
@@ -138,6 +184,18 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
+      dynamic "env" {
+        for_each = var.review_token == "" ? [] : [1]
+        content {
+          name = "CONTRIB_REVIEW_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.review[0].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
       startup_probe {
         http_get { path = "/healthz" }
         initial_delay_seconds = 1
@@ -145,7 +203,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
     }
   }
-  depends_on = [google_secret_manager_secret_iam_member.api_reads_hmac, google_storage_bucket_iam_member.api_objects]
+  depends_on = [google_secret_manager_secret_iam_member.api_reads_hmac, google_secret_manager_secret_iam_member.api_reads_review, google_storage_bucket_iam_member.api_objects]
 }
 
 # Anyone may call it: the checks are the service's, not IAM's.
@@ -210,11 +268,11 @@ resource "google_secret_manager_secret_iam_member" "api_reads_release" {
 
 locals {
   job_env = {
-    CONTRIB_BUCKET     = google_storage_bucket.quarantine.name
-    CONTRIB_MODELS     = join(",", var.models)
-    CONTRIB_JUDGE_URL  = var.judge_url
+    CONTRIB_BUCKET      = google_storage_bucket.quarantine.name
+    CONTRIB_MODELS      = join(",", var.models)
+    CONTRIB_JUDGE_URL   = var.judge_url
     CONTRIB_JUDGE_MODEL = var.judge_model
-    CONTRIB_AGING_DAYS = tostring(var.aging_days)
+    CONTRIB_AGING_DAYS  = tostring(var.aging_days)
   }
 }
 
@@ -249,10 +307,22 @@ resource "google_cloud_run_v2_job" "screener" {
             }
           }
         }
+        dynamic "env" {
+          for_each = var.judge_api_key == "" ? [] : [1]
+          content {
+            name = "CONTRIB_JUDGE_API_KEY"
+            value_source {
+              secret_key_ref {
+                secret  = google_secret_manager_secret.judge[0].secret_id
+                version = "latest"
+              }
+            }
+          }
+        }
       }
     }
   }
-  depends_on = [google_secret_manager_secret_iam_member.api_reads_hmac]
+  depends_on = [google_secret_manager_secret_iam_member.api_reads_hmac, google_secret_manager_secret_iam_member.api_reads_judge]
 }
 
 resource "google_cloud_run_v2_job" "release" {
@@ -295,10 +365,22 @@ resource "google_cloud_run_v2_job" "release" {
             }
           }
         }
+        dynamic "env" {
+          for_each = var.judge_api_key == "" ? [] : [1]
+          content {
+            name = "CONTRIB_JUDGE_API_KEY"
+            value_source {
+              secret_key_ref {
+                secret  = google_secret_manager_secret.judge[0].secret_id
+                version = "latest"
+              }
+            }
+          }
+        }
       }
     }
   }
-  depends_on = [google_secret_manager_secret_iam_member.api_reads_release]
+  depends_on = [google_secret_manager_secret_iam_member.api_reads_release, google_secret_manager_secret_iam_member.api_reads_judge]
 }
 
 resource "google_service_account" "scheduler" {
@@ -336,8 +418,8 @@ resource "google_cloud_scheduler_job" "screener" {
 }
 
 resource "google_cloud_scheduler_job" "release" {
-  name      = "contrib-release"
-  region    = var.region
+  name   = "contrib-release"
+  region = var.region
   # The 3rd of the month, 04:17 UTC: off the hour, and after the month's aging has settled.
   schedule  = "17 4 3 * *"
   time_zone = "Etc/UTC"
@@ -354,8 +436,8 @@ resource "google_cloud_scheduler_job" "release" {
 # -- the quarterly pass: screen everything accepted or held again with the current checks ---
 
 resource "google_cloud_scheduler_job" "rescreen" {
-  name      = "contrib-rescreen"
-  region    = var.region
+  name   = "contrib-rescreen"
+  region = var.region
   # The first day of January, April, July and October, 03:41 UTC.
   schedule  = "41 3 1 1,4,7,10 *"
   time_zone = "Etc/UTC"
@@ -407,7 +489,20 @@ resource "google_cloud_run_v2_job" "ablation" {
             }
           }
         }
+        dynamic "env" {
+          for_each = var.judge_api_key == "" ? [] : [1]
+          content {
+            name = "CONTRIB_JUDGE_API_KEY"
+            value_source {
+              secret_key_ref {
+                secret  = google_secret_manager_secret.judge[0].secret_id
+                version = "latest"
+              }
+            }
+          }
+        }
       }
     }
   }
+  depends_on = [google_secret_manager_secret_iam_member.api_reads_judge]
 }

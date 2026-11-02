@@ -5,7 +5,7 @@ The corpus side of contributed conversations: the ingest that
 what came in, the review page for what it held, and the release job that publishes. The design
 is in [docs/design/contributions.md](../docs/design/contributions.md) (the client side and the
 bundle) and [docs/design/contrib-ingest-cloud-run.md](../docs/design/contrib-ingest-cloud-run.md)
-(this crate). One binary, three commands:
+(this crate). One binary, five commands:
 
 ```sh
 cedar-contrib                  # serve the ingest (and the review page, with CONTRIB_REVIEW_TOKEN)
@@ -33,11 +33,12 @@ for a minute.
 
 ## The screener
 
-`cedar-contrib screen [--batch N] [--rescreen]` takes every `quarantined` bundle (at most
-`CONTRIB_SCREEN_BATCH`, 200) and gives it a verdict, `accepted`, `held` or `rejected`, with
+`cedar-contrib screen [--batch N] [--rescreen] [--force]` takes every `quarantined` bundle (at
+most `CONTRIB_SCREEN_BATCH`, 200) and gives it a verdict, `accepted`, `held` or `rejected`, with
 flags, scores and one note per finding, kept on the receipt and written to the audit log. With
 `--rescreen` it also redoes bundles judged by an older checks version (`screen::CHECKS_VERSION`;
-the release job does this itself). The checks, in cost order:
+the release job does this itself); with `--force`, every accepted or held bundle, whatever its
+version (the quarterly pass). The checks, in cost order:
 
 | Check | Flag | What happens |
 | --- | --- | --- |
@@ -193,7 +194,7 @@ CEDAR_API_KEY=devkey CHAT_CONTRIBUTIONS_URL=http://127.0.0.1:8090 cargo run -p c
 | --- | --- | --- |
 | `CONTRIB_HMAC_KEY` | required | At least 32 characters; derives withdraw tokens. Rotating it invalidates every token handed out |
 | `CONTRIB_BUCKET` | unset (memory) | The quarantine bucket |
-| `CONTRIB_MODELS` | any | Comma-separated model names, or prefixes ending in `*`, whose outputs may be published |
+| `CONTRIB_MODELS` | any | Comma-separated model names, or prefixes ending in `*`, whose outputs may be published. A bundle from another model is refused, and cedar-chat's dialog, which reads the policy, disables *Send* for it |
 | `CONTRIB_BIND_ADDR` / `PORT` | `127.0.0.1:8090` | Where to listen; Cloud Run sets `PORT` |
 | `CONTRIB_QUOTA_DAY`, `_MONTH`, `_NEW`, `_CLUSTER`, `CONTRIB_IP_PER_MINUTE` | 20, 200, 3, 5, 30 | See Quotas |
 | `CONTRIB_MAX_BUNDLE_BYTES` | 8 MiB | |
@@ -209,14 +210,33 @@ CEDAR_API_KEY=devkey CHAT_CONTRIBUTIONS_URL=http://127.0.0.1:8090 cargo run -p c
 `terraform/` holds the frugal variant of the design: Cloud Run exposed directly, the bucket, a
 service account that can touch only that bucket's objects, the HMAC and release keys in Secret
 Manager, the logging exclusion that drops Cloud Run's request logs for the service, and two Cloud
-Run Jobs from the same image, `contrib-screener` (Cloud Scheduler, every 15 minutes) and
-`contrib-release` (the 3rd of each month), started through a scheduler service account that can
-run those jobs and nothing else. `judge_url` and `judge_model` point the screener at a judge; `contrib-rescreen` runs the
-quarterly pass (`screen --rescreen --force`) on the first of January, April, July and October;
-`ablation_hook` adds the `contrib-ablation` job, started by hand before a release. The edge of
-the design, a global load balancer with Cloud Armor's per-client rate limit and WAF rules in
-front of the service, is in `edge.tf` behind `edge = true` (with `edge_domain` for its managed
-certificate): off by default, since the service's own limit is enough until floods are real.
+Run Jobs from the same image, `contrib-screener` and `contrib-release`, started by three Cloud
+Scheduler jobs through a scheduler service account that can run those jobs and nothing else:
+`contrib-screener` every 15 minutes, `contrib-release` on the 3rd of each month, and
+`contrib-rescreen`, the quarterly pass (`screen --rescreen --force` on the screener job) on the
+first of January, April, July and October. `ablation_hook` adds the `contrib-ablation` job,
+started by hand before a release. The edge of the design, a global load balancer with Cloud
+Armor's per-client rate limit and WAF rules in front of the service, is in `edge.tf` behind
+`edge = true` (with `edge_domain` for its managed certificate): off by default, since the
+service's own limit is enough until floods are real.
+
+The variables beyond the three required ones (`variables.tf` has them all):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `region` | `europe-west1` | Where the registry, the service and the jobs live; the image goes to this region's registry |
+| `bucket_location` | `EU` | The bucket's location; `EU` keeps contributions in the EU jurisdiction, `US` keeps them near a US region |
+| `models` | `["deepseek-ai/*"]` | `CONTRIB_MODELS`: the models whose outputs this corpus publishes. **A cedar running any other model cannot contribute**: the chat's dialog disables *Send* with "the corpus doesn't take conversations from this model". Name every model, or prefix, whose terms allow publishing its output |
+| `review_token` | empty | Opens the review page at `/review` to whoever presents it; kept in Secret Manager. Empty, there is no review page |
+| `judge_url`, `judge_model`, `judge_api_key` | empty, `judge`, empty | The screener's judge (an OpenAI-compatible chat-completions endpoint); the key is kept in Secret Manager. Without a judge, injected results are held for review |
+| `aging_days` | 14 | How long an accepted bundle waits before a release may take it |
+| `min_instances` | 0 | 1 keeps one instance warm |
+| `ablation_hook` | empty | Adds the ablation job with this command (see Ablation) |
+| `edge`, `edge_domain` | `false`, `contrib.example.org` | The load balancer with Cloud Armor, and its hostname |
+
+The secrets are given as variables but never shown: put them in a `terraform.tfvars` (ignored
+by git) or pass them with `-var`. Every variable is applied the same way, so a changed `models`
+or a new `review_token` is one more `terraform apply`.
 
 ```sh
 # The names. The bucket's must be unique across Google Cloud (lowercase letters, digits,
@@ -250,11 +270,28 @@ A new build gets a new tag (`0.3.6-1`, …) and the same `apply`: Cloud Run roll
 changed image, and nothing for an image pushed again under the tag it already runs.
 
 The `url` output is what a cedar-chat sets as `CHAT_CONTRIBUTIONS_URL` to send here instead of
-the project's own ingest (`DEFAULT_CONTRIBUTIONS_URL` in `chat/src/config.rs`).
+the project's own ingest (`DEFAULT_CONTRIBUTIONS_URL` in `chat/src/config.rs`). The service
+answers only its routes: `GET /v1/policy` is the one to open in a browser to see that it is up;
+the root and everything else are `404 {"error": {"code": "not_found"}}`.
 
 Checklist for the no-logs promise, after `apply`: the logging exclusion exists (Logs Router →
 Exclusions); Storage data-access audit logs are off for the project (IAM → Audit Logs); nothing
 else in the project logs requests on the service's behalf.
+
+### Running the jobs by hand
+
+The scheduler runs them, and `gcloud` runs them now; the jobs' own output (counts, never text)
+is in the execution's log in Cloud Run → Jobs. `--args` replaces the job's command for that
+run, which is how the screener's image runs the other commands:
+
+```sh
+gcloud run jobs execute contrib-screener --region $REGION --wait                       # screen now
+gcloud run jobs execute contrib-release --region $REGION --wait --args release,--dry-run  # what a release would hold
+gcloud run jobs execute contrib-screener --region $REGION --wait --args stats,--days,30   # the numbers
+```
+
+What came in is in the bucket as plain JSON (`gsutil ls gs://$BUCKET/receipts/`, then
+`gsutil cat` one); held bundles are on the review page, with `review_token` set.
 
 ## Tests
 
