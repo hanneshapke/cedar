@@ -233,16 +233,21 @@ terraform init
 terraform apply -target=google_artifact_registry_repository.images \
   -var project=$PROJECT -var region=$REGION -var bucket=$BUCKET -var image=$IMAGE
 
-# 2. The image, for amd64 (Cloud Run runs nothing else; on an Apple Silicon Mac the build is
-#    emulated and takes minutes)
+# 2. The image, built from the repository root, for amd64 (Cloud Run runs nothing else; on
+#    an Apple Silicon Mac the build is emulated and takes minutes)
+cd ../..
 gcloud auth configure-docker $REGION-docker.pkg.dev
-docker build --platform linux/amd64 --provenance=false -f ../Dockerfile -t $IMAGE ..
+docker build --platform linux/amd64 --provenance=false -f contrib/Dockerfile -t $IMAGE .
 docker push $IMAGE
 
 # 3. The rest (add -var bucket_location=US to keep the data near a US region; the default
 #    is EU, which keeps contributions in the EU jurisdiction)
+cd contrib/terraform
 terraform apply -var project=$PROJECT -var region=$REGION -var bucket=$BUCKET -var image=$IMAGE
 ```
+
+A new build gets a new tag (`0.3.6-1`, …) and the same `apply`: Cloud Run rolls a revision for a
+changed image, and nothing for an image pushed again under the tag it already runs.
 
 The `url` output is what cedar-chat sets as `CHAT_CONTRIBUTIONS_URL`.
 
