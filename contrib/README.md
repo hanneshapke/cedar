@@ -233,9 +233,10 @@ terraform init
 terraform apply -target=google_artifact_registry_repository.images \
   -var project=$PROJECT -var region=$REGION -var bucket=$BUCKET -var image=$IMAGE
 
-# 2. The image
+# 2. The image, for amd64 (Cloud Run runs nothing else; on an Apple Silicon Mac the build is
+#    emulated and takes minutes)
 gcloud auth configure-docker $REGION-docker.pkg.dev
-docker build -f ../Dockerfile -t $IMAGE ..
+docker build --platform linux/amd64 --provenance=false -f ../Dockerfile -t $IMAGE ..
 docker push $IMAGE
 
 # 3. The rest (add -var bucket_location=US to keep the data near a US region; the default

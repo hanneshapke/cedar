@@ -1,5 +1,6 @@
-# cedar-contrib, the contribution ingest, as Cloud Run runs it. Build from the repository root:
-#   docker build -f contrib/Dockerfile -t cedar-contrib .
+# cedar-contrib, the contribution ingest, as Cloud Run runs it. Build from the repository root,
+# for amd64, which is what Cloud Run runs:
+#   docker build --platform linux/amd64 -f contrib/Dockerfile -t cedar-contrib .
 FROM rust:1-slim-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
