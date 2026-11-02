@@ -232,11 +232,23 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
         group(&catalog, "maps")["reason"],
         "Turned off on the server (MAPS=off)"
     );
+    // Gmail and Calendar are on by default, waiting for an OAuth client.
+    assert_eq!(
+        group(&catalog, "gmail")["reason"],
+        "Needs a Google OAuth client"
+    );
+    assert_eq!(group(&catalog, "custom")["reason"], "No TOOLS_DIR is set");
+
+    let app = TestApp::with_env(vec![], &[("GMAIL", "off")]).await;
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
     assert_eq!(
         group(&catalog, "gmail")["reason"],
         "Turned off on the server (GMAIL=off)"
     );
-    assert_eq!(group(&catalog, "custom")["reason"], "No TOOLS_DIR is set");
+    assert_eq!(
+        group(&catalog, "calendar")["reason"],
+        "Needs a Google OAuth client"
+    );
     let fetch = group(&catalog, "web_fetch");
     assert_eq!(fetch["available"], true);
     assert_eq!(fetch["tools"][0]["name"], "fetch_url");
@@ -320,6 +332,12 @@ async fn admin_routes_need_an_admin_key() {
             Some(json!({ "redirect_uri": "http://x/cb" })),
         ),
         (Method::DELETE, "/v1/admin/integrations/google", None),
+        (
+            Method::PUT,
+            "/v1/admin/integrations/google/client",
+            Some(json!({ "client_id": "c", "client_secret": "s" })),
+        ),
+        (Method::DELETE, "/v1/admin/integrations/google/client", None),
         (Method::GET, "/v1/admin/settings", None),
         (
             Method::PUT,
@@ -642,6 +660,14 @@ async fn start_google() -> (String, Arc<GoogleMock>) {
         Form(form): Form<HashMap<String, String>>,
     ) -> impl IntoResponse {
         mock.forms.lock().unwrap().push(form.clone());
+        if form.get("client_id").map(String::as_str) != Some("client-1") {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(
+                    json!({ "error": "invalid_client", "error_description": "The OAuth client was not found." }),
+                ),
+            );
+        }
         if form.get("code").map(String::as_str) != Some("good-code") {
             return (
                 StatusCode::BAD_REQUEST,
@@ -687,6 +713,7 @@ async fn connecting_google_stores_the_account_and_turns_gmail_on() {
         vec![],
         &admin_env(&[
             ("GMAIL", "on"),
+            ("CALENDAR", "off"),
             ("GOOGLE_CLIENT_ID", "client-1"),
             ("GOOGLE_CLIENT_SECRET", "client-secret"),
             ("GOOGLE_TOKEN_URL", token_url),
@@ -703,6 +730,20 @@ async fn connecting_google_stores_the_account_and_turns_gmail_on() {
     assert_eq!(status["google"]["enabled"], true);
     assert_eq!(status["google"]["configured"], false);
     assert_eq!(status["google"]["services"], json!(["gmail"]));
+    assert_eq!(
+        status["google"]["client"],
+        json!({ "configured": true, "source": "env", "client_id": "client-1" })
+    );
+    // The client from the environment can't be changed here.
+    let (code, _) = app
+        .json(
+            Method::PUT,
+            "/v1/admin/integrations/google/client",
+            Some(KEY_B),
+            Some(json!({ "client_id": "client-2", "client_secret": "s" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT);
 
     let authorize = |redirect: &str| {
         app.json(
@@ -794,6 +835,152 @@ async fn connecting_google_stores_the_account_and_turns_gmail_on() {
     assert_eq!(code, StatusCode::NO_CONTENT);
     let (_, catalog) = app.get("/v1/tools", KEY_A).await;
     assert_eq!(group(&catalog, "gmail")["available"], false);
+}
+
+#[tokio::test]
+async fn a_google_client_saved_by_an_admin_lets_the_account_be_connected() {
+    let (token_url, mock) = start_google().await;
+    let token_url: &'static str = Box::leak(token_url.into_boxed_str());
+    let app = TestApp::with_env(
+        vec![],
+        &admin_env(&[("CALENDAR", "off"), ("GOOGLE_TOKEN_URL", token_url)]),
+    )
+    .await;
+
+    // Nothing is set up: the tools wait for a client, and connecting says so.
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["google"]["enabled"], true);
+    assert_eq!(status["google"]["services"], json!(["gmail"]));
+    assert_eq!(status["google"]["configured"], false);
+    assert_eq!(
+        status["google"]["client"],
+        json!({ "configured": false, "source": null })
+    );
+    let (code, body) = app
+        .json(
+            Method::POST,
+            "/v1/admin/integrations/google/authorize",
+            Some(KEY_B),
+            Some(json!({ "redirect_uri": "http://127.0.0.1:13000/api/oauth/google/callback" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("no Google OAuth client"));
+
+    let put_client = |id: &str, secret: &str| {
+        app.json(
+            Method::PUT,
+            "/v1/admin/integrations/google/client",
+            Some(KEY_B),
+            Some(json!({ "client_id": id, "client_secret": secret })),
+        )
+    };
+    // Checked with Google first: an unknown client is refused with Google's reason.
+    let (code, body) = put_client("client-9", "nope").await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("The OAuth client was not found"));
+    let (code, _) = put_client("", "s").await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (code, _) = put_client("client 1", "s").await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    let (code, status) = put_client(" client-1 ", " client-secret ").await;
+    assert_eq!(code, StatusCode::OK, "{status}");
+    assert_eq!(
+        status["google"]["client"],
+        json!({ "configured": true, "source": "ui", "client_id": "client-1" })
+    );
+    assert_eq!(status["google"]["configured"], false);
+    assert!(!status.to_string().contains("client-secret"));
+    let check = mock.forms.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(check["client_secret"], "client-secret");
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
+    assert_eq!(
+        group(&catalog, "gmail")["reason"],
+        "No Google account is connected"
+    );
+
+    // Now the account connects through the saved client.
+    let (code, body) = app
+        .json(
+            Method::POST,
+            "/v1/admin/integrations/google/authorize",
+            Some(KEY_B),
+            Some(json!({ "redirect_uri": "http://127.0.0.1:13000/api/oauth/google/callback" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let url = body["url"].as_str().unwrap();
+    assert!(url.contains("client_id=client-1"));
+    let (code, body) = app
+        .json(
+            Method::POST,
+            "/v1/admin/integrations/google/callback",
+            Some(KEY_B),
+            Some(json!({ "state": state_param(url), "code": "good-code" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["account"], "ana@example.com");
+    let form = mock.forms.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(form["client_id"], "client-1");
+    assert_eq!(form["client_secret"], "client-secret");
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
+    assert_eq!(group(&catalog, "gmail")["available"], true);
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["google"]["account"], "ana@example.com");
+
+    // Saving the same client again keeps the account; a different one disconnects it.
+    let (code, status) = put_client("client-1", "client-secret").await;
+    assert_eq!(code, StatusCode::OK, "{status}");
+    assert_eq!(status["google"]["configured"], true);
+
+    // Removing the client takes the account with it.
+    let (code, _) = app
+        .json(
+            Method::DELETE,
+            "/v1/admin/integrations/google/client",
+            Some(KEY_B),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::NO_CONTENT);
+    let (_, status) = app.get("/v1/admin/integrations", KEY_B).await;
+    assert_eq!(status["google"]["client"]["configured"], false);
+    assert_eq!(status["google"]["configured"], false);
+    let (_, catalog) = app.get("/v1/tools", KEY_A).await;
+    assert_eq!(group(&catalog, "gmail")["available"], false);
+    assert_eq!(
+        group(&catalog, "gmail")["reason"],
+        "Needs a Google OAuth client"
+    );
+    let (code, _) = app
+        .json(
+            Method::DELETE,
+            "/v1/admin/integrations/google/client",
+            Some(KEY_B),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+
+    // Without CEDAR_SECRET_KEY nothing can be saved.
+    let app = TestApp::with_env(vec![], &[("CEDAR_ADMIN_KEYS", KEY_B)]).await;
+    let (code, body) = app
+        .json(
+            Method::PUT,
+            "/v1/admin/integrations/google/client",
+            Some(KEY_B),
+            Some(json!({ "client_id": "client-1", "client_secret": "s" })),
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
 }
 
 // -- defaults and the model registry ----------------------------------------------------------

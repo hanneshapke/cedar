@@ -308,6 +308,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
         .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
         .route("/integrations/google", axum::routing::delete(delete_google))
+        .route("/integrations/google/client", put(put_google_client).delete(delete_google_client))
         .route("/integrations/google/connect", post(connect_google))
         .route("/integrations/tools", get(get_personal_tools))
         .route("/integrations/tools/{name}/setup", post(setup_tool))
@@ -1556,16 +1557,56 @@ fn require_models_access(state: &AppState, headers: &HeaderMap) -> Result<(), Ap
     }
 }
 
-fn redirect_uri(state: &AppState) -> String {
-    format!("{}{GOOGLE_CALLBACK_PATH}", state.cfg.public_url)
+/// Where Google sends the browser back after "Connect Google". Normally under `CHAT_PUBLIC_URL`;
+/// but a browser on this computer that opened the chat at a loopback address (the desktop app's
+/// window, or `http://localhost:…`) is sent back to that address, which an OAuth client of the
+/// *Desktop app* kind accepts without registering it. The page's own address comes from the
+/// `Origin` header (sent with the POST that starts the sign-in) or `Referer` (sent with the GET
+/// that shows it), which a reverse proxy doesn't rewrite the way it may rewrite `Host`.
+fn redirect_uri(state: &AppState, headers: &HeaderMap) -> String {
+    let loopback = headers
+        .get(header::ORIGIN)
+        .or_else(|| headers.get(header::REFERER))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| reqwest::Url::parse(v).ok())
+        .filter(|u| {
+            matches!(u.scheme(), "http" | "https")
+                && matches!(u.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
+        })
+        .map(|u| u.origin().ascii_serialization());
+    format!("{}{GOOGLE_CALLBACK_PATH}", loopback.as_deref().unwrap_or(&state.cfg.public_url))
 }
 
 async fn get_integrations(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     let mut status = state.cedar.integrations().await?;
     // To register with the Google OAuth client.
-    status["google"]["redirect_uri"] = json!(redirect_uri(&state));
+    status["google"]["redirect_uri"] = json!(redirect_uri(&state, &headers));
     Ok(Json(status))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GoogleClientBody {
+    client_id: String,
+    client_secret: String,
+}
+
+async fn put_google_client(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(body): ApiJson<GoogleClientBody>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    let mut status = state.cedar.set_google_client(&body.client_id, &body.client_secret).await?;
+    status["google"]["redirect_uri"] = json!(redirect_uri(&state, &headers));
+    Ok(Json(status))
+}
+
+async fn delete_google_client(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_google_client().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -1743,7 +1784,7 @@ async fn uninstall_tool(State(state): State<AppState>, headers: HeaderMap, Path(
 
 async fn connect_google(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
-    let url = state.cedar.google_authorize(&redirect_uri(&state)).await?;
+    let url = state.cedar.google_authorize(&redirect_uri(&state, &headers)).await?;
     Ok(Json(json!({ "url": url })))
 }
 

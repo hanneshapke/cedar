@@ -1,17 +1,21 @@
 //! Integrations an admin can set up through the API instead of the environment: the model
 //! registry (the models runs can use, each with its server and API key), a Brave Search key, a
-//! Best Buy key, a SerpApi key and a Google account ("Connect Google"). Credentials are kept encrypted (see [`crate::secrets`]).
+//! Best Buy key, a SerpApi key, a Google OAuth client and, through it, a Google account ("Connect
+//! Google"). Credentials are kept encrypted (see [`crate::secrets`]).
 //! Saving or removing a key rebuilds the tool set, and a change to the registry rebuilds the
 //! model clients, so the next run (or the next model call of one already going) sees the change
 //! without a restart. Runs already going keep the tools they started with.
 //!
 //! Personal tools get their secrets here too, one per variable their manifest declares.
 //!
-//! The environment wins for the Brave, Best Buy and SerpApi keys and the Google account: a credential set there is
-//! reported as such and can't be changed here. Models are only ever registered here.
+//! The environment wins for the Brave, Best Buy and SerpApi keys, the Google client and the Google
+//! account: a credential set there is reported as such and can't be changed here. Models are only
+//! ever registered here.
 
 use crate::api::MAX_MODEL_LEN;
-use crate::config::{Config, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL};
+use crate::config::{
+    Config, GoogleClientConfig, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL,
+};
 use crate::error::AppError;
 use crate::llm::{list_models, ChatCompletionsClient, LlmClient, LlmRouter};
 use crate::mcp::http_client;
@@ -21,7 +25,7 @@ use crate::store::Store;
 use crate::tools::custom::SavedSecrets;
 use crate::tools::{BestBuy, BraveSearch, Overrides, SearchFlights, Tool, ToolSet};
 use anyhow::{Context, Result};
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use base64::Engine;
 use chacha20poly1305::aead::rand_core::RngCore;
 use chacha20poly1305::aead::OsRng;
@@ -50,6 +54,9 @@ pub struct Integrations {
     store: Store,
     secrets: Option<SecretStore>,
     tools: Arc<ArcSwap<ToolSet>>,
+    /// The Google OAuth client in use: the environment's, else the saved one, else none. Kept
+    /// here so "Connect Google" and the tool catalog agree with the tools.
+    google_client: ArcSwapOption<GoogleClientConfig>,
     http: reqwest::Client,
     /// "Connect Google" attempts in flight: state → (redirect URI, issued at).
     pending: Mutex<HashMap<String, (String, Instant)>>,
@@ -130,6 +137,7 @@ impl Integrations {
                 .as_ref()
                 .map(|k| SecretStore::new(store.clone(), k)),
             store,
+            google_client: ArcSwapOption::from(cfg.google_oauth.clone().map(Arc::new)),
             cfg,
             tools: Arc::new(ArcSwap::from_pointee(tools)),
             http: http_client()?,
@@ -178,10 +186,42 @@ impl Integrations {
                 }
             }
             overrides.tool_secrets = self.saved_tool_secrets(secrets).await?;
+            if self.cfg.google_oauth.is_none() {
+                overrides.google_client = self.saved_google_client(secrets).await;
+            }
         }
+        let client = self
+            .cfg
+            .google_oauth
+            .clone()
+            .or_else(|| overrides.google_client.clone());
         let tools = ToolSet::build(&self.cfg, &overrides)?;
         self.tools.store(Arc::new(tools));
+        self.google_client.store(client.map(Arc::new));
         Ok(())
+    }
+
+    /// The Google OAuth client an admin saved, if any. One that can't be read is logged and left
+    /// out, like the keys.
+    async fn saved_google_client(&self, secrets: &SecretStore) -> Option<GoogleClientConfig> {
+        let (secret, meta) = match (
+            secrets.get(secrets::GOOGLE_CLIENT).await,
+            secrets.meta(secrets::GOOGLE_CLIENT).await,
+        ) {
+            (Ok(Some(secret)), Ok(Some(meta))) => (secret, meta),
+            (Ok(None), _) | (_, Ok(None)) => return None,
+            (Err(e), _) | (_, Err(e)) => {
+                tracing::warn!(error = %format!("{e:#}"), "ignoring the saved Google client");
+                return None;
+            }
+        };
+        let client_id = meta["client_id"].as_str()?.to_string();
+        Some(self.cfg.google.client(client_id, secret))
+    }
+
+    /// The Google OAuth client in use, if any (see [`Self::reload`]).
+    fn google_oauth(&self) -> Option<Arc<GoogleClientConfig>> {
+        self.google_client.load_full()
     }
 
     /// Every secret saved for a personal tool, decrypted. One that can't be read is logged and
@@ -637,13 +677,16 @@ impl Integrations {
     pub fn unavailable_reasons(&self) -> Vec<(&'static str, String)> {
         let cfg = &self.cfg;
         let off = |flag: &str| format!("Turned off on the server ({flag}=off)");
+        let has_client = self.google_client.load().is_some();
         let google = |prefix: &str, flag: &str| {
             let on = cfg.google_apis.iter().any(|a| a.prefix == prefix)
                 || cfg.mcp_servers.iter().any(|s| s.prefix == prefix);
-            if on {
-                "No Google account is connected".to_string()
-            } else {
+            if !on {
                 off(flag)
+            } else if !has_client {
+                "Needs a Google OAuth client".to_string()
+            } else {
+                "No Google account is connected".to_string()
             }
         };
         vec![
@@ -722,24 +765,34 @@ impl Integrations {
             (None, None) => json!({ "configured": false, "source": null }),
         };
         serpapi["enabled"] = json!(self.cfg.flights);
-        let google = match &self.cfg.google_oauth {
-            None => json!({ "enabled": false, "configured": false, "source": null }),
-            Some(oauth) => {
-                let mut g = match (
-                    &oauth.refresh_token,
-                    meta(secrets::GOOGLE_REFRESH_TOKEN).await?,
-                ) {
-                    (Some(_), _) => json!({ "configured": true, "source": "env" }),
-                    (None, Some(m)) => {
-                        json!({ "configured": true, "source": "ui", "account": m["account"], "scopes": m["scopes"] })
-                    }
-                    (None, None) => json!({ "configured": false, "source": null }),
-                };
-                g["enabled"] = json!(true);
-                g["services"] = json!(self.google_services());
-                g
+        // The client: from the environment, saved here, or missing.
+        let client = match (&self.cfg.google_oauth, meta(secrets::GOOGLE_CLIENT).await?) {
+            (Some(c), _) => {
+                json!({ "configured": true, "source": "env", "client_id": c.client_id })
             }
+            (None, Some(m)) => {
+                json!({ "configured": true, "source": "ui", "client_id": m["client_id"] })
+            }
+            (None, None) => json!({ "configured": false, "source": null }),
         };
+        // The account, which only a client can connect.
+        let mut google = match self.google_oauth() {
+            None => json!({ "configured": false, "source": null }),
+            Some(oauth) => match (
+                &oauth.refresh_token,
+                meta(secrets::GOOGLE_REFRESH_TOKEN).await?,
+            ) {
+                (Some(_), _) => json!({ "configured": true, "source": "env" }),
+                (None, Some(m)) => {
+                    json!({ "configured": true, "source": "ui", "account": m["account"], "scopes": m["scopes"] })
+                }
+                (None, None) => json!({ "configured": false, "source": null }),
+            },
+        };
+        let services = self.google_services();
+        google["enabled"] = json!(!services.is_empty());
+        google["services"] = json!(services);
+        google["client"] = client;
         Ok(json!({
             "storage": self.secrets.is_some(),
             "models": self.models.load().len(),
@@ -884,12 +937,128 @@ impl Integrations {
         Ok(())
     }
 
+    /// Save the Google OAuth client "Connect Google" uses, after checking with Google's token
+    /// endpoint that it exists, and rebuild the tools. A connected account belongs to the client
+    /// that connected it, so changing the client disconnects it.
+    pub async fn set_google_client(
+        &self,
+        client_id: &str,
+        client_secret: &str,
+    ) -> Result<(), AppError> {
+        let secrets = self.writable(self.cfg.google_oauth.is_some())?;
+        let client_id = client_id.trim();
+        let client_secret = client_secret.trim();
+        let malformed = |v: &str| {
+            v.is_empty()
+                || v.len() > MAX_SECRET_LEN
+                || v.chars().any(|c| c.is_control() || c == ' ')
+        };
+        if malformed(client_id) {
+            return Err(AppError::BadRequest(
+                "client_id is missing or malformed".into(),
+            ));
+        }
+        if malformed(client_secret) {
+            return Err(AppError::BadRequest(
+                "client_secret is missing or malformed".into(),
+            ));
+        }
+        if self.google_services().is_empty() {
+            return Err(AppError::Conflict(
+                "Gmail and Calendar are off on the server (GMAIL, CALENDAR)".into(),
+            ));
+        }
+        self.check_google_client(client_id, client_secret).await?;
+
+        let _guard = self.changing.lock().await;
+        let same_client = secrets
+            .meta(secrets::GOOGLE_CLIENT)
+            .await?
+            .is_some_and(|m| m["client_id"] == client_id);
+        secrets
+            .put(
+                secrets::GOOGLE_CLIENT,
+                client_secret,
+                &json!({ "client_id": client_id }),
+            )
+            .await?;
+        if !same_client && secrets.delete(secrets::GOOGLE_REFRESH_TOKEN).await? {
+            tracing::info!("Google account disconnected: the OAuth client changed");
+        }
+        self.reload().await?;
+        tracing::info!(client_id, "Google OAuth client saved");
+        Ok(())
+    }
+
+    /// Ask Google's token endpoint to redeem a code that doesn't exist. A client Google knows
+    /// gets `invalid_grant` (the code is the problem); an unknown one gets `invalid_client`.
+    async fn check_google_client(
+        &self,
+        client_id: &str,
+        client_secret: &str,
+    ) -> Result<(), AppError> {
+        let resp = self
+            .http
+            .post(&self.cfg.google.token_url)
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("code", "cedar-client-check"),
+                ("client_id", client_id),
+                ("client_secret", client_secret),
+                ("redirect_uri", "http://127.0.0.1/"),
+            ])
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| AppError::BadGateway(format!("could not reach Google: {e}")))?;
+        let status = resp.status();
+        if status.is_server_error() {
+            return Err(AppError::BadGateway(format!(
+                "Google's token endpoint answered {status}"
+            )));
+        }
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+        let error = body["error"].as_str().unwrap_or("");
+        if matches!(error, "invalid_client" | "unauthorized_client") {
+            let why = body["error_description"].as_str().unwrap_or(error);
+            return Err(AppError::BadRequest(format!(
+                "Google doesn't accept this client ID and secret ({why}); copy both from the OAuth client in the Google Cloud console"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Forget the saved Google OAuth client, and with it the account it connected.
+    pub async fn remove_google_client(&self) -> Result<(), AppError> {
+        let secrets = self.writable(self.cfg.google_oauth.is_some())?;
+        let _guard = self.changing.lock().await;
+        if !secrets.delete(secrets::GOOGLE_CLIENT).await? {
+            return Err(AppError::NotFound("no Google OAuth client is saved"));
+        }
+        secrets.delete(secrets::GOOGLE_REFRESH_TOKEN).await?;
+        self.reload().await?;
+        tracing::info!("Google OAuth client removed");
+        Ok(())
+    }
+
+    /// The client "Connect Google" goes through, or why there is none.
+    fn connectable_client(&self) -> Result<Arc<GoogleClientConfig>, AppError> {
+        if self.google_services().is_empty() {
+            return Err(AppError::Conflict(
+                "Gmail and Calendar are off on the server (GMAIL, CALENDAR)".into(),
+            ));
+        }
+        self.google_oauth().ok_or_else(|| {
+            AppError::Conflict(
+                "no Google OAuth client is set up: save one under Settings → Server, or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server".into(),
+            )
+        })
+    }
+
     /// Start "Connect Google": the URL to send the admin's browser to. Google sends it back to
     /// `redirect_uri` with a code and the `state` returned here, which works once.
     pub fn google_authorize(&self, redirect_uri: &str) -> Result<String, AppError> {
-        let oauth = self.cfg.google_oauth.as_ref().ok_or_else(|| {
-            AppError::Conflict("Gmail and Calendar are off on the server (GMAIL, CALENDAR)".into())
-        })?;
+        let oauth = self.connectable_client()?;
         self.writable(oauth.refresh_token.is_some())?;
         let redirect = reqwest::Url::parse(redirect_uri)
             .ok()
@@ -929,9 +1098,7 @@ impl Integrations {
 
     /// Finish "Connect Google": trade the code for a refresh token, save it, rebuild the tools.
     pub async fn google_callback(&self, state: &str, code: &str) -> Result<Value, AppError> {
-        let oauth = self.cfg.google_oauth.as_ref().ok_or(AppError::NotFound(
-            "Gmail and Calendar are off on the server",
-        ))?;
+        let oauth = self.connectable_client()?;
         let secrets = self.writable(oauth.refresh_token.is_some())?;
         let redirect_uri = {
             let mut pending = self.pending.lock().unwrap();
@@ -1002,9 +1169,7 @@ impl Integrations {
 
     pub async fn remove_google(&self) -> Result<(), AppError> {
         let in_env = self
-            .cfg
-            .google_oauth
-            .as_ref()
+            .google_oauth()
             .is_some_and(|o| o.refresh_token.is_some());
         let secrets = self.writable(in_env)?;
         let _guard = self.changing.lock().await;

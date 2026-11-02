@@ -305,12 +305,16 @@ impl ToolSet {
             set.tools
                 .push(Box::new(BrowserTool::new(cfg.web_fetch_allow_private)));
         }
-        let refresh_token = cfg
+        // The client from the environment wins over a saved one, as elsewhere; a refresh token
+        // from the environment only ever belongs to the environment's client.
+        let oauth = cfg
             .google_oauth
             .as_ref()
+            .or(overrides.google_client.as_ref());
+        let refresh_token = oauth
             .and_then(|o| o.refresh_token.clone())
             .or_else(|| overrides.google_refresh_token.clone());
-        if let (Some(oauth), Some(refresh_token)) = (&cfg.google_oauth, refresh_token) {
+        if let (Some(oauth), Some(refresh_token)) = (oauth, refresh_token) {
             let creds = GoogleCredentials {
                 client_id: oauth.client_id.clone(),
                 client_secret: oauth.client_secret.clone(),
@@ -472,6 +476,8 @@ pub struct Overrides {
     pub bestbuy_api_key: Option<String>,
     pub serpapi_api_key: Option<String>,
     pub google_refresh_token: Option<String>,
+    /// The Google OAuth client saved through the API, used when the environment has none.
+    pub google_client: Option<crate::config::GoogleClientConfig>,
     /// The secrets saved for personal tools.
     pub tool_secrets: custom::SavedSecrets,
 }

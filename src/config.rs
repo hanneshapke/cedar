@@ -149,9 +149,34 @@ impl std::fmt::Debug for GoogleOAuthConfig {
     }
 }
 
+/// Where cedar talks to Google when connecting an account, whichever OAuth client it uses.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GoogleEndpoints {
+    pub token_url: String,
+    /// Where people are sent to grant access ("Connect Google").
+    pub auth_url: String,
+    /// The scopes asked for when connecting.
+    pub scopes: Vec<String>,
+}
+
+impl GoogleEndpoints {
+    /// The client `client_id` / `client_secret` identify, connecting through these endpoints.
+    pub fn client(&self, client_id: String, client_secret: String) -> GoogleClientConfig {
+        GoogleClientConfig {
+            client_id,
+            client_secret,
+            refresh_token: None,
+            token_url: self.token_url.clone(),
+            auth_url: self.auth_url.clone(),
+            scopes: self.scopes.clone(),
+        }
+    }
+}
+
 /// The deployment's Google OAuth client. The refresh token is optional here: without one in the
 /// environment, an admin connects the account from the chat UI and cedar keeps the token
-/// encrypted in its database (see `CEDAR_SECRET_KEY`).
+/// encrypted in its database (see `CEDAR_SECRET_KEY`). The client itself can come from there too
+/// (see `crate::integrations`), in which case this is `None` in the configuration.
 #[derive(Clone)]
 pub struct GoogleClientConfig {
     pub client_id: String,
@@ -253,8 +278,14 @@ pub struct Config {
     pub memory: bool,
     /// How many memories one API key's owner may keep (`MEMORY_MAX_ITEMS`, 200 by default).
     pub memory_max_items: usize,
-    /// The Google account the Gmail and Calendar tools act for. Set when either is on.
+    /// The Google OAuth client from the environment (`GOOGLE_CLIENT_ID` and
+    /// `GOOGLE_CLIENT_SECRET`), with the account's refresh token when that is set there too. An
+    /// admin can save a client through the API instead, so this is `None` without one in the
+    /// environment even while Gmail and Calendar are on.
     pub google_oauth: Option<GoogleClientConfig>,
+    /// Google's token and consent endpoints and the scopes "Connect Google" asks for, for
+    /// whichever client is used.
+    pub google: GoogleEndpoints,
     /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
     pub google_apis: Vec<GoogleApiConfig>,
     /// Remote MCP servers (Gmail and Calendar with `GOOGLE_BACKEND=mcp`), in the order their
@@ -403,7 +434,9 @@ impl Config {
                 DEFAULT_CALENDAR_TOOLS,
             ),
         ] {
-            if !flag(flag_name, false)? {
+            // On unless turned off: the tools only appear once a Google OAuth client is there
+            // (from the environment or saved through the API) and an account is connected.
+            if !flag(flag_name, true)? {
                 continue;
             }
             let tools_key = format!("{flag_name}_TOOLS");
@@ -440,35 +473,42 @@ impl Config {
                 Some(<[u8; 32]>::try_from(bytes.as_slice()).expect("checked length"))
             }
         };
-        let google_oauth = if mcp_servers.is_empty() && google_apis.is_empty() {
-            None
-        } else {
-            let need = |k: &str| {
-                get(k).map(|v| v.trim().to_string()).ok_or_else(|| {
-                    anyhow!("GMAIL and CALENDAR need GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET; {k} is not set")
-                })
-            };
-            let refresh_token = get("GOOGLE_REFRESH_TOKEN").map(|v| v.trim().to_string());
-            if refresh_token.is_none() && secret_key.is_none() {
-                bail!("GMAIL and CALENDAR need GOOGLE_REFRESH_TOKEN, or CEDAR_SECRET_KEY so the account can be connected from the chat UI");
+        let scopes = match get("GOOGLE_SCOPES") {
+            Some(v) => v
+                .split([' ', ','])
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect(),
+            None => DEFAULT_GOOGLE_SCOPES.split(' ').map(String::from).collect(),
+        };
+        let google = GoogleEndpoints {
+            token_url: get("GOOGLE_TOKEN_URL").unwrap_or_else(|| DEFAULT_GOOGLE_TOKEN_URL.into()),
+            auth_url: get("GOOGLE_AUTH_URL").unwrap_or_else(|| DEFAULT_GOOGLE_AUTH_URL.into()),
+            scopes,
+        };
+        let client_id = get("GOOGLE_CLIENT_ID").map(|v| v.trim().to_string());
+        let client_secret = get("GOOGLE_CLIENT_SECRET").map(|v| v.trim().to_string());
+        let refresh_token = get("GOOGLE_REFRESH_TOKEN").map(|v| v.trim().to_string());
+        let google_oauth = match (client_id, client_secret) {
+            (None, None) => {
+                if refresh_token.is_some() {
+                    bail!("GOOGLE_REFRESH_TOKEN needs the client it belongs to: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET");
+                }
+                None
             }
-            let scopes = match get("GOOGLE_SCOPES") {
-                Some(v) => v
-                    .split([' ', ','])
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-                    .collect(),
-                None => DEFAULT_GOOGLE_SCOPES.split(' ').map(String::from).collect(),
-            };
-            Some(GoogleClientConfig {
-                client_id: need("GOOGLE_CLIENT_ID")?,
-                client_secret: need("GOOGLE_CLIENT_SECRET")?,
-                refresh_token,
-                token_url: get("GOOGLE_TOKEN_URL")
-                    .unwrap_or_else(|| DEFAULT_GOOGLE_TOKEN_URL.into()),
-                auth_url: get("GOOGLE_AUTH_URL").unwrap_or_else(|| DEFAULT_GOOGLE_AUTH_URL.into()),
-                scopes,
-            })
+            (Some(_), None) | (None, Some(_)) => {
+                bail!(
+                    "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET go together; one of them is not set"
+                )
+            }
+            (Some(client_id), Some(client_secret)) => {
+                if refresh_token.is_none() && secret_key.is_none() {
+                    bail!("a Google OAuth client in the environment needs GOOGLE_REFRESH_TOKEN, or CEDAR_SECRET_KEY so the account can be connected from the chat UI");
+                }
+                let mut client = google.client(client_id, client_secret);
+                client.refresh_token = refresh_token;
+                Some(client)
+            }
         };
         let admin_keys = list("CEDAR_ADMIN_KEYS");
         if admin_keys.iter().any(|k| !api_keys.contains(k)) {
@@ -539,6 +579,7 @@ impl Config {
                 crate::memory::DEFAULT_MAX_ITEMS,
             )?,
             google_oauth,
+            google,
             google_apis,
             mcp_servers,
             api_keys,
@@ -1010,18 +1051,36 @@ mod tests {
     }
 
     #[test]
-    fn gmail_and_calendar_are_off_unless_enabled() {
+    fn gmail_and_calendar_are_on_unless_turned_off_but_need_a_client() {
+        // On by default, so a client saved through the API is enough; without one in the
+        // environment there is no client here.
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
         assert!(cfg.mcp_servers.is_empty());
-        assert!(cfg.google_apis.is_empty());
+        let prefixes: Vec<&str> = cfg.google_apis.iter().map(|a| a.prefix.as_str()).collect();
+        assert_eq!(prefixes, ["gmail", "calendar"]);
         assert!(cfg.google_oauth.is_none());
+        assert_eq!(cfg.google.auth_url, DEFAULT_GOOGLE_AUTH_URL);
+        assert!(cfg.google.scopes.iter().any(|s| s == "email"));
+
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("GMAIL", "off"),
+            ("CALENDAR", "off"),
+        ]))
+        .unwrap();
+        assert!(cfg.google_apis.is_empty());
+        assert!(cfg.mcp_servers.is_empty());
+
+        let client = cfg.google.client("id".into(), "secret".into());
+        assert_eq!(client.client_id, "id");
+        assert_eq!(client.token_url, DEFAULT_GOOGLE_TOKEN_URL);
+        assert!(client.refresh_token.is_none());
     }
 
     #[test]
-    fn gmail_and_calendar_need_google_credentials() {
+    fn a_google_client_in_the_environment_needs_a_token_or_the_secret_key() {
         let err = Config::from_lookup(lookup(&[
             ("CEDAR_API_KEYS", "a"),
-            ("GMAIL", "on"),
             ("GOOGLE_CLIENT_ID", "id"),
             ("GOOGLE_CLIENT_SECRET", "secret"),
         ]))
@@ -1031,13 +1090,22 @@ mod tests {
         // With a secret key the account can be connected later, from the chat UI.
         let cfg = Config::from_lookup(lookup(&[
             ("CEDAR_API_KEYS", "a"),
-            ("GMAIL", "on"),
             ("GOOGLE_CLIENT_ID", "id"),
             ("GOOGLE_CLIENT_SECRET", "secret"),
             ("CEDAR_SECRET_KEY", &"ab".repeat(32)),
         ]))
         .unwrap();
         assert!(cfg.google_oauth.unwrap().refresh_token.is_none());
+
+        // Half a client, or a token without one, is a mistake.
+        for pairs in [
+            vec![("CEDAR_API_KEYS", "a"), ("GOOGLE_CLIENT_ID", "id")],
+            vec![("CEDAR_API_KEYS", "a"), ("GOOGLE_CLIENT_SECRET", "s")],
+            vec![("CEDAR_API_KEYS", "a"), ("GOOGLE_REFRESH_TOKEN", "t")],
+        ] {
+            let err = Config::from_lookup(lookup(&pairs)).unwrap_err();
+            assert!(err.to_string().contains("GOOGLE_CLIENT_ID"), "{err}");
+        }
     }
 
     #[test]
@@ -1149,6 +1217,7 @@ mod tests {
             &[
                 &google[..],
                 &[
+                    ("GMAIL", "off"),
                     ("CALENDAR", "on"),
                     ("GOOGLE_BACKEND", "MCP"),
                     ("CALENDAR_MCP_URL", "http://localhost:9999/mcp"),

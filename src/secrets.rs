@@ -13,6 +13,9 @@ pub const BRAVE_API_KEY: &str = "brave_api_key";
 pub const BESTBUY_API_KEY: &str = "bestbuy_api_key";
 pub const SERPAPI_API_KEY: &str = "serpapi_api_key";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
+/// The Google OAuth client an admin saved: the value is the client secret, the metadata holds
+/// the client ID (which identifies the deployment and is not secret).
+pub const GOOGLE_CLIENT: &str = "google_client";
 /// The single model server address, key and model name saved by versions before the model
 /// registry. Read once to migrate them into the registry's `default` entry, then removed.
 pub const LEGACY_LLM_BASE_URL: &str = "llm_base_url";
