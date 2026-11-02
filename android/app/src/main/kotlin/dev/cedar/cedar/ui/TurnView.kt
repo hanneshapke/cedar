@@ -499,6 +499,7 @@ private fun openCardOnWeb(name: String): Int = when (name) {
     "compare_stocks" -> R.string.open_comparison_on_web
     "search_products" -> R.string.open_products_on_web
     "search_flights" -> R.string.open_flights_on_web
+    "weather_forecast" -> R.string.open_weather_on_web
     "generate_chart" -> R.string.open_chart_on_web
     else -> R.string.open_result_on_web
 }

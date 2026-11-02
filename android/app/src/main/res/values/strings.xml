@@ -541,4 +541,57 @@
         <item quantity="one">reasoning of %d call left out</item>
         <item quantity="other">reasoning of %d calls left out</item>
     </plurals>
+
+    <!-- weather_forecast card -->
+    <string name="open_weather_on_web">Open the weather on the web</string>
+    <string name="weather_for">Weather for %1$s</string>
+    <string name="weather_local_time">%1$s local time</string>
+    <string name="weather_feels_like">Feels like %1$s</string>
+    <string name="weather_high_low">H %1$s · L %2$s</string>
+    <string name="weather_humidity">Humidity</string>
+    <string name="weather_wind">Wind</string>
+    <string name="weather_wind_from">Wind from %1$s</string>
+    <string name="weather_with_gusts">up to %1$s, gusts %2$s</string>
+    <string name="weather_gusts">Gusts</string>
+    <string name="weather_precipitation">Precipitation</string>
+    <string name="weather_precip_chance">%1$s (%2$s chance)</string>
+    <string name="weather_uv">UV index</string>
+    <string name="weather_sunrise">Sunrise</string>
+    <string name="weather_sunset">Sunset</string>
+    <string name="weather_daylight">Daylight</string>
+    <string name="weather_conditions">Conditions</string>
+    <string name="weather_today">Today</string>
+    <string name="weather_tomorrow">Tomorrow</string>
+    <string name="weather_forecast_one_day">1-day forecast</string>
+    <string name="weather_forecast_days">%1$d-day forecast</string>
+    <string name="weather_credit">Weather data by %1$s (CC BY 4.0)</string>
+    <string name="weather_code_unknown">Weather code %1$d</string>
+    <string name="weather_code_0">Clear sky</string>
+    <string name="weather_code_1">Mainly clear</string>
+    <string name="weather_code_2">Partly cloudy</string>
+    <string name="weather_code_3">Overcast</string>
+    <string name="weather_code_45">Fog</string>
+    <string name="weather_code_48">Freezing fog</string>
+    <string name="weather_code_51">Light drizzle</string>
+    <string name="weather_code_53">Moderate drizzle</string>
+    <string name="weather_code_55">Dense drizzle</string>
+    <string name="weather_code_56">Light freezing drizzle</string>
+    <string name="weather_code_57">Dense freezing drizzle</string>
+    <string name="weather_code_61">Light rain</string>
+    <string name="weather_code_63">Moderate rain</string>
+    <string name="weather_code_65">Heavy rain</string>
+    <string name="weather_code_66">Light freezing rain</string>
+    <string name="weather_code_67">Heavy freezing rain</string>
+    <string name="weather_code_71">Light snow</string>
+    <string name="weather_code_73">Moderate snow</string>
+    <string name="weather_code_75">Heavy snow</string>
+    <string name="weather_code_77">Snow grains</string>
+    <string name="weather_code_80">Light rain showers</string>
+    <string name="weather_code_81">Moderate rain showers</string>
+    <string name="weather_code_82">Violent rain showers</string>
+    <string name="weather_code_85">Light snow showers</string>
+    <string name="weather_code_86">Heavy snow showers</string>
+    <string name="weather_code_95">Thunderstorm</string>
+    <string name="weather_code_96">Thunderstorm with light hail</string>
+    <string name="weather_code_99">Thunderstorm with heavy hail</string>
 </resources>

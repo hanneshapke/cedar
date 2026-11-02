@@ -18,6 +18,10 @@ pub struct Config {
     /// If set, the Integrations settings (API keys, the Google account) are offered to whoever
     /// presents this token as well. Without it they are hidden.
     pub admin_token: Option<String>,
+    /// Who may manage cedar's models (`CHAT_MODELS_ACCESS`): everyone the access token lets in
+    /// (the default), or admins only. The integration secrets and the Google account stay with
+    /// admins either way.
+    pub models_access: ModelsAccess,
     /// This server's address as the browser reaches it, for the "Connect Google" redirect URI.
     pub public_url: String,
     /// How much earlier conversation is inlined into the prompt when the previous cedar run is gone
@@ -50,6 +54,25 @@ pub struct Config {
     pub contributions_url: Option<String>,
 }
 
+/// Who may add, change and remove models in Settings -> Server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelsAccess {
+    /// Only with the admin token (`CHAT_ADMIN_TOKEN`), for a server several people use.
+    Admins,
+    /// Anyone who passes the access token. The default: on a personal setup (the desktop app, a
+    /// household's stack) whoever chats also picks the models.
+    Users,
+}
+
+impl ModelsAccess {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Admins => "admins",
+            Self::Users => "users",
+        }
+    }
+}
+
 impl Config {
     pub fn from_env() -> Result<Self> {
         Self::from_lookup(|k| std::env::var(k).ok())
@@ -75,6 +98,11 @@ impl Config {
             database_url: get("CHAT_DATABASE_URL").unwrap_or_else(|| "sqlite://cedar-chat.db".into()),
             access_token: get("CHAT_ACCESS_TOKEN").map(|t| t.trim().to_string()),
             admin_token: get("CHAT_ADMIN_TOKEN").map(|t| t.trim().to_string()),
+            models_access: match get("CHAT_MODELS_ACCESS").as_deref().map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+                None | Some("users") => ModelsAccess::Users,
+                Some("admins") => ModelsAccess::Admins,
+                Some(other) => bail!("CHAT_MODELS_ACCESS must be admins or users, not {other:?}"),
+            },
             public_url: get("CHAT_PUBLIC_URL")
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_else(|| format!("http://{bind_addr}")),
@@ -172,5 +200,15 @@ mod tests {
         assert_eq!(cfg.update_dir.as_deref(), Some(std::path::Path::new("/var/lib/cedar/update")));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_CHECK", "sometimes")])).is_err());
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_URL", "api.github.com")])).is_err());
+    }
+
+    #[test]
+    fn models_access() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k")])).unwrap();
+        assert_eq!(cfg.models_access, ModelsAccess::Users);
+        assert_eq!(cfg.models_access.as_str(), "users");
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_MODELS_ACCESS", "Admins")])).unwrap();
+        assert_eq!(cfg.models_access, ModelsAccess::Admins);
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_MODELS_ACCESS", "everyone")])).is_err());
     }
 }

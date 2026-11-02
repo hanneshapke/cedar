@@ -231,6 +231,7 @@ private struct ErrorBanner: View {
 private struct Composer: View {
     @Bindable var chat: ChatModel
     var focused: FocusState<Bool>.Binding
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var showingPhotos = false
     @State private var showingFiles = false
     @State private var photos: [PhotosPickerItem] = []
@@ -284,7 +285,7 @@ private struct Composer: View {
         HStack(alignment: .bottom, spacing: 4) {
             attachMenu
             TextField(chat.openQuestions == nil ? "Message cedar" : "Or answer in your own words", text: $chat.draft, axis: .vertical)
-                .lineLimit(1...8)
+                .lineLimit(FoldLayout.composerLineLimit(verticalSizeClass: verticalSizeClass))
                 .focused(focused)
                 .padding(.vertical, 9)
                 .padding(.horizontal, 2)

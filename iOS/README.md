@@ -27,10 +27,13 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   requests, always, or never
 - Charts from `generate_chart` as native Swift Charts cards, drawn from the call's data: a legend
   that hides and shows series, touch to read the values, and the data as a table
-- Maps, recipes, routes, stock comparisons and product searches as native cards: Apple Maps
-  with numbered pins and route lines (tap for full screen), a recipe checklist with steps to
-  tick off, stock charts with ratings, returns and news, and product tiles with photos, prices,
-  the reading of their reviews and comparable options to step through
+- Maps, recipes, routes, stock comparisons, product searches and the weather as native cards:
+  Apple Maps with numbered pins and route lines (tap for full screen), a recipe checklist with
+  steps to tick off, stock charts with ratings, returns and news, product tiles with photos,
+  prices, the reading of their reviews and comparable options to step through, and a weather
+  card with the current conditions (SF Symbols icons, a moon at night), tiles for humidity, wind
+  and daylight, and a row per day with a low-to-high temperature bar that opens to its details,
+  read from the same report the model gets
 - Follow-ups continue the conversation; a stop button cancels the running response
 - Attach PDFs (any model) and photos or images (models registered as multimodal) to a
   message from the paperclip: the photo library or Files. Photos in a type cedar doesn't take,
@@ -53,7 +56,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Markdown rendering: headings, lists, quotes, tables, and code blocks with a copy button
 - Connecting by scanning the QR code the chat's Settings → Phone page, the Cedar desktop app or
   `scripts/cedar-stack.sh --pair` shows
-- iPhone and iPad layouts, light and dark mode
+- iPhone, iPad and iPhone Duo layouts, light and dark mode: one column on a phone or the folded
+  outer display, the list beside the conversation on an iPad or the unfolded inner display, with
+  the divider on the fold (see [iPhone Duo](#iphone-duo))
 - English, German, French and Spanish, picked on first launch or under Settings → Language (see
   [Languages](#languages))
 
@@ -116,15 +121,50 @@ into `production` for distribution builds.
 
 | Path | Contents |
 | --- | --- |
-| `Cedar/App` | The app entry point, the root split view, `AppModel` (settings, the conversation list, the inbox count, the live notices, open chats) and `PushRegistrar` (APNs) |
+| `Cedar/App` | The app entry point, the root split view and how it takes a foldable's canvas (`FoldLayout`), `AppModel` (settings, the conversation list, the inbox count, the live notices, open chats) and `PushRegistrar` (APNs) |
 | `Cedar/Models` | The `/api` types, the event-to-transcript reducer (text, reasoning, plans, approvals, tool calls, questions, images), and a Markdown block parser |
 | `Cedar/Networking` | `ChatClient` for `/api`, and the Server-Sent Events parser |
 | `Cedar/Storage` | Settings, Keychain access, and the Mac app's connection code (`cedar://connect?server=…&token=…`) |
 | `Cedar/Features` | SwiftUI screens: conversation list, chat (turns, questions, approvals, images), and settings (with the QR scanner and the first launch's language picker) |
 | `Cedar/Localization` | The offered languages, the picked one (`LanguageStore`), and `L10n` for text built outside SwiftUI views |
 | `Cedar/Localizable.xcstrings`, `Cedar/InfoPlist.xcstrings` | The String Catalogs: the app's text and the permission prompts, in German, French and Spanish |
-| `CedarTests` | Unit tests for the API types, the reducer, the SSE parser, Markdown, the connection code, and the languages |
+| `CedarTests` | Unit tests for the API types, the reducer, the SSE parser, Markdown, the connection code, the languages, and the fold layout |
 | `Config/Cedar.entitlements` | Push notifications |
+
+## iPhone Duo
+
+iPhone Duo folds like a book: closed, its outer display is a phone's, compact in width; open, its
+inner display is nearly square and regular in both width and height, like an iPad's, with the
+fold down its middle. iOS moves the app from one display to the other when the phone is folded or
+unfolded, as a resize of the same window, so the app is designed around the canvas it is given,
+never the device: it reads size classes and the root view's size, not `UIScreen`, the model name
+or the orientation. The same code serves an iPhone, an iPad, a window on either, and both faces
+of a Duo.
+
+What the app does on each canvas:
+
+- **Compact width** (any iPhone, the folded outer display): the split view collapses to one
+  column, the conversation list or a conversation, as it always has.
+- **Regular width** (an iPad, the unfolded inner display, a wide window): the list and the
+  conversation side by side, `.balanced`, so the list never slides over the conversation.
+- **Nearly square and regular** (the unfolded inner display): the divider is pinned to the
+  canvas's centre line, where the fold is, so neither the list nor the conversation is cut by the
+  crease (`FoldLayout.splitsAtCrease`). An iPad is 4:3 or longer and keeps the system's sidebar
+  width.
+- **Folding and unfolding keep your place.** The open chats live in `AppModel`, so a streaming
+  response carries on across the change. Which column a compact canvas shows follows the
+  selection: a conversation opened on the inner display is what the outer display shows after
+  folding, and clearing the selection goes back to the list.
+- **Compact height** (either display held sideways): the composer grows to three lines instead of
+  eight, so the conversation stays in view above the keyboard.
+- The phone may be held either way up once it is open, so upside-down portrait is allowed on
+  iPhone as it is on iPad.
+
+Left for the fold APIs in the iOS 27.1 SDK: when the open phone is held sideways the fold is
+horizontal and the one-column-each split no longer matches it (the composer sits in the lower
+half, which suits a half-folded, laptop-like posture), and the app does not yet read the hinge's
+angle or exact position. The Duo simulator ships with Xcode 27.1; CI still tests on the iPhone 16
+simulator, which the layout code's unit tests (`FoldLayoutTests`) cover for the canvas sizes.
 
 ## How it talks to the server
 

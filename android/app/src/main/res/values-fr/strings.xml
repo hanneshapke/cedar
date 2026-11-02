@@ -549,4 +549,57 @@
         <item quantity="one">raisonnement de %d appel omis</item>
         <item quantity="other">raisonnement de %d appels omis</item>
     </plurals>
+
+    <!-- weather_forecast card -->
+    <string name="open_weather_on_web">Ouvrir la météo sur le web</string>
+    <string name="weather_for">Météo pour %1$s</string>
+    <string name="weather_local_time">%1$s heure locale</string>
+    <string name="weather_feels_like">Ressenti %1$s</string>
+    <string name="weather_high_low">Max. %1$s · Min. %2$s</string>
+    <string name="weather_humidity">Humidité</string>
+    <string name="weather_wind">Vent</string>
+    <string name="weather_wind_from">Vent du %1$s</string>
+    <string name="weather_with_gusts">jusqu\'à %1$s, rafales %2$s</string>
+    <string name="weather_gusts">Rafales</string>
+    <string name="weather_precipitation">Précipitations</string>
+    <string name="weather_precip_chance">%1$s (%2$s de risque)</string>
+    <string name="weather_uv">Indice UV</string>
+    <string name="weather_sunrise">Lever du soleil</string>
+    <string name="weather_sunset">Coucher du soleil</string>
+    <string name="weather_daylight">Jour</string>
+    <string name="weather_conditions">Conditions</string>
+    <string name="weather_today">Aujourd\'hui</string>
+    <string name="weather_tomorrow">Demain</string>
+    <string name="weather_forecast_one_day">Prévisions sur 1 jour</string>
+    <string name="weather_forecast_days">Prévisions sur %1$d jours</string>
+    <string name="weather_credit">Données météo de %1$s (CC BY 4.0)</string>
+    <string name="weather_code_unknown">Code météo %1$d</string>
+    <string name="weather_code_0">Ciel dégagé</string>
+    <string name="weather_code_1">Plutôt dégagé</string>
+    <string name="weather_code_2">Partiellement nuageux</string>
+    <string name="weather_code_3">Couvert</string>
+    <string name="weather_code_45">Brouillard</string>
+    <string name="weather_code_48">Brouillard givrant</string>
+    <string name="weather_code_51">Bruine légère</string>
+    <string name="weather_code_53">Bruine modérée</string>
+    <string name="weather_code_55">Bruine dense</string>
+    <string name="weather_code_56">Bruine verglaçante légère</string>
+    <string name="weather_code_57">Bruine verglaçante dense</string>
+    <string name="weather_code_61">Pluie faible</string>
+    <string name="weather_code_63">Pluie modérée</string>
+    <string name="weather_code_65">Forte pluie</string>
+    <string name="weather_code_66">Pluie verglaçante faible</string>
+    <string name="weather_code_67">Forte pluie verglaçante</string>
+    <string name="weather_code_71">Neige faible</string>
+    <string name="weather_code_73">Neige modérée</string>
+    <string name="weather_code_75">Forte neige</string>
+    <string name="weather_code_77">Neige en grains</string>
+    <string name="weather_code_80">Averses faibles</string>
+    <string name="weather_code_81">Averses modérées</string>
+    <string name="weather_code_82">Averses violentes</string>
+    <string name="weather_code_85">Averses de neige faibles</string>
+    <string name="weather_code_86">Fortes averses de neige</string>
+    <string name="weather_code_95">Orage</string>
+    <string name="weather_code_96">Orage avec grêle faible</string>
+    <string name="weather_code_99">Orage avec forte grêle</string>
 </resources>

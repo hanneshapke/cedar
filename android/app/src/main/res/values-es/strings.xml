@@ -550,4 +550,57 @@
         <item quantity="one">razonamiento de %d llamada omitido</item>
         <item quantity="other">razonamiento de %d llamadas omitido</item>
     </plurals>
+
+    <!-- weather_forecast card -->
+    <string name="open_weather_on_web">Abrir el tiempo en la web</string>
+    <string name="weather_for">El tiempo en %1$s</string>
+    <string name="weather_local_time">%1$s hora local</string>
+    <string name="weather_feels_like">Sensación de %1$s</string>
+    <string name="weather_high_low">Máx. %1$s · Mín. %2$s</string>
+    <string name="weather_humidity">Humedad</string>
+    <string name="weather_wind">Viento</string>
+    <string name="weather_wind_from">Viento del %1$s</string>
+    <string name="weather_with_gusts">hasta %1$s, rachas %2$s</string>
+    <string name="weather_gusts">Rachas</string>
+    <string name="weather_precipitation">Precipitación</string>
+    <string name="weather_precip_chance">%1$s (%2$s de probabilidad)</string>
+    <string name="weather_uv">Índice UV</string>
+    <string name="weather_sunrise">Amanecer</string>
+    <string name="weather_sunset">Atardecer</string>
+    <string name="weather_daylight">Luz del día</string>
+    <string name="weather_conditions">Condiciones</string>
+    <string name="weather_today">Hoy</string>
+    <string name="weather_tomorrow">Mañana</string>
+    <string name="weather_forecast_one_day">Pronóstico de 1 día</string>
+    <string name="weather_forecast_days">Pronóstico de %1$d días</string>
+    <string name="weather_credit">Datos meteorológicos de %1$s (CC BY 4.0)</string>
+    <string name="weather_code_unknown">Código meteorológico %1$d</string>
+    <string name="weather_code_0">Cielo despejado</string>
+    <string name="weather_code_1">Mayormente despejado</string>
+    <string name="weather_code_2">Parcialmente nublado</string>
+    <string name="weather_code_3">Cubierto</string>
+    <string name="weather_code_45">Niebla</string>
+    <string name="weather_code_48">Niebla helada</string>
+    <string name="weather_code_51">Llovizna ligera</string>
+    <string name="weather_code_53">Llovizna moderada</string>
+    <string name="weather_code_55">Llovizna densa</string>
+    <string name="weather_code_56">Llovizna helada ligera</string>
+    <string name="weather_code_57">Llovizna helada densa</string>
+    <string name="weather_code_61">Lluvia ligera</string>
+    <string name="weather_code_63">Lluvia moderada</string>
+    <string name="weather_code_65">Lluvia intensa</string>
+    <string name="weather_code_66">Lluvia helada ligera</string>
+    <string name="weather_code_67">Lluvia helada intensa</string>
+    <string name="weather_code_71">Nevada ligera</string>
+    <string name="weather_code_73">Nevada moderada</string>
+    <string name="weather_code_75">Nevada intensa</string>
+    <string name="weather_code_77">Cinarra</string>
+    <string name="weather_code_80">Chubascos ligeros</string>
+    <string name="weather_code_81">Chubascos moderados</string>
+    <string name="weather_code_82">Chubascos violentos</string>
+    <string name="weather_code_85">Chubascos de nieve ligeros</string>
+    <string name="weather_code_86">Chubascos de nieve intensos</string>
+    <string name="weather_code_95">Tormenta</string>
+    <string name="weather_code_96">Tormenta con granizo ligero</string>
+    <string name="weather_code_99">Tormenta con granizo fuerte</string>
 </resources>

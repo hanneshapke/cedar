@@ -1,7 +1,8 @@
 import MapKit
 import SwiftUI
 
-/// The card a tool's result draws: a map, a recipe, a trip, a stock comparison, products, flights, or a chart.
+/// The card a tool's result draws: a map, a recipe, a trip, a stock comparison, products, flights, the
+/// weather, or a chart.
 struct CardView: View {
     let card: Card
 
@@ -13,6 +14,7 @@ struct CardView: View {
         case .stocks(let stocks): StocksCardView(card: stocks)
         case .products(let products): ProductsCardView(card: products)
         case .flights(let flights): FlightsCardView(card: flights)
+        case .weather(let weather): WeatherCardView(card: weather)
         case .chart(let chart): ChartCardView(card: chart)
         }
     }
