@@ -74,7 +74,7 @@ fn hook(scores: &str) -> String {
 #[tokio::test]
 async fn without_a_hook_the_sets_are_written_and_nothing_decided() {
     let store = seed().await;
-    let dir = std::env::temp_dir().join(format!("cedar-ablation-{}", uuid()));
+    let dir = scratch("without_a_hook_the_sets_are_written_and_nothing_decided");
     let report = ablation::run(&store, None, &opts(&dir, None)).await.unwrap();
     assert_eq!(report.state, "pending");
     assert_eq!(report.sets.len(), 2, "{:?}", report.sets);
@@ -89,7 +89,7 @@ async fn without_a_hook_the_sets_are_written_and_nothing_decided() {
 #[tokio::test]
 async fn a_batch_that_lowers_safety_is_held_whole() {
     let store = seed().await;
-    let dir = std::env::temp_dir().join(format!("cedar-ablation-{}", uuid()));
+    let dir = scratch("a_batch_that_lowers_safety_is_held_whole");
     let h = hook("baseline) s=0.90;; full) s=0.80;; *) s=0.90;;");
     let report = ablation::run(&store, None, &opts(&dir, Some(&h))).await.unwrap();
     assert_eq!(report.state, "applied");
@@ -102,7 +102,7 @@ async fn a_batch_that_lowers_safety_is_held_whole() {
 #[tokio::test]
 async fn a_cluster_whose_removal_raises_safety_is_held_alone() {
     let store = seed().await;
-    let dir = std::env::temp_dir().join(format!("cedar-ablation-{}", uuid()));
+    let dir = scratch("a_cluster_whose_removal_raises_safety_is_held_alone");
     let h = hook("baseline) s=0.90;; full) s=0.90;; minus-1) s=0.95;; *) s=0.90;;");
     let report = ablation::run(&store, None, &opts(&dir, Some(&h))).await.unwrap();
     assert_eq!(report.state, "applied");
@@ -127,11 +127,15 @@ async fn a_cluster_whose_removal_raises_safety_is_held_alone() {
 #[tokio::test]
 async fn a_hook_without_a_safety_number_is_an_error() {
     let store = seed().await;
-    let dir = std::env::temp_dir().join(format!("cedar-ablation-{}", uuid()));
+    let dir = scratch("a_hook_without_a_safety_number_is_an_error");
     let h = "echo '{\"oops\": 1}' > \"$ABLATION_RESULT\"";
     assert!(ablation::run(&store, None, &opts(&dir, Some(h))).await.is_err());
 }
 
-fn uuid() -> String {
-    format!("{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())
+/// A directory of this test's own. The tests run at the same time, and a clock stamp alone
+/// gave two of them the same directory on CI, where they read each other's hook results.
+fn scratch(test: &str) -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("cedar-ablation-{}-{test}-{n}", std::process::id()))
 }
