@@ -102,6 +102,9 @@ resource "google_cloud_run_v2_service" "api" {
   name     = "contrib-api"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
+  # The service and the jobs hold nothing: everything is in the bucket. Replacing them, as a
+  # bad image needs, must not be blocked by the provider's default protection.
+  deletion_protection = false
 
   template {
     service_account = google_service_account.api.email
@@ -216,8 +219,9 @@ locals {
 }
 
 resource "google_cloud_run_v2_job" "screener" {
-  name     = "contrib-screener"
-  location = var.region
+  name                = "contrib-screener"
+  location            = var.region
+  deletion_protection = false
   template {
     template {
       service_account = google_service_account.api.email
@@ -252,8 +256,9 @@ resource "google_cloud_run_v2_job" "screener" {
 }
 
 resource "google_cloud_run_v2_job" "release" {
-  name     = "contrib-release"
-  location = var.region
+  name                = "contrib-release"
+  location            = var.region
+  deletion_protection = false
   template {
     template {
       service_account = google_service_account.api.email
@@ -371,9 +376,10 @@ resource "google_cloud_scheduler_job" "rescreen" {
 # -- the ablation job, started by hand before a release when a hook is configured --------------
 
 resource "google_cloud_run_v2_job" "ablation" {
-  count    = var.ablation_hook == "" ? 0 : 1
-  name     = "contrib-ablation"
-  location = var.region
+  count               = var.ablation_hook == "" ? 0 : 1
+  name                = "contrib-ablation"
+  location            = var.region
+  deletion_protection = false
   template {
     template {
       service_account = google_service_account.api.email
