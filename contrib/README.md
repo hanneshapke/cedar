@@ -220,7 +220,9 @@ certificate): off by default, since the service's own limit is enough until floo
 
 ```sh
 # The names. The bucket's must be unique across Google Cloud (lowercase letters, digits,
-# dashes and dots), so the project id makes a good suffix.
+# dashes and dots), so the project id makes a good suffix. The region goes to terraform too:
+# the registry, the service and the jobs are all created in it, and the image must be pushed
+# to the registry's region.
 export PROJECT=my-project REGION=europe-west1
 export BUCKET=cedar-contrib-quarantine-$PROJECT
 export IMAGE=$REGION-docker.pkg.dev/$PROJECT/cedar-contrib/cedar-contrib:0.3.6
@@ -229,15 +231,16 @@ export IMAGE=$REGION-docker.pkg.dev/$PROJECT/cedar-contrib/cedar-contrib:0.3.6
 cd contrib/terraform
 terraform init
 terraform apply -target=google_artifact_registry_repository.images \
-  -var project=$PROJECT -var bucket=$BUCKET -var image=$IMAGE
+  -var project=$PROJECT -var region=$REGION -var bucket=$BUCKET -var image=$IMAGE
 
 # 2. The image
 gcloud auth configure-docker $REGION-docker.pkg.dev
 docker build -f ../Dockerfile -t $IMAGE ..
 docker push $IMAGE
 
-# 3. The rest
-terraform apply -var project=$PROJECT -var bucket=$BUCKET -var image=$IMAGE
+# 3. The rest (add -var bucket_location=US to keep the data near a US region; the default
+#    is EU, which keeps contributions in the EU jurisdiction)
+terraform apply -var project=$PROJECT -var region=$REGION -var bucket=$BUCKET -var image=$IMAGE
 ```
 
 The `url` output is what cedar-chat sets as `CHAT_CONTRIBUTIONS_URL`.
