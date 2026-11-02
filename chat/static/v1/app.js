@@ -1224,7 +1224,9 @@ async function init() {
   // The language comes first: a new browser is asked for it before anything else.
   await cedarLanguage.ready;
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
-  cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
+  cedarViewer.init({
+    fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile, conversation: () => state.current?.id ?? null,
+  });
   cedarSchedule.init({ api, toast, renderMarkdown });
   cedarStar.init({ api, toast, onOpen: () => toggleSidebar(false) });
   cedarSettings.init({

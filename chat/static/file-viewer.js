@@ -8,16 +8,23 @@
 //   fetchFile(path)   -> Promise<Response>  an ok response for a workspace file (sends the access token)
 //   renderMarkdown(s) -> html string        the app's Markdown renderer, which escapes all text
 //   download(path, button)                  starts a download of the file
+//   conversation()    -> string | null      the open conversation's id
 //
 // The files are fetched with the Authorization header and shown from a blob: URL, because the API
 // takes its token from that header only, so a plain <iframe src="/api/..."> would be rejected.
 // An image's blob gets the type its extension says, so the browser shows it as that image and
 // nothing else; its Markdown's workspace images are drawn by image-view.js when it is loaded.
+//
+// The Cedar desktop app's web view opens no blob: URL in a tab of its own, so there "Open in new
+// tab" sends the page to /__cedar-app/open-file?conversation=…&path=…, which the app's window
+// catches instead of loading (see desktop/src/window.rs): the app fetches the file itself and
+// opens it in the system's default app. The page hands over only which file, never its bytes.
 
 const cedarViewer = (() => {
   const MAX_MARKDOWN_BYTES = 2 * 1024 * 1024;
   const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
   const KINDS = [[/\.(md|markdown)$/i, 'markdown'], [/\.pdf$/i, 'pdf']];
+  const inDesktopApp = window.__CEDAR_DESKTOP_APP__ === true;
 
   let deps = null;
   let ui = null;       // the dialog and its parts, built on first use
@@ -110,6 +117,13 @@ const cedarViewer = (() => {
 
   function openInNewTab() {
     if (!fileBlob) return;
+    if (inDesktopApp) {
+      const conversation = deps.conversation?.();
+      if (!conversation || !current) return;
+      const query = new URLSearchParams({ conversation, path: current.path });
+      window.location.href = `/__cedar-app/open-file?${query}`;
+      return;
+    }
     const url = URL.createObjectURL(fileBlob); // its own URL, so closing the dialog can't pull the file away
     window.open(url, '_blank', 'noopener');
     setTimeout(() => URL.revokeObjectURL(url), 60_000);

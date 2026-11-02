@@ -1712,7 +1712,9 @@ narrow.addEventListener('change', () => { if (!narrow.matches) { state.unseen = 
 async function init() {
   await cedarLanguage.ready; // a new browser is asked for its language before anything else
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
-  cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
+  cedarViewer.init({
+    fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile, conversation: () => state.current?.id ?? null,
+  });
   cedarSchedule.init({ api, toast, renderMarkdown });
   cedarStar.init({ api, toast, onOpen: closeDrawer });
   cedarSettings.init({

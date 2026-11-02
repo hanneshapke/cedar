@@ -278,7 +278,11 @@ dev`, a build of your own) don't check at all.
 
 The chat page in the window gets no access to the app: its banner only shows what the app tells
 it, and its buttons send the window to `/__cedar-app/update/install` or `…/dismiss` on the chat's
-own address, which the window catches instead of loading (`src/window.rs`).
+own address, which the window catches instead of loading (`src/window.rs`). The file viewer's
+*Open in new tab* works the same way: it sends the window to `/__cedar-app/open-file` with the
+conversation and the file's workspace path, and the app fetches that file itself (only a raster
+image or a PDF), keeps it in a private temporary folder and opens it in the default app
+(`src/openfile.rs`).
 
 ## Using it from an iPhone, iPad or Android phone
 
