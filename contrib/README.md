@@ -219,18 +219,25 @@ front of the service, is in `edge.tf` behind `edge = true` (with `edge_domain` f
 certificate): off by default, since the service's own limit is enough until floods are real.
 
 ```sh
-# 1. The image
-PROJECT=<project>; REGION=europe-west1
-gcloud auth configure-docker $REGION-docker.pkg.dev
-docker build -f contrib/Dockerfile -t $REGION-docker.pkg.dev/$PROJECT/cedar-contrib/cedar-contrib:0.3.5 .
-# (the registry is created by terraform; apply once with any image, push, apply again)
-docker push $REGION-docker.pkg.dev/$PROJECT/cedar-contrib/cedar-contrib:0.3.5
+# The names. The bucket's must be unique across Google Cloud (lowercase letters, digits,
+# dashes and dots), so the project id makes a good suffix.
+export PROJECT=my-project REGION=europe-west1
+export BUCKET=cedar-contrib-quarantine-$PROJECT
+export IMAGE=$REGION-docker.pkg.dev/$PROJECT/cedar-contrib/cedar-contrib:0.3.6
 
-# 2. The service
+# 1. The registry, before the image: terraform creates it, and the service needs the image.
 cd contrib/terraform
 terraform init
-terraform apply -var project=$PROJECT -var bucket=<unique bucket name> \
-  -var image=$REGION-docker.pkg.dev/$PROJECT/cedar-contrib/cedar-contrib:0.3.5
+terraform apply -target=google_artifact_registry_repository.images \
+  -var project=$PROJECT -var bucket=$BUCKET -var image=$IMAGE
+
+# 2. The image
+gcloud auth configure-docker $REGION-docker.pkg.dev
+docker build -f ../Dockerfile -t $IMAGE ..
+docker push $IMAGE
+
+# 3. The rest
+terraform apply -var project=$PROJECT -var bucket=$BUCKET -var image=$IMAGE
 ```
 
 The `url` output is what cedar-chat sets as `CHAT_CONTRIBUTIONS_URL`.

@@ -46,3 +46,9 @@ bench/tasks-heldout/
 bench/.stack/
 bench/.venv/
 contrib/training/.venv/
+
+# Terraform working files (contrib/terraform); the provider lock file is kept.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars

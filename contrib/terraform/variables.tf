@@ -22,7 +22,7 @@ variable "bucket_location" {
 
 variable "image" {
   type        = string
-  description = "The cedar-contrib image to run, e.g. europe-west1-docker.pkg.dev/<project>/cedar-contrib/cedar-contrib:0.3.5."
+  description = "The cedar-contrib image to run, e.g. europe-west1-docker.pkg.dev/<project>/cedar-contrib/cedar-contrib:0.3.6."
 }
 
 variable "models" {
