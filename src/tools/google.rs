@@ -61,6 +61,21 @@ impl GoogleApi {
             .await
     }
 
+    /// GET a file's bytes (a Drive download or export) rather than JSON, refusing more than
+    /// `max_bytes`. Returns the bytes and the response's content type.
+    pub async fn get_bytes(
+        &self,
+        segments: &[&str],
+        query: &[(&str, String)],
+        max_bytes: usize,
+        timeout: Duration,
+    ) -> Result<(Vec<u8>, String)> {
+        let (bytes, content_type) = self
+            .send_raw(Method::GET, segments, query, None, Some(max_bytes), timeout)
+            .await?;
+        Ok((bytes, content_type))
+    }
+
     /// Send one request and return its JSON body. A rejected access token is refreshed once.
     async fn send(
         &self,
@@ -70,6 +85,33 @@ impl GoogleApi {
         body: Option<&Value>,
         timeout: Duration,
     ) -> Result<Value> {
+        let (bytes, _) = self
+            .send_raw(method, segments, query, body, None, timeout)
+            .await?;
+        let text = String::from_utf8_lossy(&bytes);
+        if text.trim().is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            anyhow!(
+                "{} API: the reply is not JSON ({e}): {}",
+                self.service,
+                cut(&text)
+            )
+        })
+    }
+
+    /// Send one request and return its body and content type. A rejected access token is
+    /// refreshed once; a body over `max_bytes` (when given) is refused.
+    async fn send_raw(
+        &self,
+        method: Method,
+        segments: &[&str],
+        query: &[(&str, String)],
+        body: Option<&Value>,
+        max_bytes: Option<usize>,
+        timeout: Duration,
+    ) -> Result<(Vec<u8>, String)> {
         let url = self.url(segments);
         let mut retried = false;
         loop {
@@ -88,7 +130,25 @@ impl GoogleApi {
                 .await
                 .map_err(|e| anyhow!("{} API: {}", self.service, without_url(e)))?;
             let status = resp.status();
-            let text = resp.text().await.map_err(|e| {
+            let content_type = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+            let too_large = |len: usize| {
+                anyhow!(
+                    "{} API: the file is larger than the {} MB limit ({len} bytes)",
+                    self.service,
+                    max_bytes.unwrap_or(0) / (1024 * 1024)
+                )
+            };
+            if let (Some(max), Some(len)) = (max_bytes, resp.content_length()) {
+                if status.is_success() && len as usize > max {
+                    return Err(too_large(len as usize));
+                }
+            }
+            let bytes = resp.bytes().await.map_err(|e| {
                 anyhow!(
                     "{} API: reading the response: {}",
                     self.service,
@@ -101,22 +161,20 @@ impl GoogleApi {
                 continue;
             }
             if !status.is_success() {
-                bail!(
-                    "{} API error ({status}): {}",
-                    self.service,
-                    error_message(&text)
-                );
+                let text = String::from_utf8_lossy(&bytes);
+                let mut message = error_message(&text);
+                if status == StatusCode::FORBIDDEN && message.contains("scope") {
+                    message.push_str(
+                        " (the connected Google account didn't grant this; reconnect it under \
+                         Settings → Server to grant the current scopes)",
+                    );
+                }
+                bail!("{} API error ({status}): {message}", self.service);
             }
-            if text.trim().is_empty() {
-                return Ok(Value::Null);
+            if max_bytes.is_some_and(|max| bytes.len() > max) {
+                return Err(too_large(bytes.len()));
             }
-            return serde_json::from_str(&text).map_err(|e| {
-                anyhow!(
-                    "{} API: the reply is not JSON ({e}): {}",
-                    self.service,
-                    cut(&text)
-                )
-            });
+            return Ok((bytes.to_vec(), content_type));
         }
     }
 }

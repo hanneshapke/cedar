@@ -718,6 +718,8 @@ impl Integrations {
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),
             ("calendar", google("calendar", "CALENDAR")),
+            ("drive", google("drive", "DRIVE")),
+            ("sheets", google("sheets", "SHEETS")),
             (
                 "custom",
                 match &cfg.sandbox.tools_dir {
@@ -784,7 +786,19 @@ impl Integrations {
             ) {
                 (Some(_), _) => json!({ "configured": true, "source": "env" }),
                 (None, Some(m)) => {
-                    json!({ "configured": true, "source": "ui", "account": m["account"], "scopes": m["scopes"] })
+                    // Scopes the tools now ask for that this connection didn't grant (they were
+                    // added since): a reconnect gets them.
+                    let granted: Vec<&str> = m["scopes"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(Value::as_str).collect())
+                        .unwrap_or_default();
+                    let missing: Vec<&str> = oauth
+                        .scopes
+                        .iter()
+                        .map(String::as_str)
+                        .filter(|s| s.starts_with("https://") && !granted.contains(s))
+                        .collect();
+                    json!({ "configured": true, "source": "ui", "account": m["account"], "scopes": m["scopes"], "missing_scopes": missing })
                 }
                 (None, None) => json!({ "configured": false, "source": null }),
             },

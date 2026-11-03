@@ -37,11 +37,14 @@ pub const DEFAULT_GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/
 pub const DEFAULT_GOOGLE_SCOPES: &str = "openid email \
     https://www.googleapis.com/auth/gmail.readonly \
     https://www.googleapis.com/auth/gmail.compose \
-    https://www.googleapis.com/auth/calendar.readonly";
+    https://www.googleapis.com/auth/calendar.readonly \
+    https://www.googleapis.com/auth/drive.readonly";
 pub const DEFAULT_GMAIL_MCP_URL: &str = "https://gmailmcp.googleapis.com/mcp/v1";
 pub const DEFAULT_CALENDAR_MCP_URL: &str = "https://calendarmcp.googleapis.com/mcp/v1";
 pub const DEFAULT_GMAIL_API_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
 pub const DEFAULT_CALENDAR_API_URL: &str = "https://www.googleapis.com/calendar/v3";
+pub const DEFAULT_DRIVE_API_URL: &str = "https://www.googleapis.com/drive/v3";
+pub const DEFAULT_SHEETS_API_URL: &str = "https://sheets.googleapis.com/v4/spreadsheets";
 /// The Gmail tools offered by default: reading mail and writing drafts, nothing that sends,
 /// deletes, or relabels.
 pub const DEFAULT_GMAIL_TOOLS: &str =
@@ -49,6 +52,11 @@ pub const DEFAULT_GMAIL_TOOLS: &str =
 /// The Calendar tools offered by default: reading only.
 pub const DEFAULT_CALENDAR_TOOLS: &str =
     "list_calendars,list_events,get_event,search_events,suggest_time";
+/// The Drive tools: finding files and reading Docs, Slides and text files, and saving a file
+/// into the workspace. Nothing here changes anything in Drive.
+pub const DEFAULT_DRIVE_TOOLS: &str = "search_files,get_file,read_document,download_file";
+/// The Sheets tools: reading only.
+pub const DEFAULT_SHEETS_TOOLS: &str = "get_spreadsheet,read_range";
 pub const DEFAULT_SYSTEM_PROMPT: &str = "\
 You are Cedar, a personal AI assistant. You work for one person and help with whatever they bring \
 you: questions, research, writing, email and calendar, shopping, travel, money, code and files. \
@@ -286,7 +294,8 @@ pub struct Config {
     /// Google's token and consent endpoints and the scopes "Connect Google" asks for, for
     /// whichever client is used.
     pub google: GoogleEndpoints,
-    /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default).
+    /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default), and
+    /// Drive and Sheets, which only have REST APIs.
     pub google_apis: Vec<GoogleApiConfig>,
     /// Remote MCP servers (Gmail and Calendar with `GOOGLE_BACKEND=mcp`), in the order their
     /// tools are offered.
@@ -418,20 +427,35 @@ impl Config {
         };
         let mut google_apis = Vec::new();
         let mut mcp_servers = Vec::new();
+        // Google has MCP servers for Gmail and Calendar; Drive and Sheets are REST only.
         for (prefix, flag_name, default_mcp_url, default_api_url, default_tools) in [
             (
                 "gmail",
                 "GMAIL",
-                DEFAULT_GMAIL_MCP_URL,
+                Some(DEFAULT_GMAIL_MCP_URL),
                 DEFAULT_GMAIL_API_URL,
                 DEFAULT_GMAIL_TOOLS,
             ),
             (
                 "calendar",
                 "CALENDAR",
-                DEFAULT_CALENDAR_MCP_URL,
+                Some(DEFAULT_CALENDAR_MCP_URL),
                 DEFAULT_CALENDAR_API_URL,
                 DEFAULT_CALENDAR_TOOLS,
+            ),
+            (
+                "drive",
+                "DRIVE",
+                None,
+                DEFAULT_DRIVE_API_URL,
+                DEFAULT_DRIVE_TOOLS,
+            ),
+            (
+                "sheets",
+                "SHEETS",
+                None,
+                DEFAULT_SHEETS_API_URL,
+                DEFAULT_SHEETS_TOOLS,
             ),
         ] {
             // On unless turned off: the tools only appear once a Google OAuth client is there
@@ -444,7 +468,7 @@ impl Config {
             if tools.is_empty() {
                 tools = default_tools.split(',').map(String::from).collect();
             }
-            if use_mcp {
+            if let (true, Some(default_mcp_url)) = (use_mcp, default_mcp_url) {
                 mcp_servers.push(McpServerConfig {
                     prefix: prefix.into(),
                     url: get(&format!("{flag_name}_MCP_URL"))
@@ -1057,7 +1081,7 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
         assert!(cfg.mcp_servers.is_empty());
         let prefixes: Vec<&str> = cfg.google_apis.iter().map(|a| a.prefix.as_str()).collect();
-        assert_eq!(prefixes, ["gmail", "calendar"]);
+        assert_eq!(prefixes, ["gmail", "calendar", "drive", "sheets"]);
         assert!(cfg.google_oauth.is_none());
         assert_eq!(cfg.google.auth_url, DEFAULT_GOOGLE_AUTH_URL);
         assert!(cfg.google.scopes.iter().any(|s| s == "email"));
@@ -1066,6 +1090,8 @@ mod tests {
             ("CEDAR_API_KEYS", "a"),
             ("GMAIL", "off"),
             ("CALENDAR", "off"),
+            ("DRIVE", "off"),
+            ("SHEETS", "off"),
         ]))
         .unwrap();
         assert!(cfg.google_apis.is_empty());
@@ -1178,9 +1204,20 @@ mod tests {
                         .map(String::from)
                         .collect(),
                 },
+                GoogleApiConfig {
+                    prefix: "drive".into(),
+                    url: DEFAULT_DRIVE_API_URL.into(),
+                    tools: DEFAULT_DRIVE_TOOLS.split(',').map(String::from).collect(),
+                },
+                GoogleApiConfig {
+                    prefix: "sheets".into(),
+                    url: DEFAULT_SHEETS_API_URL.into(),
+                    tools: DEFAULT_SHEETS_TOOLS.split(',').map(String::from).collect(),
+                },
             ]
         );
 
+        // Drive and Sheets have no MCP servers, so they stay on the REST APIs.
         let cfg = Config::from_lookup(lookup(
             &[
                 &google[..],
@@ -1188,12 +1225,21 @@ mod tests {
                     ("GMAIL", "on"),
                     ("CALENDAR", "on"),
                     ("GOOGLE_BACKEND", "mcp"),
+                    ("DRIVE_TOOLS", "search_files"),
+                    ("SHEETS", "off"),
                 ],
             ]
             .concat(),
         ))
         .unwrap();
-        assert!(cfg.google_apis.is_empty());
+        assert_eq!(
+            cfg.google_apis,
+            [GoogleApiConfig {
+                prefix: "drive".into(),
+                url: DEFAULT_DRIVE_API_URL.into(),
+                tools: vec!["search_files".into()],
+            }]
+        );
         assert_eq!(
             cfg.mcp_servers,
             [
@@ -1219,6 +1265,8 @@ mod tests {
                 &[
                     ("GMAIL", "off"),
                     ("CALENDAR", "on"),
+                    ("DRIVE", "off"),
+                    ("SHEETS", "off"),
                     ("GOOGLE_BACKEND", "MCP"),
                     ("CALENDAR_MCP_URL", "http://localhost:9999/mcp"),
                     ("CALENDAR_TOOLS", "list_events, create_event"),
