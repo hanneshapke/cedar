@@ -47,8 +47,17 @@ bench/.stack/
 bench/.venv/
 contrib/training/.venv/
 
-# Terraform working files (contrib/terraform); the provider lock file is kept.
+# Terraform working files (contrib/terraform)
 **/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfvars
+.terraform.lock.hcl
+
+# macOS Finder metadata and local release bundles
+.DS_Store
+dist/
+
+# Android release artifacts and signing keystore
+*.apk
+*.jks
