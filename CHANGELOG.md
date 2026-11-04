@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`plan_trip` finds the morning train.** Asked late at night for a trip between cities, the tool showed only the night coaches, 7½ hours via Leipzig for Munich–Berlin, and never the direct ICE: it took the planner's default of five itineraries, which the same coach with different local legs at either end filled before the search window reached the morning. It now asks for twelve, keeps one itinerary per trunk (the long legs), and shows the three fastest. The tool also tells the model that "now" suits only a trip about to start, so with no time named it passes a sensible departure and says which. And the model's own choice among the options is now cut off at the tool timeout (`TOOL_TIMEOUT_SECS`, 60 s), after which the fixed rules decide; a slow local model used to stall the tool for the model client's full timeout and retries, 13 minutes in one run.
+
 ## 0.3.6
 
 - **The iPhone app on iPhone Duo.** The app lays itself out for the canvas it is given rather than the device, so it serves both faces of Apple's foldable: the folded outer display gets the one-column phone layout, the unfolded inner display the list beside the conversation, with the split view's divider pinned to the canvas's centre line, where the fold is, so neither column is cut by the crease (`iOS/Cedar/App/FoldLayout.swift`). Folding or unfolding keeps your place: a conversation opened on the inner display is what the outer display shows, a streaming response carries on, and clearing the selection goes back to the list. With a compact height (either display held sideways) the composer grows to three lines instead of eight. On iPad the list now stays beside the conversation in portrait too, instead of sliding over it. See *iPhone Duo* in [iOS/README.md](iOS/README.md).
