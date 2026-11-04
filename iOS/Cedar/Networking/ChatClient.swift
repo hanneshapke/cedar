@@ -139,6 +139,62 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(conversationId)/star", method: starred ? "PUT" : "DELETE"))
     }
 
+    // MARK: Contributing a conversation
+
+    /// The conversation as it would be contributed; `reasoning` and `fetched` include what is left out by default.
+    func contributionPreview(conversationId: String, reasoning: Bool = false, fetched: Bool = false) async throws -> ContributionPreview {
+        var query: [URLQueryItem] = []
+        if reasoning { query.append(URLQueryItem(name: "reasoning", value: "true")) }
+        if fetched { query.append(URLQueryItem(name: "fetched", value: "true")) }
+        return try await decode(makeRequest("api/conversations/\(conversationId)/contribution", query: query))
+    }
+
+    /// Send the bundle as shown (the outcome inside it); answers the receipt.
+    func sendContribution(conversationId: String, bundle: JSONValue) async throws -> Contribution {
+        try await decode(makeRequest("api/conversations/\(conversationId)/contribution", method: "POST",
+                                     json: SendContribution(bundle: bundle, outcome: bundle["outcome"])))
+    }
+
+    /// The person's thumb on a response: 1, -1 or none.
+    func rateTurn(turnId: String, rating: Int?) async throws -> Turn {
+        try await decode(makeRequest("api/turns/\(turnId)/rating", method: "PUT", json: Rating(rating: rating)))
+    }
+
+    func contributions() async throws -> [Contribution] {
+        let list: ContributionList = try await decode(makeRequest("api/contributions"))
+        return list.contributions
+    }
+
+    /// Ask the corpus what became of each contribution; answers the list with statuses.
+    func refreshContributions() async throws -> [Contribution] {
+        let list: ContributionList = try await decode(makeRequest("api/contributions/refresh", method: "POST"))
+        return list.contributions
+    }
+
+    func withdrawContribution(id: String) async throws -> Contribution {
+        try await decode(makeRequest("api/contributions/\(id)", method: "DELETE"))
+    }
+
+    func contributionSettings() async throws -> ContributionSettings {
+        try await decode(makeRequest("api/settings/contributions"))
+    }
+
+    func updateContributionSettings(_ patch: ContributionSettingsPatch) async throws -> ContributionSettings {
+        try await decode(makeRequest("api/settings/contributions", method: "PUT", json: patch))
+    }
+
+    private struct Rating: Encodable {
+        /// Encoded as `null` when absent, which clears the rating.
+        let rating: Int?
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(rating, forKey: .rating)
+        }
+
+        enum CodingKeys: String, CodingKey { case rating }
+    }
+
     // MARK: Schedules
 
     func schedules() async throws -> [Schedule] {

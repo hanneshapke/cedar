@@ -9,11 +9,13 @@ struct ServerConfig: Decodable, Sendable {
     let adminEnabled: Bool
     /// The server has `/api/memory`; an older one leaves it out, so Settings hides Memory.
     let memory: Bool
+    /// The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`).
+    let contributions: Bool
 
     enum CodingKeys: String, CodingKey {
         case authRequired = "auth_required"
         case adminEnabled = "admin_enabled"
-        case memory
+        case memory, contributions
     }
 
     init(from decoder: Decoder) throws {
@@ -21,6 +23,228 @@ struct ServerConfig: Decodable, Sendable {
         authRequired = try c.decode(Bool.self, forKey: .authRequired)
         adminEnabled = try c.decode(Bool.self, forKey: .adminEnabled)
         memory = try c.decodeIfPresent(Bool.self, forKey: .memory) ?? false
+        contributions = try c.decodeIfPresent(Bool.self, forKey: .contributions) ?? false
+    }
+}
+
+// MARK: Contributing a conversation (chat/README.md, "Contributing a conversation")
+
+/// `GET /api/conversations/{id}/contribution`: the conversation as it would be contributed, and
+/// why it can't be, if it can't. `bundle` is the document itself (`contrib-schema`), kept as JSON:
+/// what Send posts back is exactly this object, outcome and ratings put in.
+struct ContributionPreview: Decodable, Sendable {
+    let bundle: JSONValue
+    /// `scheduled`, `active`, `no_turns`, `private_tools`, `run_gone`, `secrets`, `not_consistent`, `model_not_allowed`.
+    let blocked: [String]
+    let secrets: [String]
+    let problems: [String]
+    let canSend: Bool
+    let accepted: Bool
+    let privateTools: [String]
+    /// The chat's id of each turn in the bundle, in order, for the rating buttons.
+    let turnIds: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case bundle, blocked, secrets, problems, accepted
+        case canSend = "can_send"
+        case privateTools = "private_tools"
+        case turnIds = "turn_ids"
+    }
+
+    /// One turn of the bundle, as the review shows it.
+    struct TurnSummary: Identifiable, Sendable {
+        var id: Int { seq }
+        let seq: Int
+        let prompt: String
+        let status: String
+        let day: String
+        let rating: Int?
+        /// The agent's own text, in order.
+        let agentText: [String]
+        /// The tools it called, in order, with their inputs pretty-printed.
+        let toolCalls: [(name: String, input: String)]
+    }
+
+    var modelName: String { bundle["model"]?["name"]?.stringValue ?? "" }
+
+    /// The stand-ins the redaction wrote, by kind: values a reader may take for real and shouldn't.
+    var standIns: [String: [String]] {
+        guard case .object(let kinds)? = bundle["redactions"] else { return [:] }
+        var out: [String: [String]] = [:]
+        for (kind, list) in kinds {
+            let values: [JSONValue] = list.arrayValue ?? []
+            out[kind] = values.compactMap { $0.stringValue }
+        }
+        return out
+    }
+
+    var standInCount: Int {
+        var n = 0
+        for (_, values) in standIns { n += values.count }
+        return n
+    }
+
+    /// What was left out: `{attachments, memory, fetched_bodies, reasoning}`.
+    var dropped: JSONValue? { bundle["dropped"] }
+
+    func turns() -> [TurnSummary] {
+        let turnValues: [JSONValue] = bundle["turns"]?.arrayValue ?? []
+        var out: [TurnSummary] = []
+        for t in turnValues {
+            let messages: [JSONValue] = t["messages"]?.arrayValue ?? []
+            var agentText: [String] = []
+            var toolCalls: [(name: String, input: String)] = []
+            for (index, m) in messages.enumerated() {
+                let role: String = m["role"]?.stringValue ?? ""
+                let blocks: [JSONValue] = m["content"]?.arrayValue ?? []
+                for b in blocks {
+                    let type: String = b["type"]?.stringValue ?? ""
+                    if type == "text", role == "assistant", index > 0 {
+                        if let text = b["text"]?.stringValue { agentText.append(text) }
+                    } else if type == "tool_use" {
+                        let name: String = b["name"]?.stringValue ?? "?"
+                        let input: String = b["input"]?.prettyPrinted ?? ""
+                        toolCalls.append((name: name, input: input))
+                    }
+                }
+            }
+            let summary = TurnSummary(
+                seq: t["seq"]?.intValue ?? 0,
+                prompt: t["prompt"]?.stringValue ?? "",
+                status: t["status"]?.stringValue ?? "",
+                day: t["day"]?.stringValue ?? "",
+                rating: t["rating"]?.intValue,
+                agentText: agentText,
+                toolCalls: toolCalls
+            )
+            out.append(summary)
+        }
+        return out
+    }
+
+    /// The bundle with the person's outcome and the turns' ratings applied, as Send posts it.
+    func bundle(outcome: String?, notes: String?, ratings: [Int: Int?]) -> JSONValue {
+        guard case .object(var map) = bundle else { return bundle }
+        if let outcome {
+            var o: [String: JSONValue] = ["result": .string(outcome)]
+            let trimmed: String = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmed.isEmpty { o["notes"] = .string(trimmed) }
+            map["outcome"] = .object(o)
+        } else {
+            map.removeValue(forKey: "outcome")
+        }
+        if !ratings.isEmpty, let turns = map["turns"]?.arrayValue {
+            var updated: [JSONValue] = []
+            for t in turns {
+                guard case .object(var tm) = t, let seq = t["seq"]?.intValue, let chosen = ratings[seq] else {
+                    updated.append(t)
+                    continue
+                }
+                if let rating = chosen {
+                    tm["rating"] = .number(Double(rating))
+                } else {
+                    tm.removeValue(forKey: "rating")
+                }
+                updated.append(.object(tm))
+            }
+            map["turns"] = .array(updated)
+        }
+        return .object(map)
+    }
+}
+
+/// `POST /api/conversations/{id}/contribution`.
+struct SendContribution: Encodable, Sendable {
+    let bundle: JSONValue
+    let outcome: JSONValue?
+}
+
+/// A contribution's receipt (`GET /api/contributions`).
+struct Contribution: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let conversationId: String?
+    let title: String?
+    let license: String
+    let submittedAt: Date
+    let withdrawnAt: Date?
+    /// What the corpus last said: `quarantined`, `accepted`, `held`, `rejected`, `released`, `unknown`.
+    let status: String?
+    let releasedIn: [String]
+    let checkedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, license, status
+        case conversationId = "conversation_id"
+        case submittedAt = "submitted_at"
+        case withdrawnAt = "withdrawn_at"
+        case releasedIn = "released_in"
+        case checkedAt = "checked_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        conversationId = try c.decodeIfPresent(String.self, forKey: .conversationId)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        license = try c.decodeIfPresent(String.self, forKey: .license) ?? ""
+        submittedAt = try c.decode(Date.self, forKey: .submittedAt)
+        withdrawnAt = try c.decodeIfPresent(Date.self, forKey: .withdrawnAt)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        releasedIn = try c.decodeIfPresent([String].self, forKey: .releasedIn) ?? []
+        checkedAt = try c.decodeIfPresent(Date.self, forKey: .checkedAt)
+    }
+}
+
+struct ContributionList: Decodable, Sendable {
+    let contributions: [Contribution]
+}
+
+/// `GET /api/settings/contributions`: the one-time choices, and whether this server can send at all.
+struct ContributionSettings: Decodable, Sendable {
+    let license: String
+    let pseudonym: String?
+    let includeReasoning: Bool
+    let includeFetched: Bool
+    /// Set once the person read the page and turned contributing on.
+    let acceptedAt: Date?
+    let available: Bool
+    let host: String?
+    let licenses: [String]
+
+    var enabled: Bool { acceptedAt != nil }
+
+    enum CodingKeys: String, CodingKey {
+        case license, pseudonym, available, host, licenses
+        case includeReasoning = "include_reasoning"
+        case includeFetched = "include_fetched"
+        case acceptedAt = "accepted_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        license = try c.decodeIfPresent(String.self, forKey: .license) ?? "cc0"
+        pseudonym = try c.decodeIfPresent(String.self, forKey: .pseudonym)
+        includeReasoning = try c.decodeIfPresent(Bool.self, forKey: .includeReasoning) ?? false
+        includeFetched = try c.decodeIfPresent(Bool.self, forKey: .includeFetched) ?? false
+        acceptedAt = try c.decodeIfPresent(Date.self, forKey: .acceptedAt)
+        available = try c.decodeIfPresent(Bool.self, forKey: .available) ?? false
+        host = try c.decodeIfPresent(String.self, forKey: .host)
+        licenses = try c.decodeIfPresent([String].self, forKey: .licenses) ?? []
+    }
+}
+
+/// `PUT /api/settings/contributions`: any of these; `pseudonym` is `"new"` (make one) or `""` (drop it).
+struct ContributionSettingsPatch: Encodable, Sendable {
+    var license: String?
+    var pseudonym: String?
+    var includeReasoning: Bool?
+    var includeFetched: Bool?
+    var enabled: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case license, pseudonym, enabled
+        case includeReasoning = "include_reasoning"
+        case includeFetched = "include_fetched"
     }
 }
 

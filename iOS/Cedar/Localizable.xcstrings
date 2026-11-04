@@ -532,6 +532,52 @@
         }
       }
     },
+    "%lld attachment left out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Anhang weggelassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld adjunto omitido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pièce jointe omise"
+          }
+        }
+      }
+    },
+    "%lld attachments left out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Anhänge weggelassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld adjuntos omitidos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pièces jointes omises"
+          }
+        }
+      }
+    },
     "%lld child" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -620,6 +666,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld jours plus tard"
+          }
+        }
+      }
+    },
+    "%lld fetched page left out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld geladene Seite weggelassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld página descargada omitida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld page récupérée omise"
+          }
+        }
+      }
+    },
+    "%lld fetched pages left out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld geladene Seiten weggelassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld páginas descargadas omitidas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pages récupérées omises"
           }
         }
       }
@@ -1124,6 +1216,52 @@
         }
       }
     },
+    "%lld stand-in" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Stellvertreter"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sustituto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld substitut"
+          }
+        }
+      }
+    },
+    "%lld stand-ins" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Stellvertreter"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sustitutos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld substituts"
+          }
+        }
+      }
+    },
     "%lld step" : {
       "localizations" : {
         "de" : {
@@ -1348,6 +1486,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld correspondances"
+          }
+        }
+      }
+    },
+    "%lld turn in the bundle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Runde im Bündel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld turno en el paquete"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld tour dans le lot"
+          }
+        }
+      }
+    },
+    "%lld turns in the bundle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Runden im Bündel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld turnos en el paquete"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld tours dans le lot"
           }
         }
       }
@@ -1611,6 +1795,75 @@
         }
       }
     },
+    "A response's run is no longer on the cedar server, so the conversation can't be rebuilt." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Lauf einer Antwort ist nicht mehr auf dem cedar-Server; die Unterhaltung lässt sich nicht mehr zusammensetzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ejecución de una respuesta ya no está en el servidor cedar; la conversación no se puede reconstruir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'exécution d'une réponse n'est plus sur le serveur cedar ; la conversation ne peut pas être reconstituée."
+          }
+        }
+      }
+    },
+    "A scheduled agent's conversation can't be contributed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Unterhaltung eines geplanten Agenten kann nicht beigesteuert werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La conversación de un agente programado no se puede contribuir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La conversation d'un agent planifié ne peut pas être contribuée."
+          }
+        }
+      }
+    },
+    "A secret is still in the text. Redact it in the web chat." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Im Text steckt noch ein Geheimnis. Schwärze es im Web-Chat."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía hay un secreto en el texto. Tápalo en el chat web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un secret est encore dans le texte. Caviardez-le dans le chat web."
+          }
+        }
+      }
+    },
     "Access token (if the server has one)" : {
       "localizations" : {
         "de" : {
@@ -1696,6 +1949,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajusté selon le nombre d'avis : %@ sur 5"
+          }
+        }
+      }
+    },
+    "Agent" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent"
           }
         }
       }
@@ -2177,6 +2452,28 @@
         }
       }
     },
+    "Bad response" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schlechte Antwort"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mala respuesta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mauvaise réponse"
+          }
+        }
+      }
+    },
     "Band" : {
       "localizations" : {
         "de" : {
@@ -2446,6 +2743,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Acheter"
+          }
+        }
+      }
+    },
+    "CC BY 4.0 (credit by pseudonym)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CC BY 4.0 (Nennung per Pseudonym)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CC BY 4.0 (atribución por seudónimo)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CC BY 4.0 (attribution par pseudonyme)"
+          }
+        }
+      }
+    },
+    "CC0 (public domain)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CC0 (gemeinfrei)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CC0 (dominio público)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CC0 (domaine public)"
           }
         }
       }
@@ -2785,6 +3126,28 @@
         }
       }
     },
+    "Close" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer"
+          }
+        }
+      }
+    },
     "Comparable options" : {
       "localizations" : {
         "de" : {
@@ -2874,6 +3237,138 @@
         }
       }
     },
+    "Contribute" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beisteuern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuer"
+          }
+        }
+      }
+    },
+    "Contribute Conversations" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterhaltungen beisteuern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuir conversaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuer des conversations"
+          }
+        }
+      }
+    },
+    "Contribute this conversation" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Unterhaltung beisteuern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuir esta conversación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuer cette conversation"
+          }
+        }
+      }
+    },
+    "Contributing is off. Read the explanation and turn it on under Settings → Contribute before sending." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beisteuern ist aus. Lies die Erklärung unter Einstellungen → Beisteuern und schalte es dort ein, bevor du sendest."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuir está desactivado. Lee la explicación y actívalo en Ajustes → Contribuir antes de enviar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La contribution est désactivée. Lisez l'explication et activez-la dans Réglages → Contribuer avant d'envoyer."
+          }
+        }
+      }
+    },
+    "Contributing is on" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beisteuern ist an"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuir está activado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La contribution est activée"
+          }
+        }
+      }
+    },
+    "Conversations that used Gmail or Calendar can't be contributed. Redaction is best effort: the review is where you read for what it can't catch." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterhaltungen, die Gmail oder den Kalender benutzt haben, können nicht beigesteuert werden. Das Schwärzen ist nach bestem Bemühen: Bei der Durchsicht liest du nach, was es nicht erkennen kann."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las conversaciones que usaron Gmail o el calendario no se pueden contribuir. El tapado es lo mejor posible: la revisión es donde lees lo que no puede detectar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les conversations qui ont utilisé Gmail ou l'agenda ne peuvent pas être contribuées. Le caviardage est au mieux : la relecture est là pour lire ce qu'il ne peut pas repérer."
+          }
+        }
+      }
+    },
     "Cook" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2937,6 +3432,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copier la réponse"
+          }
+        }
+      }
+    },
+    "Corpus: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Korpus: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Corpus: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Corpus : %@"
           }
         }
       }
@@ -3344,6 +3862,28 @@
         }
       }
     },
+    "Did the agent do what you asked?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hat der Agent getan, worum du gebeten hast?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Hizo el agente lo que pediste?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'agent a-t-il fait ce que vous avez demandé ?"
+          }
+        }
+      }
+    },
     "Didn't start" : {
       "localizations" : {
         "de" : {
@@ -3493,6 +4033,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En voiture jusqu'à %@"
+          }
+        }
+      }
+    },
+    "Drop" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer"
           }
         }
       }
@@ -4018,6 +4580,28 @@
         }
       }
     },
+    "Give single conversations to a shared corpus for training open-weight agent models. Opt-in, one conversation at a time, after you read exactly what goes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib einzelne Unterhaltungen in ein gemeinsames Korpus zum Trainieren offener Agentenmodelle. Freiwillig, eine Unterhaltung nach der anderen, nachdem du genau gelesen hast, was geht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrega conversaciones sueltas a un corpus compartido para entrenar modelos de agentes de pesos abiertos. Voluntario, una conversación cada vez, después de leer exactamente lo que sale."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Donnez des conversations, une par une, à un corpus partagé pour entraîner des modèles d'agents à poids ouverts. Sur choix explicite, après avoir lu exactement ce qui part."
+          }
+        }
+      }
+    },
     "Go ahead" : {
       "localizations" : {
         "de" : {
@@ -4104,6 +4688,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bon"
+          }
+        }
+      }
+    },
+    "Good response" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gute Antwort"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buena respuesta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bonne réponse"
           }
         }
       }
@@ -4502,6 +5108,94 @@
         }
       }
     },
+    "Include fetched pages by default" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geladene Seiten standardmäßig mitschicken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir las páginas descargadas por defecto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inclure les pages récupérées par défaut"
+          }
+        }
+      }
+    },
+    "Include the model's reasoning" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Überlegungen des Modells mitschicken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir el razonamiento del modelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inclure le raisonnement du modèle"
+          }
+        }
+      }
+    },
+    "Include the model's reasoning by default" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überlegungen des Modells standardmäßig mitschicken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir el razonamiento del modelo por defecto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inclure le raisonnement du modèle par défaut"
+          }
+        }
+      }
+    },
+    "Include the pages and files the agent fetched" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vom Agenten geladene Seiten und Dateien mitschicken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir las páginas y archivos que el agente descargó"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inclure les pages et fichiers que l'agent a récupérés"
+          }
+        }
+      }
+    },
     "Ingredients" : {
       "localizations" : {
         "de" : {
@@ -4565,6 +5259,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Il peut faire des recherches sur le web, écrire des fichiers et exécuter du code dans son propre bac à sable. Les messages suivants conservent ses fichiers."
+          }
+        }
+      }
+    },
+    "It is deleted from the corpus's intake and left out of future releases." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er wird aus dem Eingang des Korpus gelöscht und aus künftigen Veröffentlichungen weggelassen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se borra de la entrada del corpus y se excluye de las publicaciones futuras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle est supprimée de la réception du corpus et exclue des publications futures."
           }
         }
       }
@@ -4701,6 +5417,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Espace pour les jambes"
+          }
+        }
+      }
+    },
+    "License for what you wrote" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lizenz für das, was du geschrieben hast"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Licencia de lo que escribiste"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Licence de ce que vous avez écrit"
           }
         }
       }
@@ -4907,6 +5645,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Graphique en courbes"
+          }
+        }
+      }
+    },
+    "Links your contributions to each other, and to nothing else; without a pseudonym, each stands alone. Turning contributing on only makes Send available in the review. Nothing is ever sent on its own." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verknüpft deine Beiträge miteinander und mit nichts sonst; ohne Pseudonym steht jeder für sich. Einschalten macht nur den Senden-Knopf in der Durchsicht verfügbar. Nichts wird je von selbst gesendet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlaza tus contribuciones entre sí, y con nada más; sin seudónimo, cada una va por separado. Activarlo solo hace que Enviar esté disponible en la revisión. Nunca se envía nada por sí solo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relie vos contributions entre elles, et à rien d'autre ; sans pseudonyme, chacune est isolée. Activer la contribution rend seulement Envoyer disponible dans la relecture. Rien n'est jamais envoyé tout seul."
           }
         }
       }
@@ -5431,6 +6191,28 @@
         }
       }
     },
+    "Never: attached files and their names, your memory list, run and key identifiers, exact times, your region. Emails, phone and account numbers, IP addresses, keys and home-directory names become made-up stand-ins of the same shape, consistent within the conversation and random otherwise." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie: angehängte Dateien und ihre Namen, dein Gedächtnis, Lauf- und Schlüsselkennungen, genaue Zeiten, deine Region. E-Mail-Adressen, Telefon- und Kontonummern, IP-Adressen, Schlüssel und Namen von Benutzerverzeichnissen werden zu erfundenen Stellvertretern derselben Form, innerhalb der Unterhaltung einheitlich, sonst zufällig."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nunca: los archivos adjuntos y sus nombres, tu memoria, los identificadores de ejecución y de clave, las horas exactas, tu región. Correos, números de teléfono y de cuenta, direcciones IP, claves y nombres de carpetas personales pasan a ser sustitutos inventados con la misma forma, coherentes dentro de la conversación y aleatorios fuera de ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamais : les fichiers joints et leurs noms, votre mémoire, les identifiants d'exécution et de clé, les heures exactes, votre région. Les e-mails, numéros de téléphone et de compte, adresses IP, clés et noms de dossiers personnels deviennent des substituts inventés de même forme, cohérents dans la conversation et aléatoires sinon."
+          }
+        }
+      }
+    },
     "New Chat" : {
       "localizations" : {
         "de" : {
@@ -5476,6 +6258,28 @@
         }
       }
     },
+    "New pseudonym" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Pseudonym"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo seudónimo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau pseudonyme"
+          }
+        }
+      }
+    },
     "News" : {
       "localizations" : {
         "de" : {
@@ -5516,6 +6320,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Prochaine exécution %@"
+          }
+        }
+      }
+    },
+    "No" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nein"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non"
           }
         }
       }
@@ -5604,6 +6430,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucune conversation en favori"
+          }
+        }
+      }
+    },
+    "No account, no identity. A pseudonym, if you choose one, is a random id made on your server; you can rotate or drop it. You can withdraw a contribution below." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Konto, keine Identität. Ein Pseudonym, falls du eins wählst, ist eine auf deinem Server erzeugte Zufallskennung; du kannst es wechseln oder entfernen. Einen Beitrag kannst du unten zurückziehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin cuenta, sin identidad. Un seudónimo, si eliges uno, es un identificador aleatorio creado en tu servidor; puedes cambiarlo o quitarlo. Puedes retirar una contribución abajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ni compte, ni identité. Un pseudonyme, si vous en choisissez un, est un identifiant aléatoire créé sur votre serveur ; vous pouvez le changer ou le retirer. Vous pouvez retirer une contribution ci-dessous."
           }
         }
       }
@@ -5878,6 +6726,28 @@
         }
       }
     },
+    "Not said" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Angabe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin indicar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non précisé"
+          }
+        }
+      }
+    },
     "Nothing Remembered Yet" : {
       "localizations" : {
         "de" : {
@@ -5896,6 +6766,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rien de retenu pour l'instant"
+          }
+        }
+      }
+    },
+    "Nothing sent yet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nichts gesendet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no se ha enviado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien d'envoyé pour l'instant."
           }
         }
       }
@@ -5967,6 +6859,28 @@
         }
       }
     },
+    "Off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivée"
+          }
+        }
+      }
+    },
     "Often delayed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5986,6 +6900,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Souvent en retard"
+          }
+        }
+      }
+    },
+    "On" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activée"
           }
         }
       }
@@ -6515,6 +7451,28 @@
         }
       }
     },
+    "Outcome" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ergebnis"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resultado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Résultat"
+          }
+        }
+      }
+    },
     "Output" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6580,6 +7538,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "De nuit"
+          }
+        }
+      }
+    },
+    "Partly" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teilweise"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En parte"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En partie"
           }
         }
       }
@@ -7284,6 +8264,28 @@
         }
       }
     },
+    "Pseudonym" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pseudonym"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seudónimo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pseudonyme"
+          }
+        }
+      }
+    },
     "Pushes come from the server: set up iPhone push under Settings → Notifications in the web UI, with your Apple team id and APNs key. This phone registers itself there." : {
       "localizations" : {
         "de" : {
@@ -7419,6 +8421,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Actualiser"
+          }
+        }
+      }
+    },
+    "Refresh status" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status aktualisieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar estado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiser l'état"
+          }
+        }
+      }
+    },
+    "Refreshing…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird aktualisiert …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualisation…"
           }
         }
       }
@@ -8005,6 +9051,28 @@
         }
       }
     },
+    "Sending…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird gesendet …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi…"
+          }
+        }
+      }
+    },
     "Sent" : {
       "localizations" : {
         "de" : {
@@ -8023,6 +9091,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Envoyé"
+          }
+        }
+      }
+    },
+    "Sent. Receipt %@; you can withdraw it any time under Settings → Contribute." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesendet. Beleg %@; du kannst den Beitrag jederzeit unter Einstellungen → Beisteuern zurückziehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviado. Recibo %@; puedes retirarlo cuando quieras en Ajustes → Contribuir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyé. Reçu %@ ; vous pouvez le retirer à tout moment dans Réglages → Contribuer."
           }
         }
       }
@@ -8602,6 +9693,51 @@
         }
       }
     },
+    "Stand-ins here: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stellvertreter hier: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustitutos aquí: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Substituts ici : %@"
+          }
+        }
+      }
+    },
+    "Stand-ins in this contribution (made up, not real)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stellvertreter in diesem Beitrag (erfunden, nicht echt)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustitutos en esta contribución (inventados, no reales)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Substituts dans cette contribution (inventés, pas réels)"
+          }
+        }
+      }
+    },
     "Star" : {
       "localizations" : {
         "de" : {
@@ -9108,6 +10244,29 @@
         }
       }
     },
+    "The bundle fails the corpus's checks:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Bündel besteht die Prüfungen des Korpus nicht:"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El paquete no pasa las comprobaciones del corpus:"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le lot échoue aux vérifications du corpus :"
+          }
+        }
+      }
+    },
     "The cedar-chat server's URL (where you open the web UI) and its CHAT_ACCESS_TOKEN, if it is set. Running Cedar on a Mac? Turn on iPhone & iPad sharing in the Mac app and scan the QR code it shows. The token is stored in the Keychain; cedar's own key stays on the server." : {
       "localizations" : {
         "de" : {
@@ -9132,6 +10291,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'URL du serveur cedar-chat (là où vous ouvrez l'interface web) et son CHAT_ACCESS_TOKEN, s'il est défini. Cedar tourne sur un Mac ? Activez le partage iPhone & iPad dans l'app Mac et scannez le code QR qu'elle affiche. Le jeton est stocké dans le trousseau ; la clé de cedar reste sur le serveur."
+          }
+        }
+      }
+    },
+    "The corpus doesn't take conversations from this model (%@)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Korpus nimmt keine Unterhaltungen von diesem Modell (%@)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El corpus no acepta conversaciones de este modelo (%@)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le corpus n'accepte pas les conversations de ce modèle (%@)."
           }
         }
       }
@@ -9324,6 +10506,29 @@
         }
       }
     },
+    "There is no finished response to contribute yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es gibt noch keine fertige Antwort, die beigesteuert werden könnte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay ninguna respuesta terminada que contribuir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il n'y a pas encore de réponse terminée à contribuer."
+          }
+        }
+      }
+    },
     "This conversation no longer exists on the server." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9343,6 +10548,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette conversation n'existe plus sur le serveur."
+          }
+        }
+      }
+    },
+    "This conversation used %@, whose results are other people's data, so it can't be contributed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Unterhaltung hat %@ benutzt, deren Ergebnisse Daten anderer Leute sind; sie kann nicht beigesteuert werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta conversación usó %@, cuyos resultados son datos de otras personas; no se puede contribuir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette conversation a utilisé %@, dont les résultats sont les données d'autres personnes ; elle ne peut pas être contribuée."
           }
         }
       }
@@ -9414,6 +10642,28 @@
         }
       }
     },
+    "This is exactly what would leave your server. Read it: the values listed as stand-ins are made up for what was redacted, the same stand-in for the same thing throughout. To redact more, use the web chat." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genau das würde deinen Server verlassen. Lies es: Die als Stellvertreter aufgeführten Werte sind für das Geschwärzte erfunden, durchgehend derselbe für dieselbe Sache. Mehr schwärzen kannst du im Web-Chat."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto es exactamente lo que saldría de tu servidor. Léelo: los valores listados como sustitutos son inventados para lo que se tapó, el mismo sustituto para lo mismo en toda la conversación. Para tapar más, usa el chat web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voici exactement ce qui quitterait votre serveur. Lisez-le : les valeurs listées comme substituts sont inventées pour ce qui a été caviardé, le même substitut pour la même chose d'un bout à l'autre. Pour caviarder davantage, utilisez le chat web."
+          }
+        }
+      }
+    },
     "This response no longer exists on the server." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9455,6 +10705,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce serveur ne retient encore rien d'une conversation à l'autre. Mettez cedar à jour pour utiliser la mémoire."
+          }
+        }
+      }
+    },
+    "This server has no corpus to send to, so nothing can be sent from here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Server hat kein Korpus, an das er senden könnte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor no tiene ningún corpus al que enviar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur n'a pas de corpus où envoyer."
           }
         }
       }
@@ -9874,6 +11146,29 @@
         }
       }
     },
+    "Turn %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runde %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turno %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tour %lld"
+          }
+        }
+      }
+    },
     "Typical CO₂" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9984,6 +11279,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retirer des favoris"
+          }
+        }
+      }
+    },
+    "Untitled conversation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterhaltung ohne Titel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversación sin título"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation sans titre"
           }
         }
       }
@@ -10118,6 +11436,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volatilité"
+          }
+        }
+      }
+    },
+    "Wait for the current response to finish, or stop it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte, bis die aktuelle Antwort fertig ist, oder stoppe sie."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espera a que termine la respuesta en curso, o detenla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attendez la fin de la réponse en cours, ou arrêtez-la."
           }
         }
       }
@@ -10384,6 +11725,28 @@
         }
       }
     },
+    "What a contribution contains" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was ein Beitrag enthält"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué contiene una contribución"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce qu'une contribution contient"
+          }
+        }
+      }
+    },
     "What should the agent do?" : {
       "localizations" : {
         "de" : {
@@ -10402,6 +11765,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Que doit faire l'agent ?"
+          }
+        }
+      }
+    },
+    "What was wrong? (optional)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was war falsch? (optional)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Qué estuvo mal? (opcional)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qu'est-ce qui n'allait pas ? (facultatif)"
           }
         }
       }
@@ -10496,6 +11881,28 @@
         }
       }
     },
+    "Whoever runs this server has not named a corpus, so nothing can be sent from here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wer diesen Server betreibt, hat kein Korpus angegeben, also kann von hier nichts gesendet werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quien administra este servidor no ha indicado ningún corpus, así que desde aquí no se puede enviar nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La personne qui gère ce serveur n'a pas indiqué de corpus ; rien ne peut donc être envoyé d'ici."
+          }
+        }
+      }
+    },
     "Why it fits" : {
       "localizations" : {
         "de" : {
@@ -10586,6 +11993,72 @@
         }
       }
     },
+    "Withdraw" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurückziehen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer"
+          }
+        }
+      }
+    },
+    "Withdraw This Contribution?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diesen Beitrag zurückziehen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Retirar esta contribución?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer cette contribution ?"
+          }
+        }
+      }
+    },
+    "Withdrawn" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurückgezogen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirée"
+          }
+        }
+      }
+    },
     "Working…" : {
       "localizations" : {
         "de" : {
@@ -10652,6 +12125,50 @@
         }
       }
     },
+    "Yes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ja"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sí"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oui"
+          }
+        }
+      }
+    },
+    "You" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tú"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous"
+          }
+        }
+      }
+    },
     "Your answer" : {
       "localizations" : {
         "de" : {
@@ -10670,6 +12187,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Votre réponse"
+          }
+        }
+      }
+    },
+    "Your contributions" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Beiträge"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus contribuciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos contributions"
           }
         }
       }
@@ -10720,6 +12259,28 @@
         }
       }
     },
+    "Your prompts, the agent's replies and tool calls, the system prompt and tool definitions it ran with, how the run ended, and the outcome you report." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Eingaben, die Antworten und Werkzeugaufrufe des Agenten, den Systemprompt und die Werkzeugdefinitionen, mit denen er lief, wie der Lauf endete, und das Ergebnis, das du angibst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus peticiones, las respuestas y llamadas a herramientas del agente, el prompt de sistema y las definiciones de herramientas con las que corrió, cómo terminó la ejecución, y el resultado que indiques."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos demandes, les réponses et appels d'outils de l'agent, l'invite système et les définitions d'outils avec lesquelles il a tourné, la fin de l'exécution, et le résultat que vous indiquez."
+          }
+        }
+      }
+    },
     "Zero" : {
       "localizations" : {
         "de" : {
@@ -10765,6 +12326,29 @@
         }
       }
     },
+    "accepted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "angenommen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aceptada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "acceptée"
+          }
+        }
+      }
+    },
     "best selling first" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10784,6 +12368,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "meilleures ventes d'abord"
+          }
+        }
+      }
+    },
+    "can't be sent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kann nicht gesendet werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no se puede enviar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ne peut pas être envoyée"
           }
         }
       }
@@ -10924,6 +12531,29 @@
         }
       }
     },
+    "held for review" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "zurückgestellt zur Durchsicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "retenida para revisión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "en attente de relecture"
+          }
+        }
+      }
+    },
     "high confidence" : {
       "localizations" : {
         "de" : {
@@ -11059,6 +12689,29 @@
         }
       }
     },
+    "memory list removed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gedächtnis entfernt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "memoria quitada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mémoire retirée"
+          }
+        }
+      }
+    },
     "no reviews" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11078,6 +12731,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "aucun avis"
+          }
+        }
+      }
+    },
+    "none (unlinked)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "keins (unverknüpft)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ninguno (sin enlazar)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucun (non relié)"
           }
         }
       }
@@ -11147,6 +12823,144 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "plus chers d'abord"
+          }
+        }
+      }
+    },
+    "ready" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "bereit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "lista"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "prête"
+          }
+        }
+      }
+    },
+    "reasoning of %lld call left out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überlegungen von %lld Aufruf weggelassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "razonamiento de %lld llamada omitido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "raisonnement de %lld appel omis"
+          }
+        }
+      }
+    },
+    "reasoning of %lld calls left out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überlegungen von %lld Aufrufen weggelassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "razonamiento de %lld llamadas omitido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "raisonnement de %lld appels omis"
+          }
+        }
+      }
+    },
+    "received, not yet screened" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "eingegangen, noch nicht geprüft"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "recibida, aún sin revisar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "reçue, pas encore examinée"
+          }
+        }
+      }
+    },
+    "rejected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "abgelehnt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "rechazada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refusée"
+          }
+        }
+      }
+    },
+    "released" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "veröffentlicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "publicada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "publiée"
           }
         }
       }
@@ -11239,6 +13053,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "habituellement %@–%@"
+          }
+        }
+      }
+    },
+    "unknown to the corpus" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dem Korpus unbekannt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "desconocida para el corpus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "inconnue du corpus"
           }
         }
       }

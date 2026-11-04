@@ -14,8 +14,12 @@ import dev.cedar.core.ChatClient
 import dev.cedar.core.ChatException
 import dev.cedar.core.Conversation
 import dev.cedar.core.Inbox
+import dev.cedar.core.Contribution
+import dev.cedar.core.ContributionPreview
+import dev.cedar.core.ContributionSettings
 import dev.cedar.core.MemoryItem
 import dev.cedar.core.MemoryLimits
+import kotlinx.serialization.json.JsonObject
 import dev.cedar.core.ModelInfo
 import dev.cedar.core.Notice
 import dev.cedar.core.Schedule
@@ -120,6 +124,16 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         private set
     var showingMemory by mutableStateOf(false)
 
+    /** The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then. */
+    var serverHasContributions by mutableStateOf(false)
+        private set
+    var showingContribute by mutableStateOf(false)
+    var contributionSettings by mutableStateOf<ContributionSettings?>(null)
+        private set
+    var contributions by mutableStateOf<List<Contribution>>(emptyList())
+        private set
+    var contributionsError by mutableStateOf<String?>(null)
+
     /** Conversations the list leaves out (a schedule's runs), as their chats loaded them. */
     private val otherConversations = mutableStateMapOf<String, Conversation>()
 
@@ -210,6 +224,11 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             models = emptyList()
             modelsLoaded = false
             serverHasMemory = false
+            serverHasContributions = false
+            contributionSettings = null
+            contributions = emptyList()
+            contributionsError = null
+            showingContribute = false
             memoryItems = emptyList()
             memoryLoaded = false
             memoryError = null
@@ -268,6 +287,49 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         memoryItems = emptyList()
     }
 
+    // Contributing a conversation
+
+    suspend fun refreshContributions(askCorpus: Boolean = false) {
+        val client = client ?: return
+        try {
+            contributionSettings = client.contributionSettings()
+            contributions = if (askCorpus) client.refreshContributions() else client.contributions()
+            contributionsError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            contributionsError = describe(e)
+        }
+    }
+
+    suspend fun updateContributionSettings(patch: JsonObject) {
+        val client = client ?: throw ChatException.NotConfigured
+        contributionSettings = client.updateContributionSettings(patch)
+    }
+
+    suspend fun withdrawContribution(id: String) {
+        val client = client ?: throw ChatException.NotConfigured
+        val updated = client.withdrawContribution(id)
+        contributions = contributions.map { if (it.id == id) updated else it }
+    }
+
+    suspend fun contributionPreview(conversationId: String, reasoning: Boolean, fetched: Boolean): ContributionPreview {
+        val client = client ?: throw ChatException.NotConfigured
+        return client.contributionPreview(conversationId, reasoning, fetched)
+    }
+
+    suspend fun sendContribution(conversationId: String, bundle: JsonObject): Contribution {
+        val client = client ?: throw ChatException.NotConfigured
+        val receipt = client.sendContribution(conversationId, bundle)
+        contributions = listOf(receipt) + contributions
+        return receipt
+    }
+
+    suspend fun rateTurn(turnId: String, rating: Int?) {
+        val client = client ?: throw ChatException.NotConfigured
+        client.rateTurn(turnId, rating)
+    }
+
     // Conversations
 
     suspend fun refresh() {
@@ -295,7 +357,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             if (!modelsLoaded) {
                 modelsLoaded = true
                 models = runCatching { client.models() }.getOrDefault(emptyList())
-                serverHasMemory = runCatching { client.config().memory }.getOrDefault(false)
+                val config = runCatching { client.config() }.getOrNull()
+                serverHasMemory = config?.memory ?: false
+                serverHasContributions = config?.contributions ?: false
             }
         } catch (e: CancellationException) {
             throw e

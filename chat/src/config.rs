@@ -48,7 +48,16 @@ pub struct Config {
     /// The directory the root `cedar-update` unit watches (see `update`); without it the page
     /// only shows how to update by hand.
     pub update_dir: Option<std::path::PathBuf>,
+    /// The corpus a conversation can be contributed to (`CHAT_CONTRIBUTIONS_URL`, the base URL
+    /// of a cedar-contrib ingest; see `contrib`): `DEFAULT_CONTRIBUTIONS_URL` unless another is
+    /// named. `off`, and nothing can be sent; the review dialog still exports a bundle to a file.
+    pub contributions_url: Option<String>,
 }
+
+/// The corpus a chat contributes to unless `CHAT_CONTRIBUTIONS_URL` names another or is `off`:
+/// the project's own cedar-contrib ingest. Nothing goes there until a person turns contributing
+/// on in Settings and sends a conversation.
+pub const DEFAULT_CONTRIBUTIONS_URL: &str = "https://contrib-api-7fdw4asdra-uw.a.run.app";
 
 /// Who may add, change and remove models in Settings -> Server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,7 +128,17 @@ impl Config {
             },
             update_url: get("CHAT_UPDATE_URL").map(|u| u.trim().to_string()).unwrap_or_else(|| crate::update::DEFAULT_URL.into()),
             update_dir: get("CHAT_UPDATE_DIR").map(|d| std::path::PathBuf::from(d.trim())),
+            contributions_url: match get("CHAT_CONTRIBUTIONS_URL").map(|u| u.trim().trim_end_matches('/').to_string()) {
+                None => Some(DEFAULT_CONTRIBUTIONS_URL.into()),
+                Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
+                Some(v) => Some(v),
+            },
         };
+        if let Some(u) = &cfg.contributions_url {
+            if !(u.starts_with("http://") || u.starts_with("https://")) {
+                bail!("CHAT_CONTRIBUTIONS_URL must start with http:// or https://");
+            }
+        }
         if cfg.history_max_bytes > 60_000 {
             // cedar rejects prompts over 100 KB; leave room for the new message itself.
             bail!("CHAT_HISTORY_MAX_BYTES must be at most 60000");
@@ -190,6 +209,17 @@ mod tests {
         assert_eq!(cfg.update_dir.as_deref(), Some(std::path::Path::new("/var/lib/cedar/update")));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_CHECK", "sometimes")])).is_err());
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_URL", "api.github.com")])).is_err());
+    }
+
+    #[test]
+    fn contributions_url() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k")])).unwrap();
+        assert_eq!(cfg.contributions_url.as_deref(), Some(DEFAULT_CONTRIBUTIONS_URL));
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_CONTRIBUTIONS_URL", "OFF")])).unwrap();
+        assert!(cfg.contributions_url.is_none());
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_CONTRIBUTIONS_URL", "http://127.0.0.1:8090/")])).unwrap();
+        assert_eq!(cfg.contributions_url.as_deref(), Some("http://127.0.0.1:8090"));
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_CONTRIBUTIONS_URL", "contrib.example")])).is_err());
     }
 
     #[test]

@@ -47,6 +47,9 @@ fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
         } else if (app.showingMemory) {
             BackHandler { app.showingMemory = false }
             MemoryScreen(app)
+        } else if (app.showingContribute) {
+            BackHandler { app.showingContribute = false }
+            ContributeSettingsScreen(app)
         } else if (app.showingSettings) {
             BackHandler(enabled = app.settings.isConfigured) { app.showingSettings = false }
             SettingsScreen(app, onAllowNotifications)
