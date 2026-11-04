@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks that every place carrying the release version agrees with the one given:
 #
-#   Cargo.toml                       [workspace.package] version (cedar, cedar-chat, pairing)
+#   Cargo.toml                       [workspace.package] version (cedar, cedar-chat, pairing, contrib-schema, contrib)
 #   desktop/Cargo.toml               the desktop app's version
 #   iOS/Cedar.xcodeproj              MARKETING_VERSION, in every build configuration
 #   docs/landing/version.js          the version the landing site and install guide show
