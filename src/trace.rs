@@ -101,9 +101,15 @@ pub fn without_file_data(value: &Value) -> Value {
 
 /// The whole trace of `run`: the run, the system prompt and tool definitions its agent calls were
 /// sent (`null` for a run that hasn't reached its first turn, or ran before traces were kept), its
-/// conversation, its model calls and its events.
+/// conversation, its model calls and its events. `memory_note` is where the user's memories sit
+/// in `system` (`{start, end}`, byte offsets), `null` when it holds none, so a client that passes
+/// the prompt on without them can cut exactly that.
 pub async fn build(store: &Store, run: &Run) -> Result<Value> {
     let (system, tools) = store.sent_prompt(run.id).await?;
+    let memory_note = system
+        .as_deref()
+        .and_then(crate::memory::note_span)
+        .map(|r| json!({ "start": r.start, "end": r.end }));
     let messages: Vec<Value> = store
         .list_messages(run.id)
         .await?
@@ -115,6 +121,7 @@ pub async fn build(store: &Store, run: &Run) -> Result<Value> {
     Ok(json!({
         "run": run,
         "system": system,
+        "memory_note": memory_note,
         "tools": tools,
         "messages": messages,
         "calls": calls,

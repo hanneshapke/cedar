@@ -8,6 +8,7 @@ pub mod api;
 pub mod cedar;
 pub mod channels;
 pub mod config;
+pub mod contrib;
 pub mod error;
 pub mod i18n;
 pub mod notify;

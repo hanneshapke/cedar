@@ -7,6 +7,7 @@ struct ChatView: View {
     @FocusState private var composerFocused: Bool
     @State private var starError: String?
     @State private var showingFiles = false
+    @State private var showingContribute = false
 
     private let bottomID = "bottom"
 
@@ -78,6 +79,15 @@ struct ChatView: View {
                     .tint(starred ? Color.yellow : nil)
                 }
             }
+            if chat.conversationId != nil, app.serverHasContributions {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingContribute = true
+                    } label: {
+                        Label("Contribute", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
             if chat.conversationId != nil, chat.client != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -102,6 +112,11 @@ struct ChatView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(starError ?? "")
+        }
+        .sheet(isPresented: $showingContribute) {
+            if let id = chat.conversationId {
+                ContributeView(conversationId: id)
+            }
         }
         .sheet(isPresented: $showingFiles) {
             if let id = chat.conversationId, let client = chat.client {

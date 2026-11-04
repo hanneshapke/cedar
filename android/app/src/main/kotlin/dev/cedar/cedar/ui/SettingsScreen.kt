@@ -281,6 +281,23 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                     Footnote(stringResource(R.string.memory_settings_footnote))
                 }
 
+                if (app.serverHasContributions) {
+                    HorizontalDivider()
+                    Section(stringResource(R.string.contribute))
+                    // Its own screen; its choices save at once, not on Save.
+                    Row(
+                        Modifier.fillMaxWidth().clickable { app.showingContribute = true }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.contribute_settings_row), Modifier.weight(1f))
+                        app.contributionSettings?.let { s ->
+                            Text(stringResource(if (s.enabled) R.string.contribute_on else R.string.contribute_off), color = CedarColors.secondaryText)
+                        }
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = CedarColors.secondaryText)
+                    }
+                    Footnote(stringResource(R.string.contribute_settings_footnote))
+                }
+
                 HorizontalDivider()
                 Notifications(app, onAllowNotifications, testStatus) { testStatus = it }
             }

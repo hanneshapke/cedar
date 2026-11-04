@@ -11,6 +11,11 @@ const MAX_TEXT_CHARS: usize = 200;
 const MAX_NOTE_CHARS: usize = 500;
 /// Transit itineraries kept from the planner's answer.
 const MAX_ITINERARIES: usize = 3;
+/// Itineraries asked of the planner. Its default (5) closes the search window as soon as a few
+/// variants of the same trip exist, so late at night an intercity trip shows only the night
+/// coaches and never the morning train; asking for more widens the window, and [`transit_options`]
+/// collapses the variants before keeping the fastest.
+const PLANNER_ITINERARIES: usize = 12;
 /// Points kept per drawn line after simplification; enough for a city-scale route.
 const MAX_PATH_POINTS: usize = 250;
 /// Simplification tolerance in degrees (about 10 m).
@@ -130,6 +135,7 @@ impl PlanTrip {
             ("toPlace", to.place()),
             ("detailedTransfers", "true".to_string()),
             ("directModes", "WALK".to_string()),
+            ("numItineraries", PLANNER_ITINERARIES.to_string()),
         ];
         match when {
             When::Now => {}
@@ -204,7 +210,7 @@ impl Tool for PlanTrip {
                     "from": end("starts"),
                     "to": end("ends"),
                     "depart_at": { "type": "string",
-                                   "description": "Leave at this time: ISO 8601 with a UTC offset, e.g. \"2026-10-18T08:30:00-07:00\". Defaults to now." },
+                                   "description": "Leave at this time: ISO 8601 with a UTC offset, e.g. \"2026-10-18T08:30:00-07:00\". Defaults to now, which only suits a trip the user is about to make. When they named no time and it is late at night where they are, or the trip is between cities, pass a sensible departure (the next morning, say) and tell them which you picked." },
                     "arrive_by": { "type": "string",
                                    "description": "Arrive by this time instead, in the same format. Give at most one of depart_at and arrive_by." },
                     "has_car": { "type": "boolean",
@@ -269,7 +275,17 @@ impl Tool for PlanTrip {
                     has_car: request.has_car,
                     preferences: request.preferences.as_deref(),
                 };
-                match choose(model, &trip, &options, &unavailable).await {
+                // A slow model must not stall the tool: past the tool's timeout, the rules decide.
+                let choice =
+                    tokio::time::timeout(ctx.timeout, choose(model, &trip, &options, &unavailable))
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(anyhow!(
+                                "the model took longer than {}s to choose",
+                                ctx.timeout.as_secs()
+                            ))
+                        });
+                match choice {
                     Ok(choice) => choice,
                     Err(e) => {
                         tracing::warn!(error = %format!("{e:#}"), "the model could not choose a trip option; using the rules");
@@ -463,7 +479,8 @@ struct TransitFound {
     time_zone: Option<String>,
 }
 
-/// The transit itineraries (up to `MAX_ITINERARIES`) and the direct walk from a MOTIS plan.
+/// The transit itineraries (up to `MAX_ITINERARIES`, the fastest of each trunk; see [`trunk`])
+/// and the direct walk from a MOTIS plan.
 fn transit_options(plan: &Value) -> TransitFound {
     let list = |key: &str| plan[key].as_array().cloned().unwrap_or_default();
     let mut transit: Vec<Value> = list("itineraries")
@@ -476,6 +493,8 @@ fn transit_options(plan: &Value) -> TransitFound {
         })
         .collect();
     transit.sort_by_key(|o| o["duration_min"].as_i64().unwrap_or(i64::MAX));
+    let mut seen = std::collections::HashSet::new();
+    transit.retain(|o| seen.insert(trunk(o)));
     transit.truncate(MAX_ITINERARIES);
     let walk = list("direct")
         .iter()
@@ -511,6 +530,35 @@ fn transit_options(plan: &Value) -> TransitFound {
         walk,
         time_zone,
     }
+}
+
+/// What makes an itinerary distinct: the vehicles it rides for the bulk of the trip (every transit
+/// leg at least half as long as its longest), each by line, departure and endpoints. A planner
+/// returns the same intercity coach or train several times with different local legs at either
+/// end; those share a trunk, and only the fastest is worth showing.
+fn trunk(option: &Value) -> String {
+    let legs: Vec<&Value> = option["legs"]
+        .as_array()
+        .map(|l| l.iter().filter(|l| l["mode"] != "walk").collect())
+        .unwrap_or_default();
+    let longest = legs
+        .iter()
+        .filter_map(|l| l["duration_min"].as_i64())
+        .max()
+        .unwrap_or(0);
+    legs.iter()
+        .filter(|l| l["duration_min"].as_i64().unwrap_or(0) * 2 >= longest)
+        .map(|l| {
+            format!(
+                "{}|{}|{}|{}",
+                l["route"].as_str().unwrap_or(""),
+                l["depart"].as_str().unwrap_or(""),
+                l["from"].as_str().unwrap_or(""),
+                l["to"].as_str().unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 /// One MOTIS itinerary as an option, or `None` if it has no usable legs.
@@ -1347,6 +1395,75 @@ mod tests {
         assert_eq!(found.walk[0]["duration_min"], 50);
         assert_eq!(found.walk[0]["distance_m"], 3900);
         assert!(found.walk[0]["path"].is_string());
+    }
+
+    #[test]
+    fn variants_of_the_same_trunk_collapse_to_the_fastest() {
+        let leg = |mode: &str, route: &str, from: &str, to: &str, depart: &str, secs: i64| {
+            json!({ "mode": mode, "routeShortName": route, "from": { "name": from }, "to": { "name": to },
+                    "startTime": depart, "duration": secs })
+        };
+        let walk = |secs: i64| json!({ "mode": "WALK", "duration": secs });
+        // The same night coach and train twice, with different last legs in Berlin, and a
+        // later coach: the planner's answer late at night, that used to crowd out everything.
+        let coach = || {
+            leg(
+                "COACH",
+                "N86",
+                "Fröttmaning",
+                "Leipzig",
+                "2026-11-03T23:30:00Z",
+                325 * 60,
+            )
+        };
+        let train = || {
+            leg(
+                "HIGHSPEED_RAIL",
+                "ICE 606",
+                "Leipzig Hbf",
+                "Berlin Hbf",
+                "2026-11-04T05:12:00Z",
+                77 * 60,
+            )
+        };
+        let plan = json!({ "itineraries": [
+            { "duration": 465 * 60, "transfers": 3, "startTime": "2026-11-03T23:01:00Z", "endTime": "2026-11-04T06:46:00Z",
+              "legs": [walk(120), coach(), walk(300), train(), leg("SUBWAY", "U5", "Berlin Hbf", "Unter den Linden", "2026-11-04T06:34:00Z", 240), walk(480)] },
+            { "duration": 464 * 60, "transfers": 4, "startTime": "2026-11-03T23:01:00Z", "endTime": "2026-11-04T06:45:00Z",
+              "legs": [walk(120), coach(), walk(300), train(), leg("METRO", "S3", "Berlin Hbf", "Friedrichstr.", "2026-11-04T06:33:00Z", 120), walk(300)] },
+            { "duration": 468 * 60, "transfers": 4, "startTime": "2026-11-03T23:56:00Z", "endTime": "2026-11-04T07:44:00Z",
+              "legs": [walk(720), leg("COACH", "N95", "ZOB", "Leipzig", "2026-11-04T00:21:00Z", 320 * 60), walk(300),
+                       leg("HIGHSPEED_RAIL", "ICE 806", "Leipzig Hbf", "Südkreuz", "2026-11-04T06:16:00Z", 67 * 60)] },
+            { "duration": 250 * 60, "transfers": 0, "startTime": "2026-11-04T04:50:00Z", "endTime": "2026-11-04T09:00:00Z",
+              "legs": [walk(300), leg("HIGHSPEED_RAIL", "ICE 1002", "München Hbf", "Berlin Hbf", "2026-11-04T04:55:00Z", 240 * 60), walk(300)] },
+        ] });
+        let found = transit_options(&plan);
+        let routes: Vec<Vec<&str>> = found
+            .transit
+            .iter()
+            .map(|o| {
+                o["legs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|l| l["route"].as_str())
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            routes,
+            [
+                vec!["ICE 1002"],
+                vec!["N86", "ICE 606", "S3"],
+                vec!["N95", "ICE 806"]
+            ],
+            "fastest first, one per trunk: the N86 variant via U5 is dropped"
+        );
+        // Only the long legs count: the two N86 itineraries differ in a short local leg.
+        assert_eq!(
+            trunk(&found.transit[1]),
+            "N86|2026-11-03T23:30:00Z|Fröttmaning|Leipzig"
+        );
     }
 
     fn encode7(points: &[(f64, f64)]) -> String {
