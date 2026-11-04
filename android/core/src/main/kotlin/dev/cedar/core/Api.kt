@@ -5,8 +5,13 @@ package dev.cedar.core
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.time.Instant
 import java.util.TimeZone
 
@@ -20,7 +25,130 @@ data class ServerConfig(
     @SerialName("admin_enabled") val adminEnabled: Boolean = false,
     /** The server has `/api/memory`; an older one leaves it out, so Settings hides Memory. */
     val memory: Boolean = false,
+    /** The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`). */
+    val contributions: Boolean = false,
 )
+
+// -- contributing a conversation (chat/README.md, "Contributing a conversation") --------------
+
+/**
+ * `GET /api/conversations/{id}/contribution`: the conversation as it would be contributed, and
+ * why it can't be, if it can't. `bundle` is the document itself (`contrib-schema`), kept as JSON:
+ * what Send posts back is exactly this object, outcome added.
+ */
+@Serializable
+data class ContributionPreview(
+    val bundle: JsonObject = JsonObject(emptyMap()),
+    /** `scheduled`, `active`, `no_turns`, `private_tools`, `run_gone`, `secrets`, `not_consistent`, `model_not_allowed`. */
+    val blocked: List<String> = emptyList(),
+    val secrets: List<String> = emptyList(),
+    val problems: List<String> = emptyList(),
+    @SerialName("can_send") val canSend: Boolean = false,
+    val accepted: Boolean = false,
+    @SerialName("private_tools") val privateTools: List<String> = emptyList(),
+    /** The chat's id of each turn in the bundle, in order, for the rating buttons. */
+    @SerialName("turn_ids") val turnIds: List<String> = emptyList(),
+) {
+    /** One turn of the bundle, as the review shows it. */
+    data class PreviewTurn(
+        val seq: Int,
+        val prompt: String,
+        val status: String,
+        val day: String,
+        val rating: Int?,
+        /** The agent's own text, in order. */
+        val agentText: List<String>,
+        /** The tools it called, in order, with their inputs pretty-printed. */
+        val toolCalls: List<Pair<String, String>>,
+    )
+
+    val modelName: String get() = bundle["model"]["name"].str.orEmpty()
+
+    /** The stand-ins the redaction wrote, by kind: values a reader may take for real and shouldn't. */
+    val standIns: Map<String, List<String>>
+        get() = (bundle["redactions"] as? JsonObject)?.mapValues { (_, v) -> v.arr.orEmpty().mapNotNull { it.str } }.orEmpty()
+
+    val standInCount: Int get() = standIns.values.sumOf { it.size }
+
+    /** What was left out, as `{attachments, memory, fetched_bodies, reasoning}`. */
+    val dropped: JsonElement? get() = bundle["dropped"]
+
+    fun turns(): List<PreviewTurn> = bundle["turns"].arr.orEmpty().map { t ->
+        val messages = t["messages"].arr.orEmpty()
+        val agentText = messages.drop(1).filter { it["role"].str == "assistant" }
+            .flatMap { m -> m["content"].arr.orEmpty() }.filter { it["type"].str == "text" }.mapNotNull { it["text"].str }
+        val toolCalls = messages.flatMap { m -> m["content"].arr.orEmpty() }.filter { it["type"].str == "tool_use" }
+            .map { (it["name"].str ?: "?") to it["input"].pretty() }
+        PreviewTurn(
+            seq = t["seq"].int ?: 0,
+            prompt = t["prompt"].str.orEmpty(),
+            status = t["status"].str.orEmpty(),
+            day = t["day"].str.orEmpty(),
+            rating = t["rating"].int,
+            agentText = agentText,
+            toolCalls = toolCalls,
+        )
+    }
+
+    /** The bundle with the person's outcome and a turn's rating applied, as Send posts it. */
+    fun bundleWith(outcome: String?, notes: String?, ratings: Map<Int, Int?>): JsonObject {
+        val map = bundle.toMutableMap()
+        if (outcome != null) {
+            map["outcome"] = buildJsonObject {
+                put("result", outcome)
+                notes?.trim()?.takeIf { it.isNotEmpty() }?.let { put("notes", it) }
+            }
+        } else {
+            map.remove("outcome")
+        }
+        if (ratings.isNotEmpty()) {
+            map["turns"] = JsonArray(bundle["turns"].arr.orEmpty().map { t ->
+                val seq = t["seq"].int ?: 0
+                if (seq !in ratings) t else {
+                    val tm = (t as JsonObject).toMutableMap()
+                    val r = ratings[seq]
+                    if (r == null) tm.remove("rating") else tm["rating"] = JsonPrimitive(r)
+                    JsonObject(tm)
+                }
+            })
+        }
+        return JsonObject(map)
+    }
+}
+
+/** A contribution's receipt (`GET /api/contributions`). */
+@Serializable
+data class Contribution(
+    val id: String,
+    @SerialName("conversation_id") val conversationId: String? = null,
+    val title: String? = null,
+    val license: String = "",
+    @SerialName("submitted_at") val submittedAt: Instant = Instant.EPOCH,
+    @SerialName("withdrawn_at") val withdrawnAt: Instant? = null,
+    /** What the corpus last said: `quarantined`, `accepted`, `held`, `rejected`, `released`, `unknown`. */
+    val status: String? = null,
+    @SerialName("released_in") val releasedIn: List<String> = emptyList(),
+    @SerialName("checked_at") val checkedAt: Instant? = null,
+)
+
+@Serializable
+data class ContributionList(val contributions: List<Contribution> = emptyList())
+
+/** `GET /api/settings/contributions`: the one-time choices, and whether this server can send at all. */
+@Serializable
+data class ContributionSettings(
+    val license: String = "cc0",
+    val pseudonym: String? = null,
+    @SerialName("include_reasoning") val includeReasoning: Boolean = false,
+    @SerialName("include_fetched") val includeFetched: Boolean = false,
+    /** Set once the person read the page and turned contributing on. */
+    @SerialName("accepted_at") val acceptedAt: Instant? = null,
+    val available: Boolean = false,
+    val host: String? = null,
+    val licenses: List<String> = emptyList(),
+) {
+    val enabled: Boolean get() = acceptedAt != null
+}
 
 /** One fact cedar remembers about the user across conversations (`GET /api/memory`). */
 @Serializable

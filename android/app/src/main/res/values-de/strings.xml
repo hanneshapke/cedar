@@ -444,6 +444,101 @@
         <item quantity="other">Cedar vergisst alle %d Erinnerungen, die es über dich hat. Das lässt sich nicht rückgängig machen.</item>
     </plurals>
 
+    <!-- Contributing a conversation (Settings → Contribute, and the review from a chat) -->
+    <string name="contribute">Beisteuern</string>
+    <string name="contribute_settings_row">Unterhaltungen beisteuern</string>
+    <string name="contribute_on">An</string>
+    <string name="contribute_off">Aus</string>
+    <string name="contribute_settings_footnote">Gib einzelne Unterhaltungen in ein gemeinsames Korpus zum Trainieren offener Agentenmodelle. Freiwillig, eine Unterhaltung nach der anderen, nachdem du genau gelesen hast, was geht.</string>
+    <string name="contribute_this_conversation">Diese Unterhaltung beisteuern</string>
+    <string name="contribute_send">Senden</string>
+    <string name="contribute_sending">Wird gesendet …</string>
+    <string name="contribute_sent">Gesendet. Beleg %1$s; du kannst den Beitrag jederzeit unter Einstellungen → Beisteuern zurückziehen.</string>
+    <string name="contribute_export_only">Dieser Server hat kein Korpus, an das er senden könnte.</string>
+    <string name="contribute_turn_on">Beisteuern ist aus. Lies die Erklärung unter Einstellungen → Beisteuern und schalte es dort ein, bevor du sendest.</string>
+    <string name="contribute_open_settings">Einstellungen → Beisteuern öffnen</string>
+    <string name="contribute_intro">Genau das würde deinen Server verlassen. Lies es: Die als Stellvertreter aufgeführten Werte sind für das Geschwärzte erfunden, durchgehend derselbe für dieselbe Sache. Mehr schwärzen kannst du im Web-Chat.</string>
+    <string name="contribute_include_reasoning">Die Überlegungen des Modells mitschicken</string>
+    <string name="contribute_include_fetched">Vom Agenten geladene Seiten und Dateien mitschicken</string>
+    <string name="contribute_outcome_title">Hat der Agent getan, worum du gebeten hast?</string>
+    <string name="contribute_outcome_yes">Ja</string>
+    <string name="contribute_outcome_partly">Teilweise</string>
+    <string name="contribute_outcome_no">Nein</string>
+    <string name="contribute_outcome_notes">Was war falsch? (optional)</string>
+    <string name="contribute_turn">Runde %1$d</string>
+    <string name="contribute_you">Du</string>
+    <string name="contribute_agent">Agent</string>
+    <string name="contribute_rate_good">Gute Antwort</string>
+    <string name="contribute_rate_bad">Schlechte Antwort</string>
+    <string name="contribute_stand_ins_legend">Stellvertreter in diesem Beitrag (erfunden, nicht echt):</string>
+    <string name="contribute_stand_ins_here">Stellvertreter hier: %1$s</string>
+    <string name="contribute_memory_removed">Gedächtnis entfernt</string>
+    <string name="contribute_ready">bereit</string>
+    <string name="contribute_cannot_send">kann nicht gesendet werden</string>
+    <string name="contribute_blocked_scheduled">Die Unterhaltung eines geplanten Agenten kann nicht beigesteuert werden.</string>
+    <string name="contribute_blocked_active">Warte, bis die aktuelle Antwort fertig ist, oder stoppe sie.</string>
+    <string name="contribute_blocked_no_turns">Es gibt noch keine fertige Antwort, die beigesteuert werden könnte.</string>
+    <string name="contribute_blocked_private_tools">Diese Unterhaltung hat %1$s benutzt, deren Ergebnisse Daten anderer Leute sind; sie kann nicht beigesteuert werden.</string>
+    <string name="contribute_blocked_run_gone">Der Lauf einer Antwort ist nicht mehr auf dem cedar-Server; die Unterhaltung lässt sich nicht mehr zusammensetzen.</string>
+    <string name="contribute_blocked_secrets">Im Text steckt noch ein Geheimnis. Schwärze es im Web-Chat.</string>
+    <string name="contribute_blocked_not_consistent">Das Bündel besteht die Prüfungen des Korpus nicht:</string>
+    <string name="contribute_blocked_model">Das Korpus nimmt keine Unterhaltungen von diesem Modell (%1$s).</string>
+    <string name="contribute_settings_description">Gib einzelne Unterhaltungen in ein gemeinsames Korpus zum Trainieren offener Agentenmodelle. Freiwillig, eine Unterhaltung nach der anderen, nachdem du genau gelesen hast, was geht.</string>
+    <string name="contribute_unavailable">Wer diesen Server betreibt, hat kein Korpus angegeben, also kann von hier nichts gesendet werden.</string>
+    <string name="contribute_corpus">Korpus: %1$s</string>
+    <string name="contribute_what">Was ein Beitrag enthält</string>
+    <string name="contribute_what1">Deine Eingaben, die Antworten und Werkzeugaufrufe des Agenten, den Systemprompt und die Werkzeugdefinitionen, mit denen er lief, wie der Lauf endete, und das Ergebnis, das du angibst.</string>
+    <string name="contribute_what2">Nie: angehängte Dateien und ihre Namen, dein Gedächtnis, Lauf- und Schlüsselkennungen, genaue Zeiten, deine Region. E-Mail-Adressen, Telefon- und Kontonummern, IP-Adressen, Schlüssel und Namen von Benutzerverzeichnissen werden zu erfundenen Stellvertretern derselben Form, innerhalb der Unterhaltung einheitlich, sonst zufällig.</string>
+    <string name="contribute_what3">Unterhaltungen, die Gmail oder den Kalender benutzt haben, können nicht beigesteuert werden. Das Schwärzen ist nach bestem Bemühen: Bei der Durchsicht liest du nach, was es nicht erkennen kann.</string>
+    <string name="contribute_what4">Kein Konto, keine Identität. Ein Pseudonym, falls du eins wählst, ist eine auf deinem Server erzeugte Zufallskennung; du kannst es wechseln oder entfernen. Einen Beitrag kannst du unten zurückziehen.</string>
+    <string name="contribute_license">Lizenz für das, was du geschrieben hast</string>
+    <string name="contribute_license_cc0">CC0 (gemeinfrei)</string>
+    <string name="contribute_license_ccby">CC BY 4.0 (Nennung per Pseudonym)</string>
+    <string name="contribute_pseudonym">Pseudonym</string>
+    <string name="contribute_pseudonym_desc">Verknüpft deine Beiträge miteinander und mit nichts sonst. Ohne eines steht jeder für sich.</string>
+    <string name="contribute_unlinked">keins (unverknüpft)</string>
+    <string name="contribute_new_pseudonym">Neu</string>
+    <string name="contribute_drop_pseudonym">Entfernen</string>
+    <string name="contribute_default_reasoning">Überlegungen des Modells standardmäßig mitschicken</string>
+    <string name="contribute_default_reasoning_desc">Sie zitieren oft deine Eingabe und bleiben weg, wenn du sie nicht mitschickst.</string>
+    <string name="contribute_default_fetched">Geladene Seiten standardmäßig mitschicken</string>
+    <string name="contribute_default_fetched_desc">Seiten und Dateien, die der Agent gelesen hat, sind Text anderer Leute; sie bleiben weg, wenn du sie nicht mitschickst.</string>
+    <string name="contribute_enabled">Beisteuern ist an</string>
+    <string name="contribute_enabled_desc">Einschalten macht nur den Senden-Knopf in der Durchsicht verfügbar. Nichts wird je von selbst gesendet.</string>
+    <string name="contribute_receipts">Deine Beiträge</string>
+    <string name="contribute_no_receipts">Noch nichts gesendet.</string>
+    <string name="contribute_refresh_status">Status aktualisieren</string>
+    <string name="contribute_withdraw">Zurückziehen</string>
+    <string name="contribute_withdrawn">Zurückgezogen</string>
+    <string name="contribute_withdraw_confirm">Diesen Beitrag zurückziehen? Er wird aus dem Eingang des Korpus gelöscht und aus künftigen Veröffentlichungen weggelassen.</string>
+    <string name="contribute_untitled">Unterhaltung ohne Titel</string>
+    <string name="contribute_status_quarantined">eingegangen, noch nicht geprüft</string>
+    <string name="contribute_status_accepted">angenommen</string>
+    <string name="contribute_status_held">zurückgestellt zur Durchsicht</string>
+    <string name="contribute_status_rejected">abgelehnt</string>
+    <string name="contribute_status_released">veröffentlicht</string>
+    <string name="contribute_status_unknown">dem Korpus unbekannt</string>
+    <plurals name="contribute_turns">
+        <item quantity="one">%d Runde</item>
+        <item quantity="other">%d Runden</item>
+    </plurals>
+    <plurals name="contribute_stand_ins">
+        <item quantity="one">%d Stellvertreter</item>
+        <item quantity="other">%d Stellvertreter</item>
+    </plurals>
+    <plurals name="contribute_attachments_left_out">
+        <item quantity="one">%d Anhang weggelassen</item>
+        <item quantity="other">%d Anhänge weggelassen</item>
+    </plurals>
+    <plurals name="contribute_fetched_left_out">
+        <item quantity="one">%d geladene Seite weggelassen</item>
+        <item quantity="other">%d geladene Seiten weggelassen</item>
+    </plurals>
+    <plurals name="contribute_reasoning_left_out">
+        <item quantity="one">Überlegungen von %d Aufruf weggelassen</item>
+        <item quantity="other">Überlegungen von %d Aufrufen weggelassen</item>
+    </plurals>
+
     <!-- weather_forecast card -->
     <string name="open_weather_on_web">Wetter im Web öffnen</string>
     <string name="weather_for">Wetter für %1$s</string>

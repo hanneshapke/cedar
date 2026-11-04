@@ -1,0 +1,37 @@
+# Training on a cedar-contrib release: the worked example in cedar_contrib_train/cli.py, as a uv
+# project like bench/. The base install is light (the data conversion and --dry-run need only the
+# standard library); the `train` extra brings torch, transformers, TRL and PEFT.
+#
+#     uv run --project contrib/training cedar-contrib-train rft --release out/v2026.11 --dry-run
+#     uv run --project contrib/training --extra train cedar-contrib-train rft --release out/v2026.11
+[project]
+name = "cedar-contrib-train"
+dynamic = ["version"]
+description = "Reinforcement learning on a cedar-contrib release with a small Qwen model (a worked example)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+train = [
+    "torch>=2.4",
+    "transformers>=4.46",
+    "trl>=0.17",
+    "peft>=0.13",
+    "datasets>=3.0",
+    "accelerate>=1.0",
+]
+
+[project.scripts]
+cedar-contrib-train = "cedar_contrib_train.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "cedar_contrib_train/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cedar_contrib_train"]
