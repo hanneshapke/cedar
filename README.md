@@ -115,7 +115,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `ask_user` | `ask_user` |
 | `memory` | `remember`, `forget`, and the list of what the run remembers (see [Memory](#memory)) |
 | `browser` | `browser` |
-| `gmail`, `calendar` | every `gmail_*` or `calendar_*` tool, or name single ones (`gmail_search_threads`) |
+| `gmail`, `calendar`, `drive`, `sheets` | every `gmail_*`, `calendar_*`, `drive_*` or `sheets_*` tool, or name single ones (`gmail_search_threads`) |
 | `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
 
 The sandbox tools (`bash`, the file, Python, document, PDF, and chart tools) are always included,
@@ -697,7 +697,8 @@ docker rm -f cb
 
 ### Gmail and Calendar
 
-cedar offers tools for one Google account's mail and calendar once a Google OAuth client is set
+cedar offers tools for one Google account's mail and calendar (and its files in Drive, see
+[Google Drive, Docs and Sheets](#google-drive-docs-and-sheets)) once a Google OAuth client is set
 up and an account connected through it; `GMAIL=off` or `CALENDAR=off` removes the tools. They run
 in the cedar process (the sandbox has no network, and the Google tokens stay out of it) and use
 one of two backends, chosen with `GOOGLE_BACKEND`:
@@ -723,9 +724,10 @@ you; the environment works too, for a server without a chat or one you configure
 **From the chat UI** (Settings → Server, which needs `CEDAR_SECRET_KEY` and an admin key, see
 [Integrations](#integrations); the desktop app has both):
 
-1. In a Google Cloud project, enable the Gmail API and the Google Calendar API
-   (`gcloud services enable gmail.googleapis.com calendar-json.googleapis.com --project=PROJECT_ID`;
-   for `GOOGLE_BACKEND=mcp`, `gmailmcp.googleapis.com calendarmcp.googleapis.com` as well).
+1. In a Google Cloud project, enable the Gmail, Google Calendar, Google Drive and Google Sheets
+   APIs (`gcloud services enable gmail.googleapis.com calendar-json.googleapis.com
+   drive.googleapis.com sheets.googleapis.com --project=PROJECT_ID`; for `GOOGLE_BACKEND=mcp`,
+   `gmailmcp.googleapis.com calendarmcp.googleapis.com` as well).
 2. Set up the consent screen (Google Auth Platform in the console) with the scopes below, and
    publish it (*In production*). While it stays in *Testing*, Google expires the refresh token
    after 7 days and you have to connect again every week; for your own account you can click
@@ -753,8 +755,13 @@ to a token you got yourself, for example with the
 to the Playground's client and Google refuses it (`unauthorized_client`). That needs a *Web
 application* client with `https://developers.google.com/oauthplayground` as an authorized
 redirect URI. The default tools need `https://www.googleapis.com/auth/gmail.readonly`,
-`https://www.googleapis.com/auth/gmail.compose` (drafts), and
-`https://www.googleapis.com/auth/calendar.readonly`.
+`https://www.googleapis.com/auth/gmail.compose` (drafts),
+`https://www.googleapis.com/auth/calendar.readonly` and
+`https://www.googleapis.com/auth/drive.readonly` (Drive, Docs and Sheets).
+
+When a cedar upgrade asks for a scope the connected account didn't grant (0.3.7 added
+`drive.readonly`), the tools answer Google's "insufficient scopes" error until the account is
+connected again; the Server page says which scopes are missing, and *Reconnect* grants them.
 
 cedar trades the refresh token for an access token when it first needs one and again shortly
 before that expires, and asks for a new one once if Google rejects it.
@@ -779,6 +786,35 @@ the server drops the session. Any tool the server lists can be allowed (`*` allo
 ones that send mail or change events; allowed names the server doesn't list are logged and
 skipped. Check the startup log (`MCP tools discovered`) after an upgrade, since preview tool names
 may change.
+
+### Google Drive, Docs and Sheets
+
+With the same account, cedar reads the user's files in Google Drive. The `drive` and `sheets` tool
+groups are on by default and need nothing beyond the Google client and account above (plus the
+Drive and Sheets APIs enabled in the Cloud project, and the `drive.readonly` scope, which
+"Connect Google" asks for); `DRIVE=off` or `SHEETS=off` removes them, `DRIVE_TOOLS` and
+`SHEETS_TOOLS` choose single ones. They only use the REST APIs, whatever `GOOGLE_BACKEND` says.
+
+- `drive_search_files` finds files (the user's own and ones shared with them) by words in the
+  content or the name, kind (Google Doc, Sheet, Slides, folder, PDF, image), folder and
+  modification date, newest first, and gives their IDs, owners and links.
+- `drive_get_file` is one file's details.
+- `drive_read_document` reads a Google Doc as Markdown (headings, lists and tables kept), Google
+  Slides as the text of every slide, and plain text, Markdown, CSV and JSON files as they are; a
+  Google Sheet gives its first tab as CSV and points to the Sheets tools. Long documents come in
+  parts of 40,000 characters (`offset` and `maxChars` page through them). PDFs, Word and Excel
+  files aren't read here: the tool says to save them first.
+- `drive_download_file` saves a file into the workspace (a Google Doc as docx, PDF, Markdown,
+  text or HTML; a Sheet as xlsx, CSV, ODS or PDF; Slides as pptx, PDF or text; any other file as
+  it is, up to 25 MB), where `read_document`, `run_python` and the other sandbox tools can work
+  on it.
+- `sheets_get_spreadsheet` lists a spreadsheet's tabs with their sizes.
+- `sheets_read_range` reads a tab by name in windows of rows (`startRow`, `maxRows`, 100 by
+  default and at most 1000) or an A1 range as given, formatted as the sheet shows the values, or
+  raw, or as formulas.
+
+Nothing here creates, changes, shares or deletes anything in Drive. What documents say is shown
+to the model as information, with the same warning as for emails.
 
 ### Models
 

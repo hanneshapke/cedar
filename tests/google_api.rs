@@ -1,5 +1,5 @@
-//! The Gmail and Calendar tools through Google's REST APIs (`GOOGLE_BACKEND=api`, the default),
-//! against a local mock of the token endpoint and the APIs.
+//! The Gmail, Calendar, Drive and Sheets tools through Google's REST APIs (`GOOGLE_BACKEND=api`,
+//! the default), against a local mock of the token endpoint and the APIs.
 
 mod common;
 
@@ -152,6 +152,69 @@ async fn free_busy(
     } }))
 }
 
+async fn drive_get(
+    State(mock): State<Arc<Mock>>,
+    Path(path): Path<String>,
+    RawQuery(query): RawQuery,
+    headers_in: HeaderMap,
+) -> Response {
+    let q = query.clone().unwrap_or_default();
+    mock.record("GET", &format!("/drive/{path}"), query, &headers_in);
+    let doc = json!({ "id": "doc-1", "name": "Q3 plan", "mimeType": "application/vnd.google-apps.document",
+        "modifiedTime": "2026-10-01T10:00:00Z", "webViewLink": "https://docs.google.com/document/d/doc-1",
+        "owners": [{ "displayName": "Ana", "emailAddress": "ana@example.com" }], "parents": ["folder-1"] });
+    let sheet = json!({ "id": "sheet-1", "name": "Budget", "mimeType": "application/vnd.google-apps.spreadsheet",
+        "modifiedTime": "2026-09-01T10:00:00Z" });
+    let pdf = json!({ "id": "pdf-1", "name": "invoice.pdf", "mimeType": "application/pdf", "size": "11" });
+    let parts: Vec<&str> = path.split('/').collect();
+    match parts.as_slice() {
+        ["files"] => {
+            Json(json!({ "files": [doc, sheet, pdf], "nextPageToken": "page-2" })).into_response()
+        }
+        ["files", "doc-1"] => Json(doc).into_response(),
+        ["files", "sheet-1"] => Json(sheet).into_response(),
+        ["files", "pdf-1"] if q.contains("alt=media") => {
+            ([("content-type", "application/pdf")], "%PDF-1.4 fake").into_response()
+        }
+        ["files", "pdf-1"] => Json(pdf).into_response(),
+        ["files", "doc-1", "export"] if q.contains("text%2Fmarkdown") => (
+            [("content-type", "text/markdown")],
+            "# Q3 plan\n\nShip **cedar** 0.4.\n",
+        )
+            .into_response(),
+        ["files", "doc-1", "export"] => {
+            let body = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            ([("content-type", body)], "PK fake docx").into_response()
+        }
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn sheets_get(
+    State(mock): State<Arc<Mock>>,
+    Path(path): Path<String>,
+    RawQuery(query): RawQuery,
+    headers_in: HeaderMap,
+) -> Response {
+    mock.record("GET", &format!("/sheets/{path}"), query, &headers_in);
+    let parts: Vec<&str> = path.split('/').collect();
+    match parts.as_slice() {
+        ["sheet-1"] => Json(json!({ "spreadsheetId": "sheet-1", "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-1",
+            "properties": { "title": "Budget", "locale": "en_US", "timeZone": "Europe/Zurich" },
+            "sheets": [
+                { "properties": { "sheetId": 0, "title": "2026", "index": 0, "gridProperties": { "rowCount": 1000, "columnCount": 26 } } },
+                { "properties": { "sheetId": 7, "title": "Notes", "index": 1, "hidden": true, "gridProperties": { "rowCount": 20, "columnCount": 5 } } },
+            ] })).into_response(),
+        ["sheet-1", "values", range] => {
+            let rows: Vec<Value> = (1..=3)
+                .map(|i| json!([format!("row {i}"), i * 10, "x"]))
+                .collect();
+            Json(json!({ "range": range, "majorDimension": "ROWS", "values": rows })).into_response()
+        }
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
 async fn start(mock: Mock) -> (String, Arc<Mock>) {
     let mock = Arc::new(mock);
     let app = Router::new()
@@ -160,6 +223,8 @@ async fn start(mock: Mock) -> (String, Arc<Mock>) {
         .route("/gmail/{*path}", get(gmail_get))
         .route("/calendar/freeBusy", post(free_busy))
         .route("/calendar/{*path}", get(calendar_get))
+        .route("/drive/{*path}", get(drive_get))
+        .route("/sheets/{*path}", get(sheets_get))
         .with_state(mock.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -170,12 +235,16 @@ async fn start(mock: Mock) -> (String, Arc<Mock>) {
 async fn app(script: Vec<Step>, base: &str, extra: &[(&str, &str)]) -> TestApp {
     let gmail = format!("{base}/gmail");
     let calendar = format!("{base}/calendar");
+    let drive = format!("{base}/drive");
+    let sheets = format!("{base}/sheets");
     let token = format!("{base}/token");
     let mut env = vec![
         ("GMAIL", "on"),
         ("CALENDAR", "on"),
         ("GMAIL_API_URL", gmail.as_str()),
         ("CALENDAR_API_URL", calendar.as_str()),
+        ("DRIVE_API_URL", drive.as_str()),
+        ("SHEETS_API_URL", sheets.as_str()),
         ("GOOGLE_CLIENT_ID", "client"),
         ("GOOGLE_CLIENT_SECRET", "secret"),
         ("GOOGLE_REFRESH_TOKEN", "refresh"),
@@ -404,6 +473,179 @@ async fn calendar_times_are_read_in_the_users_time_zone() {
     assert!(seen[1..]
         .iter()
         .all(|(_, _, _, auth)| auth == "Bearer tok-2"));
+}
+
+#[tokio::test]
+async fn drive_files_are_found_read_and_saved_and_sheets_are_read() {
+    let (base, mock) = start(Mock::default()).await;
+    let app = app(
+        vec![
+            Step::Reply(tool_use(
+                "t1",
+                "drive_search_files",
+                json!({ "query": "Q3 plan", "kind": "document", "modifiedAfter": "2026-01-01" }),
+            )),
+            Step::Reply(tool_use(
+                "t2",
+                "drive_read_document",
+                json!({ "fileId": "doc-1" }),
+            )),
+            Step::Reply(tool_use(
+                "t3",
+                "drive_read_document",
+                json!({ "fileId": "pdf-1" }),
+            )),
+            Step::Reply(tool_use(
+                "t4",
+                "drive_download_file",
+                json!({ "fileId": "pdf-1", "path": "in/invoice.pdf" }),
+            )),
+            Step::Reply(tool_use(
+                "t5",
+                "drive_download_file",
+                json!({ "fileId": "doc-1", "path": "plan.docx" }),
+            )),
+            Step::Reply(tool_use(
+                "t6",
+                "sheets_get_spreadsheet",
+                json!({ "spreadsheetId": "sheet-1" }),
+            )),
+            Step::Reply(tool_use(
+                "t7",
+                "sheets_read_range",
+                json!({ "spreadsheetId": "sheet-1", "range": "Ana's", "maxRows": 3 }),
+            )),
+            Step::Reply(tool_use(
+                "t8",
+                "sheets_read_range",
+                json!({ "spreadsheetId": "sheet-1", "range": "2026!A1:C2", "valueRender": "raw" }),
+            )),
+            Step::Reply(text("done")),
+        ],
+        &base,
+        &[("GMAIL", "off"), ("CALENDAR", "off")],
+    )
+    .await;
+    run_to_completion(&app).await;
+
+    let first = app.llm.requests()[0].clone();
+    let names: Vec<&str> = first["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .filter(|n| n.starts_with("drive_") || n.starts_with("sheets_"))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "drive_search_files",
+            "drive_get_file",
+            "drive_read_document",
+            "drive_download_file",
+            "sheets_get_spreadsheet",
+            "sheets_read_range",
+        ]
+    );
+    let system = first["system"].as_str().unwrap();
+    assert!(system.contains("drive_search_files"), "{system}");
+    assert!(system.contains("sheets_ tools"), "{system}");
+
+    // The search builds Drive's query language, with trashed files left out.
+    let found = result_json(&app, 1);
+    assert_eq!(found["files"][0]["id"], "doc-1");
+    assert_eq!(found["files"][0]["kind"], "Google Doc");
+    assert_eq!(found["files"][0]["owner"], "Ana <ana@example.com>");
+    assert_eq!(found["files"][2]["size"], 11);
+    assert_eq!(found["nextPageToken"], "page-2");
+    let (_, query) = mock.requests("/drive/files")[0].clone();
+    let decoded = urlencoding_decode(&query);
+    assert!(decoded.contains("trashed = false and fullText contains 'Q3 plan' and mimeType = 'application/vnd.google-apps.document' and modifiedTime > '2026-01-01T00:00:00Z'"), "{decoded}");
+    assert!(
+        !decoded.contains("orderBy"),
+        "relevance order for full-text searches: {decoded}"
+    );
+
+    // A Google Doc is exported as Markdown.
+    let doc = result_json(&app, 2);
+    assert_eq!(doc["format"], "markdown");
+    assert_eq!(doc["content"], "# Q3 plan\n\nShip **cedar** 0.4.\n");
+    assert_eq!(doc["file"]["name"], "Q3 plan");
+    assert_eq!(doc["truncated"], false);
+    assert!(doc.get("nextOffset").is_none());
+
+    // A PDF isn't text: the error says what to do instead.
+    let err = tool_result(&app, 3);
+    assert_eq!(err["is_error"], true);
+    assert!(
+        err["content"]
+            .as_str()
+            .unwrap()
+            .contains("drive_download_file"),
+        "{err}"
+    );
+
+    // Downloads land in the workspace, a Doc as docx unless asked otherwise.
+    assert_eq!(
+        tool_result(&app, 4)["content"],
+        "saved invoice.pdf to in/invoice.pdf: 13 bytes, application/pdf"
+    );
+    assert_eq!(tool_result(&app, 5)["content"].as_str().unwrap(), "saved Q3 plan to plan.docx: 12 bytes, application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    let files = app.factory.sandbox(0).files.lock().unwrap().clone();
+    assert_eq!(files["in/invoice.pdf"], b"%PDF-1.4 fake");
+    assert_eq!(files["plan.docx"], b"PK fake docx");
+
+    // The spreadsheet's tabs, then a tab by name in row windows, then an explicit range.
+    let spreadsheet = result_json(&app, 6);
+    assert_eq!(spreadsheet["title"], "Budget");
+    assert_eq!(spreadsheet["sheets"][1]["title"], "Notes");
+    assert_eq!(spreadsheet["sheets"][1]["hidden"], true);
+    let rows = result_json(&app, 7);
+    assert_eq!(rows["rows"][0], json!(["row 1", 10, "x"]));
+    assert_eq!(rows["rowCount"], 3);
+    assert_eq!(rows["more"], true);
+    assert_eq!(rows["nextStartRow"], 4);
+    let ranges = mock.requests("/sheets/sheet-1/values");
+    assert_eq!(ranges[0].0, "/sheets/sheet-1/values/'Ana''s'!1:3");
+    assert!(
+        ranges[0].1.contains("valueRenderOption=FORMATTED_VALUE"),
+        "{}",
+        ranges[0].1
+    );
+    assert_eq!(ranges[1].0, "/sheets/sheet-1/values/2026!A1:C2");
+    assert!(
+        ranges[1].1.contains("valueRenderOption=UNFORMATTED_VALUE"),
+        "{}",
+        ranges[1].1
+    );
+    let explicit = result_json(&app, 8);
+    assert_eq!(explicit["more"], false);
+    assert!(explicit.get("nextStartRow").is_none());
+}
+
+/// A query string with its percent-encoding and `+` undone, for assertions.
+fn urlencoding_decode(q: &str) -> String {
+    let bytes = q.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap();
+                out.push(u8::from_str_radix(hex, 16).unwrap());
+                i += 3;
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).unwrap()
 }
 
 #[tokio::test]

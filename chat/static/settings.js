@@ -25,6 +25,8 @@
 
 const cedarSettings = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
+  /** The tool groups that act for the connected Google account; their single tools can be chosen. */
+  const GOOGLE_GROUPS = ['gmail', 'calendar', 'drive', 'sheets'];
   // A model's reply limit when it is registered without one, and the highest cedar takes.
   const DEFAULT_MAX_TOKENS = 16384;
   const MAX_MAX_TOKENS = 1000000;
@@ -162,7 +164,7 @@ const cedarSettings = (() => {
         onChange(state);
       });
 
-      const single = detailed && (g.id === 'gmail' || g.id === 'calendar') && g.tools?.length;
+      const single = detailed && GOOGLE_GROUPS.includes(g.id) && g.tools?.length;
       if (single) {
         const details = el('details', 'cedar-set-single');
         details.open = v instanceof Set;
@@ -299,7 +301,7 @@ const cedarSettings = (() => {
     const main = el('div', 'cedar-set-row-main');
     const sub = el('span', 'cedar-set-row-sub');
     const side = el('span', 'cedar-set-row-side');
-    const single = (g.id === 'gmail' || g.id === 'calendar') && g.tools?.length;
+    const single = GOOGLE_GROUPS.includes(g.id) && g.tools?.length;
     let singles = null;
     const syncSwitch = () => {
       const v = toolState.get(g.id);
@@ -1637,6 +1639,11 @@ const cedarSettings = (() => {
     }
     if (g.configured) side.append(badge(g.account || tr('settings.google.connected'), 'ok'));
     else side.append(badge(tr('settings.google.notConnected')));
+    if (g.missing_scopes?.length) {
+      // Tools added since the account was connected ask for more than it granted.
+      const names = g.missing_scopes.map((s) => s.replace('https://www.googleapis.com/auth/', ''));
+      main.append(el('small', 'cedar-set-hint cedar-set-warn-text', tr('settings.google.missingScopes', { scopes: names.join(', ') })));
+    }
     if (!status.storage) return row;
     if (!g.client?.configured) {
       main.append(el('small', 'cedar-set-hint', tr('settings.google.needsClient')));
