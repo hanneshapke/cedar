@@ -277,7 +277,7 @@ remove the tool.
 | `CHAT_ACCESS_TOKEN` | unset | If set, the page asks for this token and the API requires it |
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
 | `CHAT_MODELS_ACCESS` | `users` | Who may add, change and remove [the models](#models): `users` (everyone the access token lets in) or `admins` (the admin token; set this on a server several people use). API keys and the Google account stay with admins either way |
-| `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback` |
+| `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, except for a browser that opened the chat at a loopback address (`127.0.0.1`, `localhost`), which is sent back to that address |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
@@ -595,8 +595,12 @@ and the error is relayed.
 Settings → **Server** is where the API keys go. Without `CHAT_ADMIN_TOKEN` it only explains how
 to turn it on and which tool groups lack a key. With it, the page is unlocked with that token for
 the browser session and manages cedar's Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
-as its last four characters) and its Google account ("Connect Google" goes through Google's
-consent page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`). They are stored by cedar,
+as its last four characters), its Google OAuth client (the ID and secret of a client made in your
+own Google Cloud project, or the JSON file the console downloads pasted into the form; the page
+walks through making one) and its Google account ("Connect Google" goes through Google's consent
+page and back to `CHAT_PUBLIC_URL/api/oauth/google/callback`, or, for a browser on the chat's own
+computer that opened it at a loopback address, back to that address, which a *Desktop app* client
+accepts without registration). They are stored by cedar,
 encrypted, and take effect on the next message without a restart. This needs this server's
 `CEDAR_API_KEY` in cedar's `CEDAR_ADMIN_KEYS`, and cedar's `CEDAR_SECRET_KEY` for anything that is
 a secret; see [Models](../README.md#models) and [Integrations](../README.md#integrations). Keys set
@@ -717,6 +721,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/integrations/marketplace` | Admin: the [community tool](../README.md#community-tools) registry's tools (`?refresh=true` to skip cedar's cache) |
 | `POST /api/integrations/marketplace/{name}/install` | Admin: install or update a community tool; the body is cedar's `{"accept": {...}}`, passed through |
 | `DELETE /api/integrations/marketplace/{name}` | Admin: uninstall a community tool |
+| `PUT` / `DELETE /api/integrations/google/client` | Admin: save (`{"client_id", "client_secret"}`) or remove cedar's Google OAuth client; the answer carries the `redirect_uri` like the status does |
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |
 | `GET /api/oauth/google/callback` | Where Google sends the browser back. Needs no token: the single-use `state` cedar issued for the admin's "Connect Google" is the check. Redirects to `/?integrations=connected` or `/?integrations=error&message=…` |

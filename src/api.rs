@@ -212,6 +212,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::delete(delete_google),
         )
         .route(
+            "/admin/integrations/google/client",
+            axum::routing::put(put_google_client).delete(delete_google_client),
+        )
+        .route(
             "/admin/integrations/google/authorize",
             post(authorize_google),
         )
@@ -977,6 +981,35 @@ async fn delete_model(
 ) -> Result<StatusCode, AppError> {
     require_admin(admin)?;
     state.integrations.remove_model(&id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GoogleClientBody {
+    client_id: String,
+    client_secret: String,
+}
+
+async fn put_google_client(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<GoogleClientBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    state
+        .integrations
+        .set_google_client(&body.client_id, &body.client_secret)
+        .await?;
+    Ok(Json(state.integrations.status().await?))
+}
+
+async fn delete_google_client(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state.integrations.remove_google_client().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

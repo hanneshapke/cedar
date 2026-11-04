@@ -174,6 +174,13 @@ admin token, so Settings works without typing anything. A phone or a browser tha
 the access token can add models too (cedar-chat's default, `CHAT_MODELS_ACCESS=users`); the API
 keys and the Google account still need the admin token.
 
+**Gmail and Calendar.** No environment variables: under *OAuth client* on the Server page, follow
+the three steps (a Google Cloud project with the Gmail and Calendar APIs, a published consent
+screen, an OAuth client of the kind *Desktop app*), paste the client's ID and secret or the JSON
+file the console downloads, then *Connect Google*. Google sends the window back to
+`http://127.0.0.1:13000/api/oauth/google/callback`, which a Desktop app client accepts as it is;
+nothing to register. See [Gmail and Calendar](../README.md#gmail-and-calendar).
+
 **Tools from the registry.** The app runs cedar with personal tools in `~/.cedar/tools`
 (`TOOLS_DIR`) and the [community tool registry](../registry/README.md) in this repository
 (`TOOLS_REGISTRY_URL`). Under the tool list in the chat's Settings → Tools, *Tool registry* links
@@ -348,10 +355,11 @@ the page, so the access token is still what protects it;
 tailnet port than 443 (when this computer already serves something there), set
 `tailscale_https_port` in `config.json`.
 
-With the address set as `CHAT_PUBLIC_URL`, *Connect Google* sends Google back to
-`https://<computer>.<tailnet>.ts.net/api/oauth/google/callback`. Add that redirect URI to your
-Google OAuth client before you connect, or set your own `CHAT_PUBLIC_URL` in `chat_env`, which
-wins.
+With the address set as `CHAT_PUBLIC_URL`, *Connect Google* from a phone's browser sends Google
+back to `https://<computer>.<tailnet>.ts.net/api/oauth/google/callback`, which needs a *Web
+application* OAuth client with that redirect URI (or your own `CHAT_PUBLIC_URL` in `chat_env`,
+which wins). Connecting from Cedar's own window keeps using the loopback address, so a *Desktop
+app* client keeps working.
 
 For push notifications on the phone, set up **iPhone push** or **Android push** in the chat's
 Settings → Notifications (see [iOS/README.md](../iOS/README.md#push-notifications) and

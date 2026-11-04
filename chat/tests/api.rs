@@ -525,6 +525,16 @@ async fn delete_integration(s: Shared, which: &str) -> axum::response::Response 
     StatusCode::NO_CONTENT.into_response()
 }
 
+async fn put_google_client(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "put_google_client", body.clone()).await {
+        return refused;
+    }
+    if body["client_id"] == "bad" {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "Google doesn't accept this client ID and secret");
+    }
+    Json(json!({ "google": { "enabled": true, "configured": false, "client": { "configured": true, "source": "ui", "client_id": body["client_id"] } } })).into_response()
+}
+
 async fn authorize(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
     if let Some(refused) = admin(&s, "authorize", body.clone()).await {
         return refused;
@@ -638,6 +648,10 @@ impl Harness {
                 axum::routing::put(put_serpapi).delete(|State(s): State<Shared>| delete_integration(s, "serpapi")),
             )
             .route("/v1/admin/integrations/google", axum::routing::delete(|State(s): State<Shared>| delete_integration(s, "google")))
+            .route(
+                "/v1/admin/integrations/google/client",
+                axum::routing::put(put_google_client).delete(|State(s): State<Shared>| delete_integration(s, "google_client")),
+            )
             .route("/v1/admin/integrations/google/authorize", post(authorize))
             .route("/v1/admin/integrations/google/callback", post(callback))
             .route(
@@ -1986,6 +2000,17 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/google", Some("admin"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    // The Google OAuth client goes through to cedar, which checks it; the answer carries the
+    // redirect URI to register, like the status does.
+    let (status, err) = admin_call(&h, Method::PUT, "/api/integrations/google/client", Some("admin"), Some(json!({ "client_id": "bad", "client_secret": "s" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("doesn't accept"));
+    let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/google/client", Some("admin"), Some(json!({ "client_id": "c-1.apps", "client_secret": "s-1" }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["google"]["client"]["client_id"], "c-1.apps");
+    assert_eq!(saved["google"]["redirect_uri"], "https://chat.example/api/oauth/google/callback");
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/google/client", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, listed) = admin_call(&h, Method::GET, "/api/integrations/models", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK, "{listed}");
     assert_eq!(listed["models"][0]["id"], "model-a");
@@ -2026,14 +2051,41 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings"]);
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "put_google_client", "put_google_client", "delete_google_client", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings"]);
     assert_eq!(calls[4].1, json!({ "api_key": "serp-5678" }), "the key goes through");
-    assert_eq!(calls[8].1, query, "the body goes through as it is");
-    assert_eq!(calls[10].1, spec, "the body goes through as it is");
+    assert_eq!(calls[8].1, json!({ "client_id": "c-1.apps", "client_secret": "s-1" }), "the client goes through");
+    assert_eq!(calls[11].1, query, "the body goes through as it is");
+    assert_eq!(calls[13].1, spec, "the body goes through as it is");
 
     let (status, connect) = admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(connect["url"].as_str().unwrap().ends_with("redirect_uri=https://chat.example/api/oauth/google/callback"));
+
+    // A browser on this computer (the desktop app's window) is sent back to the loopback address
+    // it opened the chat at, which a Desktop-app OAuth client accepts without registration; the
+    // status it saw says the same. Any other origin keeps CHAT_PUBLIC_URL.
+    let with_origin = |method: Method, uri: &str, header: &'static str, value: &'static str| {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("authorization", "Bearer access")
+            .header("x-admin-token", "admin")
+            .header(header, value)
+            .body(Body::empty())
+            .unwrap();
+        let h = &h;
+        async move {
+            let (status, _, text) = h.call_full(req).await;
+            (status, serde_json::from_str::<Value>(&text).unwrap_or(Value::Null))
+        }
+    };
+    let (status, connect) = with_origin(Method::POST, "/api/integrations/google/connect", "origin", "http://127.0.0.1:13000").await;
+    assert_eq!(status, StatusCode::OK, "{connect}");
+    assert!(connect["url"].as_str().unwrap().ends_with("redirect_uri=http://127.0.0.1:13000/api/oauth/google/callback"), "{connect}");
+    let (_, seen) = with_origin(Method::GET, "/api/integrations", "referer", "http://localhost:3000/?x=1").await;
+    assert_eq!(seen["google"]["redirect_uri"], "http://localhost:3000/api/oauth/google/callback");
+    let (_, seen) = with_origin(Method::GET, "/api/integrations", "origin", "https://phone.tailnet.ts.net").await;
+    assert_eq!(seen["google"]["redirect_uri"], "https://chat.example/api/oauth/google/callback");
 
     // cedar refusing chat's key is explained, not passed on as the browser's fault.
     *h.cedar.not_admin.lock().unwrap() = true;

@@ -609,7 +609,7 @@ const cedarSettings = (() => {
     if (!status.storage) {
       parts.push(note(tr('settings.server.noStorage')));
     }
-    parts.push(block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.title'), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
+    parts.push(block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.block'), googleClientRow(status), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
     const tools = await personalToolsBlock();
     if (tools) parts.push(block(tr('settings.server.personalTools'), tools));
     const market = await marketplaceBlock();
@@ -1497,6 +1497,131 @@ const cedarSettings = (() => {
     return row;
   }
 
+  const GOOGLE_CONSOLE = {
+    apis: 'https://console.cloud.google.com/apis/library',
+    consent: 'https://console.cloud.google.com/auth/overview',
+    credentials: 'https://console.cloud.google.com/apis/credentials',
+  };
+
+  /** `text` with its `{link}` replaced by a link to `href` that reads `label`, as nodes. */
+  function withLink(text, href, label) {
+    const [before, after] = text.split('{link}');
+    const link = el('a', '', label);
+    link.href = href;
+    link.target = '_blank';
+    link.rel = 'noreferrer';
+    return [before, link, after ?? ''];
+  }
+
+  /** `id` short enough for a badge: the number Google puts in front of `-….apps.googleusercontent.com`. */
+  function shortClientId(id = '') {
+    const m = /^(\d+)-/.exec(id);
+    const short = m ? `${m[1]}-…` : id.length > 18 ? `${id.slice(0, 16)}…` : id;
+    const b = badge(short, 'ok');
+    b.title = id;
+    return b;
+  }
+
+  /**
+   * The Google OAuth client "Connect Google" goes through: which one is saved and where it came
+   * from, how to make one in the Google Cloud console, and a form that takes its ID and secret
+   * (or the JSON file the console downloads, pasted into either field). The redirect URI the
+   * sign-in uses is shown, for a client of the Web application kind; a Desktop app client
+   * accepts the loopback address without it.
+   */
+  function googleClientRow(status) {
+    const g = status.google || {};
+    const c = g.client || {};
+    const { row, main, side } = integrationRow(tr('settings.googleClient.title'), tr('settings.googleClient.what'));
+    if (!g.enabled) {
+      side.append(badge(tr('settings.off')));
+      main.append(el('small', '', tr('settings.google.disabled')));
+      return row;
+    }
+    if (c.source === 'env') {
+      side.append(shortClientId(c.client_id), badge(tr('settings.byEnv')));
+      return row;
+    }
+    if (c.configured) side.append(shortClientId(c.client_id));
+    else side.append(badge(tr('settings.notSet')));
+    if (!status.storage) return row;
+
+    if (!c.configured) {
+      const steps = el('ol', 'cedar-set-steps');
+      const step = (nodes) => { const li = el('li'); li.append(...nodes); steps.append(li); };
+      step(withLink(tr('settings.googleClient.step1'), GOOGLE_CONSOLE.apis, tr('settings.googleClient.step1Link')));
+      step(withLink(tr('settings.googleClient.step2'), GOOGLE_CONSOLE.consent, tr('settings.googleClient.step2Link')));
+      step(withLink(tr('settings.googleClient.step3'), GOOGLE_CONSOLE.credentials, tr('settings.googleClient.step3Link')));
+      main.append(steps);
+    }
+    if (g.redirect_uri) {
+      const hint = el('small', 'cedar-set-hint');
+      const [before, after] = tr('settings.googleClient.redirect').split('{uri}');
+      hint.append(before, el('code', '', g.redirect_uri), after ?? '');
+      main.append(hint);
+    }
+
+    const edit = el('form', 'cedar-set-inline');
+    edit.hidden = true;
+    const idInput = el('input');
+    idInput.type = 'text';
+    idInput.autocomplete = 'off';
+    idInput.spellcheck = false;
+    idInput.placeholder = tr('settings.googleClient.id');
+    idInput.setAttribute('aria-label', tr('settings.googleClient.id'));
+    const secretInput = el('input');
+    secretInput.type = 'password';
+    secretInput.autocomplete = 'off';
+    secretInput.placeholder = tr('settings.googleClient.secret');
+    secretInput.setAttribute('aria-label', tr('settings.googleClient.secret'));
+    // The console's "Download JSON" file, pasted whole into either field, fills both.
+    const fromJson = (e) => {
+      const text = e.clipboardData?.getData('text') || '';
+      if (!text.trim().startsWith('{')) return;
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { return; }
+      const client = parsed?.installed || parsed?.web || parsed;
+      if (!client?.client_id || !client?.client_secret) return;
+      e.preventDefault();
+      idInput.value = client.client_id;
+      secretInput.value = client.client_secret;
+      deps.toast(tr('settings.googleClient.pasted'));
+    };
+    idInput.addEventListener('paste', fromJson);
+    secretInput.addEventListener('paste', fromJson);
+    const saveBtn = button(tr('settings.checkSave'), () => edit.requestSubmit(), 'primary');
+    edit.append(idInput, secretInput, saveBtn, button(tr('settings.cancel'), () => { edit.hidden = true; }));
+    edit.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!idInput.value.trim() || !secretInput.value.trim()) return;
+      saveBtn.disabled = true;
+      saveBtn.textContent = tr('settings.checking');
+      try {
+        await adminApi('PUT', '/integrations/google/client', { client_id: idInput.value.trim(), client_secret: secretInput.value.trim() });
+        deps.toast(tr('settings.googleClient.saved'));
+        renderIntegrations();
+        refreshTools();
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = tr('settings.checkSave');
+        deps.toast(err.message);
+      }
+    });
+    side.append(button(c.configured ? tr('settings.replace') : tr('settings.googleClient.add'), () => { edit.hidden = false; idInput.focus(); }, c.configured ? 'copy-btn' : 'primary'));
+    if (c.configured) {
+      side.append(button(tr('settings.remove'), async () => {
+        if (!(await cedarConfirm(tr('settings.googleClient.confirmRemove'), { ok: tr('settings.remove') }))) return;
+        try {
+          await adminApi('DELETE', '/integrations/google/client');
+          renderIntegrations();
+          refreshTools();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    }
+    main.append(edit);
+    return row;
+  }
+
   function googleRow(status) {
     const g = status.google || {};
     const names = (g.services || []).map((s) => s[0].toUpperCase() + s.slice(1));
@@ -1504,7 +1629,6 @@ const cedarSettings = (() => {
     const { row, main, side } = integrationRow(tr('settings.google.title'), tr('settings.google.desc', { services }));
     if (!g.enabled) {
       side.append(badge(tr('settings.off')));
-      main.append(el('small', '', tr('settings.google.disabled')));
       return row;
     }
     if (g.source === 'env') {
@@ -1514,6 +1638,10 @@ const cedarSettings = (() => {
     if (g.configured) side.append(badge(g.account || tr('settings.google.connected'), 'ok'));
     else side.append(badge(tr('settings.google.notConnected')));
     if (!status.storage) return row;
+    if (!g.client?.configured) {
+      main.append(el('small', 'cedar-set-hint', tr('settings.google.needsClient')));
+      return row;
+    }
     if (g.configured) {
       side.append(button(tr('settings.google.disconnect'), async () => {
         if (!(await cedarConfirm(tr('settings.google.confirmDisconnect'), { ok: tr('settings.google.disconnect') }))) return;
@@ -1530,12 +1658,6 @@ const cedarSettings = (() => {
         location.assign(url);
       } catch (err) { deps.toast(err.message); }
     }, g.configured ? 'copy-btn' : 'primary'));
-    if (g.redirect_uri) {
-      const hint = el('small', 'cedar-set-hint');
-      const [before, after] = tr('settings.google.redirect').split('{uri}');
-      hint.append(before, el('code', '', g.redirect_uri), after ?? '');
-      main.append(hint);
-    }
     return row;
   }
 

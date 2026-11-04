@@ -237,6 +237,22 @@ impl CedarClient {
         admin(self.send(req).await.map(drop))
     }
 
+    /// Save the Google OAuth client "Connect Google" goes through; cedar checks it with Google
+    /// first and answers with the integrations status.
+    pub async fn set_google_client(&self, client_id: &str, client_secret: &str) -> Result<Value, AppError> {
+        let req = self
+            .http
+            .put(self.url("/admin/integrations/google/client"))
+            .json(&json!({ "client_id": client_id, "client_secret": client_secret }));
+        admin(self.json(req).await)
+    }
+
+    /// Forget the saved Google OAuth client, and with it the account it connected.
+    pub async fn remove_google_client(&self) -> Result<(), AppError> {
+        let req = self.http.delete(self.url("/admin/integrations/google/client")).timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
+    }
+
     /// The Google sign-in URL for "Connect Google"; Google sends the browser back to `redirect_uri`.
     pub async fn google_authorize(&self, redirect_uri: &str) -> Result<String, AppError> {
         let req = self.http.post(self.url("/admin/integrations/google/authorize")).json(&json!({ "redirect_uri": redirect_uri }));

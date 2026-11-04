@@ -85,11 +85,12 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
 | `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
-| `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key, a Best Buy key and a SerpApi key are set and a Google account connected, and where from (`bestbuy` also says whether `PRODUCTS` is on, `serpapi` whether `FLIGHTS` is). Never returns a secret. |
+| `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key, a Best Buy key and a SerpApi key are set, a Google OAuth client is set up (`google.client`, with its `client_id`) and a Google account connected, and where from (`bestbuy` also says whether `PRODUCTS` is on, `serpapi` whether `FLIGHTS` is). Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
 | `PUT` / `DELETE /v1/admin/integrations/bestbuy` | Admin: save a Best Buy key (`{"api_key"}`; checked with one small product search first), which adds Best Buy's catalog to `search_products`, or remove it. |
 | `PUT` / `DELETE /v1/admin/integrations/serpapi` | Admin: save a SerpApi key (`{"api_key"}`; checked against SerpApi's account endpoint first, which costs no search), which turns `search_flights` on, or remove it. |
-| `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. |
+| `PUT` / `DELETE /v1/admin/integrations/google/client` | Admin: save the Google OAuth client "Connect Google" goes through (`{"client_id", "client_secret"}`; checked against Google's token endpoint first) or remove it, which also disconnects the account it connected. Saving a different client disconnects the account too. |
+| `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. `409` until a client is set up. |
 | `POST /v1/admin/integrations/google/callback` | Admin: finish it with the `{"state", "code"}` Google sent to the redirect URI. Returns `{account}`. |
 | `DELETE /v1/admin/integrations/google` | Admin: disconnect the Google account. |
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (database + Docker, and the OpenShell gateway when sandboxes run on it). No auth. |
@@ -696,9 +697,10 @@ docker rm -f cb
 
 ### Gmail and Calendar
 
-With `GMAIL=on` or `CALENDAR=on`, cedar offers tools for one Google account's mail and calendar.
-They run in the cedar process (the sandbox has no network, and the Google tokens stay out of it)
-and use one of two backends, chosen with `GOOGLE_BACKEND`:
+cedar offers tools for one Google account's mail and calendar once a Google OAuth client is set
+up and an account connected through it; `GMAIL=off` or `CALENDAR=off` removes the tools. They run
+in the cedar process (the sandbox has no network, and the Google tokens stay out of it) and use
+one of two backends, chosen with `GOOGLE_BACKEND`:
 
 - `api` (the default): cedar calls the [Gmail](https://developers.google.com/workspace/gmail/api)
   and [Calendar](https://developers.google.com/workspace/calendar/api) REST APIs itself. This
@@ -713,28 +715,46 @@ and use one of two backends, chosen with `GOOGLE_BACKEND`:
 The tools have the same names with either backend (`gmail_search_threads`,
 `calendar_list_events`, ...), so `GMAIL_TOOLS` and `CALENDAR_TOOLS` mean the same.
 
-Both backends act for one Google account, through an OAuth client and a refresh token you give
-cedar:
+Both backends act for one Google account, through an OAuth client of your own (Google has no
+client that any cedar could ship: one for Gmail's scopes needs Google's app verification) and a
+refresh token for the account. The usual way is the chat UI, which the desktop app sets up for
+you; the environment works too, for a server without a chat or one you configure by hand.
 
-1. In a Google Cloud project, enable the APIs:
-   `gcloud services enable gmail.googleapis.com calendar-json.googleapis.com --project=PROJECT_ID`
-   (for `GOOGLE_BACKEND=mcp`, `gmailmcp.googleapis.com calendarmcp.googleapis.com` as well).
-2. Set up the OAuth consent screen (Google Auth Platform in the console): add the scopes below,
-   and either add the account as a test user or publish the app (see step 4).
-3. Create an OAuth client (APIs & Services → Credentials, type *Web application*, with
-   `https://developers.google.com/oauthplayground` as an authorized redirect URI if you use the
-   Playground in the next step) and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to its ID
-   and secret.
-4. Get a refresh token for the account with the scopes the tools need, for example with the
-   [OAuth 2.0 Playground](https://developers.google.com/oauthplayground): in its settings cog
-   choose *Use your own OAuth credentials* and enter the client's ID and secret first, or the
-   token belongs to the Playground's client and Google refuses it (`unauthorized_client`). The
-   default tools need `https://www.googleapis.com/auth/gmail.readonly`,
-   `https://www.googleapis.com/auth/gmail.compose` (drafts), and
-   `https://www.googleapis.com/auth/calendar.readonly`. Set `GOOGLE_REFRESH_TOKEN` to it. While the
-   OAuth consent screen is in *Testing*, Google expires refresh tokens after 7 days; publish it
-   to *In production* (for your own account you can click through the "unverified app" warning)
-   to get one that lasts.
+**From the chat UI** (Settings → Server, which needs `CEDAR_SECRET_KEY` and an admin key, see
+[Integrations](#integrations); the desktop app has both):
+
+1. In a Google Cloud project, enable the Gmail API and the Google Calendar API
+   (`gcloud services enable gmail.googleapis.com calendar-json.googleapis.com --project=PROJECT_ID`;
+   for `GOOGLE_BACKEND=mcp`, `gmailmcp.googleapis.com calendarmcp.googleapis.com` as well).
+2. Set up the consent screen (Google Auth Platform in the console) with the scopes below, and
+   publish it (*In production*). While it stays in *Testing*, Google expires the refresh token
+   after 7 days and you have to connect again every week; for your own account you can click
+   through the "unverified app" warning once.
+3. Create an OAuth client (APIs & Services → Credentials) of the kind *Desktop app*. Under
+   *OAuth client* on the Server page, choose *Add client* and enter its ID and secret, or paste
+   the JSON file the console offers to download into either field, which fills both. cedar
+   checks the client with Google's token endpoint and keeps the secret encrypted.
+4. *Connect Google* sends you to Google's consent page and back; cedar keeps the refresh token it
+   gets, with the account's address. A browser on the same computer (the desktop app's window)
+   is sent back to the chat's loopback address, which a Desktop app client accepts without
+   registering it. From another device, or with a *Web application* client, the chat sends
+   Google to `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, which the Server page shows; add it
+   to the client's authorized redirect URIs.
+
+Replacing the client with a different one, or removing it, disconnects the account, since the
+token belongs to the client that got it.
+
+**From the environment**: set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to the client's ID
+and secret (the Server page then shows the client as managed by the environment and the account
+can still be connected from it, given `CEDAR_SECRET_KEY`), and optionally `GOOGLE_REFRESH_TOKEN`
+to a token you got yourself, for example with the
+[OAuth 2.0 Playground](https://developers.google.com/oauthplayground): in its settings cog choose
+*Use your own OAuth credentials* and enter the client's ID and secret first, or the token belongs
+to the Playground's client and Google refuses it (`unauthorized_client`). That needs a *Web
+application* client with `https://developers.google.com/oauthplayground` as an authorized
+redirect URI. The default tools need `https://www.googleapis.com/auth/gmail.readonly`,
+`https://www.googleapis.com/auth/gmail.compose` (drafts), and
+`https://www.googleapis.com/auth/calendar.readonly`.
 
 cedar trades the refresh token for an access token when it first needs one and again shortly
 before that expires, and asks for a new one once if Google rejects it.
@@ -798,9 +818,9 @@ the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_UR
 
 ### Integrations
 
-Instead of putting `BRAVE_API_KEY`, `BESTBUY_API_KEY`, `SERPAPI_API_KEY` and `GOOGLE_REFRESH_TOKEN` in the environment, an
-admin can set them up through the API, which is what the chat UI's Settings → Server does, next
-to the models:
+Instead of putting `BRAVE_API_KEY`, `BESTBUY_API_KEY`, `SERPAPI_API_KEY`, `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` in the environment, an admin can set them up
+through the API, which is what the chat UI's Settings → Server does, next to the models:
 
 1. Set `CEDAR_SECRET_KEY` (`openssl rand -hex 32`). Credentials saved through the API (a model
    server's API key included) are encrypted with it (XChaCha20-Poly1305) in cedar's database; keep
@@ -809,13 +829,15 @@ to the models:
    be registered without it.
 2. List the keys that may manage models and integrations in `CEDAR_ADMIN_KEYS`. For the chat UI
    that is cedar-chat's `CEDAR_API_KEY`. Other keys get `403` on `/v1/admin/...`.
-3. For Google, keep `GMAIL` / `CALENDAR`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the
-   environment (they identify your deployment) and leave `GOOGLE_REFRESH_TOKEN` unset. Add the
-   chat's callback, `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, as an authorized redirect URI of
-   the OAuth client. "Connect Google" then sends you to Google's consent page and cedar keeps the
-   refresh token it gets back, along with the account's address.
+3. For Google, save the OAuth client's ID and secret under *OAuth client* (`PUT
+   /v1/admin/integrations/google/client`), then "Connect Google" sends you to Google's consent
+   page and cedar keeps the refresh token it gets back, along with the account's address. See
+   [Gmail and Calendar](#gmail-and-calendar) for the client, and for the redirect URI a *Web
+   application* client needs. A client in the environment (`GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET`) is used instead of a saved one; leave `GOOGLE_REFRESH_TOKEN` unset to
+   connect the account from the UI.
 
-A saved Brave or Best Buy key is checked with one search before it is kept, a SerpApi key with SerpApi's account endpoint (which uses up no search). Saving or removing a credential
+A saved Brave or Best Buy key is checked with one search before it is kept, a SerpApi key with SerpApi's account endpoint (which uses up no search), a Google client against Google's token endpoint. Saving or removing a credential
 rebuilds the tool set at once: the next run sees the change, runs already going keep the tools they
 started with. A value set in the environment always wins; the API reports it as `"source": "env"`
 and refuses to change it.
