@@ -246,20 +246,35 @@ html{scroll-padding-top:96px}
         <span style="font-size:13px;line-height:1.45;color:#8a7f73" data-i18n-html="index.apps.win.note">Not code-signed yet, so Windows warns the first time: choose <em>More info</em>, then <em>Run anyway</em>.</span>
       </div>
     </div>
-    <div id="linux" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center;background:#231f1b;color:#fbf4ea;border-radius:28px;padding:32px;box-shadow:0 20px 50px rgba(60,30,10,.18)">
-      <div style="display:flex;flex-direction:column;gap:12px">
+    <div id="linux" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:start;background:#231f1b;color:#fbf4ea;border-radius:28px;padding:32px;box-shadow:0 20px 50px rgba(60,30,10,.18)">
+      <div style="display:flex;flex-direction:column;gap:16px">
         <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.02em" data-i18n="index.apps.linux.title">Cedar for Linux</h3>
         <p style="margin:0;font-size:17px;line-height:1.5;color:#d9cfc2;text-wrap:pretty" data-i18n="index.apps.linux.body">Got a GPU box or a home server, like an NVIDIA DGX Spark? Download Cedar's two programs, run them next to vLLM, and open the chat in your browser or on your phone. Same sealed boxes, same guardrails.</p>
-        <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <a href="{{ linuxX64Href }}" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fff" data-i18n="index.apps.linux.x64">Download for x64</a>
-          <a href="{{ linuxArmHref }}" style="background:#fbf4ea;color:#231f1b;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#231f1b" data-i18n="index.apps.linux.arm">Download for arm64</a>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#8a7f73" data-i18n="index.apps.linux.pick">1 · Pick your chip</span>
+          <div role="group" aria-label="Processor" data-i18n-attr="aria-label:index.apps.linux.pickLabel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px">
+            <sc-for list="{{ linuxTabs }}" as="t" hint-placeholder-count="2">
+              <button type="button" onclick="{{ t.pick }}" aria-pressed="{{ t.pressed }}" style="font:inherit;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:3px;border-radius:16px;padding:12px 16px;border:2px solid {{ t.border }};background:{{ t.bg }};color:{{ t.fg }};transition:background .2s,color .2s,transform .2s" style-hover="transform:translateY(-2px)">
+                <span style="font-weight:700;font-size:16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ t.name }}</span>
+                <span style="font-size:13px;line-height:1.4;opacity:.85">{{ t.sub }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <span style="font-size:13px;line-height:1.45;color:#a89d90"><span data-i18n="index.apps.linux.unsure">Not sure which? Run</span> <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#fbf4ea">uname -m</code> <span data-i18n="index.apps.linux.unsureAnswer">in a terminal: x86_64 means x64, aarch64 means arm64.</span></span>
         </div>
-        <span style="font-size:13px;line-height:1.45;color:#a89d90"><span data-i18n="index.apps.linux.distros">For Ubuntu 22.04, Debian 12 and newer. arm64 is the one for a DGX Spark. Rather build it yourself?</span> <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#fbf4ea">scripts/cedar-stack.sh</code> <span data-i18n="index.apps.linux.script">builds from source and starts it all.</span></span>
-        <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="install.html?os=linux" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff" data-i18n="index.guideArrow">Step-by-step install guide →</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff" data-i18n="index.apps.linux.guide">Read the Linux guide →</a></span>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#8a7f73" data-i18n="index.apps.linux.get">2 · Download, or install from the terminal</span>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <a href="{{ linuxHref }}" style="background:#e5553a;color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:15px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fff">{{ linuxDl }}</a>
+            <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#a89d90">{{ linuxFile }}</code>
+          </div>
+          <span style="font-size:13px;line-height:1.45;color:#a89d90"><span data-i18n="index.apps.linux.distros">For Ubuntu 22.04, Debian 12 and newer. Rather build it yourself?</span> <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#fbf4ea">scripts/cedar-stack.sh</code> <span data-i18n="index.apps.linux.script">builds from source and starts it all.</span></span>
+        </div>
+        <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="{{ linuxGuideHref }}" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff" data-i18n="index.guideArrow">Step-by-step install guide →</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="font-weight:600;font-size:16px;color:#f2a21c" style-hover="color:#fff" data-i18n="index.apps.linux.guide">Read the Linux guide →</a></span>
       </div>
-      <pre style="margin:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.7;color:#fbf4ea"><span style="color:#8a7f73" data-i18n="index.apps.linux.cmdDownload"># download and install (on arm64, swap in linux-arm64)</span>
+      <pre style="margin:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.7;color:#fbf4ea"><span style="color:#8a7f73">{{ linuxCmdComment }}</span>
 V={{ ver }}
-F=Cedar-$V-linux-x64
+F=Cedar-$V-linux-<mark style="background:rgba(242,162,28,.22);color:#f2a21c;padding:1px 5px;border-radius:5px;font-weight:700">{{ linuxArch }}</mark>   <span style="color:#8a7f73">{{ linuxCmdPicked }}</span>
 U=https://github.com/hanneshapke/cedar/releases/download
 curl -fLO $U/v$V/$F.tar.gz
 tar -xzf $F.tar.gz
@@ -397,7 +412,7 @@ sudo install $F/cedar* /usr/local/bin/
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;demoSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero demo&quot;}}">
 class Component extends DCLogic {
-  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', apk: '', ipa: '', linuxX64: '', linuxArm: '', ver: '', cmp: 'openclaw' };
+  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', apk: '', ipa: '', linuxX64: '', linuxArm: '', ver: '', linuxArch: 'x64', cmp: 'openclaw' };
   // Text comes from i18n/index.js (loaded before support.js creates this component).
   prompt = tr('index.demo.prompt');
   plan = [1, 2, 3, 4].map((n) => ({ title: tr('index.demo.step' + n), note: tr('index.demo.step' + n + '.note') }));
@@ -430,6 +445,7 @@ class Component extends DCLogic {
   }
   componentDidMount() {
     this.setState({ os: this.detectOS() });
+    this.detectLinuxArch();
     this.findInstallers();
     this.startDemo();
     this.io = new IntersectionObserver((es) => es.forEach((e) => {
@@ -456,6 +472,38 @@ class Component extends DCLogic {
     if (/Mac/.test(platform) || /Mac OS X/.test(ua)) return 'mac';
     if (/Linux|X11|CrOS/.test(platform + ua)) return 'linux';
     return '';
+  }
+  // Chromium on Linux says which chip it runs on; elsewhere the picker starts on x64, the common one.
+  async detectLinuxArch() {
+    try {
+      const d = navigator.userAgentData;
+      if (!d || !d.getHighEntropyValues) return;
+      const { architecture } = await d.getHighEntropyValues(['architecture']);
+      if (architecture === 'arm') this.setState({ linuxArch: 'arm64' });
+    } catch (e) { /* not told: keep x64 */ }
+  }
+  // The Linux section: one picker (x64 or arm64) drives the download button and the install commands.
+  linux(arch, ver) {
+    const releases = 'https://github.com/hanneshapke/cedar/releases/latest';
+    const who = tr(arch === 'arm64' ? 'index.apps.linux.whoArm' : 'index.apps.linux.whoX64');
+    return {
+      linuxArch: arch,
+      linuxTabs: ['x64', 'arm64'].map((a) => {
+        const on = a === arch;
+        return {
+          name: a, pressed: on ? 'true' : 'false',
+          sub: tr(a === 'arm64' ? 'index.apps.linux.tabArmSub' : 'index.apps.linux.tabX64Sub'),
+          pick: () => this.setState({ linuxArch: a }),
+          bg: on ? '#fbf4ea' : 'rgba(255,255,255,.06)', fg: on ? '#231f1b' : '#fbf4ea', border: on ? '#f2a21c' : 'rgba(255,255,255,.18)',
+        };
+      }),
+      linuxHref: (arch === 'arm64' ? this.state.linuxArm : this.state.linuxX64) || releases,
+      linuxDl: tr('index.apps.linux.download', { arch }),
+      linuxFile: `Cedar-${ver}-linux-${arch}.tar.gz`,
+      linuxGuideHref: `install.html?os=linux&arch=${arch}`,
+      linuxCmdComment: tr('index.apps.linux.cmdDownload', { arch, who }),
+      linuxCmdPicked: tr('index.apps.linux.cmdPicked'),
+    };
   }
   // The installers' names carry the version, so ask GitHub for the latest release's files.
   // Until that answers (or if it fails), the buttons go to the releases page.
@@ -527,10 +575,9 @@ class Component extends DCLogic {
       // The SideStore source this site publishes (docs/sidestore), and the link that adds it in SideStore.
       sourceUrl: new URL('sidestore.json', location.href).href,
       addSourceHref: 'sidestore://source?url=' + encodeURIComponent(new URL('sidestore.json', location.href).href),
-      linuxX64Href: this.state.linuxX64 || 'https://github.com/hanneshapke/cedar/releases/latest',
-      linuxArmHref: this.state.linuxArm || 'https://github.com/hanneshapke/cedar/releases/latest',
       // The newest release with Linux builds, until GitHub says which is latest.
       ver: this.state.ver || window.CEDAR_VERSION,
+      ...this.linux(this.state.linuxArch, this.state.ver || window.CEDAR_VERSION),
       showPlan: phase >= 1, showResult: phase === 3,
       statusLine: tr('index.demo.status.' + ['new', 'planning', 'working', 'done'][phase]),
       ...this.comparison(cmp),
