@@ -1864,24 +1864,46 @@
         }
       }
     },
-    "Access token (if the server has one)" : {
+    "About" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zugriffstoken (falls der Server eines hat)"
+            "value" : "Info"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Token de acceso (si el servidor tiene uno)"
+            "value" : "Acerca de"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jeton d'accès (si le serveur en a un)"
+            "value" : "À propos"
+          }
+        }
+      }
+    },
+    "Access Token" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zugriffstoken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token de acceso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeton d’accès"
           }
         }
       }
@@ -2070,6 +2092,34 @@
         }
       }
     },
+    "Allow in the Settings App" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In der Einstellungen-App erlauben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir en la app Configuración"
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir en la app Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoriser dans l’app Réglages"
+          }
+        }
+      }
+    },
     "Allowed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2180,6 +2230,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Répondre"
+          }
+        }
+      }
+    },
+    "App" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App"
+          }
+        }
+      }
+    },
+    "Applies at once. Automatic follows this device's language. Scheduled runs and notifications use the language too." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt sofort. „Automatisch“ folgt der Sprache dieses Geräts. Geplante Läufe und Benachrichtigungen verwenden die Sprache ebenfalls."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica al instante. «Automático» sigue el idioma de este dispositivo. Las ejecuciones programadas y las notificaciones también usan ese idioma."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S’applique immédiatement. « Automatique » suit la langue de cet appareil. Les exécutions planifiées et les notifications l’utilisent aussi."
           }
         }
       }
@@ -2404,28 +2498,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Automatique"
-          }
-        }
-      }
-    },
-    "Automatic follows this device's language. Scheduled runs and notifications use the language too." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "„Automatisch“ folgt der Sprache dieses Geräts. Geplante Läufe und Benachrichtigungen verwenden die Sprache ebenfalls."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "«Automático» sigue el idioma de este dispositivo. Las ejecuciones programadas y las notificaciones también usan este idioma."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "« Automatique » suit la langue de cet appareil. Les exécutions planifiées et les notifications utilisent aussi cette langue."
           }
         }
       }
@@ -2813,6 +2885,28 @@
         }
       }
     },
+    "Can't Reach the Server" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server nicht erreichbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede conectar con el servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serveur injoignable"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "localizations" : {
         "de" : {
@@ -3189,6 +3283,75 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conditions"
+          }
+        }
+      }
+    },
+    "Connected." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté."
+          }
+        }
+      }
+    },
+    "Connected. %lld model available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden. %lld Modell verfügbar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado. %lld modelo disponible."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté. %lld modèle disponible."
+          }
+        }
+      }
+    },
+    "Connected. %lld models available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden. %lld Modelle verfügbar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado. %lld modelos disponibles."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté. %lld modèles disponibles."
           }
         }
       }
@@ -3902,6 +4065,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Non démarrée"
+          }
+        }
+      }
+    },
+    "Discard Changes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen verwerfen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartar cambios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abandonner les modifications"
+          }
+        }
+      }
+    },
+    "Discard Changes?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen verwerfen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Descartar los cambios?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abandonner les modifications ?"
           }
         }
       }
@@ -4920,6 +5127,28 @@
         }
       }
     },
+    "Hide token" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token verbergen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar el token"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Masquer le jeton"
+          }
+        }
+      }
+    },
     "Hides the flights" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5029,35 +5258,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Humidité"
-          }
-        }
-      }
-    },
-    "If notifications are allowed, this phone is registered with the server the next time it starts a response." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wenn Benachrichtigungen erlaubt sind, meldet sich dieses Telefon beim Server an, sobald es das nächste Mal eine Antwort startet."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si las notificaciones están permitidas, este celular se registra en el servidor la próxima vez que inicie una respuesta."
-          }
-        },
-        "es-ES" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si las notificaciones están permitidas, este móvil se registra en el servidor la próxima vez que inicie una respuesta."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si les notifications sont autorisées, ce téléphone s'enregistre auprès du serveur la prochaine fois qu'il lance une réponse."
           }
         }
       }
@@ -5281,6 +5481,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elle est supprimée de la réception du corpus et exclue des publications futures."
+          }
+        }
+      }
+    },
+    "Keep Editing" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiter bearbeiten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seguir editando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuer à modifier"
           }
         }
       }
@@ -6814,6 +7036,34 @@
         }
       }
     },
+    "Notifications are turned off for Cedar in the Settings app. Turn them on there to hear when a response is ready." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benachrichtigungen sind für Cedar in der Einstellungen-App ausgeschaltet. Schalte sie dort ein, um zu erfahren, wenn eine Antwort fertig ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notificaciones de Cedar están desactivadas en la app Configuración. Actívalas ahí para saber cuándo hay una respuesta lista."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notificaciones de Cedar están desactivadas en la app Ajustes. Actívalas ahí para saber cuándo hay una respuesta lista."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les notifications de Cedar sont désactivées dans l’app Réglages. Activez-les là pour savoir quand une réponse est prête."
+          }
+        }
+      }
+    },
     "Now %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7011,6 +7261,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvrir %@"
+          }
+        }
+      }
+    },
+    "Open Cedar on the Web" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar im Web öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Cedar en la web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir Cedar sur le Web"
           }
         }
       }
@@ -7357,6 +7629,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvre la carte en plein écran"
+          }
+        }
+      }
+    },
+    "Optional" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opcional"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Facultatif"
           }
         }
       }
@@ -8282,34 +8576,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pseudonyme"
-          }
-        }
-      }
-    },
-    "Pushes come from the server: set up iPhone push under Settings → Notifications in the web UI, with your Apple team id and APNs key. This phone registers itself there." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Push-Mitteilungen kommen vom Server: Richte iPhone-Push in der Weboberfläche unter Einstellungen → Benachrichtigungen ein, mit deiner Apple-Team-ID und deinem APNs-Schlüssel. Dieses Telefon meldet sich dort selbst an."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las notificaciones push vienen del servidor: configura el push del iPhone en la interfaz web, en Configuración → Notificaciones, con tu Team ID de Apple y tu clave de APNs. Este celular se registra allí solo."
-          }
-        },
-        "es-ES" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las notificaciones push vienen del servidor: configura el push del iPhone en la interfaz web, en Configuración → Notificaciones, con tu Team ID de Apple y tu clave de APNs. Este móvil se registra allí solo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les notifications push viennent du serveur : configurez le push iPhone dans l'interface web sous Réglages → Notifications, avec votre identifiant d'équipe Apple et votre clé APNs. Ce téléphone s'y enregistre lui-même."
           }
         }
       }
@@ -9243,6 +9509,50 @@
         }
       }
     },
+    "Server Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server-Einstellungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración del servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages du serveur"
+          }
+        }
+      }
+    },
+    "Server URL" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server-URL"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL del servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL du serveur"
+          }
+        }
+      }
+    },
     "Server default" : {
       "localizations" : {
         "de" : {
@@ -9441,6 +9751,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Afficher les %lld titres"
+          }
+        }
+      }
+    },
+    "Show token" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token anzeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el token"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher le jeton"
           }
         }
       }
@@ -10221,6 +10553,28 @@
         }
       }
     },
+    "The address where you open cedar-chat in a browser, and its access token if it has one. On a Mac, turn on iPhone & iPad sharing in the Cedar app and scan the code it shows. The token stays in this phone's Keychain." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Adresse, unter der du cedar-chat im Browser öffnest, und sein Zugriffstoken, falls es eines gibt. Auf einem Mac: In der Cedar-App „iPhone & iPad“ einschalten und den angezeigten Code scannen. Das Token bleibt im Schlüsselbund dieses iPhones."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección en la que abres cedar-chat en un navegador y su token de acceso, si tiene uno. En un Mac, activa el uso compartido con iPhone y iPad en la app Cedar y escanea el código que muestra. El token se queda en el llavero de este teléfono."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’adresse à laquelle vous ouvrez cedar-chat dans un navigateur, et son jeton d’accès s’il en a un. Sur un Mac, activez le partage iPhone et iPad dans l’app Cedar et scannez le code affiché. Le jeton reste dans le trousseau de ce téléphone."
+          }
+        }
+      }
+    },
     "The app shows images and PDFs. Open this file on the web instead." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10263,34 +10617,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le lot échoue aux vérifications du corpus :"
-          }
-        }
-      }
-    },
-    "The cedar-chat server's URL (where you open the web UI) and its CHAT_ACCESS_TOKEN, if it is set. Running Cedar on a Mac? Turn on iPhone & iPad sharing in the Mac app and scan the QR code it shows. The token is stored in the Keychain; cedar's own key stays on the server." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die URL des cedar-chat-Servers (wo du die Weboberfläche öffnest) und sein CHAT_ACCESS_TOKEN, falls gesetzt. Läuft Cedar auf einem Mac? Schalte in der Mac-App die Freigabe für iPhone & iPad ein und scanne den angezeigten QR-Code. Das Token wird im Schlüsselbund gespeichert; cedars eigener Schlüssel bleibt auf dem Server."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La URL del servidor cedar-chat (donde abres la interfaz web) y su CHAT_ACCESS_TOKEN, si está configurado. ¿Usas Cedar en una Mac? Activa el uso compartido con iPhone & iPad en la app para Mac y escanea el código QR que muestra. El token se guarda en el llavero; la clave propia de cedar se queda en el servidor."
-          }
-        },
-        "es-ES" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La URL del servidor cedar-chat (donde abres la interfaz web) y su CHAT_ACCESS_TOKEN, si está configurado. ¿Usas Cedar en un Mac? Activa el uso compartido con iPhone & iPad en la app para Mac y escanea el código QR que muestra. El token se guarda en el llavero; la clave propia de cedar se queda en el servidor."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L'URL du serveur cedar-chat (là où vous ouvrez l'interface web) et son CHAT_ACCESS_TOKEN, s'il est défini. Cedar tourne sur un Mac ? Activez le partage iPhone & iPad dans l'app Mac et scannez le code QR qu'elle affiche. Le jeton est stocké dans le trousseau ; la clé de cedar reste sur le serveur."
           }
         }
       }
@@ -10502,6 +10828,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le serveur a répondu %lld."
+          }
+        }
+      }
+    },
+    "The server sends a push when a response is ready or Cedar has a question. Set up iPhone push under Settings → Notifications in the web UI; this phone registers itself there." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server schickt eine Push-Benachrichtigung, wenn eine Antwort fertig ist oder Cedar eine Frage hat. Richte iPhone-Push in der Web-Oberfläche unter Einstellungen → Benachrichtigungen ein; dieses iPhone meldet sich dort selbst an."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor envía una notificación push cuando hay una respuesta lista o Cedar tiene una pregunta. Configura el push de iPhone en Configuración → Notificaciones en la interfaz web; este teléfono se registra ahí por sí solo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur envoie une notification push quand une réponse est prête ou que Cedar a une question. Configurez le push iPhone sous Réglages → Notifications dans l’interface web ; ce téléphone s’y enregistre lui-même."
+          }
+        }
+      }
+    },
+    "The server, model and plan settings you changed are not saved yet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die geänderten Einstellungen für Server, Modell und Pläne sind noch nicht gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los ajustes de servidor, modelo y planes que cambiaste aún no están guardados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les réglages du serveur, du modèle et des plans que vous avez modifiés ne sont pas encore enregistrés."
           }
         }
       }
@@ -11169,6 +11539,52 @@
         }
       }
     },
+    "Turned off" : {
+      "comment" : "The Notifications row's value in Settings: whether this phone may show them.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgeschaltet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivées"
+          }
+        }
+      }
+    },
+    "Turned on" : {
+      "comment" : "The Notifications row's value in Settings: whether this phone may show them.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eingeschaltet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activées"
+          }
+        }
+      }
+    },
     "Typical CO₂" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11368,6 +11784,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valeurs"
+          }
+        }
+      }
+    },
+    "Version" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version"
           }
         }
       }

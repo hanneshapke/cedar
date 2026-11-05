@@ -98,6 +98,8 @@ struct ContributeSettingsView: View {
                 ProgressView().frame(maxWidth: .infinity)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.canvas)
         .navigationTitle("Contribute")
         .task { await app.refreshContributions() }
         .refreshable { await app.refreshContributions(askCorpus: true) }

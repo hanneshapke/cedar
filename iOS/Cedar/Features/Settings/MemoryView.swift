@@ -48,6 +48,8 @@ struct MemoryView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.canvas)
         .navigationTitle("Memory")
         .toolbar {
             if !app.memoryItems.isEmpty {

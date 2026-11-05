@@ -37,9 +37,28 @@ struct ConversationListView: View {
         .overlay {
             switch app.sidebarMode {
             case .chats:
-                if app.conversations.isEmpty && app.listError == nil && !app.isRefreshing {
-                    ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
-                                           description: Text("Start a new chat to run the agent."))
+                if app.conversations.isEmpty && !app.isRefreshing {
+                    if let error = app.listError {
+                        // Nothing to list and no server: say what went wrong and where to fix it.
+                        ContentUnavailableView {
+                            Label("Can't Reach the Server", systemImage: "wifi.exclamationmark")
+                        } description: {
+                            Text(error)
+                        } actions: {
+                            Button {
+                                app.showingSettings = true
+                            } label: {
+                                Label("Server Settings", systemImage: "gearshape")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button("Try Again") {
+                                Task { await app.refresh() }
+                            }
+                        }
+                    } else {
+                        ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
+                                               description: Text("Start a new chat to run the agent."))
+                    }
                 }
             case .starred:
                 if app.starred.isEmpty && app.starredError == nil {
@@ -113,7 +132,8 @@ struct ConversationListView: View {
 
     @ViewBuilder
     private var chats: some View {
-        if let error = app.listError {
+        // With nothing listed, the overlay shows the error instead.
+        if let error = app.listError, !app.conversations.isEmpty {
             Section {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
