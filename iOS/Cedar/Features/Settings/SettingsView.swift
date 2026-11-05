@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var started = false
     @State private var showingToken = false
     @State private var confirmingDiscard = false
+    @State private var showingTour = false
     /// Whether this phone may show notifications, once asked.
     @State private var notifications: UNAuthorizationStatus?
     @FocusState private var focus: Field?
@@ -72,6 +73,9 @@ struct SettingsView: View {
                 Button("Keep Editing", role: .cancel) {}
             } message: {
                 Text("The server, model and plan settings you changed are not saved yet.")
+            }
+            .sheet(isPresented: $showingTour) {
+                OnboardingTourView { showingTour = false }
             }
             .sheet(isPresented: $scanning, onDismiss: {
                 if scanned {
@@ -360,6 +364,11 @@ struct SettingsView: View {
                 Link(destination: client.baseURL) {
                     Label("Open Cedar on the Web", systemImage: "safari")
                 }
+            }
+            Button {
+                showingTour = true
+            } label: {
+                SettingsRow("See What Cedar Can Do", systemImage: "sparkles", tint: .purple)
             }
         } header: {
             Text("About")

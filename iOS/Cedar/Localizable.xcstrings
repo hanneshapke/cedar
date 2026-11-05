@@ -1997,6 +1997,28 @@
         }
       }
     },
+    "Agents that run on a schedule" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenten nach Zeitplan"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agentes que se ejecutan según un horario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Des agents qui tournent à heure fixe"
+          }
+        }
+      }
+    },
     "All done. Start over" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2230,6 +2252,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Répondre"
+          }
+        }
+      }
+    },
+    "Answers as cards" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antworten als Karten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Respuestas en tarjetas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Des réponses en cartes"
           }
         }
       }
@@ -2863,6 +2907,28 @@
         }
       }
     },
+    "Calendar year" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kalenderjahr"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Año natural"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Année civile"
+          }
+        }
+      }
+    },
     "Camera access is off" : {
       "localizations" : {
         "de" : {
@@ -2992,6 +3058,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar a planifié ceci et attend votre feu vert"
+          }
+        }
+      }
+    },
+    "Cedar runs where you put it. This app talks to it; your keys, files and conversations never leave your server." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar läuft dort, wo du es installierst. Diese App spricht mit ihm; deine Schlüssel, Dateien und Unterhaltungen verlassen deinen Server nie."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar se ejecuta donde tú lo instales. Esta app habla con él; tus claves, archivos y conversaciones nunca salen de tu servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar tourne là où vous l’installez. Cette app lui parle ; vos clés, vos fichiers et vos conversations ne quittent jamais votre serveur."
           }
         }
       }
@@ -3264,6 +3352,50 @@
         }
       }
     },
+    "Compare our last three quarters" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vergleiche unsere letzten drei Quartale"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compara nuestros últimos tres trimestres"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare nos trois derniers trimestres"
+          }
+        }
+      }
+    },
+    "Compute the change by quarter" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veränderung je Quartal berechnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calcular el cambio por trimestre"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calculer l’évolution par trimestre"
+          }
+        }
+      }
+    },
     "Conditions" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3283,6 +3415,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conditions"
+          }
+        }
+      }
+    },
+    "Connect your server" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde deinen Server"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conecta tu servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez votre serveur"
           }
         }
       }
@@ -3778,6 +3932,28 @@
         }
       }
     },
+    "Daily at 7:00" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Täglich um 7:00"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada día a las 7:00"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous les jours à 7:00"
+          }
+        }
+      }
+    },
     "Data" : {
       "localizations" : {
         "de" : {
@@ -4186,6 +4362,28 @@
         }
       }
     },
+    "Draw the chart and write it up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagramm zeichnen und zusammenfassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dibujar el gráfico y redactar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tracer le graphique et rédiger"
+          }
+        }
+      }
+    },
     "Drive" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4308,6 +4506,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Erreur"
+          }
+        }
+      }
+    },
+    "Every evening" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeden Abend"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada tarde"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque soir"
           }
         }
       }
@@ -4582,6 +4802,28 @@
         }
       }
     },
+    "Fiscal year" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschäftsjahr"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Año fiscal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercice"
+          }
+        }
+      }
+    },
     "Flight" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4647,6 +4889,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Brouillard"
+          }
+        }
+      }
+    },
+    "For bigger requests Cedar lays out a plan and waits for your go-ahead, and asks when something is unclear." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bei größeren Aufgaben legt Cedar einen Plan vor und wartet auf dein Okay, und fragt nach, wenn etwas unklar ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para las peticiones más grandes, Cedar presenta un plan y espera tu visto bueno, y pregunta cuando algo no está claro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour les demandes plus importantes, Cedar présente un plan et attend votre feu vert, et pose une question quand quelque chose n’est pas clair."
           }
         }
       }
@@ -4783,6 +5047,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tiré d'avis ou de résultats de recherche, non vérifié sur une page de boutique"
+          }
+        }
+      }
+    },
+    "Get Started" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los geht’s"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commencer"
           }
         }
       }
@@ -5308,6 +5594,28 @@
         }
       }
     },
+    "Inbox summary" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posteingang-Zusammenfassung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumen de la bandeja de entrada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Résumé de la boîte de réception"
+          }
+        }
+      }
+    },
     "Include fetched pages by default" : {
       "localizations" : {
         "de" : {
@@ -5481,6 +5789,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elle est supprimée de la réception du corpus et exclue des publications futures."
+          }
+        }
+      }
+    },
+    "It remembers, privately" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es merkt sich Dinge, privat"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recuerda, en privado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il se souvient, en privé"
           }
         }
       }
@@ -6323,6 +6653,50 @@
         }
       }
     },
+    "Morning briefing" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Morgen-Briefing"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumen matutino"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Briefing du matin"
+          }
+        }
+      }
+    },
+    "Morning briefing is ready" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Morgen-Briefing ist fertig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El resumen matutino está listo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le briefing du matin est prêt"
+          }
+        }
+      }
+    },
     "Most popular" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7060,6 +7434,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Les notifications de Cedar sont désactivées dans l’app Réglages. Activez-les là pour savoir quand une réponse est prête."
+          }
+        }
+      }
+    },
+    "Now" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenant"
           }
         }
       }
@@ -7836,6 +8232,29 @@
         }
       }
     },
+    "Page %lld of %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seite %1$lld von %2$lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Página %1$lld de %2$lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page %1$lld sur %2$lld"
+          }
+        }
+      }
+    },
     "Partly" : {
       "localizations" : {
         "de" : {
@@ -8171,6 +8590,28 @@
         }
       }
     },
+    "Plans a trip to Lisbon in May" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plant im Mai eine Reise nach Lissabon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planea un viaje a Lisboa en mayo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prépare un voyage à Lisbonne en mai"
+          }
+        }
+      }
+    },
     "Point the camera at the code in the Cedar Mac app (iPhone & iPad → Show QR code)." : {
       "localizations" : {
         "de" : {
@@ -8235,6 +8676,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Précipitations"
+          }
+        }
+      }
+    },
+    "Prefers metric units" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bevorzugt metrische Einheiten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prefiere unidades métricas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Préfère les unités métriques"
           }
         }
       }
@@ -8625,6 +9088,28 @@
         }
       }
     },
+    "Read the three reports" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die drei Berichte lesen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer los tres informes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire les trois rapports"
+          }
+        }
+      }
+    },
     "Reasoning" : {
       "localizations" : {
         "de" : {
@@ -8643,6 +9128,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niveau de raisonnement"
+          }
+        }
+      }
+    },
+    "Recipe" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rezept"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Receta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recette"
           }
         }
       }
@@ -8797,6 +9304,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Renommer la conversation"
+          }
+        }
+      }
+    },
+    "Replies stream in as Cedar reasons, searches the web, runs code in its sandbox and reads your mail and files. Every step is there to open." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antworten treffen laufend ein, während Cedar nachdenkt, im Web sucht, Code in seiner Sandbox ausführt und deine Mails und Dateien liest. Jeder Schritt lässt sich aufklappen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las respuestas llegan en directo mientras Cedar razona, busca en la web, ejecuta código en su sandbox y lee tu correo y tus archivos. Cada paso se puede abrir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les réponses arrivent au fil de l’eau pendant que Cedar réfléchit, cherche sur le web, exécute du code dans son bac à sable et lit vos courriels et vos fichiers. Chaque étape peut être ouverte."
           }
         }
       }
@@ -9049,6 +9578,28 @@
         }
       }
     },
+    "Sandbox" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sandbox"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sandbox"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bac à sable"
+          }
+        }
+      }
+    },
     "Saturdays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9161,6 +9712,28 @@
         }
       }
     },
+    "Scan the QR code from the Cedar Mac app or the stack script, or type the address and token. That is the whole setup." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanne den QR-Code aus der Cedar-Mac-App oder dem Stack-Skript, oder tippe Adresse und Token ein. Mehr Einrichtung braucht es nicht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanea el código QR de la app Cedar para Mac o del script de la pila, o escribe la dirección y el token. Esa es toda la configuración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scannez le code QR de l’app Cedar pour Mac ou du script de la pile, ou saisissez l’adresse et le jeton. C’est toute la configuration."
+          }
+        }
+      }
+    },
     "Scatter plot" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9269,6 +9842,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Score %lld sur une échelle de −%lld, vendre, à +%lld, acheter"
+          }
+        }
+      }
+    },
+    "See What Cedar Can Do" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was Cedar kann"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué puede hacer Cedar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que Cedar sait faire"
           }
         }
       }
@@ -9844,6 +10439,28 @@
         }
       }
     },
+    "Skip" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überspringen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Omitir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passer"
+          }
+        }
+      }
+    },
     "Slice" : {
       "localizations" : {
         "de" : {
@@ -10333,6 +10950,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tous les dimanches"
+          }
+        }
+      }
+    },
+    "Sunny" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sonnig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soleado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ensoleillé"
           }
         }
       }
@@ -10899,6 +11538,28 @@
         }
       }
     },
+    "This app" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette app"
+          }
+        }
+      }
+    },
     "This conversation no longer exists on the server." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11143,6 +11804,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Réflexion terminée"
+          }
+        }
+      }
+    },
+    "Three things changed overnight." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über Nacht hat sich dreierlei geändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tres cosas cambiaron durante la noche."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trois choses ont changé cette nuit."
           }
         }
       }
@@ -11539,6 +12222,28 @@
         }
       }
     },
+    "Turn a conversation into an agent that runs on its own. A push tells you when it has something, and the result is here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mach aus einer Unterhaltung einen Agenten, der von selbst läuft. Eine Push-Benachrichtigung sagt dir, wenn er etwas hat, und das Ergebnis ist hier."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convierte una conversación en un agente que se ejecuta solo. Una notificación te avisa cuando tiene algo, y el resultado está aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transformez une conversation en agent qui tourne tout seul. Une notification vous prévient quand il a quelque chose, et le résultat est ici."
+          }
+        }
+      }
+    },
     "Turned off" : {
       "comment" : "The Notifications row's value in Settings: whether this phone may show them.",
       "localizations" : {
@@ -11923,6 +12628,28 @@
         }
       }
     },
+    "Waiting for you" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf dich"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperándote"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de vous"
+          }
+        }
+      }
+    },
     "Waiting for your say-so" : {
       "localizations" : {
         "de" : {
@@ -12003,6 +12730,28 @@
         }
       }
     },
+    "Watch it work" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sieh ihm bei der Arbeit zu"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Míralo trabajar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regardez-le travailler"
+          }
+        }
+      }
+    },
     "Weather code %lld" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12072,6 +12821,28 @@
         }
       }
     },
+    "Weather, charts, recipes, routes, flights, stocks and products come as native cards you can tap, not walls of text." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wetter, Diagramme, Rezepte, Routen, Flüge, Aktien und Produkte kommen als native Karten zum Antippen, nicht als Textwüste."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El tiempo, gráficos, recetas, rutas, vuelos, acciones y productos llegan como tarjetas nativas que puedes tocar, no como muros de texto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Météo, graphiques, recettes, itinéraires, vols, actions et produits arrivent sous forme de cartes natives à toucher, pas de murs de texte."
+          }
+        }
+      }
+    },
     "Wednesdays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12137,6 +12908,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toutes les semaines"
+          }
+        }
+      }
+    },
+    "Weekly competitor scan" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wöchentlicher Wettbewerber-Scan"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisión semanal de la competencia"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veille concurrentielle hebdomadaire"
           }
         }
       }
@@ -12315,6 +13108,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Où réserver"
+          }
+        }
+      }
+    },
+    "Which quarters count as the last three?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welche Quartale zählen als die letzten drei?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Qué trimestres cuentan como los últimos tres?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quels trimestres comptent comme les trois derniers ?"
           }
         }
       }
@@ -12519,6 +13334,28 @@
         }
       }
     },
+    "Works on the cedar app" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arbeitet an der cedar-App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trabaja en la app cedar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travaille sur l’app cedar"
+          }
+        }
+      }
+    },
     "X" : {
       "localizations" : {
         "de" : {
@@ -12603,6 +13440,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vous"
+          }
+        }
+      }
+    },
+    "You stay in charge" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du behältst die Kontrolle"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tú tienes el control"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous gardez la main"
+          }
+        }
+      }
+    },
+    "Your agent, on your own server" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Agent, auf deinem eigenen Server"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu agente, en tu propio servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre agent, sur votre propre serveur"
           }
         }
       }
@@ -12697,6 +13578,28 @@
         }
       }
     },
+    "Your name, preferences and projects carry across conversations. See everything Cedar remembers and delete any of it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Name, deine Vorlieben und Projekte bleiben über Unterhaltungen hinweg erhalten. Sieh alles, was Cedar sich merkt, und lösche, was du willst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu nombre, tus preferencias y tus proyectos pasan de una conversación a otra. Mira todo lo que Cedar recuerda y borra lo que quieras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre nom, vos préférences et vos projets passent d’une conversation à l’autre. Voyez tout ce que Cedar retient et supprimez ce que vous voulez."
+          }
+        }
+      }
+    },
     "Your prompts, the agent's replies and tool calls, the system prompt and tool definitions it ran with, how the run ended, and the outcome you report." : {
       "localizations" : {
         "de" : {
@@ -12715,6 +13618,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vos demandes, les réponses et appels d'outils de l'agent, l'invite système et les définitions d'outils avec lesquelles il a tourné, la fin de l'exécution, et le résultat que vous indiquez."
+          }
+        }
+      }
+    },
+    "Your server" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Server"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre serveur"
           }
         }
       }

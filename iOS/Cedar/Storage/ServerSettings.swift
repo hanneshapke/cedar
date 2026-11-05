@@ -50,6 +50,11 @@ struct ServerSettings: Equatable, Sendable {
         static let accessToken = "accessToken"
     }
 
+    /// Whether settings were ever saved; before that, `load` gives the defaults.
+    static func isSaved(defaults: UserDefaults = .standard) -> Bool {
+        defaults.string(forKey: Key.serverURL) != nil
+    }
+
     static func load(defaults: UserDefaults = .standard) -> ServerSettings {
         ServerSettings(
             serverURL: defaults.string(forKey: Key.serverURL) ?? defaultServerURL,

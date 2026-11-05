@@ -56,6 +56,8 @@ final class AppModel {
     /// Which column a compact (iPhone) split view shows.
     var compactColumn: NavigationSplitViewColumn = .sidebar
     var showingSettings = false
+    /// Whether the feature tour was seen (or skipped); a new install shows it after the language.
+    private(set) var tourSeen: Bool
     /// Whether the app is in front; a response that ends while it is not stays unread.
     var isActive = true
 
@@ -67,7 +69,15 @@ final class AppModel {
 
     init() {
         settings = ServerSettings.load()
+        tourSeen = UserDefaults.standard.bool(forKey: "tourSeen")
         showingSettings = !settings.isConfigured
+    }
+
+    /// The tour ended. On a new install, Settings opens next so the server can be entered.
+    func finishTour() {
+        tourSeen = true
+        UserDefaults.standard.set(true, forKey: "tourSeen")
+        if !ServerSettings.isSaved() { showingSettings = true }
     }
 
     var client: ChatClient? { try? ChatClient(settings: settings) }

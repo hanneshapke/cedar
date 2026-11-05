@@ -7,11 +7,14 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if language.hasChosen {
-                main
-            } else {
+            if !language.hasChosen {
                 // Before anything else, the server's settings included.
                 LanguageOnboardingView { tag in app.chooseLanguage(tag) }
+            } else if !app.tourSeen {
+                // Once, in the language just picked; Settings follows on a new install.
+                OnboardingTourView { app.finishTour() }
+            } else {
+                main
             }
         }
         // Text looks itself up, and formats, in the picked language; a change shows at once.

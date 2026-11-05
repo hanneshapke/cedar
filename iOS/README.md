@@ -59,6 +59,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - iPhone, iPad and iPhone Duo layouts, light and dark mode: one column on a phone or the folded
   outer display, the list beside the conversation on an iPad or the unfolded inner display, with
   the divider on the fold (see [iPhone Duo](#iphone-duo))
+- A feature tour on first launch, after the language: seven pages that show what Cedar does, each a
+  picture of the app drawn from the theme (`Cedar/Features/Onboarding`); Settings → About shows
+  it again
 - English, German, French and Spanish, picked on first launch or under Settings → App → Language (see
   [Languages](#languages))
 
@@ -80,7 +83,7 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
    systemd install. The server URL is then `https://<machine>.<tailnet>.ts.net`.
 2. Open `iOS/Cedar.xcodeproj` in Xcode, choose the **Cedar** scheme, and run it. To run on a
    device, pick your team under *Signing & Capabilities*.
-3. On first launch, pick a language, then enter the server URL and the access token in Settings and tap
+3. On first launch, pick a language and flip through the tour (or skip it), then enter the server URL and the access token in Settings and tap
    **Test Connection** (or return from the token field): it says what it found and lists the models. With the Cedar Mac app or the stack script, tap **Scan QR Code** instead and scan the code
    under *iPhone & iPad → Show QR code*, or the one `scripts/cedar-stack.sh --pair` prints on
    Linux: it fills in both and tests the connection (it asks for the camera once). The models cedar has registered appear in the picker once it answers.
