@@ -35,10 +35,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -105,8 +107,9 @@ import java.io.File
 import java.util.UUID
 
 /**
- * The conversation's workspace files, full screen, as the web UI's files panel lists them. Images
- * and PDFs open in the viewer; other files are left to the web UI.
+ * The conversation's workspace files, full screen, as the web UI's files panel lists them. Each
+ * opens in the viewer: images and PDFs in their own, Markdown rendered, anything else handed to an
+ * app on the phone that can show it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,29 +171,31 @@ fun WorkspaceFilesDialog(client: ChatClient, conversationId: String, onDismiss: 
 
 @Composable
 private fun FileRow(file: WorkspaceFile, open: () -> Unit) {
-    val kind = WorkspaceFileKind.of(file.path)
     Row(
-        Modifier.fillMaxWidth().then(if (kind != null) Modifier.clickable(onClick = open) else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable(onClick = open).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            when (kind) {
-                WorkspaceFileKind.IMAGE -> Icons.Outlined.Image
-                WorkspaceFileKind.PDF -> Icons.Outlined.PictureAsPdf
-                null -> Icons.Outlined.InsertDriveFile
-            },
-            null, Modifier.size(24.dp), tint = CedarColors.secondaryText,
-        )
+        Icon(fileIcon(file.path), null, Modifier.size(24.dp), tint = CedarColors.secondaryText)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(file.path, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge,
-                color = if (kind != null) MaterialTheme.colorScheme.onSurface else CedarColors.secondaryText)
+            Text(file.path, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             Text(OutgoingAttachment.format(file.size), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
         }
     }
 }
 
-/** The PDFs a response produced, each opening in the viewer. */
+/** The icon for a file at [path], by what the viewer makes of it. */
+fun fileIcon(path: String): androidx.compose.ui.graphics.vector.ImageVector = when (WorkspaceFileKind.of(path)) {
+    WorkspaceFileKind.IMAGE -> Icons.Outlined.Image
+    WorkspaceFileKind.PDF -> Icons.Outlined.PictureAsPdf
+    WorkspaceFileKind.MARKDOWN -> Icons.Outlined.Description
+    WorkspaceFileKind.OTHER -> Icons.Outlined.InsertDriveFile
+}
+
+/**
+ * The files a response produced that aren't shown as pictures (PDFs, Markdown, data, code), each
+ * opening in the viewer without a trip to the Files screen.
+ */
 @Composable
 fun DocumentsView(paths: List<String>, conversationId: String, client: ChatClient) {
     var viewing by remember { mutableStateOf<String?>(null) }
@@ -201,7 +206,7 @@ fun DocumentsView(paths: List<String>, conversationId: String, client: ChatClien
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Description, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(fileIcon(path), null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
                 Text(path, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -237,12 +242,23 @@ private sealed interface Shown {
     class Pdf(val pages: PdfPages, override val file: File) : Loaded {
         override fun close() = pages.close()
     }
+
+    /** Markdown, rendered as the chat renders it. */
+    class Markdown(val text: String, override val file: File) : Loaded {
+        override fun close() {}
+    }
+
+    /** A file the app has no viewer for: another app opens it. */
+    class Other(override val file: File, val size: Long) : Loaded {
+        override fun close() {}
+    }
 }
 
 /**
- * A workspace image or PDF at full size, loaded with the access token, with sharing. The file is
- * kept in a cache folder of its own while it is shown: PdfRenderer reads from it, and a share hands
- * it over under its own name.
+ * A workspace file, loaded with the access token, with sharing: an image at full size, a PDF,
+ * Markdown rendered as the chat renders it, or anything else handed to an app that can show it. The
+ * file is kept in a cache folder of its own while it is shown: PdfRenderer reads from it, and a
+ * share or an open hands it over under its own name.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -291,8 +307,27 @@ private fun WorkspaceFileViewer(client: ChatClient, conversationId: String, path
                 is Shown.Failed -> Failure(stringResource(R.string.could_not_load, name), s.message) { attempt++ }
                 is Shown.Picture -> ZoomableImage(s.image, path)
                 is Shown.Pdf -> PdfPagesView(s.pages)
+                is Shown.Markdown -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { MarkdownView(s.text) }
+                is Shown.Other -> OtherFile(name, s) { openWithApp(context, path, s.file) }
             }
         }
+    }
+}
+
+/** A file the app doesn't draw itself: its name and size, and a button that hands it to an app that does. */
+@Composable
+private fun OtherFile(name: String, shown: Shown.Other, open: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Outlined.InsertDriveFile, null, Modifier.size(48.dp), tint = CedarColors.secondaryText)
+        Spacer(Modifier.height(12.dp))
+        Text(name, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(4.dp))
+        Text(OutgoingAttachment.format(shown.size), style = MaterialTheme.typography.bodyMedium, color = CedarColors.secondaryText)
+        Spacer(Modifier.height(20.dp))
+        ProminentButton(onClick = open, modifier = Modifier.widthIn(min = 200.dp)) { Text(stringResource(R.string.open_with_another_app)) }
+        Spacer(Modifier.height(10.dp))
+        Text(stringResource(R.string.viewer_other_app_text), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText,
+            textAlign = TextAlign.Center)
     }
 }
 
@@ -313,7 +348,7 @@ private fun Failure(title: String, message: String, retry: () -> Unit) {
 private const val MAX_VIEWED_BYTES = 32 * 1024 * 1024
 
 private suspend fun load(context: Context, client: ChatClient, conversationId: String, path: String): Shown {
-    val kind = WorkspaceFileKind.of(path) ?: return Shown.Failed(context.getString(R.string.viewer_unsupported))
+    val kind = WorkspaceFileKind.of(path)
     val bytes = try {
         client.file(conversationId, path)
     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -337,6 +372,9 @@ private suspend fun load(context: Context, client: ChatClient, conversationId: S
                 // A damaged or password-protected PDF.
                 Shown.Failed(context.getString(R.string.viewer_not_a_pdf))
             }
+            // Text in another encoding is handed to another app, which guesses it.
+            WorkspaceFileKind.MARKDOWN -> decodeUtf8(bytes)?.let { Shown.Markdown(it, file) } ?: Shown.Other(file, bytes.size.toLong())
+            WorkspaceFileKind.OTHER -> Shown.Other(file, bytes.size.toLong())
         }
         if (shown is Shown.Failed) dir.deleteRecursively()
         shown
@@ -362,12 +400,37 @@ private fun decodeImage(bytes: ByteArray): Bitmap? {
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
 }
 
+/** The text in [bytes] if it is UTF-8, else null. */
+private fun decodeUtf8(bytes: ByteArray): String? = try {
+    Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+} catch (_: Exception) {
+    null
+}
+
+/** The MIME type for [file] by its extension: `text/plain` for text-like files other apps know, `application/octet-stream` otherwise. */
+private fun mimeType(file: File): String {
+    val extension = file.extension.lowercase()
+    return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+        ?: if (extension in setOf("md", "markdown", "txt", "log", "yaml", "yml", "toml", "ini", "cfg", "py", "rs", "kt", "swift", "js", "ts", "sh")) "text/plain"
+        else "application/octet-stream"
+}
+
 /** Hands the file to the Android share sheet, through the FileProvider. */
 private fun share(context: Context, path: String, file: File) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-    val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
-    val send = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val send = Intent(Intent.ACTION_SEND).setType(mimeType(file)).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(send, path).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+}
+
+/** Opens the file in whichever app on the phone shows its kind, through the FileProvider. */
+private fun openWithApp(context: Context, path: String, file: File) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType(file)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    try {
+        context.startActivity(Intent.createChooser(view, path).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: Exception) {
+        android.widget.Toast.makeText(context, context.getString(R.string.no_app_to_open, path), android.widget.Toast.LENGTH_SHORT).show()
+    }
 }
 
 /** An image fitted to the screen that pinches to zoom up to 6×, pans when zoomed, and zooms in or back on a double tap. */

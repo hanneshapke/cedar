@@ -35,7 +35,7 @@ import dev.cedar.cedar.R
 /**
  * The list and the open chat: side by side on a tablet, a foldable or a phone in landscape (the
  * iPad's split view), one at a time on a phone, where Back returns to the list. Onboarding comes
- * first: the language, then the server (Settings).
+ * first: the language, the feature tour, then the server (Settings).
  */
 @Composable
 fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
@@ -44,6 +44,10 @@ fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         if (app.language == null) {
             LanguageScreen(app)
+        } else if (!app.tourSeen || app.showingTour) {
+            // Once, in the language just picked (Settings follows on a new install); again from Settings → About.
+            BackHandler(enabled = app.showingTour) { app.showingTour = false }
+            OnboardingTour(onDone = { app.finishTour() })
         } else if (app.showingMemory) {
             BackHandler { app.showingMemory = false }
             MemoryScreen(app)

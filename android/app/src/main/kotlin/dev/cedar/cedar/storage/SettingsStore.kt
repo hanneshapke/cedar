@@ -39,6 +39,16 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
+    /** Whether settings were ever saved; before that, [load] gives the defaults. */
+    val isSaved: Boolean get() = prefs.contains(SERVER_URL)
+
+    /** Whether the feature tour was seen (or skipped). */
+    var tourSeen: Boolean
+        get() = prefs.getBoolean(TOUR_SEEN, false)
+        set(value) {
+            prefs.edit().putBoolean(TOUR_SEEN, value).apply()
+        }
+
     /** The language picked: a tag, "" for Automatic, or null before the user has chosen one. */
     var language: String?
         get() = prefs.getString(LANGUAGE, null)
@@ -67,6 +77,7 @@ class SettingsStore(context: Context) {
         const val REASONING = "reasoning"
         const val PLAN = "plan"
         const val LANGUAGE = "language"
+        const val TOUR_SEEN = "tourSeen"
         const val LOCALE_PENDING = "localePending"
     }
 }

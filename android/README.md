@@ -22,19 +22,25 @@ The same as the iOS app:
   star, rename, open on the web or delete from a long press
 - A **Chats | Starred | Scheduled** switch at the top. Starred lists chats and scheduled runs,
   most recently starred first (stars are kept by cedar-chat, so they are the same everywhere).
-  Scheduled lists each scheduled agent with its timing, next run and last result; tap one to see
-  its runs and open any of them; **Run now**, **Pause**, **Resume** and **Show prompt** from a long
-  press. Creating and editing schedules is done on the web
+  Scheduled lists each scheduled agent with its timing, next run and last result; tap one to open
+  its last run, or its chevron to see all its runs and open any of them; **Run now**, **Pause**,
+  **Resume**, **Show runs** and **Show prompt** from a long press. Creating and editing schedules
+  is done on the web
 - Replies stream in as the agent works: the model's reasoning (folded), text, tool calls with
   their input, output, duration and sources, token usage and cost; a stop button cancels
-- A Plans setting for your messages: the server's, when Cedar thinks it helps, for longer
-  requests, always, or never; a plan Cedar chose to make partway through (`propose_plan`) is
-  marked as such
+- A Plan Approval setting for your messages, whether Cedar shows a plan first: the server's, when
+  Cedar thinks it helps, for longer requests, always, or never; a plan Cedar chose to make partway
+  through (`propose_plan`) is marked as such
 - Clarifying questions (`ask_user`) as a form; plans to agree to and tool calls to allow or deny
 - The agent's images under the reply, with the Android share sheet; tap one to see it full
-  screen and zoom in. PDFs it wrote are listed under the reply too
+  screen and zoom in. Every other file it wrote (PDF, Markdown, CSV, code…) is listed under the
+  reply and opens with a tap, without going through the Files screen
 - The conversation's workspace files from the folder button in the chat's top bar, with their
-  sizes: images and PDFs open in a viewer (pinch to zoom, share), other files are left to the web
+  sizes: images and PDFs open in a viewer (pinch to zoom, share), Markdown is rendered as in the
+  chat, and anything else is handed to an app on the phone that shows it, all with sharing
+- A feature tour on first launch, after the language: seven pages that show what Cedar does, each
+  a picture of the app drawn from the theme (`ui/OnboardingTour.kt`, `ui/TourIllustrations.kt`);
+  Settings → About shows it again
 - Cards drawn natively: charts (legend that hides series, touch to read values, the data as a
   table), maps on **OpenStreetMap** (numbered pins, route lines, full screen when tapped, OSM's
   attribution), recipes to tick off, routes with each leg, stock comparisons with ratings, returns

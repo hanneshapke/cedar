@@ -171,12 +171,26 @@ class TranscriptTest {
     }
 
     @Test
-    fun theViewerShowsImagesAndPdfs() {
+    fun theViewerKnowsEveryFile() {
         assertEquals(WorkspaceFileKind.IMAGE, WorkspaceFileKind.of("out/chart.PNG"))
         assertEquals(WorkspaceFileKind.PDF, WorkspaceFileKind.of("docs/report.pdf"))
-        assertNull(WorkspaceFileKind.of("plot.svg"))
-        assertNull(WorkspaceFileKind.of("notes.md"))
-        assertNull(WorkspaceFileKind.of("Makefile"))
+        assertEquals(WorkspaceFileKind.MARKDOWN, WorkspaceFileKind.of("notes.md"))
+        assertEquals(WorkspaceFileKind.MARKDOWN, WorkspaceFileKind.of("README.Markdown"))
+        // Another app draws what the app doesn't itself.
+        assertEquals(WorkspaceFileKind.OTHER, WorkspaceFileKind.of("plot.svg"))
+        assertEquals(WorkspaceFileKind.OTHER, WorkspaceFileKind.of("Makefile"))
+        assertEquals(WorkspaceFileKind.OTHER, WorkspaceFileKind.of("data.csv"))
+    }
+
+    @Test
+    fun everyFileButPicturesIsListedUnderTheReply() {
+        var t = TurnTranscript(turn())
+        t = t.apply(event(1, "tool.call", """{"id":"c0","name":"write_file","input":{"path":"notes.md"}}"""))
+        t = t.apply(event(2, "tool.result", result("c0", "ok")))
+        t = t.apply(event(3, "tool.call", """{"id":"c1","name":"bash","input":{"command":"make"}}"""))
+        t = t.apply(event(4, "tool.result", result("c1", "built\n[files created or modified]\n- out/a.png\n- data.csv\n- report.pdf\n- notes.md")))
+        assertEquals(listOf("notes.md", "data.csv", "report.pdf"), t.documents)
+        assertEquals(listOf("out/a.png"), t.images)
     }
 
     @Test

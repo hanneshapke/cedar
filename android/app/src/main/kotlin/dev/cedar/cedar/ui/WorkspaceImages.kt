@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import dev.cedar.cedar.R
 import dev.cedar.core.ChatClient
-import dev.cedar.core.WorkspaceFileKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -54,7 +53,7 @@ fun ImagesView(paths: List<String>, conversationId: String, client: ChatClient) 
     var viewing by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         paths.forEach { path ->
-            WorkspaceImage(client, conversationId, path, open = if (WorkspaceFileKind.of(path) == WorkspaceFileKind.IMAGE) ({ viewing = path }) else null)
+            WorkspaceImage(client, conversationId, path, open = { viewing = path })
         }
     }
     viewing?.let { path -> WorkspaceFileDialog(client, conversationId, path) { viewing = null } }
