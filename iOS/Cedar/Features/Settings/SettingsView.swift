@@ -42,6 +42,7 @@ struct SettingsView: View {
                 model
                 plans
                 if app.serverHasMemory { memory }
+                if app.serverHasRecords { records }
                 if app.serverHasContributions { contribute }
                 notificationsSection
                 language
@@ -107,6 +108,10 @@ struct SettingsView: View {
             // For the count on the Memory row.
             .task(id: app.serverHasMemory) {
                 if app.serverHasMemory { await app.refreshMemory() }
+            }
+            // And on the Records row.
+            .task(id: app.serverHasRecords) {
+                if app.serverHasRecords { await app.refreshRecords() }
             }
             .onChange(of: draft.serverURL) { check = .idle }
             .onChange(of: draft.accessToken) { check = .idle }
@@ -260,6 +265,25 @@ struct SettingsView: View {
             Text("Plan Approval")
         } footer: {
             Text("Before a bigger request, Cedar lists the steps it will take and waits for your go-ahead; you can stop it there. With \u{201C}When Cedar thinks it helps\u{201D}, it decides which requests need a plan, so quick questions get none.")
+        }
+    }
+
+    private var records: some View {
+        Section {
+            // Its own screen; deletions there apply at once, not on Save.
+            NavigationLink {
+                RecordsView()
+            } label: {
+                SettingsRow("What Cedar Keeps", systemImage: "tablecells", tint: Theme.green) {
+                    if app.recordsLoaded && app.recordsSupported {
+                        Text(verbatim: L10n.format(app.recordSets.count == 1 ? "%lld set" : "%lld sets", app.recordSets.count))
+                    }
+                }
+            }
+        } header: {
+            Text("Records")
+        } footer: {
+            Text("Data Cedar keeps for you across conversations, like a running log or weekly measurements, to compare with later. Deleting a set applies from your next message.")
         }
     }
 

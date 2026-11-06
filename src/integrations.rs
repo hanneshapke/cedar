@@ -715,6 +715,7 @@ impl Integrations {
             ),
             ("ask_user", off("ASK_USER")),
             ("memory", off("MEMORY")),
+            ("records", off("RECORDS")),
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),
             ("calendar", google("calendar", "CALENDAR")),

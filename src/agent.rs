@@ -9,6 +9,7 @@ use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
 use crate::memory::{self, Memories, MemoryContext};
+use crate::records::{self, Records, RecordsContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
 use crate::policy::Endpoint;
@@ -16,7 +17,7 @@ use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{
-    question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER, REMEMBER,
+    question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER, RECORDS_SAVE, REMEMBER,
 };
 use crate::trace;
 use crate::waits::{Answer, Waits};
@@ -56,6 +57,8 @@ pub struct AgentEnv {
     /// Whether an interactive run ends with a call that picks facts about the user out of its
     /// prompt (see [`note_facts`]).
     pub memory_extract: bool,
+    /// What owners keep as records across conversations; `None` when records are turned off.
+    pub records: Option<Records>,
 }
 
 #[derive(Debug)]
@@ -109,6 +112,12 @@ pub async fn run_agent(
             run_id: run.id,
             interactive: run.interactive,
         }),
+        records: env.records.as_ref().map(|records| RecordsContext {
+            records: records.clone(),
+            owner: run.owner.clone(),
+            run_id: run.id,
+            interactive: run.interactive,
+        }),
     };
     // Connections the key's owner always allows, which the sandbox's base policy doesn't. Only an
     // OpenShell policy can let them through one by one.
@@ -155,6 +164,15 @@ pub async fn run_agent(
     if let Some(directive) = crate::locale::directive(&run.locale) {
         note.push(' ');
         note.push_str(&directive);
+    }
+    // Which record sets the run keeps for the user, read per request like memory. It goes
+    // before the memory note, which must stay the last thing in the prompt (see
+    // [`memory::note_span`]).
+    if let (Some(records), true) = (&env.records, tools.get(RECORDS_SAVE).is_some()) {
+        let sets = records.list(&run.owner).await?;
+        let columns = records.columns_by_set(&run.owner, &sets).await?;
+        note.push_str("\n\n");
+        note.push_str(&records::note(&sets, &columns, run.interactive));
     }
     // Read per request, so a memory deleted in Settings is gone from the very next run. The
     // `memory` group switches reading and writing together.

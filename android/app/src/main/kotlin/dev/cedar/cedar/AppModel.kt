@@ -19,6 +19,9 @@ import dev.cedar.core.ContributionPreview
 import dev.cedar.core.ContributionSettings
 import dev.cedar.core.MemoryItem
 import dev.cedar.core.MemoryLimits
+import dev.cedar.core.RecordSet
+import dev.cedar.core.RecordSetDetail
+import dev.cedar.core.RecordsLimits
 import kotlinx.serialization.json.JsonObject
 import dev.cedar.core.ModelInfo
 import dev.cedar.core.Notice
@@ -123,6 +126,26 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var memoryLimits by mutableStateOf<MemoryLimits?>(null)
         private set
     var showingMemory by mutableStateOf(false)
+
+    /** The server has `/api/records` (its `/api/config` says so); Settings shows Records only then. */
+    var serverHasRecords by mutableStateOf(false)
+        private set
+
+    /** The sets of records cedar keeps for the user, once loaded (Settings → Records). */
+    var recordSets by mutableStateOf<List<RecordSet>>(emptyList())
+        private set
+    var recordsLoaded by mutableStateOf(false)
+        private set
+    var recordsError by mutableStateOf<String?>(null)
+
+    /** False when the chat server's cedar has no records yet. */
+    var recordsSupported by mutableStateOf(true)
+        private set
+    var recordsLimits by mutableStateOf<RecordsLimits?>(null)
+        private set
+    var showingRecords by mutableStateOf(false)
+    /** The set whose rows are open, over the Records screen. */
+    var showingRecordSet by mutableStateOf<RecordSet?>(null)
 
     /** The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then. */
     var serverHasContributions by mutableStateOf(false)
@@ -250,6 +273,14 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             memorySupported = true
             memoryLimits = null
             showingMemory = false
+            serverHasRecords = false
+            recordSets = emptyList()
+            recordsLoaded = false
+            recordsError = null
+            recordsSupported = true
+            recordsLimits = null
+            showingRecords = false
+            showingRecordSet = null
             selection = null
             inboxUnread = 0
             push.serverChanged(old, new)
@@ -300,6 +331,48 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         val client = client ?: throw ChatException.NotConfigured
         client.deleteAllMemory()
         memoryItems = emptyList()
+    }
+
+    // Records
+
+    suspend fun refreshRecords() {
+        val client = client ?: return
+        try {
+            val list = client.records()
+            recordsSupported = list.supported
+            recordSets = list.sets
+            recordsLimits = list.limits
+            recordsLoaded = true
+            recordsError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recordsError = describe(e)
+        }
+    }
+
+    /** One set's rows, for its screen. */
+    suspend fun loadRecordSet(name: String): RecordSetDetail {
+        val client = client ?: throw ChatException.NotConfigured
+        return client.recordSet(name)
+    }
+
+    /** Deletes one set at once (no Save): the next message, in any conversation, goes without it. */
+    suspend fun deleteRecordSet(set: RecordSet) {
+        val client = client ?: throw ChatException.NotConfigured
+        try {
+            client.deleteRecordSet(set.name)
+        } catch (e: ChatException.Api) {
+            // Already gone (another device): the list catches up below.
+            if (e.status != 404) throw e
+        }
+        recordSets = recordSets.filter { it.id != set.id }
+    }
+
+    suspend fun deleteAllRecords() {
+        val client = client ?: throw ChatException.NotConfigured
+        client.deleteAllRecords()
+        recordSets = emptyList()
     }
 
     // Contributing a conversation
@@ -374,6 +447,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
                 models = runCatching { client.models() }.getOrDefault(emptyList())
                 val config = runCatching { client.config() }.getOrNull()
                 serverHasMemory = config?.memory ?: false
+                serverHasRecords = config?.records ?: false
                 serverHasContributions = config?.contributions ?: false
             }
         } catch (e: CancellationException) {

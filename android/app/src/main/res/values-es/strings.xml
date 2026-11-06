@@ -450,6 +450,34 @@
         <item quantity="one">Cedar olvidará %d recuerdo que tiene de ti. No se puede deshacer.</item>
         <item quantity="other">Cedar olvidará los %d recuerdos que tiene de ti. No se puede deshacer.</item>
     </plurals>
+    <string name="records">Datos</string>
+    <string name="records_settings_row">Lo que Cedar guarda</string>
+    <string name="records_settings_footnote">Datos que Cedar guarda para ti entre conversaciones, como un registro de carreras o mediciones semanales, para compararlos después. Eliminar un conjunto se aplica desde tu próximo mensaje.</string>
+    <string name="records_delete_all">Eliminar todo</string>
+    <string name="records_delete_all_title">¿Eliminar todos los conjuntos?</string>
+    <string name="records_empty_title">Todavía sin datos</string>
+    <string name="records_empty_text">Cuando le des a Cedar datos a los que volver, como una exportación semanal o tus mediciones, guardará las filas aquí y podrá compararlas semana a semana.</string>
+    <string name="records_unsupported">Este servidor todavía no guarda datos entre conversaciones. Actualiza cedar para usar los conjuntos de datos.</string>
+    <string name="records_no_source">Subido a mano</string>
+    <string name="records_from_elsewhere">De una conversación que no está en esta app</string>
+    <string name="records_count_of">%1$d de %2$d conjuntos</string>
+    <string name="records_key">clave: %1$s</string>
+    <string name="records_health">Datos de salud</string>
+    <string name="records_no_rows_title">Sin filas</string>
+    <string name="records_no_rows_text">Este conjunto todavía no tiene filas.</string>
+    <string name="records_footnote">Cedar conoce el nombre, el tamaño y las columnas de cada conjunto, nunca las filas, hasta que las consulta. Toca un conjunto para ver sus filas; mantenlo presionado para eliminarlo. Los datos se quedan en tu propio servidor y nunca se comparten con terceros. Se desactivan en Configuración → Herramientas de la interfaz web.</string>
+    <plurals name="records_count">
+        <item quantity="one">%d conjunto</item>
+        <item quantity="other">%d conjuntos</item>
+    </plurals>
+    <plurals name="records_rows">
+        <item quantity="one">%d fila</item>
+        <item quantity="other">%d filas</item>
+    </plurals>
+    <plurals name="records_delete_all_text">
+        <item quantity="one">Cedar eliminará el %d conjunto de datos que guarda para ti. No se puede deshacer.</item>
+        <item quantity="other">Cedar eliminará los %d conjuntos de datos que guarda para ti. No se puede deshacer.</item>
+    </plurals>
 
     <!-- Contributing a conversation (Settings → Contribute, and the review from a chat) -->
     <string name="contribute">Contribuir</string>

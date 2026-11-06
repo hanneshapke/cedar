@@ -75,11 +75,16 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) and the `memory` limits (`{max_items, max_chars}`, or `null` with `MEMORY=off`). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch}`, or `null` with `RECORDS=off`). |
 | `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [{id, text, run_id, created_at, updated_at}], limits: {max_items, max_chars}}`. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
 | `POST /v1/memory` | Remember something by hand: `{"text"}`. Returns `201` with the item, or `200` with the existing one when the same text (ignoring case and spacing) is already remembered. `409` when the list is full or `MEMORY=off`; `400` for empty text or more than 500 characters. |
 | `DELETE /v1/memory/{id}` | Forget one memory. `204`; `404` if it isn't yours. |
 | `DELETE /v1/memory` | Forget everything your runs remember. `204`. |
+| `GET /v1/records` | The record sets your runs keep for you, oldest first: `{sets: [{id, name, description, key_fields, health_data, count, columns, created_at, updated_at}], limits: {max_sets, max_items, max_record_chars, max_batch}}`. See [Records](#records). |
+| `GET /v1/records/{name}` | One set with all its records, oldest first: `{set, records: [{id, key, data, run_id, created_at, updated_at}]}`. `run_id` is the run that saved the record last, `null` for one uploaded by hand or once that run is deleted. `404` if it isn't yours. |
+| `POST /v1/records/{name}` | Save records by hand, as `records_save` would: `{"records": [{...}, ...], "description"?, "key"?, "health_data"?}`. A weekly export can go straight in this way. Returns `201` with `{set, added, updated}` when the set is new, else `200`. `409` when the set or the limit is full or `RECORDS=off`; `400` with the reason for a bad name, record or key. |
+| `DELETE /v1/records/{name}` | Delete one set with its records. `204`; `404` if it isn't yours. |
+| `DELETE /v1/records` | Delete every set your runs keep. `204`. |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked, plus `storage`, whether a key can be saved at all (`CEDAR_SECRET_KEY`). Never returns a key. |
 | `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes", "sandbox_runtime"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). `sandbox_runtime` is what runs new sandboxes: `docker` (default) or `openshell` (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)), refused on Windows and when the OpenShell gateway doesn't answer. A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, sandbox_runtime, openshell_supported, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
@@ -114,6 +119,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `products` | `search_products` |
 | `ask_user` | `ask_user` |
 | `memory` | `remember`, `forget`, and the list of what the run remembers (see [Memory](#memory)) |
+| `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
 | `gmail`, `calendar`, `drive`, `sheets` | every `gmail_*`, `calendar_*`, `drive_*` or `sheets_*` tool, or name single ones (`gmail_search_threads`) |
 | `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
@@ -436,6 +442,47 @@ with one key, so everyone using one chat server shares one memory, and rotating 
 leaves the old memories behind, as it does the old runs. Turn the `memory` group off for a run with
 `tools`, or for the whole server with `MEMORY=off` (what was saved can still be listed and deleted).
 
+## Records
+
+Memory holds a few facts; it can't hold a running log. For data the user will come back to and
+compare with later (a weekly export, measurements, a diary, a monthly report) cedar keeps
+**records**: named sets of JSON rows per API key, in its own database, that outlive workspaces,
+conversations and runs. Durable data is what makes long-running threads unnecessary: a weekly
+check-in can be a fresh conversation, or a [scheduled agent](chat/README.md#scheduled-agents), and
+still see every earlier week.
+
+- **Sets and keys.** A set has a name (`running_log`; lowercase letters, digits and underscores,
+  since it doubles as a table name), a description, and a key: the fields that identify a row
+  (`["date"]`). `records_save` adds rows and updates the ones whose key is already there, so the
+  same week handed over twice is corrected, not doubled. Field names follow the same rule as set
+  names. A set without a key appends on every save.
+- **What the model sees.** A set can hold thousands of rows, so the run's note lists only the sets:
+  name, size, columns, description and when each was last saved, with the rules for using them.
+  The model reads the data with `records_lookup`, one read-only SQL query over the sets it names,
+  each a table of the same name with `_id` and `_saved_at` beside the records' fields, so a
+  week-by-week comparison is a `GROUP BY strftime('%Y-%W', date)` or a window function, and a
+  join across sets (runs against weight) works on a shared date. `records_describe` shows a set's
+  columns and a few rows first.
+- **Who may write.** Any run may save and read; unattended runs (a weekly import) too, which is
+  the point. Only [interactive](#plans-and-approvals) runs may `records_drop` a set.
+- **Health data.** A set saved with `health_data: true` (heart rate, glucose, weight, sleep)
+  brings the health rules into every later run that sees it: informational only, safety first,
+  never dosing or device-setting advice, see the care team.
+- **Limits.** At most `RECORDS_MAX_SETS` sets (50) of `RECORDS_MAX_ITEMS` records (10,000) each,
+  8,000 characters per record and 500 records per save; a lookup returns at most 1,000 rows and
+  runs for at most 10 seconds. When a set is full, saving is refused and the model is told to
+  aggregate or ask the user; nothing is dropped silently.
+- **Seeing and deleting it.** `GET /v1/records` lists the sets exactly as the model is told about
+  them, `GET /v1/records/{name}` every row with the run that saved it, `POST /v1/records/{name}`
+  uploads rows by hand (a script can push the weekly export without a run), and
+  `DELETE /v1/records/{name}` or `DELETE /v1/records` removes them. Deleting a run or a
+  conversation keeps its records.
+
+Records belong to the API key's owner, like memory: another key never sees them. Turn the
+`records` group off for a run with `tools`, or for the whole server with `RECORDS=off` (what was
+saved can still be listed and deleted). The chat interfaces do not show records in their settings
+yet; the API is the way to see them.
+
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
@@ -524,6 +571,9 @@ Settings come from environment variables. The important ones:
 | `MEMORY` | `on` (set `off` to remove the `remember` and `forget` tools and stop showing runs what they remember; see [Memory](#memory)) |
 | `MEMORY_MAX_ITEMS` | 200 (how many memories one API key may keep) |
 | `MEMORY_EXTRACT` | `on` (set `off` to stop the model call at the end of every interactive run that picks facts about the user out of its prompt; see [Memory](#memory)) |
+| `RECORDS` | `on` (set `off` to remove the `records_*` tools and stop showing runs which sets they keep; see [Records](#records)) |
+| `RECORDS_MAX_SETS` | 50 (how many record sets one API key may keep) |
+| `RECORDS_MAX_ITEMS` | 10000 (how many records one set may hold) |
 | `TRANSIT_BASE_URL` / `DRIVING_BASE_URL` | `https://api.transitous.org` / `https://router.project-osrm.org` (the roots of the MOTIS trip planner and the OSRM router `plan_trip` uses; point them at your own instances for anything beyond light use) |
 | `SERPAPI_API_KEY` | empty (set it, or save one in the chat UI's Settings → Server, to offer `search_flights`; a key from [SerpApi](https://serpapi.com), whose free plan covers a limited number of searches a month) |
 | `FLIGHTS` | `on` (set `off` to remove the `search_flights` tool even with a SerpApi key) |
@@ -571,6 +621,11 @@ Settings come from environment variables. The important ones:
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
 | `remember` | Saves a durable fact about the user for later conversations. Takes `text` (one fact, at most 500 characters; whitespace is collapsed to one line) and optional `replaces` (the id of the item it updates). Returns `{status: "added" \| "replaced" \| "unchanged", memory: {id, text, run_id, created_at, updated_at}}`. Refused in non-interactive runs and when the list is full. See [Memory](#memory). Unless `MEMORY=off`. |
 | `forget` | Deletes one remembered fact by `id`. Refused in non-interactive runs. Unless `MEMORY=off`. |
+| `records_list` | The record sets the run keeps for the user (see [Records](#records)): each set's `name`, `description`, `key_fields`, `health_data`, `count`, `columns` and timestamps, with the limits. Unless `RECORDS=off`. |
+| `records_describe` | One set's columns (`name`, `type`: `number`, `text`, `boolean`, `json` or `mixed`, how many records fill it, an example), its key, and the oldest and newest records as samples with `_saved_at`. Takes `set`. |
+| `records_save` | Adds or updates records in a set, creating it on first use. Takes `set` (lowercase letters, digits and underscores), `records` (1–500 JSON objects with such field names, at most 8,000 characters each), and for a new set `description` and `key` (the fields that identify a row, e.g. `["date"]`; fixed once the set holds records; without one, every save appends), plus optional `health_data`. A record whose key is already in the set replaces it. Returns `{set, added, updated, count, key}`. Nothing is written when any record is refused or the set would go over `RECORDS_MAX_ITEMS`. |
+| `records_lookup` | One read-only SQL query (SQLite) over the user's sets: each set the query names is copied into a private in-memory database as a table of that name, with the records' fields as columns plus `_id` and `_saved_at`, and the query runs there with `PRAGMA query_only`, at most 10 seconds, and nothing else reachable. Takes `sql` (a single `SELECT` or `WITH ... SELECT`; anything that would write, attach or change settings is refused by name) and optional `max_rows` (1–1000, default 100). Returns `{columns, rows, truncated, tables}`. |
+| `records_drop` | Deletes one set with everything in it. Takes `set`. Refused in non-interactive runs. |
 | `weather_forecast` | Current conditions and a daily forecast from [Open-Meteo](https://open-meteo.com) (open source, open data, no API key). Takes a `location` (a place name or postal code, geocoded to its best match) or `latitude` and `longitude`, optional `days` (1–16, default 3) and optional `units` (`metric` or `imperial`). Returns the resolved place, current temperature, conditions, humidity, wind, and precipitation, then per day the conditions, low and high, precipitation and its chance, wind, UV index, and sunrise and sunset. The chat interfaces draw the report as a weather card ([chat/README.md](chat/README.md)). Unless `WEATHER=off`. |
 | `show_map` | Shows the user a map in the chat, with a numbered pin for each place. Takes `markers` (1–25 objects, each with a `location` such as `Berlin` or `Paris, France`, or `latitude` and `longitude`, and an optional `label`) and an optional `title`. Names are looked up with Open-Meteo's geocoding API, which knows cities, towns, and regions but not street addresses or businesses. Returns JSON with the coordinates used; names that could not be found are listed under `not_found`, and a call where none are found is an error. The chat interfaces draw the JSON as a map ([chat/README.md](chat/README.md)); other clients just get the JSON. Unless `MAPS=off`. |
 | `show_recipe` | Shows the user a recipe in the chat: a photo of the dish, the times and servings, the ingredients as a checklist, and the steps as a timeline. Takes `title`, `ingredients` (1–60, each `{quantity?, item}` or a string), `steps` (1–40, each `{title?, text, duration?}` or a string), and optional `description`, `servings`, `prep_time`, `cook_time`, `total_time`, `tips`, and `image_query` (what to search for the photo; defaults to the title). A photo is always looked up: the lead image of the best matching Wikipedia article, else the best matching bitmap on Wikimedia Commons. Returns the checked recipe as JSON with an `image` (`url`, `page_url`, `title`, `source`), or an `image_note` saying why there is none; a missing photo never fails the call. The system prompt asks the model to use it whenever its answer is a recipe. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Unless `RECIPES=off`. |

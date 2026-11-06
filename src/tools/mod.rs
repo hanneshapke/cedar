@@ -27,6 +27,7 @@ mod google;
 mod map;
 mod mcp;
 mod memory;
+mod records;
 mod open_meteo;
 mod pdf;
 mod product_page;
@@ -51,6 +52,10 @@ pub use flights::SearchFlights;
 pub use map::ShowMap;
 pub use mcp::{McpServer, McpTool};
 pub use memory::{Forget, Remember, FORGET, REMEMBER};
+pub use records::{
+    RecordsDescribe, RecordsDrop, RecordsList, RecordsLookup, RecordsSave, RECORDS_DESCRIBE,
+    RECORDS_DROP, RECORDS_LIST, RECORDS_LOOKUP, RECORDS_SAVE, RECORDS_TOOLS,
+};
 pub use pdf::GeneratePdf;
 pub use products::SearchProducts;
 pub use python::RunPython;
@@ -66,6 +71,7 @@ use crate::config::GoogleOAuthConfig as GoogleCredentials;
 use crate::llm::{LlmClient, MessageRequest};
 use crate::mcp::GoogleOAuth;
 use crate::memory::MemoryContext;
+use crate::records::RecordsContext;
 use crate::models::Usage;
 use crate::sandbox::{ExecOutput, Sandbox};
 use anyhow::Result;
@@ -92,6 +98,9 @@ pub struct ToolContext {
     /// The run owner's memory, for `remember` and `forget`. `None` when memory is turned off, or
     /// outside a run.
     pub memory: Option<MemoryContext>,
+    /// The run owner's records, for the `records_*` tools. `None` when records are turned off,
+    /// or outside a run.
+    pub records: Option<RecordsContext>,
 }
 
 /// The run's model as a tool may use it: one tool-free request at a time, with the tokens it
@@ -213,7 +222,7 @@ impl ToolSet {
     /// `TRANSIT` is off, `search_flights` if a SerpApi key is configured or saved (and `FLIGHTS`
     /// isn't off), `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
     /// Best Buy key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
-    /// `remember` and `forget` unless `MEMORY` is off,
+    /// `remember` and `forget` unless `MEMORY` is off, the `records_*` tools unless `RECORDS` is off,
     /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), and the
     /// personal Python tools in `TOOLS_DIR`, if set.
@@ -302,6 +311,13 @@ impl ToolSet {
         if cfg.memory {
             set.tools.push(Box::new(Remember));
             set.tools.push(Box::new(Forget));
+        }
+        if cfg.records {
+            set.tools.push(Box::new(RecordsList));
+            set.tools.push(Box::new(RecordsDescribe));
+            set.tools.push(Box::new(RecordsSave));
+            set.tools.push(Box::new(RecordsLookup));
+            set.tools.push(Box::new(RecordsDrop));
         }
         if cfg.browser.enabled {
             set.tools
@@ -504,6 +520,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("products", "Shopping"),
     ("ask_user", "Clarifying questions"),
     ("memory", "Memory"),
+    ("records", "Records"),
     ("browser", "Browser"),
     ("gmail", "Gmail"),
     ("calendar", "Calendar"),
@@ -530,6 +547,7 @@ pub fn group_of(name: &str) -> &'static str {
         "search_products" => "products",
         "ask_user" => "ask_user",
         REMEMBER | FORGET => "memory",
+        RECORDS_LIST | RECORDS_DESCRIBE | RECORDS_SAVE | RECORDS_LOOKUP | RECORDS_DROP => "records",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
         n if n.starts_with("calendar_") => "calendar",
@@ -1043,7 +1061,12 @@ mod tests {
                 "compare_stocks",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1060,7 +1083,12 @@ mod tests {
                 "search_products",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1076,7 +1104,12 @@ mod tests {
                 "search_products",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1095,7 +1128,12 @@ mod tests {
                 "compare_stocks",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ]),
             "a key alone doesn't offer the tool when PRODUCTS is off"
         );
@@ -1109,7 +1147,12 @@ mod tests {
                 "compare_stocks",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1123,7 +1166,12 @@ mod tests {
                 "compare_stocks",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1137,7 +1185,12 @@ mod tests {
                 "compare_stocks",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1151,7 +1204,12 @@ mod tests {
                 "compare_stocks",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1165,7 +1223,12 @@ mod tests {
                 "compare_stocks",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1179,7 +1242,12 @@ mod tests {
                 "plan_trip",
                 "ask_user",
                 "remember",
-                "forget"
+                "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop"
             ])
         );
         assert_eq!(
@@ -1192,7 +1260,8 @@ mod tests {
                 ("TRANSIT", "off"),
                 ("STOCKS", "off"),
                 ("ASK_USER", "off"),
-                ("MEMORY", "off")
+                ("MEMORY", "off"),
+                ("RECORDS", "off")
             ])),
             with(&[])
         );
@@ -1209,6 +1278,11 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "records_list",
+                "records_describe",
+                "records_save",
+                "records_lookup",
+                "records_drop",
                 "browser"
             ])
         );
@@ -1224,6 +1298,9 @@ mod tests {
         assert_eq!(group_of("ask_user"), "ask_user");
         assert_eq!(group_of("remember"), "memory");
         assert_eq!(group_of("forget"), "memory");
+        for name in RECORDS_TOOLS {
+            assert_eq!(group_of(name), "records");
+        }
         assert_eq!(group_of("gmail_search_threads"), "gmail");
         assert_eq!(group_of("calendar_list_events"), "calendar");
         assert_eq!(group_of("drive_search_files"), "drive");

@@ -44,6 +44,15 @@ final class AppModel {
     /// False when the chat server's cedar has no memory yet.
     private(set) var memorySupported = true
     private(set) var memoryLimits: MemoryList.Limits?
+    /// The server has `/api/records` (its `/api/config` says so); Settings shows Records only then.
+    private(set) var serverHasRecords = false
+    /// The sets of records cedar keeps for the user, once loaded (Settings → Records).
+    private(set) var recordSets: [RecordSet] = []
+    private(set) var recordsLoaded = false
+    var recordsError: String?
+    /// False when the chat server's cedar has no records yet.
+    private(set) var recordsSupported = true
+    private(set) var recordsLimits: RecordsList.Limits?
     /// The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then.
     private(set) var serverHasContributions = false
     private(set) var contributionSettings: ContributionSettings?
@@ -112,6 +121,12 @@ final class AppModel {
             memoryError = nil
             memorySupported = true
             memoryLimits = nil
+            serverHasRecords = false
+            recordSets = []
+            recordsLoaded = false
+            recordsError = nil
+            recordsSupported = true
+            recordsLimits = nil
             selection = nil
             inboxUnread = 0
             PushRegistrar.shared?.serverChanged(from: old, to: new)
@@ -201,6 +216,47 @@ final class AppModel {
         memoryItems = []
     }
 
+    // MARK: Records
+
+    func refreshRecords() async {
+        guard let client else { return }
+        do {
+            let list = try await client.records()
+            recordsSupported = list.supported
+            recordSets = list.sets
+            recordsLimits = list.limits
+            recordsLoaded = true
+            recordsError = nil
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            recordsError = error.localizedDescription
+        }
+    }
+
+    /// One set's rows, for its screen.
+    func loadRecordSet(_ name: String) async throws -> RecordSetDetail {
+        guard let client else { throw ChatError.notConfigured }
+        return try await client.recordSet(name: name)
+    }
+
+    /// Deletes one set at once (no Save): the next message, in any conversation, goes without it.
+    func deleteRecordSet(_ set: RecordSet) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        do {
+            try await client.deleteRecordSet(name: set.name)
+        } catch let error as ChatError where error.status == 404 {
+            // Already gone (another device).
+        }
+        recordSets.removeAll { $0.id == set.id }
+    }
+
+    func deleteAllRecords() async throws {
+        guard let client else { throw ChatError.notConfigured }
+        try await client.deleteAllRecords()
+        recordSets = []
+    }
+
     // MARK: Contributing a conversation
 
     func refreshContributions(askCorpus: Bool = false) async {
@@ -275,6 +331,7 @@ final class AppModel {
                 models = (try? await client.models()) ?? []
                 let config = try? await client.config()
                 serverHasMemory = config?.memory ?? false
+                serverHasRecords = config?.records ?? false
                 serverHasContributions = config?.contributions ?? false
             }
         } catch is CancellationError {

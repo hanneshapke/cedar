@@ -449,6 +449,34 @@
         <item quantity="one">Cedar oubliera %d souvenir qu\'il a de vous. Cette action est irréversible.</item>
         <item quantity="other">Cedar oubliera les %d souvenirs qu\'il a de vous. Cette action est irréversible.</item>
     </plurals>
+    <string name="records">Données</string>
+    <string name="records_settings_row">Ce que Cedar conserve</string>
+    <string name="records_settings_footnote">Les données que Cedar conserve pour vous d\'une conversation à l\'autre, comme un journal de course ou des mesures hebdomadaires, pour les comparer plus tard. La suppression d\'un jeu s\'applique dès votre prochain message.</string>
+    <string name="records_delete_all">Tout supprimer</string>
+    <string name="records_delete_all_title">Supprimer tous les jeux ?</string>
+    <string name="records_empty_title">Aucune donnée pour l\'instant</string>
+    <string name="records_empty_text">Quand vous donnez à Cedar des données à retrouver plus tard, comme un export hebdomadaire ou vos mesures, il enregistre les lignes ici et peut les comparer semaine après semaine.</string>
+    <string name="records_unsupported">Ce serveur ne conserve encore aucune donnée d\'une conversation à l\'autre. Mettez cedar à jour pour utiliser les jeux de données.</string>
+    <string name="records_no_source">Ajouté à la main</string>
+    <string name="records_from_elsewhere">D\'une conversation absente de cette app</string>
+    <string name="records_count_of">%1$d jeux sur %2$d</string>
+    <string name="records_key">clé : %1$s</string>
+    <string name="records_health">Données de santé</string>
+    <string name="records_no_rows_title">Aucune ligne</string>
+    <string name="records_no_rows_text">Ce jeu ne contient encore aucune ligne.</string>
+    <string name="records_footnote">Cedar connaît le nom, la taille et les colonnes de chaque jeu, jamais les lignes, tant qu\'il ne les consulte pas. Touchez un jeu pour voir ses lignes ; appuyez longuement pour le supprimer. Les données restent sur votre propre serveur et ne sont jamais partagées avec des tiers. Réglages → Outils dans l\'interface web permet de les désactiver.</string>
+    <plurals name="records_count">
+        <item quantity="one">%d jeu</item>
+        <item quantity="other">%d jeux</item>
+    </plurals>
+    <plurals name="records_rows">
+        <item quantity="one">%d ligne</item>
+        <item quantity="other">%d lignes</item>
+    </plurals>
+    <plurals name="records_delete_all_text">
+        <item quantity="one">Cedar supprimera le %d jeu de données qu\'il conserve pour vous. Cette action est irréversible.</item>
+        <item quantity="other">Cedar supprimera les %d jeux de données qu\'il conserve pour vous. Cette action est irréversible.</item>
+    </plurals>
 
     <!-- Contributing a conversation (Settings → Contribute, and the review from a chat) -->
     <string name="contribute">Contribuer</string>

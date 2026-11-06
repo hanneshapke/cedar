@@ -140,6 +140,38 @@ class ChatClientTest {
     }
 
     @Test
+    fun readsAndDeletesRecords() = runBlocking {
+        server.enqueue(json("""{"supported":true,"limits":{"max_sets":50,"max_items":10000},"sets":[
+            {"id":"s1","name":"running_log","description":"Weekly runs","key_fields":["date"],"health_data":false,"count":1,
+             "columns":["date","km"],"created_at":"2026-10-29T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"}]}"""))
+        server.enqueue(json("""{"set":{"id":"s1","name":"running_log","description":"Weekly runs","key_fields":["date"],"health_data":false,"count":1,
+             "columns":["date","km"],"created_at":"2026-10-29T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"},
+             "records":[{"id":"r1","key":"2026-11-02","data":{"date":"2026-11-02","km":35.5},"run_id":"run-1","conversation_id":"c1","title":"Week 44",
+             "created_at":"2026-11-02T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"}]}"""))
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(MockResponse().setResponseCode(204))
+        // A chat server from before records.
+        server.enqueue(json("""{"error":{"code":"not_found","message":"not found"}}""", 404))
+
+        val list = client.records()
+        assertEquals(true, list.supported)
+        assertEquals(50, list.limits?.maxSets)
+        assertEquals(listOf("running_log"), list.sets.map { it.name })
+        val detail = client.recordSet("running_log")
+        assertEquals("c1", detail.records[0].conversationId)
+        assertEquals("2026-11-02", detail.records[0].data["date"].str)
+        client.deleteRecordSet("running_log")
+        client.deleteAllRecords()
+        assertEquals(RecordsList(supported = false), client.records())
+
+        assertEquals("GET /api/records", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/records/running_log", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("DELETE /api/records/running_log", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("DELETE /api/records", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/records", server.takeRequest().let { "${it.method} ${it.path}" })
+    }
+
+    @Test
     fun errorsCarryTheServersMessage() {
         server.enqueue(json("""{"error":{"code":"conflict","message":"wait for the current response to finish, or stop it"}}""", 409))
         val e = assertFailsWith<ChatException.Api> { runBlocking { client.cancel("t1") } }

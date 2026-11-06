@@ -438,6 +438,34 @@
         <item quantity="one">Cedar vergisst %d Erinnerung, die es über dich hat. Das lässt sich nicht rückgängig machen.</item>
         <item quantity="other">Cedar vergisst alle %d Erinnerungen, die es über dich hat. Das lässt sich nicht rückgängig machen.</item>
     </plurals>
+    <string name="records">Datensätze</string>
+    <string name="records_settings_row">Was Cedar aufbewahrt</string>
+    <string name="records_settings_footnote">Daten, die Cedar über Unterhaltungen hinweg für dich aufbewahrt, etwa ein Lauftagebuch oder wöchentliche Messwerte, zum späteren Vergleich. Das Löschen eines Satzes gilt ab deiner nächsten Nachricht.</string>
+    <string name="records_delete_all">Alle löschen</string>
+    <string name="records_delete_all_title">Alle Sätze löschen?</string>
+    <string name="records_empty_title">Noch keine Datensätze</string>
+    <string name="records_empty_text">Wenn du Cedar Daten gibst, auf die es zurückkommen soll, etwa einen wöchentlichen Export oder deine Messwerte, speichert es die Zeilen hier und kann sie Woche für Woche vergleichen.</string>
+    <string name="records_unsupported">Dieser Server bewahrt noch keine Daten zwischen Unterhaltungen auf. Aktualisiere cedar, um Datensätze zu nutzen.</string>
+    <string name="records_no_source">Von Hand hochgeladen</string>
+    <string name="records_from_elsewhere">Aus einer Unterhaltung, die nicht in dieser App ist</string>
+    <string name="records_count_of">%1$d von %2$d Sätzen</string>
+    <string name="records_key">Schlüssel: %1$s</string>
+    <string name="records_health">Gesundheitsdaten</string>
+    <string name="records_no_rows_title">Keine Zeilen</string>
+    <string name="records_no_rows_text">Dieser Satz enthält noch keine Zeilen.</string>
+    <string name="records_footnote">Cedar kennt von jedem Satz Name, Größe und Spalten, nie die Zeilen, bis es sie nachschlägt. Tippe auf einen Satz, um seine Zeilen zu sehen; halte ihn gedrückt, um ihn zu löschen. Datensätze bleiben auf deinem eigenen Server und werden nie an Dritte weitergegeben. Unter Einstellungen → Werkzeuge in der Weboberfläche lassen sie sich ausschalten.</string>
+    <plurals name="records_count">
+        <item quantity="one">%d Satz</item>
+        <item quantity="other">%d Sätze</item>
+    </plurals>
+    <plurals name="records_rows">
+        <item quantity="one">%d Zeile</item>
+        <item quantity="other">%d Zeilen</item>
+    </plurals>
+    <plurals name="records_delete_all_text">
+        <item quantity="one">Cedar löscht den %d Datensatz, den es für dich aufbewahrt. Das lässt sich nicht rückgängig machen.</item>
+        <item quantity="other">Cedar löscht alle %d Datensätze, die es für dich aufbewahrt. Das lässt sich nicht rückgängig machen.</item>
+    </plurals>
 
     <!-- Contributing a conversation (Settings → Contribute, and the review from a chat) -->
     <string name="contribute">Beisteuern</string>

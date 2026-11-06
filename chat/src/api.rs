@@ -106,6 +106,7 @@ const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
 const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
 const MEMORY_JS: &str = include_str!("../static/memory.js");
+const RECORDS_JS: &str = include_str!("../static/records.js");
 const TRACE_VIEW_JS: &str = include_str!("../static/trace-view.js");
 const TRACE_VIEW_CSS: &str = include_str!("../static/trace-view.css");
 /// Contributing a conversation (contrib.rs): the review dialog and Settings → Contribute.
@@ -312,6 +313,8 @@ pub fn router(state: AppState) -> Router {
         .route("/models", get(list_models))
         .route("/memory", get(list_memory).post(add_memory).delete(delete_all_memory))
         .route("/memory/{id}", axum::routing::delete(delete_memory))
+        .route("/records", get(list_records).delete(delete_all_records))
+        .route("/records/{name}", get(get_record_set).delete(delete_record_set))
         .route("/integrations", get(get_integrations))
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
         .route("/integrations/bestbuy", put(put_bestbuy_key).delete(delete_bestbuy_key))
@@ -368,6 +371,7 @@ pub fn router(state: AppState) -> Router {
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
         .route("/settings-shell.js", get(|| async { asset(JS, SETTINGS_SHELL_JS) }))
         .route("/memory.js", get(|| async { asset(JS, MEMORY_JS) }))
+        .route("/records.js", get(|| async { asset(JS, RECORDS_JS) }))
         .route("/trace-view.js", get(|| async { asset(JS, TRACE_VIEW_JS) }))
         .route("/trace-view.css", get(|| async { asset(CSS, TRACE_VIEW_CSS) }))
         .route("/contrib-view.js", get(|| async { asset(JS, CONTRIB_VIEW_JS) }))
@@ -515,6 +519,8 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
         "models_access": state.cfg.models_access.as_str(),
         // This chat server has the /api/memory routes (whether cedar has memory is in their answer).
         "memory": true,
+        // Likewise the /api/records routes (whether cedar has records is in their answer).
+        "records": true,
         // Whether a conversation can be sent to a corpus (CHAT_CONTRIBUTIONS_URL); the review
         // dialog exports to a file either way.
         "contributions": state.cfg.contributions_url.is_some(),
@@ -1531,6 +1537,51 @@ async fn delete_memory(State(state): State<AppState>, Path(id): Path<String>) ->
 async fn delete_all_memory(State(state): State<AppState>) -> Result<StatusCode, AppError> {
     state.cedar.delete_all_memory().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// -- records --------------------------------------------------------------------------------
+
+/// Settings -> Records: the record sets cedar's runs keep for the user, `{supported, sets,
+/// limits}`. A cedar from before records gives `supported: false` and no sets.
+async fn list_records(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let Some(mut body) = state.cedar.records().await? else {
+        return Ok(Json(json!({ "supported": false, "sets": [], "limits": null })));
+    };
+    Ok(Json(json!({ "supported": true, "sets": body["sets"].take(), "limits": body["limits"].take() })))
+}
+
+/// One set with its records, each with the `conversation_id` and `title` of the conversation
+/// whose run saved it last, when that still exists here.
+async fn get_record_set(State(state): State<AppState>, Path(name): Path<String>) -> Result<Json<Value>, AppError> {
+    let mut body = state.cedar.record_set(&set_name(&name)?).await?;
+    let mut records = body["records"].as_array().cloned().unwrap_or_default();
+    let runs: Vec<Uuid> = records.iter().filter_map(|r| r["run_id"].as_str()?.parse().ok()).collect();
+    let sources = state.store.conversations_of_runs(&runs).await?;
+    for record in &mut records {
+        let source = record["run_id"].as_str().and_then(|r| r.parse::<Uuid>().ok()).and_then(|r| sources.get(&r));
+        record["conversation_id"] = json!(source.map(|(id, _)| id));
+        record["title"] = json!(source.and_then(|(_, title)| title.clone()));
+    }
+    Ok(Json(json!({ "set": body["set"].take(), "records": records })))
+}
+
+async fn delete_record_set(State(state): State<AppState>, Path(name): Path<String>) -> Result<StatusCode, AppError> {
+    state.cedar.delete_record_set(&set_name(&name)?).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_all_records(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+    state.cedar.delete_all_records().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// A set name as cedar accepts it, so nothing else can be put in the path sent on.
+fn set_name(name: &str) -> Result<String, AppError> {
+    let ok = !name.is_empty()
+        && name.len() <= 64
+        && name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    if ok { Ok(name.to_string()) } else { Err(AppError::NotFound("record set not found")) }
 }
 
 #[derive(Deserialize)]

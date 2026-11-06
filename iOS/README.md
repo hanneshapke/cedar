@@ -56,6 +56,11 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   [Memory](../README.md#memory)), newest first, with when each fact was saved and a tap to open
   the conversation it came from. Swipe to delete one, or **Delete All**; deletions apply at once.
   Shown only when the server has memory (`memory` in `GET /api/config`)
+- Settings → Records: the data Cedar keeps for you across conversations (see
+  [Records](../README.md#records)), one row per set with its description, size, key and columns,
+  most recently saved first; a tap opens the set's rows, newest first, each with when it was saved
+  and a tap to open the conversation it came from. Swipe to delete a set, or **Delete All**;
+  deletions apply at once. Shown only when the server has records (`records` in `GET /api/config`)
 - Markdown rendering: headings, lists, quotes, tables, and code blocks with a copy button
 - Connecting by scanning the QR code the chat's Settings → Phone page, the Cedar desktop app or
   `scripts/cedar-stack.sh --pair` shows
@@ -192,6 +197,9 @@ simulator, which the layout code's unit tests (`FoldLayoutTests`) cover for the 
 - Settings → Memory reads `GET /api/memory` and deletes with `DELETE /api/memory/{id}` and
   `DELETE /api/memory`. A server whose `GET /api/config` has no `memory` flag, or that answers
   `/api/memory` with 404, is older than memory, and the section is hidden or says so.
+- Settings → Records reads `GET /api/records`, a set's rows with `GET /api/records/{name}`, and
+  deletes with `DELETE /api/records/{name}` and `DELETE /api/records`; the `records` flag in
+  `GET /api/config`, or a 404, hides the section or says the server is older than records.
 - Every message carries the interface language as `locale` (`de-CH`); a language picked in the
   app also goes to `PUT /api/settings/locale` (`null` for Automatic), so scheduled runs and
   notifications follow it. Before a server is set up, it is sent once one is.

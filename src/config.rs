@@ -289,6 +289,13 @@ pub struct Config {
     /// End every interactive run with a model call that picks facts about the user out of the
     /// prompt and saves them (`MEMORY_EXTRACT`, on by default; see [`crate::memory::extraction`]).
     pub memory_extract: bool,
+    /// Offer the `records_*` tools and show runs which record sets they keep for the user (on by
+    /// default; see [`crate::records`]).
+    pub records: bool,
+    /// How many record sets one API key's owner may keep (`RECORDS_MAX_SETS`, 50 by default).
+    pub records_max_sets: usize,
+    /// How many records one set may hold (`RECORDS_MAX_ITEMS`, 10,000 by default).
+    pub records_max_items: usize,
     /// The Google OAuth client from the environment (`GOOGLE_CLIENT_ID` and
     /// `GOOGLE_CLIENT_SECRET`), with the account's refresh token when that is set there too. An
     /// admin can save a client through the API instead, so this is `None` without one in the
@@ -606,6 +613,17 @@ impl Config {
                 crate::memory::DEFAULT_MAX_ITEMS,
             )?,
             memory_extract: flag("MEMORY_EXTRACT", true)?,
+            records: flag("RECORDS", true)?,
+            records_max_sets: parse(
+                "RECORDS_MAX_SETS",
+                get("RECORDS_MAX_SETS"),
+                crate::records::DEFAULT_MAX_SETS,
+            )?,
+            records_max_items: parse(
+                "RECORDS_MAX_ITEMS",
+                get("RECORDS_MAX_ITEMS"),
+                crate::records::DEFAULT_MAX_ITEMS,
+            )?,
             google_oauth,
             google,
             google_apis,
@@ -717,6 +735,9 @@ impl Config {
         }
         if self.memory_max_items == 0 {
             bail!("MEMORY_MAX_ITEMS must be at least 1; use MEMORY=off to turn memory off");
+        }
+        if self.records_max_sets == 0 || self.records_max_items == 0 {
+            bail!("RECORDS_MAX_SETS and RECORDS_MAX_ITEMS must be at least 1; use RECORDS=off to turn records off");
         }
         if self.workspace_ttl.is_zero() {
             bail!("WORKSPACE_TTL_SECS must be at least 1");

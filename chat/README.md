@@ -512,6 +512,24 @@ your saved choice predates memory and leaves it off; the Memory page says so. Ev
 chat server shares one memory, since the chat calls cedar with one `CEDAR_API_KEY`. Memory stays
 on your own cedar server and is never shared with a third party (see [PRIVACY.md](../PRIVACY.md)).
 
+### Records
+
+Memory holds a few facts; for data you will come back to, cedar keeps [records](../README.md#records):
+named sets of rows (a running log, weekly measurements, an export) that outlive conversations and
+that the agent reads back with a query, so a weekly check-in can compare with every earlier week
+from a fresh conversation. **Settings → Records** lists the sets, most recently saved first, each
+with its description, how many rows it holds, its key, its columns and when it was last saved,
+with a *Health data* badge where the agent marked it so. **Show rows** opens the set's rows in a
+table, newest first, with the date each was saved and a link to the conversation that saved it;
+**Delete** removes a set, **Delete all** every set. The list is exactly what the agent is told
+about, and a deletion applies from the next message on.
+
+Records are the `records` tool group, so **Settings → Tools** turns them off for new
+conversations and the conversation's **Tools** button for one conversation; a saved choice from
+before records leaves them off, and the Records page says so. Everyone using this chat server
+shares the same records, since the chat calls cedar with one `CEDAR_API_KEY`. Records stay on
+your own cedar server and are never shared with a third party.
+
 ### Contributing a conversation
 
 A conversation can be given, one at a time and on purpose, to a corpus for training open-weight

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.Language
@@ -161,6 +162,8 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
 
     // For the count on the Memory row.
     LaunchedEffect(app.serverHasMemory) { if (app.serverHasMemory) app.refreshMemory() }
+    // And on the Records row.
+    LaunchedEffect(app.serverHasRecords) { if (app.serverHasRecords) app.refreshRecords() }
     // For the On/Off on the Contribute row.
     LaunchedEffect(app.serverHasContributions) { if (app.serverHasContributions) app.refreshContributions() }
     // A cedar://connect link opened from another app (or the camera's QR reader).
@@ -312,6 +315,17 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                         value = if (app.memoryLoaded && app.memorySupported) plural(R.plurals.memory_count, app.memoryItems.size, app.memoryItems.size) else null,
                     ) { app.showingMemory = true }
                     Footnote(stringResource(R.string.memory_settings_footnote))
+                }
+
+                if (app.serverHasRecords) {
+                    HorizontalDivider()
+                    Section(stringResource(R.string.records))
+                    // Opens its own screen; deletions there apply at once, not on Save.
+                    SettingsRow(
+                        stringResource(R.string.records_settings_row), Icons.Outlined.TableChart, MaterialTheme.colorScheme.primary,
+                        value = if (app.recordsLoaded && app.recordsSupported) plural(R.plurals.records_count, app.recordSets.size, app.recordSets.size) else null,
+                    ) { app.showingRecords = true }
+                    Footnote(stringResource(R.string.records_settings_footnote))
                 }
 
                 if (app.serverHasContributions) {

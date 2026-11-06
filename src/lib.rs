@@ -20,6 +20,7 @@ pub mod locale;
 pub mod manager;
 pub mod marketplace;
 pub mod memory;
+pub mod records;
 pub mod mcp;
 pub mod models;
 pub mod openshell;

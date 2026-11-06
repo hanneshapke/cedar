@@ -25,6 +25,8 @@ data class ServerConfig(
     @SerialName("admin_enabled") val adminEnabled: Boolean = false,
     /** The server has `/api/memory`; an older one leaves it out, so Settings hides Memory. */
     val memory: Boolean = false,
+    /** The server has `/api/records`; an older one leaves it out, so Settings hides Records. */
+    val records: Boolean = false,
     /** The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`). */
     val contributions: Boolean = false,
 )
@@ -175,6 +177,61 @@ data class MemoryList(
     val supported: Boolean = false,
     val items: List<MemoryItem> = emptyList(),
     val limits: MemoryLimits? = null,
+)
+
+/**
+ * One set of records cedar keeps for the user across conversations (`GET /api/records`): a
+ * running log, weekly measurements (see the top-level README, "Records").
+ */
+@Serializable
+data class RecordSet(
+    val id: String,
+    val name: String,
+    val description: String = "",
+    /** The fields that identify a row; empty when every save appends. */
+    @SerialName("key_fields") val keyFields: List<String> = emptyList(),
+    @SerialName("health_data") val healthData: Boolean = false,
+    val count: Int = 0,
+    val columns: List<String> = emptyList(),
+    @SerialName("created_at") val createdAt: Instant = Instant.EPOCH,
+    @SerialName("updated_at") val updatedAt: Instant = Instant.EPOCH,
+)
+
+@Serializable
+data class RecordsLimits(
+    @SerialName("max_sets") val maxSets: Int = 0,
+    @SerialName("max_items") val maxItems: Int = 0,
+)
+
+/** The sets cedar keeps, oldest first; `supported` is false on a cedar from before records. */
+@Serializable
+data class RecordsList(
+    val supported: Boolean = false,
+    val sets: List<RecordSet> = emptyList(),
+    val limits: RecordsLimits? = null,
+)
+
+/**
+ * One row of a set (`GET /api/records/{name}`), with the conversation whose run saved it last,
+ * while that still exists on this server.
+ */
+@Serializable
+data class RecordRow(
+    val id: String,
+    val key: String = "",
+    val data: JsonObject = JsonObject(emptyMap()),
+    @SerialName("run_id") val runId: String? = null,
+    @SerialName("conversation_id") val conversationId: String? = null,
+    val title: String? = null,
+    @SerialName("created_at") val createdAt: Instant = Instant.EPOCH,
+    @SerialName("updated_at") val updatedAt: Instant = Instant.EPOCH,
+)
+
+/** A set with all its rows, oldest first. */
+@Serializable
+data class RecordSetDetail(
+    val set: RecordSet,
+    val records: List<RecordRow> = emptyList(),
 )
 
 /** One of the models cedar has registered (`GET /api/models`). */

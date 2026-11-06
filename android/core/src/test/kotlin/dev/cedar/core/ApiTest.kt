@@ -23,6 +23,43 @@ class ApiTest {
     }
 
     @Test
+    fun decodesRecordsAndTheConfigFlag() {
+        val old = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":true,"admin_enabled":false,"memory":true}""")
+        assertFalse(old.records)
+        val new = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false,"memory":true,"records":true}""")
+        assertTrue(new.records)
+
+        val list = CedarJson.decodeFromString(RecordsList.serializer(), """
+        {"supported":true,"limits":{"max_sets":50,"max_items":10000,"max_record_chars":8000,"max_batch":500},"sets":[
+          {"id":"s1","name":"running_log","description":"Weekly runs","key_fields":["date"],"health_data":false,"count":2,
+           "columns":["date","km"],"created_at":"2026-10-29T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"},
+          {"id":"s2","name":"weight","description":"","key_fields":[],"health_data":true,"count":0,"columns":[],
+           "created_at":"2026-10-29T08:00:00Z","updated_at":"2026-10-29T08:00:00Z"}]}
+        """)
+        assertTrue(list.supported)
+        assertEquals(50, list.limits?.maxSets)
+        assertEquals(listOf("running_log", "weight"), list.sets.map { it.name })
+        assertEquals(listOf("date"), list.sets[0].keyFields)
+        assertEquals(listOf("date", "km"), list.sets[0].columns)
+        assertTrue(list.sets[1].healthData)
+
+        val detail = CedarJson.decodeFromString(RecordSetDetail.serializer(), """
+        {"set":{"id":"s1","name":"running_log","description":"Weekly runs","key_fields":["date"],"health_data":false,"count":2,
+                "columns":["date","km"],"created_at":"2026-10-29T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"},
+         "records":[{"id":"r1","key":"2026-10-26","data":{"date":"2026-10-26","km":31.2},"run_id":"run-1","conversation_id":"c1","title":"Week 43",
+                     "created_at":"2026-10-26T08:00:00Z","updated_at":"2026-10-26T08:00:00Z"},
+                    {"id":"r2","key":"2026-11-02","data":{"date":"2026-11-02","km":35,"note":null},"run_id":null,"conversation_id":null,"title":null,
+                     "created_at":"2026-11-02T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"}]}
+        """)
+        assertEquals("running_log", detail.set.name)
+        assertEquals(listOf("r1", "r2"), detail.records.map { it.id })
+        assertEquals("c1", detail.records[0].conversationId)
+        assertEquals(31.2, detail.records[0].data["km"].dbl)
+        assertEquals(null, detail.records[1].conversationId)
+        assertEquals(null, detail.records[1].runId)
+    }
+
+    @Test
     fun decodesConversationsAndTurns() {
         val json = """
         {"conversation":{"id":"c1","title":"Trip","model":"m","reasoning":null,"schedule_id":null,"tools":["web_search"],
