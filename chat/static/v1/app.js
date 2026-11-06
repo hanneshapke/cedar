@@ -700,6 +700,17 @@ function applyEvent(view, event) {
       toolResult(view, d);
       break;
     }
+    case 'memory.updated':
+      // Facts cedar picked out of the prompt once the answer was out: shown as remember steps,
+      // like the ones the model saves itself, so every change to memory is visible in the thread.
+      for (const saved of Array.isArray(d.saved) ? d.saved : []) {
+        const memory = saved.memory || {};
+        const id = `memory-${memory.id}`;
+        const call = { id, name: 'remember', input: { text: memory.text } };
+        place(view, toolCall(view, call));
+        toolResult(view, { id, output: JSON.stringify(saved, null, 2), is_error: false });
+      }
+      break;
     case 'usage':
       view.usage.input += d.input_tokens || 0;
       view.usage.output += d.output_tokens || 0;

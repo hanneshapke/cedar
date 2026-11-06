@@ -95,6 +95,12 @@ fn keep_event(ty: &str, data: &Value) -> Option<Value> {
     })
 }
 
+/// The model calls a bundle keeps: the agent's turns and the planning call. The memory call that
+/// ends a run (`purpose: "memory"`) reads the user's memories and isn't part of the agent's work.
+fn keeps_call(purpose: &str) -> bool {
+    matches!(purpose, "agent" | "plan")
+}
+
 /// How the memory note opens, for a cedar from before the trace marked it.
 const MEMORY_NOTE_STARTS: [&str; 2] = ["What you remember about this user from earlier conversations.", "You don't remember anything about this user from earlier conversations yet."];
 
@@ -236,6 +242,11 @@ pub async fn preview(state: &AppState, conversation: &Conversation, opts: Option
 
         let mut calls = Vec::new();
         for c in trace["calls"].as_array().into_iter().flatten() {
+            // The call that picks facts about the user out of the prompt reads the memory list,
+            // which is cut from the bundle; it is nothing the agent did, so it goes too.
+            if !keeps_call(c["purpose"].as_str().unwrap_or("agent")) {
+                continue;
+            }
             let response = &c["response"];
             let reasoning = response["reasoning"].as_str().filter(|r| !r.trim().is_empty()).map(String::from);
             if reasoning.is_some() && !opts.reasoning {
@@ -532,6 +543,13 @@ mod tests {
             Some(json!({ "id": "a", "tool": "bash", "rule": "r", "reason": "x", "scope": "s" }))
         );
         assert_eq!(keep_event("run.completed", &json!({ "final_text": "long", "stop_reason": "end_turn" })), Some(json!({ "stop_reason": "end_turn" })));
+    }
+
+    #[test]
+    fn the_memory_call_is_left_out_of_the_bundle() {
+        assert!(keeps_call("agent"));
+        assert!(keeps_call("plan"));
+        assert!(!keeps_call("memory"));
     }
 
     #[test]

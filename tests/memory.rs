@@ -1,5 +1,6 @@
 //! Memory: what runs remember about the API key's owner across conversations, the `remember` and
-//! `forget` tools that change it, and `/v1/memory`, where people see and delete it.
+//! `forget` tools that change it, the call at the end of an interactive run that picks facts out
+//! of its prompt, and `/v1/memory`, where people see and delete it.
 
 mod common;
 
@@ -309,4 +310,154 @@ async fn the_api_lists_adds_and_deletes_per_owner() {
 
     let (status, _) = app.json(Method::GET, "/v1/memory", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// The events of kind `kind` in a run, in order.
+async fn events_of(app: &TestApp, key: &str, id: &str, kind: &str) -> Vec<Value> {
+    app.events(key, id, None)
+        .await
+        .iter()
+        .filter(|e| e.data["type"] == kind)
+        .map(|e| e.data["data"].clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn an_interactive_run_picks_facts_out_of_its_prompt() {
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(text("Nice to meet you, Ana.")),
+            // The memory call.
+            Step::Reply(text(
+                "{\"remember\": [{\"text\": \"Is called Ana\", \"replaces\": null}, \
+                 {\"text\": \"Lives in Zurich\"}, {\"text\": \"Has a cat called Mio\"}]}",
+            )),
+            Step::Reply(text("It is 20 °C in Zurich.")),
+        ],
+        &[("MEMORY_EXTRACT", "on")],
+    )
+    .await;
+    let first = run(
+        &app,
+        KEY_A,
+        json!({ "prompt": "Hi, I'm Ana, I live in Zurich with my cat Mio. How warm is it?", "interactive": true }),
+    )
+    .await;
+    assert_eq!(first["final_text"], "Nice to meet you, Ana.");
+    assert_eq!(app.llm.call_count(), 2);
+    let call = &app.llm.requests()[1];
+    assert_eq!(call["system"], cedar::memory::EXTRACT_SYSTEM);
+    assert!(call["tools"].as_array().unwrap().is_empty());
+    let body = call["messages"][0]["content"].as_str().unwrap();
+    assert!(body.starts_with("Nothing is remembered"), "{body}");
+    assert!(body.contains("my cat Mio"), "{body}");
+
+    let items = memories(&app, KEY_A).await;
+    let texts: Vec<&str> = items.iter().map(|m| m["text"].as_str().unwrap()).collect();
+    assert_eq!(texts, ["Is called Ana", "Lives in Zurich", "Has a cat called Mio"]);
+    assert!(items.iter().all(|m| m["run_id"] == first["id"]));
+
+    let id = first["id"].as_str().unwrap();
+    let updated = events_of(&app, KEY_A, id, "memory.updated").await;
+    assert_eq!(updated.len(), 1);
+    let saved = updated[0]["saved"].as_array().unwrap();
+    assert_eq!(saved.len(), 3);
+    assert_eq!(saved[0]["status"], "added");
+    assert_eq!(saved[0]["memory"]["text"], "Is called Ana");
+    assert_eq!(saved[0]["memory"]["id"], items[0]["id"]);
+    let usage = events_of(&app, KEY_A, id, "usage").await;
+    assert_eq!(usage.len(), 2);
+    assert_eq!(usage[1]["purpose"], "memory");
+    assert_eq!(usage[1]["turn"], 0);
+    // The event comes after the answer and before the end.
+    let kinds: Vec<String> = app
+        .events(KEY_A, id, None)
+        .await
+        .iter()
+        .map(|e| e.data["type"].as_str().unwrap().to_string())
+        .collect();
+    let at = |k: &str| kinds.iter().position(|x| x == k).unwrap();
+    assert!(at("assistant.text") < at("memory.updated"));
+    assert!(at("memory.updated") < at("run.completed"));
+
+    // The trace keeps the call, in full, as it does the planning call.
+    let (status, trace) = app.get(&format!("/v1/runs/{id}/trace"), KEY_A).await;
+    assert_eq!(status, StatusCode::OK);
+    let calls = trace["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[1]["purpose"], "memory");
+    assert_eq!(calls[1]["request"]["system"], cedar::memory::EXTRACT_SYSTEM);
+
+    // The next conversation knows, and the memory call sees the list.
+    run(&app, KEY_A, json!({ "prompt": "How warm is it?" })).await;
+    let sys = system(&app, 2);
+    assert!(sys.contains("Lives in Zurich"), "{sys}");
+}
+
+#[tokio::test]
+async fn the_memory_call_replaces_skips_duplicates_and_survives_failing() {
+    let app = TestApp::with_env(vec![], &[("MEMORY_EXTRACT", "on")]).await;
+    let (_, bern) = add(&app, KEY_A, "Lives in Bern").await;
+    let bern_id = bern["id"].as_str().unwrap().to_string();
+    let app = TestApp::build(
+        app.state.store.clone(),
+        ScriptedLlm::new(vec![
+            Step::Reply(text("Congratulations on the move!")),
+            Step::Reply(text(&format!(
+                "{{\"remember\": [{{\"text\": \"Lives in Zurich\", \"replaces\": \"{bern_id}\"}}, \
+                 {{\"text\": \"lives in zurich\"}}]}}"
+            ))),
+            Step::Reply(text("ok")),
+            Step::Error("model down"),
+            Step::Reply(text("ok")),
+            Step::Reply(text("Nothing worth noting.")),
+        ]),
+        FakeFactory::new(),
+        &[("MEMORY_EXTRACT", "on")],
+    )
+    .await;
+    let done = run(&app, KEY_A, json!({ "prompt": "I moved to Zurich!", "interactive": true })).await;
+    let body = app.llm.requests()[1]["messages"][0]["content"].as_str().unwrap().to_string();
+    assert!(body.contains(&format!("[{bern_id}] Lives in Bern")), "{body}");
+    let items = memories(&app, KEY_A).await;
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"], bern_id);
+    assert_eq!(items[0]["text"], "Lives in Zurich");
+    assert_eq!(items[0]["run_id"], done["id"]);
+    let updated = events_of(&app, KEY_A, done["id"].as_str().unwrap(), "memory.updated").await;
+    assert_eq!(updated[0]["saved"].as_array().unwrap().len(), 1);
+    assert_eq!(updated[0]["saved"][0]["status"], "replaced");
+
+    // A failed memory call doesn't fail the run, and leaves memory as it was.
+    let done = run(&app, KEY_A, json!({ "prompt": "and the weather?", "interactive": true })).await;
+    assert_eq!(done["status"], "completed");
+    assert!(events_of(&app, KEY_A, done["id"].as_str().unwrap(), "memory.updated").await.is_empty());
+    assert_eq!(memories(&app, KEY_A).await.len(), 1);
+
+    // Nothing usable in the reply: nothing saved, no event.
+    let done = run(&app, KEY_A, json!({ "prompt": "thanks", "interactive": true })).await;
+    assert!(events_of(&app, KEY_A, done["id"].as_str().unwrap(), "memory.updated").await.is_empty());
+    assert_eq!(app.llm.call_count(), 6);
+}
+
+#[tokio::test]
+async fn the_memory_call_is_skipped_when_it_cannot_write() {
+    // Unattended runs can't change memory; neither can a run without the memory group; and
+    // MEMORY_EXTRACT=off keeps the old behaviour. None of them makes the extra call.
+    let app = TestApp::with_env(
+        vec![Step::Repeat(text("ok"))],
+        &[("MEMORY_EXTRACT", "on")],
+    )
+    .await;
+    run(&app, KEY_A, json!({ "prompt": "I'm Ana" })).await;
+    assert_eq!(app.llm.call_count(), 1);
+    run(&app, KEY_A, json!({ "prompt": "I'm Ana", "interactive": true, "tools": ["web_fetch"] })).await;
+    assert_eq!(app.llm.call_count(), 2);
+    run(&app, KEY_A, json!({ "prompt": "I'm Ana", "interactive": true })).await;
+    assert_eq!(app.llm.call_count(), 4);
+    assert!(memories(&app, KEY_A).await.is_empty());
+
+    let app = TestApp::new(vec![Step::Repeat(text("ok"))]).await;
+    run(&app, KEY_A, json!({ "prompt": "I'm Ana", "interactive": true })).await;
+    assert_eq!(app.llm.call_count(), 1);
 }

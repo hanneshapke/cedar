@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Memory picks up what you say about yourself.** Facts were only saved when the model chose to call `remember`, which it rarely did unless asked outright. Now every interactive run ends with one short tool-free model call that reads the message you sent, next to what is already remembered, and lists the durable facts in it (your name, where you live, work, family, diet, the tools you use, how you like answers, standing instructions, ongoing projects) as JSON; each is saved as `remember` would, deduplicated and with `replaces` honoured, and the list is never read from the model's answer, tool results or attached files, only from your own words. What was saved goes out as a new `memory.updated` event (`saved: [{status, memory}]`) after the answer, shows in the chat as *remember* steps under the reply, is in the run's trace as a call with `purpose: "memory"`, and counts in a `usage` event with that purpose. `MEMORY_EXTRACT=off` turns the pass off. The rules the model is given for `remember` now tell it to save such facts in the same reply, without being asked, rather than only on request. Contributed conversations leave the memory call out, as they do the memory list.
+
 ## 0.4.1
 
 - **A feature tour on the iPhone.** After the language, a new install walks through what Cedar does in seven pages, each a small picture of the app itself drawn from the theme (the phone, the server and the sandbox wired together; a reply taking shape with its reasoning and tool calls; the weather, chart, recipe and route cards; a plan waiting for a go-ahead and a question with its choices; scheduled agents and the push they send; the memory chips with a lock; the QR code filling in the server fields), with Skip, Continue and *Get Started*, which opens Settings when no server was saved yet. Settings → About → *See What Cedar Can Do* shows it again. Shown once after this update to existing installs too.

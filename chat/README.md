@@ -498,7 +498,9 @@ Until cedar has a model registered, the message box says so and sending is off.
 
 cedar remembers short facts about you across conversations (see [Memory](../README.md#memory)):
 your name, preferences, standing instructions and projects, saved when you tell it something
-lasting or ask it to remember something. Saving one shows as a tool step (*Remembered …*).
+lasting or ask it to remember something, and picked out of your message once the reply is done,
+so a fact mentioned in passing ("I'm vegetarian, by the way") is kept too. Each one saved shows as
+a *remember* step under the reply.
 **Settings → Memory** lists everything it remembers, newest first, with the date and a link to the
 conversation it was saved in, a **Remove** button on each, and **Forget all**. The list is exactly
 what the model sees, and a removal applies from the next message on, in every conversation. The

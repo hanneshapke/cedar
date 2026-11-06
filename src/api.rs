@@ -121,6 +121,7 @@ impl AppState {
             integrations: integrations.clone(),
             pdf_preview_pages: cfg.pdf_preview_pages,
             memories: cfg.memory.then(|| memories.clone()),
+            memory_extract: cfg.memory_extract,
         };
         let manager = RunManager::new(
             store.clone(),

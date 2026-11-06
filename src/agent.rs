@@ -53,6 +53,9 @@ pub struct AgentEnv {
     pub pdf_preview_pages: usize,
     /// What owners remember across conversations; `None` when memory is turned off.
     pub memories: Option<Memories>,
+    /// Whether an interactive run ends with a call that picks facts about the user out of its
+    /// prompt (see [`note_facts`]).
+    pub memory_extract: bool,
 }
 
 #[derive(Debug)]
@@ -155,7 +158,8 @@ pub async fn run_agent(
     }
     // Read per request, so a memory deleted in Settings is gone from the very next run. The
     // `memory` group switches reading and writing together.
-    if let (Some(memories), true) = (&env.memories, tools.get(REMEMBER).is_some()) {
+    let memory_on = tools.get(REMEMBER).is_some();
+    if let (Some(memories), true) = (&env.memories, memory_on) {
         let items = memories.list(&run.owner).await?;
         note.push_str("\n\n");
         note.push_str(&memory::note(&items, run.interactive));
@@ -300,17 +304,19 @@ pub async fn run_agent(
                     let mut parts = vec![final_text];
                     parts.extend(asked);
                     parts.retain(|p| !p.trim().is_empty());
-                    return Ok(Completion {
+                    let done = Completion {
                         final_text: parts.join("\n\n"),
                         stop_reason: Some(ASK_USER.to_string()),
-                    });
+                    };
+                    return finish(env, run, memory_on, events, cancel, done).await;
                 }
             }
             other => {
-                return Ok(Completion {
+                let done = Completion {
                     final_text,
                     stop_reason: other.map(String::from),
-                })
+                };
+                return finish(env, run, memory_on, events, cancel, done).await;
             }
         }
     }
@@ -318,6 +324,91 @@ pub async fn run_agent(
         "run did not finish within {} turns",
         run.max_turns
     )))
+}
+
+/// The run's completion, after what its prompt said about the user has been noted (see
+/// [`note_facts`]). The answer is already out, so being cancelled while noting only skips it.
+async fn finish(
+    env: &AgentEnv,
+    run: &Run,
+    memory_on: bool,
+    events: &Emitter,
+    cancel: &CancellationToken,
+    done: Completion,
+) -> Result<Completion, AgentError> {
+    if memory_on && env.memory_extract && run.interactive {
+        match note_facts(env, run, events, cancel).await {
+            Ok(()) | Err(AgentError::Cancelled) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(done)
+}
+
+/// Pick the facts about the user out of the run's prompt with one tool-free model call and save
+/// them (see [`memory::extraction`]). What was added or replaced goes out as a `memory.updated`
+/// event. A failed call is logged and the run completes without; so is nothing found.
+async fn note_facts(
+    env: &AgentEnv,
+    run: &Run,
+    events: &Emitter,
+    cancel: &CancellationToken,
+) -> Result<(), AgentError> {
+    let Some(memories) = &env.memories else {
+        return Ok(());
+    };
+    let Some(llm) = env.llm.client_for(&run.model_id) else {
+        return Ok(());
+    };
+    let prompt = run.prompt.trim();
+    if prompt.is_empty() {
+        return Ok(());
+    }
+    let items = memories.list(&run.owner).await?;
+    let (system, messages) = memory::extraction(&items, prompt);
+    let req = MessageRequest {
+        model: &run.model,
+        max_tokens: max_tokens(env, run),
+        reasoning_effort: run.reasoning.as_deref(),
+        system: &system,
+        tools: &[],
+        messages: &messages,
+    };
+    let resp = match call_model(env, run, llm.as_ref(), &req, trace::MEMORY, 0, cancel).await? {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "the memory call failed; nothing noted from this prompt");
+            return Ok(());
+        }
+    };
+    env.store.record_turn(run.id, 0, resp.usage).await?;
+    let mut usage = usage_event(env, run, 0, resp.usage);
+    usage["purpose"] = json!("memory");
+    events.emit(event::USAGE, usage).await?;
+    let text: String = resp
+        .content
+        .iter()
+        .filter(|b| b["type"] == "text")
+        .filter_map(|b| b["text"].as_str())
+        .collect();
+    let found = memory::parse_extraction(&text);
+    if found.is_empty() {
+        return Ok(());
+    }
+    let saved = memories
+        .remember_all(&run.owner, Some(run.id), &found)
+        .await?;
+    if saved.is_empty() {
+        return Ok(());
+    }
+    let saved: Vec<Value> = saved
+        .into_iter()
+        .map(|(memory, status)| json!({ "status": status, "memory": memory }))
+        .collect();
+    events
+        .emit(event::MEMORY_UPDATED, json!({ "saved": saved }))
+        .await?;
+    Ok(())
 }
 
 /// The run's system prompt followed by the environment note. The note is added per request, not
