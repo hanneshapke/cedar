@@ -91,6 +91,28 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         send(request("api/memory", "DELETE"))
     }
 
+    // Records
+
+    /** The sets cedar keeps for the user. A server without the route reads as not supported. */
+    suspend fun records(): RecordsList = try {
+        decode(request("api/records"), RecordsList.serializer())
+    } catch (e: ChatException.Api) {
+        if (e.status == 404) RecordsList(supported = false) else throw e
+    }
+
+    /** One set with all its rows. */
+    suspend fun recordSet(name: String): RecordSetDetail = decode(request("api/records/$name"), RecordSetDetail.serializer())
+
+    /** Deletes one set; it applies from the next message on, in every conversation. */
+    suspend fun deleteRecordSet(name: String) {
+        send(request("api/records/$name", "DELETE"))
+    }
+
+    /** Deletes every set cedar keeps for the user. */
+    suspend fun deleteAllRecords() {
+        send(request("api/records", "DELETE"))
+    }
+
     /** Checks that the server is up and takes the token (or needs none). */
     suspend fun verify() {
         val config = config()

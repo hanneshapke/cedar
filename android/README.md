@@ -61,6 +61,12 @@ The same as the iOS app:
   [Memory](../README.md#memory)), newest first; tap a fact to open the conversation it came from,
   long-press to delete it, or **Delete all**. Deletions apply at once. Shown only when the server
   has memory (`memory` in `GET /api/config`)
+- **Settings → Records**: the data Cedar keeps for you across conversations (see
+  [Records](../README.md#records)), one row per set with its description, size, key and columns,
+  most recently saved first; tap a set to see its rows, newest first, each with when it was saved
+  and a tap to open the conversation it came from; long-press a set to delete it, or **Delete
+  all**. Deletions apply at once. Shown only when the server has records (`records` in
+  `GET /api/config`)
 - English, German, French and Spanish (see [Languages](#languages))
 
 ## Requirements
@@ -216,6 +222,8 @@ followed live (reconnecting from the last event), `GET /api/events` while in fro
 `POST /api/schedules/{id}/run`, `PATCH /api/schedules/{id}`), plans and approvals, files, and the
 language (`PUT /api/settings/locale`, and `locale` with each message), and memory
 (`GET /api/memory`, `DELETE /api/memory/{id}`, `DELETE /api/memory`; a 404 means an older server).
+Records come from `GET /api/records`, a set's rows from `GET /api/records/{name}`, and go with
+`DELETE /api/records/{name}` and `DELETE /api/records` (a 404 means an older server).
 The push token or endpoint goes to `POST /api/notifications/android/devices`.
 
 ## Continuous integration

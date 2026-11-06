@@ -1055,6 +1055,29 @@
         }
       }
     },
+    "%lld of %lld sets" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld Sätzen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld conjuntos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld jeux sur %lld"
+          }
+        }
+      }
+    },
     "%lld picked from %@ product on %@ page" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1170,6 +1193,52 @@
         }
       }
     },
+    "%lld row" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Zeile"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld fila"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld ligne"
+          }
+        }
+      }
+    },
+    "%lld rows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Zeilen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld filas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld lignes"
+          }
+        }
+      }
+    },
     "%lld samples" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1189,6 +1258,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld échantillons"
+          }
+        }
+      }
+    },
+    "%lld set" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Satz"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld conjunto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld jeu"
+          }
+        }
+      }
+    },
+    "%lld sets" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Sätze"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld conjuntos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld jeux"
           }
         }
       }
@@ -3083,6 +3198,28 @@
         }
       }
     },
+    "Cedar is told each set's name, size and columns, never the rows, until it looks them up. Records stay on your own server and are never shared with a third party. Settings → Tools in the web UI turns them off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar kennt von jedem Satz Name, Größe und Spalten, nie die Zeilen, bis es sie nachschlägt. Datensätze bleiben auf deinem eigenen Server und werden nie an Dritte weitergegeben. Unter Einstellungen → Werkzeuge in der Weboberfläche lassen sie sich ausschalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar conoce el nombre, el tamaño y las columnas de cada conjunto, nunca las filas, hasta que las consulta. Los datos se quedan en tu propio servidor y nunca se comparten con terceros. Se desactivan en Configuración → Herramientas de la interfaz web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar connaît le nom, la taille et les colonnes de chaque jeu, jamais les lignes, tant qu'il ne les consulte pas. Les données restent sur votre propre serveur et ne sont jamais partagées avec des tiers. Réglages → Outils dans l'interface web permet de les désactiver."
+          }
+        }
+      }
+    },
     "Cedar planned this, waiting for your go-ahead" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3124,6 +3261,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar tourne là où vous l’installez. Cette app lui parle ; vos clés, vos fichiers et vos conversations ne quittent jamais votre serveur."
+          }
+        }
+      }
+    },
+    "Cedar will delete all %lld sets of records it keeps for you. This can't be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar löscht alle %lld Datensätze, die es für dich aufbewahrt. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar eliminará los %lld conjuntos de datos que guarda para ti. No se puede deshacer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar supprimera les %lld jeux de données qu'il conserve pour vous. Cette action est irréversible."
+          }
+        }
+      }
+    },
+    "Cedar will delete the %lld set of records it keeps for you. This can't be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar löscht den %lld Datensatz, den es für dich aufbewahrt. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar eliminará el %lld conjunto de datos que guarda para ti. No se puede deshacer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar supprimera le %lld jeu de données qu'il conserve pour vous. Cette action est irréversible."
           }
         }
       }
@@ -3998,6 +4181,28 @@
         }
       }
     },
+    "Data Cedar keeps for you across conversations, like a running log or weekly measurements, to compare with later. Deleting a set applies from your next message." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten, die Cedar über Unterhaltungen hinweg für dich aufbewahrt, etwa ein Lauftagebuch oder wöchentliche Messwerte, zum späteren Vergleich. Das Löschen eines Satzes gilt ab deiner nächsten Nachricht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos que Cedar guarda para ti entre conversaciones, como un registro de carreras o mediciones semanales, para compararlos después. Eliminar un conjunto se aplica desde tu próximo mensaje."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données que Cedar conserve pour vous d'une conversation à l'autre, comme un journal de course ou des mesures hebdomadaires, pour les comparer plus tard. La suppression d'un jeu s'applique dès votre prochain message."
+          }
+        }
+      }
+    },
     "Date" : {
       "localizations" : {
         "de" : {
@@ -4128,6 +4333,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tout supprimer"
+          }
+        }
+      }
+    },
+    "Delete Every Set?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Sätze löschen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar todos los conjuntos?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer tous les jeux ?"
           }
         }
       }
@@ -5051,6 +5278,29 @@
         }
       }
     },
+    "From a conversation not in this app" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus einer Unterhaltung, die nicht in dieser App ist"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De una conversación que no está en esta app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D'une conversation absente de cette app"
+          }
+        }
+      }
+    },
     "From review or search text, not checked on a store page" : {
       "localizations" : {
         "de" : {
@@ -5317,6 +5567,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Max. %1$@ · Min. %2$@"
+          }
+        }
+      }
+    },
+    "Health data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesundheitsdaten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos de salud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Données de santé"
           }
         }
       }
@@ -7026,6 +7298,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucun fichier pour l'instant"
+          }
+        }
+      }
+    },
+    "No Records Yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Datensätze"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía sin datos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune donnée pour l'instant"
+          }
+        }
+      }
+    },
+    "No Rows" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Zeilen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin filas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune ligne"
           }
         }
       }
@@ -9238,6 +9554,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recommandé"
+          }
+        }
+      }
+    },
+    "Records" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datensätze"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Données"
           }
         }
       }
@@ -11783,6 +12121,28 @@
         }
       }
     },
+    "This server doesn't keep records between conversations yet. Update cedar to use records." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Server bewahrt noch keine Daten zwischen Unterhaltungen auf. Aktualisiere cedar, um Datensätze zu nutzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor todavía no guarda datos entre conversaciones. Actualiza cedar para usar los conjuntos de datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur ne conserve encore aucune donnée d'une conversation à l'autre. Mettez cedar à jour pour utiliser les jeux de données."
+          }
+        }
+      }
+    },
     "This server doesn't remember anything between conversations yet. Update cedar to use memory." : {
       "localizations" : {
         "de" : {
@@ -11823,6 +12183,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce serveur n'a pas de corpus où envoyer."
+          }
+        }
+      }
+    },
+    "This set holds no rows yet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Satz enthält noch keine Zeilen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este conjunto todavía no tiene filas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce jeu ne contient encore aucune ligne."
           }
         }
       }
@@ -12492,6 +12874,29 @@
         }
       }
     },
+    "Uploaded by hand" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Hand hochgeladen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subido a mano"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouté à la main"
+          }
+        }
+      }
+    },
     "Value" : {
       "localizations" : {
         "de" : {
@@ -12977,6 +13382,28 @@
         }
       }
     },
+    "What Cedar Keeps" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was Cedar aufbewahrt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que Cedar guarda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que Cedar conserve"
+          }
+        }
+      }
+    },
     "What Cedar Remembers" : {
       "localizations" : {
         "de" : {
@@ -13106,6 +13533,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quand Cedar le juge utile"
+          }
+        }
+      }
+    },
+    "When you give Cedar data to come back to, like a weekly export or your measurements, it saves the rows here and can compare them week by week." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du Cedar Daten gibst, auf die es zurückkommen soll, etwa einen wöchentlichen Export oder deine Messwerte, speichert es die Zeilen hier und kann sie Woche für Woche vergleichen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando le des a Cedar datos a los que volver, como una exportación semanal o tus mediciones, guardará las filas aquí y podrá compararlas semana a semana."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quand vous donnez à Cedar des données à retrouver plus tard, comme un export hebdomadaire ou vos mesures, il enregistre les lignes ici et peut les comparer semaine après semaine."
           }
         }
       }
@@ -14068,6 +14517,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "l'indice"
+          }
+        }
+      }
+    },
+    "key: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schlüssel: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "clave: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "clé : %@"
           }
         }
       }

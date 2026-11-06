@@ -26,6 +26,45 @@ final class APITests: XCTestCase {
         XCTAssertFalse(unsupported.supported)
     }
 
+    func testDecodesRecordsAndTheConfigFlag() throws {
+        let old = try JSONDecoder.cedar.decode(ServerConfig.self, from: Data(#"{"auth_required":true,"admin_enabled":false,"memory":true}"#.utf8))
+        XCTAssertFalse(old.records)
+        let new = try JSONDecoder.cedar.decode(ServerConfig.self, from: Data(#"{"auth_required":false,"admin_enabled":false,"memory":true,"records":true}"#.utf8))
+        XCTAssertTrue(new.records)
+
+        let list = try JSONDecoder.cedar.decode(RecordsList.self, from: Data("""
+        {"supported":true,"limits":{"max_sets":50,"max_items":10000,"max_record_chars":8000,"max_batch":500},"sets":[
+          {"id":"s1","name":"running_log","description":"Weekly runs","key_fields":["date"],"health_data":false,"count":2,
+           "columns":["date","km"],"created_at":"2026-10-29T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"},
+          {"id":"s2","name":"weight","description":"","key_fields":[],"health_data":true,"count":0,"columns":[],
+           "created_at":"2026-10-29T08:00:00Z","updated_at":"2026-10-29T08:00:00Z"}]}
+        """.utf8))
+        XCTAssertTrue(list.supported)
+        XCTAssertEqual(list.limits?.maxSets, 50)
+        XCTAssertEqual(list.sets.map(\.name), ["running_log", "weight"])
+        XCTAssertEqual(list.sets[0].keyFields, ["date"])
+        XCTAssertEqual(list.sets[0].columns, ["date", "km"])
+        XCTAssertTrue(list.sets[1].healthData)
+        let unsupported = try JSONDecoder.cedar.decode(RecordsList.self, from: Data(#"{"supported":false,"sets":[],"limits":null}"#.utf8))
+        XCTAssertFalse(unsupported.supported)
+
+        let detail = try JSONDecoder.cedar.decode(RecordSetDetail.self, from: Data("""
+        {"set":{"id":"s1","name":"running_log","description":"Weekly runs","key_fields":["date"],"health_data":false,"count":2,
+                "columns":["date","km"],"created_at":"2026-10-29T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"},
+         "records":[{"id":"r1","key":"2026-10-26","data":{"date":"2026-10-26","km":31.2},"run_id":"run-1","conversation_id":"c1","title":"Week 43",
+                     "created_at":"2026-10-26T08:00:00Z","updated_at":"2026-10-26T08:00:00Z"},
+                    {"id":"r2","key":"2026-11-02","data":{"date":"2026-11-02","km":35,"note":null},"run_id":null,"conversation_id":null,"title":null,
+                     "created_at":"2026-11-02T08:00:00Z","updated_at":"2026-11-05T08:00:00Z"}]}
+        """.utf8))
+        XCTAssertEqual(detail.set.name, "running_log")
+        XCTAssertEqual(detail.records.map(\.id), ["r1", "r2"])
+        XCTAssertEqual(detail.records[0].conversationId, "c1")
+        XCTAssertEqual(detail.records[0].data["km"], .number(31.2))
+        XCTAssertNil(detail.records[1].conversationId)
+        XCTAssertNil(detail.records[1].runId)
+        XCTAssertEqual(detail.records[1].data["note"], .null)
+    }
+
     func testDecodesConversationsAndTurns() throws {
         let json = """
         {"conversation":{"id":"c1","title":"Trip","model":"m","reasoning":null,"schedule_id":null,"tools":["web_search"],

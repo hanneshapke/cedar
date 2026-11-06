@@ -89,6 +89,32 @@ struct ChatClient: Sendable {
         _ = try await send(makeRequest("api/memory", method: "DELETE"))
     }
 
+    // MARK: Records
+
+    /// The sets cedar keeps for the user. A server without the route reads as not supported.
+    func records() async throws -> RecordsList {
+        do {
+            return try await decode(makeRequest("api/records"))
+        } catch let error as ChatError where error.status == 404 {
+            return .unsupported
+        }
+    }
+
+    /// One set with all its rows.
+    func recordSet(name: String) async throws -> RecordSetDetail {
+        try await decode(makeRequest("api/records/\(name)"))
+    }
+
+    /// Deletes one set; it applies from the next message on, in every conversation.
+    func deleteRecordSet(name: String) async throws {
+        _ = try await send(makeRequest("api/records/\(name)", method: "DELETE"))
+    }
+
+    /// Deletes every set cedar keeps for the user.
+    func deleteAllRecords() async throws {
+        _ = try await send(makeRequest("api/records", method: "DELETE"))
+    }
+
     /// Checks that the server is up and takes the token (or needs none).
     func verify() async throws {
         let config = try await self.config()

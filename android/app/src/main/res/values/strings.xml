@@ -441,6 +441,34 @@
         <item quantity="one">Cedar will forget %d memory it has about you. This can\'t be undone.</item>
         <item quantity="other">Cedar will forget all %d memories it has about you. This can\'t be undone.</item>
     </plurals>
+    <string name="records">Records</string>
+    <string name="records_settings_row">What Cedar Keeps</string>
+    <string name="records_settings_footnote">Data Cedar keeps for you across conversations, like a running log or weekly measurements, to compare with later. Deleting a set applies from your next message.</string>
+    <string name="records_delete_all">Delete All</string>
+    <string name="records_delete_all_title">Delete Every Set?</string>
+    <string name="records_empty_title">No Records Yet</string>
+    <string name="records_empty_text">When you give Cedar data to come back to, like a weekly export or your measurements, it saves the rows here and can compare them week by week.</string>
+    <string name="records_unsupported">This server doesn\'t keep records between conversations yet. Update cedar to use records.</string>
+    <string name="records_no_source">Uploaded by hand</string>
+    <string name="records_from_elsewhere">From a conversation not in this app</string>
+    <string name="records_count_of">%1$d of %2$d sets</string>
+    <string name="records_key">key: %1$s</string>
+    <string name="records_health">Health data</string>
+    <string name="records_no_rows_title">No Rows</string>
+    <string name="records_no_rows_text">This set holds no rows yet.</string>
+    <string name="records_footnote">Cedar is told each set\'s name, size and columns, never the rows, until it looks them up. Tap a set to see its rows; long-press to delete it. Records stay on your own server and are never shared with a third party. Settings → Tools in the web UI turns them off.</string>
+    <plurals name="records_count">
+        <item quantity="one">%d set</item>
+        <item quantity="other">%d sets</item>
+    </plurals>
+    <plurals name="records_rows">
+        <item quantity="one">%d row</item>
+        <item quantity="other">%d rows</item>
+    </plurals>
+    <plurals name="records_delete_all_text">
+        <item quantity="one">Cedar will delete the %d set of records it keeps for you. This can\'t be undone.</item>
+        <item quantity="other">Cedar will delete all %d sets of records it keeps for you. This can\'t be undone.</item>
+    </plurals>
 
     <!-- Contributing a conversation (Settings → Contribute, and the review from a chat) -->
     <string name="contribute">Contribute</string>

@@ -9,13 +9,15 @@ struct ServerConfig: Decodable, Sendable {
     let adminEnabled: Bool
     /// The server has `/api/memory`; an older one leaves it out, so Settings hides Memory.
     let memory: Bool
+    /// The server has `/api/records`; an older one leaves it out, so Settings hides Records.
+    let records: Bool
     /// The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`).
     let contributions: Bool
 
     enum CodingKeys: String, CodingKey {
         case authRequired = "auth_required"
         case adminEnabled = "admin_enabled"
-        case memory, contributions
+        case memory, records, contributions
     }
 
     init(from decoder: Decoder) throws {
@@ -23,6 +25,7 @@ struct ServerConfig: Decodable, Sendable {
         authRequired = try c.decode(Bool.self, forKey: .authRequired)
         adminEnabled = try c.decode(Bool.self, forKey: .adminEnabled)
         memory = try c.decodeIfPresent(Bool.self, forKey: .memory) ?? false
+        records = try c.decodeIfPresent(Bool.self, forKey: .records) ?? false
         contributions = try c.decodeIfPresent(Bool.self, forKey: .contributions) ?? false
     }
 }
@@ -281,6 +284,83 @@ struct MemoryList: Decodable, Sendable {
     let limits: Limits?
 
     static let unsupported = MemoryList(supported: false, items: [], limits: nil)
+}
+
+/// One set of records cedar keeps for the user across conversations (`GET /api/records`): a
+/// running log, weekly measurements (see the top-level README, "Records").
+struct RecordSet: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let description: String
+    /// The fields that identify a row; empty when every save appends.
+    let keyFields: [String]
+    let healthData: Bool
+    let count: Int
+    let columns: [String]
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, count, columns
+        case keyFields = "key_fields"
+        case healthData = "health_data"
+        case updatedAt = "updated_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        keyFields = try c.decodeIfPresent([String].self, forKey: .keyFields) ?? []
+        healthData = try c.decodeIfPresent(Bool.self, forKey: .healthData) ?? false
+        count = try c.decodeIfPresent(Int.self, forKey: .count) ?? 0
+        columns = try c.decodeIfPresent([String].self, forKey: .columns) ?? []
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+    }
+}
+
+/// The sets cedar keeps, oldest first; `supported` is false on a cedar from before records.
+struct RecordsList: Decodable, Sendable {
+    struct Limits: Decodable, Sendable {
+        let maxSets: Int
+        let maxItems: Int
+
+        enum CodingKeys: String, CodingKey {
+            case maxSets = "max_sets"
+            case maxItems = "max_items"
+        }
+    }
+
+    let supported: Bool
+    let sets: [RecordSet]
+    let limits: Limits?
+
+    static let unsupported = RecordsList(supported: false, sets: [], limits: nil)
+}
+
+/// One row of a set (`GET /api/records/{name}`), with the conversation whose run saved it last,
+/// while that still exists on this server.
+struct RecordRow: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let key: String
+    let data: [String: JSONValue]
+    let runId: String?
+    let conversationId: String?
+    let title: String?
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, key, data, title
+        case runId = "run_id"
+        case conversationId = "conversation_id"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// A set with all its rows, oldest first.
+struct RecordSetDetail: Decodable, Sendable {
+    let set: RecordSet
+    let records: [RecordRow]
 }
 
 /// One of the models cedar has registered (`GET /api/models`).
