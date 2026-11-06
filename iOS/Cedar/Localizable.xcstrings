@@ -1864,6 +1864,28 @@
         }
       }
     },
+    "AI Model" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KI-Modell"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelo de IA"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modèle d’IA"
+          }
+        }
+      }
+    },
     "About" : {
       "localizations" : {
         "de" : {
@@ -2635,6 +2657,28 @@
         }
       }
     },
+    "Before a bigger request, Cedar lists the steps it will take and waits for your go-ahead; you can stop it there. With “When Cedar thinks it helps”, it decides which requests need a plan, so quick questions get none." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor einer größeren Anfrage listet Cedar die Schritte auf, die es gehen will, und wartet auf dein Okay; dort kannst du es stoppen. Mit „Wenn Cedar es für sinnvoll hält“ entscheidet es selbst, welche Anfragen einen Plan brauchen, sodass kurze Fragen keinen bekommen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antes de una petición más grande, Cedar enumera los pasos que va a dar y espera tu visto bueno; ahí puedes detenerlo. Con «Cuando Cedar crea que ayuda», decide qué peticiones necesitan un plan, así las preguntas rápidas no reciben ninguno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avant une demande plus importante, Cedar liste les étapes qu’il va suivre et attend votre feu vert ; vous pouvez l’arrêter là. Avec « Quand Cedar le juge utile », il décide quelles demandes ont besoin d’un plan, et les questions rapides n’en ont pas."
+          }
+        }
+      }
+    },
     "Best for: " : {
       "localizations" : {
         "de" : {
@@ -3080,28 +3124,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar tourne là où vous l’installez. Cette app lui parle ; vos clés, vos fichiers et vos conversations ne quittent jamais votre serveur."
-          }
-        }
-      }
-    },
-    "Cedar shows its steps and waits for your go-ahead; you can stop it there. With “When Cedar thinks it helps”, it decides which requests need a plan, so quick questions get none." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cedar zeigt seine Schritte und wartet auf dein OK; du kannst es dort stoppen. Mit „Wenn Cedar es für sinnvoll hält“ entscheidet es selbst, welche Anfragen einen Plan brauchen, sodass kurze Fragen keinen bekommen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cedar muestra sus pasos y espera tu visto bueno; ahí puedes detenerlo. Con «Cuando Cedar crea que ayuda», decide qué solicitudes necesitan un plan, así que las preguntas rápidas no tienen ninguno."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cedar affiche ses étapes et attend votre feu vert ; vous pouvez l'arrêter à ce moment-là. Avec « Quand Cedar le juge utile », il décide quelles demandes nécessitent un plan : les questions rapides n'en ont pas."
           }
         }
       }
@@ -8545,6 +8567,28 @@
         }
       }
     },
+    "Plan Approval" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan-Freigabe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobación del plan"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Validation du plan"
+          }
+        }
+      }
+    },
     "Plan, waiting for your go-ahead" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8564,28 +8608,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plan, en attente de votre feu vert"
-          }
-        }
-      }
-    },
-    "Plans" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pläne"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Planes"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plans"
           }
         }
       }
@@ -9128,6 +9150,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niveau de raisonnement"
+          }
+        }
+      }
+    },
+    "Reasoning Effort" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denkaufwand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esfuerzo de razonamiento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effort de raisonnement"
           }
         }
       }
@@ -10328,6 +10372,28 @@
         }
       }
     },
+    "Show a Plan First" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erst einen Plan zeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar primero un plan"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Montrer d’abord un plan"
+          }
+        }
+      }
+    },
     "Show all %lld headlines" : {
       "localizations" : {
         "de" : {
@@ -11192,6 +11258,28 @@
         }
       }
     },
+    "The AI models your server offers are listed once it is reachable." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die KI-Modelle, die dein Server anbietet, erscheinen, sobald er erreichbar ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los modelos de IA que ofrece tu servidor aparecen en cuanto está disponible."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modèles d’IA que propose votre serveur s’affichent dès qu’il est joignable."
+          }
+        }
+      }
+    },
     "The address where you open cedar-chat in a browser, and its access token if it has one. On a Mac, turn on iPhone & iPad sharing in the Cedar app and scan the code it shows. The token stays in this phone's Keychain." : {
       "localizations" : {
         "de" : {
@@ -11358,28 +11446,6 @@
         }
       }
     },
-    "The models cedar has registered are listed once the server is reachable." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die bei cedar registrierten Modelle erscheinen, sobald der Server erreichbar ist."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los modelos que cedar tiene registrados aparecen en cuanto el servidor está disponible."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les modèles enregistrés par cedar s'affichent dès que le serveur est joignable."
-          }
-        }
-      }
-    },
     "The recommendation" : {
       "localizations" : {
         "de" : {
@@ -11489,28 +11555,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le serveur envoie une notification push quand une réponse est prête ou que Cedar a une question. Configurez le push iPhone sous Réglages → Notifications dans l’interface web ; ce téléphone s’y enregistre lui-même."
-          }
-        }
-      }
-    },
-    "The server, model and plan settings you changed are not saved yet." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die geänderten Einstellungen für Server, Modell und Pläne sind noch nicht gespeichert."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los ajustes de servidor, modelo y planes que cambiaste aún no están guardados."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les réglages du serveur, du modèle et des plans que vous avez modifiés ne sont pas encore enregistrés."
           }
         }
       }
@@ -12427,28 +12471,6 @@
         }
       }
     },
-    "Used for your messages. Tools, the turn limit and the system prompt follow the server's Settings." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird für deine Nachrichten verwendet. Werkzeuge, das Rundenlimit und der System-Prompt folgen den Einstellungen des Servers."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se usa para tus mensajes. Las herramientas, el límite de turnos y el prompt del sistema siguen la configuración del servidor."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Utilisé pour vos messages. Les outils, la limite de tours et le prompt système suivent les Réglages du serveur."
-          }
-        }
-      }
-    },
     "Value" : {
       "localizations" : {
         "de" : {
@@ -13112,6 +13134,28 @@
         }
       }
     },
+    "Which AI answers your messages, and how hard it thinks before answering. Tools, the turn limit and the system prompt follow the server's Settings." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welche KI deine Nachrichten beantwortet und wie gründlich sie vorher nachdenkt. Werkzeuge, das Rundenlimit und der System-Prompt folgen den Einstellungen des Servers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué IA responde a tus mensajes y cuánto piensa antes de responder. Las herramientas, el límite de turnos y el prompt del sistema siguen la configuración del servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quelle IA répond à vos messages, et combien elle réfléchit avant de répondre. Les outils, la limite de tours et le prompt système suivent les Réglages du serveur."
+          }
+        }
+      }
+    },
     "Which quarters count as the last three?" : {
       "localizations" : {
         "de" : {
@@ -13506,6 +13550,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Votre réponse"
+          }
+        }
+      }
+    },
+    "Your changes to the server, AI model and plan approval are not saved yet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Änderungen an Server, KI-Modell und Plan-Freigabe sind noch nicht gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus cambios de servidor, modelo de IA y aprobación del plan aún no están guardados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos modifications du serveur, du modèle d’IA et de la validation du plan ne sont pas encore enregistrées."
           }
         }
       }

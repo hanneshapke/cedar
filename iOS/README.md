@@ -23,7 +23,7 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
 - Plans to agree to and tool calls to allow or deny, when the server asks (`TOOL_APPROVALS`); a
   plan Cedar chose to make partway through (`propose_plan`) is marked as such
-- A Plans setting for your messages: the server's, when Cedar thinks it helps, for longer
+- A Plan Approval setting for your messages, whether Cedar shows a plan first: the server's, when Cedar thinks it helps, for longer
   requests, always, or never
 - Charts from `generate_chart` as native Swift Charts cards, drawn from the call's data: a legend
   that hides and shows series, touch to read the values, and the data as a table

@@ -72,7 +72,7 @@ struct SettingsView: View {
                 Button("Discard Changes", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
-                Text("The server, model and plan settings you changed are not saved yet.")
+                Text("Your changes to the server, AI model and plan approval are not saved yet.")
             }
             .sheet(isPresented: $showingTour) {
                 OnboardingTourView { showingTour = false }
@@ -222,7 +222,7 @@ struct SettingsView: View {
 
     private var model: some View {
         Section {
-            Picker("Model", selection: $draft.model) {
+            Picker("AI Model", selection: $draft.model) {
                 Text("Server default").tag("")
                 ForEach(models) { model in
                     Text(model.label).tag(model.id)
@@ -233,7 +233,7 @@ struct SettingsView: View {
                 }
             }
             if let levels = selectedModel?.reasoningLevels, !levels.isEmpty {
-                Picker("Reasoning", selection: $draft.reasoning) {
+                Picker("Reasoning Effort", selection: $draft.reasoning) {
                     Text("Default").tag("")
                     ForEach(levels, id: \.self) { level in
                         Text(level.capitalized).tag(level)
@@ -241,25 +241,25 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            Text("Model")
+            Text("AI Model")
         } footer: {
             Text(models.isEmpty
-                 ? "The models cedar has registered are listed once the server is reachable."
-                 : "Used for your messages. Tools, the turn limit and the system prompt follow the server's Settings.")
+                 ? "The AI models your server offers are listed once it is reachable."
+                 : "Which AI answers your messages, and how hard it thinks before answering. Tools, the turn limit and the system prompt follow the server's Settings.")
         }
     }
 
     private var plans: some View {
         Section {
-            Picker("Plan", selection: $draft.plan) {
+            Picker("Show a Plan First", selection: $draft.plan) {
                 ForEach(ServerSettings.planModes) { mode in
                     Text(L10n.string(mode.label)).tag(mode.id)
                 }
             }
         } header: {
-            Text("Plans")
+            Text("Plan Approval")
         } footer: {
-            Text("Cedar shows its steps and waits for your go-ahead; you can stop it there. With \u{201C}When Cedar thinks it helps\u{201D}, it decides which requests need a plan, so quick questions get none.")
+            Text("Before a bigger request, Cedar lists the steps it will take and waits for your go-ahead; you can stop it there. With \u{201C}When Cedar thinks it helps\u{201D}, it decides which requests need a plan, so quick questions get none.")
         }
     }
 
