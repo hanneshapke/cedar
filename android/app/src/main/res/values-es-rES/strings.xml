@@ -14,4 +14,8 @@
     <string name="recipe_serves">Raciones</string>
     <string name="flights_separate_departing">Billete aparte: ida</string>
     <string name="flights_separate_returning">Billete aparte: vuelta</string>
+    <string name="allow_in_settings_app">Permitir en Ajustes</string>
+    <string name="notifications_off_footnote">Las notificaciones de Cedar están desactivadas en los Ajustes del sistema. Actívalas ahí para saber cuándo hay una respuesta lista.</string>
+    <string name="tour_connect_text">Escanea el código QR de la página Configuración → Móvil del chat, de la app de escritorio de Cedar o del script de la pila, o escribe la dirección y el token. Esa es toda la configuración.</string>
+    <string name="viewer_other_app_text">La app muestra por sí misma imágenes, PDF y Markdown. Otra app de este móvil abre este archivo.</string>
 </resources>

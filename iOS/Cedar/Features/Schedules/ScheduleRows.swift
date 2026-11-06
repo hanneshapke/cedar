@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The sidebar's Scheduled list: each scheduled agent with its timing and last run, expanding
-/// to its runs. A run opens as a conversation in the detail column, as a chat does.
+/// The sidebar's Scheduled list: each scheduled agent with its timing and last run. Tapping one
+/// opens its last run as a conversation in the detail column, as a chat does, and its chevron
+/// shows the runs under it, each opening the same way.
 struct ScheduleRows: View {
     @Environment(AppModel.self) private var app
     @Binding var actionError: String?
@@ -17,49 +18,111 @@ struct ScheduleRows: View {
             }
         }
         ForEach(app.schedules) { schedule in
-            DisclosureGroup(isExpanded: expanded(schedule)) {
-                runs(of: schedule)
-            } label: {
-                ScheduleRow(schedule: schedule, unread: app.unreadSchedules.contains(schedule.id))
-                    .swipeActions {
-                        Button {
-                            setEnabled(schedule, !schedule.enabled)
-                        } label: {
-                            schedule.enabled
-                                ? Label("Pause", systemImage: "pause")
-                                : Label("Resume", systemImage: "play")
-                        }
-                        .tint(.orange)
-                        Button {
-                            runNow(schedule)
-                        } label: {
-                            Label("Run Now", systemImage: "play.circle")
-                        }
-                        .tint(.accentColor)
+            let isExpanded = app.expandedSchedules.contains(schedule.id)
+            let lastConversation = lastConversation(of: schedule)
+            // Two buttons side by side, so the row opens the last run and the chevron shows the
+            // runs; in a list that takes a borderless style on each.
+            HStack(spacing: 0) {
+                Button {
+                    if lastConversation != nil {
+                        open(schedule)
+                    } else {
+                        setExpanded(schedule, !isExpanded)
                     }
-                    .contextMenu {
-                        Button {
-                            runNow(schedule)
-                        } label: {
-                            Label("Run Now", systemImage: "play.circle")
-                        }
-                        .disabled(schedule.lastRun?.isActive ?? false)
-                        Button {
-                            setEnabled(schedule, !schedule.enabled)
-                        } label: {
-                            schedule.enabled
-                                ? Label("Pause", systemImage: "pause")
-                                : Label("Resume", systemImage: "play")
-                        }
-                        Button {
-                            showingPrompt = schedule
-                        } label: {
-                            Label("Show Prompt", systemImage: "text.alignleft")
-                        }
-                    }
+                } label: {
+                    ScheduleRow(schedule: schedule, unread: app.unreadSchedules.contains(schedule.id))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    setExpanded(schedule, !isExpanded)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 36, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(isExpanded ? Text("Hide Runs") : Text("Show Runs"))
             }
-            .tint(Color.secondary)
-            .sidebarRow()
+            .swipeActions {
+                Button {
+                    setEnabled(schedule, !schedule.enabled)
+                } label: {
+                    schedule.enabled
+                        ? Label("Pause", systemImage: "pause")
+                        : Label("Resume", systemImage: "play")
+                }
+                .tint(.orange)
+                Button {
+                    runNow(schedule)
+                } label: {
+                    Label("Run Now", systemImage: "play.circle")
+                }
+                .tint(.accentColor)
+            }
+            .contextMenu {
+                Button {
+                    runNow(schedule)
+                } label: {
+                    Label("Run Now", systemImage: "play.circle")
+                }
+                .disabled(schedule.lastRun?.isActive ?? false)
+                Button {
+                    setEnabled(schedule, !schedule.enabled)
+                } label: {
+                    schedule.enabled
+                        ? Label("Pause", systemImage: "pause")
+                        : Label("Resume", systemImage: "play")
+                }
+                Button {
+                    setExpanded(schedule, !isExpanded)
+                } label: {
+                    isExpanded
+                        ? Label("Hide Runs", systemImage: "chevron.up")
+                        : Label("Show Runs", systemImage: "chevron.down")
+                }
+                Button {
+                    showingPrompt = schedule
+                } label: {
+                    Label("Show Prompt", systemImage: "text.alignleft")
+                }
+            }
+            .sidebarRow(selected: lastConversation != nil && app.selection == lastConversation && !isExpanded)
+            if isExpanded {
+                runs(of: schedule)
+            }
+        }
+    }
+
+    /// The newest run that has a conversation: the loaded runs' first such, or the list's last run.
+    private func lastConversation(of schedule: Schedule) -> String? {
+        if let runs = app.scheduleRuns[schedule.id] {
+            return runs.first { $0.conversationId != nil }?.conversationId
+        }
+        return schedule.lastRun?.conversationId
+    }
+
+    /// Opens the schedule's last run as a conversation, and shows its runs under it.
+    private func open(_ schedule: Schedule) {
+        guard let conversationId = lastConversation(of: schedule) else { return }
+        app.selection = conversationId
+        app.compactColumn = .detail
+        setExpanded(schedule, true)
+    }
+
+    private func setExpanded(_ schedule: Schedule, _ open: Bool) {
+        withAnimation(.snappy(duration: 0.25)) {
+            if open {
+                app.expandedSchedules.insert(schedule.id)
+            } else {
+                app.expandedSchedules.remove(schedule.id)
+            }
+        }
+        if open {
+            Task { await app.loadRuns(scheduleId: schedule.id) }
         }
     }
 
@@ -70,12 +133,14 @@ struct ScheduleRows: View {
                 Text("No runs yet")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .padding(.leading, runIndent)
                     .sidebarRow()
             }
             ForEach(runs) { run in
                 if let conversationId = run.conversationId {
                     let starred = app.isStarred(conversationId: conversationId)
                     RunRow(run: run, starred: starred)
+                        .padding(.leading, runIndent)
                         .tag(conversationId)
                         .sidebarRow(selected: app.selection == conversationId)
                         .swipeActions {
@@ -87,6 +152,7 @@ struct ScheduleRows: View {
                 } else {
                     // It never started: nothing to open (or star).
                     RunRow(run: run, starred: false)
+                        .padding(.leading, runIndent)
                         .sidebarRow()
                 }
             }
@@ -97,19 +163,8 @@ struct ScheduleRows: View {
         }
     }
 
-    private func expanded(_ schedule: Schedule) -> Binding<Bool> {
-        Binding(
-            get: { app.expandedSchedules.contains(schedule.id) },
-            set: { open in
-                if open {
-                    app.expandedSchedules.insert(schedule.id)
-                    Task { await app.loadRuns(scheduleId: schedule.id) }
-                } else {
-                    app.expandedSchedules.remove(schedule.id)
-                }
-            }
-        )
-    }
+    /// Runs sit under the schedule's words, past its icon.
+    private let runIndent: CGFloat = 54
 
     private func runNow(_ schedule: Schedule) {
         Task {

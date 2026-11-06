@@ -32,7 +32,10 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -150,19 +153,35 @@ fun ConversationListScreen(app: AppModel) {
 @Composable
 private fun ChatRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit, onRename: (Conversation) -> Unit) {
     val context = LocalContext.current
-    if (app.conversations.isEmpty() && app.listError == null && !app.isRefreshing) {
+    val scope = rememberCoroutineScope()
+    if (app.conversations.isEmpty() && !app.isRefreshing) {
         // In a scrollable column, so pulling to refresh still works on an empty list.
         LazyColumn(Modifier.fillMaxSize()) {
             item {
-                EmptyState(
-                    Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.empty_chats_title), stringResource(R.string.empty_chats_text),
-                    Modifier.padding(top = 80.dp),
-                )
+                val error = app.listError
+                if (error != null) {
+                    // Nothing to list and no server: say what went wrong and where to fix it.
+                    EmptyState(Icons.Outlined.WifiOff, stringResource(R.string.no_server_title), error, Modifier.padding(top = 80.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                        Button(onClick = { app.showingSettings = true }) {
+                            Icon(Icons.Outlined.Settings, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.server_settings))
+                        }
+                        OutlinedButton(onClick = { scope.launch { app.refresh() } }) { Text(stringResource(R.string.try_again)) }
+                    }
+                } else {
+                    EmptyState(
+                        Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.empty_chats_title), stringResource(R.string.empty_chats_text),
+                        Modifier.padding(top = 80.dp),
+                    )
+                }
             }
         }
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
+        // With nothing listed, the empty state above shows the error instead.
         app.listError?.let { error -> item { ErrorLine(error) } }
         items(app.conversations, key = { it.id }) { conversation ->
             val starred = app.isStarred(conversation.id)

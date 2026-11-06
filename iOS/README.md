@@ -17,13 +17,16 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Replies stream in as the agent works: the model's reasoning (folded), text, tool calls with
   their input, output, duration and sources, token usage and cost
 - The agent's images (charts, pictures it saved or drew) shown under the reply, with sharing; tap
-  one to see it full screen and zoom in. PDFs it wrote are listed under the reply too
+  one to see it full screen and zoom in. Every other file it wrote (PDF, Markdown, CSV, code…)
+  is listed under the reply and opens with a tap, without going through the Files sheet
 - The conversation's workspace files from the folder button in the chat's toolbar, with their
-  sizes: images and PDFs open in a viewer (pinch to zoom, share), other files are left to the web
+  sizes: images and PDFs open in a viewer (pinch to zoom, share), Markdown is rendered as in the
+  chat, and anything else opens in Quick Look (text, CSV, code, SVG, Office documents), all with
+  sharing
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
 - Plans to agree to and tool calls to allow or deny, when the server asks (`TOOL_APPROVALS`); a
   plan Cedar chose to make partway through (`propose_plan`) is marked as such
-- A Plans setting for your messages: the server's, when Cedar thinks it helps, for longer
+- A Plan Approval setting for your messages, whether Cedar shows a plan first: the server's, when Cedar thinks it helps, for longer
   requests, always, or never
 - Charts from `generate_chart` as native Swift Charts cards, drawn from the call's data: a legend
   that hides and shows series, touch to read the values, and the data as a table
@@ -43,8 +46,8 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   starred first. Stars are kept by cedar-chat, so they are the same here, on the web and in the
   desktop app
 - Scheduled agents: a **Chats | Starred | Scheduled** switch at the top of the sidebar lists each
-  schedule with its timing, next run and last result; expand one to see its runs and open any of
-  them as a conversation. **Run now**, **Pause** and **Resume** from a swipe or a long press, and
+  schedule with its timing, next run and last result; tap one to open its last run as a
+  conversation, or its chevron to see all its runs and open any of them. **Run now**, **Pause** and **Resume** from a swipe or a long press, and
   read the prompt; creating and editing schedules is done on the web
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
@@ -59,7 +62,10 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - iPhone, iPad and iPhone Duo layouts, light and dark mode: one column on a phone or the folded
   outer display, the list beside the conversation on an iPad or the unfolded inner display, with
   the divider on the fold (see [iPhone Duo](#iphone-duo))
-- English, German, French and Spanish, picked on first launch or under Settings → Language (see
+- A feature tour on first launch, after the language: seven pages that show what Cedar does, each a
+  picture of the app drawn from the theme (`Cedar/Features/Onboarding`); Settings → About shows
+  it again
+- English, German, French and Spanish, picked on first launch or under Settings → App → Language (see
   [Languages](#languages))
 
 ## Requirements
@@ -80,8 +86,8 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
    systemd install. The server URL is then `https://<machine>.<tailnet>.ts.net`.
 2. Open `iOS/Cedar.xcodeproj` in Xcode, choose the **Cedar** scheme, and run it. To run on a
    device, pick your team under *Signing & Capabilities*.
-3. On first launch, pick a language, then enter the server URL and the access token in Settings and tap
-   **Test Connection**. With the Cedar Mac app or the stack script, tap **Scan QR Code** instead and scan the code
+3. On first launch, pick a language and flip through the tour (or skip it), then enter the server URL and the access token in Settings and tap
+   **Test Connection** (or return from the token field): it says what it found and lists the models. With the Cedar Mac app or the stack script, tap **Scan QR Code** instead and scan the code
    under *iPhone & iPad → Show QR code*, or the one `scripts/cedar-stack.sh --pair` prints on
    Linux: it fills in both and tests the connection (it asks for the camera once). The models cedar has registered appear in the picker once it answers.
 

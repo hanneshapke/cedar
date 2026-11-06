@@ -141,6 +141,21 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var selection by mutableStateOf<String?>(null)
     var showingSettings by mutableStateOf(!settings.isConfigured)
 
+    /** Whether the feature tour was seen (or skipped); a new install shows it after the language. */
+    var tourSeen by mutableStateOf(store.tourSeen)
+        private set
+
+    /** The tour, shown again from Settings → About. */
+    var showingTour by mutableStateOf(false)
+
+    /** The tour ended. On a new install, Settings opens next so the server can be entered. */
+    fun finishTour() {
+        store.tourSeen = true
+        tourSeen = true
+        showingTour = false
+        if (!store.isSaved) showingSettings = true
+    }
+
     /**
      * The settings being edited while Settings is open, so that a change of language, which recreates
      * the screen, keeps what was typed. Kept in memory only (it may hold a new access token).
@@ -507,6 +522,21 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             }
         } catch (e: Exception) {
             scheduleError = describe(e)
+        }
+    }
+
+    /** The newest run of [schedule] that has a conversation: the loaded runs' first such, or the list's last run. */
+    fun lastConversation(schedule: Schedule): String? =
+        scheduleRuns[schedule.id]?.let { runs -> runs.firstOrNull { it.conversationId != null }?.conversationId }
+            ?: schedule.lastRun?.conversationId
+
+    /** Opens the schedule's last run as a conversation, and shows its runs under it. */
+    fun openLastRun(schedule: Schedule) {
+        val conversationId = lastConversation(schedule) ?: return
+        selection = conversationId
+        if (schedule.id !in expandedSchedules) {
+            expandedSchedules += schedule.id
+            scope.launch { loadRuns(schedule.id) }
         }
     }
 

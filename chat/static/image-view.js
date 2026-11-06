@@ -27,7 +27,7 @@ const cedarImages = (() => {
   /** How many of a response's images are shown after the reply; the rest are in the files panel. */
   const MAX_SHOWN = 12;
   /** Tools whose `path` input is the file they write. */
-  const FILE_TOOLS = new Set(['write_file', 'generate_chart', 'download_file']);
+  const FILE_TOOLS = new Set(['write_file', 'generate_chart', 'generate_pdf', 'download_file', 'drive_download_file']);
   const CHANGED_HEADING = '\n[files created or modified]\n';
 
   let deps = null;

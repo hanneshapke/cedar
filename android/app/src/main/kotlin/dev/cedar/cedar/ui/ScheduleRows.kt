@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,8 +60,9 @@ import dev.cedar.core.Schedule
 import dev.cedar.core.ScheduleRun
 
 /**
- * The Scheduled list: each scheduled agent with its timing and last run, expanding to its runs, as
- * iOS/Cedar/Features/Schedules/ScheduleRows.swift. A run opens as a conversation, as a chat does.
+ * The Scheduled list: each scheduled agent with its timing and last run, as
+ * iOS/Cedar/Features/Schedules/ScheduleRows.swift. Tapping one opens its last run as a
+ * conversation, as a chat does, and its chevron shows the runs under it, each opening the same way.
  */
 @Composable
 fun ScheduleRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
@@ -84,10 +86,11 @@ fun ScheduleRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
         app.scheduleError?.let { error -> item { ErrorLine(error) } }
         for (schedule in app.schedules) {
             val expanded = schedule.id in app.expandedSchedules
+            val lastConversation = app.lastConversation(schedule)
             item(key = "schedule-${schedule.id}") {
                 MenuRow(
-                    selected = false,
-                    onClick = { app.toggleExpanded(schedule) },
+                    selected = lastConversation != null && app.selection == lastConversation && !expanded,
+                    onClick = { if (lastConversation != null) app.openLastRun(schedule) else app.toggleExpanded(schedule) },
                     menu = listOf(
                         MenuAction(stringResource(R.string.run_now), Icons.Outlined.PlayCircle, enabled = schedule.lastRun?.isActive != true) {
                             onAction { app.runNow(schedule) }
@@ -97,10 +100,15 @@ fun ScheduleRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                         } else {
                             MenuAction(stringResource(R.string.resume), Icons.Outlined.PlayArrow) { onAction { app.setEnabled(schedule, true) } }
                         },
+                        if (expanded) {
+                            MenuAction(stringResource(R.string.hide_runs), Icons.Outlined.ExpandLess) { app.toggleExpanded(schedule) }
+                        } else {
+                            MenuAction(stringResource(R.string.show_runs), Icons.Outlined.ExpandMore) { app.toggleExpanded(schedule) }
+                        },
                         MenuAction(stringResource(R.string.show_prompt), Icons.AutoMirrored.Outlined.Notes) { showingPrompt = schedule },
                     ),
                 ) {
-                    ScheduleRow(schedule, unread = schedule.id in app.unreadSchedules, expanded = expanded)
+                    ScheduleRow(schedule, unread = schedule.id in app.unreadSchedules, expanded = expanded) { app.toggleExpanded(schedule) }
                 }
             }
             if (expanded) {
@@ -153,7 +161,7 @@ fun ScheduleRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
 }
 
 @Composable
-private fun ScheduleRow(schedule: Schedule, unread: Boolean, expanded: Boolean) {
+private fun ScheduleRow(schedule: Schedule, unread: Boolean, expanded: Boolean, onToggle: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         RowIcon(
             if (schedule.enabled) Icons.Outlined.Schedule else Icons.Outlined.Pause,
@@ -182,8 +190,11 @@ private fun ScheduleRow(schedule: Schedule, unread: Boolean, expanded: Boolean) 
                 }
             }
         }
-        Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, stringResource(if (expanded) R.string.collapse else R.string.expand),
-            tint = CedarColors.secondaryText)
+        // The chevron shows or hides the runs; the rest of the row opens the last one.
+        IconButton(onClick = onToggle) {
+            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, stringResource(if (expanded) R.string.hide_runs else R.string.show_runs),
+                tint = CedarColors.secondaryText)
+        }
     }
 }
 

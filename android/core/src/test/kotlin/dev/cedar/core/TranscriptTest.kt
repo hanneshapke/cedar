@@ -163,17 +163,34 @@ class TranscriptTest {
         t = t.apply(event(4, "tool.result", result("c1", "built\n[files created or modified]\n- out/Slides.PDF\n- out/a.png\n- report.pdf")))
         t = t.apply(event(5, "tool.call", """{"id":"c2","name":"write_file","input":{"path":"failed.pdf"}}"""))
         t = t.apply(event(6, "tool.result", result("c2", "disk full", isError = true)))
-        assertEquals(listOf("report.pdf", "out/Slides.PDF"), t.documents)
+        // generate_pdf names its file in `path` too, and says what it wrote in its output.
+        t = t.apply(event(7, "tool.call", """{"id":"c3","name":"generate_pdf","input":{"path":"out/summary.pdf","content":"# Hi"}}"""))
+        t = t.apply(event(8, "tool.result", result("c3", "wrote out/summary.pdf: 2 pages, 9000 bytes")))
+        assertEquals(listOf("report.pdf", "out/Slides.PDF", "out/summary.pdf"), t.documents)
         assertEquals(listOf("out/a.png"), t.images)
     }
 
     @Test
-    fun theViewerShowsImagesAndPdfs() {
+    fun theViewerKnowsEveryFile() {
         assertEquals(WorkspaceFileKind.IMAGE, WorkspaceFileKind.of("out/chart.PNG"))
         assertEquals(WorkspaceFileKind.PDF, WorkspaceFileKind.of("docs/report.pdf"))
-        assertNull(WorkspaceFileKind.of("plot.svg"))
-        assertNull(WorkspaceFileKind.of("notes.md"))
-        assertNull(WorkspaceFileKind.of("Makefile"))
+        assertEquals(WorkspaceFileKind.MARKDOWN, WorkspaceFileKind.of("notes.md"))
+        assertEquals(WorkspaceFileKind.MARKDOWN, WorkspaceFileKind.of("README.Markdown"))
+        // Another app draws what the app doesn't itself.
+        assertEquals(WorkspaceFileKind.OTHER, WorkspaceFileKind.of("plot.svg"))
+        assertEquals(WorkspaceFileKind.OTHER, WorkspaceFileKind.of("Makefile"))
+        assertEquals(WorkspaceFileKind.OTHER, WorkspaceFileKind.of("data.csv"))
+    }
+
+    @Test
+    fun everyFileButPicturesIsListedUnderTheReply() {
+        var t = TurnTranscript(turn())
+        t = t.apply(event(1, "tool.call", """{"id":"c0","name":"write_file","input":{"path":"notes.md"}}"""))
+        t = t.apply(event(2, "tool.result", result("c0", "ok")))
+        t = t.apply(event(3, "tool.call", """{"id":"c1","name":"bash","input":{"command":"make"}}"""))
+        t = t.apply(event(4, "tool.result", result("c1", "built\n[files created or modified]\n- out/a.png\n- data.csv\n- report.pdf\n- notes.md")))
+        assertEquals(listOf("notes.md", "data.csv", "report.pdf"), t.documents)
+        assertEquals(listOf("out/a.png"), t.images)
     }
 
     @Test

@@ -345,9 +345,12 @@ data class TurnTranscript(
         // A chart drawn as a card isn't shown again as a picture.
         get() = produced(WorkspaceImages::isImage) { it.name == "generate_chart" && it.card != null }
 
-    /** The PDFs the turn's finished tool calls produced, each once, in order: workspace paths. */
+    /**
+     * The other files the turn's finished tool calls produced (PDFs, Markdown, data, code, anything
+     * that isn't shown as a picture), each once, in order: workspace paths.
+     */
     val documents: List<String>
-        get() = produced(WorkspaceImages::isPdf) { false }
+        get() = produced({ !WorkspaceImages.isImage(it) }) { false }
 
     private fun produced(include: (String) -> Boolean, skip: (ToolCall) -> Boolean): List<String> {
         val seen = LinkedHashSet<String>()
@@ -368,7 +371,7 @@ object WorkspaceImages {
     val EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg")
 
     /** Tools whose `path` input is the file they write. */
-    val FILE_TOOLS = setOf("write_file", "generate_chart", "download_file")
+    val FILE_TOOLS = setOf("write_file", "generate_chart", "generate_pdf", "download_file", "drive_download_file")
     const val CHANGED_HEADING = "\n[files created or modified]\n"
 
     /** The images [call] produced. */
@@ -412,15 +415,21 @@ object WorkspaceImages {
     }
 }
 
-/** How the app shows a workspace file: an image, a PDF, or null for files it leaves to the web UI (SVG among them, which Android doesn't decode). */
+/**
+ * How the app shows a workspace file: an image that zooms, a PDF, Markdown rendered as the chat
+ * renders it, or anything else (SVG among them, which Android doesn't decode) handed to another app.
+ */
 enum class WorkspaceFileKind {
-    IMAGE, PDF;
+    IMAGE, PDF, MARKDOWN, OTHER;
 
     companion object {
-        fun of(path: String): WorkspaceFileKind? = when {
+        val MARKDOWN_EXTENSIONS = setOf("md", "markdown")
+
+        fun of(path: String): WorkspaceFileKind = when {
             WorkspaceImages.isPdf(path) -> PDF
             WorkspaceImages.isImage(path) && WorkspaceImages.extension(path) != "svg" -> IMAGE
-            else -> null
+            WorkspaceImages.extension(path) in MARKDOWN_EXTENSIONS -> MARKDOWN
+            else -> OTHER
         }
     }
 }

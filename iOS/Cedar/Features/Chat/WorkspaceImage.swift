@@ -13,7 +13,7 @@ struct ImagesView: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(paths, id: \.self) { path in
                 WorkspaceImageView(request: client.fileRequest(conversationId: conversationId, path: path), caption: path,
-                                   open: WorkspaceFileKind(path: path) == .image ? { viewing = ViewedFile(path: path) } : nil)
+                                   open: { viewing = ViewedFile(path: path) })
             }
         }
         .workspaceFileSheet($viewing, conversationId: conversationId, client: client)
