@@ -146,13 +146,16 @@ final class TranscriptTests: XCTestCase {
             ("write_file", .object(["path": .string("/workspace/report.pdf")]), "ok", false),
             ("bash", .object(["command": .string("make")]), "built\n[files created or modified]\n- out/Slides.PDF\n- out/a.png\n- report.pdf", false),
             ("write_file", .object(["path": .string("failed.pdf")]), "disk full", true),
+            // generate_pdf names its file in `path` too, and says what it wrote in its output.
+            ("generate_pdf", .object(["path": .string("out/summary.pdf"), "content": .string("# Hi")]), "wrote out/summary.pdf: 2 pages, 9000 bytes", false),
+            ("drive_download_file", .object(["fileId": .string("f1"), "path": .string("plan.docx")]), "saved plan.docx", false),
         ]
         for (offset, (name, input, output, isError)) in calls.enumerated() {
             let id = "c\(offset)"
             transcript.apply(event(offset * 2 + 1, "tool.call", .object(["id": .string(id), "name": .string(name), "input": input])))
             transcript.apply(event(offset * 2 + 2, "tool.result", .object(["id": .string(id), "output": .string(output), "is_error": .bool(isError)])))
         }
-        XCTAssertEqual(transcript.documents, ["report.pdf", "out/Slides.PDF"])
+        XCTAssertEqual(transcript.documents, ["report.pdf", "out/Slides.PDF", "out/summary.pdf", "plan.docx"])
         XCTAssertEqual(transcript.images, ["out/a.png"])
     }
 

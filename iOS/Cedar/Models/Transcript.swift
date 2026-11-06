@@ -382,7 +382,7 @@ enum WorkspaceImages {
     static let maxShown = 12
     static let extensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg"]
     /// Tools whose `path` input is the file they write.
-    static let fileTools: Set<String> = ["write_file", "generate_chart", "download_file"]
+    static let fileTools: Set<String> = ["write_file", "generate_chart", "generate_pdf", "download_file", "drive_download_file"]
     static let changedHeading = "\n[files created or modified]\n"
 
     /// The images `call` produced.
