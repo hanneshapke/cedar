@@ -162,7 +162,8 @@ ol.setup strong{color:var(--ink);font-weight:600}
     { id: 'hw', when: (s) => s.where && s.where !== 'factory',
       opts: [
         { v: 'mac', k: 'mac', s: true }, { v: 'ryzen', k: 'ryzen', s: true },
-        { v: 'spark', k: 'spark', s: true }, { v: 'other', k: 'other' },
+        { v: 'spark', k: 'spark', s: true }, { v: 'jetson', k: 'jetson', s: true },
+        { v: 'other', k: 'other' },
       ] },
     { id: 'mem', when: (s) => s.where !== 'factory' && ['mac', 'ryzen', 'spark'].includes(s.hw),
       opts: [
@@ -173,6 +174,8 @@ ol.setup strong{color:var(--ink);font-weight:600}
       ] },
   ];
   const optText = (q, o) => tr(`models.opt.${q.id}.${o.k}`);
+  // A Jetson Orin Nano developer kit has one size, so it skips the memory question.
+  const memOf = (s) => (s.hw === 'jetson' ? '8' : s.mem);
   const DEFAULTS = { input: '', where: '', hw: '', mem: '' };
   const state = readState();
 
@@ -230,6 +233,12 @@ ol.setup strong{color:var(--ink);font-weight:600}
       ollama: 'qwen3.5:122b', lms: 'Qwen3.5 122B A10B', hf: 'Qwen/Qwen3.5-122B-A10B' },
     'mistral-small-4': { name: 'Mistral Small 4', org: 'Mistral', date: '2026-03', images: true, total: 119, active: 6, gb: 70,
       lms: 'Mistral Small 4' },
+    'nemotron-3.5-super-vl': { name: 'Nemotron 3.5 Super VL 120B-A12B', org: 'NVIDIA', date: '2026-10', images: true, total: 120, active: 12, gb: 80,
+      ollama: 'nemotron-3.5-super', hf: 'nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
+    'nemotron-3.5-lightning': { name: 'Nemotron 3.5 Lightning 30B-A3B', org: 'NVIDIA', date: '2026-08', images: false, total: 30, active: 3, gb: 25,
+      ollama: 'nemotron-3.5-lightning:30b-a3b', hf: 'nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
+    'qwen3.5-4b': { name: 'Qwen3.5 4B', org: 'Alibaba Qwen', date: '2026-03', images: true, total: 4, gb: 3.4,
+      ollama: 'qwen3.5:4b' },
     'deepseek-v4-flash': { name: 'DeepSeek V4 Flash', org: 'DeepSeek', date: '2026-04', images: false, total: 284, active: 13, gb: 160,
       hf: 'deepseek-ai/DeepSeek-V4-Flash', recipe: 'https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash' },
   };
@@ -259,13 +268,15 @@ ol.setup strong{color:var(--ink);font-weight:600}
     'mac:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'mistral-small-4', 'qwen3.6-35b'] },
     'ryzen:64': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'gemma4-26b'], images: ['qwen3.6-35b', 'gemma4-26b'] },
     'ryzen:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'qwen3.6-35b', 'mistral-small-4'] },
-    'spark:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'mistral-small-4', 'qwen3.6-35b'] },
-    'spark:256': { text: ['deepseek-v4-flash', 'gpt-oss-120b'], images: ['qwen3.5-122b', 'mistral-small-4'] },
+    'spark:128': { text: ['nemotron-3.5-super-vl', 'nemotron-3.5-lightning', 'gpt-oss-120b', 'qwen3.5-122b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
+    'spark:256': { text: ['deepseek-v4-flash', 'nemotron-3.5-super-vl', 'gpt-oss-120b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
+    'jetson:8': { text: ['qwen3.5-4b'], images: ['qwen3.5-4b'] },
   };
   const HOSTED_PICKS = { text: ['deepseek-v4.1-flash', 'glm-5.3', 'kimi-k2.6', 'deepseek-v4-pro'], images: ['deepseek-v4.1-flash', 'kimi-k2.6', 'qwen3.6-35b-hosted', 'gemma4-31b-hosted'] };
 
   // Machines with a note on their memory (models.hwnote.<hw>.<mem>), shown above the suggestions.
-  const HW_NOTES = ['mac:24', 'mac:96', 'ryzen:64', 'ryzen:128', 'spark:256'];
+  const HW_NOTES = ['mac:24', 'mac:96', 'ryzen:64', 'ryzen:128', 'spark:128', 'spark:256', 'jetson:8'];
+  const JETSON_STORY = 'https://github.com/hanneshapke/cedar/blob/main/docs/developer_stories/cedar-on-jetson-orin-nano.md';
 
   // ---------- rendering ----------
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -302,8 +313,9 @@ ol.setup strong{color:var(--ink);font-weight:600}
     if (s.where === 'factory') chip(tr('models.chip.factory'));
     if (s.where === 'here') chip(tr('models.opt.where.here'));
     if (s.where === 'box') chip(tr('models.opt.where.box'));
-    const hw = { mac: 'M4/M5 Mac', ryzen: 'Ryzen AI Max', spark: 'DGX Spark', other: tr('models.chip.other') }[s.hw];
-    if (hw && s.where !== 'factory') {
+    const hw = { mac: 'M4/M5 Mac', ryzen: 'Ryzen AI Max', spark: 'DGX Spark', jetson: 'Jetson Orin Nano', other: tr('models.chip.other') }[s.hw];
+    if (s.hw === 'jetson' && s.where !== 'factory') chip(`${hw} · 8 GB`, 'done');
+    else if (hw && s.where !== 'factory') {
       const opt = optsFor(QUESTIONS[3], s).find((o) => o.v === s.mem);
       chip(`${hw}${s.mem ? ' · ' + (s.mem === '256' ? tr('models.chip.twoSparks') : opt ? optText(QUESTIONS[3], opt) : undefined) : ''}`, 'done');
     }
@@ -316,7 +328,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const lines = [];
     if (m.ollama) lines.push(`<p>${tr('models.get.ollama')}</p>${code(`ollama pull ${m.ollama}\nollama run ${m.ollama} "say hi"    # ${tr('models.get.quickTest')}`, shell)}`);
     else if (s.hw !== 'spark') lines.push(`<p class="note">${tr('models.get.noOllama')}</p>`);
-    if (m.lms) lines.push(`<p>${tr(s.hw === 'mac' ? 'models.get.lmsMac' : 'models.get.lms', { name: esc(m.lms) })}</p>`);
+    if (m.lms && s.hw !== 'jetson') lines.push(`<p>${tr(s.hw === 'mac' ? 'models.get.lmsMac' : 'models.get.lms', { name: esc(m.lms) })}</p>`);
     if (s.hw === 'spark') {
       lines.push(`<p>${tr('models.get.vllm', {
         what: m.hf ? `<code>${esc(m.hf)}</code>` : esc(m.name),
@@ -377,7 +389,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
       : '';
     const addr = remote ? `http://&lt;${esc(tr('models.setup.thatMachine'))}&gt;:${port}/v1` : `http://127.0.0.1:${port}/v1`;
     const install = `install.html?host=yes&serve=${serve}`;
-    const what = serve === 'vllm' ? 'vLLM' : tr('models.setup.ollamaOrLms');
+    const what = serve === 'vllm' ? 'vLLM' : s.hw === 'jetson' ? 'Ollama' : tr('models.setup.ollamaOrLms');
     const model = list.length ? esc(list[0].name) : tr('models.setup.it');
     return `<ol class="setup">
       <li>${tr(remote ? 'models.setup.installRemote' : 'models.setup.installHere', { what, install })}</li>
@@ -407,10 +419,11 @@ ol.setup strong{color:var(--ink);font-weight:600}
         <p><a class="btn" href="?input=${s.input}&where=factory${lang ? '&lang=' + encodeURIComponent(lang) : ''}">${tr('models.result.seeFactory')}</a></p>`;
       return;
     }
-    if (!s.mem) { empty('models.result.pickMem'); return; }
-    const key = `${s.hw}:${s.mem}`;
+    const mem = memOf(s);
+    if (!mem) { empty('models.result.pickMem'); return; }
+    const key = `${s.hw}:${mem}`;
     const list = (PICKS[key] || { text: [], images: [] })[s.input].map((id) => MODELS[id]);
-    const note = HW_NOTES.includes(key) ? `<div class="explain">${tr(`models.hwnote.${s.hw}.${s.mem}`)}</div>` : '';
+    const note = HW_NOTES.includes(key) ? `<div class="explain">${tr(`models.hwnote.${s.hw}.${mem}`, { story: JETSON_STORY })}</div>` : '';
     out.innerHTML = `${note}${heading('models.result.suggested')}<div class="models">${list.map((m, i) => modelCard(m, i === 0, s)).join('')}</div>
       ${heading('models.result.setUp')}${setupSteps(s, list)}`;
   }
