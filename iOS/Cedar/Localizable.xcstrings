@@ -5435,6 +5435,28 @@
         }
       }
     },
+    "Hide Runs" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Läufe ausblenden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar ejecuciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Masquer les exécutions"
+          }
+        }
+      }
+    },
     "Hide token" : {
       "localizations" : {
         "de" : {
@@ -10368,6 +10390,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Afficher le prompt"
+          }
+        }
+      }
+    },
+    "Show Runs" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Läufe anzeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar ejecuciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher les exécutions"
           }
         }
       }

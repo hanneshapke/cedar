@@ -43,8 +43,8 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   starred first. Stars are kept by cedar-chat, so they are the same here, on the web and in the
   desktop app
 - Scheduled agents: a **Chats | Starred | Scheduled** switch at the top of the sidebar lists each
-  schedule with its timing, next run and last result; expand one to see its runs and open any of
-  them as a conversation. **Run now**, **Pause** and **Resume** from a swipe or a long press, and
+  schedule with its timing, next run and last result; tap one to open its last run as a
+  conversation, or its chevron to see all its runs and open any of them. **Run now**, **Pause** and **Resume** from a swipe or a long press, and
   read the prompt; creating and editing schedules is done on the web
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
