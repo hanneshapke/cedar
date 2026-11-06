@@ -134,7 +134,12 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "search_products",
             "ask_user",
             "remember",
-            "forget"
+            "forget",
+            "records_list",
+            "records_describe",
+            "records_save",
+            "records_lookup",
+            "records_drop"
         ]
     );
 
@@ -306,7 +311,12 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
             "compare_stocks",
             "ask_user",
             "remember",
-            "forget"
+            "forget",
+            "records_list",
+            "records_describe",
+            "records_save",
+            "records_lookup",
+            "records_drop"
         ]
     );
 }
