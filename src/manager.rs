@@ -110,9 +110,31 @@ struct Inner {
     stop: CancellationToken,
     /// Sandboxes kept for their workspace's next run, by workspace.
     parked: Mutex<HashMap<Uuid, Parked>>,
+    /// Owners whose memory is being consolidated right now (see [`RunManager::consolidate_memory`]).
+    consolidating: Mutex<std::collections::HashSet<String>>,
 }
 
 impl RunManager {
+    /// Consolidate the memory of owners who have had runs since their last pass and have been
+    /// idle for an hour (see [`crate::memory::consolidate`]).
+    pub async fn consolidate_idle_owners(&self) {
+        let Some(memories) = &self.0.env.memories else { return };
+        if self.0.env.memory_consolidate_after == 0 {
+            return;
+        }
+        let idle_before = chrono::Utc::now() - chrono::Duration::hours(1);
+        let owners = match memories.owners_idle_since(idle_before).await {
+            Ok(o) => o,
+            Err(e) => {
+                tracing::warn!(error = %format!("{e:#}"), "could not list owners for memory consolidation");
+                return;
+            }
+        };
+        for owner in owners {
+            self.0.clone().consolidate_memory(owner, None);
+        }
+    }
+
     pub fn new(
         store: Store,
         hub: Arc<EventHub>,
@@ -135,6 +157,7 @@ impl RunManager {
             shutting_down: AtomicBool::new(false),
             stop: CancellationToken::new(),
             parked: Mutex::new(HashMap::new()),
+            consolidating: Mutex::new(Default::default()),
         }))
     }
 
@@ -215,6 +238,7 @@ impl RunManager {
                 if let Err(e) = manager.expire_workspaces(ttl).await {
                     tracing::warn!(error = %format!("{e:#}"), "workspace cleanup failed");
                 }
+                manager.consolidate_idle_owners().await;
             }
         });
     }
@@ -468,7 +492,79 @@ impl Inner {
     }
 
     /// Record the terminal state exactly once and release the run's in-memory bookkeeping.
-    async fn finalize(&self, run: &Run, outcome: Result<Completion, AgentError>) {
+    /// Count the run for its owner's memory, note an episode for a run that failed or was
+    /// cancelled (a completed one noted its own, see [`crate::agent`]), and start the
+    /// consolidation pass when enough runs have finished.
+    async fn memory_bookkeeping(self: &Arc<Self>, run: &Run) {
+        let Some(memories) = &self.env.memories else { return };
+        if run.tools.as_ref().is_some_and(|t| !t.iter().any(|g| g == "memory" || g == crate::tools::REMEMBER)) {
+            return;
+        }
+        if let Ok(Some(done)) = self.store.get_run(run.id).await {
+            if done.status != RunStatus::Completed && self.env.memory_experience {
+                let outcome = match done.status {
+                    RunStatus::Failed => format!("failed: {}", done.error.as_deref().unwrap_or("unknown error")),
+                    _ => "cancelled".to_string(),
+                };
+                let messages: Vec<serde_json::Value> = self
+                    .store
+                    .list_messages(run.id)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|m| json!({ "role": m.role, "content": m.content }))
+                    .collect();
+                let transcript = crate::memory::extract::transcript(&messages, &run.prompt);
+                let row = crate::memory::extract::episode(run.id, &run.prompt, None, &outcome, &transcript, &[]);
+                if let Err(e) = memories.remember(&run.owner, row, crate::memory::Actor::Run(run.id)).await {
+                    tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not note the run as an episode");
+                }
+            }
+        }
+        if self.env.memory_consolidate_after == 0 {
+            return;
+        }
+        match memories.run_finished(&run.owner).await {
+            Ok(pending) if pending >= self.env.memory_consolidate_after => {
+                self.clone().consolidate_memory(run.owner.clone(), Some(run.model_id.clone()));
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not count the run for memory consolidation"),
+        }
+    }
+
+    /// Run the consolidation pass for `owner` in the background, once at a time per owner, with
+    /// `model_id` (or the default model).
+    fn consolidate_memory(self: Arc<Self>, owner: String, model_id: Option<String>) {
+        if !self.consolidating.lock().unwrap().insert(owner.clone()) {
+            return;
+        }
+        let inner = self.clone();
+        self.tracker.spawn(async move {
+            let Some(memories) = &inner.env.memories else { return };
+            let entry = model_id
+                .and_then(|id| inner.env.integrations.models().iter().find(|m| m.id == id).cloned())
+                .or_else(|| inner.env.integrations.default_entry());
+            let (client, spec) = match entry {
+                Some(entry) => (
+                    inner.env.llm.client_for(&entry.id),
+                    crate::memory::consolidate::ModelSpec {
+                        model: entry.model.clone(),
+                        max_tokens: entry.max_tokens,
+                        reasoning: entry.default_reasoning.clone(),
+                    },
+                ),
+                None => (None, crate::memory::consolidate::ModelSpec { model: String::new(), max_tokens: 1024, reasoning: None }),
+            };
+            match crate::memory::consolidate::run(memories, client.as_deref(), &spec, &owner).await {
+                Ok(report) => tracing::info!(owner, ?report, "memory consolidated"),
+                Err(e) => tracing::warn!(owner, error = %format!("{e:#}"), "memory consolidation failed"),
+            }
+            inner.consolidating.lock().unwrap().remove(&owner);
+        });
+    }
+
+    async fn finalize(self: &Arc<Self>, run: &Run, outcome: Result<Completion, AgentError>) {
         let finish = match &outcome {
             Ok(done) => Finish {
                 status: RunStatus::Completed,
@@ -510,6 +606,7 @@ impl Inner {
                 tracing::error!(run_id = %run.id, error = ?e, "could not record the run's final state")
             }
         }
+        self.memory_bookkeeping(run).await;
         // Dropping the hub entry wakes any stream one last time so it can drain and close.
         self.hub.remove(run.id);
         self.env.waits.forget(run.id);

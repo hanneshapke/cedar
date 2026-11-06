@@ -63,7 +63,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
-| `GET /v1/runs/{id}/trace` | Everything the run sent to the model and got back, for debugging: `{run, system, tools, messages, calls, events}`. `system` and `tools` are the system prompt (with cedar's notes) and tool definitions the agent's calls were sent, and `memory_note` (`{start, end}`, byte offsets into `system`, or `null`) where the user's memories sit in it, so a client passing the prompt on can cut exactly that; `messages` the conversation as in `/messages`, with attached files' base64 replaced by their size (`source.bytes`); `calls` one entry per model call, `{seq, turn, purpose, request, response, error, started_at, duration_ms}`, where `purpose` is `agent`, `plan` or `memory` (the call that picks facts about the user out of the prompt, see [Memory](#memory)), an agent call's `request` is `{model, max_tokens, reasoning_effort, message_count}` (it was sent the first `message_count` messages) and a planning or memory call's also has its own `system`, `tools` and `messages`, and `response` is `{content, stop_reason, usage, reasoning}` (`null`, with `error`, when the call failed); `events` the run's event log. `system`, `tools` and `calls` are empty for runs from before traces were kept. |
+| `GET /v1/runs/{id}/trace` | Everything the run sent to the model and got back, for debugging: `{run, system, tools, messages, calls, events}`. `system` and `tools` are the system prompt (with cedar's notes) and tool definitions the agent's calls were sent, `memory_note` (`{start, end}`, byte offsets into `system`, or `null`) where the user's memories sit in it, so a client passing the prompt on can cut exactly that, and `memory` what was shown there and why (the `memory.recalled` event's data, or `null`); `messages` the conversation as in `/messages`, with attached files' base64 replaced by their size (`source.bytes`); `calls` one entry per model call, `{seq, turn, purpose, request, response, error, started_at, duration_ms}`, where `purpose` is `agent`, `plan` or `memory` (the call at the end of the run that notes what it learned, see [Memory](#memory)), an agent call's `request` is `{model, max_tokens, reasoning_effort, message_count}` (it was sent the first `message_count` messages) and a planning or memory call's also has its own `system`, `tools` and `messages`, and `response` is `{content, stop_reason, usage, reasoning}` (`null`, with `error`, when the call failed); `events` the run's event log. `system`, `tools` and `calls` are empty for runs from before traces were kept. |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
 | `POST /v1/runs/{id}/plan` | Agree to the plan an interactive run is waiting on: `{"steps": [{"id", "title"}, ...]}` (1–12, edited, reordered, added or removed as you like). Returns `202`; `409` if the run isn't waiting for its plan. |
@@ -75,11 +75,18 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch}`, or `null` with `RECORDS=off`). |
-| `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [{id, text, run_id, created_at, updated_at}], limits: {max_items, max_chars}}`. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
-| `POST /v1/memory` | Remember something by hand: `{"text"}`. Returns `201` with the item, or `200` with the existing one when the same text (ignoring case and spacing) is already remembered. `409` when the list is full or `MEMORY=off`; `400` for empty text or more than 500 characters. |
-| `DELETE /v1/memory/{id}` | Forget one memory. `204`; `404` if it isn't yours. |
-| `DELETE /v1/memory` | Forget everything your runs remember. `204`. |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch}`, or `null` with `RECORDS=off`). |
+| `POST /v1/runs/{id}/feedback` | Your verdict on a finished run: `{"rating": "up" \| "down" \| null}`. Promotes or archives what the run learned (see [Memory](#memory)); returns `{rating, archived}`. `409` while the run is still going. |
+| `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [...], profile, limits}`. Each item is `{id, short_id, kind, text, subject, relation, topics, source, support, hedged, sensitive, pinned, mentions, meta, run_id, valid_from, valid_until, created_at, updated_at, superseded_by, archived_at, recall_count, last_recalled_at}`; `?kind=fact,episode` narrows it, `?archived=true` lists the archive (superseded, expired and forgotten rows) instead, `?q=` searches. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
+| `POST /v1/memory` | Remember something by hand: `{"text", "kind"?, "pinned"?, "valid_until"?, "subject"?, "relation"?, "topics"?}`. Returns `201` with the item, or `200` with the existing one when the same thing is already remembered. `409` with `MEMORY=off`; `400` for empty text, more than 500 characters, a kind that isn't `fact`, `preference`, `instruction` or `temporary`, or text that looks like a secret or an identifier. |
+| `GET /v1/memory/{id}` | One memory. `404` if it isn't yours. |
+| `PATCH /v1/memory/{id}` | Change one: `{"text"?, "kind"?, "pinned"?, "archived"?, "valid_until"?, "topics"?}`. Archiving takes it out of every prompt and keeps it; `archived: false` restores it. Returns the item. |
+| `GET /v1/memory/{id}/history` | Its versions (the chain it superseded, oldest first, ending in itself) and audit rows: `{versions: [...], ops: [{id, memory_id, op, actor, at, before, after}]}`, where `op` is `add`, `update`, `supersede`, `merge`, `archive`, `restore`, `expire`, `rollup`, `pin`, `unpin` and `actor` a run id, `user` or `consolidation`. |
+| `DELETE /v1/memory/{id}` | Forget one memory for good, with its history. `204`; `404` if it isn't yours. |
+| `DELETE /v1/memory` | Forget everything your runs remember, the profile and the history included. `204`. |
+| `GET /v1/memory/profile` | The profile: `{profile: {text, user_edited, updated_at}}` or `{profile: null}`. |
+| `PUT /v1/memory/profile` | Write the profile by hand: `{"text"}` (at most 1,600 characters; empty clears it). It then stays as written and the consolidation pass leaves it alone. |
+| `GET /v1/memory/export` | Everything, for a backup: `{version: 2, profile, items}` (active and archived). `POST /v1/memory/import` adds an export's active rows and its profile (when there is none): returns `{added}`. |
 | `GET /v1/records` | The record sets your runs keep for you, oldest first: `{sets: [{id, name, description, key_fields, health_data, count, columns, created_at, updated_at}], limits: {max_sets, max_items, max_record_chars, max_batch}}`. See [Records](#records). |
 | `GET /v1/records/{name}` | One set with all its records, oldest first: `{set, records: [{id, key, data, run_id, created_at, updated_at}]}`. `run_id` is the run that saved the record last, `null` for one uploaded by hand or once that run is deleted. `404` if it isn't yours. |
 | `POST /v1/records/{name}` | Save records by hand, as `records_save` would: `{"records": [{...}, ...], "description"?, "key"?, "health_data"?}`. A weekly export can go straight in this way. Returns `201` with `{set, added, updated}` when the set is new, else `200`. `409` when the set or the limit is full or `RECORDS=off`; `400` with the reason for a bad name, record or key. |
@@ -118,7 +125,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `stocks` | `compare_stocks` |
 | `products` | `search_products` |
 | `ask_user` | `ask_user` |
-| `memory` | `remember`, `forget`, and the list of what the run remembers (see [Memory](#memory)) |
+| `memory` | `remember`, `forget`, `recall`, and what the run is shown from memory (see [Memory](#memory)) |
 | `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
 | `gmail`, `calendar`, `drive`, `sheets` | every `gmail_*`, `calendar_*`, `drive_*` or `sheets_*` tool, or name single ones (`gmail_search_threads`) |
@@ -210,8 +217,9 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 | `tool.call` | `id`, `name`, `input` |
 | `tool.result` | `id`, `output`, `is_error`, `duration_ms`, and `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite |
 | `sandbox.denied` | `call_id`, `program` (the path OpenShell named, `null` for a refused HTTP request), `host`, `port`, `what` (`connect`, or the method and path of a refused request), `reason`: an OpenShell sandbox's policy refused something while a `bash` or `run_python` call ran (see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)) |
-| `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call, and with `purpose: "memory"` the call that picks facts about the user out of the prompt; one with `purpose: "tool"` and the `tool`'s name is a call a tool made to the model during that turn (`search_products` picking products, `plan_trip` choosing a trip option) |
-| `memory.updated` | `saved`: `[{status, memory}]`, what the call at the end of an interactive run picked out of the prompt and saved, `status` `added` or `replaced` and `memory` `{id, text, run_id, created_at, updated_at}` (see [Memory](#memory)). Only when something was saved, after the last `assistant.text` |
+| `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call, and with `purpose: "memory"` the call at the end of the run that notes what it learned; one with `purpose: "tool"` and the `tool`'s name is a call a tool made to the model during that turn (`search_products` picking products, `plan_trip` choosing a trip option) |
+| `memory.recalled` | What the run was shown from memory at its start: `profile` (whether there is one), `cues` (`recall`, `time`), `left_out` (how many matched but didn't fit), `items: [{id, short_id, kind, why, score}]` with `why` `pinned`, `core`, `match` or `cue` (see [Memory](#memory)). Only when something was shown |
+| `memory.updated` | What the run noted once it was done: `saved: [{status, memory}]` (`status` `added`, `superseded` or `replaced`; facts the user stated, and a procedure the run learned), `skipped: [{text, reason}]` (what the model proposed and the checks refused), `episode` (the row for this conversation, or `null`). After the last `assistant.text` |
 | `run.completed` | `final_text`, `stop_reason` |
 | `run.failed` | `error` |
 | `run.cancelled` | `reason` |
@@ -400,47 +408,76 @@ and tone.
 ## Memory
 
 A new conversation starts from the system prompt alone, so without memory the user repeats their
-name, their preferences and what they are working on. cedar keeps a short list of facts about the
-person behind each API key instead, in its own database:
+name, their preferences and what they are working on, and the agent repeats its mistakes. cedar
+keeps a typed memory for the person behind each API key, in its own database, and uses it the way
+the research on agent memory says works (see [docs/design/memory.md](docs/design/memory.md)):
 
-- **Reading.** Every run whose tools allow the `memory` group (all runs, unless `tools` leaves it out)
-  is shown the whole list in its note: what they remember about the user, as `[id] text`, oldest
-  first, framed as facts the user told them, not instructions, and never overriding the system
-  prompt. The note is built for each request and never stored, so a memory deleted through the API
-  is gone from the very next run, continuations included.
-- **Writing.** The model saves a fact with `remember` (`{text, replaces?}`) and deletes one with
-  `forget` (`{id}`), ordinary tool calls that show up as tool steps. It is told to save durable facts
-  the user states or asks it to keep (preferences, names, standing instructions, ongoing projects,
-  corrections), and never anything it only read in a tool result, a web page, an email or a document.
-  `replaces` updates an item in place (an address changed); the same text again (ignoring case and
-  spacing) only moves the existing item's `updated_at`. Only [interactive](#plans-and-approvals) runs
-  may write: in a run with `interactive: false` (a scheduled agent) both tools refuse, and the note
-  says memory is read-only, so unattended runs use what the user said but cannot add to it.
-- **Picking facts up.** Models rarely call `remember` on their own, so once an interactive run has
-  answered, cedar makes one more short call, with no tools, that shows the model the memory list
-  and the run's prompt and asks which durable facts about the user the prompt states (a name, where
-  they live, their work, family, diet, tools, tastes, how they want answers, standing instructions,
-  ongoing projects) that are not remembered yet, as JSON. Each one is saved as `remember` would
-  (deduplicated, `replaces` honoured, refused when the list is full), from the same run, after the
-  answer went out and before `run.completed`. What was added or replaced goes out as a
-  `memory.updated` event, so a client can show it (the chat shows them as *remember* steps under
-  the reply), and the call is in the run's trace with `purpose: "memory"`. Nothing but the prompt
-  is read: not the model's answer, not tool results, not attached files. A failed call is logged
-  and the run completes without. `MEMORY_EXTRACT=off` turns the pass off and leaves only the
-  tools.
-- **Limits.** At most `MEMORY_MAX_ITEMS` items (200) of 500 characters each, about 100 KB at the very
-  most and far less in practice, which is why there is no vector store: the list fits in the prompt
-  whole. When it is full, `remember` is refused and the model is told to forget something or ask the
-  user; nothing is ever dropped silently.
-- **Seeing and deleting it.** `GET /v1/memory` lists exactly what the model sees, with the run each
-  item came from; `DELETE /v1/memory/{id}` forgets one item and `DELETE /v1/memory` all of them. The
-  chat shows this list in Settings → Memory, on the web, the desktop app, iOS and Android
-  ([chat/README.md](chat/README.md#memory)). Deleting a run or a conversation keeps its memories.
+- **What is kept.** Six kinds of row. *Facts*, *preferences* and *standing instructions* the user
+  stated, and *temporary* facts with an end date, each with the user's own words it was taken from
+  (`support`), when it became true (`valid_from`) apart from when cedar learned it, and optionally
+  a key (`subject`, `relation`: the home city, the employer) for facts with one current value.
+  *Episodes*: what each conversation was about and how it ended, written by the run itself.
+  *Procedures*: how a task with tools went well for this user, abstracted (title, approach,
+  rationale, pitfall; never commands or values). Besides the rows, a *profile*: a short summary
+  of the user the consolidation pass writes, which the user can write themselves instead.
+- **Reading.** A run whose tools allow the `memory` group is shown the profile and every pinned
+  row (instructions are pinned by default) in every request, and beyond that what the request
+  calls for: facts, preferences and temporary rows whose words overlap the prompt and the newest
+  user turns, and episodes and procedures only on a recall cue ("last time", "the script we
+  wrote", a date) or a strong overlap, within `MEMORY_RECALL_TOKENS`. A store of at most 25 rows
+  about the user is shown whole. Superseded, archived and expired rows are never shown, and a row
+  whose key has a newer value yields to it. The note is built for each request and never stored,
+  so a change in Settings applies to the very next run; it sits last in the system prompt, framed
+  as the user's facts and the agent's notes rather than instructions, with short ids (`[m12]`).
+  What was shown goes out as a `memory.recalled` event and is in the trace as `memory`. The
+  `recall` tool lets the model search memory itself (by words, kind, with history), in every run.
+- **Writing.** The model saves a fact with `remember` (`{text, kind?, supersedes?, valid_until?,
+  subject?, relation?}`) and archives one with `forget` (`{id}`), in interactive runs only. Once
+  any run has answered, cedar makes one more short call, with no tools, that reads the
+  conversation (what the user and the assistant said and one line per tool call; never tool
+  results or attached files) next to the memories most related to it, and answers with JSON: the
+  durable facts the user stated, each quoting the user's words it is taken from; a title and
+  summary for the conversation; and, when the run did work with tools that went well, one
+  procedure. Facts are saved from interactive runs with `MEMORY_EXTRACT` on, episodes and
+  procedures from any run with `MEMORY_EXPERIENCE` on (a run without tools writes its episode
+  without a call). Nothing the model proposes is trusted: a fact is saved only if its quote occurs
+  in the user's own words of that conversation, so nothing read in a tool result, an email or a
+  web page can become a fact about the user; text that looks like a password, a key or a card,
+  account or government number is refused; the same thing said again is one row said once more
+  (the fuller text wins), and a text that differs in one word is another row. A keyed fact (same
+  subject and relation, different text) supersedes the old one without being asked, as does a
+  `supersedes` id: the old row is closed (`valid_until`, `superseded_by`) and kept as history.
+  What was saved and what was refused goes out as `memory.updated`, and the call is in the trace
+  with `purpose: "memory"`. A failed call is logged and the run completes without.
+- **Consolidation.** After `MEMORY_CONSOLIDATE_AFTER` (5) finished runs of an owner, or an hour of
+  idleness with runs since the last pass, the manager runs a background pass, never on the request
+  path: temporary rows past their date are archived; raw episodes older than 30 days are rolled up
+  into one summary per month (the raw rows archived); and one model call over the active rows
+  about the user proposes duplicates to merge, contradictions to close and the profile to write.
+  A merge or supersede is applied only between rows of one kind that are plainly alike, a pinned
+  row is never touched, a profile the user wrote is kept, and every change is an audit row.
+  Nothing is deleted. `MEMORY_CONSOLIDATE=off` turns the pass off.
+- **Rank and budgets.** When more matches than fits, rows are ranked by kind, by how often they
+  were said and recalled, and by disuse (half of the way to a floor after 30 days without being
+  recalled; never for pinned rows). An owner keeps `MEMORY_MAX_ITEMS` (500) active rows about
+  themselves, 2,000 raw episodes and 200 procedures; past a budget the lowest-ranked unpinned row
+  is archived, not refused, and listed under the archive in Settings, where it can be restored.
+- **Feedback.** `POST /v1/runs/{id}/feedback` with a thumbs up or down counts for or against the
+  procedures the run was shown; one that has failed more than it succeeded is archived, and a
+  thumbs down archives the procedure the run itself learned. The chat passes its thumbs on.
+- **Seeing and changing it.** `GET /v1/memory` lists the rows by kind, or the archive, and the
+  profile; `PATCH /v1/memory/{id}` edits, pins, archives and restores; `GET /v1/memory/{id}/history`
+  shows a row's versions and who changed it when; `PUT /v1/memory/profile` writes the profile;
+  `DELETE` forgets a row or everything for good; `GET /v1/memory/export` backs it all up and
+  `POST /v1/memory/import` brings it back. The chat shows the profile and the rows in Settings →
+  Memory on the web and the desktop app ([chat/README.md](chat/README.md#memory)); the iOS and
+  Android apps list the rows. Deleting a run or a conversation keeps its memories.
 
 Memory belongs to the API key's owner, like runs: another key never sees it. The chat calls cedar
 with one key, so everyone using one chat server shares one memory, and rotating `CEDAR_API_KEY`
 leaves the old memories behind, as it does the old runs. Turn the `memory` group off for a run with
-`tools`, or for the whole server with `MEMORY=off` (what was saved can still be listed and deleted).
+`tools`, or memory off altogether with `MEMORY=off` (the routes stay, so what was saved can still be
+listed and deleted). Upgrading from a cedar before 0.6 keeps every memory as a fact without a quote.
 
 ## Records
 
@@ -568,9 +605,12 @@ Settings come from environment variables. The important ones:
 | `RECIPE_WIKIPEDIA_URL` / `RECIPE_COMMONS_URL` | `https://en.wikipedia.org/w/api.php` / `https://commons.wikimedia.org/w/api.php` (the MediaWiki APIs `show_recipe` searches for a photo of the dish) |
 | `TRANSIT` | `on` (set `off` to remove the `plan_trip` tool) |
 | `ASK_USER` | `on` (set `off` to remove the `ask_user` tool, so the model never stops a run to ask a question) |
-| `MEMORY` | `on` (set `off` to remove the `remember` and `forget` tools and stop showing runs what they remember; see [Memory](#memory)) |
-| `MEMORY_MAX_ITEMS` | 200 (how many memories one API key may keep) |
-| `MEMORY_EXTRACT` | `on` (set `off` to stop the model call at the end of every interactive run that picks facts about the user out of its prompt; see [Memory](#memory)) |
+| `MEMORY` | `on` (set `off` to remove the `remember`, `forget` and `recall` tools and stop showing runs what they remember; see [Memory](#memory)) |
+| `MEMORY_MAX_ITEMS` | 500 (how many facts, preferences, instructions and temporary memories one API key keeps active; past it the lowest-ranked are archived) |
+| `MEMORY_EXTRACT` | `on` (set `off` to stop noting the facts the user states, from the model call at the end of every interactive run; see [Memory](#memory)) |
+| `MEMORY_EXPERIENCE` | `on` (set `off` to stop noting what each run did as an episode, and how a task went well as a procedure) |
+| `MEMORY_CONSOLIDATE` / `MEMORY_CONSOLIDATE_AFTER` | `on` / 5 (the background pass that merges, rolls up and writes the profile, after this many finished runs of an owner or an hour of idleness) |
+| `MEMORY_RECALL_TOKENS` | 600 (how many tokens of recalled memories a run's prompt may hold beyond the profile and what is pinned) |
 | `RECORDS` | `on` (set `off` to remove the `records_*` tools and stop showing runs which sets they keep; see [Records](#records)) |
 | `RECORDS_MAX_SETS` | 50 (how many record sets one API key may keep) |
 | `RECORDS_MAX_ITEMS` | 10000 (how many records one set may hold) |
@@ -619,8 +659,9 @@ Settings come from environment variables. The important ones:
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
 | `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
-| `remember` | Saves a durable fact about the user for later conversations. Takes `text` (one fact, at most 500 characters; whitespace is collapsed to one line) and optional `replaces` (the id of the item it updates). Returns `{status: "added" \| "replaced" \| "unchanged", memory: {id, text, run_id, created_at, updated_at}}`. Refused in non-interactive runs and when the list is full. See [Memory](#memory). Unless `MEMORY=off`. |
-| `forget` | Deletes one remembered fact by `id`. Refused in non-interactive runs. Unless `MEMORY=off`. |
+| `remember` | Saves something durable about the user for later conversations. Takes `text` (one fact, at most 500 characters; whitespace is collapsed to one line), optional `kind` (`fact`, `preference`, `instruction`, `temporary`), `supersedes` (the id of the memory it makes untrue, kept as history), `valid_until` (an ISO date, for a temporary fact), `subject` and `relation` (the key of a fact with one current value). Returns `{status: "added" \| "superseded" \| "replaced" \| "unchanged", memory: {id, kind, text, pinned, since, until}}`. Refused in non-interactive runs and for text that looks like a secret or an identifier. See [Memory](#memory). Unless `MEMORY=off`. |
+| `forget` | Archives one memory by `id`: it leaves every prompt and stays in the user's Settings, where they can delete or restore it. Refused in non-interactive runs. Unless `MEMORY=off`. |
+| `recall` | Searches memory: `query` (a few words), optional `kind`, `history` (superseded facts too) and `limit` (10). Returns `{matches: [{id, kind, text, since, until, superseded, score, ...}]}`, best first, with an episode's outcome and a procedure's rationale and pitfall. In every run. Unless `MEMORY=off`. |
 | `records_list` | The record sets the run keeps for the user (see [Records](#records)): each set's `name`, `description`, `key_fields`, `health_data`, `count`, `columns` and timestamps, with the limits. Unless `RECORDS=off`. |
 | `records_describe` | One set's columns (`name`, `type`: `number`, `text`, `boolean`, `json` or `mixed`, how many records fill it, an example), its key, and the oldest and newest records as samples with `_saved_at`. Takes `set`. |
 | `records_save` | Adds or updates records in a set, creating it on first use. Takes `set` (lowercase letters, digits and underscores), `records` (1–500 JSON objects with such field names, at most 8,000 characters each), and for a new set `description` and `key` (the fields that identify a row, e.g. `["date"]`; fixed once the set holds records; without one, every save appends), plus optional `health_data`. A record whose key is already in the set replaces it. Returns `{set, added, updated, count, key}`. Nothing is written when any record is refused or the set would go over `RECORDS_MAX_ITEMS`. |
@@ -1143,7 +1184,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - Turning networking on for a Docker sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services. [OpenShell sandboxes](#openshell-sandboxes-opt-in) narrow that to the hosts their policy names, from the programs it names; turn them on in Settings → Advanced.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
 - [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
-- [Memory](#memory) outlives the conversation it was saved in, so an instruction planted in it would too. The layers against that: only interactive runs can write it, the model is told never to save what a tool, page, email or document said, the list is shown as the user's facts that don't override the system prompt, every write is visible (a tool step, or a `memory.updated` event for what the end-of-run call picked out of the prompt, which reads nothing but the user's own prompt), and the whole list can be read and deleted through `/v1/memory` (Settings → Memory in the chat). Memories stay in cedar's database and go to the LLM server with every run that has the `memory` group on, like the conversation itself. Set `MEMORY=off` if that is not acceptable.
+- [Memory](#memory) outlives the conversation it was saved in, so an instruction planted in it would too. The layers against that: only interactive runs can write facts about the user, and a fact is saved only when it quotes the user's own words from that conversation (a check in code, so nothing a tool, page, email or document said can be saved as something the user said); text that looks like a secret or an identifier is refused; what is shown is framed as the user's facts and the agent's notes that don't override the system prompt; every write is visible (a tool step, or the `memory.updated` event with what was saved and what was refused) and every change is an audit row; episodes and procedures are the agent's own account of what it did, written from the conversation's text and never from tool results; and everything can be read, edited, archived and deleted through `/v1/memory` (Settings → Memory in the chat). Memories stay in cedar's database and go to the LLM server with every run that has the `memory` group on, like the conversation itself. Set `MEMORY=off` if that is not acceptable.
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
 ## Operations

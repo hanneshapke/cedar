@@ -54,9 +54,14 @@ pub struct AgentEnv {
     pub pdf_preview_pages: usize,
     /// What owners remember across conversations; `None` when memory is turned off.
     pub memories: Option<Memories>,
-    /// Whether an interactive run ends with a call that picks facts about the user out of its
-    /// prompt (see [`note_facts`]).
+    /// Whether an interactive run ends with a call that notes the facts about the user its
+    /// conversation stated (see [`note_memory`]).
     pub memory_extract: bool,
+    /// Whether that call also notes what the run did (an episode) and how a task went well (a
+    /// procedure); then every run with tools makes it, unattended ones too.
+    pub memory_experience: bool,
+    /// After how many finished runs of an owner the manager consolidates their memory; 0 never.
+    pub memory_consolidate_after: u32,
     /// What owners keep as records across conversations; `None` when records are turned off.
     pub records: Option<Records>,
 }
@@ -174,15 +179,6 @@ pub async fn run_agent(
         note.push_str("\n\n");
         note.push_str(&records::note(&sets, &columns, run.interactive));
     }
-    // Read per request, so a memory deleted in Settings is gone from the very next run. The
-    // `memory` group switches reading and writing together.
-    let memory_on = tools.get(REMEMBER).is_some();
-    if let (Some(memories), true) = (&env.memories, memory_on) {
-        let items = memories.list(&run.owner).await?;
-        note.push_str("\n\n");
-        note.push_str(&memory::note(&items, run.interactive));
-    }
-    let mut system = with_note(&run.system, &note);
     // A continuation starts with a copy of its parent's conversation (made when it was created).
     let mut messages: Vec<Value> = env
         .store
@@ -191,6 +187,22 @@ pub async fn run_agent(
         .into_iter()
         .map(|m| json!({ "role": m.role, "content": m.content }))
         .collect();
+    // Read per request, so a memory deleted in Settings is gone from the very next run. The
+    // `memory` group switches reading and writing together. The profile and pinned
+    // instructions are always shown; the rest is what the request calls for (see
+    // [`memory::recall`]), and what was shown goes out as a `memory.recalled` event.
+    let memory_on = tools.get(REMEMBER).is_some();
+    if let (Some(memories), true) = (&env.memories, memory_on) {
+        let query = memory::recall_query(&messages, &run.prompt);
+        let recall = memories.recall(&run.owner, &query).await?;
+        memories.recalled(&run.owner, &recall.ids()).await?;
+        if recall.profile.is_some() || !recall.shown.is_empty() {
+            events.emit(event::MEMORY_RECALLED, recall.summary()).await?;
+        }
+        note.push_str("\n\n");
+        note.push_str(&memory::note(&recall, run.interactive));
+    }
+    let mut system = with_note(&run.system, &note);
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
     let attachments = env.store.list_attachments(run.id).await?;
@@ -326,7 +338,7 @@ pub async fn run_agent(
                         final_text: parts.join("\n\n"),
                         stop_reason: Some(ASK_USER.to_string()),
                     };
-                    return finish(env, run, memory_on, events, cancel, done).await;
+                    return finish(env, run, memory_on, &messages, events, cancel, done).await;
                 }
             }
             other => {
@@ -334,7 +346,7 @@ pub async fn run_agent(
                     final_text,
                     stop_reason: other.map(String::from),
                 };
-                return finish(env, run, memory_on, events, cancel, done).await;
+                return finish(env, run, memory_on, &messages, events, cancel, done).await;
             }
         }
     }
@@ -344,18 +356,19 @@ pub async fn run_agent(
     )))
 }
 
-/// The run's completion, after what its prompt said about the user has been noted (see
-/// [`note_facts`]). The answer is already out, so being cancelled while noting only skips it.
+/// The run's completion, after what it learned has been noted (see [`note_memory`]). The answer
+/// is already out, so being cancelled while noting only skips it.
 async fn finish(
     env: &AgentEnv,
     run: &Run,
     memory_on: bool,
+    messages: &[Value],
     events: &Emitter,
     cancel: &CancellationToken,
     done: Completion,
 ) -> Result<Completion, AgentError> {
-    if memory_on && env.memory_extract && run.interactive {
-        match note_facts(env, run, events, cancel).await {
+    if memory_on {
+        match note_memory(env, run, messages, &done, events, cancel).await {
             Ok(()) | Err(AgentError::Cancelled) => {}
             Err(e) => return Err(e),
         }
@@ -363,74 +376,100 @@ async fn finish(
     Ok(done)
 }
 
-/// Pick the facts about the user out of the run's prompt with one tool-free model call and save
-/// them (see [`memory::extraction`]). What was added or replaced goes out as a `memory.updated`
-/// event. A failed call is logged and the run completes without; so is nothing found.
-async fn note_facts(
+/// Note what a run learned, with one tool-free model call over its conversation (see
+/// [`memory::extract`]): the facts the user stated (interactive runs, with `MEMORY_EXTRACT`),
+/// an episode and, when the work went well, a procedure (`MEMORY_EXPERIENCE`). An episode row is
+/// written even without the call. What was saved goes out as a `memory.updated` event. A failed
+/// call is logged and the run completes without.
+async fn note_memory(
     env: &AgentEnv,
     run: &Run,
+    messages: &[Value],
+    done: &Completion,
     events: &Emitter,
     cancel: &CancellationToken,
 ) -> Result<(), AgentError> {
     let Some(memories) = &env.memories else {
         return Ok(());
     };
-    let Some(llm) = env.llm.client_for(&run.model_id) else {
-        return Ok(());
-    };
-    let prompt = run.prompt.trim();
-    if prompt.is_empty() {
-        return Ok(());
-    }
-    let items = memories.list(&run.owner).await?;
-    let (system, messages) = memory::extraction(&items, prompt);
-    let req = MessageRequest {
-        model: &run.model,
-        max_tokens: max_tokens(env, run),
-        reasoning_effort: run.reasoning.as_deref(),
-        system: &system,
-        tools: &[],
-        messages: &messages,
-    };
-    let resp = match call_model(env, run, llm.as_ref(), &req, trace::MEMORY, 0, cancel).await? {
-        Ok(resp) => resp,
-        Err(e) => {
-            tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "the memory call failed; nothing noted from this prompt");
-            return Ok(());
+    let transcript = memory::extract::transcript(messages, &run.prompt);
+    let asked = done.stop_reason.as_deref() == Some(ASK_USER);
+    let outcome = if asked { "waiting for the user's answer" } else { "completed" };
+    let facts = env.memory_extract && run.interactive;
+    let experience = env.memory_experience;
+    let worked = !transcript.tools.is_empty();
+    let call = facts || (experience && worked);
+    let mut noted = memory::extract::Noted::default();
+    let remembered = memories.active(&run.owner).await?;
+    if call && !transcript.text.trim().is_empty() {
+        if let Some(llm) = env.llm.client_for(&run.model_id) {
+            let (system, call_messages) = memory::extract::call(&remembered, &transcript, facts, experience, outcome);
+            let req = MessageRequest {
+                model: &run.model,
+                max_tokens: max_tokens(env, run),
+                reasoning_effort: run.reasoning.as_deref(),
+                system: &system,
+                tools: &[],
+                messages: &call_messages,
+            };
+            match call_model(env, run, llm.as_ref(), &req, trace::MEMORY, 0, cancel).await? {
+                Ok(resp) => {
+                    env.store.record_turn(run.id, 0, resp.usage).await?;
+                    let mut usage = usage_event(env, run, 0, resp.usage);
+                    usage["purpose"] = json!("memory");
+                    events.emit(event::USAGE, usage).await?;
+                    let text: String = resp
+                        .content
+                        .iter()
+                        .filter(|b| b["type"] == "text")
+                        .filter_map(|b| b["text"].as_str())
+                        .collect();
+                    noted = memory::extract::parse(&text);
+                }
+                Err(e) => {
+                    tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "the memory call failed; nothing noted from this conversation");
+                }
+            }
         }
-    };
-    env.store.record_turn(run.id, 0, resp.usage).await?;
-    let mut usage = usage_event(env, run, 0, resp.usage);
-    usage["purpose"] = json!("memory");
-    events.emit(event::USAGE, usage).await?;
-    let text: String = resp
-        .content
-        .iter()
-        .filter(|b| b["type"] == "text")
-        .filter_map(|b| b["text"].as_str())
-        .collect();
-    let found = memory::parse_extraction(&text);
-    if found.is_empty() {
+    }
+    let actor = memory::Actor::Run(run.id);
+    let mut saved: Vec<Value> = Vec::new();
+    let mut skipped: Vec<Value> = Vec::new();
+    if facts {
+        for c in &noted.facts {
+            match memory::extract::admit(c, &transcript.user_text, &remembered, run.id, &noted.topics) {
+                Ok(new) => match memories.remember(&run.owner, new, actor).await? {
+                    Ok((_, memory::Saved::Unchanged)) => {}
+                    Ok((m, status)) => saved.push(json!({ "status": status, "memory": m })),
+                    Err(refused) => skipped.push(json!({ "text": c.text, "reason": refused.to_string() })),
+                },
+                Err(skip) => skipped.push(json!({ "text": skip.text, "reason": skip.reason })),
+            }
+        }
+    }
+    let mut episode = None;
+    if experience {
+        let row = memory::extract::episode(run.id, &run.prompt, noted.episode.as_ref(), outcome, &transcript, &noted.topics);
+        if let Ok((m, _)) = memories.remember(&run.owner, row, actor).await? {
+            episode = Some(m);
+        }
+        if let Some(p) = noted.procedure.as_ref().filter(|_| worked && !asked) {
+            if let Ok((m, status @ (memory::Saved::Added | memory::Saved::Superseded))) =
+                memories.remember(&run.owner, memory::extract::procedure(run.id, p, &noted.topics), actor).await?
+            {
+                saved.push(json!({ "status": status, "memory": m }));
+            }
+        }
+    }
+    if saved.is_empty() && skipped.is_empty() && episode.is_none() {
         return Ok(());
     }
-    let saved = memories
-        .remember_all(&run.owner, Some(run.id), &found)
-        .await?;
-    if saved.is_empty() {
-        return Ok(());
-    }
-    let saved: Vec<Value> = saved
-        .into_iter()
-        .map(|(memory, status)| json!({ "status": status, "memory": memory }))
-        .collect();
     events
-        .emit(event::MEMORY_UPDATED, json!({ "saved": saved }))
+        .emit(event::MEMORY_UPDATED, json!({ "saved": saved, "skipped": skipped, "episode": episode }))
         .await?;
     Ok(())
 }
 
-/// The run's system prompt followed by the environment note. The note is added per request, not
-/// stored, so it follows the server's current configuration.
 fn with_note(system: &str, note: &str) -> String {
     match (system.trim().is_empty(), note.is_empty()) {
         (_, true) => system.to_string(),

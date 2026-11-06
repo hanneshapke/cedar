@@ -1,15 +1,26 @@
 'use strict';
 
 // Settings → Memory: what Cedar remembers about the user across conversations (cedar's
-// `/v1/memory`, through `/api/memory`). Each fact is listed with when it was saved and the
-// conversation it came from, with a Remove button; Forget all clears the list. What is listed is
-// exactly what the agent is shown, and a removal applies from the next message on, so there is
-// nothing to save. The page draws its own section, like the Language page, and needs only its
-// script tag after settings-shell.js.
+// `/v1/memory`, through `/api/memory`). At the top, the profile: the short summary of the user
+// that Cedar reads before every conversation, written by its background pass unless the user
+// writes it themselves. Below, the memories by kind: facts, preferences and standing
+// instructions the user stated (each with the words it was taken from and the conversation it
+// came from), what past conversations were about, and ways of working that went well; and the
+// archive, where superseded, expired and forgotten memories stay until deleted. Each row can be
+// pinned (always shown to Cedar), archived or restored, and removed for good. The page draws its
+// own section, like the Language page, and needs only its script tag after settings-shell.js.
 
 (() => {
-  let data = null;      // the last GET /api/memory: { supported, items, limits }
+  let data = null;      // the last GET /api/memory: { supported, items, profile, limits }
   let tools = undefined; // the saved default tool selection (null: every group)
+  let view = 'about';    // 'about' | 'episodes' | 'procedures' | 'archived'
+
+  const VIEWS = {
+    about: { kinds: ['fact', 'preference', 'instruction', 'temporary'], archived: false },
+    episodes: { kinds: ['episode'], archived: false },
+    procedures: { kinds: ['procedure'], archived: false },
+    archived: { kinds: [], archived: true },
+  };
 
   function el(tag, className, text) {
     const e = document.createElement(tag);
@@ -27,17 +38,18 @@
 
   const shell = () => (typeof cedarSettingsShell === 'undefined' ? null : cedarSettingsShell);
 
-  async function api(method, path) {
+  async function api(method, path, body) {
     const headers = {};
     try {
       const token = localStorage.getItem('cedar-chat-token');
       if (token) headers.Authorization = `Bearer ${token}`;
     } catch { /* no saved token: the server may not need one */ }
-    const res = await fetch(`/api${path}`, { method, headers });
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     if (res.status === 204) return null;
-    const body = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(body?.error?.message || tr('memory.requestFailed', { status: String(res.status) }));
-    return body;
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.error?.message || tr('memory.requestFailed', { status: String(res.status) }));
+    return json;
   }
 
   function when(iso) {
@@ -62,26 +74,64 @@
       a.addEventListener('click', closeSettings);
       return a;
     }
+    if (item.source === 'consolidation') return el('span', '', tr('memory.fromConsolidation'));
     // No run: added by hand, or its run was deleted with its conversation.
     return el('span', '', item.run_id ? tr('memory.fromElsewhere') : tr('memory.noSource'));
+  }
+
+  function fail(err) {
+    shell()?.setStatus('memory', err.message, 'error');
+  }
+
+  async function change(item, body, section) {
+    try {
+      const updated = await api('PATCH', `/memory/${encodeURIComponent(item.id)}`, body);
+      Object.assign(item, updated);
+    } catch (err) {
+      fail(err);
+    }
+    await reload(section);
   }
 
   function row(item, section) {
     const r = el('div', 'cedar-set-integration');
     const main = el('div', 'cedar-set-integration-main');
+    const head = el('span', '');
+    head.append(el('span', 'cedar-set-badge', tr(`memory.kind.${item.kind}`)), ' ');
+    if (item.pinned) head.append(el('span', 'cedar-set-badge', tr('memory.pinned')), ' ');
+    head.append(item.text);
+    main.append(head);
+    if (item.support && item.support !== item.text) {
+      main.append(el('small', '', tr('memory.said', { quote: item.support })));
+    }
+    if (item.kind === 'procedure' && item.meta?.pitfall) main.append(el('small', '', tr('memory.pitfall', { text: item.meta.pitfall })));
+    if (item.kind === 'episode' && item.meta?.outcome && item.meta.outcome !== 'completed') {
+      main.append(el('small', '', tr('memory.outcome', { outcome: item.meta.outcome })));
+    }
     const sub = el('small', '');
-    sub.append(`${when(item.created_at)} · `, source(item));
-    main.append(el('span', '', item.text), sub);
+    const bits = [when(item.valid_from || item.created_at)];
+    if (item.valid_until) bits.push(tr('memory.until', { date: when(item.valid_until) }));
+    if (item.superseded_by) bits.push(tr('memory.superseded'));
+    else if (item.archived_at) bits.push(tr('memory.archivedOn', { date: when(item.archived_at) }));
+    if (item.recall_count) bits.push(tr('memory.used', { count: item.recall_count }));
+    sub.append(`${bits.join(' · ')} · `, source(item));
+    main.append(sub);
     const side = el('div', 'cedar-set-integration-side');
+    const aboutUser = !['episode', 'procedure'].includes(item.kind);
+    const active = !item.archived_at && !item.superseded_by;
+    if (active && aboutUser) {
+      side.append(button(item.pinned ? tr('memory.unpin') : tr('memory.pin'), () => change(item, { pinned: !item.pinned }, section)));
+    }
+    if (active) side.append(button(tr('memory.archive'), () => change(item, { archived: true }, section)));
+    else if (!item.superseded_by) side.append(button(tr('memory.restore'), () => change(item, { archived: false }, section)));
     side.append(button(tr('memory.remove'), async (e) => {
       e.currentTarget.disabled = true;
       try {
         await api('DELETE', `/memory/${encodeURIComponent(item.id)}`);
-        data.items = data.items.filter((i) => i.id !== item.id);
       } catch (err) {
-        shell()?.setStatus('memory', err.message, 'error');
+        fail(err);
       }
-      draw(section);
+      await reload(section);
     }));
     r.append(main, side);
     return r;
@@ -89,15 +139,59 @@
 
   async function forgetAll(section) {
     const count = data?.items?.length || 0;
-    if (!count) return;
+    if (!count && !data?.profile) return;
     if (!(await cedarConfirm(tr('memory.confirmForgetAll', { count }), { ok: tr('memory.forgetAll') }))) return;
     try {
       await api('DELETE', '/memory');
-      data.items = [];
     } catch (err) {
-      shell()?.setStatus('memory', err.message, 'error');
+      fail(err);
     }
-    draw(section);
+    await reload(section);
+  }
+
+  async function exportAll() {
+    try {
+      const all = await api('GET', '/memory/export');
+      const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `cedar-memory-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  function profileBlock(section) {
+    const block = el('div', 'cedar-set-block');
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', tr('memory.profile')));
+    block.append(head);
+    const profile = data.profile;
+    const area = el('textarea', 'settings-input');
+    area.rows = 4;
+    area.placeholder = tr('memory.profilePlaceholder');
+    area.value = profile?.text || '';
+    area.maxLength = data.limits?.max_profile_chars || 1600;
+    const note = el('p', 'cedar-set-note', profile
+      ? (profile.user_edited ? tr('memory.profileByYou', { date: when(profile.updated_at) }) : tr('memory.profileByCedar', { date: when(profile.updated_at) }))
+      : tr('memory.profileNone'));
+    const actions = el('div', 'cedar-set-block-head');
+    const save = button(tr('memory.saveProfile'), async () => {
+      save.disabled = true;
+      try {
+        await api('PUT', '/memory/profile', { text: area.value });
+      } catch (err) {
+        fail(err);
+      }
+      await reload(section);
+    }, 'settings-ghost');
+    save.disabled = true;
+    area.addEventListener('input', () => { save.disabled = area.value === (profile?.text || ''); });
+    actions.append(note, save);
+    block.append(area, actions);
+    return block;
   }
 
   function draw(section) {
@@ -113,13 +207,22 @@
       warn.append(' ', button(tr('memory.openTools'), () => shell()?.go('tools'), 'settings-link'));
       parts.push(warn);
     }
+    parts.push(profileBlock(section));
+
     const block = el('div', 'cedar-set-block');
+    const tabs = el('div', 'cedar-set-block-head');
+    const chips = el('div', '');
+    for (const id of Object.keys(VIEWS)) {
+      const chip = button(tr(`memory.view.${id}`), () => { view = id; reload(section); }, 'settings-ghost');
+      if (id === view) chip.setAttribute('aria-pressed', 'true');
+      chips.append(chip, ' ');
+    }
+    const actions = el('div', '');
+    actions.append(button(tr('memory.export'), exportAll, 'settings-ghost'), ' ', button(tr('memory.forgetAll'), () => forgetAll(section), 'settings-ghost'));
+    tabs.append(chips, actions);
+    block.append(tabs);
     const head = el('div', 'cedar-set-block-head');
-    const max = data.limits?.max_items;
-    head.append(el('span', 'settings-eyebrow', max
-      ? tr('memory.countOf', { count: data.items.length, max })
-      : tr('memory.count', { count: data.items.length })));
-    if (data.items.length) head.append(button(tr('memory.forgetAll'), () => forgetAll(section), 'settings-ghost'));
+    head.append(el('span', 'settings-eyebrow', tr('memory.count', { count: data.items.length })));
     block.append(head);
     if (data.items.length) {
       const list = el('div', 'cedar-set-models');
@@ -127,17 +230,19 @@
       for (const item of [...data.items].reverse()) list.append(row(item, section));
       block.append(list);
     } else {
-      block.append(el('p', 'cedar-set-note', tr('memory.empty')));
+      block.append(el('p', 'cedar-set-note', tr(view === 'about' ? 'memory.empty' : `memory.empty.${view}`)));
     }
     parts.push(block, el('p', 'cedar-set-note', tr('memory.privacy')));
     section.replaceChildren(...parts);
   }
 
-  async function render(section) {
-    shell()?.setStatus('memory', '');
-    if (!data) section.replaceChildren(el('p', 'cedar-set-note', tr('memory.loading')));
+  async function reload(section) {
+    const v = VIEWS[view];
+    const params = new URLSearchParams();
+    if (v.kinds.length) params.set('kind', v.kinds.join(','));
+    if (v.archived) params.set('archived', 'true');
     try {
-      const [memory, prefs] = await Promise.all([api('GET', '/memory'), api('GET', '/settings').catch(() => null)]);
+      const [memory, prefs] = await Promise.all([api('GET', `/memory?${params}`), api('GET', '/settings').catch(() => null)]);
       data = memory;
       tools = prefs ? prefs.tools : undefined;
     } catch (err) {
@@ -147,11 +252,17 @@
     draw(section);
   }
 
+  async function render(section) {
+    shell()?.setStatus('memory', '');
+    if (!data) section.replaceChildren(el('p', 'cedar-set-note', tr('memory.loading')));
+    await reload(section);
+  }
+
   function summary() {
     if (!data) return null;
     if (!data.supported) return tr('memory.summaryUnsupported');
     if (offInTools()) return { text: tr('memory.summaryOff'), kind: 'warn' };
-    return tr('memory.summary', { count: data.items.length });
+    return data.profile ? tr('memory.summaryProfile') : tr('memory.summary', { count: data.items.length });
   }
 
   function bind() {

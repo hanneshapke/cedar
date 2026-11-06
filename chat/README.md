@@ -496,15 +496,20 @@ Until cedar has a model registered, the message box says so and sending is off.
 
 ### Memory
 
-cedar remembers short facts about you across conversations (see [Memory](../README.md#memory)):
-your name, preferences, standing instructions and projects, saved when you tell it something
-lasting or ask it to remember something, and picked out of your message once the reply is done,
-so a fact mentioned in passing ("I'm vegetarian, by the way") is kept too. Each one saved shows as
-a *remember* step under the reply.
-**Settings → Memory** lists everything it remembers, newest first, with the date and a link to the
-conversation it was saved in, a **Remove** button on each, and **Forget all**. The list is exactly
-what the model sees, and a removal applies from the next message on, in every conversation. The
-same list is in the iOS and Android apps' Settings.
+cedar remembers you across conversations (see [Memory](../README.md#memory)): the facts,
+preferences and standing instructions you state, saved when you tell it something lasting or ask
+it to remember something, and noted from your message once the reply is done, so a fact mentioned
+in passing ("I'm vegetarian, by the way") is kept too; what each conversation was about; and ways
+of working that went well. Each fact or procedure saved shows as a *remember* step under the reply.
+**Settings → Memory** shows the profile at the top (the short summary cedar reads before every
+reply, written by cedar after a few conversations, or by you: edit it and it stays as you wrote
+it), then the memories by kind (*About you*, *Conversations*, *Ways of working*) and the
+*Archive*, newest first, each with the words it was taken from, the date, a link to the
+conversation it came from and how often it was used, with **Pin** (always shown to cedar),
+**Archive** or **Restore**, and **Remove** (for good) on each, **Export** for a backup, and
+**Forget all**. A change applies from the next message on, in every conversation. The thumbs on a
+reply are passed on to cedar, which counts them for or against what it learned in that run. The
+iOS and Android apps list and delete the memories in Settings.
 
 Memory is the `memory` tool group, so **Settings → Tools** turns it off for new conversations and
 the conversation's **Tools** button for one conversation. If you ever unticked a group there,

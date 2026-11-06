@@ -1,6 +1,15 @@
 # Memory, revised: a plan
 
-Status: proposal, November 2026. Nothing here is built yet.
+Status: implemented, November 2026, with these departures from the plan below. Retrieval is a
+lexical scan in Rust over the owner's rows (idf-weighted overlap of content words, with cue
+phrases for episodes and procedures) rather than FTS5, because stores are hundreds to a few
+thousand rows and a scan per request is cheaper than an index kept in step; an embedding model can
+be added behind the same function. The fact extraction and the experience note are one model call
+at the end of the run, not two, with the fact section asked for only when facts may be saved. A
+run's episode is written in code even when no call is made, and the manager writes one for a run
+that failed or was cancelled. Duplicate detection requires one text's content words to be a subset
+of the other's, so a text that differs in one word is never taken for a repeat. The chat passes
+its thumbs on through `POST /v1/runs/{id}/feedback`. Phase 0's bench suite is in `bench/tasks/memory`.
 
 cedar's memory today is a flat list of up to 200 short facts per API key, shown whole in every
 prompt, written by a `remember` tool the model rarely calls and by one extraction call at the end

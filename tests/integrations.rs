@@ -106,6 +106,7 @@ async fn without_a_selection_every_tool_is_offered() {
             "ask_user",
             "remember",
             "forget",
+            "recall",
             "records_list",
             "records_describe",
             "records_save",

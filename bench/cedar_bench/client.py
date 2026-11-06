@@ -104,6 +104,23 @@ class Cedar:
             # Dropped, or closed without a terminal event (cedar restarted?): resume after `after`.
             time.sleep(1)
 
+    def memory(self) -> list[dict]:
+        """What cedar remembers for this key (`GET /v1/memory`), or nothing on a cedar without memory."""
+        try:
+            return list(self._request("GET", "/v1/memory").get("items", []))
+        except CedarError as e:
+            if e.status == 404:
+                return []
+            raise
+
+    def clear_memory(self) -> None:
+        """Forget everything cedar remembers for this key, so trials start alike."""
+        try:
+            self._request("DELETE", "/v1/memory")
+        except CedarError as e:
+            if e.status != 404:
+                raise
+
     def ready(self) -> dict:
         """`GET /readyz`; raises OSError (URLError) when nothing answers at the address."""
         try:

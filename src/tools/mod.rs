@@ -51,7 +51,7 @@ pub use files::{ReadFile, WriteFile};
 pub use flights::SearchFlights;
 pub use map::ShowMap;
 pub use mcp::{McpServer, McpTool};
-pub use memory::{Forget, Remember, FORGET, REMEMBER};
+pub use memory::{Forget, RecallTool, Remember, FORGET, RECALL, REMEMBER};
 pub use records::{
     RecordsDescribe, RecordsDrop, RecordsList, RecordsLookup, RecordsSave, RECORDS_DESCRIBE,
     RECORDS_DROP, RECORDS_LIST, RECORDS_LOOKUP, RECORDS_SAVE, RECORDS_TOOLS,
@@ -311,6 +311,7 @@ impl ToolSet {
         if cfg.memory {
             set.tools.push(Box::new(Remember));
             set.tools.push(Box::new(Forget));
+            set.tools.push(Box::new(RecallTool));
         }
         if cfg.records {
             set.tools.push(Box::new(RecordsList));
@@ -546,7 +547,7 @@ pub fn group_of(name: &str) -> &'static str {
         "compare_stocks" => "stocks",
         "search_products" => "products",
         "ask_user" => "ask_user",
-        REMEMBER | FORGET => "memory",
+        REMEMBER | FORGET | RECALL => "memory",
         RECORDS_LIST | RECORDS_DESCRIBE | RECORDS_SAVE | RECORDS_LOOKUP | RECORDS_DROP => "records",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
@@ -1062,6 +1063,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1084,6 +1086,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1105,6 +1108,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1129,6 +1133,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1148,6 +1153,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1167,6 +1173,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1186,6 +1193,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1205,6 +1213,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1224,6 +1233,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1243,6 +1253,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1278,6 +1289,7 @@ mod tests {
                 "ask_user",
                 "remember",
                 "forget",
+                "recall",
                 "records_list",
                 "records_describe",
                 "records_save",
@@ -1298,6 +1310,7 @@ mod tests {
         assert_eq!(group_of("ask_user"), "ask_user");
         assert_eq!(group_of("remember"), "memory");
         assert_eq!(group_of("forget"), "memory");
+        assert_eq!(group_of("recall"), "memory");
         for name in RECORDS_TOOLS {
             assert_eq!(group_of(name), "records");
         }

@@ -65,7 +65,7 @@ def resolved(task: Task, anchor: dt.date, base: str) -> Task:
         return json.loads(json.dumps(timeutil.resolve(value, anchor)).replace("{base}", base))
 
     return dataclasses.replace(task, run=fill(task.run), user=fill(task.user),
-                               checks=fill(task.checks))
+                               checks=fill(task.checks), sessions=fill(task.sessions))
 
 
 def attachments(task: Task, fixtures_dir: Path) -> list[dict]:
@@ -112,7 +112,36 @@ def run_trial(cedar: Cedar, fixtures_url: str, fixtures_dir: Path, task: Task, m
     error = None
     body = run_body(task, model, reasoning, fixtures_dir)
     started = time.monotonic()
+    # Memory outlives runs, so every trial starts from none and holds its earlier conversations
+    # itself (see Task.sessions); the key's memory is cleared again once the trial is graded.
+    cedar.clear_memory()
     try:
+        for i, sess in enumerate(task.sessions):
+            # An earlier conversation, attended (so cedar notes what the user said), run to its end.
+            sbody: dict[str, Any] = {"prompt": sess["prompt"].strip(), "model": model,
+                                     "interactive": bool(sess.get("interactive", True)), "plan": "off"}
+            for key in ("tools", "max_turns", "locale", "system"):
+                if key in sess:
+                    sbody[key] = sess[key]
+            if reasoning:
+                sbody["reasoning"] = reasoning
+            srun = cedar.create_run(sbody)
+            try:
+                for ev in cedar.events(srun["id"], deadline):
+                    ev["run_id"] = srun["id"]
+                    ev["session"] = i
+                    events.append(ev)
+                    data = ev.get("data") or {}
+                    if ev["type"] == "approval.required":
+                        cedar.answer_approval(srun["id"], data["id"], user.decide(data))
+                    elif ev["type"] == "plan" and data.get("awaiting"):
+                        cedar.answer_plan(srun["id"], user.plan(data["steps"]))
+            except TimeoutError:
+                cedar.cancel(srun["id"])
+                raise RuntimeError(f"session {i} timed out after {timeout:.0f}s")
+            done = cedar.run(srun["id"])
+            if done.get("status") != "completed":
+                raise RuntimeError(f"session {i} ended {done.get('status')}: {done.get('error')}")
         while True:
             run = cedar.create_run(body)
             questions: list[dict] = []
@@ -146,11 +175,19 @@ def run_trial(cedar: Cedar, fixtures_url: str, fixtures_dir: Path, task: Task, m
 
     last = runs[-1]["id"] if runs else None
     listing = cedar.files(last) if last else {"files": []}
+    try:
+        memory = cedar.memory()
+    except Exception as e:  # noqa: BLE001
+        memory, error = [], error or f"harness: {e!r}"
     trial = grading.Trial(
         prompt=task.run["prompt"], runs=runs, events=events, files=listing.get("files", []),
         fetch_file=(lambda p: cedar.file(last, p)) if last else (lambda p: b""),
-        fixture_state=_fixtures(fixtures_url, "/_admin/state"), error=error,
+        fixture_state=_fixtures(fixtures_url, "/_admin/state"), error=error, memory=memory,
     )
+    try:
+        cedar.clear_memory()
+    except Exception:  # noqa: BLE001
+        pass
     result = grading.grade(task, trial)
     wrong = wrong_zone(events, state.get("timezone"))
     if wrong:

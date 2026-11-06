@@ -106,7 +106,7 @@ pub fn without_file_data(value: &Value) -> Value {
 /// sent (`null` for a run that hasn't reached its first turn, or ran before traces were kept), its
 /// conversation, its model calls and its events. `memory_note` is where the user's memories sit
 /// in `system` (`{start, end}`, byte offsets), `null` when it holds none, so a client that passes
-/// the prompt on without them can cut exactly that.
+/// the prompt on without them can cut exactly that; `memory` is what was shown there and why.
 pub async fn build(store: &Store, run: &Run) -> Result<Value> {
     let (system, tools) = store.sent_prompt(run.id).await?;
     let memory_note = system
@@ -121,10 +121,16 @@ pub async fn build(store: &Store, run: &Run) -> Result<Value> {
         .collect();
     let calls = store.list_llm_calls(run.id).await?;
     let events = store.events_after(run.id, 0, MAX_EVENTS).await?;
+    // What the run was shown from memory, and why: the `memory.recalled` event, if any.
+    let memory = events
+        .iter()
+        .find(|e| e.kind == crate::models::event::MEMORY_RECALLED)
+        .map(|e| e.data.clone());
     Ok(json!({
         "run": run,
         "system": system,
         "memory_note": memory_note,
+        "memory": memory,
         "tools": tools,
         "messages": messages,
         "calls": calls,

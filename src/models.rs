@@ -48,6 +48,14 @@ pub struct Usage {
     pub output_tokens: u64,
 }
 
+/// A thumbs up or down on a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Rating {
+    Up,
+    Down,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Run {
     pub id: Uuid,
@@ -87,6 +95,8 @@ pub struct Run {
     pub interactive: bool,
     /// The user's language and region (a BCP 47 tag such as `de-CH`; see [`crate::locale`]).
     pub locale: String,
+    /// The user's verdict on the run (`POST /v1/runs/{id}/feedback`), if they gave one.
+    pub rating: Option<Rating>,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -273,7 +283,9 @@ pub mod event {
     /// The sandbox's policy refused a connection or request while a call ran.
     pub const SANDBOX_DENIED: &str = "sandbox.denied";
     pub const USAGE: &str = "usage";
-    /// Facts about the user picked out of the prompt once the run was done were saved.
+    /// What the run was shown from memory at its start: `{profile, cues, items: [{id, kind, why}]}`.
+    pub const MEMORY_RECALLED: &str = "memory.recalled";
+    /// What the run noted once it was done: `{saved: [{status, memory}], skipped, episode}`.
     pub const MEMORY_UPDATED: &str = "memory.updated";
     pub const RUN_COMPLETED: &str = "run.completed";
     pub const RUN_FAILED: &str = "run.failed";
