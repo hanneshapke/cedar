@@ -37,8 +37,11 @@ final class AppModel {
     var starredError: String?
     /// The server has `/api/memory` (its `/api/config` says so); Settings shows Memory only then.
     private(set) var serverHasMemory = false
-    /// What cedar remembers about the user, oldest first, once loaded (Settings → Memory).
+    /// What cedar remembers about the user, oldest first, once loaded (Settings → Memory), as
+    /// `memoryFilter` says; and the profile it reads before every reply.
     private(set) var memoryItems: [MemoryItem] = []
+    private(set) var memoryProfile: MemoryProfile?
+    var memoryFilter: MemoryFilter = .about
     private(set) var memoryLoaded = false
     var memoryError: String?
     /// False when the chat server's cedar has no memory yet.
@@ -117,6 +120,8 @@ final class AppModel {
             contributions = []
             contributionsError = nil
             memoryItems = []
+            memoryProfile = nil
+            memoryFilter = .about
             memoryLoaded = false
             memoryError = nil
             memorySupported = true
@@ -186,9 +191,13 @@ final class AppModel {
     func refreshMemory() async {
         guard let client else { return }
         do {
-            let list = try await client.memory()
+            let filter = memoryFilter
+            let list = try await client.memory(filter)
+            // The filter may have changed while the request was out; that refresh is on its way.
+            guard filter == memoryFilter else { return }
             memorySupported = list.supported
             memoryItems = list.items
+            memoryProfile = list.profile
             memoryLimits = list.limits
             memoryLoaded = true
             memoryError = nil
@@ -214,6 +223,25 @@ final class AppModel {
         guard let client else { throw ChatError.notConfigured }
         try await client.deleteAllMemory()
         memoryItems = []
+        memoryProfile = nil
+    }
+
+    /// Pins, unpins, archives or restores one memory at once. A row that leaves the list being
+    /// shown (archived from the active list, restored from the archive) is dropped from it.
+    func updateMemory(_ item: MemoryItem, pinned: Bool? = nil, archived: Bool? = nil) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        let updated = try await client.updateMemory(id: item.id, MemoryChange(pinned: pinned, archived: archived))
+        if updated.isActive == memoryFilter.archived {
+            memoryItems.removeAll { $0.id == item.id }
+        } else if let i = memoryItems.firstIndex(where: { $0.id == item.id }) {
+            memoryItems[i] = updated
+        }
+    }
+
+    /// Writes the profile by hand; it then stays as written until changed or cleared here.
+    func saveMemoryProfile(_ text: String) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        memoryProfile = try await client.setMemoryProfile(text)
     }
 
     // MARK: Records

@@ -470,8 +470,8 @@ the research on agent memory says works (see [docs/design/memory.md](docs/design
   shows a row's versions and who changed it when; `PUT /v1/memory/profile` writes the profile;
   `DELETE` forgets a row or everything for good; `GET /v1/memory/export` backs it all up and
   `POST /v1/memory/import` brings it back. The chat shows the profile and the rows in Settings →
-  Memory on the web and the desktop app ([chat/README.md](chat/README.md#memory)); the iOS and
-  Android apps list the rows. Deleting a run or a conversation keeps its memories.
+  Memory on the web, the desktop app, iOS and Android ([chat/README.md](chat/README.md#memory)).
+  Deleting a run or a conversation keeps its memories.
 
 Memory belongs to the API key's owner, like runs: another key never sees it. The chat calls cedar
 with one key, so everyone using one chat server shares one memory, and rotating `CEDAR_API_KEY`

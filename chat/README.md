@@ -509,7 +509,8 @@ conversation it came from and how often it was used, with **Pin** (always shown 
 **Archive** or **Restore**, and **Remove** (for good) on each, **Export** for a backup, and
 **Forget all**. A change applies from the next message on, in every conversation. The thumbs on a
 reply are passed on to cedar, which counts them for or against what it learned in that run. The
-iOS and Android apps list and delete the memories in Settings.
+iOS and Android apps have the same page in Settings: the profile, the kinds and the archive, with
+pin, archive, restore and delete on each memory.
 
 Memory is the `memory` tool group, so **Settings → Tools** turns it off for new conversations and
 the conversation's **Tools** button for one conversation. If you ever unticked a group there,

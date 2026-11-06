@@ -74,12 +74,30 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
 
     // Memory
 
-    /** What cedar remembers about the user. A server without the route reads as not supported. */
-    suspend fun memory(): MemoryList = try {
-        decode(request("api/memory"), MemoryList.serializer())
+    /** What cedar remembers about the user, as `filter` says. A server without the route reads as not supported. */
+    suspend fun memory(filter: MemoryFilter = MemoryFilter.ABOUT): MemoryList = try {
+        val query = buildMap<String, String> {
+            filter.kind?.let { put("kind", it) }
+            if (filter.archived) put("archived", "true")
+        }
+        decode(request("api/memory", query = query), MemoryList.serializer())
     } catch (e: ChatException.Api) {
         if (e.status == 404) MemoryList(supported = false) else throw e
     }
+
+    /** Pins, unpins, archives or restores one memory; cedar answers with the item. */
+    suspend fun updateMemory(id: String, pinned: Boolean? = null, archived: Boolean? = null): MemoryItem =
+        decode(
+            request("api/memory/$id", "PATCH", buildJsonObject {
+                pinned?.let { put("pinned", it) }
+                archived?.let { put("archived", it) }
+            }),
+            MemoryItem.serializer(),
+        )
+
+    /** Writes the profile by hand (an empty text clears it); it then stays as written. */
+    suspend fun setMemoryProfile(text: String): MemoryProfile? =
+        decode(request("api/memory/profile", "PUT", buildJsonObject { put("text", text) }), MemoryProfileResponse.serializer()).profile
 
     /** Forgets one memory; it applies from the next message on, in every conversation. */
     suspend fun deleteMemory(id: String) {
@@ -156,7 +174,7 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
 
     /** The conversation as it would be contributed; `reasoning` and `fetched` include what is left out by default. */
     suspend fun contributionPreview(conversationId: String, reasoning: Boolean = false, fetched: Boolean = false): ContributionPreview {
-        val query = buildMap {
+        val query = buildMap<String, String> {
             if (reasoning) put("reasoning", "true")
             if (fetched) put("fetched", "true")
         }

@@ -433,7 +433,7 @@
     <!-- Memory (Settings → Memory) -->
     <string name="memory">Memoria</string>
     <string name="memory_settings_row">Lo que Cedar recuerda</string>
-    <string name="memory_settings_footnote">Lo que Cedar recuerda de ti entre conversaciones, como tu nombre, tus preferencias y tus proyectos. Eliminar algo se aplica desde tu próximo mensaje.</string>
+    <string name="memory_settings_footnote">Lo que Cedar recuerda de ti entre conversaciones: un perfil que lee antes de cada respuesta, los hechos e instrucciones que le dijiste, conversaciones anteriores y formas de trabajar. Los cambios se aplican desde tu próximo mensaje.</string>
     <string name="memory_delete_all">Eliminar todo</string>
     <string name="memory_delete_all_title">¿Olvidar todo?</string>
     <string name="memory_empty_title">Todavía no recuerda nada</string>
@@ -441,10 +441,44 @@
     <string name="memory_unsupported">Este servidor todavía no recuerda nada entre conversaciones. Actualiza cedar para usar la memoria.</string>
     <string name="memory_no_source">Sin conversación asociada</string>
     <string name="memory_count_of">%1$d de %2$d recordados</string>
-    <string name="memory_footnote">Esto es exactamente lo que ve Cedar. Toca un recuerdo para abrir la conversación de la que viene; mantenlo presionado para eliminarlo. La memoria se queda en tu propio servidor y nunca se comparte con terceros. Se desactiva en Configuración → Herramientas de la interfaz web.</string>
+    <string name="memory_footnote">Toca un recuerdo para abrir la conversación de la que viene; mantenlo presionado para fijarlo, archivarlo o eliminarlo. Los recuerdos fijados están en cada respuesta; los archivados salen del prompt de Cedar y se quedan aquí hasta que se eliminen. La memoria se queda en tu propio servidor y nunca se comparte con terceros. Se desactiva en Configuración → Herramientas de la interfaz web.</string>
     <plurals name="memory_count">
         <item quantity="one">%d recuerdo</item>
         <item quantity="other">%d recuerdos</item>
+    </plurals>
+    <string name="memory_profile">Perfil</string>
+    <string name="memory_profile_placeholder">Quién eres y cómo te gusta que se hagan las cosas, en unas frases.</string>
+    <string name="memory_profile_none">Aún no hay perfil. Cedar escribe uno tras unas cuantas conversaciones, o puedes escribirlo ahora.</string>
+    <string name="memory_profile_by_cedar">Escrito por Cedar %1$s. Si lo editas, se queda como lo escribas.</string>
+    <string name="memory_profile_by_you">Escrito por ti %1$s. Cedar no lo cambiará; bórralo para que Cedar lo escriba de nuevo.</string>
+    <string name="memory_save_profile">Guardar perfil</string>
+    <string name="memory_view_about">Sobre ti</string>
+    <string name="memory_view_conversations">Conversaciones</string>
+    <string name="memory_view_procedures">Formas de trabajar</string>
+    <string name="memory_view_archive">Archivo</string>
+    <string name="memory_empty_conversations">Aún no hay conversaciones anotadas. Cuando una conversación termina, aquí queda de qué trató, para que Cedar la retome cuando la menciones.</string>
+    <string name="memory_empty_procedures">Aún no ha aprendido nada. Cuando una tarea con herramientas sale bien, Cedar anota a grandes rasgos cómo la hizo, para la próxima vez.</string>
+    <string name="memory_empty_archive">El archivo está vacío. Los hechos que cambiaron, los temporales pasada su fecha y lo que tú o Cedar olvidasteis quedan aquí hasta que los elimines.</string>
+    <string name="memory_kind_fact">hecho</string>
+    <string name="memory_kind_preference">preferencia</string>
+    <string name="memory_kind_instruction">instrucción</string>
+    <string name="memory_kind_temporary">hasta una fecha</string>
+    <string name="memory_kind_episode">conversación</string>
+    <string name="memory_kind_procedure">forma de trabajar</string>
+    <string name="memory_pinned">fijado</string>
+    <string name="memory_pin">Fijar</string>
+    <string name="memory_unpin">Soltar</string>
+    <string name="memory_archive">Archivar</string>
+    <string name="memory_restore">Restaurar</string>
+    <string name="memory_said">Dijiste: «%1$s»</string>
+    <string name="memory_until">hasta %1$s</string>
+    <string name="memory_superseded">sustituido por un recuerdo más reciente</string>
+    <string name="memory_archived">archivado</string>
+    <string name="memory_from_consolidation">escrito por Cedar a partir de recuerdos anteriores</string>
+    <string name="memory_delete_all_everything">Cedar olvidará todo lo que recuerda de ti, incluidos el perfil y el archivo. Esto no se puede deshacer.</string>
+    <plurals name="memory_used">
+        <item quantity="one">usado una vez</item>
+        <item quantity="other">usado %d veces</item>
     </plurals>
     <plurals name="memory_delete_all_text">
         <item quantity="one">Cedar olvidará %d recuerdo que tiene de ti. No se puede deshacer.</item>

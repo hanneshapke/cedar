@@ -10,18 +10,32 @@ final class APITests: XCTestCase {
         XCTAssertTrue(new.memory)
 
         let list = try JSONDecoder.cedar.decode(MemoryList.self, from: Data("""
-        {"supported":true,"limits":{"max_items":200,"max_chars":500},"items":[
-          {"id":"m1","text":"Prefers metric units","run_id":"r1","conversation_id":"c1","title":"Units",
+        {"supported":true,"limits":{"max_items":500,"max_chars":500,"max_profile_chars":1600},
+         "profile":{"text":"Ana, in Zurich.","user_edited":false,"updated_at":"2026-11-06T08:00:00Z"},"items":[
+          {"id":"m1","short_id":"m1","kind":"preference","text":"Prefers metric units","support":"I always want metric units",
+           "pinned":false,"source":"user","recall_count":3,"run_id":"r1","conversation_id":"c1","title":"Units",
+           "valid_from":"2026-10-29T08:00:00Z","valid_until":null,"archived_at":null,"superseded_by":null,
            "created_at":"2026-10-29T08:00:00Z","updated_at":"2026-10-29T08:00:00Z"},
           {"id":"m2","text":"Has a cat","run_id":null,"conversation_id":null,"title":null,
            "created_at":"2026-10-29T09:00:00Z","updated_at":"2026-10-29T09:00:00Z"}]}
         """.utf8))
         XCTAssertTrue(list.supported)
-        XCTAssertEqual(list.limits?.maxItems, 200)
+        XCTAssertEqual(list.limits?.maxItems, 500)
+        XCTAssertEqual(list.profile?.text, "Ana, in Zurich.")
+        XCTAssertEqual(list.profile?.userEdited, false)
         XCTAssertEqual(list.items.map(\.id), ["m1", "m2"])
         XCTAssertEqual(list.items[0].conversationId, "c1")
         XCTAssertEqual(list.items[0].title, "Units")
+        XCTAssertEqual(list.items[0].kind, "preference")
+        XCTAssertEqual(list.items[0].support, "I always want metric units")
+        XCTAssertEqual(list.items[0].recallCount, 3)
+        XCTAssertTrue(list.items[0].isActive)
+        // A cedar from before kinds: a fact, not pinned, with no quote.
         XCTAssertNil(list.items[1].conversationId)
+        XCTAssertEqual(list.items[1].kind, "fact")
+        XCTAssertFalse(list.items[1].pinned)
+        XCTAssertNil(list.items[1].support)
+        XCTAssertNil(list.items[1].validFrom)
         let unsupported = try JSONDecoder.cedar.decode(MemoryList.self, from: Data(#"{"supported":false,"items":[],"limits":null}"#.utf8))
         XCTAssertFalse(unsupported.supported)
     }

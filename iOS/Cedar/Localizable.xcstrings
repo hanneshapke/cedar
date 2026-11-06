@@ -2023,6 +2023,29 @@
         }
       }
     },
+    "About You" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über dich"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sobre ti"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous"
+          }
+        }
+      }
+    },
     "Access Token" : {
       "localizations" : {
         "de" : {
@@ -2455,6 +2478,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "S’applique immédiatement. « Automatique » suit la langue de cet appareil. Les exécutions planifiées et les notifications l’utilisent aussi."
+          }
+        }
+      }
+    },
+    "Archive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archiv"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive"
           }
         }
       }
@@ -3357,6 +3403,29 @@
         }
       }
     },
+    "Cedar will forget everything it remembers about you, the profile and the archive included. This can't be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar vergisst alles, was es über dich weiß, Profil und Archiv eingeschlossen. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar olvidará todo lo que recuerda de ti, incluidos el perfil y el archivo. Esto no se puede deshacer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar oubliera tout ce qu'il retient de vous, profil et archive compris. Cette action est irréversible."
+          }
+        }
+      }
+    },
     "Cedar's plan" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3865,6 +3934,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La contribution est activée"
+          }
+        }
+      }
+    },
+    "Conversations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterhaltungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversations"
           }
         }
       }
@@ -7457,6 +7549,29 @@
         }
       }
     },
+    "No conversations noted yet. Once a conversation ends, what it was about is kept here, so Cedar can pick it up when you refer to it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Unterhaltungen notiert. Wenn eine Unterhaltung endet, bleibt hier, worum es ging, damit Cedar daran anknüpfen kann, wenn du dich darauf beziehst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay conversaciones anotadas. Cuando una conversación termina, aquí queda de qué trató, para que Cedar la retome cuando la menciones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune conversation notée pour l'instant. À la fin d'une conversation, son sujet est gardé ici pour que Cedar puisse s'y référer quand vous en parlez."
+          }
+        }
+      }
+    },
     "No customer rating found" : {
       "localizations" : {
         "de" : {
@@ -7520,6 +7635,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucune préférence"
+          }
+        }
+      }
+    },
+    "No profile yet. Cedar writes one after a few conversations, or you can write it now." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch kein Profil. Cedar schreibt nach ein paar Unterhaltungen eines, oder du schreibst es jetzt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay perfil. Cedar escribe uno tras unas cuantas conversaciones, o puedes escribirlo ahora."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas encore de profil. Cedar en écrit un après quelques conversations, ou vous pouvez l'écrire maintenant."
           }
         }
       }
@@ -7722,6 +7860,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rien de retenu pour l'instant"
+          }
+        }
+      }
+    },
+    "Nothing learned yet. When a task with tools goes well, Cedar notes how it did it, in general terms, for the next time you ask." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nichts gelernt. Wenn eine Aufgabe mit Werkzeugen gut läuft, notiert Cedar in groben Zügen, wie es vorgegangen ist, für das nächste Mal."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no ha aprendido nada. Cuando una tarea con herramientas sale bien, Cedar anota a grandes rasgos cómo la hizo, para la próxima vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien d'appris pour l'instant. Quand une tâche avec des outils se passe bien, Cedar note dans les grandes lignes comment il a procédé, pour la prochaine fois."
           }
         }
       }
@@ -8860,6 +9021,52 @@
         }
       }
     },
+    "Pin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anheften"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fijar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Épingler"
+          }
+        }
+      }
+    },
+    "Pinned memories are in every reply; archived ones leave Cedar's prompt and stay here until deleted. Memory stays on your own server and is never shared with a third party. Settings → Tools in the web UI turns it off." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angeheftete Erinnerungen sind in jeder Antwort dabei; archivierte verlassen Cedars Prompt und bleiben hier, bis sie gelöscht werden. Das Gedächtnis bleibt auf deinem eigenen Server und wird nie an Dritte weitergegeben. Unter Einstellungen → Werkzeuge in der Weboberfläche lässt es sich ausschalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recuerdos fijados están en cada respuesta; los archivados salen del prompt de Cedar y se quedan aquí hasta que se eliminen. La memoria se queda en tu propio servidor y nunca se comparte con terceros. Se desactiva en Configuración → Herramientas de la interfaz web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les souvenirs épinglés sont dans chaque réponse ; les archivés quittent l'invite de Cedar et restent ici jusqu'à leur suppression. La mémoire reste sur votre propre serveur et n'est jamais partagée avec des tiers. Réglages → Outils dans l'interface web permet de la désactiver."
+          }
+        }
+      }
+    },
     "Plan" : {
       "localizations" : {
         "de" : {
@@ -9359,6 +9566,29 @@
         }
       }
     },
+    "Profile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil"
+          }
+        }
+      }
+    },
     "Pros" : {
       "localizations" : {
         "de" : {
@@ -9734,6 +9964,29 @@
         }
       }
     },
+    "Restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederherstellen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurer"
+          }
+        }
+      }
+    },
     "Resume" : {
       "localizations" : {
         "de" : {
@@ -10071,6 +10324,29 @@
         }
       }
     },
+    "Save Profile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil speichern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar perfil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer le profil"
+          }
+        }
+      }
+    },
     "Saved as %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10090,6 +10366,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enregistré sous %@"
+          }
+        }
+      }
+    },
+    "Saving…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird gespeichert…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement…"
           }
         }
       }
@@ -11684,6 +11983,29 @@
         }
       }
     },
+    "The archive is empty. Facts that changed, temporary ones past their date, and what you or Cedar forgot stay here until you remove them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Archiv ist leer. Fakten, die sich geändert haben, Befristetes nach seinem Datum und was du oder Cedar vergessen habt, bleiben hier, bis du es entfernst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El archivo está vacío. Los hechos que cambiaron, los temporales pasada su fecha y lo que tú o Cedar olvidasteis quedan aquí hasta que los elimines."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'archive est vide. Les faits qui ont changé, les faits temporaires passés leur date et ce que vous ou Cedar avez oublié restent ici jusqu'à ce que vous les supprimiez."
+          }
+        }
+      }
+    },
     "The bundle fails the corpus's checks:" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12806,6 +13128,29 @@
         }
       }
     },
+    "Unpin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lösen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soltar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désépingler"
+          }
+        }
+      }
+    },
     "Unread" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -13196,6 +13541,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regardez-le travailler"
+          }
+        }
+      }
+    },
+    "Ways of Working" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorgehensweisen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formas de trabajar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Façons de faire"
           }
         }
       }
@@ -13648,6 +14016,29 @@
         }
       }
     },
+    "Who you are and how you like things done, in a few sentences." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wer du bist und wie du es gern hast, in ein paar Sätzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quién eres y cómo te gusta que se hagan las cosas, en unas frases."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qui vous êtes et comment vous aimez que les choses soient faites, en quelques phrases."
+          }
+        }
+      }
+    },
     "Whoever runs this server has not named a corpus, so nothing can be sent from here." : {
       "localizations" : {
         "de" : {
@@ -13870,6 +14261,75 @@
         }
       }
     },
+    "Written by Cedar %@. Edit it and it stays as you wrote it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Cedar geschrieben %@. Wenn du es bearbeitest, bleibt es so, wie du es schreibst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escrito por Cedar %@. Si lo editas, se queda como lo escribas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écrit par Cedar %@. Modifiez-le et il restera tel que vous l'avez écrit."
+          }
+        }
+      }
+    },
+    "Written by Cedar from earlier memories" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Cedar aus früheren Erinnerungen geschrieben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escrito por Cedar a partir de recuerdos anteriores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écrit par Cedar à partir de souvenirs antérieurs"
+          }
+        }
+      }
+    },
+    "Written by you %@. Cedar won't change it; clear it to let Cedar write it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von dir geschrieben %@. Cedar ändert es nicht; leere es, damit Cedar es wieder schreibt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escrito por ti %@. Cedar no lo cambiará; bórralo para que Cedar lo escriba de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écrit par vous %@. Cedar ne le changera pas ; effacez-le pour que Cedar l'écrive à nouveau."
+          }
+        }
+      }
+    },
     "X" : {
       "localizations" : {
         "de" : {
@@ -13954,6 +14414,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vous"
+          }
+        }
+      }
+    },
+    "You said: “%@”" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast gesagt: „%@“"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dijiste: «%@»"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous avez dit : « %@ »"
           }
         }
       }
@@ -14248,6 +14731,29 @@
         }
       }
     },
+    "archived" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "archiviert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "archivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "archivé"
+          }
+        }
+      }
+    },
     "best selling first" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14363,6 +14869,29 @@
         }
       }
     },
+    "conversation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterhaltung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "conversación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "conversation"
+          }
+        }
+      }
+    },
     "direct" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14382,6 +14911,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "direct"
+          }
+        }
+      }
+    },
+    "fact" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hecho"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "fait"
           }
         }
       }
@@ -14517,6 +15069,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "l'indice"
+          }
+        }
+      }
+    },
+    "instruction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anweisung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "instrucción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "consigne"
           }
         }
       }
@@ -14699,6 +15274,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "non disponible"
+          }
+        }
+      }
+    },
+    "preference" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorliebe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "preferencia"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "préférence"
           }
         }
       }
@@ -14887,6 +15485,29 @@
         }
       }
     },
+    "replaced by a newer memory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "durch eine neuere Erinnerung ersetzt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sustituido por un recuerdo más reciente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "remplacé par un souvenir plus récent"
+          }
+        }
+      }
+    },
     "same price" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15025,6 +15646,52 @@
         }
       }
     },
+    "until %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "bis %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hasta el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jusqu'au %@"
+          }
+        }
+      }
+    },
+    "until a date" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "befristet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hasta una fecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jusqu'à une date"
+          }
+        }
+      }
+    },
     "up to %@, gusts %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15048,6 +15715,52 @@
         }
       }
     },
+    "used %lld time" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld-mal verwendet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "usado %lld vez"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "utilisé %lld fois"
+          }
+        }
+      }
+    },
+    "used %lld times" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld-mal verwendet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "usado %lld veces"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "utilisé %lld fois"
+          }
+        }
+      }
+    },
     "was %@" : {
       "localizations" : {
         "de" : {
@@ -15066,6 +15779,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "avant %@"
+          }
+        }
+      }
+    },
+    "way of working" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorgehensweise"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "forma de trabajar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "façon de faire"
           }
         }
       }

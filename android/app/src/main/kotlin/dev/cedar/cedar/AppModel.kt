@@ -17,8 +17,10 @@ import dev.cedar.core.Inbox
 import dev.cedar.core.Contribution
 import dev.cedar.core.ContributionPreview
 import dev.cedar.core.ContributionSettings
+import dev.cedar.core.MemoryFilter
 import dev.cedar.core.MemoryItem
 import dev.cedar.core.MemoryLimits
+import dev.cedar.core.MemoryProfile
 import dev.cedar.core.RecordSet
 import dev.cedar.core.RecordSetDetail
 import dev.cedar.core.RecordsLimits
@@ -113,9 +115,15 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var serverHasMemory by mutableStateOf(false)
         private set
 
-    /** What cedar remembers about the user, oldest first, once loaded (Settings → Memory). */
+    /**
+     * What cedar remembers about the user, oldest first, once loaded (Settings → Memory), as
+     * `memoryFilter` says; and the profile it reads before every reply.
+     */
     var memoryItems by mutableStateOf<List<MemoryItem>>(emptyList())
         private set
+    var memoryProfile by mutableStateOf<MemoryProfile?>(null)
+        private set
+    var memoryFilter by mutableStateOf(MemoryFilter.ABOUT)
     var memoryLoaded by mutableStateOf(false)
         private set
     var memoryError by mutableStateOf<String?>(null)
@@ -268,6 +276,8 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             contributionsError = null
             showingContribute = false
             memoryItems = emptyList()
+            memoryProfile = null
+            memoryFilter = MemoryFilter.ABOUT
             memoryLoaded = false
             memoryError = null
             memorySupported = true
@@ -302,9 +312,13 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     suspend fun refreshMemory() {
         val client = client ?: return
         try {
-            val list = client.memory()
+            val filter = memoryFilter
+            val list = client.memory(filter)
+            // The filter may have changed while the request was out; that refresh is on its way.
+            if (filter != memoryFilter) return
             memorySupported = list.supported
             memoryItems = list.items
+            memoryProfile = list.profile
             memoryLimits = list.limits
             memoryLoaded = true
             memoryError = null
@@ -331,6 +345,27 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         val client = client ?: throw ChatException.NotConfigured
         client.deleteAllMemory()
         memoryItems = emptyList()
+        memoryProfile = null
+    }
+
+    /**
+     * Pins, unpins, archives or restores one memory at once. A row that leaves the list being
+     * shown (archived from the active list, restored from the archive) is dropped from it.
+     */
+    suspend fun updateMemory(item: MemoryItem, pinned: Boolean? = null, archived: Boolean? = null) {
+        val client = client ?: throw ChatException.NotConfigured
+        val updated = client.updateMemory(item.id, pinned = pinned, archived = archived)
+        memoryItems = if (updated.isActive == memoryFilter.archived) {
+            memoryItems.filter { it.id != item.id }
+        } else {
+            memoryItems.map { if (it.id == item.id) updated else it }
+        }
+    }
+
+    /** Writes the profile by hand; it then stays as written until changed or cleared here. */
+    suspend fun saveMemoryProfile(text: String) {
+        val client = client ?: throw ChatException.NotConfigured
+        memoryProfile = client.setMemoryProfile(text)
     }
 
     // Records

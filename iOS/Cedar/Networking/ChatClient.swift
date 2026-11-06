@@ -70,13 +70,32 @@ struct ChatClient: Sendable {
 
     // MARK: Memory
 
-    /// What cedar remembers about the user. A server without the route reads as not supported.
-    func memory() async throws -> MemoryList {
+    /// What cedar remembers about the user, as `filter` says. A server without the route reads
+    /// as not supported.
+    func memory(_ filter: MemoryFilter = .about) async throws -> MemoryList {
+        var query: [URLQueryItem] = []
+        if let kind = filter.kind {
+            query.append(URLQueryItem(name: "kind", value: kind))
+        }
+        if filter.archived {
+            query.append(URLQueryItem(name: "archived", value: "true"))
+        }
         do {
-            return try await decode(makeRequest("api/memory"))
+            return try await decode(makeRequest("api/memory", query: query))
         } catch let error as ChatError where error.status == 404 {
             return .unsupported
         }
+    }
+
+    /// Pins, unpins, archives or restores one memory; cedar answers with the item.
+    func updateMemory(id: String, _ change: MemoryChange) async throws -> MemoryItem {
+        try await decode(makeRequest("api/memory/\(id)", method: "PATCH", json: change))
+    }
+
+    /// Writes the profile by hand (an empty text clears it); it then stays as written.
+    func setMemoryProfile(_ text: String) async throws -> MemoryProfile? {
+        let response: MemoryProfileResponse = try await decode(makeRequest("api/memory/profile", method: "PUT", json: ["text": text]))
+        return response.profile
     }
 
     /// Forgets one memory; it applies from the next message on, in every conversation.
