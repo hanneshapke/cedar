@@ -357,9 +357,10 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
         produced(WorkspaceImages.isImage) { $0.name == "generate_chart" && $0.card != nil }
     }
 
-    /// The PDFs the turn's finished tool calls produced, each once, in order: workspace paths.
+    /// The other files the turn's finished tool calls produced (PDFs, Markdown, data, code, anything
+    /// that isn't shown as a picture), each once, in order: workspace paths.
     var documents: [String] {
-        produced(WorkspaceImages.isPDF) { _ in false }
+        produced({ !WorkspaceImages.isImage($0) }) { _ in false }
     }
 
     private func produced(_ include: (String) -> Bool, skipping skip: (ToolCall) -> Bool) -> [String] {
@@ -434,19 +435,26 @@ enum WorkspaceImages {
     }
 }
 
-/// How the app shows a workspace file: an image, a PDF, or nil for files it leaves to the web UI
-/// (SVG among them, which UIKit doesn't draw).
+/// How the app shows a workspace file: an image that zooms, a PDF, Markdown rendered as the chat
+/// renders it, or anything else (SVG among them, which UIKit doesn't draw) with Quick Look.
 enum WorkspaceFileKind: Equatable, Sendable {
     case image
     case pdf
+    case markdown
+    case preview
 
-    init?(path: String) {
+    static let markdownExtensions: Set<String> = ["md", "markdown"]
+
+    init(path: String) {
+        let ext = WorkspaceImages.fileExtension(path)
         if WorkspaceImages.isPDF(path) {
             self = .pdf
-        } else if WorkspaceImages.isImage(path), WorkspaceImages.fileExtension(path) != "svg" {
+        } else if WorkspaceImages.isImage(path), ext != "svg" {
             self = .image
+        } else if let ext, Self.markdownExtensions.contains(ext) {
+            self = .markdown
         } else {
-            return nil
+            self = .preview
         }
     }
 }

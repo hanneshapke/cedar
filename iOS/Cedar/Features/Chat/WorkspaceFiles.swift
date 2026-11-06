@@ -1,9 +1,10 @@
 import PDFKit
+import QuickLook
 import SwiftUI
 import UIKit
 
-/// The conversation's workspace files, as the web UI's files panel lists them. Images and PDFs
-/// open in the viewer; other files are left to the web UI.
+/// The conversation's workspace files, as the web UI's files panel lists them. Each opens in the
+/// viewer: images and PDFs in their own, Markdown rendered, anything else with Quick Look.
 struct WorkspaceFilesView: View {
     let conversationId: String
     let client: ChatClient
@@ -45,11 +46,7 @@ struct WorkspaceFilesView: View {
                 List {
                     Section {
                         ForEach(listing.files) { file in
-                            if WorkspaceFileKind(path: file.path) != nil {
-                                NavigationLink(value: file.path) { WorkspaceFileRow(file: file) }
-                            } else {
-                                WorkspaceFileRow(file: file)
-                            }
+                            NavigationLink(value: file.path) { WorkspaceFileRow(file: file) }
                         }
                     } footer: {
                         if listing.truncated {
@@ -109,12 +106,14 @@ extension WorkspaceFileKind {
         switch WorkspaceFileKind(path: path) {
         case .image: "photo"
         case .pdf: "doc.richtext"
-        case nil: "doc"
+        case .markdown: "doc.text"
+        case .preview: "doc"
         }
     }
 }
 
-/// The PDFs a response produced, each opening in the viewer.
+/// The files a response produced that aren't shown as pictures (PDFs, Markdown, data, code),
+/// each opening in the viewer without a trip to the Files sheet.
 struct DocumentsView: View {
     let paths: [String]
     let conversationId: String
@@ -132,7 +131,7 @@ struct DocumentsView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     } icon: {
-                        Image(systemName: "doc.richtext")
+                        Image(systemName: WorkspaceFileKind.symbol(for: path))
                     }
                     .font(.subheadline)
                     .padding(.horizontal, 12)
@@ -177,7 +176,8 @@ private struct DoneButton: View {
     }
 }
 
-/// A workspace image or PDF at full size, loaded with the access token, with sharing. The file is
+/// A workspace file, loaded with the access token, with sharing: an image at full size, a PDF,
+/// Markdown rendered as the chat renders it, or anything else in Quick Look. The file is
 /// downloaded to a temporary file named after it, so a share hands over a file with its own name.
 struct WorkspaceFileViewer: View {
     /// Larger files are left to the web UI's files panel.
@@ -192,6 +192,8 @@ struct WorkspaceFileViewer: View {
         case failed(String)
         case image(UIImage, URL)
         case pdf(PDFDocument, URL)
+        case markdown(String, URL)
+        case preview(URL)
     }
 
     private var name: String { path.split(separator: "/").last.map(String.init) ?? path }
@@ -216,6 +218,16 @@ struct WorkspaceFileViewer: View {
             case .pdf(let document, _):
                 PDFDocumentView(document: document)
                     .ignoresSafeArea(edges: .bottom)
+            case .markdown(let text, _):
+                ScrollView {
+                    MarkdownView(text: text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+                .background(Theme.canvas)
+            case .preview(let url):
+                QuickLookView(url: url)
+                    .ignoresSafeArea(edges: .bottom)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -235,17 +247,14 @@ struct WorkspaceFileViewer: View {
 
     private var sharedFile: URL? {
         switch state {
-        case .image(_, let url), .pdf(_, let url): url
+        case .image(_, let url), .pdf(_, let url), .markdown(_, let url), .preview(let url): url
         case .loading, .failed: nil
         }
     }
 
     private func load() async {
         state = .loading
-        guard let kind = WorkspaceFileKind(path: path) else {
-            state = .failed(L10n.string("The app shows images and PDFs. Open this file on the web instead."))
-            return
-        }
+        let kind = WorkspaceFileKind(path: path)
         do {
             let (download, response) = try await URLSession.shared.download(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -277,6 +286,15 @@ struct WorkspaceFileViewer: View {
                 } else {
                     state = .failed(L10n.string("The file isn't a PDF the app can show."))
                 }
+            case .markdown:
+                // Text in another encoding goes to Quick Look, which guesses it.
+                if let text = try? String(contentsOf: file, encoding: .utf8) {
+                    state = .markdown(text, file)
+                } else {
+                    state = .preview(file)
+                }
+            case .preview:
+                state = .preview(file)
             }
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
@@ -294,6 +312,45 @@ struct WorkspaceFileViewer: View {
         let file = folder.appendingPathComponent(name)
         try FileManager.default.moveItem(at: download, to: file)
         return file
+    }
+}
+
+/// Quick Look's preview of a file the app has no viewer of its own for: text, CSV, code, SVG,
+/// Office documents and whatever else iOS can draw.
+private struct QuickLookView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        if context.coordinator.url != url {
+            context.coordinator.url = url
+            controller.reloadData()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(url: url)
+    }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        var url: URL
+
+        init(url: URL) {
+            self.url = url
+        }
+
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+            1
+        }
+
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            url as NSURL
+        }
     }
 }
 

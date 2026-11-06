@@ -11346,29 +11346,6 @@
         }
       }
     },
-    "The app shows images and PDFs. Open this file on the web instead." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die App zeigt Bilder und PDFs. Öffne diese Datei stattdessen im Web."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La app muestra imágenes y PDF. Abre este archivo en la web."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L'app affiche les images et les PDF. Ouvrez plutôt ce fichier sur le web."
-          }
-        }
-      }
-    },
     "The bundle fails the corpus's checks:" : {
       "extractionState" : "manual",
       "localizations" : {

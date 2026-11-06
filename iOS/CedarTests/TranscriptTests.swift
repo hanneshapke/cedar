@@ -156,12 +156,30 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.images, ["out/a.png"])
     }
 
-    func testTheViewerShowsImagesAndPDFs() {
+    func testTheViewerKnowsEveryFile() {
         XCTAssertEqual(WorkspaceFileKind(path: "out/chart.PNG"), .image)
         XCTAssertEqual(WorkspaceFileKind(path: "docs/report.pdf"), .pdf)
-        XCTAssertNil(WorkspaceFileKind(path: "plot.svg"))
-        XCTAssertNil(WorkspaceFileKind(path: "notes.md"))
-        XCTAssertNil(WorkspaceFileKind(path: "Makefile"))
+        XCTAssertEqual(WorkspaceFileKind(path: "notes.md"), .markdown)
+        XCTAssertEqual(WorkspaceFileKind(path: "README.Markdown"), .markdown)
+        // Quick Look draws what the app doesn't itself.
+        XCTAssertEqual(WorkspaceFileKind(path: "plot.svg"), .preview)
+        XCTAssertEqual(WorkspaceFileKind(path: "Makefile"), .preview)
+        XCTAssertEqual(WorkspaceFileKind(path: "data.csv"), .preview)
+    }
+
+    func testEveryFileButPicturesIsListedUnderTheReply() {
+        var transcript = TurnTranscript(turn: turn())
+        let calls: [(String, JSONValue, String)] = [
+            ("write_file", .object(["path": .string("notes.md")]), "ok"),
+            ("bash", .object(["command": .string("make")]), "built\n[files created or modified]\n- out/a.png\n- data.csv\n- report.pdf\n- notes.md"),
+        ]
+        for (offset, (name, input, output)) in calls.enumerated() {
+            let id = "c\(offset)"
+            transcript.apply(event(offset * 2 + 1, "tool.call", .object(["id": .string(id), "name": .string(name), "input": input])))
+            transcript.apply(event(offset * 2 + 2, "tool.result", .object(["id": .string(id), "output": .string(output), "is_error": .bool(false)])))
+        }
+        XCTAssertEqual(transcript.documents, ["notes.md", "data.csv", "report.pdf"])
+        XCTAssertEqual(transcript.images, ["out/a.png"])
     }
 
     func testMemoryStepsShowTheFact() {
