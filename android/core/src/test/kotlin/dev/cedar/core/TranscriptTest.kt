@@ -163,7 +163,10 @@ class TranscriptTest {
         t = t.apply(event(4, "tool.result", result("c1", "built\n[files created or modified]\n- out/Slides.PDF\n- out/a.png\n- report.pdf")))
         t = t.apply(event(5, "tool.call", """{"id":"c2","name":"write_file","input":{"path":"failed.pdf"}}"""))
         t = t.apply(event(6, "tool.result", result("c2", "disk full", isError = true)))
-        assertEquals(listOf("report.pdf", "out/Slides.PDF"), t.documents)
+        // generate_pdf names its file in `path` too, and says what it wrote in its output.
+        t = t.apply(event(7, "tool.call", """{"id":"c3","name":"generate_pdf","input":{"path":"out/summary.pdf","content":"# Hi"}}"""))
+        t = t.apply(event(8, "tool.result", result("c3", "wrote out/summary.pdf: 2 pages, 9000 bytes")))
+        assertEquals(listOf("report.pdf", "out/Slides.PDF", "out/summary.pdf"), t.documents)
         assertEquals(listOf("out/a.png"), t.images)
     }
 

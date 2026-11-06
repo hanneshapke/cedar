@@ -368,7 +368,7 @@ object WorkspaceImages {
     val EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg")
 
     /** Tools whose `path` input is the file they write. */
-    val FILE_TOOLS = setOf("write_file", "generate_chart", "download_file")
+    val FILE_TOOLS = setOf("write_file", "generate_chart", "generate_pdf", "download_file", "drive_download_file")
     const val CHANGED_HEADING = "\n[files created or modified]\n"
 
     /** The images [call] produced. */
