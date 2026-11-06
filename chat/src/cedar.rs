@@ -162,6 +162,32 @@ impl CedarClient {
         Ok(())
     }
 
+    /// The record sets cedar's runs keep for the user (`GET /v1/records`): `{sets, limits}`.
+    /// `None` from a cedar from before records, which doesn't know the route.
+    pub async fn records(&self) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url("/records"))).await {
+            Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
+            other => other.map(Some),
+        }
+    }
+
+    /// One set with all its records (`GET /v1/records/{name}`): `{set, records}`.
+    pub async fn record_set(&self, name: &str) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url(&format!("/records/{name}")))).await
+    }
+
+    /// Delete one set; a 404 means it isn't there (any more).
+    pub async fn delete_record_set(&self, name: &str) -> Result<(), AppError> {
+        self.send(self.http.delete(self.url(&format!("/records/{name}"))).timeout(REQUEST_TIMEOUT)).await?;
+        Ok(())
+    }
+
+    /// Delete every set cedar's runs keep for the user.
+    pub async fn delete_all_records(&self) -> Result<(), AppError> {
+        self.send(self.http.delete(self.url("/records")).timeout(REQUEST_TIMEOUT)).await?;
+        Ok(())
+    }
+
     // -- admin: integrations (needs CEDAR_API_KEY to be one of cedar's CEDAR_ADMIN_KEYS) --------
 
     pub async fn integrations(&self) -> Result<Value, AppError> {

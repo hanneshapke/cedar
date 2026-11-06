@@ -57,6 +57,9 @@ struct FakeCedar {
     /// What cedar remembers (`/v1/memory`); unset, the routes are unknown, as on a cedar from
     /// before memory.
     memory: Mutex<Option<Vec<Value>>>,
+    /// The record sets cedar keeps (`/v1/records`), each `{set, records}`; unset, the routes are
+    /// unknown, as on a cedar from before records.
+    records: Mutex<Option<Vec<Value>>>,
     /// The fake corpus: every bundle it took, the chat version header each came with, and
     /// every withdrawal (receipt id, Authorization header).
     ingested: Mutex<Vec<Value>>,
@@ -489,6 +492,46 @@ async fn forget_all_memory(State(s): State<Shared>) -> axum::response::Response 
     }
 }
 
+async fn list_records(State(s): State<Shared>) -> axum::response::Response {
+    match &*s.records.lock().unwrap() {
+        Some(sets) => {
+            let sets: Vec<Value> = sets.iter().map(|e| e["set"].clone()).collect();
+            Json(json!({ "sets": sets, "limits": { "max_sets": 50, "max_items": 10000, "max_record_chars": 8000, "max_batch": 500 } })).into_response()
+        }
+        None => no_route(),
+    }
+}
+
+async fn get_record_set(State(s): State<Shared>, Path(name): Path<String>) -> axum::response::Response {
+    let records = s.records.lock().unwrap();
+    let Some(sets) = records.as_ref() else { return no_route() };
+    match sets.iter().find(|e| e["set"]["name"] == name.as_str()) {
+        Some(entry) => Json(entry.clone()).into_response(),
+        None => cedar_error(StatusCode::NOT_FOUND, "not_found", "record set not found"),
+    }
+}
+
+async fn drop_record_set(State(s): State<Shared>, Path(name): Path<String>) -> axum::response::Response {
+    let mut records = s.records.lock().unwrap();
+    let Some(sets) = records.as_mut() else { return no_route() };
+    let before = sets.len();
+    sets.retain(|e| e["set"]["name"] != name.as_str());
+    if sets.len() == before {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "record set not found");
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn drop_all_records(State(s): State<Shared>) -> axum::response::Response {
+    match s.records.lock().unwrap().as_mut() {
+        Some(sets) => {
+            sets.clear();
+            StatusCode::NO_CONTENT.into_response()
+        }
+        None => no_route(),
+    }
+}
+
 async fn admin(s: &Shared, route: &str, body: Value) -> Option<axum::response::Response> {
     s.admin_calls.lock().unwrap().push((route.to_string(), body));
     (*s.not_admin.lock().unwrap()).then(|| cedar_error(StatusCode::FORBIDDEN, "forbidden", "not an admin key"))
@@ -585,6 +628,8 @@ impl Harness {
             .route("/v1/models", get(models))
             .route("/v1/memory", get(list_memory).post(add_memory).delete(forget_all_memory))
             .route("/v1/memory/{id}", axum::routing::delete(forget_memory))
+            .route("/v1/records", get(list_records).delete(drop_all_records))
+            .route("/v1/records/{name}", get(get_record_set).delete(drop_record_set))
             .route("/v1/defaults", get(|| async { Json(json!({ "model": "org/model-a", "model_id": "model-a", "system": "You are helpful.", "max_turns_cap": 25 })) }))
             .route(
                 "/v1/admin/models",
@@ -1067,7 +1112,7 @@ async fn validation_and_upstream_errors() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
-    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "users", "memory": true, "contributions": false }));
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "users", "memory": true, "records": true, "contributions": false }));
     // The pickers take cedar's registry, relayed.
     let (status, listed) = h.json(Method::GET, "/api/models", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -3233,6 +3278,64 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (_, body) = h.json(Method::GET, "/api/memory", None).await;
     assert_eq!(body["items"], json!([]));
+}
+
+#[tokio::test]
+async fn records_are_relayed_with_the_conversations_their_rows_came_from() {
+    let h = Harness::new(&[]).await;
+    // A cedar from before records: the page says so instead of failing.
+    let (status, body) = h.json(Method::GET, "/api/records", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "supported": false, "sets": [], "limits": null }));
+
+    let (cid, run_id) = h.finished_conversation("here is my running export", "Saved.").await;
+    let set = json!({ "id": Uuid::new_v4(), "name": "running_log", "description": "Weekly runs", "key_fields": ["date"],
+                      "health_data": false, "count": 2, "columns": ["date", "km"],
+                      "created_at": "2026-10-29T08:00:00Z", "updated_at": "2026-11-05T08:00:00Z" });
+    let record = |run: Value, date: &str| json!({ "id": Uuid::new_v4(), "key": date, "data": { "date": date, "km": 10.5 }, "run_id": run,
+                                                   "created_at": "2026-10-29T08:00:00Z", "updated_at": "2026-10-29T08:00:00Z" });
+    *h.cedar.records.lock().unwrap() = Some(vec![
+        json!({ "set": set, "records": [record(json!(run_id), "2026-10-26"), record(Value::Null, "2026-11-02")] }),
+        json!({ "set": { "id": Uuid::new_v4(), "name": "weight", "description": "Morning weight", "key_fields": ["date"], "health_data": true,
+                         "count": 0, "columns": [], "created_at": "2026-10-29T08:00:00Z", "updated_at": "2026-10-29T08:00:00Z" }, "records": [] }),
+    ]);
+
+    let (status, body) = h.json(Method::GET, "/api/records", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["supported"], true);
+    assert_eq!(body["limits"]["max_sets"], 50);
+    let sets = body["sets"].as_array().unwrap();
+    assert_eq!(sets.len(), 2);
+    assert_eq!(sets[0]["name"], "running_log");
+    assert_eq!(sets[0]["columns"], json!(["date", "km"]));
+    assert_eq!(sets[1]["health_data"], true);
+
+    let (status, body) = h.json(Method::GET, "/api/records/running_log", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["set"]["name"], "running_log");
+    let rows = body["records"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["conversation_id"], json!(cid));
+    assert_eq!(rows[0]["title"], "here is my running export");
+    assert_eq!(rows[0]["data"]["km"], 10.5);
+    assert_eq!((&rows[1]["conversation_id"], &rows[1]["title"]), (&Value::Null, &Value::Null));
+
+    // A name cedar would refuse never reaches it.
+    let (status, _) = h.json(Method::GET, "/api/records/Not%20A%20Set", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, err) = h.json(Method::GET, "/api/records/nope", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["message"], "record set not found");
+
+    let (status, _) = h.call(Method::DELETE, "/api/records/weight", None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = h.json(Method::DELETE, "/api/records/weight", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(h.cedar.records.lock().unwrap().as_ref().unwrap().len(), 1);
+    let (status, _) = h.call(Method::DELETE, "/api/records", None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, body) = h.json(Method::GET, "/api/records", None).await;
+    assert_eq!(body["sets"], json!([]));
 }
 
 // -- contributions --------------------------------------------------------------------------

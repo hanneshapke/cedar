@@ -267,3 +267,12 @@
   .cedar-set-single-list { margin-left: 0; }
   .cedar-set-menu { width: calc(100vw - 16px); }
 }
+
+/* Settings → Records: a set's rows, shown on request. */
+.cedar-rec-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.cedar-rec-cols { font: 12px var(--mono); color: var(--muted); word-break: break-word; }
+.cedar-rec-rows { grid-column: 1 / -1; width: 100%; overflow: auto; max-height: 320px; border: 1px solid var(--line); border-radius: 8px; }
+.cedar-rec-table { border-collapse: collapse; width: 100%; font: 12px var(--mono); }
+.cedar-rec-table th, .cedar-rec-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.cedar-rec-table th { position: sticky; top: 0; background: var(--sheet); color: var(--muted); font-weight: 500; }
+.cedar-rec-table tr:last-child td { border-bottom: 0; }
