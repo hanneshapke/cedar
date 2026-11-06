@@ -286,6 +286,9 @@ pub struct Config {
     pub memory: bool,
     /// How many memories one API key's owner may keep (`MEMORY_MAX_ITEMS`, 200 by default).
     pub memory_max_items: usize,
+    /// End every interactive run with a model call that picks facts about the user out of the
+    /// prompt and saves them (`MEMORY_EXTRACT`, on by default; see [`crate::memory::extraction`]).
+    pub memory_extract: bool,
     /// The Google OAuth client from the environment (`GOOGLE_CLIENT_ID` and
     /// `GOOGLE_CLIENT_SECRET`), with the account's refresh token when that is set there too. An
     /// admin can save a client through the API instead, so this is `None` without one in the
@@ -602,6 +605,7 @@ impl Config {
                 get("MEMORY_MAX_ITEMS"),
                 crate::memory::DEFAULT_MAX_ITEMS,
             )?,
+            memory_extract: flag("MEMORY_EXTRACT", true)?,
             google_oauth,
             google,
             google_apis,
@@ -980,14 +984,17 @@ mod tests {
     fn memory_is_on_by_default_with_a_cap() {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
         assert!(cfg.memory);
+        assert!(cfg.memory_extract);
         assert_eq!(cfg.memory_max_items, 200);
         let cfg = Config::from_lookup(lookup(&[
             ("CEDAR_API_KEYS", "a"),
             ("MEMORY", "off"),
+            ("MEMORY_EXTRACT", "off"),
             ("MEMORY_MAX_ITEMS", "50"),
         ]))
         .unwrap();
         assert!(!cfg.memory);
+        assert!(!cfg.memory_extract);
         assert_eq!(cfg.memory_max_items, 50);
         let err =
             Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("MEMORY_MAX_ITEMS", "0")]))

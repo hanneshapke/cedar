@@ -273,6 +273,8 @@ pub mod event {
     /// The sandbox's policy refused a connection or request while a call ran.
     pub const SANDBOX_DENIED: &str = "sandbox.denied";
     pub const USAGE: &str = "usage";
+    /// Facts about the user picked out of the prompt once the run was done were saved.
+    pub const MEMORY_UPDATED: &str = "memory.updated";
     pub const RUN_COMPLETED: &str = "run.completed";
     pub const RUN_FAILED: &str = "run.failed";
     pub const RUN_CANCELLED: &str = "run.cancelled";

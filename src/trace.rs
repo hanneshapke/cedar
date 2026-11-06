@@ -3,8 +3,8 @@
 //!
 //! An agent call sends the run's system prompt, its tool definitions and the first
 //! `message_count` messages of its conversation. Those are kept once (the prompt and tools on the
-//! run, the conversation in `messages`) and the call records only the count. A planning call has a
-//! prompt and messages of its own, so it records them in full.
+//! run, the conversation in `messages`) and the call records only the count. A planning or memory
+//! call has a prompt and messages of its own, so it records them in full.
 
 use crate::llm::{LlmResponse, MessageRequest};
 use crate::models::Run;
@@ -18,6 +18,9 @@ use serde_json::{json, Value};
 pub const AGENT: &str = "agent";
 /// The call that asks for a plan before the first turn.
 pub const PLAN: &str = "plan";
+/// The call that picks facts about the user out of the prompt once the run is done (see
+/// [`crate::memory::extraction`]).
+pub const MEMORY: &str = "memory";
 
 /// The most events a trace lists.
 const MAX_EVENTS: u32 = 10_000;
@@ -26,7 +29,7 @@ const MAX_EVENTS: u32 = 10_000;
 #[derive(Debug, Clone, Serialize)]
 pub struct LlmCall {
     pub seq: i64,
-    /// The agent turn; 0 for the planning call.
+    /// The agent turn; 0 for the planning and memory calls.
     pub turn: u32,
     pub purpose: String,
     pub request: Value,
