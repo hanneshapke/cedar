@@ -558,6 +558,7 @@ async fn generate_pdf_renders_markdown_in_the_sandbox() {
         model: None,
         locale: "en".into(),
         memory: None,
+        records: None,
     };
     let input = json!({
         "path": "out/it's a report.pdf",
@@ -609,6 +610,7 @@ fn tool_ctx(sb: &Arc<dyn Sandbox>) -> cedar::tools::ToolContext {
         model: None,
         locale: "en".into(),
         memory: None,
+        records: None,
     }
 }
 

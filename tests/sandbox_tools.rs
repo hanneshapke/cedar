@@ -54,6 +54,7 @@ async fn bash_runs_the_command_as_given_and_lists_the_files_it_changed() {
         model: None,
         locale: "en".into(),
         memory: None,
+        records: None,
     };
 
     let msg = Bash

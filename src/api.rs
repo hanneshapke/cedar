@@ -14,6 +14,7 @@ use crate::llm::LlmRouter;
 use crate::manager::{self, RunManager};
 use crate::marketplace::{InstallRequest, Marketplace};
 use crate::memory::{self, Memories, Refused};
+use crate::records::{self, Records, SaveOptions};
 use crate::models::{
     Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
@@ -78,6 +79,9 @@ pub struct AppState {
     /// What owners remember across conversations. There even with `MEMORY=off`, so people can
     /// still see and delete what was saved before.
     pub memories: Memories,
+    /// What owners keep as records across conversations. There even with `RECORDS=off`, so
+    /// people can still see and delete what was saved before.
+    pub records: Records,
 }
 
 impl AppState {
@@ -108,6 +112,7 @@ impl AppState {
         let cfg = Arc::new(cfg);
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
         let memories = Memories::new(store.clone(), cfg.memory_max_items);
+        let records = Records::new(store.clone(), cfg.records_max_sets, cfg.records_max_items);
         let env = AgentEnv {
             llm: llm.clone(),
             sandbox: cfg.sandbox.clone(),
@@ -122,6 +127,7 @@ impl AppState {
             pdf_preview_pages: cfg.pdf_preview_pages,
             memories: cfg.memory.then(|| memories.clone()),
             memory_extract: cfg.memory_extract,
+            records: cfg.records.then(|| records.clone()),
         };
         let manager = RunManager::new(
             store.clone(),
@@ -156,6 +162,7 @@ impl AppState {
             webhooks,
             marketplace,
             memories,
+            records,
         })
     }
 }
@@ -188,6 +195,11 @@ pub fn router(state: AppState) -> Router {
             get(list_memory).post(add_memory).delete(forget_all),
         )
         .route("/memory/{id}", delete(forget_memory))
+        .route("/records", get(list_records).delete(drop_all_records))
+        .route(
+            "/records/{name}",
+            get(get_records).post(save_records).delete(drop_records),
+        )
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
         .route("/admin/server-models", post(list_server_models))
@@ -599,6 +611,7 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
             "max_image_side": images::max_side(&state.store).await?,
         },
         "memory": cfg.memory.then(|| state.memories.limits()),
+        "records": cfg.records.then(|| state.records.limits()),
     })))
 }
 
@@ -660,6 +673,99 @@ async fn forget_all(
     Extension(owner): Extension<Owner>,
 ) -> Result<StatusCode, AppError> {
     state.memories.forget_all(&owner.0).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// -- records --------------------------------------------------------------------------------
+
+/// The record sets the caller's runs keep for them, oldest first, with their columns and how much fits.
+async fn list_records(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let sets = state.records.list(&owner.0).await?;
+    let columns = state.records.columns_by_set(&owner.0, &sets).await?;
+    let sets: Vec<serde_json::Value> = sets
+        .iter()
+        .map(|s| {
+            let mut v = serde_json::to_value(s).unwrap_or_default();
+            v["columns"] = json!(columns.get(&s.name).cloned().unwrap_or_default());
+            v
+        })
+        .collect();
+    Ok(Json(json!({ "sets": sets, "limits": state.records.limits() })))
+}
+
+/// One set with all its records, oldest first.
+async fn get_records(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (set, items) = state
+        .records
+        .records(&owner.0, &name)
+        .await?
+        .ok_or(AppError::NotFound("record set not found"))?;
+    Ok(Json(json!({ "set": set, "records": items })))
+}
+
+#[derive(Deserialize)]
+struct SaveRecords {
+    records: Vec<serde_json::Value>,
+    description: Option<String>,
+    key: Option<Vec<String>>,
+    health_data: Option<bool>,
+}
+
+/// Save records by hand, as `records_save` would: a client uploading a weekly export straight
+/// into a set. `201` when the set is new, else `200`.
+async fn save_records(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(name): Path<String>,
+    ApiJson(req): ApiJson<SaveRecords>,
+) -> Result<(StatusCode, Json<records::Saved>), AppError> {
+    if !state.cfg.records {
+        return Err(AppError::Conflict(
+            "records are turned off on this server (RECORDS=off)".into(),
+        ));
+    }
+    let existed = state.records.get(&owner.0, &name).await?.is_some();
+    let opts = SaveOptions {
+        description: req.description.as_deref(),
+        key: req.key.as_deref(),
+        health_data: req.health_data,
+        run_id: None,
+    };
+    match state.records.save(&owner.0, &name, &req.records, opts).await? {
+        Ok(saved) if existed => Ok((StatusCode::OK, Json(saved))),
+        Ok(saved) => Ok((StatusCode::CREATED, Json(saved))),
+        Err(full @ (records::Refused::FullSets(_) | records::Refused::FullSet(_))) => {
+            Err(AppError::Conflict(full.to_string()))
+        }
+        Err(refused) => Err(AppError::BadRequest(refused.to_string())),
+    }
+}
+
+/// Delete one set. Another owner's looks like a missing one.
+async fn drop_records(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(name): Path<String>,
+) -> Result<StatusCode, AppError> {
+    if !state.records.drop(&owner.0, &name).await? {
+        return Err(AppError::NotFound("record set not found"));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete every set the caller keeps.
+async fn drop_all_records(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<StatusCode, AppError> {
+    state.records.drop_all(&owner.0).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
