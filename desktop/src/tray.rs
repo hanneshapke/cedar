@@ -129,7 +129,7 @@ fn handle(app: &AppHandle, id: &str) {
             if state.update().version.is_none() {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = crate::update::check(&app).await {
+                    if let Err(e) = crate::update::check(&app, true).await {
                         eprintln!("checking for updates: {e:#}");
                     }
                 });
