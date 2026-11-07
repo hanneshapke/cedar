@@ -307,6 +307,9 @@ pub struct Config {
     pub records_max_sets: usize,
     /// How many records one set may hold (`RECORDS_MAX_ITEMS`, 10,000 by default).
     pub records_max_items: usize,
+    /// Import a run's CSV and JSON attachments into record sets unless the request says
+    /// otherwise (`RECORDS_IMPORT_ATTACHMENTS`, on by default; see [`crate::records::import`]).
+    pub records_import_attachments: bool,
     /// The Google OAuth client from the environment (`GOOGLE_CLIENT_ID` and
     /// `GOOGLE_CLIENT_SECRET`), with the account's refresh token when that is set there too. An
     /// admin can save a client through the API instead, so this is `None` without one in the
@@ -629,6 +632,7 @@ impl Config {
             memory_consolidate_after: parse("MEMORY_CONSOLIDATE_AFTER", get("MEMORY_CONSOLIDATE_AFTER"), 5u32)?,
             memory_recall_tokens: parse("MEMORY_RECALL_TOKENS", get("MEMORY_RECALL_TOKENS"), 600usize)?,
             records: flag("RECORDS", true)?,
+            records_import_attachments: flag("RECORDS_IMPORT_ATTACHMENTS", true)?,
             records_max_sets: parse(
                 "RECORDS_MAX_SETS",
                 get("RECORDS_MAX_SETS"),

@@ -18,7 +18,7 @@
 //   toast(message)   a short notice
 
 const cedarAttach = (() => {
-  const TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'];
+  const TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'text/csv', 'application/json'];
   const ACCEPT = TYPES.join(',');
   const MAX_FILES = 10;
   const MAX_BYTES = 20 * 1024 * 1024;
@@ -26,6 +26,9 @@ const cedarAttach = (() => {
   const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.1l-8.8 8.8a5.5 5.5 0 0 1-7.8-7.8l8.8-8.8a3.7 3.7 0 0 1 5.2 5.2l-8.8 8.8a1.8 1.8 0 0 1-2.6-2.6l8.1-8.1"/></svg>';
 
   const PDF = 'application/pdf';
+  // What any model takes: PDFs and tables are saved in the workspace, never shown as images.
+  const FILES = [PDF, 'text/csv', 'application/json'];
+  const FILES_ACCEPT = FILES.join(',');
 
   let deps = null;
   let enabled = false;  // set once the app knows the model
@@ -53,6 +56,8 @@ const cedarAttach = (() => {
   function kindOf(file) {
     if (TYPES.includes(file.type)) return file.type;
     if (/\.pdf$/i.test(file.name)) return 'application/pdf';
+    if (/\.csv$/i.test(file.name)) return 'text/csv';
+    if (/\.json$/i.test(file.name)) return 'application/json';
     return null;
   }
 
@@ -72,7 +77,7 @@ const cedarAttach = (() => {
     for (const file of Array.from(list)) {
       const media_type = kindOf(file);
       if (!media_type) { deps.toast(tr('attach.wrongType', { name: file.name })); continue; }
-      if (media_type !== PDF && !images) { deps.toast(tr('attach.noImages', { name: file.name })); continue; }
+      if (!FILES.includes(media_type) && !images) { deps.toast(tr('attach.noImages', { name: file.name })); continue; }
       if (!file.size) { deps.toast(tr('attach.empty', { name: file.name })); continue; }
       if (file.size > MAX_BYTES) { deps.toast(tr('attach.tooLarge', { name: file.name, size: fmtSize(MAX_BYTES) })); continue; }
       if (files.length >= MAX_FILES) { deps.toast(tr('attach.tooMany', { count: MAX_FILES })); break; }
@@ -84,7 +89,7 @@ const cedarAttach = (() => {
         deps.toast(e.message);
         continue;
       }
-      if (!enabled || (media_type !== PDF && !images)) return; // the model changed while reading
+      if (!enabled || (!FILES.includes(media_type) && !images)) return; // the model changed while reading
       const url = media_type.startsWith('image/') ? URL.createObjectURL(file) : null;
       files.push({ name: file.name, media_type, size: file.size, data, url });
     }
@@ -106,7 +111,8 @@ const cedarAttach = (() => {
       img.alt = '';
       c.append(img);
     } else {
-      c.append(el('span', 'cedar-attach-kind', info.media_type === 'application/pdf' ? 'PDF' : 'IMG'));
+      const kind = { 'application/pdf': 'PDF', 'text/csv': 'CSV', 'application/json': 'JSON' }[info.media_type] || 'IMG';
+      c.append(el('span', 'cedar-attach-kind', kind));
     }
     c.append(el('span', 'cedar-attach-name', info.name), el('span', 'cedar-attach-size', fmtSize(info.size)));
     if (onRemove) {
@@ -137,9 +143,9 @@ const cedarAttach = (() => {
     enabled = true;
     images = Boolean(on);
     syncButton();
-    if (!images && files.some((f) => f.media_type !== PDF)) {
+    if (!images && files.some((f) => !FILES.includes(f.media_type))) {
       for (const f of files) if (f.url) URL.revokeObjectURL(f.url);
-      files = files.filter((f) => f.media_type === PDF);
+      files = files.filter((f) => FILES.includes(f.media_type));
       render();
     }
   }
@@ -156,7 +162,7 @@ const cedarAttach = (() => {
     button.hidden = !enabled;
     button.title = what;
     button.setAttribute('aria-label', what);
-    picker.accept = images ? ACCEPT : PDF;
+    picker.accept = images ? ACCEPT : FILES_ACCEPT;
   }
 
   /** What goes with the message: `[{name, media_type, data}]`. */

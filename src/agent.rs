@@ -206,6 +206,34 @@ pub async fn run_agent(
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
     let attachments = env.store.list_attachments(run.id).await?;
+    // CSV and JSON attachments go into record sets named after them before the model sees
+    // anything, when the run asks for it (see [`records::import`]); the note says what became
+    // of each, and a `records.updated` event what was imported.
+    let mut imported: Vec<Option<String>> = vec![None; attachments.len()];
+    let records_on = env.records.is_some() && tools.get(RECORDS_SAVE).is_some();
+    if run.import_attachments && records_on {
+        let records = env.records.as_ref().expect("records are on");
+        let mut done = Vec::new();
+        for (i, a) in attachments.iter().enumerate().filter(|(_, a)| a.is_table()) {
+            imported[i] = Some(match records.import_file(&run.owner, run.id, a).await? {
+                Ok(r) => {
+                    done.push(json!({ "file": a.name, "set": r.set, "added": r.added, "updated": r.updated, "key": r.key }));
+                    format!(
+                        "its {} rows were imported into the record set {} ({} added, {} updated; key {}); query it with records_lookup",
+                        r.rows,
+                        r.set,
+                        r.added,
+                        r.updated,
+                        if r.key.is_empty() { "none".to_string() } else { r.key.join(", ") }
+                    )
+                }
+                Err(why) => format!("not imported into records ({why}); read it with read_file or run_python"),
+            });
+        }
+        if !done.is_empty() {
+            events.emit(event::RECORDS_UPDATED, json!({ "imported": done })).await?;
+        }
+    }
     let blocks = if attachments.is_empty() {
         vec![]
     } else {
@@ -221,6 +249,7 @@ pub async fn run_agent(
             images,
             env.pdf_preview_pages,
             env.tool_timeout,
+            &imported,
         );
         tokio::select! {
             biased;
@@ -398,12 +427,26 @@ async fn note_memory(
     let facts = env.memory_extract && run.interactive;
     let experience = env.memory_experience;
     let worked = !transcript.tools.is_empty();
+    // Data the user handed over goes into records from the same call, when the run may save
+    // records (see [`memory::extract::admit_rows`]).
+    let records = env.records.as_ref().filter(|_| {
+        facts && run.tools.as_ref().is_none_or(|t| t.iter().any(|g| g == "records" || g == RECORDS_SAVE || g == "*"))
+    });
+    let sets: Option<Vec<(String, Vec<String>)>> = match records {
+        Some(r) => {
+            let list = r.list(&run.owner).await?;
+            let columns = r.columns_by_set(&run.owner, &list).await?;
+            Some(list.iter().map(|s| (s.name.clone(), columns.get(&s.name).cloned().unwrap_or_default())).collect())
+        }
+        None => None,
+    };
     let call = facts || (experience && worked);
     let mut noted = memory::extract::Noted::default();
     let remembered = memories.active(&run.owner).await?;
     if call && !transcript.text.trim().is_empty() {
         if let Some(llm) = env.llm.client_for(&run.model_id) {
-            let (system, call_messages) = memory::extract::call(&remembered, &transcript, facts, experience, outcome);
+            let (system, call_messages) =
+                memory::extract::call(&remembered, sets.as_deref(), &transcript, facts, experience, outcome);
             let req = MessageRequest {
                 model: &run.model,
                 max_tokens: max_tokens(env, run),
@@ -447,6 +490,36 @@ async fn note_memory(
             }
         }
     }
+    let mut saved_records: Vec<Value> = Vec::new();
+    if let (Some(records), Some(sets)) = (records, &sets) {
+        // The user's own words and the files they attached are what a row may be taken from.
+        let mut source = transcript.user_text.clone();
+        for a in env.store.list_attachments(run.id).await? {
+            if let Some(text) = records::import::text_of(&a) {
+                source.push('\n');
+                source.extend(text.chars().take(records::import::MAX_TEXT_CHARS));
+            }
+        }
+        for note in &noted.records {
+            let (rows, rejected) = memory::extract::admit_rows(note, &source);
+            skipped.extend(rejected.into_iter().map(|s| json!({ "text": s.text, "reason": s.reason })));
+            if rows.is_empty() {
+                continue;
+            }
+            let exists = sets.iter().any(|(name, _)| *name == note.set);
+            let description = note.description.clone().unwrap_or_else(|| "Data the user handed over".to_string());
+            let opts = records::SaveOptions {
+                description: (!exists).then_some(description.as_str()),
+                key: (!exists).then_some(note.key.as_slice()),
+                health_data: None,
+                run_id: Some(run.id),
+            };
+            match records.save(&run.owner, &note.set, &rows, opts).await? {
+                Ok(done) => saved_records.push(json!({ "set": done.set.name, "added": done.added, "updated": done.updated })),
+                Err(refused) => skipped.push(json!({ "text": format!("{}: {} rows", note.set, rows.len()), "reason": refused.to_string() })),
+            }
+        }
+    }
     let mut episode = None;
     if experience {
         let row = memory::extract::episode(run.id, &run.prompt, noted.episode.as_ref(), outcome, &transcript, &noted.topics);
@@ -461,11 +534,14 @@ async fn note_memory(
             }
         }
     }
-    if saved.is_empty() && skipped.is_empty() && episode.is_none() {
+    if saved.is_empty() && skipped.is_empty() && episode.is_none() && saved_records.is_empty() {
         return Ok(());
     }
     events
-        .emit(event::MEMORY_UPDATED, json!({ "saved": saved, "skipped": skipped, "episode": episode }))
+        .emit(
+            event::MEMORY_UPDATED,
+            json!({ "saved": saved, "skipped": skipped, "episode": episode, "records": saved_records }),
+        )
         .await?;
     Ok(())
 }

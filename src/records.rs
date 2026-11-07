@@ -948,6 +948,338 @@ impl Records {
     }
 }
 
+// -- importing files ------------------------------------------------------------------------
+
+/// Importing a CSV or JSON attachment into a record set, with no model call (see "Records" in the
+/// README): the set is named after the file, the first column that identifies a row (`id`,
+/// `date`, ...) becomes the key, cells that look like numbers become numbers, and the same file
+/// handed over again updates rather than doubles.
+pub mod import {
+    use super::{valid_name, Records, Refused, SaveOptions, Saved, MAX_BATCH, MAX_NAME_CHARS};
+    use crate::models::Attachment;
+    use anyhow::Result;
+    use base64::Engine;
+    use serde_json::{json, Map, Value};
+    use uuid::Uuid;
+
+    /// Fields that identify a row, in order of preference.
+    const KEY_FIELDS: [&str; 9] = ["id", "date", "day", "timestamp", "datetime", "time", "week", "month", "key"];
+    /// The most characters of a file that are read.
+    pub const MAX_TEXT_CHARS: usize = 8_000_000;
+
+    /// What an import did.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Imported {
+        pub set: String,
+        pub added: usize,
+        pub updated: usize,
+        pub rows: usize,
+        pub key: Vec<String>,
+    }
+
+    /// A lowercase identifier made from `raw`: letters, digits and underscores, starting with
+    /// a letter; `fallback` when nothing of it remains.
+    pub fn identifier(raw: &str, fallback: &str) -> String {
+        let mut out = String::new();
+        let mut last_underscore = true;
+        for c in raw.trim().chars() {
+            let c = c.to_ascii_lowercase();
+            if c.is_ascii_alphanumeric() {
+                out.push(c);
+                last_underscore = false;
+            } else if !last_underscore {
+                out.push('_');
+                last_underscore = true;
+            }
+        }
+        let out = out.trim_matches('_').to_string();
+        let mut out = if out.is_empty() {
+            fallback.to_string()
+        } else if !out.starts_with(|c: char| c.is_ascii_lowercase()) {
+            format!("{fallback}_{out}")
+        } else {
+            out
+        };
+        out.truncate(MAX_NAME_CHARS);
+        out.trim_end_matches('_').to_string()
+    }
+
+    /// The set a file is imported into: its name without the extension, as an identifier.
+    pub fn set_name_for(file: &str) -> String {
+        let base = file.rsplit(['/', '\\']).next().unwrap_or(file);
+        let stem = match base.rsplit_once('.') {
+            Some((stem, _)) if !stem.is_empty() => stem,
+            _ => base,
+        };
+        identifier(stem, "file")
+    }
+
+    /// The field that identifies a row, if the columns have one.
+    pub fn key_for(columns: &[String]) -> Vec<String> {
+        KEY_FIELDS
+            .iter()
+            .find(|k| columns.iter().any(|c| c == *k))
+            .map(|k| vec![k.to_string()])
+            .unwrap_or_default()
+    }
+
+    /// Column names as field names: identifiers, made distinct with a numeric suffix.
+    fn fields(headers: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for (i, h) in headers.iter().enumerate() {
+            let base = identifier(h, &format!("column_{}", i + 1));
+            let mut name = base.clone();
+            let mut n = 2;
+            while out.contains(&name) {
+                name = format!("{base}_{n}");
+                n += 1;
+            }
+            out.push(name);
+        }
+        out
+    }
+
+    /// A cell as a JSON value: empty is null, a number is a number, true and false are booleans.
+    fn cell(raw: &str) -> Value {
+        let t = raw.trim();
+        if t.is_empty() {
+            return Value::Null;
+        }
+        if let Ok(n) = t.parse::<i64>() {
+            return json!(n);
+        }
+        if t.chars().any(|c| c.is_ascii_digit()) && !t.starts_with('+') {
+            if let Ok(f) = t.parse::<f64>() {
+                if f.is_finite() {
+                    return json!(f);
+                }
+            }
+        }
+        match t {
+            "true" | "TRUE" | "True" => json!(true),
+            "false" | "FALSE" | "False" => json!(false),
+            _ => json!(t),
+        }
+    }
+
+    /// The delimiter a CSV uses: whichever of comma, semicolon and tab is most frequent on its
+    /// first line.
+    fn delimiter(first_line: &str) -> char {
+        [',', ';', '\t']
+            .into_iter()
+            .max_by_key(|d| first_line.matches(*d).count())
+            .unwrap_or(',')
+    }
+
+    /// Split CSV text into records of fields, quotes and doubled quotes honoured, CRLF and LF
+    /// line ends alike.
+    fn parse_csv(text: &str, delim: char) -> Vec<Vec<String>> {
+        let mut rows = Vec::new();
+        let mut row = Vec::new();
+        let mut field = String::new();
+        let mut quoted = false;
+        let mut chars = text.chars().peekable();
+        while let Some(c) = chars.next() {
+            if quoted {
+                if c == '"' {
+                    if chars.peek() == Some(&'"') {
+                        field.push('"');
+                        chars.next();
+                    } else {
+                        quoted = false;
+                    }
+                } else {
+                    field.push(c);
+                }
+            } else if c == '"' {
+                quoted = true;
+            } else if c == delim {
+                row.push(std::mem::take(&mut field));
+            } else if c == '\n' || c == '\r' {
+                if c == '\r' && chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                row.push(std::mem::take(&mut field));
+                if row.iter().any(|f| !f.trim().is_empty()) {
+                    rows.push(std::mem::take(&mut row));
+                } else {
+                    row.clear();
+                }
+            } else {
+                field.push(c);
+            }
+        }
+        if !field.is_empty() || !row.is_empty() {
+            row.push(field);
+            if row.iter().any(|f| !f.trim().is_empty()) {
+                rows.push(row);
+            }
+        }
+        rows
+    }
+
+    /// The rows of a CSV: the first line is the header. Short rows get nulls, long ones are cut.
+    pub fn rows_from_csv(text: &str) -> Result<Vec<Value>, String> {
+        let text = text.trim_start_matches('\u{feff}');
+        let first = text.lines().next().unwrap_or("");
+        let mut rows = parse_csv(text, delimiter(first));
+        if rows.len() < 2 {
+            return Err("the CSV has a header but no rows".into());
+        }
+        let headers: Vec<String> = rows.remove(0);
+        let names = fields(&headers);
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let mut object = Map::new();
+                for (i, name) in names.iter().enumerate() {
+                    object.insert(name.clone(), r.get(i).map(|v| cell(v)).unwrap_or(Value::Null));
+                }
+                Value::Object(object)
+            })
+            .collect())
+    }
+
+    /// The rows of a JSON file: an array of objects, or an object whose first array of objects
+    /// holds them. Field names are made identifiers; nested values are kept as they are.
+    pub fn rows_from_json(text: &str) -> Result<Vec<Value>, String> {
+        let value: Value = serde_json::from_str(text).map_err(|e| format!("not valid JSON: {e}"))?;
+        let items = match &value {
+            Value::Array(items) => items.clone(),
+            Value::Object(map) => map
+                .values()
+                .find_map(|v| v.as_array().filter(|a| a.iter().all(Value::is_object)).cloned())
+                .ok_or_else(|| "the JSON holds no array of objects".to_string())?,
+            _ => return Err("the JSON is neither an array of objects nor an object holding one".into()),
+        };
+        if items.is_empty() {
+            return Err("the JSON holds no rows".into());
+        }
+        let mut rows = Vec::with_capacity(items.len());
+        for (i, item) in items.into_iter().enumerate() {
+            let Value::Object(map) = item else {
+                return Err(format!("row {} is not an object", i + 1));
+            };
+            let keys: Vec<String> = map.keys().cloned().collect();
+            let names = fields(&keys);
+            let mut object = Map::new();
+            for (name, (_, v)) in names.into_iter().zip(map) {
+                object.insert(name, v);
+            }
+            rows.push(Value::Object(object));
+        }
+        Ok(rows)
+    }
+
+    /// The rows an attachment holds, by its media type.
+    pub fn rows_of(attachment: &Attachment) -> Result<Vec<Value>, String> {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&attachment.data)
+            .map_err(|_| "not valid base64".to_string())?;
+        let text = String::from_utf8_lossy(&bytes);
+        if text.chars().count() > MAX_TEXT_CHARS {
+            return Err("the file is too large to import".into());
+        }
+        match attachment.media_type.as_str() {
+            "text/csv" => rows_from_csv(&text),
+            "application/json" => rows_from_json(&text),
+            other => Err(format!("{other} is not a table")),
+        }
+    }
+
+    /// The text of a table attachment, for checks that read what the user handed over.
+    pub fn text_of(attachment: &Attachment) -> Option<String> {
+        if !attachment.is_table() {
+            return None;
+        }
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&attachment.data).ok()?;
+        Some(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    impl Records {
+        /// Import a CSV or JSON attachment of `owner` into the set named after it, from `run_id`.
+        /// A set that exists keeps its key and description; a new one gets the first identifying
+        /// column as its key. Rows go in batches of [`MAX_BATCH`]. `Err` says why nothing was
+        /// imported, in words for the model and the user.
+        pub async fn import_file(&self, owner: &str, run_id: Uuid, attachment: &Attachment) -> Result<Result<Imported, String>> {
+            let rows = match rows_of(attachment) {
+                Ok(rows) => rows,
+                Err(why) => return Ok(Err(why)),
+            };
+            let set = set_name_for(&attachment.name);
+            if let Err(Refused::BadName(_)) = valid_name(&set) {
+                return Ok(Err(format!("{:?} does not make a set name", attachment.name)));
+            }
+            let existing = self.list(owner).await?.into_iter().find(|s| s.name == set);
+            let columns: Vec<String> = rows[0].as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+            let key = match &existing {
+                Some(s) => s.key_fields.clone(),
+                None => key_for(&columns),
+            };
+            let description = format!("Imported from {}", attachment.name.trim());
+            let (mut added, mut updated) = (0, 0);
+            for batch in rows.chunks(MAX_BATCH) {
+                let opts = SaveOptions {
+                    description: existing.is_none().then_some(description.as_str()),
+                    key: existing.is_none().then_some(key.as_slice()),
+                    health_data: None,
+                    run_id: Some(run_id),
+                };
+                match self.save(owner, &set, batch, opts).await? {
+                    Ok(Saved { added: a, updated: u, .. }) => {
+                        added += a;
+                        updated += u;
+                    }
+                    Err(refused) => {
+                        if added + updated > 0 {
+                            return Ok(Err(format!("{added} rows imported into {set}, then refused: {refused}")));
+                        }
+                        return Ok(Err(refused.to_string()));
+                    }
+                }
+            }
+            Ok(Ok(Imported { set, added, updated, rows: rows.len(), key }))
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn names_become_identifiers() {
+            assert_eq!(set_name_for("Running Log (2026).csv"), "running_log_2026");
+            assert_eq!(set_name_for("/tmp/2026-weights.json"), "file_2026_weights");
+            assert_eq!(set_name_for("...csv"), "file");
+            assert_eq!(fields(&["Date".into(), "km".into(), "Date".into(), "".into()]), ["date", "km", "date_2", "column_4"]);
+            assert_eq!(key_for(&["km".into(), "date".into()]), ["date"]);
+            assert!(key_for(&["km".into()]).is_empty());
+        }
+
+        #[test]
+        fn csv_is_parsed_with_quotes_delimiters_and_types() {
+            let rows = rows_from_csv("\u{feff}Date;Distance (km);Note\r\n2026-11-01;5.2;\"easy; flat\"\r\n2026-11-02;10;\"said \"\"hi\"\"\"\n\n").unwrap();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0], json!({ "date": "2026-11-01", "distance_km": 5.2, "note": "easy; flat" }));
+            assert_eq!(rows[1], json!({ "date": "2026-11-02", "distance_km": 10, "note": "said \"hi\"" }));
+            let rows = rows_from_csv("a,b\n1,\n,true").unwrap();
+            assert_eq!(rows, [json!({ "a": 1, "b": null }), json!({ "a": null, "b": true })]);
+            assert!(rows_from_csv("a,b\n").is_err());
+        }
+
+        #[test]
+        fn json_rows_come_from_an_array_or_a_wrapper() {
+            let rows = rows_from_json("[{\"Date\": \"2026-11-01\", \"km\": 5}]").unwrap();
+            assert_eq!(rows, [json!({ "date": "2026-11-01", "km": 5 })]);
+            let rows = rows_from_json("{\"meta\": 1, \"data\": [{\"id\": 7, \"tags\": [\"a\"]}]}").unwrap();
+            assert_eq!(rows, [json!({ "id": 7, "tags": ["a"] })]);
+            assert!(rows_from_json("[1, 2]").is_err());
+            assert!(rows_from_json("{\"x\": 1}").is_err());
+            assert!(rows_from_json("nope").is_err());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

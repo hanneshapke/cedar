@@ -33,13 +33,16 @@ const MAX_NAME_BYTES: usize = 120;
 /// Copy `attachments` into the sandbox's workspace and build the blocks the run's opening message
 /// gets for them: image blocks, then the note. With `images` (the model takes them), images are
 /// shown as they are and PDFs as up to `pdf_pages` page images in all. A PDF that can't be
-/// rendered is still saved and listed; failing to save a file, or a broken sandbox, fails.
+/// rendered is still saved and listed; failing to save a file, or a broken sandbox, fails. A CSV
+/// or JSON file is saved and listed with `imported[i]`, what became of it in records (see
+/// [`crate::records::import`]), when there is one.
 pub async fn prepare(
     sandbox: &dyn Sandbox,
     attachments: &[Attachment],
     images: bool,
     pdf_pages: usize,
     timeout: Duration,
+    imported: &[Option<String>],
 ) -> Result<Vec<Value>> {
     let mut blocks = Vec::new();
     let mut lines = Vec::new();
@@ -60,6 +63,12 @@ pub async fn prepare(
                 "image, shown above".to_string()
             } else {
                 "image; this model can't view images".to_string()
+            }
+        } else if a.is_table() {
+            let kind = if a.media_type == "text/csv" { "CSV" } else { "JSON" };
+            match imported.get(i).and_then(|s| s.as_deref()) {
+                Some(outcome) => format!("{kind} file; {outcome}"),
+                None => format!("{kind} file; read it with read_file or run_python"),
             }
         } else if !images || budget == 0 {
             "PDF; read its text with read_document".to_string()

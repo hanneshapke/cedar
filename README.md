@@ -59,7 +59,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "locale"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [Languages](#languages) for `locale`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "locale"?, "import_attachments"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [Languages](#languages) for `locale`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
@@ -75,7 +75,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch}`, or `null` with `RECORDS=off`). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
 | `POST /v1/runs/{id}/feedback` | Your verdict on a finished run: `{"rating": "up" \| "down" \| null}`. Promotes or archives what the run learned (see [Memory](#memory)); returns `{rating, archived}`. `409` while the run is still going. |
 | `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [...], profile, limits}`. Each item is `{id, short_id, kind, text, subject, relation, topics, source, support, hedged, sensitive, pinned, mentions, meta, run_id, valid_from, valid_until, created_at, updated_at, superseded_by, archived_at, recall_count, last_recalled_at}`; `?kind=fact,episode` narrows it, `?archived=true` lists the archive (superseded, expired and forgotten rows) instead, `?q=` searches. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
 | `POST /v1/memory` | Remember something by hand: `{"text", "kind"?, "pinned"?, "valid_until"?, "subject"?, "relation"?, "topics"?}`. Returns `201` with the item, or `200` with the existing one when the same thing is already remembered. `409` with `MEMORY=off`; `400` for empty text, more than 500 characters, a kind that isn't `fact`, `preference`, `instruction` or `temporary`, or text that looks like a secret or an identifier. |
@@ -140,16 +140,16 @@ choice keeps working; an unknown name is a `400`. The run's `tools` are returned
 
 ### Attachments
 
-A run's prompt can come with PDFs, for any model, and with images, for a model registered as
-`multimodal` (see [Models](#models)); an image for any other model is refused with `400`:
+A run's prompt can come with PDFs, CSV and JSON files, for any model, and with images, for a model
+registered as `multimodal` (see [Models](#models)); an image for any other model is refused with `400`:
 
 ```json
 {"prompt": "what does the invoice say?",
  "attachments": [{"name": "invoice.pdf", "media_type": "application/pdf", "data": "<base64>"}]}
 ```
 
-`media_type` is one of `image/png`, `image/jpeg`, `image/gif`, `image/webp` or
-`application/pdf`; `data` is the file's bytes in standard base64 (no `data:` prefix). At most 10
+`media_type` is one of `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf`,
+`text/csv` or `application/json`; `data` is the file's bytes in standard base64 (no `data:` prefix). At most 10
 files per run, 20 MiB each and 32 MiB together (decoded); the request body itself may be up to
 48 MiB. Anything else is a `400` that names the file.
 
@@ -174,7 +174,12 @@ the run's opening user message, before the prompt's text:
   sandbox (`cedar-render-pages`, `sandbox/render_pages.py`, on pypdfium2), not in cedar;
 - a text block listing the saved files: where each one is, its page count, and which pages the
   model was shown, pointing it to `read_document` for the rest. A PDF that can't be rendered (a
-  damaged or encrypted file, say) is listed with the reason, and the run goes on.
+  damaged or encrypted file, say) is listed with the reason, and the run goes on. A CSV or JSON
+  file is listed with what became of it in [records](#records): by default its rows are imported
+  into a set named after the file before the model sees anything, and the line says the set, the
+  counts and the key, or why it could not be imported; `"import_attachments": false` on the run
+  (or `RECORDS_IMPORT_ATTACHMENTS=off` as the server's default) leaves it in the workspace only,
+  for `read_file` and `run_python`.
 
 PDFs are not sent to the model as files: OpenAI-compatible servers such as vLLM take images in a
 prompt but not PDFs. On the wire, images are chat-completions `image_url` content parts with a
@@ -192,8 +197,10 @@ agents](chat/README.md#scheduled-agents), say) needs one prompt rather than the 
 led there. `POST /v1/compact` with `{"run_id": "<a finished run of yours>"}` makes a single model
 call over the run's stored conversation, with no tools and no sandbox, asking the model to write a
 prompt a fresh agent could carry out unattended: the concrete inputs, the constraints, the output
-format, the files to produce, with the dead ends and dropped requests left out. The answer is
-returned as `prompt` and not stored. `409` while the run is still going. Tool results are cut to
+format, the files to produce, with the dead ends and dropped requests left out, and, when the
+task produces a result worth comparing over time, an instruction to save it with `records_save`
+into a fixed set keyed by date and compare with the earlier rows first (see [Records](#records)).
+The answer is returned as `prompt` and not stored. `409` while the run is still going. Tool results are cut to
 2,000 characters each and the oldest messages dropped to keep the call under about 60 KB, so a long
 run still compacts cheaply; a conversation that ended in the middle of a tool call gets error
 results for the open calls first, as a [continuation](#continuing-a-run) would. `{"transcript":
@@ -219,7 +226,8 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 | `sandbox.denied` | `call_id`, `program` (the path OpenShell named, `null` for a refused HTTP request), `host`, `port`, `what` (`connect`, or the method and path of a refused request), `reason`: an OpenShell sandbox's policy refused something while a `bash` or `run_python` call ran (see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)) |
 | `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call, and with `purpose: "memory"` the call at the end of the run that notes what it learned; one with `purpose: "tool"` and the `tool`'s name is a call a tool made to the model during that turn (`search_products` picking products, `plan_trip` choosing a trip option) |
 | `memory.recalled` | What the run was shown from memory at its start: `profile` (whether there is one), `cues` (`recall`, `time`), `left_out` (how many matched but didn't fit), `items: [{id, short_id, kind, why, score}]` with `why` `pinned`, `core`, `match` or `cue` (see [Memory](#memory)). Only when something was shown |
-| `memory.updated` | What the run noted once it was done: `saved: [{status, memory}]` (`status` `added`, `superseded` or `replaced`; facts the user stated, and a procedure the run learned), `skipped: [{text, reason}]` (what the model proposed and the checks refused), `episode` (the row for this conversation, or `null`). After the last `assistant.text` |
+| `memory.updated` | What the run noted once it was done: `saved: [{status, memory}]` (`status` `added`, `superseded` or `replaced`; facts the user stated, and a procedure the run learned), `skipped: [{text, reason}]` (what the model proposed and the checks refused, rows for records included), `episode` (the row for this conversation, or `null`), `records: [{set, added, updated}]` (data the user handed over, saved as records). After the last `assistant.text` |
+| `records.updated` | `imported: [{file, set, added, updated, key}]`: the run's CSV and JSON attachments that went into record sets when it started (see [Records](#records)). Before the first turn, only when something was imported |
 | `run.completed` | `final_text`, `stop_reason` |
 | `run.failed` | `error` |
 | `run.cancelled` | `reason` |
@@ -502,6 +510,22 @@ still see every earlier week.
   columns and a few rows first.
 - **Who may write.** Any run may save and read; unattended runs (a weekly import) too, which is
   the point. Only [interactive](#plans-and-approvals) runs may `records_drop` a set.
+- **Saved without being asked.** Three paths fill records with no tool call. A CSV or JSON
+  [attachment](#attachments) is imported into a set named after the file when the run starts
+  (`Running Log.csv` becomes `running_log`, with `Imported from Running Log.csv` as its
+  description): the first identifying column (`id`, `date`, `day`, `timestamp`, ...) is the key,
+  cells that look like numbers become numbers, blanks become `null`, a semicolon or tab delimiter
+  is detected, and a file handed over again updates its rows. The run says what was imported in a
+  `records.updated` event and in the files note the model reads, and `"import_attachments":
+  false` on the run or `RECORDS_IMPORT_ATTACHMENTS=off` turns it off. The call at the end of an
+  interactive run that notes the facts the user stated (see [Memory](#memory)) also proposes the
+  data they handed over in their messages and files as rows for a set, new or existing; a row is
+  saved only if every value of it occurs in the user's own words or files (numbers with a dot or a
+  comma, dates taken as given), so nothing from a tool result or a web page gets in, and what was
+  saved and what was refused is in the `memory.updated` event. And a [scheduled
+  agent](chat/README.md#scheduled-agents) whose task produces a result worth comparing over time
+  is told, by [compaction](#compacting-a-run-into-a-prompt), to save each run's result into a
+  fixed set keyed by date and to compare with the earlier rows before answering.
 - **Health data.** A set saved with `health_data: true` (heart rate, glucose, weight, sleep)
   brings the health rules into every later run that sees it: informational only, safety first,
   never dosing or device-setting advice, see the care team.
@@ -614,6 +638,7 @@ Settings come from environment variables. The important ones:
 | `RECORDS` | `on` (set `off` to remove the `records_*` tools and stop showing runs which sets they keep; see [Records](#records)) |
 | `RECORDS_MAX_SETS` | 50 (how many record sets one API key may keep) |
 | `RECORDS_MAX_ITEMS` | 10000 (how many records one set may hold) |
+| `RECORDS_IMPORT_ATTACHMENTS` | `on` (import a run's CSV and JSON attachments into record sets named after the files unless the run says `"import_attachments": false`; see [Records](#records)) |
 | `TRANSIT_BASE_URL` / `DRIVING_BASE_URL` | `https://api.transitous.org` / `https://router.project-osrm.org` (the roots of the MOTIS trip planner and the OSRM router `plan_trip` uses; point them at your own instances for anything beyond light use) |
 | `SERPAPI_API_KEY` | empty (set it, or save one in the chat UI's Settings → Server, to offer `search_flights`; a key from [SerpApi](https://serpapi.com), whose free plan covers a limited number of searches a month) |
 | `FLIGHTS` | `on` (set `off` to remove the `search_flights` tool even with a SerpApi key) |

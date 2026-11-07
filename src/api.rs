@@ -568,6 +568,7 @@ async fn create_run(
         plan: req.plan.unwrap_or(cfg.plan),
         interactive: req.interactive.unwrap_or(false),
         locale,
+        import_attachments: cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -625,7 +626,11 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
             "max_image_side": images::max_side(&state.store).await?,
         },
         "memory": cfg.memory.then(|| state.memories.limits_json()),
-        "records": cfg.records.then(|| state.records.limits()),
+        "records": cfg.records.then(|| {
+            let mut limits = state.records.limits();
+            limits["import_attachments"] = json!(cfg.records_import_attachments);
+            limits
+        }),
     })))
 }
 

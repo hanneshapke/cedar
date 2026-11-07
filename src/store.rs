@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, plan, interactive, locale, callback_url, rating, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, locale, callback_url, rating, import_attachments, created_at, started_at, finished_at";
 
 /// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
 /// its run's final state.
@@ -80,6 +80,7 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         interactive: r.try_get("interactive")?,
         locale: r.try_get("locale")?,
         rating: r.try_get::<Option<i64>, _>("rating")?.and_then(|v| match v { 1 => Some(Rating::Up), -1 => Some(Rating::Down), _ => None }),
+        import_attachments: r.try_get::<i64, _>("import_attachments")? != 0,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
@@ -328,8 +329,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, locale, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, locale, import_attachments, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -348,6 +349,7 @@ impl Store {
         .bind(new.plan.as_str())
         .bind(new.interactive)
         .bind(&new.locale)
+        .bind(new.import_attachments as i64)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -1129,6 +1131,7 @@ mod tests {
             plan: PlanMode::Off,
             interactive: false,
             locale: "en".into(),
+            import_attachments: false,
         }
     }
 
@@ -1499,6 +1502,7 @@ mod tests {
             plan: PlanMode::Off,
             interactive: false,
             locale: "en".into(),
+            import_attachments: false,
             ..new_run("a")
         };
         let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();

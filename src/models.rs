@@ -97,6 +97,8 @@ pub struct Run {
     pub locale: String,
     /// The user's verdict on the run (`POST /v1/runs/{id}/feedback`), if they gave one.
     pub rating: Option<Rating>,
+    /// Whether its CSV and JSON attachments were imported into record sets when it started.
+    pub import_attachments: bool,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -122,6 +124,8 @@ pub struct NewRun {
     pub plan: PlanMode,
     pub interactive: bool,
     pub locale: String,
+    /// Import CSV and JSON attachments into record sets when the run starts.
+    pub import_attachments: bool,
 }
 
 /// Whether a run makes a plan before it starts: always, never, or for prompts long enough to
@@ -232,12 +236,14 @@ impl Price {
 }
 
 /// The media types a run's prompt may come with: images and PDFs.
-pub const ALLOWED_ATTACHMENT_TYPES: [&str; 5] = [
+pub const ALLOWED_ATTACHMENT_TYPES: [&str; 7] = [
     "image/png",
     "image/jpeg",
     "image/gif",
     "image/webp",
     "application/pdf",
+    "text/csv",
+    "application/json",
 ];
 
 /// A file sent with a run's prompt, base64 as received (an image over the `max_image_side`
@@ -256,6 +262,16 @@ pub struct Attachment {
 impl Attachment {
     pub fn is_image(&self) -> bool {
         self.media_type.starts_with("image/")
+    }
+
+    /// A CSV or JSON file: tabular data, saved in the workspace and, when the run asks, imported
+    /// into a record set (see [`crate::records::import`]).
+    pub fn is_table(&self) -> bool {
+        matches!(self.media_type.as_str(), "text/csv" | "application/json")
+    }
+
+    pub fn is_pdf(&self) -> bool {
+        self.media_type == "application/pdf"
     }
 
     /// The content block the attachment becomes in the conversation: `image` for images,
@@ -285,8 +301,11 @@ pub mod event {
     pub const USAGE: &str = "usage";
     /// What the run was shown from memory at its start: `{profile, cues, items: [{id, kind, why}]}`.
     pub const MEMORY_RECALLED: &str = "memory.recalled";
-    /// What the run noted once it was done: `{saved: [{status, memory}], skipped, episode}`.
+    /// What the run noted once it was done: `{saved: [{status, memory}], skipped, episode, records}`.
     pub const MEMORY_UPDATED: &str = "memory.updated";
+    /// Records the run saved outside a tool call: attachments imported at its start
+    /// (`{imported: [{file, set, added, updated}]}`).
+    pub const RECORDS_UPDATED: &str = "records.updated";
     pub const RUN_COMPLETED: &str = "run.completed";
     pub const RUN_FAILED: &str = "run.failed";
     pub const RUN_CANCELLED: &str = "run.cancelled";
@@ -385,4 +404,7 @@ pub struct CreateRunRequest {
     /// The user's language and region, a BCP 47 tag such as `de` or `fr-CH` (see
     /// [`crate::locale`]). Absent: the parent's for a continuation, else `DEFAULT_LOCALE`.
     pub locale: Option<String>,
+    /// Import the run's CSV and JSON attachments into record sets named after the files when it
+    /// starts (see "Records" in the README). Absent: `RECORDS_IMPORT_ATTACHMENTS`.
+    pub import_attachments: Option<bool>,
 }

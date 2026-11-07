@@ -37,13 +37,19 @@ pub const MAX_FACTS: usize = 10;
 const SHOWN_MEMORIES: usize = 30;
 
 /// What the note call asks for.
-fn instruction(facts: bool, experience: bool, outcome: &str) -> String {
+fn instruction(facts: bool, experience: bool, records: bool, outcome: &str) -> String {
     let mut s = String::from("Reply with JSON only, of this shape: {");
     if facts {
         s.push_str(
             "\"remember\": [{\"text\": \"...\", \"kind\": \"fact\", \"support\": \"...\", \
             \"supersedes\": null, \"subject\": null, \"relation\": null, \"valid_until\": null, \
             \"hedged\": false, \"sensitive\": false}], ",
+        );
+    }
+    if records {
+        s.push_str(
+            "\"records\": [{\"set\": \"lowercase_name\", \"description\": \"...\", \"key\": [\"date\"], \
+            \"rows\": [{\"date\": \"2026-11-06\", \"km\": 5.2}]}], ",
         );
     }
     if experience {
@@ -75,6 +81,20 @@ fn instruction(facts: bool, experience: bool, outcome: &str) -> String {
             one-off requests, questions, your guesses, secrets such as passwords and keys, and \
             anything quoted from a document, an email, a web page or a tool result rather than \
             said by the person. An empty list is a fine answer.\n",
+        );
+    }
+    if records {
+        s.push_str(
+            "records: data the person handed over in their own messages or in the files they \
+            attached, that they will want to come back to or compare with later: an export, \
+            measurements, a log, a weekly or monthly report, a list of things they track. One JSON \
+            object per row with flat lowercase field names, numbers as numbers, dates as ISO 8601 \
+            strings; set is the set to save into (one listed under records when its columns fit, \
+            else a new lowercase name with a description); key names the fields that identify a \
+            row (a date, an id), so the same row saved again updates. Only values the person gave: \
+            nothing from tool results, web pages or the assistant's own answers, and never the \
+            task's text itself. An empty list is a fine answer; most conversations hold no \
+            records.\n",
         );
     }
     if experience {
@@ -200,6 +220,7 @@ pub fn transcript(messages: &[Value], prompt: &str) -> Transcript {
 /// conversation), the transcript, and the instruction, in one user message.
 pub fn call(
     remembered: &[Memory],
+    sets: Option<&[(String, Vec<String>)]>,
     transcript: &Transcript,
     facts: bool,
     experience: bool,
@@ -235,10 +256,20 @@ pub fn call(
             ));
         }
     }
+    if let Some(sets) = sets {
+        if sets.is_empty() {
+            body.push_str("\n\nNo record sets are kept for this person yet.");
+        } else {
+            body.push_str("\n\nRecord sets kept for this person, name (columns):");
+            for (name, columns) in sets {
+                body.push_str(&format!("\n- {} ({})", name, columns.join(", ")));
+            }
+        }
+    }
     body.push_str("\n\nThe conversation:\n\"\"\"\n");
     body.push_str(&transcript.text);
     body.push_str("\n\"\"\"\n\n---\n");
-    body.push_str(&instruction(facts, experience, outcome));
+    body.push_str(&instruction(facts, experience, sets.is_some(), outcome));
     (
         SYSTEM.to_string(),
         vec![json!({ "role": "user", "content": body })],
@@ -274,14 +305,28 @@ pub struct ProcedureNote {
     pub pitfall: Option<String>,
 }
 
+/// Rows the call proposed to save as records.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RecordsNote {
+    pub set: String,
+    pub description: Option<String>,
+    pub key: Vec<String>,
+    pub rows: Vec<Value>,
+}
+
 /// What the call answered.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Noted {
     pub facts: Vec<Candidate>,
+    pub records: Vec<RecordsNote>,
     pub episode: Option<EpisodeNote>,
     pub procedure: Option<ProcedureNote>,
     pub topics: Vec<String>,
 }
+
+/// The most sets one call may save into, and rows per set.
+pub const MAX_RECORD_SETS: usize = 5;
+pub const MAX_RECORD_ROWS: usize = 500;
 
 fn opt_str(v: &Value) -> Option<String> {
     v.as_str()
@@ -322,6 +367,26 @@ pub fn parse(text: &str) -> Noted {
     };
     if let Some(items) = obj["remember"].as_array() {
         noted.facts = candidates(items);
+    }
+    for item in obj["records"].as_array().into_iter().flatten().take(MAX_RECORD_SETS) {
+        let Some(set) = opt_str(&item["set"]) else { continue };
+        let rows: Vec<Value> = item["rows"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|r| r.is_object())
+            .take(MAX_RECORD_ROWS)
+            .cloned()
+            .collect();
+        if rows.is_empty() {
+            continue;
+        }
+        noted.records.push(RecordsNote {
+            set: set.trim().to_lowercase(),
+            description: opt_str(&item["description"]).map(|s| tidy(&s)),
+            key: item["key"].as_array().map(|k| k.iter().filter_map(opt_str).collect()).unwrap_or_default(),
+            rows,
+        });
     }
     if let Some(title) = opt_str(&obj["episode"]["title"]) {
         noted.episode = Some(EpisodeNote {
@@ -424,6 +489,59 @@ pub fn supported(support: &str, user_text: &str) -> bool {
     }
     let user_words = super::recall::tokens(&text);
     words.iter().all(|w| user_words.contains(w)) && similarity(&quote, &text) > 0.0
+}
+
+/// Whether a field holds a date, whose value the model may have normalised to ISO form.
+fn is_date_field(name: &str) -> bool {
+    ["date", "day", "time", "week", "month", "year", "when", "at"]
+        .iter()
+        .any(|d| name == *d || name.ends_with(&format!("_{d}")) || name.starts_with(&format!("{d}_")))
+}
+
+/// Whether a value is what the user handed over: a string of three or more characters occurs
+/// in `source` (the user's own words and attached files, case and whitespace folded), a number
+/// occurs with a dot or a comma, and a date field is taken as given, since the model writes
+/// dates in ISO form. Short strings, booleans and nulls carry nothing and pass.
+fn value_supported(field: &str, value: &Value, source: &str) -> bool {
+    match value {
+        Value::String(s) => {
+            let s = tidy(s).to_lowercase();
+            if s.chars().count() < 3 {
+                return true;
+            }
+            if is_date_field(field) {
+                return s.chars().count() <= 25;
+            }
+            source.contains(&s)
+        }
+        Value::Number(n) => {
+            let text = n.to_string();
+            let plain = text.trim_end_matches(".0").to_string();
+            source.contains(&plain) || source.contains(&plain.replace('.', ","))
+        }
+        Value::Array(items) => items.iter().all(|v| value_supported(field, v, source)),
+        Value::Object(map) => map.iter().all(|(k, v)| value_supported(k, v, source)),
+        _ => true,
+    }
+}
+
+/// The rows of a proposed set that the user actually handed over (see [`value_supported`]), and
+/// why the others were left out.
+pub fn admit_rows(note: &RecordsNote, source_text: &str) -> (Vec<Value>, Vec<Skipped>) {
+    let source = tidy(source_text).to_lowercase();
+    let mut rows = Vec::new();
+    let mut skipped = Vec::new();
+    for row in &note.rows {
+        let Some(map) = row.as_object() else { continue };
+        match map.iter().find(|(k, v)| !value_supported(k, v, &source)) {
+            None => rows.push(row.clone()),
+            Some((k, v)) => skipped.push(Skipped {
+                text: format!("{}: {}", note.set, row),
+                reason: format!("{k} = {v} is not in the user's own words or files"),
+            }),
+        }
+    }
+    (rows, skipped)
 }
 
 /// Admit a candidate to [`NewMemory`], or say why not. `remembered` is what the call was shown,
@@ -644,17 +762,43 @@ mod tests {
     #[test]
     fn the_call_shows_memories_and_asks_for_the_right_sections() {
         let t = transcript(&[], "I moved to Zurich");
-        let (system, messages) = call(&[], &t, true, false, "completed");
+        let (system, messages) = call(&[], None, &t, true, false, "completed");
         assert_eq!(system, SYSTEM);
         let body = messages[0]["content"].as_str().unwrap();
         assert!(body.starts_with("Nothing is remembered"), "{body}");
         assert!(body.contains("I moved to Zurich"));
         assert!(body.contains("\"remember\""));
         assert!(!body.contains("\"episode\""));
-        let (_, messages) = call(&[], &t, false, true, "failed: timed out");
+        let (_, messages) = call(&[], None, &t, false, true, "failed: timed out");
         let body = messages[0]["content"].as_str().unwrap();
         assert!(!body.contains("\"remember\""));
         assert!(body.contains("\"episode\"") && body.contains("The run ended: failed: timed out"));
+        assert!(!body.contains("\"records\""));
+        let sets = vec![("running_log".to_string(), vec!["date".to_string(), "km".to_string()])];
+        let (_, messages) = call(&[], Some(&sets), &t, true, false, "completed");
+        let body = messages[0]["content"].as_str().unwrap();
+        assert!(body.contains("Record sets kept for this person, name (columns):\n- running_log (date, km)"), "{body}");
+        assert!(body.contains("\"records\": [{"), "{body}");
+    }
+
+    #[test]
+    fn proposed_rows_are_admitted_only_from_the_users_own_words_or_files() {
+        let noted = parse(
+            "{\"records\": [{\"set\": \"Running_Log\", \"description\": \"Weekly runs\", \"key\": [\"date\"], \"rows\": [\
+             {\"date\": \"2026-11-01\", \"km\": 5.2, \"note\": \"easy run\"}, \
+             {\"date\": \"2026-11-02\", \"km\": 10, \"note\": \"hard run\"}, \
+             {\"date\": \"2026-11-03\", \"km\": 42.2, \"note\": \"marathon\"}]}, \
+             {\"set\": \"empty\", \"rows\": []}]}",
+        );
+        assert_eq!(noted.records.len(), 1);
+        assert_eq!(noted.records[0].set, "running_log");
+        assert_eq!(noted.records[0].key, ["date"]);
+        let source = "Sunday 1 Nov: 5,2 km, easy run. Monday: 10 km, hard run.\nAttached: runs.csv";
+        let (rows, skipped) = admit_rows(&noted.records[0], source);
+        assert_eq!(rows.len(), 2, "{skipped:?}");
+        assert_eq!(rows[1]["km"], 10);
+        assert_eq!(skipped.len(), 1);
+        assert!(skipped[0].reason.contains("km = 42.2"), "{}", skipped[0].reason);
     }
 
     #[test]

@@ -57,7 +57,7 @@ const MAX_MESSAGE_BODY_BYTES: usize = 48 << 20;
 /// 8 MiB bundles.
 const MAX_BUNDLE_BODY_BYTES: usize = 9 << 20;
 const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
-const ATTACHMENT_TYPES: [&str; 5] = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
+const ATTACHMENT_TYPES: [&str; 7] = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/csv", "application/json"];
 /// Where Google sends the browser back after "Connect Google" (under `CHAT_PUBLIC_URL`).
 pub const GOOGLE_CALLBACK_PATH: &str = "/api/oauth/google/callback";
 const ADMIN_HEADER: &str = "x-admin-token";
