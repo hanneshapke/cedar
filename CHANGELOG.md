@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- **The Memory count in Settings counts every memory.** The web chat's and desktop app's Settings menu, and the iPhone and Android apps' *What Cedar Remembers* row, showed only the memories of the kind the Memory page last had open (*About you* by default), so conversations and ways of working were left out of the number. They now count every active memory, of every kind, and the count follows when a memory is removed, archived or restored.
+
 ## 0.6.0
 
 - **The desktop app checks for updates at start-up, and says when you're up to date.** The first check now runs a few seconds after Cedar starts instead of a minute later. A check you ask for (the menu bar's or tray's *Check for Updates…*, or *Check now* on the setup page) that finds nothing newer now says so: the chat shows "You're on the latest version, Cedar X" for a few seconds, and the setup page's Updates section says the version you have is the latest. In English, German, French and Spanish.
