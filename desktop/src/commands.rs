@@ -172,7 +172,7 @@ pub fn copy_token(state: State<'_, AppState>) -> Result<(), String> {
 /// "Check now" on the setup page.
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> Result<(), String> {
-    crate::update::check(&app).await.map_err(fail)
+    crate::update::check(&app, true).await.map_err(fail)
 }
 
 /// The banner's Update: downloads and installs the newer release, then restarts into it.

@@ -13,12 +13,17 @@
 //     app pushes its own updater's state in with cedarUpdate.fromApp(state), and Update and
 //     Dismiss send the page to /__cedar-app/update/install or …/dismiss, which the app's window
 //     catches instead of loading (see desktop/src/window.rs). The page gets no other way to
-//     call the app.
+//     call the app. When a check the user asked for (the tray's Check for Updates…) finds
+//     nothing newer, the bar says "You're on the latest version" for a few seconds.
 
 const cedarUpdate = (() => {
   const TOKEN_KEY = 'cedar-chat-token';
   const ADMIN_KEY = 'cedar-chat-admin';
   const DISMISS_KEY = 'cedar-update-dismissed';
+  const CONFIRMED_KEY = 'cedar-update-confirmed';
+  // How long "You're on the latest version" stays up, and how old a confirmation may be to show.
+  const CONFIRMED_SHOW = 6000;
+  const CONFIRMED_FRESH = 2 * 60 * 1000;
   const POLL = 30 * 60 * 1000;
   const POLL_INSTALLING = 3000;
   const STEPS = {
@@ -34,6 +39,7 @@ const cedarUpdate = (() => {
   let status = null;       // GET /api/update, or what the app pushed in
   let timer = null;
   let restartingFrom = null;  // the version that was running when the restart began
+  let confirmedTimer = null;  // hides "You're on the latest version" again
 
   function el(tag, className, text) {
     const e = document.createElement(tag);
@@ -120,8 +126,12 @@ const cedarUpdate = (() => {
     const failed = step === 'failed';
     const dismissed = inDesktopApp ? status?.dismissed : stored(localStorage, DISMISS_KEY) === version;
     const show = status?.available && version && (busy || failed || !dismissed);
+    if (!show && confirmedTimer) return;  // "You're on the latest version" is up
     b.hidden = !show;
-    if (!show) return;
+    if (!show) {
+      if (inDesktopApp) showUpToDate();
+      return;
+    }
 
     const text = el('span', 'cedar-update-text');
     if (busy) {
@@ -154,6 +164,26 @@ const cedarUpdate = (() => {
       remember(localStorage, DISMISS_KEY, version);
       render();
     }, 'cedar-update-close'));
+  }
+
+  /** "You're on the latest version", once per check the user asked for (desktop app). */
+  function showUpToDate() {
+    const at = status?.up_to_date && status?.confirmed_at;
+    if (!at || String(at) === stored(sessionStorage, CONFIRMED_KEY) || Date.now() - at > CONFIRMED_FRESH) return;
+    remember(sessionStorage, CONFIRMED_KEY, String(at));
+    const b = ensureBar();
+    const hide = () => {
+      clearTimeout(confirmedTimer);
+      confirmedTimer = null;
+      render();
+    };
+    b.replaceChildren(
+      el('span', 'cedar-update-text', tr('update.upToDate', { version: status.current })),
+      button(tr('update.ok'), hide, 'cedar-update-close'),
+    );
+    b.hidden = false;
+    clearTimeout(confirmedTimer);
+    confirmedTimer = setTimeout(hide, CONFIRMED_SHOW);
   }
 
   // -- updating ----------------------------------------------------------------------------------

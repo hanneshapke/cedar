@@ -1,10 +1,14 @@
-//! Updating the app itself. A minute after the start and then every six hours the app asks the
+//! Updating the app itself. Right after the start and then every six hours the app asks the
 //! latest GitHub Release for its `latest.json` (tauri-plugin-updater), and when that names a newer
 //! version the setup page, the chat page (through the window, see window.rs) and the tray menu
 //! say so. **Update** downloads the release's DMG app bundle or MSI, checks its signature
 //! against the key the release was built with, stops the servers, and installs: on a Mac the
 //! app bundle is replaced and the app restarts; on Windows the MSI runs (asking for administrator
 //! rights, like the first install) and starts Cedar again when it is done.
+//!
+//! A check the user asked for (the tray's **Check for Updates…**, the setup page's **Check now**)
+//! that finds nothing newer says so: the chat shows "You're on the latest version" for a moment and
+//! the setup page's Updates section says this version is the latest.
 //!
 //! Builds without `CEDAR_UPDATER_PUBKEY` (anything but the release workflow's) don't check.
 
@@ -18,7 +22,8 @@ use tauri_plugin_updater::UpdaterExt;
 
 /// The minisign public key the release workflow signs updates with, baked in at build time.
 const PUBKEY: Option<&str> = option_env!("CEDAR_UPDATER_PUBKEY");
-const FIRST_CHECK: Duration = Duration::from_secs(60);
+/// The first check runs as soon as the app has settled after the start.
+const FIRST_CHECK: Duration = Duration::from_secs(5);
 const EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// What the pages and the tray show. `state` is `idle`, `checking`, `downloading`, `installing`
@@ -35,6 +40,11 @@ pub struct UpdateStatus {
     pub dismissed: bool,
     pub state: &'static str,
     pub detail: Option<String>,
+    /// The last check went through and found nothing newer: this version is the latest.
+    pub up_to_date: bool,
+    /// When (ms since the epoch) a check the user asked for last found this version the latest,
+    /// so the chat can say so once.
+    pub confirmed_at: Option<u64>,
 }
 
 impl Default for UpdateStatus {
@@ -47,6 +57,8 @@ impl Default for UpdateStatus {
             dismissed: false,
             state: "idle",
             detail: None,
+            up_to_date: false,
+            confirmed_at: None,
         }
     }
 }
@@ -73,6 +85,8 @@ pub fn for_chat(s: &UpdateStatus) -> serde_json::Value {
         "version": s.version,
         "notes_url": s.notes_url,
         "dismissed": s.dismissed,
+        "up_to_date": s.up_to_date,
+        "confirmed_at": s.confirmed_at,
         "install": { "state": s.state, "detail": s.detail },
     })
 }
@@ -106,7 +120,7 @@ pub fn start(app: AppHandle) {
         tokio::time::sleep(FIRST_CHECK).await;
         loop {
             if app.state::<AppState>().config().check_updates {
-                if let Err(e) = check(&app).await {
+                if let Err(e) = check(&app, false).await {
                     eprintln!("checking for updates: {e:#}");
                 }
             }
@@ -133,7 +147,7 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) -> Result<()> {
     if enabled && releases {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = check(&app).await {
+            if let Err(e) = check(&app, false).await {
                 eprintln!("checking for updates: {e:#}");
             }
         });
@@ -141,8 +155,9 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) -> Result<()> {
     Ok(())
 }
 
-/// Looks for a newer release once; the result is in [`AppState::update`].
-pub async fn check(app: &AppHandle) -> Result<()> {
+/// Looks for a newer release once; the result is in [`AppState::update`]. `asked`: the user
+/// asked for this check, so finding nothing newer is announced too.
+pub async fn check(app: &AppHandle, asked: bool) -> Result<()> {
     if matches!(app.state::<AppState>().update().state, "checking" | "downloading" | "installing") {
         return Ok(());
     }
@@ -155,22 +170,38 @@ pub async fn check(app: &AppHandle) -> Result<()> {
         Ok(update) => {
             let version = update.map(|u| u.version);
             let dismissed = app.state::<AppState>().config().dismissed_update;
-            set(app, |s| {
-                s.dismissed = version.as_deref().is_some_and(|v| v == dismissed);
-                s.notes_url = version.as_deref().map(notes_url);
-                s.version = version;
-                s.state = "idle";
-            });
+            set(app, |s| found_release(s, version, &dismissed, asked.then(now_ms)));
             Ok(())
         }
         Err(e) => {
             set(app, |s| {
                 s.state = "idle";
                 s.detail = Some(format!("{e:#}"));
+                s.up_to_date = false;
             });
             Err(e)
         }
     }
+}
+
+/// What a check that went through leaves in the status. `asked_at`: when the user asked for it.
+fn found_release(s: &mut UpdateStatus, version: Option<String>, dismissed: &str, asked_at: Option<u64>) {
+    s.dismissed = version.as_deref().is_some_and(|v| v == dismissed);
+    s.notes_url = version.as_deref().map(notes_url);
+    s.up_to_date = version.is_none();
+    if s.up_to_date && asked_at.is_some() {
+        s.confirmed_at = asked_at;
+    }
+    s.version = version;
+    s.state = "idle";
+    s.detail = None;
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// Downloads, checks and installs the newer release, then restarts into it. The servers are
@@ -258,5 +289,26 @@ mod tests {
         assert_eq!(v["install"]["state"], "downloading");
         assert_eq!(v["current"], crate::config::VERSION);
         assert_eq!(for_chat(&UpdateStatus::default())["available"], false);
+    }
+
+    #[test]
+    fn an_asked_check_that_finds_nothing_says_this_is_the_latest() {
+        let mut s = UpdateStatus { detail: Some("timed out".into()), ..UpdateStatus::default() };
+        found_release(&mut s, None, "", None);
+        assert!(s.up_to_date);
+        assert_eq!(s.confirmed_at, None, "a scheduled check announces nothing");
+        assert_eq!(s.detail, None);
+
+        found_release(&mut s, None, "", Some(42));
+        assert_eq!(s.confirmed_at, Some(42));
+        let v = for_chat(&s);
+        assert_eq!(v["up_to_date"], true);
+        assert_eq!(v["confirmed_at"], 42);
+
+        found_release(&mut s, Some("0.2.0".into()), "0.2.0", Some(43));
+        assert!(!s.up_to_date);
+        assert!(s.dismissed);
+        assert_eq!(s.notes_url.as_deref(), Some("https://github.com/hanneshapke/cedar/releases/tag/v0.2.0"));
+        assert_eq!(s.confirmed_at, Some(42), "only a check that finds nothing confirms");
     }
 }

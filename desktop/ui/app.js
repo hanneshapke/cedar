@@ -270,6 +270,7 @@ function renderUpdate(s) {
   else if (u.state === 'checking') key = 'updates.checking';
   else if (u.version) key = 'updates.available';
   else if (u.detail) key = 'updates.failed';
+  else if (u.up_to_date) key = 'updates.latest';
   else key = 'updates.idle';
   $('updates-text').textContent = tr(key, params);
 }
