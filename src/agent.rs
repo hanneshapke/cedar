@@ -173,11 +173,12 @@ pub async fn run_agent(
     // Which record sets the run keeps for the user, read per request like memory. It goes
     // before the memory note, which must stay the last thing in the prompt (see
     // [`memory::note_span`]).
+    let memory_on = env.memories.is_some() && tools.get(REMEMBER).is_some();
     if let (Some(records), true) = (&env.records, tools.get(RECORDS_SAVE).is_some()) {
         let sets = records.list(&run.owner).await?;
         let columns = records.columns_by_set(&run.owner, &sets).await?;
         note.push_str("\n\n");
-        note.push_str(&records::note(&sets, &columns, run.interactive));
+        note.push_str(&records::note(&sets, &columns, run.interactive, memory_on));
     }
     // A continuation starts with a copy of its parent's conversation (made when it was created).
     let mut messages: Vec<Value> = env
@@ -191,7 +192,6 @@ pub async fn run_agent(
     // `memory` group switches reading and writing together. The profile and pinned
     // instructions are always shown; the rest is what the request calls for (see
     // [`memory::recall`]), and what was shown goes out as a `memory.recalled` event.
-    let memory_on = tools.get(REMEMBER).is_some();
     if let (Some(memories), true) = (&env.memories, memory_on) {
         let query = memory::recall_query(&messages, &run.prompt);
         let recall = memories.recall(&run.owner, &query).await?;
