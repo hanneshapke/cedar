@@ -251,39 +251,131 @@ struct ContributionSettingsPatch: Encodable, Sendable {
     }
 }
 
-/// One fact cedar remembers about the user across conversations (`GET /api/memory`).
+/// One thing cedar remembers about the user across conversations (`GET /api/memory`): a fact,
+/// preference, instruction or temporary fact they stated, an episode (what a conversation was
+/// about) or a procedure (how a task went well). See "Memory" in the top-level README.
 struct MemoryItem: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let text: String
+    /// `fact`, `preference`, `instruction`, `temporary`, `episode` or `procedure`; `fact` on a
+    /// cedar from before kinds.
+    let kind: String
+    /// The user's own words it was taken from, when a conversation stated it.
+    let support: String?
+    /// Always in cedar's prompt; never archived.
+    let pinned: Bool
+    /// `user`, `agent`, `consolidation` or `api`.
+    let source: String?
+    let recallCount: Int
     /// The conversation it was saved in, while that still exists on this server, and its title.
     let conversationId: String?
     let title: String?
     let createdAt: Date
+    let validFrom: Date?
+    let validUntil: Date?
+    /// Out of cedar's prompt, kept until deleted; `supersededBy` names the newer version.
+    let archivedAt: Date?
+    let supersededBy: String?
+
+    var isActive: Bool { archivedAt == nil && supersededBy == nil }
+    var isAboutUser: Bool { kind != "episode" && kind != "procedure" }
 
     enum CodingKeys: String, CodingKey {
-        case id, text, title
+        case id, text, kind, support, pinned, source, title
+        case recallCount = "recall_count"
         case conversationId = "conversation_id"
         case createdAt = "created_at"
+        case validFrom = "valid_from"
+        case validUntil = "valid_until"
+        case archivedAt = "archived_at"
+        case supersededBy = "superseded_by"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        text = try c.decode(String.self, forKey: .text)
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "fact"
+        support = try c.decodeIfPresent(String.self, forKey: .support)
+        pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        source = try c.decodeIfPresent(String.self, forKey: .source)
+        recallCount = try c.decodeIfPresent(Int.self, forKey: .recallCount) ?? 0
+        conversationId = try c.decodeIfPresent(String.self, forKey: .conversationId)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        validFrom = try c.decodeIfPresent(Date.self, forKey: .validFrom)
+        validUntil = try c.decodeIfPresent(Date.self, forKey: .validUntil)
+        archivedAt = try c.decodeIfPresent(Date.self, forKey: .archivedAt)
+        supersededBy = try c.decodeIfPresent(String.self, forKey: .supersededBy)
     }
 }
 
-/// What cedar remembers, oldest first; `supported` is false on a cedar from before memory.
+/// The short summary of the user cedar reads before every reply, written by its background
+/// pass unless the user wrote it (`userEdited`; then it stays as written).
+struct MemoryProfile: Decodable, Hashable, Sendable {
+    let text: String
+    let userEdited: Bool
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case userEdited = "user_edited"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// Which memories Settings → Memory lists: the rows about the user, past conversations, ways of
+/// working, or the archive (superseded, expired and forgotten rows).
+enum MemoryFilter: String, CaseIterable, Identifiable, Sendable {
+    case about, conversations, procedures, archive
+
+    var id: String { rawValue }
+
+    /// The `kind` query, `nil` for the server's default (the rows about the user).
+    var kind: String? {
+        switch self {
+        case .about: return nil
+        case .conversations: return "episode"
+        case .procedures: return "procedure"
+        case .archive: return nil
+        }
+    }
+
+    var archived: Bool { self == .archive }
+}
+
+/// What cedar remembers, oldest first, with the profile; `supported` is false on a cedar from
+/// before memory.
 struct MemoryList: Decodable, Sendable {
     struct Limits: Decodable, Sendable {
         let maxItems: Int
         let maxChars: Int
+        let maxProfileChars: Int?
 
         enum CodingKeys: String, CodingKey {
             case maxItems = "max_items"
             case maxChars = "max_chars"
+            case maxProfileChars = "max_profile_chars"
         }
     }
 
     let supported: Bool
     let items: [MemoryItem]
+    let profile: MemoryProfile?
     let limits: Limits?
 
-    static let unsupported = MemoryList(supported: false, items: [], limits: nil)
+    static let unsupported = MemoryList(supported: false, items: [], profile: nil, limits: nil)
+}
+
+/// The answer to `GET` and `PUT /api/memory/profile`.
+struct MemoryProfileResponse: Decodable, Sendable {
+    let profile: MemoryProfile?
+}
+
+/// A change to one memory (`PATCH /api/memory/{id}`); fields left `nil` stay as they are.
+struct MemoryChange: Encodable, Sendable {
+    var pinned: Bool?
+    var archived: Bool?
 }
 
 /// One set of records cedar keeps for the user across conversations (`GET /api/records`): a

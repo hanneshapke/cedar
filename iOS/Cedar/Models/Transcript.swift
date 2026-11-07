@@ -57,6 +57,8 @@ struct ToolCall: Identifiable, Hashable, Sendable {
             return input["text"]?.stringValue ?? ""
         case "forget":
             return ""
+        case "recall":
+            return input["query"]?.stringValue ?? ""
         case "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast":
             return cardTitle ?? ""
         default:

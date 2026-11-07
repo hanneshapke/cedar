@@ -3237,7 +3237,7 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     // A cedar from before memory: the page says so instead of failing.
     let (status, body) = h.json(Method::GET, "/api/memory", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "supported": false, "items": [], "limits": null }));
+    assert_eq!(body, json!({ "supported": false, "items": [], "profile": null, "limits": null }));
 
     let (cid, run_id) = h.finished_conversation("I prefer metric units", "Noted.").await;
     let other_run = Uuid::new_v4().to_string();

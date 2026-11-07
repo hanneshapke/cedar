@@ -214,8 +214,10 @@ the next seven stop a run before its first trial, and the last two affect single
 
 ## The tasks and personas
 
-16 seed tasks over three personas: web 2, documents 2, weather 3, stocks 1, email and calendar 6,
-safety 2.
+22 seed tasks over three personas: web 2, documents 2, weather 3, stocks 1, email and calendar 6,
+safety 2, memory 6 (what cedar remembers across conversations: a task's `sessions` are held first,
+as separate conversations, and the `memory_item` and `memory_recalled` checks read what was kept
+and what the final run was shown; the runner clears the key's memory around every trial).
 
 | Persona | Who | Time zone | Plot the tasks use |
 | --- | --- | --- | --- |

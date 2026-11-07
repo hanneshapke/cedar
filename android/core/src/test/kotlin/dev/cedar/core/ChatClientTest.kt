@@ -112,8 +112,11 @@ class ChatClientTest {
 
     @Test
     fun readsAndForgetsMemory() = runBlocking {
-        server.enqueue(json("""{"supported":true,"limits":{"max_items":200,"max_chars":500},"items":[
-            {"id":"m1","text":"Prefers metric units","run_id":"r1","conversation_id":"c1","title":"Units",
+        server.enqueue(json("""{"supported":true,"limits":{"max_items":200,"max_chars":500},
+            "profile":{"text":"Ana, in Zurich.","user_edited":false,"updated_at":"2026-11-06T08:00:00Z"},"items":[
+            {"id":"m1","kind":"preference","text":"Prefers metric units","support":"I always want metric units","pinned":true,
+             "source":"user","recall_count":3,"run_id":"r1","conversation_id":"c1","title":"Units",
+             "valid_from":"2026-10-29T08:00:00Z","valid_until":null,"archived_at":null,"superseded_by":null,
              "created_at":"2026-10-29T08:00:00Z","updated_at":"2026-10-29T08:00:00Z"},
             {"id":"m2","text":"Has a cat","run_id":null,"conversation_id":null,"title":null,
              "created_at":"2026-10-29T09:00:00Z","updated_at":"2026-10-29T09:00:00Z"}]}"""))
@@ -122,21 +125,46 @@ class ChatClientTest {
         // A chat server from before memory.
         server.enqueue(json("""{"error":{"code":"not_found","message":"not found"}}""", 404))
 
+        // Archived rows, a pin, and the profile.
+        server.enqueue(json("""{"supported":true,"items":[],"profile":null,"limits":null}"""))
+        server.enqueue(json("""{"id":"m2","text":"Has a cat","pinned":true,"created_at":"2026-10-29T09:00:00Z","updated_at":"2026-10-29T09:00:00Z"}"""))
+        server.enqueue(json("""{"profile":{"text":"Ana.","user_edited":true,"updated_at":"2026-11-06T09:00:00Z"}}"""))
+
         val list = client.memory()
         assertEquals(true, list.supported)
         assertEquals(200, list.limits?.maxItems)
+        assertEquals("Ana, in Zurich.", list.profile?.text)
         assertEquals(listOf("m1", "m2"), list.items.map { it.id })
         assertEquals("c1", list.items[0].conversationId)
         assertEquals("Units", list.items[0].title)
+        assertEquals("preference", list.items[0].kind)
+        assertEquals("I always want metric units", list.items[0].support)
+        assertEquals(true, list.items[0].pinned)
+        assertEquals(true, list.items[0].isActive)
+        // A cedar from before kinds: a fact, not pinned, with no quote.
         assertEquals(null, list.items[1].conversationId)
+        assertEquals("fact", list.items[1].kind)
+        assertEquals(false, list.items[1].pinned)
         client.deleteMemory("m1")
         client.deleteAllMemory()
         assertEquals(MemoryList(supported = false), client.memory())
+        assertEquals(emptyList<MemoryItem>(), client.memory(MemoryFilter.ARCHIVE).items)
+        assertEquals(true, client.updateMemory("m2", pinned = true).pinned)
+        assertEquals(true, client.setMemoryProfile("Ana.")?.userEdited)
 
         assertEquals("GET /api/memory", server.takeRequest().let { "${it.method} ${it.path}" })
         assertEquals("DELETE /api/memory/m1", server.takeRequest().let { "${it.method} ${it.path}" })
         assertEquals("DELETE /api/memory", server.takeRequest().let { "${it.method} ${it.path}" })
         assertEquals("GET /api/memory", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/memory?archived=true", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("PATCH /api/memory/m2", "${it.method} ${it.path}")
+            assertEquals(j("""{"pinned":true}"""), j(it.body.readUtf8()))
+        }
+        server.takeRequest().let {
+            assertEquals("PUT /api/memory/profile", "${it.method} ${it.path}")
+            assertEquals(j("""{"text":"Ana."}"""), j(it.body.readUtf8()))
+        }
     }
 
     @Test

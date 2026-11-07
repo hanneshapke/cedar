@@ -57,7 +57,7 @@ const MAX_MESSAGE_BODY_BYTES: usize = 48 << 20;
 /// 8 MiB bundles.
 const MAX_BUNDLE_BODY_BYTES: usize = 9 << 20;
 const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
-const ATTACHMENT_TYPES: [&str; 5] = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
+const ATTACHMENT_TYPES: [&str; 7] = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/csv", "application/json"];
 /// Where Google sends the browser back after "Connect Google" (under `CHAT_PUBLIC_URL`).
 pub const GOOGLE_CALLBACK_PATH: &str = "/api/oauth/google/callback";
 const ADMIN_HEADER: &str = "x-admin-token";
@@ -312,7 +312,10 @@ pub fn router(state: AppState) -> Router {
         .route("/tools", get(list_tools))
         .route("/models", get(list_models))
         .route("/memory", get(list_memory).post(add_memory).delete(delete_all_memory))
-        .route("/memory/{id}", axum::routing::delete(delete_memory))
+        .route("/memory/profile", get(get_memory_profile).put(put_memory_profile))
+        .route("/memory/export", get(export_memory))
+        .route("/memory/{id}", axum::routing::patch(patch_memory).delete(delete_memory))
+        .route("/memory/{id}/history", get(memory_history))
         .route("/records", get(list_records).delete(delete_all_records))
         .route("/records/{name}", get(get_record_set).delete(delete_record_set))
         .route("/integrations", get(get_integrations))
@@ -1500,12 +1503,18 @@ async fn list_models(State(state): State<AppState>) -> Result<Json<Value>, AppEr
 
 // -- memory ---------------------------------------------------------------------------------
 
-/// Settings -> Memory: what cedar remembers about the user, `{supported, items, limits}`, each item
-/// with the `conversation_id` and `title` of the conversation it was saved in, when that still
-/// exists here. A cedar from before memory gives `supported: false` and no items.
-async fn list_memory(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
-    let Some(mut body) = state.cedar.memory().await? else {
-        return Ok(Json(json!({ "supported": false, "items": [], "limits": null })));
+/// Settings -> Memory: what cedar remembers about the user, `{supported, items, profile, limits}`,
+/// each item with the `conversation_id` and `title` of the conversation it was saved in, when
+/// that still exists here. `?archived=true`, `?kind=` and `?q=` go through to cedar. A cedar from
+/// before memory gives `supported: false` and no items.
+async fn list_memory(State(state): State<AppState>, Query(q): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
+    let mut query: Vec<(&str, &str)> = q.iter().filter(|(k, _)| ["archived", "kind", "q"].contains(&k.as_str())).map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    // Without a kind, the rows about the user: what the phone apps, which predate kinds, list.
+    if !q.contains_key("kind") && !q.contains_key("archived") {
+        query.push(("kind", "fact,preference,instruction,temporary"));
+    }
+    let Some(mut body) = state.cedar.memory(&query).await? else {
+        return Ok(Json(json!({ "supported": false, "items": [], "profile": null, "limits": null })));
     };
     let mut items = body["items"].as_array().cloned().unwrap_or_default();
     let runs: Vec<Uuid> = items.iter().filter_map(|i| i["run_id"].as_str()?.parse().ok()).collect();
@@ -1515,17 +1524,90 @@ async fn list_memory(State(state): State<AppState>) -> Result<Json<Value>, AppEr
         item["conversation_id"] = json!(source.map(|(id, _)| id));
         item["title"] = json!(source.and_then(|(_, title)| title.clone()));
     }
-    Ok(Json(json!({ "supported": true, "items": items, "limits": body["limits"].take() })))
+    Ok(Json(json!({ "supported": true, "items": items, "profile": body["profile"].take(), "limits": body["limits"].take() })))
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MemoryBody {
     text: String,
+    kind: Option<String>,
+    pinned: Option<bool>,
+    valid_until: Option<String>,
 }
 
 async fn add_memory(State(state): State<AppState>, ApiJson(body): ApiJson<MemoryBody>) -> Result<Json<Value>, AppError> {
-    Ok(Json(state.cedar.add_memory(&body.text).await?))
+    let mut req = json!({ "text": body.text });
+    if let Some(kind) = body.kind {
+        req["kind"] = json!(kind);
+    }
+    if let Some(pinned) = body.pinned {
+        req["pinned"] = json!(pinned);
+    }
+    if let Some(until) = body.valid_until {
+        req["valid_until"] = json!(until);
+    }
+    Ok(Json(state.cedar.add_memory(&req).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryChange {
+    text: Option<String>,
+    kind: Option<String>,
+    pinned: Option<bool>,
+    archived: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_some")]
+    valid_until: Option<Option<String>>,
+}
+
+/// `null` as `Some(None)`, absent as `None`.
+fn deserialize_some<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(d).map(Some)
+}
+
+async fn patch_memory(State(state): State<AppState>, Path(id): Path<String>, ApiJson(body): ApiJson<MemoryChange>) -> Result<Json<Value>, AppError> {
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::NotFound("memory not found"))?;
+    let mut req = json!({});
+    if let Some(v) = body.text {
+        req["text"] = json!(v);
+    }
+    if let Some(v) = body.kind {
+        req["kind"] = json!(v);
+    }
+    if let Some(v) = body.pinned {
+        req["pinned"] = json!(v);
+    }
+    if let Some(v) = body.archived {
+        req["archived"] = json!(v);
+    }
+    if let Some(v) = body.valid_until {
+        req["valid_until"] = json!(v);
+    }
+    Ok(Json(state.cedar.patch_memory(id, &req).await?))
+}
+
+async fn memory_history(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::NotFound("memory not found"))?;
+    Ok(Json(state.cedar.memory_history(id).await?))
+}
+
+async fn get_memory_profile(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.memory_profile().await?.unwrap_or_else(|| json!({ "profile": null }))))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProfileBody {
+    text: String,
+}
+
+async fn put_memory_profile(State(state): State<AppState>, ApiJson(body): ApiJson<ProfileBody>) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.set_memory_profile(&body.text).await?))
+}
+
+async fn export_memory(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.memory_export().await?))
 }
 
 async fn delete_memory(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
@@ -2040,6 +2122,11 @@ async fn rate_turn(State(state): State<AppState>, Path(id): Path<String>, ApiJso
     }
     let turn = find_turn(&state, &id).await?;
     state.store.set_turn_rating(turn.id, body.rating).await?;
+    // cedar learns from it too: what the run noted is promoted or archived (see cedar's memory).
+    let rating = body.rating.map(|r| if r > 0 { "up" } else { "down" });
+    if let Err(e) = state.cedar.run_feedback(turn.run_id, rating).await {
+        tracing::warn!(run_id = %turn.run_id, error = %e, "could not pass the rating on to cedar");
+    }
     Ok(Json(state.store.get_turn(turn.id).await?.ok_or(AppError::NotFound("no such turn"))?))
 }
 

@@ -188,6 +188,7 @@ final class TranscriptTests: XCTestCase {
     func testMemoryStepsShowTheFact() {
         XCTAssertEqual(ToolCall(id: "1", name: "remember", input: .object(["text": .string("Prefers metric units")])).summary, "Prefers metric units")
         XCTAssertEqual(ToolCall(id: "2", name: "forget", input: .object(["id": .string("m1")])).summary, "")
+        XCTAssertEqual(ToolCall(id: "3", name: "recall", input: .object(["query": .string("the primes script")])).summary, "the primes script")
     }
 
     func testCardTitles() {

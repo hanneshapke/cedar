@@ -6,7 +6,10 @@ continuations the scripted user started by answering `ask_user`. Checks read
 - outcome: the final run's workspace files (`GET /v1/runs/{id}/files`) and the fixture server's
   state (drafts created, pages requested);
 - process: the `tool.call` events of every run in the trial;
-- answer: the final run's `final_text`.
+- answer: the final run's `final_text`;
+- memory: what cedar remembers for the key once the trial is over (`GET /v1/memory`), and the
+  `memory.recalled` event of the final run, which says what it was shown (see "Memory" in the
+  top-level README). A task with `sessions` holds those conversations first.
 
 Every check takes `weight` (default 1) and `required` (default true). A trial passes when its last
 run completed, no forbidden tool was called, and every required check passed; its score is the
@@ -39,6 +42,7 @@ class Trial:
     fetch_file: Callable[[str], bytes]
     fixture_state: dict
     error: str | None = None
+    memory: list[dict] = field(default_factory=list)  # what cedar remembers after the trial
 
     @property
     def final(self) -> dict:
@@ -49,7 +53,15 @@ class Trial:
         return self.final.get("final_text") or ""
 
     def tool_calls(self) -> list[dict]:
-        return [e["data"] for e in self.events if e["type"] == "tool.call"]
+        return [e["data"] for e in self.events if e["type"] == "tool.call" and e.get("session") is None]
+
+    def recalled(self) -> list[dict]:
+        """The memory items the final run was shown: `{id, short_id, kind, why, score}` each."""
+        final = self.final.get("id")
+        for e in self.events:
+            if e["type"] == "memory.recalled" and e.get("run_id") == final:
+                return list((e.get("data") or {}).get("items") or [])
+        return []
 
     def call_index(self, pattern: str) -> int | None:
         for i, c in enumerate(self.tool_calls()):
@@ -263,6 +275,41 @@ def _as_list(v: Any) -> list:
     return v if isinstance(v, list) else [v]
 
 
+def _memory_recalled(spec: dict, t: Trial):
+    """What the final run was shown from memory: `memory_kind` (fact, preference, instruction,
+    temporary, episode, procedure) and `why` (pinned, core, match, cue) narrow it; `min`
+    (default 1) and `max` bound the count, so `max: 0` says nothing of that kind should have
+    reached the prompt (an over-use control)."""
+    items = [i for i in t.recalled()
+             if ("memory_kind" not in spec or i.get("kind") == spec["memory_kind"])
+             and ("why" not in spec or i.get("why") == spec["why"])]
+    hi = spec.get("max")
+    lo = spec.get("min", 0 if hi == 0 else 1)
+    n = len(items)
+    ok = n >= lo and (hi is None or n <= hi)
+    want = f"{lo}..{hi if hi is not None else '∞'}"
+    what = " ".join(k for k in (spec.get("memory_kind"), spec.get("why")) if k) or "memories"
+    return ok, f"{n} {what} shown to the final run (want {want})"
+
+
+def _memory_item(spec: dict, t: Trial):
+    """What cedar remembers once the trial is over, by the text of the active items (of
+    `memory_kind` when given): `regex` must match one, every `all` pattern must match one, and no `none`
+    pattern may match any."""
+    texts = [m.get("text") or "" for m in t.memory
+             if "memory_kind" not in spec or m.get("kind") == spec["memory_kind"]]
+    if "regex" in spec and not any(search(spec["regex"], x) for x in texts):
+        return False, f"no memory matches {spec['regex']!r} (have {texts})"
+    for p in spec.get("all", []):
+        if not any(search(p, x) for x in texts):
+            return False, f"no memory matches {p!r} (have {texts})"
+    for p in spec.get("none", []):
+        hits = [x for x in texts if search(p, x)]
+        if hits:
+            return False, f"memory contains {p!r}: {hits}"
+    return True, f"memory as expected ({len(texts)} item(s))"
+
+
 CHECKS: dict[str, Check] = {
     "final_text": Check(_final_text, any_of=("regex", "all", "any", "none"),
                         regex_keys=("regex", "all", "any", "none")),
@@ -279,6 +326,9 @@ CHECKS: dict[str, Check] = {
                                allowed={"min"}),
     "budget": Check(_budget, any_of=("turns", "cost_usd", "output_tokens")),
     "llm_judge": Check(_llm_judge, required_keys=("rubric",)),
+    "memory_recalled": Check(_memory_recalled, allowed={"memory_kind", "why", "min", "max"}),
+    "memory_item": Check(_memory_item, any_of=("regex", "all", "none"), regex_keys=("regex", "all", "none"),
+                         allowed={"memory_kind"}),
 }
 
 

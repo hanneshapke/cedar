@@ -449,3 +449,133 @@ async fn records_off_removes_the_tools_the_note_and_uploads() {
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
+
+/// The events of kind `kind` in a run, in order.
+async fn events_of(app: &TestApp, key: &str, id: &str, kind: &str) -> Vec<Value> {
+    app.events(key, id, None)
+        .await
+        .iter()
+        .filter(|e| e.data["type"] == kind)
+        .map(|e| e.data["data"].clone())
+        .collect()
+}
+
+fn csv(name: &str, text: &str) -> Value {
+    use base64::Engine;
+    json!({ "name": name, "media_type": "text/csv", "data": base64::engine::general_purpose::STANDARD.encode(text) })
+}
+
+#[tokio::test]
+async fn csv_and_json_attachments_are_imported_into_sets_unless_the_run_says_otherwise() {
+    use base64::Engine;
+    let app = TestApp::new(vec![Step::Repeat(text("ok"))]).await;
+    let runs = csv("Running Log.csv", "Date,km,minutes\n2026-11-01,5.2,31\n2026-11-02,10,58\n");
+    let weights = json!({ "name": "weights.json", "media_type": "application/json",
+        "data": base64::engine::general_purpose::STANDARD.encode("[{\"date\": \"2026-11-01\", \"kg\": 71.5}]") });
+    let first = run(&app, KEY_A, json!({ "prompt": "Here are my runs and weights", "attachments": [runs.clone(), weights] })).await;
+    assert_eq!(first["import_attachments"], true);
+    let imported = events_of(&app, KEY_A, first["id"].as_str().unwrap(), "records.updated").await;
+    assert_eq!(imported.len(), 1);
+    let done = imported[0]["imported"].as_array().unwrap();
+    assert_eq!(done.len(), 2);
+    assert_eq!((done[0]["file"].as_str(), done[0]["set"].as_str(), done[0]["added"].as_i64()), (Some("Running Log.csv"), Some("running_log"), Some(2)));
+    assert_eq!(done[0]["key"], json!(["date"]));
+    assert_eq!((done[1]["set"].as_str(), done[1]["added"].as_i64()), (Some("weights"), Some(1)));
+    // The model is told where the data went.
+    let opening = app.llm.requests()[0]["messages"][0]["content"].to_string();
+    assert!(opening.contains("attachments/Running Log.csv: CSV file; its 2 rows were imported into the record set running_log (2 added, 0 updated; key date)"), "{opening}");
+    assert!(opening.contains("weights.json: JSON file; its 1 rows were imported"), "{opening}");
+    // The sets are there, typed, with the file as their description.
+    let all = sets(&app, KEY_A).await;
+    assert_eq!(all.iter().map(|s| s["name"].as_str().unwrap()).collect::<Vec<_>>(), ["running_log", "weights"]);
+    assert_eq!(all[0]["description"], "Imported from Running Log.csv");
+    assert_eq!(all[0]["columns"], json!(["date", "km", "minutes"]));
+    let (_, rows) = app.get("/v1/records/running_log", KEY_A).await;
+    assert_eq!(rows["records"][1]["data"], json!({ "date": "2026-11-02", "km": 10, "minutes": 58 }));
+    assert_eq!(rows["records"][0]["run_id"], first["id"]);
+
+    // The same file again updates rather than doubles, and a corrected row wins.
+    let again = csv("running log.csv", "Date,km,minutes\n2026-11-02,10.5,58\n2026-11-03,3,20\n");
+    let second = run(&app, KEY_A, json!({ "prompt": "corrected", "attachments": [again] })).await;
+    let imported = events_of(&app, KEY_A, second["id"].as_str().unwrap(), "records.updated").await;
+    assert_eq!((imported[0]["imported"][0]["added"].as_i64(), imported[0]["imported"][0]["updated"].as_i64()), (Some(1), Some(1)));
+    let (_, rows) = app.get("/v1/records/running_log", KEY_A).await;
+    assert_eq!(rows["records"].as_array().unwrap().len(), 3);
+
+    // Opted out: saved in the workspace only, and the note says so.
+    let third = run(&app, KEY_A, json!({ "prompt": "just look", "attachments": [runs.clone()], "import_attachments": false })).await;
+    assert_eq!(third["import_attachments"], false);
+    assert!(events_of(&app, KEY_A, third["id"].as_str().unwrap(), "records.updated").await.is_empty());
+    let opening = app.llm.requests()[2]["messages"][0]["content"].to_string();
+    assert!(opening.contains("Running Log.csv: CSV file; read it with read_file or run_python"), "{opening}");
+
+    // A file with nothing in it is listed with the reason.
+    let empty = csv("empty.csv", "a,b\n");
+    let fourth = run(&app, KEY_A, json!({ "prompt": "empty", "attachments": [empty] })).await;
+    assert!(events_of(&app, KEY_A, fourth["id"].as_str().unwrap(), "records.updated").await.is_empty());
+    let opening = app.llm.requests()[3]["messages"][0]["content"].to_string();
+    assert!(opening.contains("not imported into records (the CSV has a header but no rows)"), "{opening}");
+    assert_eq!(sets(&app, KEY_A).await.len(), 2);
+
+    // Without the records group, nothing is imported; with RECORDS_IMPORT_ATTACHMENTS=off the
+    // default flips, and the request can still ask.
+    let fifth = run(&app, KEY_A, json!({ "prompt": "x", "attachments": [runs.clone()], "tools": ["memory"] })).await;
+    assert!(events_of(&app, KEY_A, fifth["id"].as_str().unwrap(), "records.updated").await.is_empty());
+    let app = TestApp::with_env(vec![Step::Repeat(text("ok"))], &[("RECORDS_IMPORT_ATTACHMENTS", "off")]).await;
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["records"]["import_attachments"], false);
+    assert!(defaults["attachments"]["media_types"].as_array().unwrap().iter().any(|t| t == "text/csv"));
+    let off = run(&app, KEY_A, json!({ "prompt": "x", "attachments": [runs.clone()] })).await;
+    assert_eq!(off["import_attachments"], false);
+    let on = run(&app, KEY_A, json!({ "prompt": "x", "attachments": [runs], "import_attachments": true })).await;
+    assert_eq!(on["import_attachments"], true);
+    assert_eq!(sets(&app, KEY_A).await.len(), 1);
+}
+
+#[tokio::test]
+async fn the_memory_call_saves_the_data_the_user_handed_over() {
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(text("Logged.")),
+            // The memory call proposes rows: two the user stated, one it made up, and one into
+            // a set that already exists.
+            Step::Reply(text(
+                "{\"remember\": [], \"records\": [\
+                 {\"set\": \"weight_log\", \"description\": \"Morning weights\", \"key\": [\"date\"], \"rows\": [\
+                 {\"date\": \"2026-11-05\", \"kg\": 71.5}, {\"date\": \"2026-11-06\", \"kg\": 71.2}, {\"date\": \"2026-11-07\", \"kg\": 60}]}, \
+                 {\"set\": \"running_log\", \"rows\": [{\"date\": \"2026-11-06\", \"km\": 8}]}]}",
+            )),
+            Step::Reply(text("ok")),
+        ],
+        &[("MEMORY_EXTRACT", "on")],
+    )
+    .await;
+    upload(&app, KEY_A, "running_log", json!({ "description": "Runs", "key": ["date"], "records": [week("2026-11-01", 5.2, 31)] })).await;
+    let done = run(
+        &app,
+        KEY_A,
+        json!({ "prompt": "Log my weights: 71.5 kg yesterday, 71.2 today. And I ran 8 km today.", "interactive": true }),
+    )
+    .await;
+    let body = app.llm.requests()[1]["messages"][0]["content"].as_str().unwrap().to_string();
+    assert!(body.contains("Record sets kept for this person, name (columns):\n- running_log (date, km, minutes)"), "{body}");
+    assert!(body.contains("\"records\": [{"), "{body}");
+
+    let updated = events_of(&app, KEY_A, done["id"].as_str().unwrap(), "memory.updated").await;
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated[0]["records"], json!([
+        { "set": "weight_log", "added": 2, "updated": 0 },
+        { "set": "running_log", "added": 1, "updated": 0 },
+    ]));
+    let skipped = updated[0]["skipped"].as_array().unwrap();
+    assert_eq!(skipped.len(), 1);
+    assert!(skipped[0]["reason"].as_str().unwrap().contains("kg = 60"), "{skipped:?}");
+    let all = sets(&app, KEY_A).await;
+    assert_eq!(all.iter().map(|s| (s["name"].as_str().unwrap(), s["count"].as_i64().unwrap())).collect::<Vec<_>>(), [("running_log", 2), ("weight_log", 2)]);
+    assert_eq!(all[1]["description"], "Morning weights");
+    assert_eq!(all[1]["key_fields"], json!(["date"]));
+
+    // The next run sees the sets, as it does any records.
+    run(&app, KEY_A, json!({ "prompt": "how is it going?" })).await;
+    assert!(system(&app, 2).contains("weight_log: 2 records"), "{}", system(&app, 2));
+}

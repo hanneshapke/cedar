@@ -197,6 +197,7 @@ class TranscriptTest {
     fun memoryStepsShowTheFact() {
         assertEquals("Prefers metric units", ToolCall("1", "remember", j("""{"text":"Prefers metric units"}""")).summary)
         assertEquals("", ToolCall("2", "forget", j("""{"id":"m1"}""")).summary)
+        assertEquals("the primes script", ToolCall("3", "recall", j("""{"query":"the primes script"}""")).summary)
     }
 
     @Test

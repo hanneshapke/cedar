@@ -841,7 +841,7 @@ async fn attached_pdfs_are_saved_and_their_first_pages_rendered() {
         data: BASE64.encode(&pdf),
     };
 
-    let blocks = attachments::prepare(sb.as_ref(), &[attachment], true, 2, 60 * SECOND)
+    let blocks = attachments::prepare(sb.as_ref(), &[attachment], true, 2, 60 * SECOND, &[])
         .await
         .unwrap();
     assert_eq!(blocks.len(), 3, "two pages and the note: {blocks:?}");

@@ -44,6 +44,7 @@ data class ToolCall(
             "web_search" -> input["query"].str ?: ""
             "remember" -> input["text"].str ?: ""
             "forget" -> ""
+            "recall" -> input["query"].str ?: ""
             "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast" -> cardTitle ?: ""
             else -> input.pretty().replace("\n", " ")
         }

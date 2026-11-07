@@ -138,16 +138,57 @@ impl CedarClient {
 
     /// What cedar's runs remember about the user (`GET /v1/memory`): `{items, limits}`. `None` from
     /// a cedar from before memory, which doesn't know the route.
-    pub async fn memory(&self) -> Result<Option<Value>, AppError> {
-        match self.json(self.http.get(self.url("/memory"))).await {
+    pub async fn memory(&self, query: &[(&str, &str)]) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url("/memory")).query(query)).await {
             Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
             other => other.map(Some),
         }
     }
 
-    /// Remember `text` by hand; cedar answers with the item.
-    pub async fn add_memory(&self, text: &str) -> Result<Value, AppError> {
-        self.json(self.http.post(self.url("/memory")).json(&json!({ "text": text }))).await
+    /// Remember something by hand (`{text, kind?, pinned?, valid_until?}`); cedar answers with the item.
+    pub async fn add_memory(&self, body: &Value) -> Result<Value, AppError> {
+        self.json(self.http.post(self.url("/memory")).json(body)).await
+    }
+
+    /// Change one memory (`{text?, kind?, pinned?, archived?, valid_until?}`); cedar answers with the item.
+    pub async fn patch_memory(&self, id: Uuid, body: &Value) -> Result<Value, AppError> {
+        self.json(self.http.patch(self.url(&format!("/memory/{id}"))).json(body)).await
+    }
+
+    /// A memory's versions and audit rows.
+    pub async fn memory_history(&self, id: Uuid) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url(&format!("/memory/{id}/history")))).await
+    }
+
+    /// The profile cedar keeps of the user (`{profile}`), `None` from a cedar from before profiles.
+    pub async fn memory_profile(&self) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url("/memory/profile"))).await {
+            Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
+            other => other.map(Some),
+        }
+    }
+
+    /// Write the profile by hand; an empty text clears it.
+    pub async fn set_memory_profile(&self, text: &str) -> Result<Value, AppError> {
+        self.json(self.http.put(self.url("/memory/profile")).json(&json!({ "text": text }))).await
+    }
+
+    /// Everything cedar remembers, for a backup.
+    pub async fn memory_export(&self) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url("/memory/export"))).await
+    }
+
+    /// Tell cedar what the person thought of a run (`"up"`, `"down"` or `None`), which promotes
+    /// or archives what it learned from it. A cedar from before feedback doesn't know the route;
+    /// that is fine.
+    pub async fn run_feedback(&self, run_id: Uuid, rating: Option<&str>) -> Result<(), AppError> {
+        match self
+            .send(self.http.post(self.url(&format!("/runs/{run_id}/feedback"))).json(&json!({ "rating": rating })).timeout(REQUEST_TIMEOUT))
+            .await
+        {
+            Ok(_) | Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Forget one memory; a 404 means it isn't there (any more).

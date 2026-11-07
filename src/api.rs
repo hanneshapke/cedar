@@ -13,10 +13,10 @@ use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::{self, RunManager};
 use crate::marketplace::{InstallRequest, Marketplace};
-use crate::memory::{self, Memories, Refused};
+use crate::memory::{self, Actor, Memories, Refused};
 use crate::records::{self, Records, SaveOptions};
 use crate::models::{
-    Attachment, CreateRunRequest, ModelEntry, NewRun, Run, RunStatus, StoredMessage,
+    Attachment, CreateRunRequest, ModelEntry, NewRun, Rating, Run, RunStatus, StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
 };
 use crate::sandbox::{
@@ -31,7 +31,7 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::response::sse::Sse;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use base64::Engine;
 use futures_util::Stream;
@@ -111,7 +111,14 @@ impl AppState {
         let hub = Arc::new(EventHub::new());
         let cfg = Arc::new(cfg);
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
-        let memories = Memories::new(store.clone(), cfg.memory_max_items);
+        let memories = Memories::new(
+            store.clone(),
+            memory::Limits {
+                max_items: cfg.memory_max_items,
+                recall_tokens: cfg.memory_recall_tokens,
+                consolidate_after: cfg.memory_consolidate_after,
+            },
+        );
         let records = Records::new(store.clone(), cfg.records_max_sets, cfg.records_max_items);
         let env = AgentEnv {
             llm: llm.clone(),
@@ -127,6 +134,8 @@ impl AppState {
             pdf_preview_pages: cfg.pdf_preview_pages,
             memories: cfg.memory.then(|| memories.clone()),
             memory_extract: cfg.memory_extract,
+            memory_experience: cfg.memory_experience,
+            memory_consolidate_after: if cfg.memory_consolidate { cfg.memory_consolidate_after } else { 0 },
             records: cfg.records.then(|| records.clone()),
         };
         let manager = RunManager::new(
@@ -181,6 +190,7 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/trace", get(get_trace))
         .route("/runs/{id}/events", get(stream_events))
         .route("/runs/{id}/cancel", post(cancel_run))
+        .route("/runs/{id}/feedback", post(run_feedback))
         .route("/runs/{id}/plan", post(answer_plan))
         .route("/runs/{id}/approvals/{approval_id}", post(decide_approval))
         .route("/runs/{id}/files", get(list_files))
@@ -194,7 +204,11 @@ pub fn router(state: AppState) -> Router {
             "/memory",
             get(list_memory).post(add_memory).delete(forget_all),
         )
-        .route("/memory/{id}", delete(forget_memory))
+        .route("/memory/profile", get(get_profile).put(set_profile))
+        .route("/memory/export", get(export_memory))
+        .route("/memory/import", post(import_memory))
+        .route("/memory/{id}", get(get_memory).patch(edit_memory).delete(forget_memory))
+        .route("/memory/{id}/history", get(memory_history))
         .route("/records", get(list_records).delete(drop_all_records))
         .route(
             "/records/{name}",
@@ -554,6 +568,7 @@ async fn create_run(
         plan: req.plan.unwrap_or(cfg.plan),
         interactive: req.interactive.unwrap_or(false),
         locale,
+        import_attachments: cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -610,31 +625,68 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
             "media_types": ALLOWED_ATTACHMENT_TYPES,
             "max_image_side": images::max_side(&state.store).await?,
         },
-        "memory": cfg.memory.then(|| state.memories.limits()),
-        "records": cfg.records.then(|| state.records.limits()),
+        "memory": cfg.memory.then(|| state.memories.limits_json()),
+        "records": cfg.records.then(|| {
+            let mut limits = state.records.limits();
+            limits["import_attachments"] = json!(cfg.records_import_attachments);
+            limits
+        }),
     })))
 }
 
 // -- memory ---------------------------------------------------------------------------------
 
-/// What the caller's runs remember about them, oldest first, with how much fits.
+#[derive(Deserialize, Default)]
+struct MemoryQuery {
+    /// A comma-separated list of kinds.
+    kind: Option<String>,
+    /// Archived and superseded rows instead of active ones.
+    #[serde(default)]
+    archived: bool,
+    q: Option<String>,
+}
+
+fn memory_filter(q: &MemoryQuery) -> Result<memory::Filter, AppError> {
+    let mut kinds = Vec::new();
+    for k in q.kind.iter().flat_map(|k| k.split(',')).map(str::trim).filter(|k| !k.is_empty()) {
+        kinds.push(memory::Kind::parse(k).ok_or_else(|| AppError::BadRequest(format!("unknown memory kind {k:?}")))?);
+    }
+    Ok(memory::Filter { kinds, archived: q.archived, query: q.q.clone() })
+}
+
+/// What the caller's runs remember about them, oldest first: active rows (or `?archived=true`),
+/// of `?kind=` (comma-separated), matching `?q=`; the profile; the limits.
 async fn list_memory(
     State(state): State<AppState>,
     Extension(owner): Extension<Owner>,
+    axum::extract::Query(q): axum::extract::Query<MemoryQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let items = state.memories.list(&owner.0).await?;
-    Ok(Json(
-        json!({ "items": items, "limits": state.memories.limits() }),
-    ))
+    let items = state.memories.list(&owner.0, &memory_filter(&q)?).await?;
+    Ok(Json(json!({
+        "items": items,
+        "profile": state.memories.profile(&owner.0).await?,
+        "limits": state.memories.limits_json(),
+    })))
 }
 
 #[derive(Deserialize)]
 struct AddMemory {
     text: String,
+    kind: Option<memory::Kind>,
+    pinned: Option<bool>,
+    valid_until: Option<chrono::DateTime<chrono::Utc>>,
+    subject: Option<String>,
+    relation: Option<String>,
+    #[serde(default)]
+    topics: Vec<String>,
 }
 
-/// Remember something by hand. Text already remembered isn't added twice: that item comes back,
-/// with 200 instead of 201.
+fn refused(r: Refused) -> AppError {
+    AppError::BadRequest(r.to_string())
+}
+
+/// Remember something by hand. The same thing already remembered isn't added twice: that item
+/// comes back, with 200 instead of 201.
 async fn add_memory(
     State(state): State<AppState>,
     Extension(owner): Extension<Owner>,
@@ -645,35 +697,173 @@ async fn add_memory(
             "memory is turned off on this server (MEMORY=off)".into(),
         ));
     }
-    match state.memories.remember(&owner.0, &req.text, None, None).await? {
-        Ok((item, memory::Saved::Added)) => Ok((StatusCode::CREATED, Json(item))),
+    if req.kind.is_some_and(|k| !k.is_about_user()) {
+        return Err(AppError::BadRequest("kind must be fact, preference, instruction or temporary".into()));
+    }
+    let new = memory::NewMemory {
+        kind: req.kind,
+        text: req.text,
+        subject: req.subject,
+        relation: req.relation,
+        topics: req.topics,
+        source: Some(memory::Source::Api),
+        pinned: req.pinned,
+        valid_until: req.valid_until,
+        ..Default::default()
+    };
+    match state.memories.remember(&owner.0, new, Actor::User).await? {
+        Ok((item, memory::Saved::Added | memory::Saved::Superseded)) => Ok((StatusCode::CREATED, Json(item))),
         Ok((item, _)) => Ok((StatusCode::OK, Json(item))),
-        Err(full @ Refused::Full(_)) => Err(AppError::Conflict(full.to_string())),
-        Err(refused) => Err(AppError::BadRequest(refused.to_string())),
+        Err(r) => Err(refused(r)),
     }
 }
 
-/// Forget one memory. Another owner's looks like a missing one.
+fn memory_id(id: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(id).map_err(|_| AppError::NotFound("memory not found"))
+}
+
+async fn get_memory(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<memory::Memory>, AppError> {
+    let id = memory_id(&id)?;
+    state
+        .memories
+        .get(&owner.0, id)
+        .await?
+        .map(Json)
+        .ok_or(AppError::NotFound("memory not found"))
+}
+
+/// Change one memory: `{text?, kind?, pinned?, archived?, valid_until?, topics?}`.
+async fn edit_memory(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+    ApiJson(change): ApiJson<memory::Edit>,
+) -> Result<Json<memory::Memory>, AppError> {
+    let id = memory_id(&id)?;
+    if change.kind.is_some_and(|k| !k.is_about_user()) {
+        return Err(AppError::BadRequest("kind must be fact, preference, instruction or temporary".into()));
+    }
+    let change = memory::Edit { meta: None, ..change };
+    match state.memories.edit(&owner.0, id, &change, Actor::User).await? {
+        Ok(Some(item)) => Ok(Json(item)),
+        Ok(None) => Err(AppError::NotFound("memory not found")),
+        Err(r) => Err(refused(r)),
+    }
+}
+
+/// A memory's versions and audit rows: `{versions: [...], ops: [...]}`.
+async fn memory_history(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let id = memory_id(&id)?;
+    let (versions, ops) = state
+        .memories
+        .history(&owner.0, id)
+        .await?
+        .ok_or(AppError::NotFound("memory not found"))?;
+    Ok(Json(json!({ "versions": versions, "ops": ops })))
+}
+
+/// Forget one memory for good. Another owner's looks like a missing one.
 async fn forget_memory(
     State(state): State<AppState>,
     Extension(owner): Extension<Owner>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    let not_found = || AppError::NotFound("memory not found");
-    let id = Uuid::parse_str(&id).map_err(|_| not_found())?;
+    let id = memory_id(&id)?;
     if !state.memories.forget(&owner.0, id).await? {
-        return Err(not_found());
+        return Err(AppError::NotFound("memory not found"));
     }
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Forget everything the caller's runs remember.
+/// Forget everything the caller's runs remember, the profile and the history included.
 async fn forget_all(
     State(state): State<AppState>,
     Extension(owner): Extension<Owner>,
 ) -> Result<StatusCode, AppError> {
     state.memories.forget_all(&owner.0).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_profile(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    Ok(Json(json!({ "profile": state.memories.profile(&owner.0).await? })))
+}
+
+#[derive(Deserialize)]
+struct SetProfile {
+    text: String,
+}
+
+/// Write the profile by hand. It then stays as written until the user changes or clears it
+/// (an empty text), and consolidation leaves it alone.
+async fn set_profile(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(req): ApiJson<SetProfile>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    match state.memories.set_profile(&owner.0, &req.text, Actor::User).await? {
+        Ok(profile) => Ok(Json(json!({ "profile": profile }))),
+        Err(r) => Err(refused(r)),
+    }
+}
+
+async fn export_memory(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    Ok(Json(state.memories.export(&owner.0).await?))
+}
+
+/// Add what an export holds. Returns `{added}`.
+async fn import_memory(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(data): ApiJson<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !state.cfg.memory {
+        return Err(AppError::Conflict("memory is turned off on this server (MEMORY=off)".into()));
+    }
+    if !data["items"].is_array() {
+        return Err(AppError::BadRequest("items must be the list of an export".into()));
+    }
+    let added = state.memories.import(&owner.0, &data).await?;
+    Ok(Json(json!({ "added": added })))
+}
+
+#[derive(Deserialize)]
+struct Feedback {
+    rating: Option<Rating>,
+}
+
+/// The user's verdict on a finished run: `{"rating": "up" | "down" | null}`. A thumbs down
+/// archives the procedure the run learned and counts against the ones it followed; a thumbs up
+/// counts for them.
+async fn run_feedback(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+    ApiJson(req): ApiJson<Feedback>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let run = owned_run(&state, &owner, &id).await?;
+    if !run.status.is_terminal() {
+        return Err(AppError::Conflict("run is still active".into()));
+    }
+    state.store.set_run_rating(run.id, req.rating).await?;
+    let mut archived = Vec::new();
+    if let Some(rating) = req.rating {
+        archived = memory::feedback(&state.memories, &state.store, &run, rating).await?;
+    }
+    Ok(Json(json!({ "rating": req.rating, "archived": archived })))
 }
 
 // -- records --------------------------------------------------------------------------------

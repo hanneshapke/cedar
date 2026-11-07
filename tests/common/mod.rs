@@ -674,8 +674,10 @@ pub fn test_config(extra: &[(&str, &str)]) -> Config {
         ("CEDAR_API_KEYS", "key-a,key-b"),
         ("MAX_ACTIVE_RUNS_PER_KEY", "10"),
         ("MAX_TURNS_CAP", "10"),
-        // Off here, so a scripted reply isn't spent on it; tests/memory.rs turns it on.
+        // Off here, so a scripted reply isn't spent on them; tests/memory.rs turns them on.
         ("MEMORY_EXTRACT", "off"),
+        ("MEMORY_EXPERIENCE", "off"),
+        ("MEMORY_CONSOLIDATE", "off"),
     ]
     .iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))

@@ -152,30 +152,77 @@ data class ContributionSettings(
     val enabled: Boolean get() = acceptedAt != null
 }
 
-/** One fact cedar remembers about the user across conversations (`GET /api/memory`). */
+/**
+ * One thing cedar remembers about the user across conversations (`GET /api/memory`): a fact,
+ * preference, instruction or temporary fact they stated, an episode (what a conversation was
+ * about) or a procedure (how a task went well). See "Memory" in the top-level README.
+ */
 @Serializable
 data class MemoryItem(
     val id: String,
     val text: String,
+    /** `fact`, `preference`, `instruction`, `temporary`, `episode` or `procedure`; `fact` on a cedar from before kinds. */
+    val kind: String = "fact",
+    /** The user's own words it was taken from, when a conversation stated it. */
+    val support: String? = null,
+    /** Always in cedar's prompt; never archived. */
+    val pinned: Boolean = false,
+    /** `user`, `agent`, `consolidation` or `api`. */
+    val source: String? = null,
+    @SerialName("recall_count") val recallCount: Int = 0,
     /** The conversation it was saved in, while that still exists on this server. */
     @SerialName("conversation_id") val conversationId: String? = null,
     /** That conversation's title. */
     val title: String? = null,
     @SerialName("created_at") val createdAt: Instant = Instant.EPOCH,
     @SerialName("updated_at") val updatedAt: Instant = Instant.EPOCH,
+    @SerialName("valid_from") val validFrom: Instant? = null,
+    @SerialName("valid_until") val validUntil: Instant? = null,
+    /** Out of cedar's prompt, kept until deleted; `supersededBy` names the newer version. */
+    @SerialName("archived_at") val archivedAt: Instant? = null,
+    @SerialName("superseded_by") val supersededBy: String? = null,
+) {
+    val isActive: Boolean get() = archivedAt == null && supersededBy == null
+    val isAboutUser: Boolean get() = kind != "episode" && kind != "procedure"
+}
+
+/**
+ * The short summary of the user cedar reads before every reply, written by its background pass
+ * unless the user wrote it (`userEdited`; then it stays as written).
+ */
+@Serializable
+data class MemoryProfile(
+    val text: String,
+    @SerialName("user_edited") val userEdited: Boolean = false,
+    @SerialName("updated_at") val updatedAt: Instant = Instant.EPOCH,
 )
+
+/** The answer to `GET` and `PUT /api/memory/profile`. */
+@Serializable
+data class MemoryProfileResponse(val profile: MemoryProfile? = null)
+
+/**
+ * Which memories Settings → Memory lists: the rows about the user, past conversations, ways of
+ * working, or the archive (superseded, expired and forgotten rows). `kind` is the query, null for
+ * the server's default (the rows about the user).
+ */
+enum class MemoryFilter(val kind: String?, val archived: Boolean) {
+    ABOUT(null, false), CONVERSATIONS("episode", false), PROCEDURES("procedure", false), ARCHIVE(null, true)
+}
 
 @Serializable
 data class MemoryLimits(
     @SerialName("max_items") val maxItems: Int = 0,
     @SerialName("max_chars") val maxChars: Int = 0,
+    @SerialName("max_profile_chars") val maxProfileChars: Int = 0,
 )
 
-/** What cedar remembers, oldest first; `supported` is false on a cedar from before memory. */
+/** What cedar remembers, oldest first, with the profile; `supported` is false on a cedar from before memory. */
 @Serializable
 data class MemoryList(
     val supported: Boolean = false,
     val items: List<MemoryItem> = emptyList(),
+    val profile: MemoryProfile? = null,
     val limits: MemoryLimits? = null,
 )
 

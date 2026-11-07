@@ -28,8 +28,9 @@ cedar can remember facts about you across conversations, such as your name, your
 
 - Your memory is stored only in the database of the cedar server **you** run. We never see it, and cedar never sends it to us or to anyone else.
 - The only place it goes is the LLM server you configured, as part of each request, like the rest of your conversation. If that is a hosted model provider rather than your own server, its privacy policy applies to what it receives.
-- You can see every remembered fact, and the conversation it came from, and delete one or all of them at any time in Settings → Memory (web chat, desktop, iOS and Android) or through cedar's API (`GET` and `DELETE /v1/memory`). What you see there is exactly what the agent sees.
-- A deleted memory is removed from the database right away and is not used again, starting with your very next message.
+- cedar keeps facts, preferences and standing instructions you stated, each with the words of yours it was taken from, a note on what each conversation was about, ways of working that went well, and a short profile of you. A fact is kept only when it quotes your own words from the conversation, never something a tool, a web page, an email or a document said, and text that looks like a password, a key or a card, account or government number is refused.
+- You can see all of it, the conversation each item came from, when it was last used and how it changed over time, and edit, pin, archive or delete one item or everything at any time in Settings → Memory (web chat and desktop; the iOS and Android apps list and delete) or through cedar's API (`/v1/memory`). A run's trace says exactly which memories it was shown.
+- A deleted memory is removed from the database right away, with its history, and is not used again, starting with your very next message. An archived one leaves every prompt and stays until you delete it.
 - You can turn memory off under Settings → Tools → Memory, and whoever runs the server can turn it off altogether (`MEMORY=off`).
 
 ## Contributing a conversation (opt-in)

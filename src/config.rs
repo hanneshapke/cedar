@@ -284,11 +284,22 @@ pub struct Config {
     /// Offer the `remember` and `forget` tools and show runs what they remember about the user
     /// (on by default; see [`crate::memory`]).
     pub memory: bool,
-    /// How many memories one API key's owner may keep (`MEMORY_MAX_ITEMS`, 200 by default).
+    /// How many facts, preferences, instructions and temporary memories one API key's owner keeps
+    /// active (`MEMORY_MAX_ITEMS`, 500 by default); beyond it the lowest-ranked are archived.
     pub memory_max_items: usize,
-    /// End every interactive run with a model call that picks facts about the user out of the
-    /// prompt and saves them (`MEMORY_EXTRACT`, on by default; see [`crate::memory::extraction`]).
+    /// End every interactive run with a model call that reads the conversation and saves the
+    /// facts the user stated (`MEMORY_EXTRACT`, on by default; see [`crate::memory::extract`]).
     pub memory_extract: bool,
+    /// Let runs note what they did (an episode per run) and how a task went well (a procedure),
+    /// from the same call (`MEMORY_EXPERIENCE`, on by default).
+    pub memory_experience: bool,
+    /// Run the background consolidation pass (`MEMORY_CONSOLIDATE`, on by default) after this
+    /// many finished runs of an owner (`MEMORY_CONSOLIDATE_AFTER`, 5), or an hour of idleness.
+    pub memory_consolidate: bool,
+    pub memory_consolidate_after: u32,
+    /// How many tokens of recalled memories a run's prompt may hold beyond the profile and what
+    /// is pinned (`MEMORY_RECALL_TOKENS`, 600).
+    pub memory_recall_tokens: usize,
     /// Offer the `records_*` tools and show runs which record sets they keep for the user (on by
     /// default; see [`crate::records`]).
     pub records: bool,
@@ -296,6 +307,9 @@ pub struct Config {
     pub records_max_sets: usize,
     /// How many records one set may hold (`RECORDS_MAX_ITEMS`, 10,000 by default).
     pub records_max_items: usize,
+    /// Import a run's CSV and JSON attachments into record sets unless the request says
+    /// otherwise (`RECORDS_IMPORT_ATTACHMENTS`, on by default; see [`crate::records::import`]).
+    pub records_import_attachments: bool,
     /// The Google OAuth client from the environment (`GOOGLE_CLIENT_ID` and
     /// `GOOGLE_CLIENT_SECRET`), with the account's refresh token when that is set there too. An
     /// admin can save a client through the API instead, so this is `None` without one in the
@@ -613,7 +627,12 @@ impl Config {
                 crate::memory::DEFAULT_MAX_ITEMS,
             )?,
             memory_extract: flag("MEMORY_EXTRACT", true)?,
+            memory_experience: flag("MEMORY_EXPERIENCE", true)?,
+            memory_consolidate: flag("MEMORY_CONSOLIDATE", true)?,
+            memory_consolidate_after: parse("MEMORY_CONSOLIDATE_AFTER", get("MEMORY_CONSOLIDATE_AFTER"), 5u32)?,
+            memory_recall_tokens: parse("MEMORY_RECALL_TOKENS", get("MEMORY_RECALL_TOKENS"), 600usize)?,
             records: flag("RECORDS", true)?,
+            records_import_attachments: flag("RECORDS_IMPORT_ATTACHMENTS", true)?,
             records_max_sets: parse(
                 "RECORDS_MAX_SETS",
                 get("RECORDS_MAX_SETS"),
@@ -735,6 +754,9 @@ impl Config {
         }
         if self.memory_max_items == 0 {
             bail!("MEMORY_MAX_ITEMS must be at least 1; use MEMORY=off to turn memory off");
+        }
+        if self.memory_consolidate_after == 0 {
+            bail!("MEMORY_CONSOLIDATE_AFTER must be at least 1; use MEMORY_CONSOLIDATE=off to turn the pass off");
         }
         if self.records_max_sets == 0 || self.records_max_items == 0 {
             bail!("RECORDS_MAX_SETS and RECORDS_MAX_ITEMS must be at least 1; use RECORDS=off to turn records off");
@@ -1006,7 +1028,7 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
         assert!(cfg.memory);
         assert!(cfg.memory_extract);
-        assert_eq!(cfg.memory_max_items, 200);
+        assert_eq!(cfg.memory_max_items, 500);
         let cfg = Config::from_lookup(lookup(&[
             ("CEDAR_API_KEYS", "a"),
             ("MEMORY", "off"),

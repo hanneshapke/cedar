@@ -159,7 +159,7 @@ Both interfaces have all of these, except where noted:
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
   [the models](#models) cedar can use, its Brave Search, Best Buy and SerpApi keys and its Google account
-- [Attachments](#attachments): PDFs go with a message to any model, and images to a model registered as
+- [Attachments](#attachments): PDFs, CSV and JSON files go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - Starred conversations: the star button in the header stars the open conversation, a chat or a
   scheduled run alike, and a **Starred** list at the top of the sidebar (the drawer in the other
@@ -496,15 +496,21 @@ Until cedar has a model registered, the message box says so and sending is off.
 
 ### Memory
 
-cedar remembers short facts about you across conversations (see [Memory](../README.md#memory)):
-your name, preferences, standing instructions and projects, saved when you tell it something
-lasting or ask it to remember something, and picked out of your message once the reply is done,
-so a fact mentioned in passing ("I'm vegetarian, by the way") is kept too. Each one saved shows as
-a *remember* step under the reply.
-**Settings → Memory** lists everything it remembers, newest first, with the date and a link to the
-conversation it was saved in, a **Remove** button on each, and **Forget all**. The list is exactly
-what the model sees, and a removal applies from the next message on, in every conversation. The
-same list is in the iOS and Android apps' Settings.
+cedar remembers you across conversations (see [Memory](../README.md#memory)): the facts,
+preferences and standing instructions you state, saved when you tell it something lasting or ask
+it to remember something, and noted from your message once the reply is done, so a fact mentioned
+in passing ("I'm vegetarian, by the way") is kept too; what each conversation was about; and ways
+of working that went well. Each fact or procedure saved shows as a *remember* step under the reply.
+**Settings → Memory** shows the profile at the top (the short summary cedar reads before every
+reply, written by cedar after a few conversations, or by you: edit it and it stays as you wrote
+it), then the memories by kind (*About you*, *Conversations*, *Ways of working*) and the
+*Archive*, newest first, each with the words it was taken from, the date, a link to the
+conversation it came from and how often it was used, with **Pin** (always shown to cedar),
+**Archive** or **Restore**, and **Remove** (for good) on each, **Export** for a backup, and
+**Forget all**. A change applies from the next message on, in every conversation. The thumbs on a
+reply are passed on to cedar, which counts them for or against what it learned in that run. The
+iOS and Android apps have the same page in Settings: the profile, the kinds and the archive, with
+pin, archive, restore and delete on each memory.
 
 Memory is the `memory` tool group, so **Settings → Tools** turns it off for new conversations and
 the conversation's **Tools** button for one conversation. If you ever unticked a group there,
@@ -594,14 +600,15 @@ script. The QR code and the Tailscale checks are shared with the desktop app's s
 ### Attachments
 
 A paperclip button by the message box attaches files to a message; they can also be dropped on
-the box or pasted (a screenshot, say). PDFs go to any model: cedar saves them in the run's
-workspace under `attachments/` and tells the agent, which reads them with its `read_document`
-tool. Images go only to a model registered with **Accepts images** (a checkbox on its entry under
+the box or pasted (a screenshot, say). PDFs, CSV and JSON files go to any model: cedar saves them
+in the run's workspace under `attachments/` and tells the agent, which reads a PDF with its
+`read_document` tool; a CSV or JSON file is also imported into a [record set](#records) named
+after the file, unless the cedar server has that off, and the agent is told where its rows went. Images go only to a model registered with **Accepts images** (a checkbox on its entry under
 [Models](#models)), and only while the send button names it (the default model, until another is
-picked); such a model is also shown the first pages of each PDF as images. PNG, JPEG, GIF, WebP
-and PDF files are taken, at most 10 per message, 20 MB each and 32 MB together; the chosen files
+picked); such a model is also shown the first pages of each PDF as images. PNG, JPEG, GIF, WebP,
+PDF, CSV and JSON files are taken, at most 10 per message, 20 MB each and 32 MB together; the chosen files
 are shown as chips, with a thumbnail for images, until the message is sent, and a message still
-needs some text. Picking a model without the box drops chosen images and keeps PDFs. The browser
+needs some text. Picking a model without the box drops chosen images and keeps the other files. The browser
 sends the files as base64 with the message, and cedar puts them in front of the prompt as
 [attachments](../README.md#attachments) of the run, so the agent sees them for the rest of the
 conversation. A sent message shows what went with it (name, type and size; the bytes stay in

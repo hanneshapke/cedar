@@ -12,9 +12,12 @@ from cedar_bench.user import ScriptedUser
 BENCH = Path(__file__).resolve().parent.parent
 
 
-def trial(final_text="", calls=(), drafts=(), files=None, status="completed", requests=()):
+def trial(final_text="", calls=(), drafts=(), files=None, status="completed", requests=(),
+          memory=(), recalled=()):
     events = [{"type": "tool.call", "data": {"id": f"c{i}", "name": n, "input": inp}, "run_id": "r1"}
               for i, (n, inp) in enumerate(calls)]
+    if recalled:
+        events.append({"type": "memory.recalled", "data": {"items": list(recalled)}, "run_id": "r1"})
     events.append({"type": "usage", "data": {"input_tokens": 100, "output_tokens": 20,
                                              "cost_usd": 0.001}, "run_id": "r1"})
     files = files or {}
@@ -22,7 +25,8 @@ def trial(final_text="", calls=(), drafts=(), files=None, status="completed", re
         prompt="p", runs=[{"id": "r1", "status": status, "final_text": final_text, "turns": 3}],
         events=events, files=[{"path": p, "size": len(d)} for p, d in files.items()],
         fetch_file=lambda p: files[p],
-        fixture_state={"drafts": list(drafts), "requests": list(requests), "misses": []})
+        fixture_state={"drafts": list(drafts), "requests": list(requests), "misses": []},
+        memory=list(memory))
 
 
 def task(checks, forbidden=()):
@@ -95,6 +99,33 @@ class GradingTest(unittest.TestCase):
         self.assertTrue(r["passed"])
         self.assertEqual(r["score"], 0.5)
         self.assertFalse(grading.grade(task(checks), trial("a", status="failed"))["passed"])
+
+    def test_memory_checks(self):
+        t = trial("Zurich", memory=[{"kind": "fact", "text": "Lives in Zurich"},
+                                    {"kind": "instruction", "text": "Always end with Cheers"}],
+                  recalled=[{"kind": "instruction", "why": "pinned"}, {"kind": "fact", "why": "match"}])
+        passed = [r["passed"] for r in grading.grade(task([
+            {"kind": "memory_item", "regex": "(?i)zurich"},
+            {"kind": "memory_item", "memory_kind": "instruction", "all": ["Cheers"], "none": ["Bern"]},
+            {"kind": "memory_item", "none": ["Zurich"]},
+            {"kind": "memory_recalled", "memory_kind": "instruction", "why": "pinned"},
+            {"kind": "memory_recalled", "memory_kind": "episode", "max": 0},
+            {"kind": "memory_recalled", "why": "match", "max": 0},
+        ]), t)["checks"]]
+        self.assertEqual(passed, [True, True, False, True, True, False])
+        # A session's tool calls are not the trial's.
+        t.events.append({"type": "tool.call", "data": {"id": "s", "name": "bash", "input": {}}, "run_id": "s1", "session": 0})
+        self.assertEqual(t.tool_calls(), [])
+
+    def test_sessions_are_checked(self):
+        with self.assertRaises(schema.TaskError):
+            schema.parse({"id": "t/x", "canary": CANARY, "tags": {"category": "t"}, "run": {"prompt": "p"},
+                          "sessions": [{"prompt": "", "bogus": 1}], "checks": [{"kind": "final_text", "regex": "x"}]},
+                         Path("x.yaml"))
+        t = schema.parse({"id": "t/x", "canary": CANARY, "tags": {"category": "t"}, "run": {"prompt": "p"},
+                          "sessions": [{"prompt": "earlier", "tools": []}], "checks": [{"kind": "final_text", "regex": "x"}]},
+                         Path("x.yaml"))
+        self.assertEqual(t.sessions[0]["prompt"], "earlier")
 
     def test_llm_judge_is_skipped_without_a_judge(self):
         r = grading.grade(task([{"kind": "llm_judge", "rubric": "polite"},

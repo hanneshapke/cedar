@@ -23,6 +23,10 @@ pub const INSTRUCTION: &str = "Review this whole conversation and write ONE self
     ended up wanting. Fold in everything that was clarified or corrected along the way; leave out \
     dead ends and the parts the user dropped. Include the concrete inputs (names, URLs, places, \
     numbers), the constraints, the format of the result, and the names of any files to produce. \
+    If the task produces a result worth comparing with later runs (a figure, a reading, a \
+    status, a list that changes), also tell the agent to save that result with records_save \
+    into a record set with a fixed lowercase name, one row per run keyed by date, and to \
+    compare it with the earlier rows of that set with records_lookup before answering. \
     Write it in the second person imperative, as the user would, and in the language the user \
     wrote in. Do not ask questions, do not add \
     a preamble or commentary, and do not mention this conversation. Reply with the prompt text \

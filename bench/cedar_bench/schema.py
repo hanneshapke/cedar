@@ -51,7 +51,8 @@ DECISIONS = {"allow", "allow_always", "deny"}
 DIFFICULTIES = {"easy", "medium", "hard"}
 RUN_KEYS = {"prompt", "tools", "plan", "interactive", "max_turns", "locale", "attachments", "system"}
 TOP_KEYS = {"id", "canary", "version", "split", "persona", "tags", "run", "user", "forbidden_tools",
-            "checks", "notes", "anchor"}
+            "checks", "notes", "anchor", "sessions"}
+SESSION_KEYS = {"prompt", "tools", "interactive", "max_turns", "locale", "system"}
 
 
 class TaskError(ValueError):
@@ -71,6 +72,10 @@ class Task:
     forbidden_tools: list[str]
     checks: list[dict]
     notes: str = ""
+    # Earlier conversations to hold before the run, each a separate run of its own (new
+    # conversation, same API key), so a task can test what cedar remembers across them. The
+    # runner clears the key's memory before the first one and after the trial.
+    sessions: list[dict] = field(default_factory=list)
     # A fixed anchor day for tasks that must not follow the clock (rare; see timeutil).
     anchor: str | None = None
     raw: dict = field(default_factory=dict, repr=False)
@@ -117,6 +122,14 @@ def parse(raw: Any, path: Path) -> Task:
             need(isinstance(a, dict) and "name" in a and (("path" in a) != ("text_pdf" in a)),
                  f"run.attachments[{i}] needs a name and exactly one of path, text_pdf")
 
+    sessions = raw.get("sessions") or []
+    need(isinstance(sessions, list), "sessions must be a list")
+    for i, sess in enumerate(sessions if isinstance(sessions, list) else []):
+        need(isinstance(sess, dict) and isinstance(sess.get("prompt"), str) and sess["prompt"].strip(),
+             f"sessions[{i}].prompt is required")
+        if isinstance(sess, dict):
+            need(not set(sess) - SESSION_KEYS, f"unknown keys in sessions[{i}]: {sorted(set(sess) - SESSION_KEYS)}")
+
     user = raw.get("user") or {}
     for i, a in enumerate(user.get("answers") or []):
         need(isinstance(a, dict) and "answer" in a, f"user.answers[{i}] needs an answer")
@@ -147,6 +160,7 @@ def parse(raw: Any, path: Path) -> Task:
         persona=raw.get("persona"), tags=tags, run=run, user=user,
         forbidden_tools=list(raw.get("forbidden_tools") or []), checks=checks,
         notes=raw.get("notes", ""), anchor=raw.get("anchor"), raw=raw,
+        sessions=list(sessions) if isinstance(sessions, list) else [],
     )
 
 

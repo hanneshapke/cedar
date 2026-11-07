@@ -220,7 +220,7 @@ async fn by_default_the_tool_is_offered_after_the_weather_tool() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     assert_eq!(
-        &names[names.len() - 13..],
+        &names[names.len() - 14..],
         [
             "weather_forecast",
             "show_map",
@@ -230,6 +230,7 @@ async fn by_default_the_tool_is_offered_after_the_weather_tool() {
             "ask_user",
             "remember",
             "forget",
+            "recall",
             "records_list",
             "records_describe",
             "records_save",

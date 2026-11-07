@@ -46,8 +46,18 @@ class FakeCedar(BaseHTTPRequestHandler):
             return self._send(202, {})
         self._send(404, {})
 
+    def do_DELETE(self):
+        if self.path == "/v1/memory":
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self._send(404, {})
+
     def do_GET(self):
         parts = self.path.split("?")[0].strip("/").split("/")
+        if parts == ["v1", "memory"]:
+            return self._send(200, {"items": [], "profile": None})
         if parts[:2] == ["v1", "runs"] and len(parts) == 4 and parts[3] == "events":
             return self._events(self.runs[parts[2]])
         if parts[:2] == ["v1", "runs"] and len(parts) == 4 and parts[3] == "files":
