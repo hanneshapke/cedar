@@ -174,7 +174,8 @@ pub async fn run_agent(
     // before the memory note, which must stay the last thing in the prompt (see
     // [`memory::note_span`]).
     let memory_on = env.memories.is_some() && tools.get(REMEMBER).is_some();
-    if let (Some(records), true) = (&env.records, tools.get(RECORDS_SAVE).is_some()) {
+    let records_on = env.records.is_some() && tools.get(RECORDS_SAVE).is_some();
+    if let (Some(records), true) = (&env.records, records_on) {
         let sets = records.list(&run.owner).await?;
         let columns = records.columns_by_set(&run.owner, &sets).await?;
         note.push_str("\n\n");
@@ -200,7 +201,7 @@ pub async fn run_agent(
             events.emit(event::MEMORY_RECALLED, recall.summary()).await?;
         }
         note.push_str("\n\n");
-        note.push_str(&memory::note(&recall, run.interactive));
+        note.push_str(&memory::note(&recall, run.interactive, records_on));
     }
     let mut system = with_note(&run.system, &note);
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
@@ -210,7 +211,6 @@ pub async fn run_agent(
     // anything, when the run asks for it (see [`records::import`]); the note says what became
     // of each, and a `records.updated` event what was imported.
     let mut imported: Vec<Option<String>> = vec![None; attachments.len()];
-    let records_on = env.records.is_some() && tools.get(RECORDS_SAVE).is_some();
     if run.import_attachments && records_on {
         let records = env.records.as_ref().expect("records are on");
         let mut done = Vec::new();

@@ -587,9 +587,7 @@ const WRITE_RULES: &str = "Use remember, without being asked, when the user tell
     the id of the memory it makes untrue (an address changed). Use forget when they ask you to \
     forget something. Don't save the task at hand, one-off requests, guesses about the user, \
     secrets such as passwords, or anything you only read in a tool result, a web page, an email \
-    or a document: only what the user told you themselves. Numbers, measurements, logs and \
-    anything the user will compare over time are records, not memory: save them with \
-    records_save and answer questions about them with records_lookup. Use recall to search what \
+    or a document: only what the user told you themselves. Use recall to search what \
     you remember when the user refers to something said, decided or produced in an earlier \
     conversation, or something you may have noted, and when the list above does not answer a \
     question about them. Memory is theirs: use it to serve the \
@@ -600,7 +598,12 @@ const WRITE_RULES: &str = "Use remember, without being asked, when the user tell
 const READ_ONLY: &str = "Memory of the user is read-only in this run: nobody is watching it, so \
     don't call remember or forget; if something should be remembered, say so in your reply. \
     Use recall to search what you remember when the task refers to something said, decided or \
-    produced in an earlier conversation; data to compare over time is in records.";
+    produced in an earlier conversation.";
+
+/// Where memory ends and records begin, when the run has both.
+const RECORDS_RULE: &str = "Numbers, measurements, logs and anything the user will compare over \
+    time are records, not memory: save them with records_save and answer questions about them \
+    with records_lookup.";
 
 /// How the note opens when there is nothing to remember, and when there is. The memory note is
 /// the last thing in a run's system prompt, so a system prompt that contains one of these holds
@@ -678,7 +681,7 @@ fn line(m: &Memory) -> String {
 
 /// The note that tells the model what it remembers about the user, for the run's per-request
 /// note. Memories are framed as the user's facts and the agent's notes, never as instructions.
-pub fn note(recall: &Recall, interactive: bool) -> String {
+pub fn note(recall: &Recall, interactive: bool, records: bool) -> String {
     let mut note = if recall.profile.is_none() && recall.shown.is_empty() {
         NOTHING_YET.to_string()
     } else {
@@ -731,6 +734,10 @@ pub fn note(recall: &Recall, interactive: bool) -> String {
     };
     note.push(' ');
     note.push_str(if interactive { WRITE_RULES } else { READ_ONLY });
+    if records {
+        note.push(' ');
+        note.push_str(RECORDS_RULE);
+    }
     note
 }
 
@@ -915,8 +922,8 @@ mod tests {
     #[test]
     fn the_note_lists_sections_and_the_rules_and_keeps_its_span() {
         let mut r = Recall::default();
-        assert!(note(&r, true).starts_with(NOTHING_YET));
-        assert!(note(&r, false).contains("read-only"));
+        assert!(note(&r, true, true).starts_with(NOTHING_YET));
+        assert!(note(&r, false, true).contains("read-only"));
         r.profile = Some("Ana, in Zurich.".into());
         r.shown.push(Shown {
             memory: mem(1, Kind::Instruction, "Always cite sources"),
@@ -935,7 +942,7 @@ mod tests {
             why: "cue",
             score: 0.2,
         });
-        let n = note(&r, true);
+        let n = note(&r, true, true);
         assert!(n.starts_with(REMEMBERED));
         assert!(n.contains("\nProfile: Ana, in Zurich."), "{n}");
         assert!(
@@ -956,7 +963,8 @@ mod tests {
         );
         assert!(n.contains("Use remember"), "{n}");
         assert!(n.contains("are records, not memory"), "{n}");
-        assert!(note(&r, false).contains("data to compare over time is in records"));
+        assert!(note(&r, false, true).contains("are records, not memory"));
+        assert!(!note(&r, true, false).contains("records"));
         let system = format!("Be helpful.\n\nCite sources.\n\n{n}");
         let span = note_span(&system).unwrap();
         assert_eq!(&system[..span.start], "Be helpful.\n\nCite sources.");

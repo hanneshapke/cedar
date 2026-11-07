@@ -1726,7 +1726,7 @@ mod tests {
             "running_log".to_string(),
             vec!["date".to_string(), "km".to_string()],
         )]);
-        let n = note(std::slice::from_ref(&set), &cols, true);
+        let n = note(std::slice::from_ref(&set), &cols, true, true);
         assert!(n.starts_with("Records you keep"), "{n}");
         assert!(
             n.contains(
