@@ -87,6 +87,17 @@ struct ChatClient: Sendable {
         }
     }
 
+    /// How many active memories there are, of every kind; `nil` on a cedar from before memory.
+    func memoryCount() async throws -> Int? {
+        let query = [URLQueryItem(name: "kind", value: MemoryFilter.allKinds)]
+        do {
+            let list: MemoryList = try await decode(makeRequest("api/memory", query: query))
+            return list.supported ? list.items.count : nil
+        } catch let error as ChatError where error.status == 404 {
+            return nil
+        }
+    }
+
     /// Pins, unpins, archives or restores one memory; cedar answers with the item.
     func updateMemory(id: String, _ change: MemoryChange) async throws -> MemoryItem {
         try await decode(makeRequest("api/memory/\(id)", method: "PATCH", json: change))

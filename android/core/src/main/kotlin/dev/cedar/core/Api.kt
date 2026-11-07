@@ -207,7 +207,12 @@ data class MemoryProfileResponse(val profile: MemoryProfile? = null)
  * the server's default (the rows about the user).
  */
 enum class MemoryFilter(val kind: String?, val archived: Boolean) {
-    ABOUT(null, false), CONVERSATIONS("episode", false), PROCEDURES("procedure", false), ARCHIVE(null, true)
+    ABOUT(null, false), CONVERSATIONS("episode", false), PROCEDURES("procedure", false), ARCHIVE(null, true);
+
+    companion object {
+        /** Every kind of active memory, for counting them all whatever the picker shows. */
+        const val ALL_KINDS = "fact,preference,instruction,temporary,episode,procedure"
+    }
 }
 
 @Serializable

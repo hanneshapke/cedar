@@ -123,6 +123,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         private set
     var memoryProfile by mutableStateOf<MemoryProfile?>(null)
         private set
+    /** How many active memories there are of every kind, whatever `memoryFilter` shows: the count on the Settings row. */
+    var memoryTotal by mutableStateOf<Int?>(null)
+        private set
     var memoryFilter by mutableStateOf(MemoryFilter.ABOUT)
     var memoryLoaded by mutableStateOf(false)
         private set
@@ -277,6 +280,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             showingContribute = false
             memoryItems = emptyList()
             memoryProfile = null
+            memoryTotal = null
             memoryFilter = MemoryFilter.ABOUT
             memoryLoaded = false
             memoryError = null
@@ -314,6 +318,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         try {
             val filter = memoryFilter
             val list = client.memory(filter)
+            refreshMemoryTotal()
             // The filter may have changed while the request was out; that refresh is on its way.
             if (filter != memoryFilter) return
             memorySupported = list.supported
@@ -339,6 +344,19 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             if (e.status != 404) throw e
         }
         memoryItems = memoryItems.filter { it.id != item.id }
+        refreshMemoryTotal()
+    }
+
+    /** Recounts the memories of every kind; a failure keeps the last count. */
+    private suspend fun refreshMemoryTotal() {
+        val client = client ?: return
+        try {
+            memoryTotal = client.memoryCount()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The Settings row falls back to the list being shown.
+        }
     }
 
     suspend fun deleteAllMemory() {
@@ -346,6 +364,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         client.deleteAllMemory()
         memoryItems = emptyList()
         memoryProfile = null
+        memoryTotal = 0
     }
 
     /**
@@ -360,6 +379,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         } else {
             memoryItems.map { if (it.id == item.id) updated else it }
         }
+        if (archived != null) refreshMemoryTotal()
     }
 
     /** Writes the profile by hand; it then stays as written until changed or cleared here. */

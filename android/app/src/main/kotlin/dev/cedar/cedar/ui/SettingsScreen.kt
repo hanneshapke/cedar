@@ -312,7 +312,7 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                     // Opens its own screen; deletions there apply at once, not on Save.
                     SettingsRow(
                         stringResource(R.string.memory_settings_row), Icons.Outlined.BookmarkBorder, MaterialTheme.colorScheme.primary,
-                        value = if (app.memoryLoaded && app.memorySupported) plural(R.plurals.memory_count, app.memoryItems.size, app.memoryItems.size) else null,
+                        value = if (app.memoryLoaded && app.memorySupported) (app.memoryTotal ?: app.memoryItems.size).let { plural(R.plurals.memory_count, it, it) } else null,
                     ) { app.showingMemory = true }
                     Footnote(stringResource(R.string.memory_settings_footnote))
                 }

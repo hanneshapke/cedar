@@ -295,7 +295,9 @@ struct SettingsView: View {
             } label: {
                 SettingsRow("What Cedar Remembers", systemImage: "bookmark", tint: Theme.green) {
                     if app.memoryLoaded && app.memorySupported {
-                        Text(verbatim: L10n.format(app.memoryItems.count == 1 ? "%lld memory" : "%lld memories", app.memoryItems.count))
+                        // Every kind, not just the ones the Memory screen's picker shows.
+                        let count = app.memoryTotal ?? app.memoryItems.count
+                        Text(verbatim: L10n.format(count == 1 ? "%lld memory" : "%lld memories", count))
                     }
                 }
             }
