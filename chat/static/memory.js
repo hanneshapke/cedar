@@ -12,6 +12,7 @@
 
 (() => {
   let data = null;      // the last GET /api/memory: { supported, items, profile, limits }
+  let total = null;     // how many active memories there are of every kind, for the menu summary
   let tools = undefined; // the saved default tool selection (null: every group)
   let view = 'about';    // 'about' | 'episodes' | 'procedures' | 'archived'
 
@@ -21,6 +22,8 @@
     procedures: { kinds: ['procedure'], archived: false },
     archived: { kinds: [], archived: true },
   };
+  // Every active kind: the menu counts all memories, not just the ones the open view lists.
+  const ALL_KINDS = [...new Set(Object.values(VIEWS).flatMap((v) => v.kinds))];
 
   function el(tag, className, text) {
     const e = document.createElement(tag);
@@ -242,8 +245,13 @@
     if (v.kinds.length) params.set('kind', v.kinds.join(','));
     if (v.archived) params.set('archived', 'true');
     try {
-      const [memory, prefs] = await Promise.all([api('GET', `/memory?${params}`), api('GET', '/settings').catch(() => null)]);
+      const [memory, all, prefs] = await Promise.all([
+        api('GET', `/memory?${params}`),
+        api('GET', `/memory?${new URLSearchParams({ kind: ALL_KINDS.join(',') })}`).catch(() => null),
+        api('GET', '/settings').catch(() => null),
+      ]);
       data = memory;
+      total = all && all.supported ? all.items.length : null;
       tools = prefs ? prefs.tools : undefined;
     } catch (err) {
       section.replaceChildren(el('p', 'cedar-set-error', tr('memory.loadFailed', { error: err.message })));
@@ -262,7 +270,7 @@
     if (!data) return null;
     if (!data.supported) return tr('memory.summaryUnsupported');
     if (offInTools()) return { text: tr('memory.summaryOff'), kind: 'warn' };
-    return data.profile ? tr('memory.summaryProfile') : tr('memory.summary', { count: data.items.length });
+    return data.profile ? tr('memory.summaryProfile') : tr('memory.summary', { count: total ?? data.items.length });
   }
 
   function bind() {
