@@ -145,6 +145,7 @@ cedarI18n.add({
     'updates.available': 'Cedar {current}. Cedar {version} is available.',
     'updates.failed': 'Cedar {current}. The last check failed: {detail}',
     'updates.idle': 'Cedar {current}. Cedar looks for a newer release every few hours.',
+    'updates.latest': 'You’re on the latest version, Cedar {current}. Cedar keeps checking every few hours.',
 
     'html.footer': 'Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.',
   },
@@ -288,6 +289,7 @@ cedarI18n.add({
     'updates.available': 'Cedar {current}. Cedar {version} ist verfügbar.',
     'updates.failed': 'Cedar {current}. Die letzte Suche ist fehlgeschlagen: {detail}',
     'updates.idle': 'Cedar {current}. Cedar sucht alle paar Stunden nach einer neueren Version.',
+    'updates.latest': 'Du hast die neueste Version, Cedar {current}. Cedar sucht weiterhin alle paar Stunden.',
 
     'html.footer': 'Jeder Lauf eines Agenten bekommt seinen eigenen Docker-Container; den Modellserver startet Cedar nie selbst. Das Sandbox-Image ist <code id="sandbox-image"></code>.',
   },
@@ -431,6 +433,7 @@ cedarI18n.add({
     'updates.available': 'Cedar {current}. Cedar {version} est disponible.',
     'updates.failed': 'Cedar {current}. La dernière recherche a échoué : {detail}',
     'updates.idle': 'Cedar {current}. Cedar recherche une version plus récente plusieurs fois par jour.',
+    'updates.latest': 'Vous utilisez la dernière version, Cedar {current}. Cedar continue de vérifier plusieurs fois par jour.',
 
     'html.footer': 'Chaque exécution d’agent dispose de son propre conteneur Docker ; Cedar n’exécute jamais lui-même le serveur de modèles. L’image du bac à sable est <code id="sandbox-image"></code>.',
   },
@@ -576,6 +579,7 @@ cedarI18n.add({
     'updates.available': 'Cedar {current}. Cedar {version} está disponible.',
     'updates.failed': 'Cedar {current}. La última búsqueda falló: {detail}',
     'updates.idle': 'Cedar {current}. Cedar busca una versión más reciente cada pocas horas.',
+    'updates.latest': 'Tienes la versión más reciente, Cedar {current}. Cedar sigue buscando cada pocas horas.',
 
     'html.footer': 'Cada ejecución de un agente tiene su propio contenedor de Docker; Cedar nunca ejecuta el servidor de modelos por sí mismo. La imagen del sandbox es <code id="sandbox-image"></code>.',
   },
