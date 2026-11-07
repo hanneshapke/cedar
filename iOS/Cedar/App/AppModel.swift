@@ -41,6 +41,9 @@ final class AppModel {
     /// `memoryFilter` says; and the profile it reads before every reply.
     private(set) var memoryItems: [MemoryItem] = []
     private(set) var memoryProfile: MemoryProfile?
+    /// How many active memories there are of every kind, whatever `memoryFilter` shows: the
+    /// count on the Settings row.
+    private(set) var memoryTotal: Int?
     var memoryFilter: MemoryFilter = .about
     private(set) var memoryLoaded = false
     var memoryError: String?
@@ -121,6 +124,7 @@ final class AppModel {
             contributionsError = nil
             memoryItems = []
             memoryProfile = nil
+            memoryTotal = nil
             memoryFilter = .about
             memoryLoaded = false
             memoryError = nil
@@ -192,7 +196,9 @@ final class AppModel {
         guard let client else { return }
         do {
             let filter = memoryFilter
+            async let total = try? client.memoryCount()
             let list = try await client.memory(filter)
+            memoryTotal = await total ?? nil
             // The filter may have changed while the request was out; that refresh is on its way.
             guard filter == memoryFilter else { return }
             memorySupported = list.supported
@@ -217,6 +223,13 @@ final class AppModel {
             // Already gone (another device).
         }
         memoryItems.removeAll { $0.id == item.id }
+        await refreshMemoryTotal()
+    }
+
+    /// Recounts the memories of every kind after one was removed, archived or restored.
+    private func refreshMemoryTotal() async {
+        guard let client else { return }
+        if let total = try? await client.memoryCount() { memoryTotal = total }
     }
 
     func deleteAllMemory() async throws {
@@ -224,6 +237,7 @@ final class AppModel {
         try await client.deleteAllMemory()
         memoryItems = []
         memoryProfile = nil
+        memoryTotal = 0
     }
 
     /// Pins, unpins, archives or restores one memory at once. A row that leaves the list being
@@ -236,6 +250,7 @@ final class AppModel {
         } else if let i = memoryItems.firstIndex(where: { $0.id == item.id }) {
             memoryItems[i] = updated
         }
+        if archived != nil { await refreshMemoryTotal() }
     }
 
     /// Writes the profile by hand; it then stays as written until changed or cleared here.

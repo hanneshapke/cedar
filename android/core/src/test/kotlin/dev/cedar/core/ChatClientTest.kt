@@ -168,6 +168,26 @@ class ChatClientTest {
     }
 
     @Test
+    fun countsMemoriesOfEveryKind() = runBlocking {
+        server.enqueue(json("""{"supported":true,"items":[
+            {"id":"m1","text":"Prefers metric","kind":"preference","created_at":"2026-10-29T08:00:00Z","updated_at":"2026-10-29T08:00:00Z"},
+            {"id":"m2","text":"Planned a trip","kind":"episode","created_at":"2026-10-29T09:00:00Z","updated_at":"2026-10-29T09:00:00Z"}],
+            "profile":null,"limits":null}"""))
+        server.enqueue(json("""{"supported":false,"items":[],"profile":null,"limits":null}"""))
+        server.enqueue(json("""{"error":{"code":"not_found","message":"not found"}}""", 404))
+
+        assertEquals(2, client.memoryCount())
+        assertEquals(null, client.memoryCount())
+        assertEquals(null, client.memoryCount())
+
+        server.takeRequest().let {
+            assertEquals("GET", it.method)
+            assertEquals("/api/memory", it.requestUrl?.encodedPath)
+            assertEquals(MemoryFilter.ALL_KINDS, it.requestUrl?.queryParameter("kind"))
+        }
+    }
+
+    @Test
     fun readsAndDeletesRecords() = runBlocking {
         server.enqueue(json("""{"supported":true,"limits":{"max_sets":50,"max_items":10000},"sets":[
             {"id":"s1","name":"running_log","description":"Weekly runs","key_fields":["date"],"health_data":false,"count":1,

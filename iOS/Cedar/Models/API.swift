@@ -342,6 +342,9 @@ enum MemoryFilter: String, CaseIterable, Identifiable, Sendable {
     }
 
     var archived: Bool { self == .archive }
+
+    /// Every kind of active memory, for counting them all whatever the picker shows.
+    static let allKinds = "fact,preference,instruction,temporary,episode,procedure"
 }
 
 /// What cedar remembers, oldest first, with the profile; `supported` is false on a cedar from

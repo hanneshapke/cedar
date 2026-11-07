@@ -85,6 +85,14 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         if (e.status == 404) MemoryList(supported = false) else throw e
     }
 
+    /** How many active memories there are, of every kind; `null` on a cedar from before memory. */
+    suspend fun memoryCount(): Int? = try {
+        val list = decode(request("api/memory", query = mapOf("kind" to MemoryFilter.ALL_KINDS)), MemoryList.serializer())
+        if (list.supported) list.items.size else null
+    } catch (e: ChatException.Api) {
+        if (e.status == 404) null else throw e
+    }
+
     /** Pins, unpins, archives or restores one memory; cedar answers with the item. */
     suspend fun updateMemory(id: String, pinned: Boolean? = null, archived: Boolean? = null): MemoryItem =
         decode(
