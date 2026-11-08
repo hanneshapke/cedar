@@ -518,7 +518,8 @@ def report(pump, sensors, a, suggestions, tz, low, high, unit):
 def charts(readings, a, tz, low, high, unit):
     """`[chart]` lines for the cedar chat: the recent window in 15-minute steps against the
     baseline's average at the same time of day, inside the target range; and time in range by
-    time of day. Each is the generate_chart tool's input, without a path."""
+    time of day. Each is the generate_chart tool's input, without a path. The recent window is
+    drawn in red and the baseline average in blue."""
     if not a["recent"]["n"]:
         return []
     mmol = unit == "mmol"
@@ -556,9 +557,9 @@ def charts(readings, a, tz, low, high, unit):
     while recent and recent[-1] is None:
         labels.pop(), recent.pop(), usual.pop()
 
-    series = [{"name": tr("last", h=h), "values": recent}]
+    series = [{"name": tr("last", h=h), "values": recent, "color": "red"}]
     if any(v is not None for v in usual):
-        series.append({"name": tr("average", d=d), "values": usual})
+        series.append({"name": tr("average", d=d), "values": usual, "color": "blue"})
     unit_label = "mmol/L" if mmol else "mg/dL"
     out = [{
         "kind": "line", "title": tr("glucose_title", h=h, d=d),
@@ -568,9 +569,9 @@ def charts(readings, a, tz, low, high, unit):
 
     names = [name for name, _, _ in BLOCKS]
     tir = lambda blocks: [round(blocks[n]["tir"]) if blocks[n]["n"] else None for n in names]  # noqa: E731
-    by_time = [{"name": tr("last", h=h), "values": tir(a["recent_blocks"])}]
+    by_time = [{"name": tr("last", h=h), "values": tir(a["recent_blocks"]), "color": "red"}]
     if a["base"]["n"]:
-        by_time.append({"name": tr("average", d=d), "values": tir(a["base_blocks"])})
+        by_time.append({"name": tr("average", d=d), "values": tir(a["base_blocks"]), "color": "blue"})
     out.append({
         "kind": "bar", "title": tr("tir_title", low=decimal(conv(low)), high=decimal(conv(high)), unit=unit_label),
         "labels": [tr(n) for n in names], "series": by_time, "y_label": tr("tir_label"),

@@ -53,6 +53,10 @@ const cedarChart = (() => {
   const str = (v, max = 200) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : '');
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   const slotClass = (slot) => (slot < SLOTS ? `s${slot + 1}` : 'so');
+  /** The colors a series may ask for by name (`"color": "red"`), as palette slots. */
+  const COLOR_SLOTS = { blue: 0, orange: 1, green: 2, yellow: 3, pink: 4, purple: 6, red: 7 };
+  /** A series' color class: the color it named, else its place in the palette. */
+  const toneClass = (s) => slotClass(s.tone ?? s.slot);
 
   /** Every `step`-th index of `n`, always keeping the last, so long series stay drawable. */
   function thin(n, max) {
@@ -73,7 +77,7 @@ const cedarChart = (() => {
     for (const [i, s] of input.series.slice(0, MAX_SERIES).entries()) {
       if (!s || !Array.isArray(s.values) || !s.values.length) return null;
       if (s.values.some((v) => v !== null && num(v) === null)) return null;
-      series.push({ name: str(s.name, 80) || tr('chart.seriesN', { n: i + 1 }), named: Boolean(str(s.name)), values: s.values.slice(0, MAX_VALUES).map(num), slot: i });
+      series.push({ name: str(s.name, 80) || tr('chart.seriesN', { n: i + 1 }), named: Boolean(str(s.name)), values: s.values.slice(0, MAX_VALUES).map(num), slot: i, tone: Object.hasOwn(COLOR_SLOTS, s.color) ? COLOR_SLOTS[s.color] : i });
     }
     let labels = [];
     if (kind !== 'histogram') {
@@ -441,7 +445,7 @@ const cedarChart = (() => {
       const pos = new Array(n).fill(axis.base);
       const neg = new Array(n).fill(axis.base);
       data.forEach((s, k) => {
-        const g = svg('g', { class: slotClass(s.slot) });
+        const g = svg('g', { class: toneClass(s) });
         s.values.forEach((val, i) => {
           if (val === null || spec.log && val <= 0) return;
           let a;
@@ -470,7 +474,7 @@ const cedarChart = (() => {
       });
     } else if (kind === 'scatter') {
       for (const s of data) {
-        const g = svg('g', { class: slotClass(s.slot) });
+        const g = svg('g', { class: toneClass(s) });
         s.values.forEach((val, i) => {
           if (val === null || spec.log && val <= 0) return;
           g.append(svg('circle', { cx: xs[i], cy: v(val), r: n > 400 ? 3 : 4.5, class: 'pt' }));
@@ -494,7 +498,7 @@ const cedarChart = (() => {
       }
       // Stacked areas are filled from the series below; plain areas from the baseline.
       drawn.forEach(({ s, pts }) => {
-        const cls = slotClass(s.slot);
+        const cls = toneClass(s);
         if (kind === 'area') {
           let d = '';
           let run = [];
@@ -512,7 +516,7 @@ const cedarChart = (() => {
         }
       });
       drawn.forEach(({ s, pts }) => {
-        const cls = slotClass(s.slot);
+        const cls = toneClass(s);
         const path = svg('path', { d: linePath(pts), class: `line ${cls}${animate ? ' draw' : ''}` });
         path.setAttribute('pathLength', '1');
         marks.append(path);
@@ -543,7 +547,7 @@ const cedarChart = (() => {
     const cross = svg('line', { class: 'cross' });
     cross.style.display = 'none';
     const dots = data.map((s) => {
-      const c = svg('circle', { r: 5, class: `dot ${slotClass(s.slot)}` });
+      const c = svg('circle', { r: 5, class: `dot ${toneClass(s)}` });
       c.style.display = 'none';
       return c;
     });
@@ -565,7 +569,7 @@ const cedarChart = (() => {
     }
     function row(s, value, extra) {
       const r = el('div', 'row');
-      r.append(el('span', `key ${slotClass(s.slot)}`), el('span', 'who', s.name), el('strong', '', value));
+      r.append(el('span', `key ${toneClass(s)}`), el('span', 'who', s.name), el('strong', '', value));
       if (extra) r.append(el('span', 'extra', extra));
       return r;
     }
@@ -726,10 +730,10 @@ const cedarChart = (() => {
         const large = a1 - a0 > Math.PI ? 1 : 0;
         d = `M${pt(r, a0)}A${r},${r} 0 ${large} 1 ${pt(r, a1)}L${pt(inner, a1)}A${inner},${inner} 0 ${large} 0 ${pt(inner, a0)}Z`;
       }
-      const arc = svg('path', { d, class: `slice ${slotClass(s.slot)}`, 'fill-rule': 'evenodd' });
+      const arc = svg('path', { d, class: `slice ${toneClass(s)}`, 'fill-rule': 'evenodd' });
       root.append(arc);
       arcs.push(arc);
-      const li = el('li', slotClass(s.slot));
+      const li = el('li', toneClass(s));
       li.append(el('span', 'swatch'), el('span', 'name', s.name), el('span', 'val', full(s.value)), el('span', 'pct', shareText));
       list.append(li);
       rows.push(li);
@@ -855,7 +859,7 @@ const cedarChart = (() => {
         b.type = 'button';
         b.setAttribute('aria-pressed', 'true');
         b.title = spec.series.length > 1 ? tr('chart.toggle', { name: s.name }) : s.name;
-        b.append(el('span', `key ${slotClass(s.slot)}${spec.kind === 'line' || spec.kind === 'scatter' ? ' line' : ''}`), el('span', 'name', s.name));
+        b.append(el('span', `key ${toneClass(s)}${spec.kind === 'line' || spec.kind === 'scatter' ? ' line' : ''}`), el('span', 'name', s.name));
         if (spec.series.length > 1) {
           b.addEventListener('click', () => {
             if (!hidden.has(s.slot) && hidden.size === spec.series.length - 1) return; // keep one
