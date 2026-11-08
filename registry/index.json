@@ -262,7 +262,7 @@
       "files": {
         ".env.example": "a442f1e4bcb057e4b09cc1aef8e3f7a75b0add4e0c1fba70d98c4cd0298b15d1",
         "tool.json": "f2f88b503ddbaa7a15ab5058f740636f2a25bef1e23481f5df35f46685af87de",
-        "tool.py": "f215733c80e77b4608abd72dc31cf6139714f4d1fec3ddd0cd5faf0488882061"
+        "tool.py": "c44c07e7904ca5c19bbb498bb27a7cae39e21218565e6f9805a620c3d4c455fc"
       },
       "reviewed": true,
       "translations": {
