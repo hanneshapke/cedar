@@ -36,6 +36,28 @@ struct ServerSettings: Equatable, Sendable {
         !serverURL.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// Whether the device reaches this server through Tailscale, so it should have the Tailscale app:
+    /// no usable address yet (the usual setup is `tailscale serve`), a loopback address (the
+    /// device's own, never the server's), or a tailnet one (`isTailnetHost`).
+    var needsTailscale: Bool {
+        guard let host = URLComponents(string: serverURL.trimmingCharacters(in: .whitespacesAndNewlines))?.host?
+            .lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".[]")), !host.isEmpty else { return true }
+        return host == "localhost" || host.hasPrefix("127.") || host == "::1" || Self.isTailnetHost(host)
+    }
+
+    /// Whether `host` is on a tailnet: a MagicDNS name (`<machine>.<tailnet>.ts.net`), a Tailscale
+    /// IPv4 address (100.64.0.0/10) or a Tailscale IPv6 one (fd7a:115c:a1e0::/48).
+    static func isTailnetHost(_ host: String) -> Bool {
+        var h = host.lowercased()
+        while h.hasSuffix(".") { h.removeLast() }
+        if h.hasPrefix("["), h.hasSuffix("]") { h = String(h.dropFirst().dropLast()) }
+        if h.hasSuffix(".ts.net") || h.hasPrefix("fd7a:115c:a1e0:") { return true }
+        let parts = h.split(separator: ".", omittingEmptySubsequences: false)
+        let octets = parts.compactMap { Int($0) }
+        guard parts.count == 4, octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else { return false }
+        return octets[0] == 100 && (64...127).contains(octets[1])
+    }
+
     /// Whether `other` points at another server, or at it with another token.
     func sameServer(as other: ServerSettings) -> Bool {
         serverURL.trimmingCharacters(in: .whitespacesAndNewlines) == other.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)

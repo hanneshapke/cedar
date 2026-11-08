@@ -323,6 +323,7 @@
 				DEVELOPMENT_TEAM = 6CFTUZ6T4D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = cedar;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "cedar scans the QR code the Cedar Mac app shows, to connect to it.";
@@ -356,6 +357,7 @@
 				DEVELOPMENT_TEAM = 6CFTUZ6T4D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = cedar;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "cedar scans the QR code the Cedar Mac app shows, to connect to it.";
