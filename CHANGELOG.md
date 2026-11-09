@@ -6,6 +6,7 @@
 - **Tandem charts: the last 24 hours in red, the average in blue.** Both of the tool's charts (glucose over the last hours against the usual day, and time in range by time of day) draw the recent window in red and the baseline average in blue, where they used to take the palette's first two colors.
 - **A chart series can name its color.** A series in `generate_chart`'s input, or in a `[chart]` line a tool prints, may carry `"color"`: one of blue, orange, green, yellow, pink, purple or red. The picture `generate_chart` saves, the web chat and the iPhone and Android apps map it onto their own palettes (Android, whose palette has no pure red, takes its rose); any other value is dropped, and a series without one takes the next palette color as before.
 - **The iPhone and Android apps check for the Tailscale app.** When the server is reached through Tailscale (a `*.ts.net` address, a Tailscale IP, or no address yet, since the usual setup is `tailscale serve`) and the Tailscale app isn't on the device, Settings → Server says so and offers *Get Tailscale*, which opens the App Store or Play Store. The note goes away once Tailscale is installed, as soon as you come back to the app. A server on a public HTTPS address or the local network gets no note. In English, German, French and Spanish.
+- **DGX Spark developer story.** The landing page and model selection page is extended by the developer story around the DGX Spark story.
 
 ## 0.6.1
 
