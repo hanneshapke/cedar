@@ -4,8 +4,10 @@
 Downloads CGM readings, boluses, and basal deliveries from Tandem Source (t:connect) with
 tconnectsync, compares the last hours with the days before, and suggests what to try today.
 The analysis follows the Diabetes Concierge backend (stats, advisor, and daily summary rules).
-The report ends with `[chart] {...}` lines, which the cedar chat draws as charts (the same spec
-as the generate_chart tool's input).
+The report ends with one summary row per calendar day for cedar's records (the model saves them
+into the `tandem_daily` set with records_save, keyed by date, and compares today with yesterday,
+and with any earlier day, through records_lookup), then `[chart] {...}` lines, which the cedar chat
+draws as charts (the same spec as the generate_chart tool's input).
 
 Credentials come from the secrets an admin saved for this tool in cedar (they arrive as
 environment variables), or else from a `.env` file next to this script (copy `.env.example`).
@@ -24,7 +26,7 @@ import site
 import statistics
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -42,6 +44,9 @@ CGM_TYPES = {"LidCgmDataGxb": "Dexcom G6", "LidCgmDataG7": "Dexcom G7", "LidCgmD
 SENSOR_RANGE = {"Dexcom G6": (40, 400), "Dexcom G7": (40, 400), "FreeStyle Libre 2": (40, 500)}
 STATUS_HIGH, STATUS_LOW = 1, 2
 SLOT_MINUTES = 15  # the chart's resolution
+# The record set the daily rows go into, and the fields that identify a row.
+RECORD_SET, RECORD_KEY = "tandem_daily", ["date"]
+RECORD_DAYS = 14  # the most daily rows one call hands over (each about 700 bytes of output)
 # Text the user sees in the charts, by CEDAR_LANGUAGE. The report itself stays English for the model.
 STRINGS = {
     "en": {"last": "Last {h} h", "average": "{d}-day average", "target": "Target",
@@ -366,6 +371,66 @@ def analyze(readings, boluses, basal, flagged, now, hours, baseline_days, tz, lo
     }
 
 
+def daily(readings, boluses, basal, now, tz, low, high):
+    """One row per local calendar day with CGM data, oldest first, for the `tandem_daily` record
+    set: glucose in mg/dL whatever the display unit, so rows saved on different days compare.
+    Today's row covers the day so far (`complete` false, `through` the newest reading) and is
+    updated by the next call; a past day's row is final once the pump has uploaded all of it."""
+    today = now.astimezone(tz).date()
+    days = sorted({t.astimezone(tz).date() for t, _ in readings})
+    rows = []
+    for day in days[-RECORD_DAYS:]:
+        start = datetime.combine(day, time(0), tzinfo=tz).astimezone(timezone.utc)
+        end = datetime.combine(day + timedelta(days=1), time(0), tzinfo=tz).astimezone(timezone.utc)
+        within = [(t, v) for t, v in readings if start <= t < end]
+        s = stats([v for _, v in within], low, high)
+        if not s["n"]:
+            continue
+        ins = insulin(boluses, basal, start, min(end, now + timedelta(seconds=1)))
+        blocks = by_block(within, tz, low, high)
+        expected = 288 * min(1.0, (min(now, end) - start).total_seconds() / 86400)
+        row = {
+            "date": day.isoformat(), "complete": day < today,
+            "through": within[-1][0].astimezone(tz).strftime("%H:%M"),
+            "readings": s["n"], "coverage_pct": round(min(100.0, 100 * s["n"] / expected)) if expected else None,
+            "target_low_mg_dl": low, "target_high_mg_dl": high,
+            "mean_mg_dl": round(s["mean"]), "sd_mg_dl": round(s["sd"]), "cv_pct": round(s["cv"], 1),
+            "gmi_pct": round(s["gmi"], 1), "tir_pct": round(s["tir"], 1),
+            "below_pct": round(s["low"] + s["very_low"], 1), "very_low_pct": round(s["very_low"], 1),
+            "above_pct": round(s["high"] + s["very_high"], 1), "very_high_pct": round(s["very_high"], 1),
+            "min_mg_dl": round(s["min"]), "max_mg_dl": round(s["max"]),
+            "lows": len(episodes(within, below=low)),
+            "highs": len(episodes(within, above=URGENT_HIGH, min_readings=3)),
+            "insulin_total_u": round(ins["total"], 1), "bolus_u": round(ins["bolus"], 1),
+            "basal_u": round(ins["basal"], 1), "boluses": ins["count"], "carbs_g": round(ins["carbs"]),
+        }
+        for name, _, _ in BLOCKS:
+            b = blocks[name]
+            row[f"{name}_mean_mg_dl"] = round(b["mean"]) if b["n"] else None
+            row[f"{name}_tir_pct"] = round(b["tir"]) if b["n"] else None
+        rows.append(row)
+    return rows
+
+
+def records_section(rows, now, tz):
+    """The daily rows, with what to do with them, for the model."""
+    if not rows:
+        return []
+    day = now.astimezone(tz).date()
+    save = {"set": RECORD_SET, "key": RECORD_KEY, "health_data": True,
+            "description": "One row per day of the user's Tandem pump and CGM data (glucose in mg/dL, "
+                           "time in range, lows and highs, insulin, carbs), from the tandem_glucose tool",
+            "records": rows}
+    today, yesterday = day.isoformat(), (day - timedelta(days=1)).isoformat()
+    return ["", f"Daily records ({len(rows)} days, {rows[0]['date']} to {rows[-1]['date']}; today is {today}): save them with records_save "
+            f"exactly as given (set {RECORD_SET}, key date; the same day saved again is updated, so today's "
+            "partial row is completed by later calls), then compare today with yesterday with records_lookup, "
+            f"e.g. SELECT * FROM {RECORD_SET} WHERE date IN ('{today}', '{yesterday}'), and with earlier days "
+            "for a trend. Today is so far only: compare it with yesterday's same hours by time of day "
+            "(the *_tir_pct and *_mean_mg_dl columns) rather than its insulin and carb totals.",
+            "[records] " + json.dumps(save, separators=(",", ":"), ensure_ascii=False)]
+
+
 def recommend(a, tz, low, high, fmt):
     """Suggestions for the rest of today, safety first. Behavioral only: never doses or settings."""
     out = []
@@ -518,7 +583,8 @@ def report(pump, sensors, a, suggestions, tz, low, high, unit):
 def charts(readings, a, tz, low, high, unit):
     """`[chart]` lines for the cedar chat: the recent window in 15-minute steps against the
     baseline's average at the same time of day, inside the target range; and time in range by
-    time of day. Each is the generate_chart tool's input, without a path."""
+    time of day. Each is the generate_chart tool's input, without a path. The recent window is
+    drawn in red and the baseline average in blue."""
     if not a["recent"]["n"]:
         return []
     mmol = unit == "mmol"
@@ -556,9 +622,9 @@ def charts(readings, a, tz, low, high, unit):
     while recent and recent[-1] is None:
         labels.pop(), recent.pop(), usual.pop()
 
-    series = [{"name": tr("last", h=h), "values": recent}]
+    series = [{"name": tr("last", h=h), "values": recent, "color": "red"}]
     if any(v is not None for v in usual):
-        series.append({"name": tr("average", d=d), "values": usual})
+        series.append({"name": tr("average", d=d), "values": usual, "color": "blue"})
     unit_label = "mmol/L" if mmol else "mg/dL"
     out = [{
         "kind": "line", "title": tr("glucose_title", h=h, d=d),
@@ -568,9 +634,9 @@ def charts(readings, a, tz, low, high, unit):
 
     names = [name for name, _, _ in BLOCKS]
     tir = lambda blocks: [round(blocks[n]["tir"]) if blocks[n]["n"] else None for n in names]  # noqa: E731
-    by_time = [{"name": tr("last", h=h), "values": tir(a["recent_blocks"])}]
+    by_time = [{"name": tr("last", h=h), "values": tir(a["recent_blocks"]), "color": "red"}]
     if a["base"]["n"]:
-        by_time.append({"name": tr("average", d=d), "values": tir(a["base_blocks"])})
+        by_time.append({"name": tr("average", d=d), "values": tir(a["base_blocks"]), "color": "blue"})
     out.append({
         "kind": "bar", "title": tr("tir_title", low=decimal(conv(low)), high=decimal(conv(high)), unit=unit_label),
         "labels": [tr(n) for n in names], "series": by_time, "y_label": tr("tir_label"),
@@ -648,6 +714,9 @@ def main():
     a = analyze(readings, boluses, basal, flagged, now, hours, baseline_days, tz, low, high)
     suggestions = recommend(a, tz, low, high, formatter(unit == "mmol"))
     print(report(pump, sensors, a, suggestions, tz, low, high, unit))
+    section = records_section(daily(readings, boluses, basal, now, tz, low, high), now, tz)
+    if section:
+        print("\n".join(section))
     lines = charts(readings, a, tz, low, high, unit)
     if lines:
         print("\n" + "\n".join(lines))

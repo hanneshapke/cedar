@@ -3311,6 +3311,28 @@
         }
       }
     },
+    "Cedar usually reaches your server through Tailscale. Install the Tailscale app on this device and log in to the same tailnet as your server." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar erreicht deinen Server meist über Tailscale. Installiere die Tailscale-App auf diesem Gerät und melde dich im selben Tailnet an wie dein Server."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar suele llegar a tu servidor a través de Tailscale. Instala la app de Tailscale en este dispositivo e inicia sesión en la misma tailnet que tu servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar joint généralement votre serveur via Tailscale. Installez l'application Tailscale sur cet appareil et connectez-vous au même tailnet que votre serveur."
+          }
+        }
+      }
+    },
     "Cedar will delete all %lld sets of records it keeps for you. This can't be undone." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5433,6 +5455,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Commencer"
+          }
+        }
+      }
+    },
+    "Get Tailscale" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tailscale laden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obtener Tailscale"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installer Tailscale"
           }
         }
       }
@@ -11787,6 +11831,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Symbole"
+          }
+        }
+      }
+    },
+    "Tailscale isn't installed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tailscale ist nicht installiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tailscale no está instalado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tailscale n'est pas installé"
           }
         }
       }

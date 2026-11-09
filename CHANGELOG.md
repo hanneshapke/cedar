@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.6.3
 
 - **The agent calculates with code.** The default system prompt now tells the model to work out any arithmetic beyond the trivial (money, percentages, dates, unit conversions) with `run_python` rather than in its head, so totals, conversions and date differences come out exact. `run_python` is in every run and works offline. A custom system prompt is not changed.
+
+## 0.6.2
+
+- **Tandem: today against yesterday, from a daily history in records.** The `tandem_glucose` tool (1.4.0) now ends its report with one summary row per calendar day, for up to the last 14 days it downloaded: glucose in mg/dL whatever the display unit, time in range, time below and above range, variability, GMI, the lowest and highest readings, lows and highs, insulin (total, bolus, basal), boluses and carbs, and the average and time in range overnight, in the morning, afternoon and evening. Today's row is marked as partial, with the time it runs to. The model saves the rows with `records_save` into a `tandem_daily` set keyed by date (marked as health data), so the same day saved again is updated and the history grows across conversations and scheduled runs, then compares today with yesterday through `records_lookup` (by time of day, since today is partial), and with earlier days for a trend, and leads its answer with how today is going against yesterday.
+- **Tandem charts: the last 24 hours in red, the average in blue.** Both of the tool's charts (glucose over the last hours against the usual day, and time in range by time of day) draw the recent window in red and the baseline average in blue, where they used to take the palette's first two colors.
+- **A chart series can name its color.** A series in `generate_chart`'s input, or in a `[chart]` line a tool prints, may carry `"color"`: one of blue, orange, green, yellow, pink, purple or red. The picture `generate_chart` saves, the web chat and the iPhone and Android apps map it onto their own palettes (Android, whose palette has no pure red, takes its rose); any other value is dropped, and a series without one takes the next palette color as before.
+- **The iPhone and Android apps check for the Tailscale app.** When the server is reached through Tailscale (a `*.ts.net` address, a Tailscale IP, or no address yet, since the usual setup is `tailscale serve`) and the Tailscale app isn't on the device, Settings → Server says so and offers *Get Tailscale*, which opens the App Store or Play Store. The note goes away once Tailscale is installed, as soon as you come back to the app. A server on a public HTTPS address or the local network gets no note. In English, German, French and Spanish.
+- **DGX Spark developer story.** The landing page and model selection page is extended by the developer story around the DGX Spark story.
 
 ## 0.6.1
 

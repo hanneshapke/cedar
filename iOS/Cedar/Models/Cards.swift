@@ -1264,7 +1264,12 @@ struct ChartCard: Hashable, Sendable {
         let named: Bool
         /// One per label; `nil` is a gap. For a histogram, the raw samples.
         let values: [Double?]
+        /// Its palette slot: the color it named (`"color": "red"`), else its place in the order.
+        let tone: Int
     }
+
+    /// The colors a series may ask for by name, as palette slots.
+    static let colorSlots = ["blue": 0, "orange": 1, "green": 2, "yellow": 3, "pink": 4, "purple": 6, "red": 7]
 
     let kind: Kind
     let path: String?
@@ -1310,7 +1315,8 @@ struct ChartCard: Hashable, Sendable {
                 values.append(n)
             }
             let name = CardParse.text(s["name"], max: 80)
-            series.append(Series(name: name ?? L10n.format("Series %lld", i + 1), named: name != nil, values: values))
+            let tone = s["color"]?.stringValue.flatMap { colorSlots[$0] } ?? i
+            series.append(Series(name: name ?? L10n.format("Series %lld", i + 1), named: name != nil, values: values, tone: tone))
         }
         var labels: [Label] = []
         if kind != .histogram {
@@ -1341,7 +1347,7 @@ struct ChartCard: Hashable, Sendable {
                 var keep = (0..<limit).map { Int(Double($0) * step) }
                 if keep.last != labels.count - 1 { keep.append(labels.count - 1) }
                 labels = keep.map { labels[$0] }
-                series = series.map { s in Series(name: s.name, named: s.named, values: keep.map { s.values[$0] }) }
+                series = series.map { s in Series(name: s.name, named: s.named, values: keep.map { s.values[$0] }, tone: s.tone) }
             }
         }
         let bins = value["bins"]?.doubleValue.flatMap { (1...500).contains($0) ? Int($0) : nil }

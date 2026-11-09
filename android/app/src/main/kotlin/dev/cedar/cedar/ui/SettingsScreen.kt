@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.AlertDialog
@@ -88,6 +89,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.BuildConfig
 import dev.cedar.cedar.R
+import dev.cedar.cedar.TailscaleApp
 import dev.cedar.cedar.push.Transport
 import dev.cedar.core.AppLocales
 import dev.cedar.core.ChatClient
@@ -123,6 +125,12 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
     var testStatus by remember { mutableStateOf<String?>(null) }
     var confirmingDiscard by remember { mutableStateOf(false) }
     val tokenField = remember { FocusRequester() }
+    // Checked again on coming back, from the store after installing it.
+    var tailscaleInstalled by remember { mutableStateOf(TailscaleApp.isInstalled(context)) }
+    LifecycleResumeEffect(Unit) {
+        tailscaleInstalled = TailscaleApp.isInstalled(context)
+        onPauseOrDispose {}
+    }
 
     val hasChanges = draft != app.settings
     val canSave = draft.isConfigured && draft.urlProblem() == null && hasChanges
@@ -267,6 +275,9 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                     )
                     is Check.Failed -> StatusLine(Icons.Outlined.Error, c.message, CedarColors.red)
                     else -> {}
+                }
+                if (!tailscaleInstalled && draft.needsTailscale) {
+                    TailscaleMissing { TailscaleApp.openStore(context) }
                 }
                 Footnote(stringResource(R.string.server_footnote))
 
@@ -499,6 +510,20 @@ private fun Section(title: String) {
 @Composable
 private fun Footnote(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
+}
+
+/** Under the connection buttons when the server is on a tailnet and Tailscale isn't on this phone. */
+@Composable
+private fun TailscaleMissing(onGet: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        StatusLine(Icons.Outlined.Warning, stringResource(R.string.tailscale_missing), CedarColors.red)
+        Text(stringResource(R.string.tailscale_missing_text), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
+        OutlinedButton(onClick = onGet) {
+            Icon(Icons.Outlined.OpenInBrowser, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.get_tailscale))
+        }
+    }
 }
 
 /** A line under the connection buttons: what the last test found. */

@@ -90,8 +90,17 @@ def category_ticks(ax, positions, labels, horizontal=False, most=14):
     (ax.set_yticks if horizontal else ax.set_xticks)([positions[i] for i in keep], [str(labels[i]) for i in keep])
 
 
+# The colors a series may ask for by name (`"color": "red"`), as slots of PALETTE.
+COLOR_SLOTS = {"blue": 0, "orange": 1, "green": 2, "yellow": 3, "pink": 4, "purple": 6, "red": 7}
+
+
 def color(i):
     return PALETTE[i] if i < len(PALETTE) else OTHER
+
+
+def series_color(series, i):
+    """The i-th series' color: the one it named, else the next in the palette."""
+    return color(COLOR_SLOTS.get(series[i].get("color"), i))
 
 
 def pie_slices(labels, values, limit=len(PALETTE)):
@@ -130,25 +139,25 @@ def draw(ax, spec):
     if kind == "histogram":
         data = [[v for v in values_of(s) if not math.isnan(v)] for s in series]
         ax.hist(data, bins=spec.get("bins", "auto"), label=names, stacked=stacked,
-                color=[color(i) for i in range(len(data))], edgecolor="white", linewidth=1.2)
+                color=[series_color(series, i) for i in range(len(data))], edgecolor="white", linewidth=1.2)
     elif kind == "scatter":
         for i, (name, s) in enumerate(zip(names, series)):
-            ax.scatter(labels, values_of(s), label=name, color=color(i), alpha=0.85, s=36,
+            ax.scatter(labels, values_of(s), label=name, color=series_color(series, i), alpha=0.85, s=36,
                        edgecolors="white", linewidths=0.8)
     elif kind in ("line", "area"):
         numeric = all(isinstance(l, (int, float)) for l in labels)
         x = labels if numeric else list(range(len(labels)))
         if kind == "area" and stacked:
             ax.stackplot(x, *[values_of(s) for s in series], labels=names, alpha=0.8,
-                         colors=[color(i) for i in range(len(series))], edgecolor="white", linewidth=1)
+                         colors=[series_color(series, i) for i in range(len(series))], edgecolor="white", linewidth=1)
         else:
             for i, (name, s) in enumerate(zip(names, series)):
                 ys = values_of(s)
                 if kind == "area":
-                    ax.fill_between(x, ys, color=color(i), alpha=0.16, linewidth=0)
-                    ax.plot(x, ys, label=name, color=color(i))
+                    ax.fill_between(x, ys, color=series_color(series, i), alpha=0.16, linewidth=0)
+                    ax.plot(x, ys, label=name, color=series_color(series, i))
                 else:
-                    ax.plot(x, ys, label=name, color=color(i), marker="o" if len(x) <= 30 else None,
+                    ax.plot(x, ys, label=name, color=series_color(series, i), marker="o" if len(x) <= 30 else None,
                             markersize=4.5, markeredgecolor="white", markeredgewidth=1)
         if not numeric:
             category_ticks(ax, x, labels)
@@ -161,7 +170,7 @@ def draw(ax, spec):
             base = [0.0] * len(labels)
             for i, (name, s) in enumerate(zip(names, series)):
                 vals = [0.0 if math.isnan(v) else v for v in values_of(s)]
-                style = {"label": name, "color": color(i), "edgecolor": "white", "linewidth": 1}
+                style = {"label": name, "color": series_color(series, i), "edgecolor": "white", "linewidth": 1}
                 if horizontal:
                     bar(positions, vals, 0.62, left=base, **style)
                 else:
@@ -173,7 +182,7 @@ def draw(ax, spec):
             for i, (name, s) in enumerate(zip(names, series)):
                 offset = (i - (n - 1) / 2) * width
                 # A thin white edge leaves a gap between neighbouring bars of a group.
-                bar([p + offset for p in positions], values_of(s), width, label=name, color=color(i),
+                bar([p + offset for p in positions], values_of(s), width, label=name, color=series_color(series, i),
                     edgecolor="white", linewidth=1.5 if n > 1 else 0)
         category_ticks(ax, positions, labels, horizontal, most=40 if horizontal else 14)
         if horizontal:

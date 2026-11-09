@@ -48,6 +48,9 @@
     <string name="test_connection">Test Connection</string>
     <string name="connected">Connected</string>
     <string name="server_footnote">The cedar-chat server\'s address (where you open the web UI) and its CHAT_ACCESS_TOKEN, if it is set. The app connects over HTTPS only: serve the chat with tailscale serve, which the Cedar desktop app and scripts/cedar-stack.sh do for you, then scan the QR code under Settings → Phone in the chat. The token is stored encrypted on this phone; cedar\'s own key stays on the server.</string>
+    <string name="tailscale_missing">Tailscale isn\'t installed</string>
+    <string name="tailscale_missing_text">Cedar usually reaches your server through Tailscale. Install the Tailscale app on this device and log in to the same tailnet as your server.</string>
+    <string name="get_tailscale">Get Tailscale</string>
     <string name="server_default">Server default</string>
     <string name="reasoning">Reasoning</string>
     <string name="reasoning_default">Default</string>
