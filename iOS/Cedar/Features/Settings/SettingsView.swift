@@ -23,6 +23,8 @@ struct SettingsView: View {
     @State private var showingTour = false
     /// Whether this phone may show notifications, once asked.
     @State private var notifications: UNAuthorizationStatus?
+    /// Read again on coming back, from the App Store after installing it.
+    @State private var tailscaleInstalled = true
     @FocusState private var focus: Field?
 
     enum CheckState: Equatable {
@@ -96,10 +98,14 @@ struct SettingsView: View {
                 draft = app.settings
                 models = app.models
             }
+            .onAppear { tailscaleInstalled = TailscaleApp.isInstalled }
             .task { await readNotificationStatus() }
             // Back from the system's Settings app, where notifications may have been allowed.
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await readNotificationStatus() } }
+                if phase == .active {
+                    tailscaleInstalled = TailscaleApp.isInstalled
+                    Task { await readNotificationStatus() }
+                }
             }
             // For the On/Off on the Contribute row.
             .task(id: app.serverHasContributions) {
@@ -191,10 +197,31 @@ struct SettingsView: View {
             }
             .disabled(!draft.isConfigured || check == .checking)
             connectionStatus
+            if !tailscaleInstalled && draft.needsTailscale {
+                tailscaleMissing
+            }
         } header: {
             Text("Server")
         } footer: {
             Text("The address where you open cedar-chat in a browser, and its access token if it has one. On a Mac, turn on iPhone & iPad sharing in the Cedar app and scan the code it shows. The token stays in this phone's Keychain.")
+        }
+    }
+
+    /// Under the Test Connection row when the server is on a tailnet and Tailscale isn't installed.
+    private var tailscaleMissing: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Tailscale isn't installed", systemImage: "exclamationmark.triangle.fill")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.clay)
+            Text("Cedar usually reaches your server through Tailscale. Install the Tailscale app on this device and log in to the same tailnet as your server.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button {
+                openURL(TailscaleApp.appStoreURL)
+            } label: {
+                Label("Get Tailscale", systemImage: "arrow.down.app")
+            }
+            .buttonStyle(.borderless)
         }
     }
 

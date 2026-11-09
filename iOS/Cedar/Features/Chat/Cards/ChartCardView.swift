@@ -136,8 +136,8 @@ struct ChartCardView: View {
                     } label: {
                         HStack(spacing: 6) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(on ? ChartPalette.color(s) : Color.clear)
-                                .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(ChartPalette.color(s), lineWidth: on ? 0 : 1.5))
+                                .fill(on ? ChartPalette.color(series.tone) : Color.clear)
+                                .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(ChartPalette.color(series.tone), lineWidth: on ? 0 : 1.5))
                                 .frame(width: 10, height: 10)
                             Text(series.name)
                                 .font(.caption)
@@ -232,7 +232,7 @@ struct ChartCardView: View {
                 }
             }
         }
-        .chartForegroundStyleScale(domain: names, range: card.series.indices.map(ChartPalette.color))
+        .chartForegroundStyleScale(domain: names, range: card.series.map { ChartPalette.color($0.tone) })
         .chartLegend(.hidden)
         .chartBackground { proxy in bandFill(proxy) }
         .modifier(ValueAxis(log: card.log, horizontal: card.kind == .barh))
@@ -354,7 +354,7 @@ struct ChartCardView: View {
             Text(categories[i]).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(shown, id: \.self) { s in
                 HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 2).fill(ChartPalette.color(s)).frame(width: 8, height: 8)
+                    RoundedRectangle(cornerRadius: 2).fill(ChartPalette.color(card.series[s].tone)).frame(width: 8, height: 8)
                     Text(card.series[s].name).lineLimit(1)
                     Spacer(minLength: 6)
                     Text(columns[s][i].map(ChartCard.format) ?? "–").fontWeight(.semibold).monospacedDigit()
