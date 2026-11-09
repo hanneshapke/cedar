@@ -45,6 +45,9 @@
     <string name="test_connection">Tester la connexion</string>
     <string name="connected">Connecté</string>
     <string name="server_footnote">L\'adresse du serveur cedar-chat (là où vous ouvrez l\'interface web) et son CHAT_ACCESS_TOKEN, s\'il est défini. L\'application se connecte uniquement en HTTPS : servez le chat avec tailscale serve, ce que l\'application de bureau Cedar et scripts/cedar-stack.sh font pour vous, puis scannez le code QR sous Réglages → Téléphone dans le chat. Le jeton est stocké chiffré sur ce téléphone ; la clé de cedar reste sur le serveur.</string>
+    <string name="tailscale_missing">Tailscale n\'est pas installé</string>
+    <string name="tailscale_missing_text">Cedar joint généralement votre serveur via Tailscale. Installez l\'application Tailscale sur cet appareil et connectez-vous au même tailnet que votre serveur.</string>
+    <string name="get_tailscale">Installer Tailscale</string>
     <string name="server_default">Par défaut du serveur</string>
     <string name="reasoning">Niveau de raisonnement</string>
     <string name="reasoning_default">Par défaut</string>

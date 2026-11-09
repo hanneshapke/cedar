@@ -46,6 +46,22 @@ data class ServerSettings(
         }
     }
 
+    /**
+     * Whether the phone reaches this server through Tailscale, so the app should have the Tailscale
+     * app installed: no usable address yet (the usual setup is `tailscale serve`), a loopback address
+     * (the phone's own, never the server's), or a tailnet one ([isTailnetHost]).
+     */
+    val needsTailscale: Boolean
+        get() {
+            val host = try {
+                URI(serverURL.trim()).host
+            } catch (_: Exception) {
+                null
+            }?.lowercase()?.trimEnd('.')?.removeSurrounding("[", "]")
+            return host.isNullOrEmpty() || host == "localhost" || host.startsWith("127.") || host == "::1" ||
+                isTailnetHost(host)
+        }
+
     /** [urlIssue] in English. */
     fun urlProblem(): String? = when (urlIssue()) {
         UrlProblem.NOT_CONFIGURED -> ChatException.NotConfigured.message
@@ -57,6 +73,21 @@ data class ServerSettings(
     companion object {
         const val HTTPS_ONLY = "Cedar connects over HTTPS only. Use the chat's https:// address, such as the one " +
             "tailscale serve gives it: https://<machine>.<tailnet>.ts.net (no port)."
+
+        /** The Tailscale app's package on Android (Play Store and F-Droid alike). */
+        const val TAILSCALE_PACKAGE = "com.tailscale.ipn"
+
+        /**
+         * Whether `host` is on a tailnet: a MagicDNS name (`<machine>.<tailnet>.ts.net`), a Tailscale
+         * IPv4 address (100.64.0.0/10) or a Tailscale IPv6 one (fd7a:115c:a1e0::/48).
+         */
+        fun isTailnetHost(host: String): Boolean {
+            val h = host.lowercase().trimEnd('.').removeSurrounding("[", "]")
+            if (h.endsWith(".ts.net")) return true
+            if (h.startsWith("fd7a:115c:a1e0:")) return true
+            val octets = h.split('.').map { it.toIntOrNull() ?: return false }
+            return octets.size == 4 && octets.all { it in 0..255 } && octets[0] == 100 && octets[1] in 64..127
+        }
     }
 }
 
