@@ -1140,6 +1140,8 @@ data class ChartCard(
         val named: Boolean,
         /** One per label; `null` is a gap. For a histogram, the raw samples. */
         val values: List<Double?>,
+        /** The palette color it asked for (one of [COLORS]), or `null` for the next in order. */
+        val color: String? = null,
     )
 
     data class Band(val from: Double, val to: Double, val label: String?)
@@ -1172,6 +1174,8 @@ data class ChartCard(
 
     companion object {
         const val MAX_SERIES = 20
+        /** The colors a series may ask for by name. */
+        val COLORS = setOf("blue", "orange", "green", "yellow", "pink", "purple", "red")
         const val MAX_VALUES = 100_000
 
         /** The categorical palette's size; later series are drawn in grey. */
@@ -1193,7 +1197,8 @@ data class ChartCard(
                     values += v.dbl ?: return null
                 }
                 val name = CardParse.text(s["name"], 80)
-                series += Series(name ?: "Series ${i + 1}", name != null, values)
+                val color = s["color"].str?.takeIf { it in COLORS }
+                series += Series(name ?: "Series ${i + 1}", name != null, values, color)
             }
             var labels = mutableListOf<Label>()
             if (kind != Kind.HISTOGRAM) {

@@ -79,6 +79,12 @@ val ChartPalette = listOf(
 
 fun seriesColor(index: Int): Color = ChartPalette.getOrElse(index) { Color(0xFF9E9E9E) }
 
+/** The colors a series may ask for by name (`"color": "red"`), as [ChartPalette] slots. */
+private val ColorSlots = mapOf("green" to 0, "orange" to 1, "blue" to 2, "red" to 3, "pink" to 3, "purple" to 4, "yellow" to 6)
+
+/** A chart series' color: the one it named, else its place in the palette. */
+fun seriesColor(index: Int, series: ChartCard.Series): Color = seriesColor(series.color?.let(ColorSlots::get) ?: index)
+
 /** One line on a [LineChart]: points as (x, y), x increasing. */
 data class Line(val label: String, val color: Color, val points: List<Pair<Double, Double?>>, val dashed: Boolean = false, val fill: Boolean = false)
 
@@ -287,7 +293,7 @@ fun ChartCardView(card: ChartCard) {
             else -> {
                 val numeric = card.numericX
                 val lines = visible.map { (i, s) ->
-                    Line(names[i], seriesColor(i), s.values.mapIndexed { j, v -> (if (numeric) card.labels[j].number!! else j.toDouble()) to v },
+                    Line(names[i], seriesColor(i, s), s.values.mapIndexed { j, v -> (if (numeric) card.labels[j].number!! else j.toDouble()) to v },
                         fill = card.kind == ChartCard.Kind.AREA)
                 }
                 LineChart(
@@ -302,7 +308,7 @@ fun ChartCardView(card: ChartCard) {
             }
         }
         if (card.series.size > 1 && card.kind != ChartCard.Kind.PIE) {
-            Legend(names.mapIndexed { i, name -> name to seriesColor(i) }, hidden) { name -> if (name in hidden) hidden.remove(name) else hidden.add(name) }
+            Legend(names.mapIndexed { i, name -> name to seriesColor(i, card.series[i]) }, hidden) { name -> if (name in hidden) hidden.remove(name) else hidden.add(name) }
         }
         if (card.thinned) {
             Text(stringResource(R.string.chart_thinned), style = MaterialTheme.typography.labelSmall, color = CedarColors.secondaryText)
@@ -330,7 +336,7 @@ private fun BarChart(card: ChartCard, names: List<String>, hidden: List<String>)
     val hist = if (histogram) card.histogram else null
     val categories: List<String> = hist?.first?.windowed(2)?.map { (a, b) -> "${ChartCard.format(a)}–${ChartCard.format(b)}" } ?: card.labels.map { it.text }
     val series = card.series.withIndex().filter { names[it.index] !in hidden }.map { (i, s) ->
-        Triple(names[i], seriesColor(i), if (hist != null) hist.second[i].map { it.toDouble() } else s.values.map { it ?: 0.0 })
+        Triple(names[i], seriesColor(i, s), if (hist != null) hist.second[i].map { it.toDouble() } else s.values.map { it ?: 0.0 })
     }
     if (series.isEmpty() || categories.isEmpty()) return
     val horizontal = card.kind == ChartCard.Kind.BARH

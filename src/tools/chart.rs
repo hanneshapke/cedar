@@ -15,6 +15,8 @@ const RENDERER: &str = "cedar-render-chart";
 const KINDS: [&str; 7] = ["line", "bar", "barh", "area", "scatter", "pie", "histogram"];
 const EXTENSIONS: [&str; 3] = [".png", ".svg", ".pdf"];
 const MAX_SERIES: usize = 20;
+/// The palette colors a series may ask for by name; every renderer maps them onto its own palette.
+const COLORS: [&str; 7] = ["blue", "orange", "green", "yellow", "pink", "purple", "red"];
 const MAX_POINTS: usize = 100_000;
 
 pub struct GenerateChart;
@@ -44,6 +46,8 @@ impl Tool for GenerateChart {
                                 "items": { "type": "object",
                                            "properties": {
                                                "name": { "type": "string", "description": "Legend entry." },
+                                               "color": { "type": "string", "enum": COLORS,
+                                                          "description": "A palette color for this series (default: the next one in order)." },
                                                "values": { "type": "array", "items": { "type": ["number", "null"] },
                                                            "description": "One value per label (null for a gap). For histogram, the raw samples." }
                                            },
@@ -152,6 +156,9 @@ fn parse_spec(input: &Value) -> Result<Value> {
         let mut entry = Map::new();
         if let Some(name) = s["name"].as_str().map(str::trim).filter(|n| !n.is_empty()) {
             entry.insert("name".into(), name.into());
+        }
+        if let Some(color) = s["color"].as_str().map(str::trim).filter(|c| COLORS.contains(c)) {
+            entry.insert("color".into(), color.into());
         }
         entry.insert("values".into(), Value::Array(values.clone()));
         clean_series.push(Value::Object(entry));
@@ -266,14 +273,14 @@ mod tests {
     fn a_spec_keeps_known_fields_trimmed() {
         let input = json!({
             "path": " out/sales.png ", "kind": "bar", "labels": ["Q1", "Q2"],
-            "series": [{ "name": " 2025 ", "values": [1, 2.5], "color": "red" }, { "values": [3, null] }],
+            "series": [{ "name": " 2025 ", "values": [1, 2.5], "color": "red" }, { "values": [3, null], "color": "#ff0000" }],
             "title": " Sales ", "x_label": "", "stacked": true, "extra": 1
         });
         assert_eq!(
             parse_spec(&input).unwrap(),
             json!({
                 "path": "out/sales.png", "kind": "bar", "labels": ["Q1", "Q2"],
-                "series": [{ "name": "2025", "values": [1, 2.5] }, { "values": [3, null] }],
+                "series": [{ "name": "2025", "color": "red", "values": [1, 2.5] }, { "values": [3, null] }],
                 "title": "Sales", "stacked": true
             })
         );

@@ -231,7 +231,7 @@
     },
     {
       "name": "tandem_glucose",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "summary": "Compare your last day of Tandem pump and CGM data with the week before, with tips for today",
       "category": "health",
       "author": "Hannes Hapke",
@@ -261,8 +261,8 @@
       "base_url": "tools/tandem_glucose/",
       "files": {
         ".env.example": "a442f1e4bcb057e4b09cc1aef8e3f7a75b0add4e0c1fba70d98c4cd0298b15d1",
-        "tool.json": "dfc1646dc3fb82f5059e5f59f3b12fb354f0a0a3e09af3c94b530ad8d6caf38d",
-        "tool.py": "03a9bd84323a2d7f5e51153c7563ac298fddd58fc13ec5224f2ce8ba891588c0"
+        "tool.json": "f2f88b503ddbaa7a15ab5058f740636f2a25bef1e23481f5df35f46685af87de",
+        "tool.py": "c44c07e7904ca5c19bbb498bb27a7cae39e21218565e6f9805a620c3d4c455fc"
       },
       "reviewed": true,
       "translations": {
