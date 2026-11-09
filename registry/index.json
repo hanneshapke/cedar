@@ -73,7 +73,7 @@
     },
     {
       "name": "dataiku",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "summary": "Inspect, build and run Dataiku projects, and delegate changes to Cobuild, like Dataiku Headless",
       "category": "data",
       "author": "Hannes Hapke",
@@ -96,9 +96,9 @@
       },
       "base_url": "tools/dataiku/",
       "files": {
-        ".env.example": "4e0d03ed8014d8a5b39b547b3364ec70150655786228847aa58e0c1fed3c86ba",
-        "tool.json": "f29871a9d23692d64117436248dbe000eb0c91578c90d0146e3efb72cfaedd82",
-        "tool.py": "868a339a68f4eebe5c3e5909ffc64a672395d65912eba8954fbfe0c05f1c0cc5"
+        ".env.example": "5b0e53f4ab30f41c9cba94422904f0fd056f8c8970a5ccad9e6a42a919c4e0c2",
+        "tool.json": "9aac1d8267a6bda991774c0a06f78fafadbe6c0c9e81818a94047f8181c174c0",
+        "tool.py": "92bbcba1dac9ecd1c10b2bf6e1e33e208040430d2fb2ec6311cc345cd5f5b8fa"
       },
       "reviewed": false,
       "translations": {

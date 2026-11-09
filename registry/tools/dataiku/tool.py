@@ -113,6 +113,15 @@ def unreachable(base, error):
             "Tailscale address (e.g. http://192.168.1.20:8082), or http://host.docker.internal:8082 "
             "with Docker Desktop, and make sure DSS listens on that interface, not only on 127.0.0.1. "
             "On OpenShell, also add that host to \"network\" in your copy of tool.json.")
+    elif host == "host.docker.internal" and "resolve" in str(error).lower():
+        message += (
+            "\n\nhost.docker.internal does not resolve in this tool's container. Docker Desktop "
+            "defines it on its own; Docker Engine on Linux only with --add-host "
+            "host.docker.internal:host-gateway, which newer cedar versions add to networked tool calls. With an "
+            "older cedar, or on OpenShell, set DKU_DSS_URL to the host's address instead: its "
+            "Docker bridge gateway (usually http://172.17.0.1:8082; `ip -4 addr show docker0` on "
+            "the host) or its LAN or Tailscale address. DSS must listen on that interface, not "
+            "only on 127.0.0.1.")
     return message
 
 
