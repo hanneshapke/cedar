@@ -237,6 +237,31 @@ class ApiTest {
     }
 
     @Test
+    fun saysWhenTheServerIsReachedThroughTailscale() {
+        assertTrue(ServerSettings.isTailnetHost("m.tail1234.ts.net"))
+        assertTrue(ServerSettings.isTailnetHost("M.Tail1234.TS.NET."))
+        assertTrue(ServerSettings.isTailnetHost("100.64.0.1"))
+        assertTrue(ServerSettings.isTailnetHost("100.127.255.254"))
+        assertTrue(ServerSettings.isTailnetHost("[fd7a:115c:a1e0::1]"))
+        assertFalse(ServerSettings.isTailnetHost("100.128.0.1"))
+        assertFalse(ServerSettings.isTailnetHost("100.63.0.1"))
+        assertFalse(ServerSettings.isTailnetHost("192.168.1.10"))
+        assertFalse(ServerSettings.isTailnetHost("chat.example.com"))
+        assertFalse(ServerSettings.isTailnetHost("ts.net.example.com"))
+
+        assertTrue(ServerSettings(serverURL = "https://m.t.ts.net").needsTailscale)
+        assertTrue(ServerSettings(serverURL = "https://100.101.102.103").needsTailscale)
+        assertTrue(ServerSettings(serverURL = "https://[fd7a:115c:a1e0::1]").needsTailscale)
+        // Nothing usable yet, or the phone's own address: the usual setup is tailscale serve.
+        assertTrue(ServerSettings().needsTailscale)
+        assertTrue(ServerSettings(serverURL = "http://127.0.0.1:3000").needsTailscale)
+        assertTrue(ServerSettings(serverURL = "m.t.ts.net").needsTailscale)
+        // A public HTTPS server (Caddy, Let's Encrypt) needs no Tailscale.
+        assertFalse(ServerSettings(serverURL = "https://chat.example.com").needsTailscale)
+        assertFalse(ServerSettings(serverURL = "https://192.168.1.10").needsTailscale)
+    }
+
+    @Test
     fun decodesAContributionPreviewAndRebuildsTheBundleToSend() {
         val json = """
         {"bundle":{"schema_version":1,"model":{"id":"m","name":"org/model-a"},"redactions":{"EMAIL":["maya.lindqvist@example.net"],"USER":["theo"]},

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- **The iPhone and Android apps check for the Tailscale app.** When the server is reached through Tailscale (a `*.ts.net` address, a Tailscale IP, or no address yet, since the usual setup is `tailscale serve`) and the Tailscale app isn't on the device, Settings → Server says so and offers *Get Tailscale*, which opens the App Store or Play Store. The note goes away once Tailscale is installed, as soon as you come back to the app. A server on a public HTTPS address or the local network gets no note. In English, German, French and Spanish.
+
 ## 0.6.1
 
 - **The Memory count in Settings counts every memory.** The web chat's and desktop app's Settings menu, and the iPhone and Android apps' *What Cedar Remembers* row, showed only the memories of the kind the Memory page last had open (*About you* by default), so conversations and ways of working were left out of the number. They now count every active memory, of every kind, and the count follows when a memory is removed, archived or restored.
