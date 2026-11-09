@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The agent calculates with code.** The default system prompt now tells the model to work out any arithmetic beyond the trivial (money, percentages, dates, unit conversions) with `run_python` rather than in its head, so totals, conversions and date differences come out exact. `run_python` is in every run and works offline. A custom system prompt is not changed.
+
 ## 0.6.1
 
 - **The Memory count in Settings counts every memory.** The web chat's and desktop app's Settings menu, and the iPhone and Android apps' *What Cedar Remembers* row, showed only the memories of the kind the Memory page last had open (*About you* by default), so conversations and ways of working were left out of the number. They now count every active memory, of every kind, and the count follows when a memory is removed, archived or restored.
