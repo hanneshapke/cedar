@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.6.3
 
 - **Personal tools reach the Docker host as `host.docker.internal`, on Linux too.** On Docker, a call of a personal tool that declares `network` hosts now runs with `--add-host host.docker.internal:host-gateway`, so a tool can reach a service on the machine Docker runs on (a local Dataiku DSS, say) by the name Docker Desktop defines on its own but Docker Engine on Linux did not; it failed with "No address associated with hostname". It adds no reach: such a call could already reach the host through its network's gateway address, and calls without a network, or on `TOOLS_NETWORK=host`, get nothing. The service must listen on an interface the container reaches, not only on 127.0.0.1.
 - **Dataiku: a localhost address gets an explanation.** The `dataiku` tool (1.0.2) runs each call in a sandbox container of its own, so a `DKU_DSS_URL` of `http://localhost:…` reaches the container, not the machine DSS runs on, and failed with a bare "Connection refused". The error now says so and what to use instead (the DSS machine's LAN or Tailscale address, or `host.docker.internal` with Docker Desktop, with DSS listening on that interface), and `.env.example` says it too. A `host.docker.internal` that does not resolve (Docker Engine on Linux with a cedar from before the change above, or OpenShell) gets the same kind of explanation, pointing at the host's Docker bridge or LAN address.
+- **The agent calculates with code.** The default system prompt now tells the model to work out any arithmetic beyond the trivial (money, percentages, dates, unit conversions) with `run_python` rather than in its head, so totals, conversions and date differences come out exact. `run_python` is in every run and works offline. A custom system prompt is not changed.
 
 ## 0.6.2
 
