@@ -1054,7 +1054,7 @@ A manifest also says what the tool needs, which cedar enforces and shows to admi
 | Field | Meaning |
 | --- | --- |
 | `version`, `author`, `homepage`, `license` | Shown in the settings; `version` names a release |
-| `network` | The hosts the tool reaches (`api.example.com`, or `*.example.com`). With any, its calls get `TOOLS_NETWORK` (`bridge` by default); without, no network at all |
+| `network` | The hosts the tool reaches (`api.example.com`, or `*.example.com`). With any, its calls get `TOOLS_NETWORK` (`bridge` by default), and on Docker `host.docker.internal` names the Docker host, as on Docker Desktop, so a tool can reach a service running there (the host's `localhost` is not the container's); without, no network at all |
 | `secrets` | The environment variables it reads credentials from: names (`"API_TOKEN"`) or `{"name", "description"?, "optional"?}`. Admins save them in the settings (encrypted, see [Integrations](#integrations)); a call gets only its own tool's declared, saved ones, plus `CEDAR_LOCALE` and `CEDAR_LANGUAGE` (the run's [language](#languages)). `PATH`, `HOME`, `PYTHON*`, `PIP_*`, `LD_*`, `CEDAR_*` and similar are reserved |
 | `pip` | Plain requirements (`"requests>=2"`; no options, URLs or paths), installed into the tool's own environment when it is installed from the marketplace, or with `POST /v1/admin/tools/{name}/setup` |
 | `health_data` | It reads or returns personal health data. Runs that have such a tool get health rules in their system prompt (informational only, safety first, never dosing or device-setting advice, see the care team), and installing one asks for consent |
