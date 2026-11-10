@@ -113,6 +113,23 @@ fn tool_network(cfg: &SandboxConfig, wants: bool) -> &str {
     }
 }
 
+/// `--add-host host.docker.internal:host-gateway` for a tool call on a bridge-style network, so
+/// a tool can reach a service on the Docker host (a local DSS, say) by the name Docker Desktop
+/// defines on its own but Docker Engine on Linux does not. It adds no reach: a container on such a
+/// network already reaches the host through the network's gateway; this only names it. Calls
+/// without a network, those on `host` (where localhost already is the host) and those sharing
+/// another container's network (where Docker refuses `--add-host`) get nothing.
+fn host_gateway(network: &str) -> Vec<String> {
+    match network {
+        "none" | "host" => Vec::new(),
+        _ if network.starts_with("container:") => Vec::new(),
+        _ => vec![
+            "--add-host".into(),
+            "host.docker.internal:host-gateway".into(),
+        ],
+    }
+}
+
 /// Arguments for the `docker run` of one personal tool call (see [`ToolRun`]): the run's
 /// workspace, the tool's folder read-only, the tool's environment, the declared secrets by name,
 /// and the script under an in-container `timeout`, reading its input from stdin.
@@ -140,11 +157,9 @@ pub fn tool_run_args(
     .iter()
     .map(|s| s.to_string())
     .collect();
-    args.extend(locked_down(
-        cfg,
-        tool_network(cfg, !call.hosts.is_empty()),
-        "128",
-    ));
+    let net = tool_network(cfg, !call.hosts.is_empty());
+    args.extend(locked_down(cfg, net, "128"));
+    args.extend(host_gateway(net));
     args.extend([
         "-w".to_string(),
         "/workspace".into(),
@@ -702,6 +717,10 @@ mod tests {
             joined.contains("--network none"),
             "no hosts declared: {joined}"
         );
+        assert!(
+            !joined.contains("--add-host"),
+            "no network, no host name: {joined}"
+        );
         assert!(joined.contains("--cap-drop ALL"));
         assert!(joined.contains("--user 1000:1000"));
         assert!(joined.contains(&format!("--label cedar.run={run}")));
@@ -739,6 +758,21 @@ mod tests {
         };
         let joined = tool_run_args(&cfg(), run, ws, "c", &networked, 30).join(" ");
         assert!(joined.contains("--network bridge"), "{joined}");
+        assert!(
+            joined.contains("--add-host host.docker.internal:host-gateway"),
+            "{joined}"
+        );
+    }
+
+    #[test]
+    fn only_networked_tool_calls_get_the_host_gateway_name() {
+        assert!(host_gateway("none").is_empty());
+        assert!(host_gateway("host").is_empty());
+        assert!(host_gateway("container:proxy").is_empty());
+        assert_eq!(
+            host_gateway("cedar-tools"),
+            ["--add-host", "host.docker.internal:host-gateway"]
+        );
     }
 
     #[test]

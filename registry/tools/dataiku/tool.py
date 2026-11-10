@@ -19,6 +19,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     import dataikuapi
@@ -93,6 +94,35 @@ def client():
     if not url.startswith("https://") and not url.startswith("http://"):
         fail(f"DKU_DSS_URL must start with https://, not {url!r}")
     return url, dataikuapi.DSSClient(url, api_key=key, extra_headers={"X-DKU-Client-Application": USER_AGENT})
+
+
+LOOPBACK = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+
+def unreachable(base, error):
+    """The message for a connection that failed. A loopback address gets an explanation: every call
+    of this tool runs in a container of its own, where localhost is that container, not the machine
+    DSS runs on."""
+    message = f"Could not reach {base}: {short(error, 600)}"
+    host = (urlsplit(base).hostname or "").lower()
+    if host in LOOPBACK or host.startswith("127.") or host.endswith(".localhost"):
+        message += (
+            f"\n\nDKU_DSS_URL points at {host}, but cedar runs each call of this tool in a sandbox "
+            "container of its own, where localhost is the container itself, not the machine DSS runs "
+            "on. Set DKU_DSS_URL to an address the container can reach: the DSS machine's LAN or "
+            "Tailscale address (e.g. http://192.168.1.20:8082), or http://host.docker.internal:8082 "
+            "with Docker Desktop, and make sure DSS listens on that interface, not only on 127.0.0.1. "
+            "On OpenShell, also add that host to \"network\" in your copy of tool.json.")
+    elif host == "host.docker.internal" and "resolve" in str(error).lower():
+        message += (
+            "\n\nhost.docker.internal does not resolve in this tool's container. Docker Desktop "
+            "defines it on its own; Docker Engine on Linux only with --add-host "
+            "host.docker.internal:host-gateway, which newer cedar versions add to networked tool calls. With an "
+            "older cedar, or on OpenShell, set DKU_DSS_URL to the host's address instead: its "
+            "Docker bridge gateway (usually http://172.17.0.1:8082; `ip -4 addr show docker0` on "
+            "the host) or its LAN or Tailscale address. DSS must listen on that interface, not "
+            "only on 127.0.0.1.")
+    return message
 
 
 def project_url(base, project_key):
@@ -365,7 +395,7 @@ def main():
     except DataikuException as e:
         fail(f"Dataiku refused {action}: {short(e, 1500)}")
     except OSError as e:
-        fail(f"Could not reach {base}: {e}")
+        fail(unreachable(base, e))
     print(json.dumps(result, ensure_ascii=False, default=str))
 
 
