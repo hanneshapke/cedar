@@ -4,6 +4,8 @@ This guide turns an 8GB Jetson Orin Nano Developer Kit into a private, remote Ce
 
 [Cedar](https://getcedar.io) has two programs: `cedar`, the agent server, and `cedar-chat`, the web interface. Each run uses tools inside a Docker sandbox.
 
+If you want to run much larger models with the same setup, see [Running Cedar on an AMD Ryzen AI Max (Strix Halo) mini PC](cedar-on-ryzen-ai-max-strix-halo.md). It follows these steps on a 128GB x86_64 machine with `gpt-oss:120b`.
+
 ```text
 Your computer -> SSH tunnel or Tailscale -> cedar-chat :3000 -> cedar :8080 -> Ollama :11434
                                                                   |
@@ -531,6 +533,7 @@ If the board returns by itself after that power cycle, a smart plug can give you
 - [Cedar](https://getcedar.io)
 - [Cedar Linux deployment guide](https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md)
 - [Cedar README](https://github.com/hanneshapke/cedar)
+- [Running Cedar on an AMD Ryzen AI Max (Strix Halo) mini PC](cedar-on-ryzen-ai-max-strix-halo.md)
 - [Jetson Orin Nano Quick Start Guide](https://docs.nvidia.com/jetson/orin-nano-devkit/user-guide/latest/quick_start.html)
 - [JetPack 6.x Update Path](https://docs.nvidia.com/jetson/orin-nano-devkit/user-guide/latest/update_firmware.html)
 - [Jetson AI Lab: OpenClaw on Jetson](https://www.jetson-ai-lab.com/tutorials/openclaw/)
