@@ -73,7 +73,8 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
-| `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
+| `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes, pollable}]}], sources}`. `pollable` marks the tools that can be [called outside a run](#calling-a-tool-outside-a-run), and `sources` lists what else can (`url`, unless `WEB_FETCH` is off). |
+| `POST /v1/tools/{name}/call` | Call one pollable tool, or the `url` source, without starting a run: `{"input": {...}}` → `{output, is_error, json?, truncated}`. `400` for a tool that isn't pollable, `404` for one that isn't offered. See [Calling a tool outside a run](#calling-a-tool-outside-a-run). |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
 | `POST /v1/runs/{id}/feedback` | Your verdict on a finished run: `{"rating": "up" \| "down" \| null}`. Promotes or archives what the run learned (see [Memory](#memory)); returns `{rating, archived}`. `409` while the run is still going. |
@@ -207,6 +208,43 @@ results for the open calls first, as a [continuation](#continuing-a-run) would. 
 "<text>"}` (at most 100 KB) compacts a plain-text conversation instead, for a run cedar no longer
 has. `"model"` works as for a run; without it the run's model (or the default) is used. If the
 model returns no text the response is `502 bad_gateway`.
+
+### Calling a tool outside a run
+
+A client that watches something (a price, an inbox, a calendar) and wants a run only when it
+changed can ask cedar for one tool's result directly: `POST /v1/tools/{name}/call` with
+`{"input": {...}}`. No model is called, nothing joins a conversation, and no run is created.
+[cedar-chat's triggers](chat/README.md#agents) are built on it.
+
+```sh
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+     -d '{"input": {"url": "https://api.example.com/price", "as": "json"}}' \
+     localhost:8080/v1/tools/url/call
+# {"output": "{\"eur\":41.5}", "is_error": false, "json": {"eur": 41.5}, "truncated": false}
+```
+
+- Only tools that read and need nothing of a run can be called: `weather_forecast`,
+  `compare_stocks`, `gmail_search_threads`, `calendar_list_calendars`, `calendar_list_events` and
+  `calendar_search_events` (with the built-in Google backend, not `GOOGLE_BACKEND=mcp`), and
+  [personal tools](#personal-tools-in-python). `GET /v1/tools` marks them `pollable`. Everything
+  else (the sandbox tools, `fetch_url`, anything that writes, remembers or asks) is a `400`.
+- `url` is a source of its own rather than a tool: `{"url", "as"?: "json" | "text"}` returns the
+  body as it came, up to 1 MiB (a longer one is an error, not a cut-off value). As `json`, the
+  default for a JSON content type, it must parse; as `text`, an HTML page is reduced to its text.
+  The same address rules as `fetch_url` apply (public addresses only, unless
+  `WEB_FETCH_ALLOW_PRIVATE` is on).
+- A personal tool gets a sandbox and an empty workspace of its own for the one call, removed
+  right after, so each call starts containers: keep the interval long. Its code runs with its
+  declared network and secrets and **without anyone approving the call**, as in a run that isn't
+  interactive.
+- `output` is the tool's text, up to 256 KiB (more than in a run, where the cap protects the
+  model's context); `json` is that text parsed, when it is JSON. A tool that fails is a `200`
+  with `is_error: true` and the message in `output`.
+- Two calls run at a time and the rest wait; they don't take a run's slot
+  (`MAX_CONCURRENT_RUNS`). Every call is logged and recorded in the database (the key's owner id,
+  the tool, when, how long, the error) for a month. The input and output are not kept.
+- Any API key can call it. A key can already read the same data through a run; what differs is
+  that no run, and so no trace, shows what was read.
 
 ### Events
 
@@ -1238,7 +1276,7 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 
 - No token-level streaming from the model; events arrive per model turn and per tool call.
 - A run is a single prompt. To follow up, start a new run that [continues](#continuing-a-run) the finished one.
-- cedar has no scheduler of its own: a run starts when a client asks for it. Recurring runs are a [cedar-chat](chat/README.md#scheduled-agents) feature.
+- cedar has no scheduler of its own: a run starts when a client asks for it. Runs on a clock, a condition, a webhook or new mail are [cedar-chat's agents](chat/README.md#agents), which watch through `POST /v1/tools/{name}/call`.
 - Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload into the workspace; [attachments](#attachments) go to the model, not to `/workspace`.
 - One instance: SQLite and the run queue live in the process.
 - Tool calls within a turn run one after another.

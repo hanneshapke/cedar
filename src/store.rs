@@ -154,6 +154,15 @@ fn notification_from_row(r: &SqliteRow) -> Result<Notification> {
     })
 }
 
+/// A tool call made outside a run (see [`crate::polls`]).
+#[derive(Debug, Clone)]
+pub struct ToolCall {
+    pub tool: String,
+    pub started_at: DateTime<Utc>,
+    pub duration_ms: u64,
+    pub error: Option<String>,
+}
+
 /// A webhook call the worker has to make: the notification, where to POST it, and with what.
 #[derive(Debug, Clone)]
 pub struct Delivery {
@@ -886,6 +895,57 @@ impl Store {
         .fetch_one(&self.pool)
         .await?;
         Ok(row.try_get("seq")?)
+    }
+
+    /// Record one tool call made outside a run (see [`crate::polls`]), and drop the records
+    /// older than `keep`.
+    pub async fn record_tool_call(
+        &self,
+        owner: &str,
+        tool: &str,
+        started_at: DateTime<Utc>,
+        duration: std::time::Duration,
+        error: Option<&str>,
+        keep: std::time::Duration,
+    ) -> Result<()> {
+        let started = started_at.timestamp_millis();
+        sqlx::query(
+            "INSERT INTO tool_calls (owner, tool, started_at, duration_ms, error) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(owner)
+        .bind(tool)
+        .bind(started)
+        .bind(duration.as_millis() as i64)
+        .bind(error)
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("DELETE FROM tool_calls WHERE started_at < ?")
+            .bind(started - keep.as_millis() as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// An owner's latest tool calls outside a run, newest first.
+    pub async fn list_tool_calls(&self, owner: &str, limit: u32) -> Result<Vec<ToolCall>> {
+        let rows = sqlx::query(
+            "SELECT tool, started_at, duration_ms, error FROM tool_calls WHERE owner = ? \
+             ORDER BY id DESC LIMIT ?",
+        )
+        .bind(owner)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(ToolCall {
+                    tool: r.try_get("tool")?,
+                    started_at: to_dt(r.try_get("started_at")?),
+                    duration_ms: r.try_get::<i64, _>("duration_ms")? as u64,
+                    error: r.try_get("error")?,
+                })
+            })
+            .collect()
     }
 
     pub async fn list_llm_calls(&self, run_id: Uuid) -> Result<Vec<LlmCall>> {

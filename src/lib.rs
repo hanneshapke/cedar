@@ -26,6 +26,7 @@ pub mod models;
 pub mod openshell;
 pub mod plan;
 pub mod policy;
+pub mod polls;
 pub mod sandbox;
 pub mod secrets;
 pub mod sources;

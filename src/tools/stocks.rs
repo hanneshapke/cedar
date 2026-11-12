@@ -129,6 +129,10 @@ impl Tool for CompareStocks {
         "compare_stocks"
     }
 
+    fn pollable(&self) -> bool {
+        true
+    }
+
     fn description(&self) -> &str {
         "Track and compare stocks, ETFs, and indices, shown to the user as a card in the chat: the \
          latest price and day's move, a chart of the price history against a benchmark index, \

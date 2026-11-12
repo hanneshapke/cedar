@@ -174,6 +174,12 @@ pub trait Tool: Send + Sync {
         None
     }
 
+    /// Whether the tool may be called outside a run (see [`crate::polls`]): it only reads, and
+    /// needs nothing of a run (no sandbox, model, memory or records). Off unless a tool says so.
+    fn pollable(&self) -> bool {
+        false
+    }
+
     /// This tool's entry in the `tools` array handed to the LLM client.
     fn definition(&self) -> Value {
         json!({
@@ -451,7 +457,7 @@ impl ToolSet {
                 let tools: Vec<Value> = self
                     .all()
                     .filter(|t| self.group(t.name()) == *id)
-                    .map(|t| json!({ "name": t.name(), "description": t.description(), "writes": writes(t.name()) }))
+                    .map(|t| json!({ "name": t.name(), "description": t.description(), "writes": writes(t.name()), "pollable": t.pollable() }))
                     .collect();
                 let remote = self.remote.iter().find(|s| s.prefix() == *id);
                 let available = !tools.is_empty() || remote.is_some();

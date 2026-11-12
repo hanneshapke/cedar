@@ -4,7 +4,7 @@
 mod common;
 
 use axum::extract::{Path, RawQuery, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Form, Json, Router};
@@ -670,4 +670,45 @@ async fn only_the_allowed_tools_are_offered() {
         .collect();
     // send_message isn't implemented for the REST API, so it is left out rather than offered.
     assert_eq!(names, ["gmail_get_thread"]);
+}
+
+#[tokio::test]
+async fn mail_and_calendar_can_be_read_outside_a_run() {
+    let (base, mock) = start(Mock::default()).await;
+    let app = app(vec![], &base, &[]).await;
+    let (status, body) = app
+        .json(
+            Method::POST,
+            "/v1/tools/gmail_search_threads/call",
+            Some(KEY_A),
+            Some(json!({ "input": { "query": "is:unread" } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["is_error"], false, "{body}");
+    assert_eq!(body["json"]["threads"][0]["id"], "t1");
+    assert_eq!(body["json"]["threads"][0]["messageCount"], 2);
+    assert!(!mock.requests("/gmail/threads").is_empty());
+
+    let (status, body) = app
+        .json(
+            Method::POST,
+            "/v1/tools/calendar_list_events/call",
+            Some(KEY_A),
+            Some(json!({ "input": {} })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["is_error"], false, "{body}");
+    assert!(body["json"]["events"].is_array(), "{body}");
+
+    // Reading one thread, or writing a draft, stays inside runs.
+    for name in ["gmail_get_thread", "gmail_create_draft", "calendar_get_event"] {
+        let (status, _) = app
+            .json(Method::POST, &format!("/v1/tools/{name}/call"), Some(KEY_A), Some(json!({})))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name}");
+    }
+    assert_eq!(app.llm.call_count(), 0);
+    assert!(app.factory.created.lock().unwrap().is_empty());
 }

@@ -44,6 +44,10 @@ impl Tool for WeatherForecast {
         "weather_forecast"
     }
 
+    fn pollable(&self) -> bool {
+        true
+    }
+
     fn description(&self) -> &str {
         "Get the current weather and a daily forecast (up to 16 days) for a place, from Open-Meteo. \
          Pass a place name such as \"Berlin\" or \"Paris, France\", or latitude and longitude. \

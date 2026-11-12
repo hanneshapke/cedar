@@ -528,6 +528,11 @@ impl Tool for PythonTool {
         Some(self)
     }
 
+    /// In a sandbox and workspace made for the one call.
+    fn pollable(&self) -> bool {
+        true
+    }
+
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
         if !input.is_object() && !input.is_null() {
             bail!("input must be an object");
