@@ -2390,6 +2390,8 @@ async fn update_schedule(
         schedule.time_of_day = timing.time.format("%H:%M").to_string();
         schedule.timezone = timing.tz.name().to_string();
         schedule.next_run_at = timing.next_after(Utc::now());
+        // The columns are the trigger again (an agent made through `/api/agents` kept a copy).
+        schedule.trigger = None;
     }
     if let Some(enabled) = body.enabled {
         if enabled && !schedule.enabled && !retime {

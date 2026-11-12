@@ -3704,6 +3704,10 @@ async fn agents_run_on_every_kind_of_clock() {
     assert_eq!(status, StatusCode::OK, "{edited}");
     assert_eq!((edited["title"].as_str(), edited["trigger"]["kind"].as_str(), edited["timezone"].as_str()), (Some("Daily"), Some("time"), Some("UTC")));
     assert_eq!(h.json(Method::GET, &format!("/api/schedules/{interval}"), None).await.0, StatusCode::OK, "now a classic schedule");
+    // An app from before can retime it the old way, and both routes agree on the result.
+    let (status, _) = h.json(Method::PATCH, &format!("/api/schedules/{interval}"), Some(json!({ "time": "08:15", "frequency": "weekly", "weekday": 4 }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(h.agent(interval).await["agent"]["trigger"], json!({ "kind": "time", "frequency": "weekly", "weekday": 4, "time": "08:15", "timezone": "UTC" }));
     let (_, paused) = h.json(Method::PATCH, &format!("/api/agents/{interval}"), Some(json!({ "enabled": false }))).await;
     assert_eq!(paused["enabled"], false);
     let past = json!({ "trigger": { "kind": "once", "at": "2020-01-01T09:00", "timezone": "UTC" } });
