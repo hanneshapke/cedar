@@ -29,6 +29,8 @@ struct ToolCall: Identifiable, Hashable, Sendable {
     var card: Card?
     /// Charts any other tool printed (`[chart] {spec}` lines), drawn after it.
     var charts: [ChartCard] = []
+    /// What a finished `suggest_follow_up` proposed, drawn as a card under the turn.
+    var followUp: FollowUp?
 
     var isFinished: Bool { output != nil }
 
@@ -59,6 +61,8 @@ struct ToolCall: Identifiable, Hashable, Sendable {
             return ""
         case "recall":
             return input["query"]?.stringValue ?? ""
+        case FollowUp.tool:
+            return followUp?.title ?? input["title"]?.stringValue ?? ""
         case "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast":
             return cardTitle ?? ""
         default:
@@ -137,6 +141,38 @@ struct Questions: Hashable, Sendable {
         }
         guard !questions.isEmpty else { return nil }
         return Questions(questions: questions, note: value["note"]?.stringValue)
+    }
+}
+
+/// A follow-up the model suggested with `suggest_follow_up`: a one-off agent for later. Nothing
+/// is scheduled by the call; the user sets it up or dismisses it
+/// (`PUT /api/turns/{turn_id}/followups/{call_id}`).
+struct FollowUp: Hashable, Sendable {
+    static let tool = "suggest_follow_up"
+
+    let title: String
+    let prompt: String
+    /// When it should run: RFC 3339 in UTC, kept as the tool wrote it, since accepting sends it back.
+    let at: String
+
+    /// The instant `at` means; `nil` when it can't be read.
+    var date: Date? { CedarDate.parse(at) }
+
+    /// Its time has passed, so it can only be dismissed.
+    func isPast(now: Date = Date()) -> Bool {
+        date.map { $0 <= now } ?? false
+    }
+
+    /// Parses the tool's JSON result, `{"follow_up": {"title", "prompt", "at"}, "note"}`. `nil`
+    /// when it holds no suggestion.
+    static func parse(_ output: String) -> FollowUp? {
+        guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(output.utf8)),
+              let suggestion = value["follow_up"],
+              let prompt = suggestion["prompt"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty,
+              let at = suggestion["at"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !at.isEmpty
+        else { return nil }
+        let title = suggestion["title"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return FollowUp(title: title, prompt: prompt, at: at)
     }
 }
 
@@ -294,6 +330,8 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
             call.durationMs = data["duration_ms"]?.intValue
             if call.isCard, !call.isError, let output = call.output {
                 call.card = Card.parse(name: call.name, output: output, input: call.input)
+            } else if call.name == FollowUp.tool, !call.isError, let output = call.output {
+                call.followUp = FollowUp.parse(output)
             } else if !call.isError, let output = call.output {
                 call.charts = ChartCard.inOutput(output).charts
             }
@@ -351,6 +389,15 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
             if case .plan(_, let plan) = item, plan.awaiting { return plan }
         }
         return nil
+    }
+
+    /// The calls that suggested a follow-up, in order; each call's id is the suggestion's
+    /// `call_id`.
+    var followUps: [ToolCall] {
+        items.compactMap { item -> ToolCall? in
+            if case .tool(let call) = item, call.followUp != nil { return call }
+            return nil
+        }
     }
 
     /// The images the turn's finished tool calls produced, each once, in order: workspace paths.

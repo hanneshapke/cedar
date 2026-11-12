@@ -554,6 +554,21 @@ struct ConversationDetail: Decodable, Sendable {
     /// The agent whose run this conversation is; `nil` for a chat, and on a server from before
     /// agents (which still sends `conversation.scheduleId`).
     let agent: AgentRef?
+    /// What was decided about the follow-ups its runs suggested; a suggestion that isn't here is
+    /// still open. Empty on a server from before follow-ups.
+    let followups: [FollowUpDecision]
+
+    enum CodingKeys: String, CodingKey {
+        case conversation, turns, agent, followups
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        conversation = try c.decode(Conversation.self, forKey: .conversation)
+        turns = try c.decode([Turn].self, forKey: .turns)
+        agent = try c.decodeIfPresent(AgentRef.self, forKey: .agent)
+        followups = try c.decodeIfPresent([FollowUpDecision].self, forKey: .followups) ?? []
+    }
 }
 
 enum TurnStatus: String, Codable, Sendable {

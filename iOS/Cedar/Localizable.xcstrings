@@ -1,6 +1,28 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@"
+          }
+        }
+      }
+    },
     "%@ (%@ chance)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -139,6 +161,29 @@
         }
       }
     },
+    "%@ has used up its runs for today." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat seine Läufe für heute aufgebraucht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya agotó sus ejecuciones de hoy."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a épuisé ses exécutions pour aujourd’hui."
+          }
+        }
+      }
+    },
     "%@ in · %@ out" : {
       "localizations" : {
         "de" : {
@@ -209,6 +254,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ dépasse %@"
+          }
+        }
+      }
+    },
+    "%@ is paused. Resume it in Cedar to run it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist pausiert. Setze ihn in Cedar fort, um ihn auszuführen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ está en pausa. Reanúdalo en Cedar para ejecutarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est en pause. Reprenez-le dans Cedar pour l’exécuter."
+          }
+        }
+      }
+    },
+    "%@ is still busy with its last run, so no new run was started." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist noch mit dem letzten Lauf beschäftigt, deshalb wurde kein neuer gestartet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sigue ocupado con su última ejecución, así que no se inició otra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est encore occupé par sa dernière exécution ; aucune nouvelle n’a donc été lancée."
           }
         }
       }
@@ -305,6 +396,29 @@
         }
       }
     },
+    "%@ no longer exists on the server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ gibt es auf dem Server nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya no existe en el servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’existe plus sur le serveur."
+          }
+        }
+      }
+    },
     "%@ out of 5 stars" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -351,6 +465,29 @@
         }
       }
     },
+    "%@ ran a moment ago, and its limits don't allow another run yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist gerade erst gelaufen, und seine Limits erlauben noch keinen weiteren Lauf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se ejecutó hace un momento y sus límites todavía no permiten otra ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vient de s’exécuter, et ses limites n’autorisent pas encore une nouvelle exécution."
+          }
+        }
+      }
+    },
     "%@ stars from %@ reviews" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -374,6 +511,29 @@
         }
       }
     },
+    "%@ started." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wurde gestartet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se inició."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a démarré."
+          }
+        }
+      }
+    },
     "%@ towards %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -393,6 +553,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ direction %@"
+          }
+        }
+      }
+    },
+    "%@ was not started." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wurde nicht gestartet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no se inició."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a pas été lancé."
           }
         }
       }
@@ -2567,6 +2750,28 @@
         }
       }
     },
+    "Agent set up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent eingerichtet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agente configurado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent configuré"
+          }
+        }
+      }
+    },
     "Agents" : {
       "localizations" : {
         "de" : {
@@ -2849,24 +3054,24 @@
         }
       }
     },
-    "An agent is a prompt Cedar runs on its own: on a schedule, when something changes, when a webhook is called, or when mail or a calendar event comes up." : {
+    "An agent is a prompt Cedar runs on its own: on a schedule, when something changes, when a webhook or your device calls it, or when mail, a calendar event or a new file comes up." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Agent ist ein Prompt, den Cedar von selbst ausführt: nach Zeitplan, wenn sich etwas ändert, wenn ein Webhook aufgerufen wird oder wenn eine E-Mail oder ein Kalendertermin ansteht."
+            "value" : "Ein Agent ist ein Prompt, den Cedar von selbst ausführt: nach Zeitplan, wenn sich etwas ändert, wenn ein Webhook oder dein Gerät ihn aufruft oder wenn eine E-Mail, ein Kalendertermin oder eine neue Datei ansteht."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agente es un prompt que Cedar ejecuta por sí solo: según un horario, cuando algo cambia, cuando se llama a un webhook o cuando llega un correo o se acerca un evento del calendario."
+            "value" : "Un agente es un prompt que Cedar ejecuta por sí solo: según un horario, cuando algo cambia, cuando lo llama un webhook o tu dispositivo, o cuando llega un correo, se acerca un evento del calendario o aparece un archivo nuevo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agent est un prompt que Cedar exécute tout seul : à heure fixe, quand quelque chose change, quand un webhook est appelé, ou quand un e-mail arrive ou qu’un événement du calendrier approche."
+            "value" : "Un agent est un prompt que Cedar exécute tout seul : à heure fixe, quand quelque chose change, quand un webhook ou votre appareil l’appelle, ou quand un e-mail arrive, qu’un événement du calendrier approche ou qu’un nouveau fichier apparaît."
           }
         }
       }
@@ -2894,25 +3099,25 @@
         }
       }
     },
-    "An agent that events start reads text other people wrote (mail, a web page, what a webhook sends) and runs with nobody there to approve what its tools do." : {
+    "An agent that events start reads text other people wrote (mail, a web page, a shared file, what a webhook or a shortcut sends) and runs with nobody there to approve what its tools do." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Agent, den Ereignisse starten, liest Text, den andere geschrieben haben (E-Mails, eine Webseite, was ein Webhook schickt), und läuft, ohne dass jemand freigibt, was seine Werkzeuge tun."
+            "value" : "Ein Agent, den Ereignisse starten, liest Text, den andere geschrieben haben (E-Mails, eine Webseite, eine geteilte Datei, was ein Webhook oder ein Kurzbefehl schickt), und läuft, ohne dass jemand freigibt, was seine Werkzeuge tun."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agente que se inicia por eventos lee texto escrito por otras personas (correos, una página web, lo que envía un webhook) y se ejecuta sin que nadie apruebe lo que hacen sus herramientas."
+            "value" : "Un agente que se inicia por eventos lee texto escrito por otras personas (correos, una página web, un archivo compartido, lo que envía un webhook o un atajo) y se ejecuta sin que nadie apruebe lo que hacen sus herramientas."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agent lancé par des événements lit du texte écrit par d’autres (des e-mails, une page web, ce qu’envoie un webhook) et s’exécute sans personne pour valider ce que font ses outils."
+            "value" : "Un agent lancé par des événements lit du texte écrit par d’autres (des e-mails, une page web, un fichier partagé, ce qu’envoie un webhook ou un raccourci) et s’exécute sans personne pour valider ce que font ses outils."
           }
         }
       }
@@ -2936,6 +3141,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L’exécution d’un agent ne peut pas être contribuée."
+          }
+        }
+      }
+    },
+    "An automation in the Shortcuts app can run that shortcut for you, for example when you arrive at or leave a place, or when your iPhone connects to CarPlay." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Automation in der Kurzbefehle-App kann diesen Kurzbefehl für dich ausführen, zum Beispiel wenn du an einem Ort ankommst oder ihn verlässt oder wenn sich dein iPhone mit CarPlay verbindet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una automatización de la app Atajos puede ejecutar ese atajo por ti, por ejemplo cuando llegas a un lugar o sales de él, o cuando tu iPhone se conecta a CarPlay."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une automatisation de l’app Raccourcis peut exécuter ce raccourci pour vous, par exemple quand vous arrivez à un endroit ou le quittez, ou quand votre iPhone se connecte à CarPlay."
           }
         }
       }
@@ -3026,6 +3253,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Des réponses en cartes"
+          }
+        }
+      }
+    },
+    "Any agent that isn't paused can be started from the Shortcuts app this way, whatever else starts it. This kind is for one that nothing else starts." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeder Agent, der nicht pausiert ist, lässt sich so aus der Kurzbefehle-App starten, egal was ihn sonst startet. Diese Art ist für einen Agenten, den sonst nichts startet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cualquier agente que no esté en pausa se puede iniciar así desde la app Atajos, sea cual sea su activador. Este tipo es para un agente que nada más inicia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout agent qui n’est pas en pause peut être lancé ainsi depuis l’app Raccourcis, quel que soit son déclencheur. Ce type est pour un agent que rien d’autre ne lance."
           }
         }
       }
@@ -3995,6 +4245,29 @@
         }
       }
     },
+    "Cedar is busy right now, so %@ was not started. Try again in a moment." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar ist gerade ausgelastet, deshalb wurde %@ nicht gestartet. Versuch es gleich noch einmal."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar está ocupado en este momento, así que %@ no se inició. Vuelve a intentarlo en un momento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar est occupé en ce moment ; %@ n’a donc pas été lancé. Réessayez dans un instant."
+          }
+        }
+      }
+    },
     "Cedar is told each set's name, size and columns, never the rows, until it looks them up. Records stay on your own server and are never shared with a third party. Settings → Tools in the web UI turns them off." : {
       "localizations" : {
         "de" : {
@@ -4013,6 +4286,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar connaît le nom, la taille et les colonnes de chaque jeu, jamais les lignes, tant qu'il ne les consulte pas. Les données restent sur votre propre serveur et ne sont jamais partagées avec des tiers. Réglages → Outils dans l'interface web permet de les désactiver."
+          }
+        }
+      }
+    },
+    "Cedar looks at the set on every check, with no AI model involved. The first check only learns what is there; after that, rows that are new (or new or changed, if you choose so) start a run, which is handed those rows." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar sieht sich den Satz bei jeder Prüfung an, ohne KI-Modell. Die erste Prüfung merkt sich nur, was da ist; danach starten neue Zeilen (oder neue und geänderte, wenn du das wählst) einen Lauf, der diese Zeilen erhält."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar mira el conjunto de datos en cada comprobación, sin ningún modelo de IA. La primera comprobación solo registra lo que hay; después, las filas nuevas (o las nuevas y modificadas, si así lo eliges) inician una ejecución, que recibe esas filas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar regarde le jeu de données à chaque vérification, sans modèle d’IA. La première vérification ne fait que noter ce qui s’y trouve ; ensuite, les nouvelles lignes (ou les lignes nouvelles ou modifiées, si vous le choisissez) lancent une exécution, qui reçoit ces lignes."
           }
         }
       }
@@ -5902,6 +6198,50 @@
         }
       }
     },
+    "Dismiss Suggestion" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwerfen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignorer"
+          }
+        }
+      }
+    },
+    "Dismissed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verworfen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignorée"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "de" : {
@@ -6181,6 +6521,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Indiquez la fréquence : un nombre d’au moins 1."
+          }
+        }
+      }
+    },
+    "Enter the folder's address or its ID." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib die Adresse des Ordners oder seine ID ein."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribe la dirección de la carpeta o su ID."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez l’adresse du dossier ou son identifiant."
           }
         }
       }
@@ -6914,6 +7277,28 @@
         }
       }
     },
+    "Folder address or ID" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adresse oder ID des Ordners"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dirección o ID de la carpeta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adresse ou identifiant du dossier"
+          }
+        }
+      }
+    },
     "For bigger requests Cedar lays out a plan and waits for your go-ahead, and asks when something is unclear." : {
       "localizations" : {
         "de" : {
@@ -7429,6 +7814,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Max. %1$@ · Min. %2$@"
+          }
+        }
+      }
+    },
+    "Handed to the run as data: a note, a link, what a shortcut found." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geht als Daten an den Lauf: eine Notiz, ein Link, was ein Kurzbefehl gefunden hat."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llega a la ejecución como datos: una nota, un enlace, lo que encontró un atajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remis à l’exécution comme données : une note, un lien, ce qu’un raccourci a trouvé."
           }
         }
       }
@@ -8693,25 +9100,25 @@
         }
       }
     },
-    "Mail and calendar" : {
+    "Mail, calendar and files" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "E-Mail und Kalender"
+            "value" : "E-Mail, Kalender und Dateien"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Correo y calendario"
+            "value" : "Correo, calendario y archivos"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "E-mail et calendrier"
+            "value" : "E-mail, calendrier et fichiers"
           }
         }
       }
@@ -9390,6 +9797,29 @@
         }
       }
     },
+    "New files in a Google Drive folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Dateien in einem Google-Drive-Ordner"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos nuevos en una carpeta de Google Drive"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveaux fichiers dans un dossier Google Drive"
+          }
+        }
+      }
+    },
     "New invoices" : {
       "localizations" : {
         "de" : {
@@ -9435,6 +9865,51 @@
         }
       }
     },
+    "New or changed rows" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue oder geänderte Zeilen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filas nuevas o modificadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lignes nouvelles ou modifiées"
+          }
+        }
+      }
+    },
+    "New or changed rows in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue oder geänderte Zeilen in %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filas nuevas o modificadas en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lignes nouvelles ou modifiées dans %@"
+          }
+        }
+      }
+    },
     "New pseudonym" : {
       "localizations" : {
         "de" : {
@@ -9453,6 +9928,51 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nouveau pseudonyme"
+          }
+        }
+      }
+    },
+    "New rows" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Zeilen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filas nuevas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvelles lignes"
+          }
+        }
+      }
+    },
+    "New rows in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Zeilen in %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filas nuevas en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvelles lignes dans %@"
           }
         }
       }
@@ -10237,6 +10757,28 @@
         }
       }
     },
+    "Nothing to fill in. The agent waits until your device asks for a run: add the Run Cedar Agent action to a shortcut in the Shortcuts app and choose this agent. Text you pass to the action goes to the run as data." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier gibt es nichts auszufüllen. Der Agent wartet, bis dein Gerät einen Lauf anfordert: Füge in der Kurzbefehle-App die Aktion „Cedar-Agent ausführen“ zu einem Kurzbefehl hinzu und wähle diesen Agenten. Text, den du der Aktion übergibst, erhält der Lauf als Daten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay nada que rellenar. El agente espera a que tu dispositivo pida una ejecución: en la app Atajos, añade la acción «Ejecutar agente de Cedar» a un atajo y elige este agente. El texto que le pases a la acción llega a la ejecución como datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien à remplir. L’agent attend que votre appareil demande une exécution : dans l’app Raccourcis, ajoutez l’action « Exécuter un agent Cedar » à un raccourci et choisissez cet agent. Le texte transmis à l’action est remis à l’exécution comme données."
+          }
+        }
+      }
+    },
     "Notifications" : {
       "localizations" : {
         "de" : {
@@ -10646,6 +11188,28 @@
         }
       }
     },
+    "Open Agent" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir l’agent"
+          }
+        }
+      }
+    },
     "Open Cedar on the Web" : {
       "localizations" : {
         "de" : {
@@ -10828,6 +11392,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvrir les vols sur le web"
+          }
+        }
+      }
+    },
+    "Open the folder in Google Drive in a browser and copy its address, or enter the folder's ID. New files in the folder start a run; files in its subfolders don't count, and the first check only learns what is there. Google has to be connected on the server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffne den Ordner in Google Drive im Browser und kopiere seine Adresse, oder gib die ID des Ordners ein. Neue Dateien im Ordner starten einen Lauf; Dateien in Unterordnern zählen nicht, und die erste Prüfung merkt sich nur, was da ist. Google muss auf dem Server verbunden sein."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la carpeta en Google Drive en un navegador y copia su dirección, o escribe el ID de la carpeta. Los archivos nuevos de la carpeta inician una ejecución; los de sus subcarpetas no cuentan, y la primera comprobación solo registra lo que hay. Google tiene que estar conectado en el servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez le dossier dans Google Drive dans un navigateur et copiez son adresse, ou saisissez l’identifiant du dossier. Les nouveaux fichiers du dossier lancent une exécution ; ceux de ses sous-dossiers ne comptent pas, et la première vérification ne fait que noter ce qui s’y trouve. Google doit être connecté sur le serveur."
           }
         }
       }
@@ -12944,6 +13531,72 @@
         }
       }
     },
+    "Run ${agent}" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${agent} ausführen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ejecutar ${agent}"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exécuter ${agent}"
+          }
+        }
+      }
+    },
+    "Run Agent" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent ausführen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ejecutar agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exécuter un agent"
+          }
+        }
+      }
+    },
+    "Run Cedar Agent" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar-Agent ausführen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ejecutar agente de Cedar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exécuter un agent Cedar"
+          }
+        }
+      }
+    },
     "Run Now" : {
       "localizations" : {
         "de" : {
@@ -13850,6 +14503,28 @@
         }
       }
     },
+    "Set Up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einrichten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurer"
+          }
+        }
+      }
+    },
     "Set up an agent that runs on a schedule, when something changes, or when mail arrives. A push tells you when it has something, and the result is here." : {
       "localizations" : {
         "de" : {
@@ -14431,6 +15106,28 @@
         }
       }
     },
+    "Start it from the Shortcuts app with the Run Cedar Agent action, by hand or from an automation." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starte ihn in der Kurzbefehle-App mit der Aktion „Cedar-Agent ausführen“, von Hand oder aus einer Automation."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inícialo desde la app Atajos con la acción «Ejecutar agente de Cedar», a mano o desde una automatización."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lancez-le depuis l’app Raccourcis avec l’action « Exécuter un agent Cedar », à la main ou depuis une automatisation."
+          }
+        }
+      }
+    },
     "Started by" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14472,6 +15169,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Démarre"
+          }
+        }
+      }
+    },
+    "Starts one of your Cedar agents now. Text you pass in goes to the run as data." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startet jetzt einen deiner Cedar-Agenten. Übergebener Text geht als Daten an den Lauf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia ahora uno de tus agentes de Cedar. El texto que le pases llega a la ejecución como datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lance maintenant l’un de vos agents Cedar. Le texte transmis est remis à l’exécution comme données."
           }
         }
       }
@@ -14628,6 +15347,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Métro"
+          }
+        }
+      }
+    },
+    "Suggested Follow-Up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorgeschlagener Folgelauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seguimiento sugerido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suivi suggéré"
           }
         }
       }
@@ -14889,6 +15630,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tester la connexion"
+          }
+        }
+      }
+    },
+    "Text" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texte"
           }
         }
       }
@@ -15842,6 +16605,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce jeu ne contient encore aucune ligne."
+          }
+        }
+      }
+    },
+    "This time has passed, so the suggestion can only be dismissed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Zeitpunkt ist vorbei, deshalb lässt sich der Vorschlag nur noch verwerfen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese momento ya pasó, así que la sugerencia solo se puede descartar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce moment est passé ; la suggestion ne peut donc plus qu’être ignorée."
           }
         }
       }
@@ -17002,6 +17787,28 @@
         }
       }
     },
+    "Waiting for your device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf dein Gerät"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a tu dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de votre appareil"
+          }
+        }
+      }
+    },
     "Waiting for your say-so" : {
       "localizations" : {
         "de" : {
@@ -17100,6 +17907,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Surveiller"
+          }
+        }
+      }
+    },
+    "Watch For" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Achten auf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vigilar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À surveiller"
           }
         }
       }
@@ -17324,6 +18153,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Webhook"
+          }
+        }
+      }
+    },
+    "Webhooks and devices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webhooks und Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webhooks y dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webhooks et appareils"
           }
         }
       }
@@ -17640,6 +18492,29 @@
         }
       }
     },
+    "When a record set gets rows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn ein Satz Zeilen bekommt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando un conjunto de datos recibe filas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quand un jeu de données reçoit des lignes"
+          }
+        }
+      }
+    },
     "When a webhook is called" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17727,6 +18602,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quand un événement commence"
+          }
+        }
+      }
+    },
+    "When files appear in a Drive folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn Dateien in einem Drive-Ordner erscheinen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando aparecen archivos en una carpeta de Drive"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quand des fichiers apparaissent dans un dossier Drive"
           }
         }
       }
@@ -17861,6 +18759,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lorsque vous dites à Cedar quelque chose de durable, comme votre nom, une préférence ou un projet, ou lui demandez de s'en souvenir, cela apparaît ici."
+          }
+        }
+      }
+    },
+    "When your device asks" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn dein Gerät es anfordert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando tu dispositivo lo pide"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quand votre appareil le demande"
           }
         }
       }

@@ -24,6 +24,11 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   chat, and anything else opens in Quick Look (text, CSV, code, SVG, Office documents), all with
   sharing
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
+- Follow-up suggestions (`suggest_follow_up`) as a card under the reply: what Cedar would do
+  later and when, in your time zone, with the prompt folded. **Set Up** makes it a one-off agent,
+  **Dismiss Suggestion** drops it; nothing is scheduled until you set it up. A card that was
+  decided, here or on another device, says so, and one that was set up opens its agent. A
+  suggestion whose time has passed can only be dismissed
 - Plans to agree to and tool calls to allow or deny, when the server asks (`TOOL_APPROVALS`); a
   plan Cedar chose to make partway through (`propose_plan`) is marked as such
 - A Plan Approval setting for your messages, whether Cedar shows a plan first: the server's, when Cedar thinks it helps, for longer
@@ -50,9 +55,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   passage that matched
 - Agents, as on the web: a **Chats | Starred | Agents** switch at the top of the sidebar, and
   under Agents an **Agents | Activity** switch. Agents lists every agent under what starts it
-  (on a schedule, when something changes, a webhook, mail and calendar) with its trigger in a
-  line, where it stands (next run, watching, waiting for calls, paused, check failing) and its
-  last result; **Run Now**, **Pause**/**Resume**, **Edit** and **Delete** from a swipe or a long
+  (on a schedule, when something changes, webhooks and devices, mail, calendar and files) with
+  its trigger in a line, where it stands (next run, watching, waiting for calls, waiting for your
+  device, paused, check failing) and its last result; **Run Now**, **Pause**/**Resume**, **Edit** and **Delete** from a swipe or a long
   press. Activity lists the latest runs of all agents with what started each; tap one to open
   its conversation
 - An agent's detail (tap it): its trigger, prompt and settings, its runs with what started each,
@@ -61,11 +66,18 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Make and change agents in the app: **+** in the Agents list, or **Make Agent** in a finished
   chat's toolbar (the server writes the prompt from the conversation). The form covers every
   trigger: daily or weekly, once, every so often, monthly, a condition on a web address, a tool
-  or a record set (with **Try It** to check it once and find the path to a value), a webhook,
-  new mail, and calendar events; and the model, notification method, limits and tools of its
-  runs. A trigger from a newer server that the app doesn't know is shown as it is and left alone
+  or a record set (with **Try It** to check it once and find the path to a value), new or
+  changed rows of a record set, a webhook, your device, new mail, calendar events, and new files
+  in a Google Drive folder (its address or ID); and the model, notification method, limits and
+  tools of its runs. Everything that watches something can be tried out with **Try It**. A trigger from a newer server that the app doesn't know is shown as it is and left alone
 - A conversation that is an agent's run carries a badge with the agent's title; tap it for the
   agent
+- A **Run Cedar Agent** action in the Shortcuts app (and Siri): pick an agent, optionally pass
+  it text, and it starts a run now and says whether it started or why it is held back. It works
+  for any agent that isn't paused; an agent with the **When your device asks** trigger is one
+  that nothing else starts. Run it from one of the Shortcuts app's own automations to start an
+  agent when you arrive at or leave a place, or when the iPhone connects to CarPlay (see
+  [Shortcuts](#shortcuts))
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered
@@ -145,15 +157,34 @@ open is not shown; the response is already in front of you.
 `Config/Cedar.entitlements` holds the `aps-environment` entitlement; Xcode turns `development`
 into `production` for distribution builds.
 
+## Shortcuts
+
+`Cedar/Intents/RunAgentIntent.swift` is an App Intent in the app itself (no extension, no extra
+entitlement, no location permission). It lists the server's agents for its **Agent** parameter
+and calls `POST /api/agents/{id}/trigger` with `source: "shortcut"` and the text it was handed,
+which goes to the run as data. It reads the server's address and the Keychain's token the way the
+app does, so it works while the app isn't open (after the phone was unlocked once since it
+started). The answer is spoken or shown: the agent started, or it is held back because its last
+run is still going, it ran a moment ago, its runs for the day are used up or Cedar is busy; a run
+that is held back is not queued. A paused agent says so.
+
+The app watches nothing itself. Arriving, leaving, CarPlay, a time of day, an NFC tag: make a
+personal automation in the Shortcuts app and have it run the action.
+
+The action's name, description and parameters are in `Localizable.xcstrings` like the rest of the
+app's text. The phrase for Siri ("Run an agent in cedar") is English only for now: phrases are
+translated in a String Catalog of their own, `AppShortcuts.xcstrings`, which Xcode creates.
+
 ## Layout
 
 | Path | Contents |
 | --- | --- |
 | `Cedar/App` | The app entry point, the root split view and how it takes a foldable's canvas (`FoldLayout`), `AppModel` (settings, the conversation list, the inbox count, the live notices, open chats) and `PushRegistrar` (APNs) |
-| `Cedar/Models` | The `/api` types, the event-to-transcript reducer (text, reasoning, plans, approvals, tool calls, questions, images), and a Markdown block parser |
+| `Cedar/Models` | The `/api` types, the event-to-transcript reducer (text, reasoning, plans, approvals, tool calls, questions, follow-up suggestions, images), and a Markdown block parser |
 | `Cedar/Networking` | `ChatClient` for `/api`, and the Server-Sent Events parser |
 | `Cedar/Storage` | Settings, Keychain access, and the Mac app's connection code (`cedar://connect?server=…&token=…`) |
-| `Cedar/Features` | SwiftUI screens: conversation list, chat (turns, questions, approvals, images), and settings (with the QR scanner and the first launch's language picker) |
+| `Cedar/Features` | SwiftUI screens: conversation list, chat (turns, questions, approvals, follow-up suggestions, images), agents (list, detail, form), and settings (with the QR scanner and the first launch's language picker) |
+| `Cedar/Intents` | The Run Cedar Agent action for the Shortcuts app |
 | `Cedar/Localization` | The offered languages, the picked one (`LanguageStore`), and `L10n` for text built outside SwiftUI views |
 | `Cedar/Localizable.xcstrings`, `Cedar/InfoPlist.xcstrings` | The String Catalogs: the app's text and the permission prompts, in German, French and Spanish |
 | `CedarTests` | Unit tests for the API types, the reducer, the SSE parser, Markdown, the connection code, the languages, and the fold layout |
@@ -219,6 +250,12 @@ simulator, which the layout code's unit tests (`FoldLayoutTests`) cover for the 
   Make Agent calls `POST /api/conversations/{id}/compact`. A change leaves the trigger out
   unless the form changed it (sending one makes the server forget what the old one had seen);
   the device's time zone always goes along
+- The Shortcuts action asks for a run with `POST /api/agents/{id}/trigger`
+  (`{source: "shortcut", text}`); the answer says whether it started or why it is held back.
+- A follow-up suggestion is the result of a `suggest_follow_up` tool call in a turn's events;
+  Set Up and Dismiss send `PUT /api/turns/{turn_id}/followups/{call_id}` (the tool call's id),
+  accepting with the suggestion's title, prompt and time as the tool gave them and the device's
+  time zone. Decisions already made come with `GET /api/conversations/{id}` as `followups`.
 - Settings → Memory reads `GET /api/memory` and deletes with `DELETE /api/memory/{id}` and
   `DELETE /api/memory`. A server whose `GET /api/config` has no `memory` flag, or that answers
   `/api/memory` with 404, is older than memory, and the section is hidden or says so.

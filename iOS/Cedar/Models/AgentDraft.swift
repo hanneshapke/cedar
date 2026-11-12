@@ -6,7 +6,7 @@ import Foundation
 struct AgentDraft: Equatable, Sendable {
     /// The trigger kinds the form can make.
     enum Kind: String, CaseIterable, Identifiable, Sendable {
-        case time, once, interval, monthly, condition, webhook, email, calendar
+        case time, once, interval, monthly, condition, records, webhook, device, email, calendar, drive
 
         var id: String { rawValue }
 
@@ -17,9 +17,12 @@ struct AgentDraft: Equatable, Sendable {
             case .interval: return L10n.string("Every so often")
             case .monthly: return L10n.string("Monthly")
             case .condition: return L10n.string("When something changes")
+            case .records: return L10n.string("When a record set gets rows")
             case .webhook: return L10n.string("When a webhook is called")
+            case .device: return L10n.string("When your device asks")
             case .email: return L10n.string("When mail arrives")
             case .calendar: return L10n.string("Around calendar events")
+            case .drive: return L10n.string("When files appear in a Drive folder")
             }
         }
 
@@ -27,7 +30,7 @@ struct AgentDraft: Equatable, Sendable {
         /// The server checks something for it between runs, so it can be tried out.
         var watches: Bool { Trigger.watches(kind: rawValue) }
         /// Something outside starts its runs: these get the limits and the careful tools.
-        var byEvent: Bool { watches || self == .webhook }
+        var byEvent: Bool { Trigger.byEvent(kind: rawValue) }
     }
 
     enum Unit: String, CaseIterable, Identifiable, Sendable {
@@ -108,7 +111,7 @@ struct AgentDraft: Equatable, Sendable {
 
     /// Why the form can't be saved, or the trigger tried out, yet.
     enum Problem: LocalizedError, Equatable {
-        case titleMissing, promptMissing, urlInvalid, toolMissing, toolInputInvalid, recordSetMissing
+        case titleMissing, promptMissing, urlInvalid, toolMissing, toolInputInvalid, recordSetMissing, folderMissing
         case numberNeeded, valueNeeded, amountMissing, tooLong, calendarNeedsOne, oncePast, toolsUnavailable, noTools, notEditable
         case intervalTooShort(Int)
         case checkTooOften(Int)
@@ -121,6 +124,7 @@ struct AgentDraft: Equatable, Sendable {
             case .toolMissing: return L10n.string("Choose the tool to watch.")
             case .toolInputInvalid: return L10n.string("The tool's input must be a JSON object, like {\"city\": \"Zurich\"}.")
             case .recordSetMissing: return L10n.string("Choose the record set to watch.")
+            case .folderMissing: return L10n.string("Enter the folder's address or its ID.")
             case .numberNeeded: return L10n.string("Enter a number to compare with.")
             case .valueNeeded: return L10n.string("Enter the value to compare with.")
             case .amountMissing: return L10n.string("Enter how often: a number of at least 1.")
@@ -178,8 +182,16 @@ struct AgentDraft: Equatable, Sendable {
     /// How often a watching trigger checks.
     var check = Every(amount: 5, unit: .minutes)
 
+    // Rows of a record set (the set is `recordSet`, as for a condition on one)
+    /// `added`, or `changed` for added or changed rows.
+    var rowsOn = "added"
+
     // Mail
     var query = ""
+
+    // Google Drive
+    /// The folder's ID, or its address in the browser.
+    var driveFolder = ""
 
     // Calendar
     /// Kept as the agent has it; the form has no field for it.
@@ -275,6 +287,17 @@ struct AgentDraft: Equatable, Sendable {
             if let minutesBefore { before = Every(minutes: minutesBefore) }
             self.newEvents = newEvents
             check = Every(minutes: everyMinutes)
+        case .records(let set, let on, let everyMinutes):
+            kind = .records
+            recordSet = set
+            rowsOn = on
+            check = Every(minutes: everyMinutes)
+        case .drive(let folder, let everyMinutes):
+            kind = .drive
+            driveFolder = folder
+            check = Every(minutes: everyMinutes)
+        case .device:
+            kind = .device
         case .unknown:
             fixedTrigger = agent.trigger
         }
@@ -339,6 +362,17 @@ struct AgentDraft: Equatable, Sendable {
             return .calendar(calendarId: calendarId, filter: filter.isEmpty ? nil : filter,
                              minutesBefore: remindBefore ? max(0, before.minutes) : nil, newEvents: newEvents,
                              everyMinutes: try checkMinutes(atLeast: 1))
+        case .records:
+            let set = recordSet.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !set.isEmpty else { throw Problem.recordSetMissing }
+            return .records(set: set, on: rowsOn, everyMinutes: try checkMinutes(atLeast: 1))
+        case .drive:
+            // The address goes as it is: the server takes the folder's ID out of it.
+            let folder = driveFolder.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !folder.isEmpty else { throw Problem.folderMissing }
+            return .drive(folder: folder, everyMinutes: try checkMinutes(atLeast: 1))
+        case .device:
+            return .device
         }
     }
 

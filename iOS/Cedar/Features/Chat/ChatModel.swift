@@ -23,6 +23,9 @@ final class ChatModel {
     private(set) var attachments: [OutgoingAttachment] = []
     /// Picked files still being read.
     private(set) var isAddingAttachments = false
+    /// What was decided about the follow-ups suggested here, by `FollowUpDecision.key`; a
+    /// suggestion without one is still open.
+    private(set) var followUpDecisions: [String: FollowUpDecision] = [:]
 
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private var followers: [String: Task<Void, Never>] = [:]
@@ -80,6 +83,10 @@ final class ChatModel {
         do {
             let detail = try await client.conversation(id: conversationId)
             app?.remember(detail.conversation, agent: detail.agent)
+            // Decisions are never taken back, so the server's only add to the ones known here.
+            for decision in detail.followups {
+                followUpDecisions[decision.key] = decision
+            }
             sync(with: detail.turns)
             errorMessage = nil
         } catch let error as ChatError where error.status == 404 {
@@ -348,6 +355,25 @@ final class ChatModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: Follow-ups
+
+    /// What was decided about the follow-up `call` suggested in `turn`; `nil` while it is open.
+    func followUpDecision(for call: ToolCall, in turn: TurnTranscript) -> FollowUpDecision? {
+        followUpDecisions[FollowUpDecision.key(turnId: turn.id, callId: call.id)]
+    }
+
+    /// Sets up the follow-up `call` suggested (a one-off agent) or dismisses it. Throws the
+    /// server's reason when it refuses, for the card to show. The answer is the decision that
+    /// stands, which is an earlier one when another device was first.
+    func decideFollowUp(_ call: ToolCall, in turn: TurnTranscript, accept: Bool) async throws {
+        guard let followUp = call.followUp else { return }
+        guard let client else { throw ChatError.notConfigured }
+        let body = accept ? FollowUpBody.accept(followUp) : FollowUpBody.dismiss
+        let answer = try await client.decideFollowup(turnId: turn.id, callId: call.id, body)
+        followUpDecisions[answer.followup.key] = answer.followup
+        if let agent = answer.agent { app?.agentWasMade(agent) }
     }
 
     func agree(to plan: Plan, in turn: TurnTranscript) async {

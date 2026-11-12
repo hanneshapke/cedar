@@ -308,6 +308,23 @@ struct ChatClient: Sendable {
         return try await decode(request)
     }
 
+    /// This device asks an agent for a run, whatever its trigger: `source` says where the request
+    /// comes from (`shortcut`, `share`, `automation`), and `text`, `title` and `url` are handed to
+    /// the run as data. 409 while the agent is paused. A run that is held back isn't queued.
+    func triggerAgent(id: String, source: String? = nil, text: String? = nil, title: String? = nil,
+                      url: String? = nil) async throws -> AgentTriggerResult {
+        let body = AgentTriggerBody(source: source, text: text, title: title, url: url)
+        return try await decode(makeRequest("api/agents/\(id)/trigger", method: "POST", json: body))
+    }
+
+    /// Sets up or dismisses a follow-up the model suggested in a turn; `callId` is the id of the
+    /// tool call that suggested it. Accepting makes a one-off agent (400 once its time has
+    /// passed, 409 when there are as many agents as the server keeps). The first decision
+    /// stands: deciding again answers the earlier one.
+    func decideFollowup(turnId: String, callId: String, _ body: FollowUpBody) async throws -> FollowUpAnswer {
+        try await decode(makeRequest("api/turns/\(turnId)/followups/\(callId)", method: "PUT", json: body))
+    }
+
     /// The latest runs of every agent, newest first. `before` is the last page's `nextBefore`.
     func activity(before: String? = nil, limit: Int? = nil) async throws -> ActivityPage {
         var query: [URLQueryItem] = []

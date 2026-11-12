@@ -18,7 +18,8 @@ struct AgentFormContext: Identifiable {
 
 /// Makes or changes an agent: its name and prompt, what starts it (every kind of trigger, each
 /// with its own fields), and the model, notification, limits and tools its runs get. A trigger
-/// that watches something can be tried out before saving. Save sends only what the server needs
+/// that watches something (a value, a record set, mail, a calendar, a Drive folder) can be tried
+/// out before saving. Save sends only what the server needs
 /// (`AgentDraft` builds the body); Cancel asks before dropping edits.
 struct AgentFormView: View {
     let context: AgentFormContext
@@ -238,6 +239,46 @@ struct AgentFormView: View {
             }
             Toggle("When an Event Is Added", isOn: $draft.newEvents)
             EveryRow(title: "Check Every", every: $draft.check)
+        case .records:
+            recordSetPicker
+            Picker("Watch For", selection: $draft.rowsOn) {
+                Text("New rows").tag("added")
+                Text("New or changed rows").tag("changed")
+                // A choice from a newer server, kept until it is changed.
+                if draft.rowsOn != "added", draft.rowsOn != "changed" {
+                    Text(verbatim: draft.rowsOn).tag(draft.rowsOn)
+                }
+            }
+            EveryRow(title: "Check Every", every: $draft.check)
+        case .drive:
+            TextField(text: $draft.driveFolder, prompt: Text(verbatim: "https://drive.google.com/drive/folders/…")) {
+                Text("Folder address or ID")
+            }
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            EveryRow(title: "Check Every", every: $draft.check)
+        case .device:
+            Text("Nothing to fill in. The agent waits until your device asks for a run: add the Run Cedar Agent action to a shortcut in the Shortcuts app and choose this agent. Text you pass to the action goes to the run as data.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text("An automation in the Shortcuts app can run that shortcut for you, for example when you arrive at or leave a place, or when your iPhone connects to CarPlay.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// The record sets cedar keeps, for a condition on one and for a trigger on its rows.
+    private var recordSetPicker: some View {
+        Picker("Record Set", selection: $draft.recordSet) {
+            Text("Choose…").tag("")
+            ForEach(recordSets) { set in
+                Text(verbatim: set.name).tag(set.name)
+            }
+            // The saved pick, kept until the list is loaded or it is changed.
+            if !draft.recordSet.isEmpty, !recordSets.contains(where: { $0.name == draft.recordSet }) {
+                Text(verbatim: draft.recordSet).tag(draft.recordSet)
+            }
         }
     }
 
@@ -292,15 +333,7 @@ struct AgentFormView: View {
                 .autocorrectionDisabled()
             }
         case .records:
-            Picker("Record Set", selection: $draft.recordSet) {
-                Text("Choose…").tag("")
-                ForEach(recordSets) { set in
-                    Text(verbatim: set.name).tag(set.name)
-                }
-                if !draft.recordSet.isEmpty, !recordSets.contains(where: { $0.name == draft.recordSet }) {
-                    Text(verbatim: draft.recordSet).tag(draft.recordSet)
-                }
-            }
+            recordSetPicker
         }
         TextField(text: $draft.extract, prompt: Text(verbatim: draft.sourceType == .records ? "count" : "price.eur")) {
             Text("Path to the value (optional)")
@@ -366,12 +399,18 @@ struct AgentFormView: View {
             parts.append(L10n.string("Gmail's search syntax; leave it empty for any new mail. Google has to be connected on the server."))
         case .calendar:
             parts.append(L10n.string("Runs before events start, when new ones appear, or both. Google has to be connected on the server."))
+        case .records:
+            parts.append(L10n.string("Cedar looks at the set on every check, with no AI model involved. The first check only learns what is there; after that, rows that are new (or new or changed, if you choose so) start a run, which is handed those rows."))
+        case .drive:
+            parts.append(L10n.string("Open the folder in Google Drive in a browser and copy its address, or enter the folder's ID. New files in the folder start a run; files in its subfolders don't count, and the first check only learns what is there. Google has to be connected on the server."))
+        case .device:
+            parts.append(L10n.string("Any agent that isn't paused can be started from the Shortcuts app this way, whatever else starts it. This kind is for one that nothing else starts."))
         }
         if draft.hasForeignTimeZone {
             parts.append(L10n.format("Times are in %@.", draft.timezone))
         }
         if draft.kind.byEvent {
-            parts.append(L10n.string("An agent that events start reads text other people wrote (mail, a web page, what a webhook sends) and runs with nobody there to approve what its tools do."))
+            parts.append(L10n.string("An agent that events start reads text other people wrote (mail, a web page, a shared file, what a webhook or a shortcut sends) and runs with nobody there to approve what its tools do."))
         }
         return parts.joined(separator: "\n\n")
     }

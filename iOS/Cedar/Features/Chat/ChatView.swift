@@ -28,7 +28,10 @@ struct ChatView: View {
                         }
                     }
                     ForEach(chat.turns) { turn in
-                        TurnView(turn: turn, chat: chat, webURL: webURL, isLast: turn.id == chat.turns.last?.id)
+                        TurnView(turn: turn, chat: chat, webURL: webURL, isLast: turn.id == chat.turns.last?.id,
+                                 openAgent: { agentId, title in
+                                     showingAgent = AgentSelection(id: agentId, title: title)
+                                 })
                     }
                     if let questions = chat.openQuestions, chat.pendingPrompt == nil {
                         QuestionsView(questions: questions) { answers in

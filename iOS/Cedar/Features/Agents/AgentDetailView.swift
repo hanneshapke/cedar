@@ -106,6 +106,11 @@ struct AgentDetailView: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
+            if case .device = agent.trigger {
+                Text("Start it from the Shortcuts app with the Run Cedar Agent action, by hand or from an automation.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if !agent.trigger.isKnown {
                 Text("This trigger was made by a newer version of Cedar. It runs as usual, but this version of the app can only show it.")
                     .font(.footnote)

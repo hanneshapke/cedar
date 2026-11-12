@@ -232,7 +232,7 @@ final class APITests: XCTestCase {
         XCTAssertEqual(triggers.map(\.kind), ["time", "time", "once", "interval", "monthly", "condition", "condition", "condition",
                                               "webhook", "email", "calendar", "calendar"])
         XCTAssertEqual(triggers.map(\.group), [.schedule, .schedule, .schedule, .schedule, .schedule, .change, .change, .change,
-                                               .webhook, .mailAndCalendar, .mailAndCalendar, .mailAndCalendar])
+                                               .outside, .mailCalendarFiles, .mailCalendarFiles, .mailCalendarFiles])
         XCTAssertTrue(triggers[0].isClock && !triggers[0].byEvent && !triggers[0].watches)
         XCTAssertTrue(triggers[5].watches && triggers[5].byEvent)
         XCTAssertTrue(triggers[8].byEvent && !triggers[8].watches && !triggers[8].isClock)
@@ -761,7 +761,7 @@ final class APITests: XCTestCase {
         XCTAssertEqual(Trigger.unknown(kind: "").summary, "A trigger this version of the app doesn't know")
         XCTAssertEqual(Trigger.Predicate(op: "lte", value: .number(40.5)).text(subject: "price"), "price ≤ 40.5")
         XCTAssertEqual(Trigger.Predicate(op: "equals", value: .bool(true)).valueText, "true")
-        XCTAssertEqual(Trigger.Group.allCases.map(\.title), ["On a schedule", "When something changes", "When a webhook is called", "Mail and calendar", "Other"])
+        XCTAssertEqual(Trigger.Group.allCases.map(\.title), ["On a schedule", "When something changes", "Webhooks and devices", "Mail, calendar and files", "Other"])
 
         // Times as triggers write them, in the trigger's own zone.
         let nine = try XCTUnwrap(AgentClock.date(at: "2026-12-03T09:00", timezone: "Europe/Berlin"))
@@ -780,6 +780,232 @@ final class APITests: XCTestCase {
             XCTAssertFalse(draft.hasForeignTimeZone)
             XCTAssertEqual(try draft.trigger(), .time(frequency: "daily", weekday: nil, time: "07:30", timezone: TimeZone.current.identifier))
         }
+    }
+
+    func testRowsFilesAndTheDeviceStartRunsToo() throws {
+        let triggers = try JSONDecoder.cedar.decode([Trigger].self, from: Data("""
+        [{"kind":"records","set":"runs","on":"changed","every_minutes":15},
+         {"kind":"records","set":"weight"},
+         {"kind":"drive","folder":"1AbCdEf","every_minutes":10},
+         {"kind":"drive","folder":"1AbCdEf"},
+         {"kind":"device"},
+         {"kind":"records"},
+         {"kind":"drive","every_minutes":5}]
+        """.utf8))
+        XCTAssertEqual(triggers, [
+            .records(set: "runs", on: "changed", everyMinutes: 15),
+            // The server's defaults: new rows only, checked every five minutes.
+            .records(set: "weight", on: "added", everyMinutes: 5),
+            .drive(folder: "1AbCdEf", everyMinutes: 10),
+            .drive(folder: "1AbCdEf", everyMinutes: 5),
+            .device,
+            // Without what it watches it can't be read, and is shown as it is.
+            .unknown(kind: "records"),
+            .unknown(kind: "drive"),
+        ])
+        XCTAssertEqual(triggers.map(\.kind), ["records", "records", "drive", "drive", "device", "records", "drive"])
+        XCTAssertEqual(triggers.map(\.group), [.change, .change, .mailCalendarFiles, .mailCalendarFiles, .outside, .change, .mailCalendarFiles])
+        // Rows and files are watched; the device isn't, but all three are started by events.
+        XCTAssertTrue(triggers[0].watches && triggers[0].byEvent && !triggers[0].isClock)
+        XCTAssertTrue(triggers[2].watches && triggers[2].byEvent)
+        XCTAssertTrue(!triggers[4].watches && triggers[4].byEvent && !triggers[4].isClock)
+        XCTAssertNil(triggers[0].timezone)
+
+        // Sent with their own fields and no others, and read back as they were.
+        let cases: [(Trigger, String)] = [
+            (.records(set: "runs", on: "added", everyMinutes: 5), #"{"kind":"records","set":"runs","on":"added","every_minutes":5}"#),
+            (.records(set: "runs", on: "changed", everyMinutes: 60), #"{"kind":"records","set":"runs","on":"changed","every_minutes":60}"#),
+            (.drive(folder: "https://drive.google.com/drive/folders/1AbCdEf", everyMinutes: 5),
+             #"{"kind":"drive","folder":"https://drive.google.com/drive/folders/1AbCdEf","every_minutes":5}"#),
+            (.device, #"{"kind":"device"}"#),
+        ]
+        for (trigger, json) in cases {
+            XCTAssertEqual(try sent(trigger), try object(json), trigger.kind)
+            XCTAssertEqual(try JSONDecoder.cedar.decode(Trigger.self, from: JSONEncoder().encode(trigger)), trigger)
+        }
+
+        XCTAssertEqual(Trigger.records(set: "runs", on: "added", everyMinutes: 5).summary, "New rows in runs")
+        XCTAssertEqual(Trigger.records(set: "runs", on: "changed", everyMinutes: 5).summary, "New or changed rows in runs")
+        XCTAssertEqual(Trigger.drive(folder: "1AbCdEf", everyMinutes: 5).summary, "New files in a Google Drive folder")
+        XCTAssertEqual(Trigger.device.summary, "When your device asks")
+
+        // An agent for the device waits for it: no next run, no check, no call held.
+        let waits = try agent(#"{"id":"a","title":"Arrive","trigger":{"kind":"device"},"next_run_at":null,"next_check_at":null,"hook":null}"#)
+        XCTAssertEqual(waits.status, .waitingForDevice)
+        XCTAssertEqual(try agent(#"{"id":"a","title":"Arrive","enabled":false,"trigger":{"kind":"device"}}"#).status, .paused)
+        XCTAssertEqual(try agent(#"{"id":"a","title":"Rows","trigger":{"kind":"records","set":"runs"}}"#).status, .watching(lastChecked: nil))
+        XCTAssertEqual(try agent(#"{"id":"a","title":"Files","last_error":"Google is not connected","trigger":{"kind":"drive","folder":"1AbCdEf"}}"#).status,
+                       .checkFailing("Google is not connected"))
+
+        // What started such runs is the server's line, as for every other cause.
+        let run = try JSONDecoder.cedar.decode(AgentRun.self, from: Data("""
+        {"id":"r1","schedule_id":"a","started_at":"2026-11-12T10:00:00Z",
+         "cause":{"kind":"rows","summary":"2 new rows in runs","set":"runs","added":2,"changed":0}}
+        """.utf8))
+        XCTAssertEqual(run.cause?.kind, "rows")
+        XCTAssertEqual(run.startedBy, "2 new rows in runs")
+    }
+
+    func testTheFormMakesRowsFilesAndDeviceTriggers() throws {
+        let device = TimeZone.current.identifier
+        let now = try XCTUnwrap(CedarDate.parse("2026-11-12T10:00:00Z"))
+        var draft = AgentDraft(now: now)
+        draft.title = "Watcher"
+        draft.prompt = "DO: look into it"
+        func body(_ draft: AgentDraft) throws -> NSDictionary {
+            try sent(draft.createBody(now: now))
+        }
+        func expected(_ trigger: String) throws -> NSDictionary {
+            try object(#"{"title":"Watcher","prompt":"DO: look into it","model":"","reasoning":"","notify":null,"timezone":"\#(device)","trigger":\#(trigger)}"#)
+        }
+
+        // Rows of a record set: new ones, or new and changed ones.
+        draft.kind = .records
+        XCTAssertThrowsError(try body(draft)) { XCTAssertEqual($0 as? AgentDraft.Problem, .recordSetMissing) }
+        draft.recordSet = " runs "
+        XCTAssertEqual(try body(draft), try expected(#"{"kind":"records","set":"runs","on":"added","every_minutes":5}"#))
+        draft.rowsOn = "changed"
+        draft.check = AgentDraft.Every(amount: 1, unit: .hours)
+        XCTAssertEqual(try body(draft), try expected(#"{"kind":"records","set":"runs","on":"changed","every_minutes":60}"#))
+        draft.check = AgentDraft.Every(amount: 0, unit: .minutes)
+        XCTAssertThrowsError(try body(draft)) { XCTAssertEqual($0 as? AgentDraft.Problem, .amountMissing) }
+        XCTAssertTrue(draft.canTest && draft.byEvent)
+
+        // A Drive folder: its address goes as typed, and the server keeps the ID.
+        draft.kind = .drive
+        draft.check = AgentDraft.Every(amount: 5, unit: .minutes)
+        XCTAssertThrowsError(try body(draft)) { XCTAssertEqual($0 as? AgentDraft.Problem, .folderMissing) }
+        draft.driveFolder = " https://drive.google.com/drive/folders/1AbCdEf\n"
+        XCTAssertEqual(try body(draft), try expected(#"{"kind":"drive","folder":"https://drive.google.com/drive/folders/1AbCdEf","every_minutes":5}"#))
+        XCTAssertTrue(draft.canTest && draft.byEvent)
+
+        // The device has nothing to fill in and nothing to try out, but the limits apply.
+        draft.kind = .device
+        XCTAssertEqual(try body(draft), try expected(#"{"kind":"device"}"#))
+        XCTAssertTrue(!draft.canTest && draft.byEvent)
+        draft.customLimits = true
+        draft.minInterval = AgentDraft.Every(amount: 10, unit: .minutes)
+        draft.maxRunsPerDay = 12
+        XCTAssertEqual(try body(draft), try object(#"{"title":"Watcher","prompt":"DO: look into it","model":"","reasoning":"","notify":null,"timezone":"\#(device)","trigger":{"kind":"device"},"min_interval_secs":600,"max_runs_per_day":12}"#))
+
+        // Editing reads them back, and leaves the trigger out unless it was changed.
+        let rows = try agent(#"{"id":"a1","title":"Rows","prompt":"p","trigger":{"kind":"records","set":"runs","on":"changed","every_minutes":120}}"#)
+        var edited = AgentDraft(agent: rows)
+        XCTAssertEqual(edited.kind, .records)
+        XCTAssertEqual(edited.recordSet, "runs")
+        XCTAssertEqual(edited.rowsOn, "changed")
+        XCTAssertEqual(edited.check, AgentDraft.Every(amount: 2, unit: .hours))
+        edited.title = "New rows"
+        XCTAssertNil(try edited.updateBody(for: rows).trigger)
+        edited.rowsOn = "added"
+        XCTAssertEqual(try edited.updateBody(for: rows).trigger, .records(set: "runs", on: "added", everyMinutes: 120))
+        let files = AgentDraft(agent: try agent(#"{"id":"a2","title":"Files","prompt":"p","trigger":{"kind":"drive","folder":"1AbCdEf","every_minutes":5}}"#))
+        XCTAssertEqual(files.kind, .drive)
+        XCTAssertEqual(files.driveFolder, "1AbCdEf")
+        XCTAssertEqual(AgentDraft(agent: try agent(#"{"id":"a3","title":"Arrive","prompt":"p","trigger":{"kind":"device"}}"#)).kind, .device)
+        XCTAssertEqual(AgentDraft.Kind.allCases.map(\.rawValue).sorted(),
+                       ["calendar", "condition", "device", "drive", "email", "interval", "monthly", "once", "records", "time", "webhook"])
+    }
+
+    func testADeviceAsksForARun() throws {
+        let started = try JSONDecoder.cedar.decode(AgentTriggerResult.self, from: Data(#"{"started":true,"conversation_id":"c9"}"#.utf8))
+        XCTAssertTrue(started.started)
+        XCTAssertEqual(started.conversationId, "c9")
+        XCTAssertNil(started.held)
+        XCTAssertEqual(started.message(agent: "Arrive"), "Arrive started.")
+
+        // Held back, and not queued: each reason has its own words.
+        let held = try JSONDecoder.cedar.decode(AgentTriggerResult.self, from: Data(#"{"started":false,"held":"too_soon"}"#.utf8))
+        XCTAssertFalse(held.started)
+        XCTAssertNil(held.conversationId)
+        XCTAssertEqual(held.held, "too_soon")
+        XCTAssertEqual(held.message(agent: "Arrive"), "Arrive ran a moment ago, and its limits don't allow another run yet.")
+        let reasons = try ["busy", "too_soon", "daily_limit", "cedar_busy", "something_new"].map { reason in
+            try JSONDecoder.cedar.decode(AgentTriggerResult.self, from: Data(#"{"started":false,"held":"\#(reason)"}"#.utf8)).message(agent: "Arrive")
+        }
+        XCTAssertEqual(Set(reasons).count, 5)
+        XCTAssertTrue(reasons.allSatisfy { $0.contains("Arrive") })
+        XCTAssertEqual(reasons[4], "Arrive was not started.")
+
+        // The server refuses fields it doesn't know, so only what is set is sent.
+        XCTAssertEqual(try sent(AgentTriggerBody(source: "shortcut", text: "Home in 10")), try object(#"{"source":"shortcut","text":"Home in 10"}"#))
+        XCTAssertEqual(try sent(AgentTriggerBody(source: "share", title: "A page", url: "https://example.com")),
+                       try object(#"{"source":"share","title":"A page","url":"https://example.com"}"#))
+        XCTAssertEqual(try sent(AgentTriggerBody()), try object("{}"))
+    }
+
+    func testAFollowUpIsSuggestedDecidedAndListed() throws {
+        // The tool's result is a JSON string, like `ask_user`'s; `at` is kept as it was written.
+        let output = #"{"follow_up":{"title":"Check the visa status","prompt":"Look up the status again and tell me.","at":"2026-12-04T08:00:00Z"},"note":"Nothing is scheduled until the user sets it up."}"#
+        let followUp = try XCTUnwrap(FollowUp.parse(output))
+        XCTAssertEqual(followUp.title, "Check the visa status")
+        XCTAssertEqual(followUp.prompt, "Look up the status again and tell me.")
+        XCTAssertEqual(followUp.at, "2026-12-04T08:00:00Z")
+        XCTAssertEqual(followUp.date, CedarDate.parse("2026-12-04T08:00:00Z"))
+        // Once its time has passed it can only be dismissed.
+        XCTAssertFalse(followUp.isPast(now: try XCTUnwrap(CedarDate.parse("2026-12-04T07:59:00Z"))))
+        XCTAssertTrue(followUp.isPast(now: try XCTUnwrap(CedarDate.parse("2026-12-04T08:00:00Z"))))
+        XCTAssertNil(FollowUp.parse(#"{"follow_up":{"title":"No time","prompt":"p"}}"#))
+        XCTAssertNil(FollowUp.parse(#"{"error":"at must be in the future"}"#))
+        XCTAssertNil(FollowUp.parse("not json"))
+        // A time that can't be read is shown as written and left to the server to judge.
+        let odd = try XCTUnwrap(FollowUp.parse(#"{"follow_up":{"title":"t","prompt":"p","at":"next week"}}"#))
+        XCTAssertNil(odd.date)
+        XCTAssertFalse(odd.isPast())
+
+        // In a turn, a successful call carries the suggestion; its id is the `call_id`.
+        var transcript = TurnTranscript(turn: Turn(id: "t1", conversationId: "c1", runId: "r1", prompt: "hi", status: .running))
+        transcript.apply(RunEvent(seq: 1, type: "tool.call", data: .object(["id": .string("call_7"), "name": .string("suggest_follow_up"),
+                                                                             "input": .object(["title": .string("Check the visa status")])])))
+        XCTAssertTrue(transcript.followUps.isEmpty)
+        transcript.apply(RunEvent(seq: 2, type: "tool.result", data: .object(["id": .string("call_7"), "output": .string(output), "is_error": .bool(false)])))
+        transcript.apply(RunEvent(seq: 3, type: "tool.call", data: .object(["id": .string("call_8"), "name": .string("suggest_follow_up"), "input": .object([:])])))
+        transcript.apply(RunEvent(seq: 4, type: "tool.result", data: .object(["id": .string("call_8"), "output": .string("at must be in the future"), "is_error": .bool(true)])))
+        XCTAssertEqual(transcript.followUps.map(\.id), ["call_7"])
+        XCTAssertEqual(transcript.followUps.first?.followUp, followUp)
+        XCTAssertEqual(transcript.followUps.first?.summary, "Check the visa status")
+
+        // Setting it up sends the suggestion back with this device's time zone; dismissing, nothing else.
+        XCTAssertEqual(try sent(FollowUpBody.accept(followUp, timezone: "Europe/Berlin")),
+                       try object(#"{"decision":"accept","title":"Check the visa status","prompt":"Look up the status again and tell me.","at":"2026-12-04T08:00:00Z","timezone":"Europe/Berlin"}"#))
+        XCTAssertEqual(try sent(FollowUpBody.accept(followUp))["timezone"] as? String, TimeZone.current.identifier)
+        XCTAssertEqual(try sent(FollowUpBody.dismiss), try object(#"{"decision":"dismiss"}"#))
+
+        // The answer is the decision that stands, with the one-off agent accepting made.
+        let accepted = try JSONDecoder.cedar.decode(FollowUpAnswer.self, from: Data("""
+        {"followup":{"turn_id":"t1","call_id":"call_7","status":"accepted","agent_id":"a9","decided_at":"2026-11-12T10:00:00.123456Z"},
+         "agent":{"id":"a9","title":"Check the visa status","prompt":"Look up the status again and tell me.","enabled":true,
+                  "trigger":{"kind":"once","at":"2026-12-04T09:00","timezone":"Europe/Berlin"},"next_run_at":"2026-12-04T08:00:00Z"}}
+        """.utf8))
+        XCTAssertTrue(accepted.followup.isAccepted)
+        XCTAssertEqual(accepted.followup.agentId, "a9")
+        XCTAssertNotNil(accepted.followup.decidedAt)
+        XCTAssertEqual(accepted.followup.key, FollowUpDecision.key(turnId: "t1", callId: "call_7"))
+        XCTAssertEqual(accepted.agent?.trigger, .once(at: "2026-12-04T09:00", timezone: "Europe/Berlin"))
+        let dismissed = try JSONDecoder.cedar.decode(FollowUpAnswer.self, from: Data("""
+        {"followup":{"turn_id":"t1","call_id":"call_7","status":"dismissed","agent_id":null,"decided_at":"2026-11-12T10:00:00Z"},"agent":null}
+        """.utf8))
+        XCTAssertTrue(dismissed.followup.isDismissed && !dismissed.followup.isAccepted)
+        XCTAssertNil(dismissed.followup.agentId)
+        XCTAssertNil(dismissed.agent)
+
+        // A conversation lists the decisions already made; a suggestion without one is open.
+        let detail = try JSONDecoder.cedar.decode(ConversationDetail.self, from: Data("""
+        {"conversation":{"id":"c1","title":"Visa","schedule_id":null,"unread":false,"needs_answer":false,
+                         "created_at":"2026-11-12T09:00:00Z","updated_at":"2026-11-12T10:00:00Z"},
+         "turns":[],
+         "followups":[{"turn_id":"t1","call_id":"call_7","status":"accepted","agent_id":"a9","decided_at":"2026-11-12T10:00:00Z"},
+                      {"turn_id":"t2","call_id":"call_3","status":"dismissed","agent_id":null,"decided_at":"2026-11-12T10:05:00Z"}]}
+        """.utf8))
+        XCTAssertEqual(detail.followups.map(\.key), ["t1/call_7", "t2/call_3"])
+        XCTAssertEqual(detail.followups.map(\.status), ["accepted", "dismissed"])
+        XCTAssertNil(detail.agent)
+        // A server from before follow-ups sends none.
+        let old = try JSONDecoder.cedar.decode(ConversationDetail.self, from: Data("""
+        {"conversation":{"id":"c1","title":"Visa","unread":false,"needs_answer":false,
+                         "created_at":"2026-11-12T09:00:00Z","updated_at":"2026-11-12T10:00:00Z"},"turns":[]}
+        """.utf8))
+        XCTAssertTrue(old.followups.isEmpty)
     }
 
     func testParsesDatesWithAnyPrecision() {

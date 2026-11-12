@@ -649,6 +649,11 @@ final class AppModel {
         }
     }
 
+    /// An agent made outside the form (a follow-up that was set up in a chat) joins the list.
+    func agentWasMade(_ agent: Agent) {
+        take(agent)
+    }
+
     /// The agent's detail has shown the secret; it isn't kept any longer.
     func forgetSecret(agentId: String) {
         agentSecrets.removeValue(forKey: agentId)

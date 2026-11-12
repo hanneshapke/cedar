@@ -1,9 +1,10 @@
 import Foundation
 
 // Agents (`/api/agents`): prompts the server runs on its own, each with a trigger that says what
-// starts a run: a clock, something it watches, a webhook, new mail or a calendar event. Field
-// names are the server's, in snake_case. What a client may leave out or get `null` for is
-// optional here, so an agent from a newer server still lists.
+// starts a run: a clock, something it watches (a value, a record set, mail, a calendar, a Drive
+// folder), a webhook, or the user's own device. Field names are the server's, in snake_case.
+// What a client may leave out or get `null` for is optional here, so an agent from a newer
+// server still lists.
 
 /// What starts an agent's run, told apart by `kind`. A kind this version doesn't know (or one
 /// whose fields it can't read) decodes as `.unknown` rather than failing, so the list still
@@ -23,6 +24,14 @@ enum Trigger: Hashable, Sendable {
     case email(query: String, everyMinutes: Int)
     /// A run `minutesBefore` an event starts, when a new event appears, or both.
     case calendar(calendarId: String?, filter: String?, minutesBefore: Int?, newEvents: Bool, everyMinutes: Int)
+    /// A run when record set `set` gets new rows (`on` is `added`), or new or changed ones
+    /// (`changed`). The run is handed those rows.
+    case records(set: String, on: String, everyMinutes: Int)
+    /// A run when files appear in a Google Drive folder: `folder` is its ID (the server also
+    /// takes the folder's browser address and keeps the ID).
+    case drive(folder: String, everyMinutes: Int)
+    /// Waits for the user's own device to ask for a run (`POST /api/agents/{id}/trigger`).
+    case device
     case unknown(kind: String)
 
     /// What a condition watches.
@@ -47,7 +56,8 @@ enum Trigger: Hashable, Sendable {
 
     /// How the Agents list groups triggers.
     enum Group: String, CaseIterable, Identifiable, Sendable {
-        case schedule, change, webhook, mailAndCalendar, other
+        /// `outside` is what is started from outside cedar: a webhook's call, or the user's device.
+        case schedule, change, outside, mailCalendarFiles, other
 
         var id: String { rawValue }
 
@@ -55,8 +65,8 @@ enum Trigger: Hashable, Sendable {
             switch self {
             case .schedule: return L10n.string("On a schedule")
             case .change: return L10n.string("When something changes")
-            case .webhook: return L10n.string("When a webhook is called")
-            case .mailAndCalendar: return L10n.string("Mail and calendar")
+            case .outside: return L10n.string("Webhooks and devices")
+            case .mailCalendarFiles: return L10n.string("Mail, calendar and files")
             case .other: return L10n.string("Other")
             }
         }
@@ -75,6 +85,9 @@ enum Trigger: Hashable, Sendable {
         case .webhook: return "webhook"
         case .email: return "email"
         case .calendar: return "calendar"
+        case .records: return "records"
+        case .drive: return "drive"
+        case .device: return "device"
         case .unknown(let kind): return kind
         }
     }
@@ -89,9 +102,9 @@ enum Trigger: Hashable, Sendable {
     static func group(ofKind kind: String) -> Group {
         switch kind {
         case "time", "once", "interval", "monthly": return .schedule
-        case "condition": return .change
-        case "webhook": return .webhook
-        case "email", "calendar": return .mailAndCalendar
+        case "condition", "records": return .change
+        case "webhook", "device": return .outside
+        case "email", "calendar", "drive": return .mailCalendarFiles
         default: return .other
         }
     }
@@ -103,12 +116,16 @@ enum Trigger: Hashable, Sendable {
     var watches: Bool { Self.watches(kind: kind) }
 
     static func watches(kind: String) -> Bool {
-        kind == "condition" || kind == "email" || kind == "calendar"
+        kind == "condition" || kind == "email" || kind == "calendar" || kind == "records" || kind == "drive"
     }
 
-    /// Something outside starts its runs (a value, mail, an event, a call) rather than the
-    /// clock: these get the limits on how often, and the careful choice of tools.
-    var byEvent: Bool { watches || kind == "webhook" }
+    /// Something outside starts its runs (a value, mail, an event, a call, the user's device)
+    /// rather than the clock: these get the limits on how often, and the careful choice of tools.
+    var byEvent: Bool { Self.byEvent(kind: kind) }
+
+    static func byEvent(kind: String) -> Bool {
+        watches(kind: kind) || kind == "webhook" || kind == "device"
+    }
 
     /// The time zone its times are in, for the triggers that have one.
     var timezone: String? {
@@ -130,6 +147,9 @@ enum Trigger: Hashable, Sendable {
         case "webhook": return "link"
         case "email": return "envelope"
         case "calendar": return "calendar.badge.clock"
+        case "records": return "tablecells"
+        case "drive": return "folder"
+        case "device": return "iphone"
         default: return "questionmark.circle"
         }
     }
@@ -182,6 +202,12 @@ enum Trigger: Hashable, Sendable {
                 parts.append(L10n.format("matching %@", filter))
             }
             return parts.joined(separator: " · ")
+        case .records(let set, let on, _):
+            return L10n.format(on == "changed" ? "New or changed rows in %@" : "New rows in %@", set)
+        case .drive:
+            return L10n.string("New files in a Google Drive folder")
+        case .device:
+            return L10n.string("When your device asks")
         case .unknown(let kind):
             return kind.isEmpty
                 ? L10n.string("A trigger this version of the app doesn't know")
@@ -292,7 +318,7 @@ extension Trigger.Predicate {
 
 extension Trigger: Codable {
     private enum CodingKeys: String, CodingKey {
-        case kind, frequency, weekday, time, timezone, at, day, source, extract, predicate, query, filter
+        case kind, frequency, weekday, time, timezone, at, day, source, extract, predicate, query, filter, set, on, folder
         case everyMinutes = "every_minutes"
         case calendarId = "calendar_id"
         case minutesBefore = "minutes_before"
@@ -348,6 +374,15 @@ extension Trigger: Codable {
                              minutesBefore: try c.decodeIfPresent(Int.self, forKey: .minutesBefore),
                              newEvents: try c.decodeIfPresent(Bool.self, forKey: .newEvents) ?? false,
                              everyMinutes: try c.decodeIfPresent(Int.self, forKey: .everyMinutes) ?? defaultCheckMinutes)
+        case "records":
+            return .records(set: try c.decode(String.self, forKey: .set),
+                            on: try c.decodeIfPresent(String.self, forKey: .on) ?? "added",
+                            everyMinutes: try c.decodeIfPresent(Int.self, forKey: .everyMinutes) ?? defaultCheckMinutes)
+        case "drive":
+            return .drive(folder: try c.decode(String.self, forKey: .folder),
+                          everyMinutes: try c.decodeIfPresent(Int.self, forKey: .everyMinutes) ?? defaultCheckMinutes)
+        case "device":
+            return .device
         default:
             return .unknown(kind: kind)
         }
@@ -378,7 +413,7 @@ extension Trigger: Codable {
             try c.encodeIfPresent(extract, forKey: .extract)
             try c.encode(predicate, forKey: .predicate)
             try c.encode(everyMinutes, forKey: .everyMinutes)
-        case .webhook, .unknown:
+        case .webhook, .device, .unknown:
             break
         case .email(let query, let everyMinutes):
             try c.encode(query, forKey: .query)
@@ -388,6 +423,13 @@ extension Trigger: Codable {
             try c.encodeIfPresent(filter, forKey: .filter)
             try c.encodeIfPresent(minutesBefore, forKey: .minutesBefore)
             try c.encode(newEvents, forKey: .newEvents)
+            try c.encode(everyMinutes, forKey: .everyMinutes)
+        case .records(let set, let on, let everyMinutes):
+            try c.encode(set, forKey: .set)
+            try c.encode(on, forKey: .on)
+            try c.encode(everyMinutes, forKey: .everyMinutes)
+        case .drive(let folder, let everyMinutes):
+            try c.encode(folder, forKey: .folder)
             try c.encode(everyMinutes, forKey: .everyMinutes)
         }
     }
@@ -591,6 +633,8 @@ struct Agent: Decodable, Identifiable, Hashable, Sendable {
         case waitingForCalls
         /// A webhook delivery is held until the agent may run again.
         case callWaiting
+        /// It runs when the user's own device asks.
+        case waitingForDevice
         /// Nothing to say: a clock without a next run, or a trigger this version doesn't know.
         case idle
     }
@@ -603,6 +647,7 @@ struct Agent: Decodable, Identifiable, Hashable, Sendable {
         if let lastError, !lastError.isEmpty { return .checkFailing(lastError) }
         if trigger.watches { return .watching(lastChecked: lastCheckedAt) }
         if case .webhook = trigger { return waiting ? .callWaiting : .waitingForCalls }
+        if case .device = trigger { return .waitingForDevice }
         if let nextRunAt { return .nextRun(nextRunAt) }
         return .idle
     }
@@ -613,7 +658,8 @@ struct Agent: Decodable, Identifiable, Hashable, Sendable {
 struct AgentRun: Decodable, Identifiable, Hashable, Sendable {
     /// What started a run. `summary` is one line, already in the user's language.
     struct Cause: Decodable, Hashable, Sendable {
-        /// `clock`, `changed`, `holds`, `webhook`, `mail`, `soon` or `new_event`.
+        /// `clock`, `changed`, `holds`, `webhook`, `mail`, `soon`, `new_event`, `rows`, `files` or
+        /// `device`. Only `summary` is shown, so a kind from a newer server needs nothing here.
         let kind: String
         let summary: String
         /// The start of the data that came with it.
@@ -820,6 +866,112 @@ struct ActivityPage: Decodable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         items = try c.decodeIfPresent([ActivityItem].self, forKey: .items) ?? []
         nextBefore = try c.decodeIfPresent(String.self, forKey: .nextBefore)
+    }
+}
+
+/// `POST /api/agents/{id}/trigger`: what came of this device asking an agent for a run. It either
+/// started, or is held back (`held` says why) and then isn't queued: nothing runs later.
+struct AgentTriggerResult: Decodable, Hashable, Sendable {
+    let started: Bool
+    /// The run's conversation, when it started.
+    let conversationId: String?
+    /// `busy`, `too_soon`, `daily_limit` or `cedar_busy`, when it didn't.
+    let held: String?
+
+    enum CodingKeys: String, CodingKey {
+        case started, held
+        case conversationId = "conversation_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        started = try c.decodeIfPresent(Bool.self, forKey: .started) ?? false
+        conversationId = try c.decodeIfPresent(String.self, forKey: .conversationId)
+        held = try c.decodeIfPresent(String.self, forKey: .held)
+    }
+
+    /// One sentence for the person who asked: it started, or why it didn't.
+    func message(agent title: String) -> String {
+        if started { return L10n.format("%@ started.", title) }
+        switch held {
+        case "busy": return L10n.format("%@ is still busy with its last run, so no new run was started.", title)
+        case "too_soon": return L10n.format("%@ ran a moment ago, and its limits don't allow another run yet.", title)
+        case "daily_limit": return L10n.format("%@ has used up its runs for today.", title)
+        case "cedar_busy": return L10n.format("Cedar is busy right now, so %@ was not started. Try again in a moment.", title)
+        default: return L10n.format("%@ was not started.", title)
+        }
+    }
+}
+
+/// The body of `POST /api/agents/{id}/trigger`: where the request comes from (`shortcut`,
+/// `share`, `automation`) and what is handed to the run as data. All of it is optional, and the
+/// server refuses fields it doesn't know, so only what is set is written.
+struct AgentTriggerBody: Encodable, Sendable {
+    var source: String?
+    var text: String?
+    var title: String?
+    var url: String?
+}
+
+/// What was decided about a follow-up the model suggested (`suggest_follow_up`), as
+/// `GET /api/conversations/{id}` lists it and `PUT /api/turns/{turn_id}/followups/{call_id}`
+/// answers. A suggestion without one is still open; the first decision stands.
+struct FollowUpDecision: Decodable, Hashable, Sendable {
+    let turnId: String
+    /// The id of the tool call that made the suggestion.
+    let callId: String
+    /// `accepted` or `dismissed`.
+    let status: String
+    /// The one-off agent that was made, when it was accepted and the agent still exists.
+    let agentId: String?
+    let decidedAt: Date?
+
+    var isAccepted: Bool { status == "accepted" }
+    var isDismissed: Bool { status == "dismissed" }
+    /// What tells one suggestion from another in a conversation: its turn and its tool call.
+    var key: String { Self.key(turnId: turnId, callId: callId) }
+
+    static func key(turnId: String, callId: String) -> String { "\(turnId)/\(callId)" }
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case turnId = "turn_id"
+        case callId = "call_id"
+        case agentId = "agent_id"
+        case decidedAt = "decided_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        turnId = try c.decode(String.self, forKey: .turnId)
+        callId = try c.decode(String.self, forKey: .callId)
+        status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+        agentId = try c.decodeIfPresent(String.self, forKey: .agentId)
+        decidedAt = try c.decodeIfPresent(Date.self, forKey: .decidedAt)
+    }
+}
+
+/// The answer to deciding a follow-up: the decision that stands (an earlier one, if there was
+/// one), and the agent accepting made.
+struct FollowUpAnswer: Decodable, Sendable {
+    let followup: FollowUpDecision
+    let agent: Agent?
+}
+
+/// The body of `PUT /api/turns/{turn_id}/followups/{call_id}`: `accept` with the suggestion as
+/// the tool gave it and this device's time zone, or `dismiss` alone.
+struct FollowUpBody: Encodable, Hashable, Sendable {
+    let decision: String
+    var title: String?
+    var prompt: String?
+    /// RFC 3339, as the tool wrote it.
+    var at: String?
+    var timezone: String?
+
+    static let dismiss = FollowUpBody(decision: "dismiss")
+
+    static func accept(_ followUp: FollowUp, timezone: String = TimeZone.current.identifier) -> FollowUpBody {
+        FollowUpBody(decision: "accept", title: followUp.title, prompt: followUp.prompt, at: followUp.at, timezone: timezone)
     }
 }
 
