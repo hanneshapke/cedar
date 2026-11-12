@@ -171,8 +171,36 @@ function render(s) {
   $('open-chat').disabled = !running;
   $('open-browser').disabled = !running;
 
+  renderRemote(s);
   renderUpdate(s);
   renderActivity(s, p);
+}
+
+// A chat server on another computer (src/remote.rs): offered, folded, while unused; while in use,
+// its state replaces the sections about this computer's own servers.
+function renderRemote(s) {
+  const inUse = Boolean(s.remote_server);
+  document.body.classList.toggle('remote', inUse);
+  $('remote-offer').classList.toggle('hidden', inUse);
+  $('remote-in-use').classList.toggle('hidden', !inUse);
+  if (!inUse) return;
+  const r = s.remote;
+  $('remote-detail').textContent = '';
+  if (r.state === 'connected') {
+    dot($('remote-dot'), 'ok');
+    $('remote-text').textContent = tr('remote.connected', { url: s.remote_server });
+  } else if (r.state === 'failed') {
+    dot($('remote-dot'), 'bad');
+    $('remote-text').textContent = tr('remote.failed', { url: s.remote_server });
+    $('remote-detail').textContent = r.detail;
+  } else {
+    dot($('remote-dot'), 'busy');
+    $('remote-text').textContent = tr('remote.checking', { url: s.remote_server });
+  }
+  const ready = r.state === 'connected';
+  $('remote-open').disabled = !ready;
+  $('remote-browser').disabled = !ready;
+  $('remote-retry').disabled = r.state === 'checking';
 }
 
 // The banner under the header: the one thing that is going on, from the whole status. Either
@@ -189,6 +217,13 @@ function activity(s, p) {
   const sh = s.share;
   const sv = s.services;
   const m = s.model;
+  // A chat server on another computer: nothing else applies.
+  if (s.remote_server) {
+    const r = s.remote;
+    if (r.state === 'connected') return { mode: 'ready', text: tr('activity.remoteReady', { url: s.remote_server }), target: 'remote' };
+    if (r.state === 'failed') return waiting(tr('activity.remoteFailed', { url: s.remote_server }), 'remote');
+    return busy(tr('remote.checking', { url: s.remote_server }), 'remote');
+  }
   // Docker, and setting it up from here.
   if (ds.state === 'running') return busy(tr('activity.dockerSetup', { detail: ds.detail }), 'docker');
   if (ds.state === 'needs_restart') return waiting(tr('activity.restart'), 'docker');
@@ -626,6 +661,37 @@ $('updates-toggle').addEventListener('change', (ev) => {
   invoke('set_check_updates', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
 });
 $('open-logs').addEventListener('click', () => invoke('open_logs').catch((e) => alert(e)));
+
+// Connecting checks the server first; once it answers, the app restarts into it and this page
+// goes away, so the call only comes back when something is wrong.
+$('remote-connect').addEventListener('click', async () => {
+  $('remote-error').textContent = '';
+  $('remote-connect').disabled = true;
+  $('remote-connect-status').textContent = tr('remote.connecting');
+  try {
+    await invoke('connect_remote', {
+      link: $('remote-link').value,
+      server: $('remote-server').value,
+      token: $('remote-token').value,
+    });
+  } catch (e) {
+    $('remote-error').textContent = String(e);
+  } finally {
+    $('remote-connect').disabled = false;
+    $('remote-connect-status').textContent = '';
+  }
+});
+$('remote-open').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
+$('remote-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));
+$('remote-copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
+$('remote-retry').addEventListener('click', () => invoke('recheck').then(refresh));
+$('remote-disconnect').addEventListener('click', () => {
+  $('remote-error').textContent = '';
+  $('remote-disconnect').disabled = true;
+  invoke('disconnect_remote')
+    .catch((e) => { $('remote-error').textContent = String(e); })
+    .finally(() => { $('remote-disconnect').disabled = false; });
+});
 
 refresh();
 setInterval(refresh, 1500);

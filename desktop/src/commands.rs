@@ -91,11 +91,13 @@ pub fn save_model_server(
     model: String,
 ) -> Result<(), String> {
     let base_url = models::normalize_base_url(&base_url).map_err(fail)?;
+    let state = app.state::<AppState>();
+    app::refuse_when_remote(&state.config()).map_err(fail)?;
     let model = model.trim().to_string();
     if model.is_empty() {
         return Err(t("cmd.pick_model"));
     }
-    app.state::<AppState>()
+    state
         .update_config(|c| {
             c.llm_base_url = base_url;
             c.llm_api_key = api_key.trim().to_string();
@@ -109,7 +111,9 @@ pub fn save_model_server(
 /// Turns the browser tool on or off; on pulls its image and restarts cedar with `BROWSER=on`.
 #[tauri::command]
 pub fn set_browser(app: AppHandle, enabled: bool) -> Result<(), String> {
-    app.state::<AppState>()
+    let state = app.state::<AppState>();
+    app::refuse_when_remote(&state.config()).map_err(fail)?;
+    state
         .update_config(|c| c.browser = enabled)
         .map_err(fail)?;
     tauri::async_runtime::spawn(app::restart(app));
@@ -166,7 +170,27 @@ pub fn open_logs(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn copy_token(state: State<'_, AppState>) -> Result<(), String> {
-    crate::tray::copy_to_clipboard(&state.config().secrets.chat_access_token).map_err(fail)
+    crate::tray::copy_to_clipboard(state.config().chat_token()).map_err(fail)
+}
+
+/// Uses the chat server on another computer that `link` (the `cedar://connect` link its Phone
+/// settings or setup page shows) or `server` and `token` name, once it answers; the app then
+/// restarts into it. An error says why it can't, with nothing changed.
+#[tauri::command]
+pub async fn connect_remote(
+    app: AppHandle,
+    link: String,
+    server: String,
+    token: String,
+) -> Result<(), String> {
+    let remote = crate::remote::from_input(&link, &server, &token).map_err(fail)?;
+    crate::remote::switch(app, Some(remote)).await.map_err(fail)
+}
+
+/// Goes back to running the servers on this computer; the app restarts.
+#[tauri::command]
+pub async fn disconnect_remote(app: AppHandle) -> Result<(), String> {
+    crate::remote::switch(app, None).await.map_err(fail)
 }
 
 /// "Check now" on the setup page.

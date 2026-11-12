@@ -122,7 +122,7 @@ fn handle(app: &AppHandle, id: &str) {
     let result = match id {
         OPEN => crate::window::show(app),
         BROWSER => open::that(state.config().chat_url()).map_err(Into::into),
-        COPY_TOKEN => copy_to_clipboard(&state.config().secrets.chat_access_token),
+        COPY_TOKEN => copy_to_clipboard(state.config().chat_token()),
         SETUP | IPHONE => crate::window::show_setup(app),
         LOGS => open::that(&state.paths.logs).map_err(Into::into),
         UPDATE => {

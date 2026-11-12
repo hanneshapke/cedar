@@ -18,6 +18,7 @@ mod notify;
 mod paths;
 mod proc;
 mod pull;
+mod remote;
 mod supervisor;
 mod tailscale;
 mod tray;
@@ -92,6 +93,8 @@ fn main() {
             commands::dismiss_update,
             commands::set_check_updates,
             commands::set_locale,
+            commands::connect_remote,
+            commands::disconnect_remote,
         ])
         .build(tauri::generate_context!())
         .expect("Cedar could not start")

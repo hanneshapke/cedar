@@ -1,6 +1,7 @@
 //! Shared state and the launch sequence: find Docker, pull the images, start the servers,
-//! share the chat on the tailnet if asked, register the model, show the chat. Everything the setup page shows comes from
-//! [`AppState::status`].
+//! share the chat on the tailnet if asked, register the model, show the chat. With a chat server on
+//! another computer set (see remote.rs), only: check that it answers, show it. Everything the setup
+//! page shows comes from [`AppState::status`].
 
 use crate::config::{Config, VERSION};
 use crate::docker::{self, DockerCli};
@@ -74,6 +75,17 @@ pub enum ModelStatus {
     Failed(String),
 }
 
+/// The chat server on another computer, when one is set (see remote.rs).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum RemoteStatus {
+    /// None set: the servers run on this computer.
+    Off,
+    Checking,
+    Connected,
+    Failed(String),
+}
+
 /// Whether the chat is served on the tailnet for the phone apps (see tailscale.rs).
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
@@ -95,6 +107,7 @@ pub struct AppState {
     images: Mutex<ImagesStatus>,
     model: Mutex<ModelStatus>,
     share: Mutex<ShareStatus>,
+    remote: Mutex<RemoteStatus>,
     /// The tailnet port `tailscale serve` was set up on by this app, to turn off again.
     served_port: Mutex<Option<u16>>,
     /// The `CHAT_PUBLIC_URL` the running chat was started with.
@@ -126,6 +139,9 @@ pub struct Status {
     /// Sharing is turned on (it is served once the servers run and Tailscale is ready).
     pub tailscale_share: bool,
     pub configured: bool,
+    /// The chat server on another computer this app uses instead of its own, or empty.
+    pub remote_server: String,
+    pub remote: RemoteStatus,
     pub llm_base_url: String,
     pub llm_model: String,
     pub has_api_key: bool,
@@ -154,6 +170,7 @@ impl AppState {
             images: Mutex::new(ImagesStatus::Waiting),
             model: Mutex::new(ModelStatus::Unset),
             share: Mutex::new(ShareStatus::Off),
+            remote: Mutex::new(RemoteStatus::Off),
             served_port: Mutex::new(None),
             started_public_url: Mutex::new(None),
             update: Mutex::new(UpdateStatus::default()),
@@ -216,6 +233,19 @@ impl AppState {
 
     fn set_model(&self, s: ModelStatus) {
         *self.model.lock().unwrap() = s;
+    }
+
+    fn set_remote(&self, s: RemoteStatus) {
+        *self.remote.lock().unwrap() = s;
+    }
+
+    /// Whether the window can show the chat: this app's servers run, or the remote chat answered.
+    pub fn chat_ready(&self) -> bool {
+        if self.config().remote_server().is_some() {
+            *self.remote.lock().unwrap() == RemoteStatus::Connected
+        } else {
+            self.supervisor.state() == ServiceState::Running
+        }
     }
 
     fn set_share(&self, s: ShareStatus) {
@@ -293,12 +323,14 @@ impl AppState {
             share: self.share.lock().unwrap().clone(),
             tailscale_share: cfg.tailscale_share,
             configured: cfg.configured(),
+            remote_server: cfg.remote_server().map(|r| r.server.clone()).unwrap_or_default(),
+            remote: self.remote.lock().unwrap().clone(),
             llm_base_url: cfg.llm_base_url.clone(),
             llm_model: cfg.llm_model.clone(),
             has_api_key: !cfg.llm_api_key.trim().is_empty(),
             browser: cfg.browser,
             chat_url: cfg.chat_url(),
-            access_token: cfg.secrets.chat_access_token.clone(),
+            access_token: cfg.chat_token().to_string(),
             logs_dir: self.paths.logs.to_string_lossy().into_owned(),
             config_path: self.paths.config().to_string_lossy().into_owned(),
             sandbox_image: cfg.sandbox_image(),
@@ -356,6 +388,21 @@ fn begin(setup: &Mutex<SetupStatus>) -> bool {
 pub async fn bootstrap(app: AppHandle) {
     let state = app.state::<AppState>();
     let _one_at_a_time = state.bootstrap.lock().await;
+
+    // 0. A chat server on another computer: nothing to start here.
+    if let Some(remote) = state.config().remote_server().cloned() {
+        state.set_remote(RemoteStatus::Checking);
+        match crate::remote::check(&remote).await {
+            Ok(()) => {
+                state.set_remote(RemoteStatus::Connected);
+                if let Err(e) = window::show_chat(&app) {
+                    eprintln!("showing the chat: {e:#}");
+                }
+            }
+            Err(e) => state.set_remote(RemoteStatus::Failed(format!("{e:#}"))),
+        }
+        return;
+    }
 
     // 1. The docker CLI and its daemon.
     state.set_docker(DockerStatus::Checking);
@@ -475,6 +522,7 @@ pub async fn apply_model_server(app: AppHandle) {
 pub async fn set_share(app: AppHandle, enabled: bool) -> Result<()> {
     let state = app.state::<AppState>();
     let cfg = state.config();
+    refuse_when_remote(&cfg)?;
     let url = if enabled {
         let cli = tailscale::find().ok_or_else(|| anyhow::anyhow!(tailscale::MISSING))?;
         Some(cli.url(cfg.tailscale_https_port).await?)
@@ -508,6 +556,18 @@ pub async fn share_from_chat(app: AppHandle) {
         if let Err(e) = window::show_setup(&app) {
             eprintln!("showing the setup page: {e:#}");
         }
+    }
+}
+
+/// The settings of this computer's own servers (model server, browser tool, sharing) don't apply
+/// while the app uses a chat server on another computer; that server's own Settings has them.
+pub fn refuse_when_remote(cfg: &Config) -> Result<()> {
+    match cfg.remote_server() {
+        Some(r) => Err(anyhow::anyhow!(crate::i18n::tf(
+            "remote.in_use",
+            &[("server", &r.server)]
+        ))),
+        None => Ok(()),
     }
 }
 
