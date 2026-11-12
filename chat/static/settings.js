@@ -1680,11 +1680,50 @@ const cedarSettings = (() => {
     }
     side.append(button(g.configured ? tr('settings.google.reconnect') : tr('settings.google.connect'), async () => {
       try {
-        const { url } = await adminApi('POST', '/integrations/google/connect');
-        location.assign(url);
+        if (window.__CEDAR_DESKTOP_APP__ === true) {
+          // The app's web view can't do every way of signing in to Google (passkeys, Sign in
+          // with Apple): the app opens the page in the default browser (desktop/src/window.rs),
+          // and this page checks again when the window comes forward.
+          const { url } = await adminApi('POST', '/integrations/google/connect?browser=1');
+          location.assign(`/__cedar-app/open?url=${encodeURIComponent(url)}`);
+          deps.toast(tr('settings.google.continueInBrowser'));
+          awaitBrowserSignIn();
+        } else {
+          const { url } = await adminApi('POST', '/integrations/google/connect');
+          location.assign(url);
+        }
       } catch (err) { deps.toast(err.message); }
     }, g.configured ? 'copy-btn' : 'primary'));
     return row;
+  }
+
+  /** After "Connect Google" went to the browser: when the app's window comes forward again, show
+   *  Google's status anew, until it is connected (or ten minutes have passed). */
+  let browserSignIn = null;
+  function awaitBrowserSignIn() {
+    if (browserSignIn) return;
+    const until = Date.now() + 10 * 60 * 1000;
+    const check = async () => {
+      if (document.visibilityState === 'hidden') return;
+      if (Date.now() > until) return stop();
+      try {
+        const status = await adminApi('GET', '/integrations');
+        if (status?.google?.configured && !status.google.missing_scopes?.length) {
+          stop();
+          deps.toast(tr('settings.google.connectedToast'));
+        }
+      } catch { /* checked again next time */ }
+      if (document.getElementById('settings-dialog')?.open) renderIntegrations();
+      refreshTools();
+    };
+    const stop = () => {
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
+      browserSignIn = null;
+    };
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    browserSignIn = stop;
   }
 
   async function refreshTools() {

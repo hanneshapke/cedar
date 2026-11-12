@@ -11,8 +11,9 @@ use url::Url;
 pub const MAIN: &str = "main";
 
 /// Where the chat's pages send the window to ask the app for something: the update banner's
-/// Update and Dismiss (update.js), and the Phone page's button that turns sharing with the phone
-/// apps on (pairing.js). Never loaded, the window catches it (see [`create`]). The chat page has
+/// Update and Dismiss (update.js), the Phone page's button that turns sharing with the phone
+/// apps on (pairing.js), and Settings' "Connect Google", whose sign-in page opens in the default
+/// browser (settings.js). Never loaded, the window catches it (see [`create`]). The chat page has
 /// no other way to reach the app.
 const APP_PATH: &str = "/__cedar-app/";
 
@@ -49,6 +50,12 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
             NewWindowResponse::Deny
         })
         .on_navigation(move |url| match page_action(url, &chat) {
+            Some(PageAction::OpenInBrowser(target)) => {
+                if let Err(e) = open_web_link(&target) {
+                    eprintln!("opening {target}: {e:#}");
+                }
+                false
+            }
             Some(action) => {
                 run_page_action(&handle, action);
                 false
@@ -103,6 +110,10 @@ enum PageAction {
     Dismiss,
     /// The Phone page's "Turn on sharing".
     ShareOn,
+    /// A page to show in the default browser rather than in the window: Google's sign-in for
+    /// "Connect Google", which a web view can't do every way of (passkeys, Sign in with Apple).
+    /// Only https.
+    OpenInBrowser(Url),
 }
 
 /// The page's request, when `url` is the chat's address for one.
@@ -114,6 +125,12 @@ fn page_action(url: &Url, chat: &str) -> Option<PageAction> {
         "update/install" => Some(PageAction::Install),
         "update/dismiss" => Some(PageAction::Dismiss),
         "share/on" => Some(PageAction::ShareOn),
+        "open" => url
+            .query_pairs()
+            .find(|(k, _)| k == "url")
+            .and_then(|(_, v)| Url::parse(&v).ok())
+            .filter(|target| target.scheme() == "https")
+            .map(PageAction::OpenInBrowser),
         _ => None,
     }
 }
@@ -133,6 +150,8 @@ fn run_page_action(app: &AppHandle, action: PageAction) {
         PageAction::ShareOn => {
             tauri::async_runtime::spawn(crate::app::share_from_chat(app.clone()));
         }
+        // Handled in `create`, which needs no app handle for it.
+        PageAction::OpenInBrowser(_) => {}
     }
 }
 
@@ -269,6 +288,17 @@ mod tests {
         assert_eq!(at("http://127.0.0.1:13000/"), None);
         assert_eq!(at("http://127.0.0.1:13001/__cedar-app/update/install"), None);
         assert_eq!(at("https://example.com/__cedar-app/share/on"), None);
+        let google = "https://accounts.google.com/o/oauth2/v2/auth?state=s&scope=a%20b";
+        let open = format!("http://127.0.0.1:13000/__cedar-app/open?url={}", urlencoding(google));
+        assert_eq!(at(&open), Some(PageAction::OpenInBrowser(Url::parse(google).unwrap())));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/open?url=file%3A%2F%2F%2Fetc%2Fpasswd"), None);
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/open?url=http%3A%2F%2Fexample.com%2F"), None);
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/open"), None);
+        assert_eq!(at(&open.replace("13000", "13001")), None);
+    }
+
+    fn urlencoding(s: &str) -> String {
+        url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
     }
 
     #[test]
