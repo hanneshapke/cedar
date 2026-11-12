@@ -102,11 +102,15 @@ The same as the iOS app:
 
 ## Installing
 
-1. On the phone, open the latest [GitHub Release](https://github.com/hanneshapke/cedar/releases)
+Cedar is not on Google Play yet (it is planned for the coming months). Until then, install the APK
+from a computer over USB with `adb`.
+
+1. On a computer, open the latest [GitHub Release](https://github.com/hanneshapke/cedar/releases)
    and download `Cedar-<version>-android.apk`.
-2. Open it. Android asks to allow installs from your browser (or file manager) the first time:
-   allow it, then install. Later releases install over it and keep your settings; they are signed
-   with the same key.
+2. Install it with `adb install Cedar-<version>-android.apk`.
+   [Installing Cedar on Android with ADB](../docs/developer_stories/cedar-on-android-with-adb.md)
+   walks through it, from getting `adb` to allowing the computer on the phone. Later releases
+   install over it with `adb install -r` and keep your settings; they are signed with the same key.
 3. Serve the chat over HTTPS. The simplest way is Tailscale: the [desktop app](../desktop/README.md)
    does it with one checkbox, `scripts/cedar-stack.sh` runs `tailscale serve` for you, and
    [DEPLOYMENT.md](../DEPLOYMENT.md#over-https-with-tailscale-the-ios-and-android-apps) shows the

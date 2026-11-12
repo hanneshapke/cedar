@@ -145,6 +145,8 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 (() => {
   const REPO = 'https://github.com/hanneshapke/cedar';
   const RELEASES = REPO + '/releases/latest';
+  // Until the Android app is on Google Play, its APK is installed from a computer with adb.
+  const ADB = REPO + '/blob/main/docs/developer_stories/cedar-on-android-with-adb.md';
   const DESKTOP = REPO + '/blob/main/desktop/README.md';
   const LINUX = REPO + '/blob/main/DEPLOYMENT.md';
   const TESTFLIGHT = REPO + '/discussions/51';
@@ -343,7 +345,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       : sideloads(s) ? `<p>${btn(ADD_SOURCE, tr('install.dl.iphoneSideStore'))}${btn(release.ipa || RELEASES, tr('install.dl.orIpa'), true)}</p>`
       : s.phone === 'iphone' && s.ios === 'testflight' ? `<p>${btn(TESTFLIGHT, tr('install.dl.iphoneTestFlight'))}</p>`
       : s.phone === 'iphone' ? `<p>${btn(TESTFLIGHT, tr('install.dl.iphoneInvite'))}${btn(release.ipa || RELEASES, tr('install.dl.iphonePrivately'), true)}</p>`
-      : s.phone === 'android' ? `<p>${btn(release.apk || RELEASES, tr('install.dl.android'))}</p>`
+      : s.phone === 'android' ? `<p>${btn(release.apk || RELEASES, tr('install.dl.android'))}</p><p class="note">${tr('install.dl.androidAdb', { adb: ADB })}</p>`
       : `<p>${btn(TESTFLIGHT, 'iPhone (TestFlight)', true)}${btn(release.ipa || RELEASES, 'iPhone (.ipa)', true)}${btn(release.apk || RELEASES, 'Android (.apk)', true)}</p>`;
     return step(tr('install.dl.title'), `<p>${tr(s.mobile === 'yes' ? 'install.dl.introPhone' : 'install.dl.intro')}</p>${desktop}${phone}
       <p class="note">${tr('install.dl.elsewhere', { url: RELEASES })}</p>`, 'final');
@@ -497,8 +499,8 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       iphone: sideloads(s)
         ? tr('install.phone.iphoneSideStore')
         : tr(s.ios ? 'install.phone.iphone' : 'install.phone.iphoneEither', { testflight: TESTFLIGHT, privately: esc(tr('install.opt.privately')) }),
-      android: tr('install.phone.android', { apk: release.apk || RELEASES }),
-    }[wanted && s.phone] || tr('install.phone.any', { testflight: TESTFLIGHT, ipa: release.ipa || RELEASES, apk: release.apk || RELEASES });
+      android: tr('install.phone.android', { apk: release.apk || RELEASES, adb: ADB }),
+    }[wanted && s.phone] || tr('install.phone.any', { testflight: TESTFLIGHT, ipa: release.ipa || RELEASES, apk: release.apk || RELEASES, adb: ADB });
     const phone = `<li>${app}</li>`;
     const share = s.os === 'linux'
       ? `<li>${tr('install.phone.shareLinux')}${code('sudo tailscale serve --bg --https=443 http://127.0.0.1:3000\nURL=https://$(tailscale status --json | jq -r \'.Self.DNSName | rtrimstr(".")\')\necho "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env\nsudo systemctl restart cedar-chat', 'Terminal')}</li>
