@@ -299,8 +299,11 @@ sudo install $F/cedar* /usr/local/bin/
           </div>
           <div style="background:rgba(251,244,234,.55);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:10px">
             <span style="font-weight:700;font-size:16px">Android</span>
-            <span style="font-size:14.5px;line-height:1.4" data-i18n="index.apps.phone.android">Download the app on the phone and open it. Android 8 or newer.</span>
-            <a href="{{ apkHref }}" style="align-self:flex-start;background:#231f1b;color:#fbf4ea;padding:10px 16px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fbf4ea" data-i18n="index.apps.phone.apk">Download the APK</a>
+            <span style="font-size:14.5px;line-height:1.4" data-i18n="index.apps.phone.android">Not on Google Play yet (coming in the next months). Until then, install the APK from a computer over USB with adb. Android 8 or newer.</span>
+            <span style="display:flex;gap:8px;flex-wrap:wrap">
+              <a href="{{ apkHref }}" style="align-self:flex-start;background:#231f1b;color:#fbf4ea;padding:10px 16px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#fbf4ea" data-i18n="index.apps.phone.apk">Download the APK</a>
+              <a href="https://github.com/hanneshapke/cedar/blob/main/docs/developer_stories/cedar-on-android-with-adb.md" style="align-self:flex-start;border:2px solid #231f1b;color:#231f1b;padding:8px 14px;border-radius:999px;font-weight:600;font-size:14.5px;transition:transform .2s;white-space:nowrap" style-hover="transform:translateY(-2px);color:#231f1b" data-i18n="index.apps.phone.adb">Install with ADB</a>
+            </span>
           </div>
         </div>
         <p style="margin:0;font-size:17px;line-height:1.5;text-wrap:pretty" data-i18n="index.apps.phone.pair">Paired with one scan, whatever Cedar runs on. The phone reaches it over a private connection (Tailscale); nobody else can.</p>
@@ -537,7 +540,8 @@ class Component extends DCLogic {
       case 'mac': return { label: forOS('Mac'), href: dmg || releases, other: either('Windows', 'Linux'), invite: true };
       case 'windows': return { label: forOS('Windows'), href: msi || releases, other: either('Mac', 'Linux'), invite: true };
       case 'linux': return { label: forOS('Linux'), href: '#linux', other: either('Mac', 'Windows'), invite: true };
-      case 'android': return { label: tr('index.dl.android'), href: apk || releases, other: tr('index.dl.otherComputer'), invite: false };
+      // Not on Google Play yet: the phone section says how to install the APK with adb.
+      case 'android': return { label: tr('index.dl.android'), href: '#phone', other: tr('index.dl.otherComputer'), invite: false };
       // TestFlight or privately with SideStore: the phone section offers both.
       case 'ios': return { label: tr('index.dl.iphone'), href: '#phone', other: tr('index.dl.otherComputer'), invite: false };
       default: return { label: tr('index.dl.cedar'), href: '#apps', other: tr('index.dl.otherAll'), invite: true };
