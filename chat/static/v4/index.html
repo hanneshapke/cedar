@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/schedule.css">
   <link rel="stylesheet" href="/star.css">
+  <link rel="stylesheet" href="/search.css">
   <link rel="stylesheet" href="/notify.css">
   <link rel="stylesheet" href="/update.css">
   <link rel="stylesheet" href="/settings.css">
@@ -46,17 +47,18 @@
       <a class="side-new" href="#/" id="drawer-new">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="v4.newTask">New task</span>
       </a>
-      <div class="cedar-star-side" id="starred-section" data-starred hidden>
+      <div data-search></div>
+      <div class="cedar-star-side" id="starred-section" data-starred data-search-hides hidden>
         <div class="cedar-star-side-head"><span class="label" data-i18n="v4.starred">Starred</span><span class="cedar-star-count"></span></div>
         <nav class="cedar-star-links" aria-label="Starred conversations" data-i18n-attr="aria-label:v4.starredConversations"></nav>
       </div>
-      <div class="label side-label" data-i18n="v4.conversations">Conversations</div>
-      <nav class="recents" id="recents"></nav>
-      <div class="cedar-sched-side" id="schedules-section" data-schedules hidden>
+      <div class="label side-label" data-search-hides data-i18n="v4.conversations">Conversations</div>
+      <nav class="recents" id="recents" data-search-hides></nav>
+      <div class="cedar-sched-side" id="schedules-section" data-schedules data-search-hides hidden>
         <div class="cedar-sched-side-head"><span class="label" data-i18n="v4.scheduledAgents">Scheduled agents</span><span class="cedar-sched-count"></span></div>
         <nav class="cedar-sched-links" aria-label="Scheduled agents" data-i18n-attr="aria-label:v4.scheduledAgents"></nav>
       </div>
-      <div class="outline-wrap" id="outline-wrap" hidden>
+      <div class="outline-wrap" id="outline-wrap" data-search-hides hidden>
         <div class="label side-label" data-i18n="v4.inThisBrief">In this brief</div>
         <nav class="outline" id="outline" aria-label="Sections of the open brief" data-i18n-attr="aria-label:v4.outlineLabel"></nav>
       </div>
@@ -247,6 +249,7 @@
   <script src="/schedule.js"></script>
   <script src="/more-menu.js"></script>
   <script src="/star.js"></script>
+  <script src="/search.js"></script>
   <script src="/notify.js"></script>
   <script src="/update.js"></script>
   <script src="/pairing.js"></script>

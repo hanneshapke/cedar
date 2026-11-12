@@ -35,6 +35,16 @@ final class AppModel {
     private(set) var starred: [Conversation] = []
     private(set) var starredLoaded = false
     var starredError: String?
+    /// What the list's search field holds. While it holds something, the list shows what the
+    /// server found for it instead of Chats, Starred or Scheduled.
+    var searchText = ""
+    /// The conversations found for `searchQuery`, chats and scheduled runs alike, most recently
+    /// active first; `nil` until the first answer.
+    private(set) var searchResults: [Conversation]?
+    var searchError: String?
+    /// What is searched for: `searchText` without the space around it.
+    var searchQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var isSearching: Bool { !searchQuery.isEmpty }
     /// The server has `/api/memory` (its `/api/config` says so); Settings shows Memory only then.
     private(set) var serverHasMemory = false
     /// What cedar remembers about the user, oldest first, once loaded (Settings → Memory), as
@@ -107,6 +117,9 @@ final class AppModel {
             chats = [:]
             conversations = []
             otherConversations = [:]
+            searchText = ""
+            searchResults = nil
+            searchError = nil
             starred = []
             starredLoaded = false
             schedules = []
@@ -382,6 +395,33 @@ final class AppModel {
             listError = error.localizedDescription
         }
         if sidebarMode == .scheduled { await refreshSchedules() }
+        if isSearching { await search() }
+    }
+
+    /// Asks the server for the conversations that match the search field: their titles and
+    /// everything said in them are searched. An answer that comes after the field changed is dropped.
+    func search() async {
+        let query = searchQuery
+        guard !query.isEmpty else {
+            searchResults = nil
+            searchError = nil
+            return
+        }
+        guard let client else {
+            searchError = ChatError.notConfigured.errorDescription
+            return
+        }
+        do {
+            let found = try await client.search(query: query)
+            guard query == searchQuery else { return }
+            searchResults = found
+            searchError = nil
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            guard query == searchQuery else { return }
+            searchError = error.localizedDescription
+        }
     }
 
     private func take(_ inbox: Inbox) {
@@ -393,6 +433,7 @@ final class AppModel {
 
     func conversation(id: String) -> Conversation? {
         conversations.first { $0.id == id } ?? otherConversations[id] ?? starred.first { $0.id == id }
+            ?? searchResults?.first { $0.id == id }
     }
 
     /// A chat loaded its conversation. One the list leaves out is kept here, so its title shows
@@ -402,9 +443,10 @@ final class AppModel {
         let isNew = otherConversations[conversation.id] == nil
         otherConversations[conversation.id] = conversation
         guard selection == conversation.id else { return }
-        if isNew, let scheduleId = conversation.scheduleId, sidebarMode != .starred,
+        if isNew, let scheduleId = conversation.scheduleId, sidebarMode != .starred, !isSearching,
            sidebarMode != .scheduled || !expandedSchedules.contains(scheduleId) {
-            // Opened from a push, say: show where it belongs. One opened from Starred stays there.
+            // Opened from a push, say: show where it belongs. One opened from Starred or from a
+            // search stays there.
             sidebarMode = .scheduled
             expandedSchedules.insert(scheduleId)
             Task { await refreshSchedules() }
@@ -462,6 +504,7 @@ final class AppModel {
         chats.removeValue(forKey: conversation.id)?.stopStreaming()
         conversations.removeAll { $0.id == conversation.id }
         starred.removeAll { $0.id == conversation.id }
+        searchResults?.removeAll { $0.id == conversation.id }
         if selection == conversation.id {
             selection = nil
             compactColumn = .sidebar
@@ -494,6 +537,13 @@ final class AppModel {
             var updated = conversation
             updated.scheduleTitle = updated.scheduleTitle ?? starred[index].scheduleTitle
             starred[index] = updated
+        }
+        if let index = searchResults?.firstIndex(where: { $0.id == conversation.id }), let found = searchResults?[index] {
+            // The result's copy carries the passage that matched and the schedule's title.
+            var updated = conversation
+            updated.scheduleTitle = updated.scheduleTitle ?? found.scheduleTitle
+            updated.snippet = found.snippet
+            searchResults?[index] = updated
         }
     }
 

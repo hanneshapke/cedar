@@ -1633,6 +1633,7 @@ async function init() {
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarSchedule.init({ api, toast, renderMarkdown });
   cedarStar.init({ api, toast, onOpen: closeDrawer });
+  cedarSearch.init({ api, onOpen: closeDrawer, reveal: openDrawer });
   cedarSettings.init({
     api, toast, authHeaders,
     config: () => state.config,

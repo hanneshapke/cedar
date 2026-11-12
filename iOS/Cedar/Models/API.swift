@@ -514,13 +514,15 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
     var needsAnswer: Bool
     /// When it was starred, on any device; `nil` when it isn't.
     var starredAt: Date?
-    /// The schedule a scheduled run belongs to; only the Starred list sends it.
+    /// The schedule a scheduled run belongs to; only the Starred list and a search send it.
     var scheduleTitle: String?
+    /// The passage of a message a search matched; only search results carry it.
+    var snippet: String?
     var createdAt: Date
     var updatedAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, title, model, reasoning, tools, unread
+        case id, title, model, reasoning, tools, unread, snippet
         case scheduleId = "schedule_id"
         case needsAnswer = "needs_answer"
         case starredAt = "starred_at"

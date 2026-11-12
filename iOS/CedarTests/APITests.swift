@@ -105,6 +105,31 @@ final class APITests: XCTestCase {
         XCTAssertEqual(Conversation(id: "x", unread: false, needsAnswer: false, createdAt: Date(), updatedAt: Date()).displayTitle, "New chat")
     }
 
+    func testDecodesSearchResults() throws {
+        let json = """
+        {"conversations":[
+          {"id":"c9","title":"Weekend in Lisbon","model":"gemma","reasoning":null,"schedule_id":null,
+           "tools":null,"unread":false,"needs_answer":false,"starred_at":null,"schedule_title":null,
+           "snippet":"…take tram 28 up to the Alfama district…",
+           "created_at":"2026-10-20T08:00:00Z","updated_at":"2026-10-21T08:00:00Z"},
+          {"id":"c8","title":"Tax return","model":null,"reasoning":null,"schedule_id":null,"tools":null,"unread":false,
+           "needs_answer":false,"starred_at":null,"schedule_title":null,"snippet":null,
+           "created_at":"2026-10-20T08:00:00Z","updated_at":"2026-10-20T08:00:00Z"}
+        ]}
+        """
+        let list = try JSONDecoder.cedar.decode(ConversationList.self, from: Data(json.utf8))
+        XCTAssertEqual(list.conversations[0].snippet, "…take tram 28 up to the Alfama district…")
+        // Only the title matched.
+        XCTAssertNil(list.conversations[1].snippet)
+    }
+
+    func testFindsTheWordsOfASearch() {
+        let text = "Take tram 28 to the Alfama. TRAM again."
+        let found = SearchPassage.ranges(in: text, query: " tram  alfama ").map { String(text[$0]) }
+        XCTAssertEqual(found, ["tram", "Alfama", "TRAM"])
+        XCTAssertTrue(SearchPassage.ranges(in: text, query: "bus").isEmpty)
+    }
+
     func testDecodesStarredConversations() throws {
         let list = try JSONDecoder.cedar.decode(ConversationList.self, from: Data("""
         {"conversations":[{"id":"c2","title":"Morning digest · Fri 23 Oct","model":null,"reasoning":null,"schedule_id":"s1",
