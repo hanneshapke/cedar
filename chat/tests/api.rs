@@ -1306,6 +1306,9 @@ async fn both_uis_are_served() {
             assert!(page.contains("<script src=\"/star.js\">"), "{uri} loads the starring script");
             assert!(page.contains("href=\"/star.css\""), "{uri} loads the starring styles");
             assert!(page.contains("data-starred") && page.contains("data-star-toggle"), "{uri} has the Starred list and the star button");
+            assert!(page.contains("<script src=\"/search.js\">"), "{uri} loads the search script");
+            assert!(page.contains("href=\"/search.css\""), "{uri} loads the search styles");
+            assert!(page.contains("data-search") && page.contains("data-search-hides"), "{uri} has the search box, and lists it stands in for");
             assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
             assert!(page.contains("href=\"/attach.css\""), "{uri} loads the attachments styles");
             assert!(page.contains("<script src=\"/notify.js\">"), "{uri} loads the inbox script");
@@ -1735,6 +1738,46 @@ async fn run_now_starts_a_run_without_moving_the_schedule() {
     let (_, latest) = h.json(Method::GET, &format!("/api/schedules/{sid}"), None).await;
     assert_eq!(latest["runs"].as_array().unwrap().len(), 2);
     assert_eq!(h.state.store.list_conversations(100).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn search_finds_chats_and_scheduled_runs() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("Plan a weekend in Lisbon", "Take tram 28 to the Alfama district.").await;
+    // Reading the conversation stores the finished response, as the page does.
+    h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    h.json(Method::POST, "/api/conversations", Some(json!({ "title": "Tax return" }))).await;
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let sid = s["id"].as_str().unwrap().to_string();
+    let (_, run) = h.json(Method::POST, &format!("/api/schedules/{sid}/run"), None).await;
+    let run_cid = run["conversation_id"].as_str().unwrap().to_string();
+
+    let search = async |q: &str| h.json(Method::GET, &format!("/api/conversations/search?q={q}"), None).await;
+    // What cedar answered is searched too; the passage comes with it.
+    let (status, found) = search("alfama").await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    let items = found["conversations"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{found}");
+    assert_eq!(items[0]["id"], cid);
+    assert_eq!(items[0]["snippet"], "Take tram 28 to the Alfama district.");
+    assert_eq!(items[0]["schedule_title"], Value::Null);
+    // A scheduled run's conversation is found as well, under its schedule's title.
+    let (_, found) = search("summarize%20news").await;
+    let items = found["conversations"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{found}");
+    assert_eq!(items[0]["id"], run_cid);
+    assert_eq!(items[0]["schedule_id"], sid);
+    assert_eq!(items[0]["schedule_title"], "Morning digest");
+    // A title; every word has to match; nothing is asked for, nothing is found.
+    let (_, found) = search("tax%20RETURN").await;
+    assert_eq!(found["conversations"].as_array().unwrap().len(), 1, "{found}");
+    assert_eq!(found["conversations"][0]["snippet"], Value::Null);
+    let (_, found) = search("tax%20lisbon").await;
+    assert_eq!(found["conversations"], json!([]));
+    let (status, found) = h.json(Method::GET, "/api/conversations/search", None).await;
+    assert_eq!((status, &found["conversations"]), (StatusCode::OK, &json!([])));
+    let (status, _) = search(&"x".repeat(201)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

@@ -174,6 +174,13 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     /** Starred conversations, most recently starred first: chats and scheduled runs alike. */
     suspend fun starred(): List<Conversation> = decode(request("api/starred"), ConversationList.serializer()).conversations
 
+    /**
+     * The conversations with every word of `query` in their title or messages, most recently active
+     * first: chats and scheduled runs alike, each with the passage that matched.
+     */
+    suspend fun search(query: String): List<Conversation> =
+        decode(request("api/conversations/search", query = mapOf("q" to query)), ConversationList.serializer()).conversations
+
     /** Stars or unstars the conversation, for every device. Both are idempotent. */
     suspend fun setStarred(conversationId: String, starred: Boolean): Conversation =
         decode(request("api/conversations/$conversationId/star", if (starred) "PUT" else "DELETE"), Conversation.serializer())

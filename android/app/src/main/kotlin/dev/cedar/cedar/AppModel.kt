@@ -111,6 +111,24 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         private set
     var starredError by mutableStateOf<String?>(null)
 
+    /**
+     * What the list's search field holds. While it holds something, the list shows what the server
+     * found for it instead of Chats, Starred or Scheduled.
+     */
+    var searchText by mutableStateOf("")
+
+    /**
+     * The conversations found for `searchQuery`, chats and scheduled runs alike, most recently active
+     * first; null until the first answer.
+     */
+    var searchResults by mutableStateOf<List<Conversation>?>(null)
+        private set
+    var searchError by mutableStateOf<String?>(null)
+
+    /** What is searched for: `searchText` without the space around it. */
+    val searchQuery: String get() = searchText.trim()
+    val isSearching: Boolean get() = searchQuery.isNotEmpty()
+
     /** The server has `/api/memory` (its `/api/config` says so); Settings shows Memory only then. */
     var serverHasMemory by mutableStateOf(false)
         private set
@@ -262,6 +280,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             chats.clear()
             conversations = emptyList()
             otherConversations.clear()
+            searchText = ""
+            searchResults = null
+            searchError = null
             starred = emptyList()
             starredLoaded = false
             schedules = emptyList()
@@ -513,6 +534,34 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             isRefreshing = false
         }
         if (sidebarMode == SidebarMode.SCHEDULED) refreshSchedules()
+        if (isSearching) search()
+    }
+
+    /**
+     * Asks the server for the conversations that match the search field: their titles and everything
+     * said in them are searched. An answer that comes after the field changed is dropped.
+     */
+    suspend fun search() {
+        val query = searchQuery
+        if (query.isEmpty()) {
+            searchResults = null
+            searchError = null
+            return
+        }
+        val client = client ?: run {
+            searchError = describe(ChatException.NotConfigured)
+            return
+        }
+        try {
+            val found = client.search(query)
+            if (query != searchQuery) return
+            searchResults = found
+            searchError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (query == searchQuery) searchError = describe(e)
+        }
     }
 
     private fun take(inbox: Inbox) {
@@ -524,6 +573,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
 
     fun conversation(id: String): Conversation? =
         conversations.firstOrNull { it.id == id } ?: otherConversations[id] ?: starred.firstOrNull { it.id == id }
+            ?: searchResults?.firstOrNull { it.id == id }
 
     /** A chat loaded its conversation. One the list leaves out is kept here, so its title shows and opening it marks it seen. */
     fun remember(conversation: Conversation) {
@@ -532,10 +582,10 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         otherConversations[conversation.id] = conversation
         if (selection != conversation.id) return
         val scheduleId = conversation.scheduleId
-        if (isNew && scheduleId != null && sidebarMode != SidebarMode.STARRED &&
+        if (isNew && scheduleId != null && sidebarMode != SidebarMode.STARRED && !isSearching &&
             (sidebarMode != SidebarMode.SCHEDULED || scheduleId !in expandedSchedules)
         ) {
-            // Opened from a push, say: show where it belongs. One opened from Starred stays there.
+            // Opened from a push, say: show where it belongs. One opened from Starred or from a search stays there.
             sidebarMode = SidebarMode.SCHEDULED
             if (scheduleId !in expandedSchedules) expandedSchedules += scheduleId
             scope.launch { refreshSchedules() }
@@ -584,6 +634,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         chats.remove(conversation.id)?.stopStreaming()
         conversations = conversations.filter { it.id != conversation.id }
         starred = starred.filter { it.id != conversation.id }
+        searchResults = searchResults?.filter { it.id != conversation.id }
         if (selection == conversation.id) selection = null
         refresh()
     }
@@ -610,6 +661,10 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         }
         // The list's copy carries the schedule's title, which other responses don't.
         starred = starred.map { if (it.id == conversation.id) conversation.copy(scheduleTitle = conversation.scheduleTitle ?: it.scheduleTitle) else it }
+        // The result's copy carries the passage that matched, too.
+        searchResults = searchResults?.map {
+            if (it.id == conversation.id) conversation.copy(scheduleTitle = conversation.scheduleTitle ?: it.scheduleTitle, snippet = it.snippet) else it
+        }
     }
 
     // Schedules

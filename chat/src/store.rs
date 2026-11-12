@@ -48,6 +48,107 @@ pub struct StarredConversation {
     pub schedule_title: Option<String>,
 }
 
+/// A conversation a search found, with the passage of a message that matched.
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchHit {
+    #[serde(flatten)]
+    pub conversation: Conversation,
+    /// The schedule a scheduled run's conversation belongs to.
+    pub schedule_title: Option<String>,
+    /// An excerpt of the first message (the user's or cedar's) the search matched; `None` when
+    /// only the title did.
+    pub snippet: Option<String>,
+}
+
+/// The most words of a search that count; the rest are ignored.
+const MAX_SEARCH_TERMS: usize = 8;
+/// How much of a matching message a snippet shows before and after the match, in characters.
+const SNIPPET_BEFORE: usize = 40;
+const SNIPPET_AFTER: usize = 120;
+
+/// The words of a search, lowercased: a conversation matches when it has every one of them.
+pub fn search_terms(query: &str) -> Vec<String> {
+    let mut terms: Vec<String> = Vec::new();
+    for word in query.split_whitespace() {
+        let word = word.to_lowercase();
+        if !terms.contains(&word) {
+            terms.push(word);
+        }
+        if terms.len() == MAX_SEARCH_TERMS {
+            break;
+        }
+    }
+    terms
+}
+
+/// The `LIKE` patterns that find `term` anywhere in a text. SQLite's `LIKE` ignores the case of
+/// ASCII letters only, so a term with other letters is also looked for in upper case and with a
+/// capital first letter ("ärzte" finds "Ärzte" and "ÄRZTE").
+fn like_patterns(term: &str) -> Vec<String> {
+    let mut forms = vec![term.to_string()];
+    if !term.is_ascii() {
+        let mut chars = term.chars();
+        let capitalized = chars.next().map(|c| c.to_uppercase().chain(chars).collect::<String>()).unwrap_or_default();
+        for form in [term.to_uppercase(), capitalized] {
+            if !forms.contains(&form) {
+                forms.push(form);
+            }
+        }
+    }
+    forms
+        .iter()
+        .map(|f| {
+            let mut pattern = String::from("%");
+            for c in f.chars() {
+                if matches!(c, '%' | '_' | '\\') {
+                    pattern.push('\\');
+                }
+                pattern.push(c);
+            }
+            pattern.push('%');
+            pattern
+        })
+        .collect()
+}
+
+/// Where the earliest of `terms` (lowercase) starts in `text`, as a character index, whatever
+/// the case of `text`.
+fn find_term(text: &[char], terms: &[String]) -> Option<usize> {
+    let lower: Vec<char> = text.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+    terms
+        .iter()
+        .filter_map(|term| {
+            let term: Vec<char> = term.chars().collect();
+            lower.windows(term.len().max(1)).position(|w| w == term.as_slice())
+        })
+        .min()
+}
+
+/// The part of `text` around the first of `terms`, on one line, with "…" where it is cut off.
+/// `None` when none of them is in it.
+pub fn snippet(text: &str, terms: &[String]) -> Option<String> {
+    // One line, so a match in a table or a list reads as a sentence.
+    let chars: Vec<char> = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().collect();
+    let at = find_term(&chars, terms)?;
+    let mut start = at.saturating_sub(SNIPPET_BEFORE);
+    // Start at a word rather than in the middle of one.
+    if start > 0 {
+        if let Some(space) = chars[start..at].iter().position(|c| *c == ' ') {
+            start += space + 1;
+        }
+    }
+    let end = (at + SNIPPET_AFTER).min(chars.len());
+    let mut out = String::new();
+    if start > 0 {
+        out.push('…');
+    }
+    out.extend(&chars[start..end]);
+    if end < chars.len() {
+        out.push('…');
+    }
+    Some(out)
+}
+
 /// A browser that turned on Web Push: where its push service takes messages, and the keys
 /// they are encrypted with (see `channels`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -509,6 +610,85 @@ impl Store {
                 Ok(StarredConversation { conversation: conversation_from_row(r)?, schedule_title: r.try_get("schedule_title")? })
             })
             .collect()
+    }
+
+    /// The conversations whose title or messages (what the user wrote and what cedar answered)
+    /// have every word of `query`, most recently active first, scheduled runs' conversations
+    /// included. Each comes with the passage of its first matching message.
+    pub async fn search_conversations(&self, query: &str, limit: u32) -> Result<Vec<SearchHit>> {
+        let terms = search_terms(query);
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Every pattern is bound once and referred to by number (`?1`, `?2`, ...).
+        let mut binds: Vec<String> = Vec::new();
+        let mut like = |column: &str, term: &str| {
+            let tests: Vec<String> = like_patterns(term)
+                .into_iter()
+                .map(|pattern| {
+                    let n = binds.iter().position(|b| *b == pattern).unwrap_or_else(|| {
+                        binds.push(pattern);
+                        binds.len() - 1
+                    });
+                    format!("{column} LIKE ?{} ESCAPE '\\'", n + 1)
+                })
+                .collect();
+            format!("({})", tests.join(" OR "))
+        };
+        let in_message = |like: &mut dyn FnMut(&str, &str) -> String, term: &str| format!("({} OR {})", like("t.prompt", term), like("t.final_text", term));
+        let wanted: Vec<String> = terms
+            .iter()
+            .map(|term| {
+                format!(
+                    "({} OR EXISTS (SELECT 1 FROM turns t WHERE t.conversation_id = c.id AND {}))",
+                    like("c.title", term),
+                    in_message(&mut like, term)
+                )
+            })
+            .collect();
+        let message_tests: Vec<String> = terms.iter().map(|term| in_message(&mut like, term)).collect();
+
+        let select = CONVERSATION_SELECT.replace(
+            "FROM conversations c",
+            ", (SELECT s.title FROM schedules s WHERE s.id = c.schedule_id) AS schedule_title FROM conversations c",
+        );
+        let sql = format!("{select} WHERE {} ORDER BY c.updated_at DESC, c.id DESC LIMIT {limit}", wanted.join(" AND "));
+        let mut found = sqlx::query(&sql);
+        for pattern in &binds {
+            found = found.bind(pattern);
+        }
+        let rows = found.fetch_all(&self.pool).await?;
+
+        let mut hits = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let conversation = conversation_from_row(row)?;
+            // The passage shows what the title doesn't: the words the title lacks come first,
+            // and the first message that has one of them is the one quoted.
+            let title = conversation.title.as_deref().unwrap_or_default().to_lowercase();
+            let (missing, missing_tests): (Vec<String>, Vec<&str>) =
+                terms.iter().zip(&message_tests).filter(|(term, _)| !title.contains(term.as_str())).map(|(term, test)| (term.clone(), test.as_str())).unzip();
+            let preferred = if missing_tests.is_empty() { "1".to_string() } else { missing_tests.join(" OR ") };
+            let passage_sql = format!(
+                "SELECT t.prompt, t.final_text FROM turns t WHERE t.conversation_id = ?{} AND ({}) ORDER BY ({preferred}) DESC, t.seq LIMIT 1",
+                binds.len() + 1,
+                message_tests.join(" OR ")
+            );
+            let mut passage = sqlx::query(&passage_sql);
+            for pattern in &binds {
+                passage = passage.bind(pattern);
+            }
+            let turn = passage.bind(conversation.id.to_string()).fetch_optional(&self.pool).await?;
+            let snippet = match turn {
+                Some(turn) => {
+                    let prompt: String = turn.try_get("prompt")?;
+                    let reply: String = turn.try_get::<Option<String>, _>("final_text")?.unwrap_or_default();
+                    [&missing, &terms].into_iter().filter(|words| !words.is_empty()).find_map(|words| snippet(&prompt, words).or_else(|| snippet(&reply, words)))
+                }
+                None => None,
+            };
+            hits.push(SearchHit { conversation, schedule_title: row.try_get("schedule_title")?, snippet });
+        }
+        Ok(hits)
     }
 
     /// Star or unstar a conversation. Starring one that is already starred keeps the time it was
@@ -1432,5 +1612,44 @@ mod tests {
         assert!(store.get_turn(without.id).await.unwrap().unwrap().attachments.is_empty());
         let turns = store.list_turns(c.id).await.unwrap();
         assert_eq!(turns.iter().map(|t| t.attachments.len()).collect::<Vec<_>>(), [1, 0]);
+    }
+
+    #[tokio::test]
+    async fn search_finds_titles_and_messages() {
+        let store = Store::connect_memory().await.unwrap();
+        let trip = store.create_conversation(None).await.unwrap();
+        let t = store.insert_turn(trip.id, Uuid::new_v4(), "Plan a weekend in Lisbon", "queued", None, None, &[]).await.unwrap();
+        let reply = format!("{} Take tram 28 to the Alfama district.\n\nThen eat. {}", "Intro. ".repeat(20), "More. ".repeat(40));
+        store.update_turn(t.id, "completed", Some(&reply), None, None).await.unwrap();
+        let doctors = store.create_conversation(Some("Ärzte in Zürich")).await.unwrap();
+        let odd = store.create_conversation(Some("100% done_now")).await.unwrap();
+
+        let ids = |hits: &[SearchHit]| hits.iter().map(|h| h.conversation.id).collect::<Vec<_>>();
+        // A word of the prompt: found, with the passage it is in.
+        let hits = store.search_conversations("LISBON", 10).await.unwrap();
+        assert_eq!(ids(&hits), [trip.id]);
+        assert_eq!(hits[0].snippet.as_deref(), Some("Plan a weekend in Lisbon"));
+        // A word of the reply: the passage is cut out of the middle, on one line.
+        let hits = store.search_conversations("alfama", 10).await.unwrap();
+        let passage = hits[0].snippet.clone().unwrap();
+        assert!(passage.starts_with('…') && passage.ends_with('…'), "{passage}");
+        assert!(passage.contains("tram 28 to the Alfama district. Then eat."), "{passage}");
+        assert!(passage.chars().count() <= SNIPPET_BEFORE + SNIPPET_AFTER + 2, "{passage}");
+        // Every word has to be there, in the title or any message.
+        let hits = store.search_conversations("lisbon tram", 10).await.unwrap();
+        assert_eq!(ids(&hits), [trip.id]);
+        // The title has "Lisbon", so the passage is the one with the other word.
+        assert!(hits[0].snippet.as_deref().unwrap().contains("tram 28"), "{:?}", hits[0].snippet);
+        assert!(store.search_conversations("tram berlin", 10).await.unwrap().is_empty());
+        // A title alone matches too, without a passage; letters outside ASCII in either case.
+        let hits = store.search_conversations("ärzte zürich", 10).await.unwrap();
+        assert_eq!(ids(&hits), [doctors.id]);
+        assert_eq!(hits[0].snippet, None);
+        // LIKE's wildcards are plain characters in a search.
+        assert_eq!(ids(&store.search_conversations("100%", 10).await.unwrap()), [odd.id]);
+        assert_eq!(ids(&store.search_conversations("done_now", 10).await.unwrap()), [odd.id]);
+        assert!(store.search_conversations("1_0", 10).await.unwrap().is_empty());
+        assert!(store.search_conversations("%", 10).await.unwrap().len() == 1);
+        assert!(store.search_conversations("   ", 10).await.unwrap().is_empty());
     }
 }

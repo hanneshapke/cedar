@@ -168,6 +168,13 @@ Both interfaces have all of these, except where noted:
   [Cedar app for macOS and Windows](../desktop/README.md) and the Cedar iOS and Android apps; a page picks up
   stars set elsewhere when it comes back into view, and every minute while it is shown
   (`star.js` and `star.css`)
+- Search: a search box at the top of the sidebar (the drawer in the other styles) finds
+  conversations, chats and scheduled runs alike, by their title and by what was said in them, your
+  messages and Cedar's answers. A conversation matches when it has every word you typed, in any
+  case; the results take the place of the sidebar's lists, most recently active first, each with
+  the passage that matched and the words marked. Ctrl+K (⌘K on a Mac) puts the cursor in the box,
+  the arrow keys walk the results, Enter opens the first one and Escape empties the box
+  (`search.js` and `search.css`)
 - [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
   runs on its own every day, on weekdays, or weekly at a local time, listed in the sidebar with
   every run's result
@@ -194,7 +201,7 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `flight-view.js` and `flight-view.css` for flights, `clarify-view.js` and `clarify-view.css` for clarifying questions,
 `schedule.js` and `schedule.css` for scheduled agents, `star.js` and `star.css` for starred
-conversations, `notify.js` and `notify.css` for the inbox
+conversations, `search.js` and `search.css` for the search over the conversations, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
 push, and
 `models.js` and `models.css` for the send button's model menu, `settings-shell.js` for the Settings
@@ -699,6 +706,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET` / `PUT /api/settings/contributions` | The one-time choices: `{license, pseudonym, include_reasoning, include_fetched, accepted_at, available, host, licenses}`. `PUT` takes any of `license`, `pseudonym` (`"new"` makes one, `""` drops it), `include_reasoning`, `include_fetched` and `enabled` (sets or clears `accepted_at`) |
 | `PUT /api/turns/{id}/rating` | `{"rating": 1 \| -1 \| null}`: your thumb on a response; answers the turn |
 | `PUT` / `DELETE /api/conversations/{id}/star` | Star or unstar the conversation (a chat or a scheduled run) for every client. Both are idempotent; starring again keeps the first `starred_at`. Returns the conversation |
+| `GET /api/conversations/search?q=` | `{conversations}`: up to 50 conversations that have every word of `q` (at most 200 characters; the first 8 words count) in their title, a message or a response, whatever the case, most recently active first, scheduled runs included. Each has `schedule_title` like the starred ones and `snippet`: the passage of the first message that matched, or `null` when only the title did. An empty `q` finds nothing |
 | `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, scheduled runs included, each with `schedule_title` (the schedule a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |

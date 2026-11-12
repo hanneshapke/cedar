@@ -20,7 +20,9 @@ The same as the iOS app:
 - The conversation list as cedar-chat keeps it, with a dot and a bold title on an unread
   response and a **Needs answer** chip when the agent asked a question; pull to refresh, and
   star, rename, open on the web or delete from a long press
-- A **Chats | Starred | Scheduled** switch at the top. Starred lists chats and scheduled runs,
+- A search field at the top that finds chats and scheduled runs by their title and by what was
+  said in them, each shown with the passage that matched.
+- A **Chats | Starred | Scheduled** switch under it. Starred lists chats and scheduled runs,
   most recently starred first (stars are kept by cedar-chat, so they are the same everywhere).
   Scheduled lists each scheduled agent with its timing, next run and last result; tap one to open
   its last run, or its chevron to see all its runs and open any of them; **Run now**, **Pause**,
@@ -218,7 +220,7 @@ As the iOS app (see its README): `GET /api/conversations`, `GET /api/conversatio
 `POST /api/conversations/{id}/messages`, each turn rebuilt from `GET /api/turns/{id}/events` and
 followed live (reconnecting from the last event), `GET /api/events` while in front,
 `POST /api/conversations/{id}/seen`, stars (`PUT`/`DELETE /api/conversations/{id}/star`,
-`GET /api/starred`), schedules (`GET /api/schedules`, `GET /api/schedules/{id}`,
+`GET /api/starred`), search (`GET /api/conversations/search`), schedules (`GET /api/schedules`, `GET /api/schedules/{id}`,
 `POST /api/schedules/{id}/run`, `PATCH /api/schedules/{id}`), plans and approvals, files, and the
 language (`PUT /api/settings/locale`, and `locale` with each message), and memory
 (`GET /api/memory`, `DELETE /api/memory/{id}`, `DELETE /api/memory`; a 404 means an older server).
