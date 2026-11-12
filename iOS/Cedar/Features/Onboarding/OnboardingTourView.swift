@@ -61,6 +61,10 @@ private struct TourPageView: View {
     /// Whether this is the page on screen; the picture builds up when it becomes so.
     let active: Bool
     @State private var shown = false
+    /// Read when the page appears and again on coming back, from the App Store after installing it.
+    @State private var tailscaleInstalled = true
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
@@ -82,11 +86,42 @@ private struct TourPageView: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 12)
             .accessibilityElement(children: .combine)
+            if page.offersTailscale && !tailscaleInstalled {
+                getTailscale
+            }
+        }
+        .onAppear { tailscaleInstalled = TailscaleApp.isInstalled }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { tailscaleInstalled = TailscaleApp.isInstalled }
         }
         .onChange(of: active, initial: true) { _, active in
             // The page beside the one on screen is built ahead of time; its picture waits.
             shown = active
         }
+    }
+}
+
+private extension TourPageView {
+    /// On the page about connecting, when the Tailscale app isn't on this device: the phone needs
+    /// it to reach a server shared over Tailscale, so the tour offers it before Settings does.
+    var getTailscale: some View {
+        VStack(spacing: 8) {
+            Text("Cedar usually reaches your server through Tailscale. Install the Tailscale app on this device and log in to the same tailnet as your server.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                openURL(TailscaleApp.appStoreURL)
+            } label: {
+                Label("Get Tailscale", systemImage: "arrow.down.app")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: 420)
+        .padding(.horizontal, 28)
+        .padding(.bottom, 12)
     }
 }
 
@@ -114,6 +149,8 @@ struct TourPage {
     let title: LocalizedStringKey
     let text: LocalizedStringKey
     let illustration: TourIllustration
+    /// Whether the page offers the Tailscale app when it isn't installed.
+    var offersTailscale = false
 
     static let all: [TourPage] = [
         TourPage(title: "Your agent, on your own server",
@@ -136,6 +173,7 @@ struct TourPage {
                  illustration: .memory),
         TourPage(title: "Connect your server",
                  text: "Scan the QR code from the Cedar Mac app or the stack script, or type the address and token. That is the whole setup.",
-                 illustration: .connect),
+                 illustration: .connect,
+                 offersTailscale: true),
     ]
 }

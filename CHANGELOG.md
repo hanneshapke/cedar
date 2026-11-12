@@ -4,6 +4,7 @@
 
 - **The Docker step leads with *Set up Docker for me*.** When no Docker is found on a Mac or PC, the setup page put the button under two paragraphs and the *Check again* / *Get Docker Desktop* row, and people missed it. The button now sits directly under a one-line status, with what it does and Docker's license note below it; installing Docker yourself follows under a divider as the alternative.
 - **The phone-sharing step leads with *Set up Tailscale for me* too.** While Tailscale isn't installed, the button sits under one line on what Tailscale is for, with what it does below it; the long explanation and the sharing switch follow under a divider.
+- **The phone apps' tour offers Tailscale.** On iOS and Android, the tour's last page (*Connect your server*) now shows *Get Tailscale* when the Tailscale app isn't on the phone, opening its App Store or Google Play page; until now only Settings said so, after a server address was typed. It goes away once Tailscale is installed.
 
 ## 0.6.3
 

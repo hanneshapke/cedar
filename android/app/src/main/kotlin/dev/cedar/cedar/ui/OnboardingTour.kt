@@ -15,20 +15,29 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -37,11 +46,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import dev.cedar.cedar.R
+import dev.cedar.cedar.TailscaleApp
 import kotlinx.coroutines.launch
 
-/** A page's words and picture. */
-private class TourPage(val title: Int, val text: Int, val illustration: TourIllustration)
+/** A page's words and picture; [offersTailscale] adds the Tailscale app when it isn't installed. */
+private class TourPage(val title: Int, val text: Int, val illustration: TourIllustration, val offersTailscale: Boolean = false)
 
 private val PAGES = listOf(
     TourPage(R.string.tour_server_title, R.string.tour_server_text, TourIllustration.SERVER),
@@ -50,7 +61,7 @@ private val PAGES = listOf(
     TourPage(R.string.tour_plans_title, R.string.tour_plans_text, TourIllustration.PLANS),
     TourPage(R.string.tour_schedules_title, R.string.tour_schedules_text, TourIllustration.SCHEDULES),
     TourPage(R.string.tour_memory_title, R.string.tour_memory_text, TourIllustration.MEMORY),
-    TourPage(R.string.tour_connect_title, R.string.tour_connect_text, TourIllustration.CONNECT),
+    TourPage(R.string.tour_connect_title, R.string.tour_connect_text, TourIllustration.CONNECT, offersTailscale = true),
 )
 
 /**
@@ -93,6 +104,13 @@ fun OnboardingTour(onDone: () -> Unit) {
 /** One page: the picture above, the words below. */
 @Composable
 private fun TourPageView(page: TourPage, active: Boolean) {
+    val context = LocalContext.current
+    // Checked again on coming back, from the store after installing it.
+    var tailscaleInstalled by remember { mutableStateOf(TailscaleApp.isInstalled(context)) }
+    LifecycleResumeEffect(Unit) {
+        tailscaleInstalled = TailscaleApp.isInstalled(context)
+        onPauseOrDispose {}
+    }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
             // The page beside the one on screen is built ahead of time; its picture waits.
@@ -117,6 +135,28 @@ private fun TourPageView(page: TourPage, active: Boolean) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.widthIn(max = 420.dp),
             )
+        }
+        // On the page about connecting, when the Tailscale app isn't on this phone: the phone needs
+        // it to reach a server shared over Tailscale, so the tour offers it before Settings does.
+        if (page.offersTailscale && !tailscaleInstalled) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    stringResource(R.string.tailscale_missing_text),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = CedarColors.secondaryText,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.widthIn(max = 420.dp),
+                )
+                OutlinedButton(onClick = { TailscaleApp.openStore(context) }) {
+                    Icon(Icons.Outlined.OpenInBrowser, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.get_tailscale))
+                }
+            }
         }
     }
 }
