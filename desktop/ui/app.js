@@ -75,13 +75,16 @@ function render(s) {
   // Images
   const i = s.images;
   $('images-detail').textContent = '';
+  $('images-progress-text').textContent = '';
+  showProgress($('images-progress'), i.state === 'pulling' ? pullProgress(i.detail) : null);
   if (i.state === 'waiting') {
     dot($('images-dot'), '');
     $('images-text').textContent = tr('images.waiting');
   } else if (i.state === 'pulling') {
     dot($('images-dot'), 'busy');
     $('images-text').textContent = tr('images.pulling');
-    $('images-detail').textContent = i.detail;
+    if (i.detail.layers) $('images-progress-text').textContent = tr('images.layers', i.detail);
+    $('images-detail').textContent = i.detail.text;
   } else if (i.state === 'failed') {
     dot($('images-dot'), 'bad');
     $('images-text').textContent = tr('images.failed');
@@ -200,7 +203,7 @@ function activity(s, p) {
   }
   if (d.state === 'not_running') return waiting(tr('activity.dockerNotRunning', { start: p.text('dockerStart') }), 'docker');
   // The images.
-  if (i.state === 'pulling') return busy(tr('activity.pulling'), 'images');
+  if (i.state === 'pulling') return { ...busy(tr('activity.pulling'), 'images'), progress: pullProgress(i.detail) };
   if (i.state === 'failed') return waiting(tr('activity.pullFailed'), 'images');
   // Installing Tailscale runs on its own; while it does, it is what the page waits for.
   if (ts.state === 'running') return busy(tr('activity.tsSetup', { detail: ts.detail }), 'share');
@@ -229,6 +232,23 @@ function renderActivity(s, p) {
   $('activity-text').textContent = a.text;
   $('activity-icon').textContent = a.mode === 'waiting' ? '!' : a.mode === 'ready' ? '✓' : '';
   $('activity-go').classList.toggle('hidden', a.mode === 'ready');
+  showProgress($('activity-progress'), a.progress);
+}
+
+// How far an image download is, from 0 to 1: each layer is downloaded, then unpacked, and each
+// of the two counts as half of it. -1 until Docker has said which layers there are.
+function pullProgress(detail) {
+  if (!detail.layers) return -1;
+  return (detail.downloaded + detail.unpacked) / (2 * detail.layers);
+}
+
+// Shows a progress bar at `value` (0 to 1), as a bar without a position for -1, or hides it for
+// null or undefined.
+function showProgress(el, value) {
+  const shown = value !== null && value !== undefined;
+  el.classList.toggle('hidden', !shown);
+  if (shown && value >= 0) el.value = value;
+  else el.removeAttribute('value');
 }
 
 // Clicking the banner (or pressing Enter on it) scrolls to the step it names.
