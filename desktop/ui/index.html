@@ -64,6 +64,11 @@
   .qr { margin-top: 12px; width: 220px; padding: 0; border-radius: 8px; overflow: hidden; line-height: 0; }
   .qr svg { width: 220px; height: 220px; }
   .hidden { display: none; }
+  .fine { font-size: 12px; }
+  #docker-setup-text:empty, #docker-setup-detail:empty { display: none; }
+  /* The do-it-yourself path, once it sits below Cedar's own offer to set Docker up. */
+  .alternative { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .alternative .row { margin-top: 8px; }
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
   footer a { color: inherit; }
@@ -148,19 +153,24 @@
 <section id="docker">
   <h2><span class="dot" id="docker-dot"></span>Docker</h2>
   <p id="docker-text" class="muted" data-i18n="docker.checking">Checking…</p>
-  <div class="row">
-    <button id="docker-recheck" data-i18n="common.checkAgain">Check again</button>
-    <a id="docker-help" class="hidden muted" href="#" target="_blank" rel="noreferrer" data-i18n="docker.getDesktop">Get Docker Desktop</a>
+  <!-- Do it yourself: the only path when Cedar can't set Docker up. When it can, app.js moves this
+       below the setup block, so the button that does the work comes first. -->
+  <div id="docker-manual">
+    <p id="docker-manual-text" class="muted hidden"></p>
+    <div class="row">
+      <button id="docker-recheck" data-i18n="common.checkAgain">Check again</button>
+      <a id="docker-help" class="hidden muted" href="#" target="_blank" rel="noreferrer" data-i18n="docker.getDesktop">Get Docker Desktop</a>
+    </div>
   </div>
   <div id="docker-setup" class="hidden">
-    <p class="muted" id="docker-setup-intro"></p>
-    <p class="muted" data-i18n-html="html.docker.license">Docker Desktop is free for personal use, education, and businesses with fewer than 250 employees and less than $10 million in annual revenue; larger organizations need a <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">paid subscription</a>. Setting it up here accepts the <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a> on your behalf.</p>
     <div class="row">
       <button class="primary" id="docker-install" data-i18n="dockerSetup.install">Set up Docker for me</button>
       <button class="primary hidden" id="docker-finish" data-i18n="dockerSetup.restartNow">Restart now</button>
     </div>
     <p id="docker-setup-text" class="muted"></p>
     <p class="detail" id="docker-setup-detail"></p>
+    <p class="muted" id="docker-setup-intro"></p>
+    <p class="muted fine" data-i18n-html="html.docker.license">Docker Desktop is free for personal use, education, and businesses with fewer than 250 employees and less than $10 million in annual revenue; larger organizations need a <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">paid subscription</a>. Setting it up here accepts the <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a> on your behalf.</p>
   </div>
 </section>
 

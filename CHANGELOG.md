@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The Docker step leads with *Set up Docker for me*.** When no Docker is found on a Mac or PC, the setup page put the button under two paragraphs and the *Check again* / *Get Docker Desktop* row, and people missed it. The button now sits directly under a one-line status, with what it does and Docker's license note below it; installing Docker yourself follows under a divider as the alternative.
+
 ## 0.6.3
 
 - **Personal tools reach the Docker host as `host.docker.internal`, on Linux too.** On Docker, a call of a personal tool that declares `network` hosts now runs with `--add-host host.docker.internal:host-gateway`, so a tool can reach a service on the machine Docker runs on (a local Dataiku DSS, say) by the name Docker Desktop defines on its own but Docker Engine on Linux did not; it failed with "No address associated with hostname". It adds no reach: such a call could already reach the host through its network's gateway address, and calls without a network, or on `TOOLS_NETWORK=host`, get nothing. The service must listen on an interface the container reaches, not only on 127.0.0.1.

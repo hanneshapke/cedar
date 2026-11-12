@@ -43,6 +43,8 @@ cedarI18n.add({
     'docker.looking': 'Looking for Docker…',
     'docker.getDesktop': 'Get Docker Desktop',
     'docker.missing': 'No docker command was found. Install {apps}, start it, then check again.',
+    'docker.missingSetup': 'Cedar needs Docker, and didn’t find it on this computer.',
+    'docker.manual': 'Already have Docker, or want to install it yourself? Install {apps}, start it, then check again.',
     'docker.firstStart': '{starting} The first start after installing it takes a minute or two.',
     'docker.notRunning': 'Docker is installed but not answering. {start} and check again. {detail}',
     'html.docker.license': 'Docker Desktop is free for personal use, education, and businesses with fewer than 250 employees and less than $10 million in annual revenue; larger organizations need a <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">paid subscription</a>. Setting it up here accepts the <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a> on your behalf.',
@@ -187,6 +189,8 @@ cedarI18n.add({
     'docker.looking': 'Docker wird gesucht…',
     'docker.getDesktop': 'Docker Desktop herunterladen',
     'docker.missing': 'Es wurde kein docker-Befehl gefunden. Installiere {apps}, starte es und prüfe dann erneut.',
+    'docker.missingSetup': 'Cedar braucht Docker und hat es auf diesem Computer nicht gefunden.',
+    'docker.manual': 'Du hast Docker schon oder möchtest es selbst installieren? Installiere {apps}, starte es und prüfe dann erneut.',
     'docker.firstStart': '{starting} Der erste Start nach der Installation dauert ein bis zwei Minuten.',
     'docker.notRunning': 'Docker ist installiert, antwortet aber nicht. {start} und prüfe erneut. {detail}',
     'html.docker.license': 'Docker Desktop ist kostenlos für die private Nutzung, für Bildung und für Unternehmen mit weniger als 250 Beschäftigten und weniger als 10 Millionen US-Dollar Jahresumsatz; größere Organisationen brauchen ein <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">kostenpflichtiges Abo</a>. Wenn du es hier einrichtest, wird in deinem Namen das <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a> akzeptiert.',
@@ -331,6 +335,8 @@ cedarI18n.add({
     'docker.looking': 'Recherche de Docker…',
     'docker.getDesktop': 'Obtenir Docker Desktop',
     'docker.missing': 'Aucune commande docker n’a été trouvée. Installez {apps}, démarrez-le, puis vérifiez à nouveau.',
+    'docker.missingSetup': 'Cedar a besoin de Docker et ne l’a pas trouvé sur cet ordinateur.',
+    'docker.manual': 'Vous avez déjà Docker, ou vous préférez l’installer vous-même ? Installez {apps}, démarrez-le, puis vérifiez à nouveau.',
     'docker.firstStart': '{starting} Le premier démarrage après l’installation prend une à deux minutes.',
     'docker.notRunning': 'Docker est installé mais ne répond pas. {start} et vérifiez à nouveau. {detail}',
     'html.docker.license': 'Docker Desktop est gratuit pour un usage personnel, l’enseignement et les entreprises de moins de 250 employés réalisant moins de 10 millions de dollars US de chiffre d’affaires annuel ; les organisations plus grandes ont besoin d’un <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">abonnement payant</a>. En le configurant ici, vous acceptez en votre nom le <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a>.',
@@ -477,6 +483,8 @@ cedarI18n.add({
     'docker.looking': 'Buscando Docker…',
     'docker.getDesktop': 'Descargar Docker Desktop',
     'docker.missing': 'No se encontró el comando docker. Instala {apps}, inícialo y vuelve a verificar.',
+    'docker.missingSetup': 'Cedar necesita Docker y no lo encontró en esta computadora.',
+    'docker.manual': '¿Ya tienes Docker o prefieres instalarlo tú? Instala {apps}, inícialo y vuelve a verificar.',
     'docker.firstStart': '{starting} El primer inicio después de instalarlo tarda uno o dos minutos.',
     'docker.notRunning': 'Docker está instalado pero no responde. {start} y vuelve a verificar. {detail}',
     'html.docker.license': 'Docker Desktop es gratuito para uso personal, educación y empresas con menos de 250 empleados y menos de 10 millones de dólares estadounidenses de ingresos anuales; las organizaciones más grandes necesitan una <a href="https://www.docker.com/pricing/" target="_blank" rel="noreferrer">suscripción de pago</a>. Si lo configuras aquí, se acepta en tu nombre el <a href="https://www.docker.com/legal/docker-subscription-service-agreement/" target="_blank" rel="noreferrer">Docker Subscription Service Agreement</a>.',
@@ -586,6 +594,7 @@ cedarI18n.add({
 
   // Spain: el Mac, ordenador, móvil, icono, añadir.
   'es-ES': {
+    'docker.missingSetup': 'Cedar necesita Docker y no lo encontró en este ordenador.',
     'platform.macos.computer': 'este Mac',
     'platform.macos.computerSubject': 'este Mac',
     'platform.macos.setupIntro': 'Cedar puede configurar Docker por ti. Descarga Docker Desktop para el chip de este Mac (unos 600 MB) y lo instala en Aplicaciones. macOS pide una vez la contraseña de un administrador; luego Cedar inicia Docker Desktop y continúa.',
