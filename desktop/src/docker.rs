@@ -6,9 +6,8 @@
 
 use crate::i18n::tf;
 use crate::proc;
+use crate::pull::{self, Endpoint, PullLayers, PullProgress};
 use anyhow::{anyhow, bail, Context, Result};
-use serde::Serialize;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -224,11 +223,45 @@ impl DockerCli {
         .is_ok()
     }
 
-    /// `docker pull`, reporting each progress line as it comes, with how far the pull is by then.
-    /// Large images take minutes.
+    /// The Engine API's address in the CLI's current context, when it is a local socket or pipe.
+    async fn endpoint(&self) -> Option<Endpoint> {
+        let host = self
+            .output(
+                &["context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+                Duration::from_secs(20),
+            )
+            .await
+            .ok()?;
+        Endpoint::parse(&host)
+    }
+
+    /// Pulls `image`, reporting each progress line as it comes, with how far the pull is by
+    /// then. Through the Engine API first, for progress in bytes (see pull.rs); `docker pull`
+    /// takes over when the API can't be reached or its pull fails, since the CLI also has the
+    /// user's registry logins and gives the error messages people know. Large images take
+    /// minutes.
     pub async fn pull(
         &self,
         image: &str,
+        mut on_progress: impl FnMut(String, PullProgress),
+    ) -> Result<()> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(45 * 60);
+        if let Some(endpoint) = self.endpoint().await {
+            match tokio::time::timeout_at(deadline, pull::pull(&endpoint, image, &mut on_progress)).await {
+                Ok(Ok(())) => return Ok(()),
+                Ok(Err(e)) => eprintln!("pulling {image} through the Engine API: {e:#}; trying docker pull"),
+                Err(_) => bail!(tf("images.pull_slow", &[("image", image)])),
+            }
+        }
+        self.pull_with_cli(image, deadline, on_progress).await
+    }
+
+    /// `docker pull`. Without a terminal it prints a line when a layer changes state and no byte
+    /// counts, so the progress is in layers.
+    async fn pull_with_cli(
+        &self,
+        image: &str,
+        deadline: tokio::time::Instant,
         mut on_progress: impl FnMut(String, PullProgress),
     ) -> Result<()> {
         let mut child = self
@@ -250,14 +283,13 @@ impl DockerCli {
             text
         });
         let mut layers = PullLayers::default();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(45 * 60);
         loop {
             let next = tokio::time::timeout_at(deadline, lines.next_line()).await;
             match next {
                 Ok(Ok(Some(line))) => {
                     let line = line.trim();
                     if !line.is_empty() {
-                        layers.read(line);
+                        layers.read_line(line);
                         on_progress(line.to_string(), layers.progress());
                     }
                 }
@@ -280,88 +312,6 @@ impl DockerCli {
             }
             bail!(tf("images.pull_failed", &[("image", image), ("stderr", stderr)]))
         }
-    }
-}
-
-/// How far a `docker pull` is, in layers. Without a terminal `docker pull` prints no byte counts,
-/// only a line when a layer changes state, so layers are the finest measure there is.
-#[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
-pub struct PullProgress {
-    /// The layers the image has; 0 until docker has listed them.
-    pub layers: usize,
-    /// Of those, the ones downloaded (or already on disk).
-    pub downloaded: usize,
-    /// Of those, the ones unpacked too, which is the second half of a layer's work.
-    pub unpacked: usize,
-}
-
-/// Follows the layers through the lines of a `docker pull`: `<id>: Pulling fs layer` for each
-/// one first, then `<id>: Download complete` and `<id>: Pull complete` as they come in.
-#[derive(Default)]
-struct PullLayers {
-    /// Each layer by its id, with how many of its two steps (download, unpack) are done.
-    steps: HashMap<String, u8>,
-}
-
-impl PullLayers {
-    fn read(&mut self, line: &str) {
-        let Some((id, status)) = line.split_once(": ") else {
-            return;
-        };
-        let steps = match status.trim() {
-            "Pulling fs layer" | "Waiting" => 0,
-            "Download complete" => 1,
-            "Pull complete" | "Already exists" => 2,
-            _ => return,
-        };
-        let layer = self.steps.entry(id.to_string()).or_insert(0);
-        *layer = (*layer).max(steps);
-    }
-
-    fn progress(&self) -> PullProgress {
-        PullProgress {
-            layers: self.steps.len(),
-            downloaded: self.steps.values().filter(|s| **s >= 1).count(),
-            unpacked: self.steps.values().filter(|s| **s >= 2).count(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod pull_tests {
-    use super::*;
-
-    #[test]
-    fn layers_are_counted_from_the_pull_output() {
-        let mut layers = PullLayers::default();
-        assert_eq!(layers.progress(), PullProgress::default());
-        for line in [
-            "0.4.2: Pulling from hanneshapke/cedar-sandbox",
-            "aaaaaaaaaaaa: Already exists",
-            "bbbbbbbbbbbb: Pulling fs layer",
-            "cccccccccccc: Pulling fs layer",
-            "dddddddddddd: Pulling fs layer",
-            "dddddddddddd: Waiting",
-            "bbbbbbbbbbbb: Verifying Checksum",
-            "bbbbbbbbbbbb: Download complete",
-            "cccccccccccc: Download complete",
-            "bbbbbbbbbbbb: Pull complete",
-        ] {
-            layers.read(line);
-        }
-        assert_eq!(layers.progress(), PullProgress { layers: 4, downloaded: 3, unpacked: 2 });
-        // A late "Waiting" does not take a finished layer back.
-        layers.read("bbbbbbbbbbbb: Waiting");
-        assert_eq!(layers.progress().unpacked, 2);
-        for line in [
-            "cccccccccccc: Pull complete",
-            "dddddddddddd: Pull complete",
-            "Digest: sha256:0123",
-            "Status: Downloaded newer image for ghcr.io/hanneshapke/cedar-sandbox:0.4.2",
-        ] {
-            layers.read(line);
-        }
-        assert_eq!(layers.progress(), PullProgress { layers: 4, downloaded: 4, unpacked: 4 });
     }
 }
 

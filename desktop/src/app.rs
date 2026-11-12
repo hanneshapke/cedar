@@ -3,7 +3,8 @@
 //! [`AppState::status`].
 
 use crate::config::{Config, VERSION};
-use crate::docker::{self, DockerCli, PullProgress};
+use crate::docker::{self, DockerCli};
+use crate::pull::PullProgress;
 use crate::models;
 use crate::paths::Paths;
 use crate::supervisor::{ServiceState, Supervisor};

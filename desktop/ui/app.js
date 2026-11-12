@@ -83,7 +83,7 @@ function render(s) {
   } else if (i.state === 'pulling') {
     dot($('images-dot'), 'busy');
     $('images-text').textContent = tr('images.pulling');
-    if (i.detail.layers) $('images-progress-text').textContent = tr('images.layers', i.detail);
+    $('images-progress-text').textContent = pullText(i.detail);
     $('images-detail').textContent = i.detail.text;
   } else if (i.state === 'failed') {
     dot($('images-dot'), 'bad');
@@ -235,11 +235,21 @@ function renderActivity(s, p) {
   showProgress($('activity-progress'), a.progress);
 }
 
-// How far an image download is, from 0 to 1: each layer is downloaded, then unpacked, and each
-// of the two counts as half of it. -1 until Docker has said which layers there are.
+// How far an image download is, from 0 to 1 (worked out in src/pull.rs), or -1 until Docker
+// has said which layers there are.
 function pullProgress(detail) {
-  if (!detail.layers) return -1;
-  return (detail.downloaded + detail.unpacked) / (2 * detail.layers);
+  return typeof detail.fraction === 'number' ? detail.fraction : -1;
+}
+
+// The megabytes so far (and in all, once Docker has said), then the layers.
+function pullText(detail) {
+  if (!detail.layers) return '';
+  const mb = (bytes) => (bytes < 10e6 ? Math.round(bytes / 1e5) / 10 : Math.round(bytes / 1e6));
+  const parts = [];
+  if (detail.total_bytes) parts.push(tr('images.bytesOf', { done: mb(detail.bytes), total: mb(detail.total_bytes) }));
+  else if (detail.bytes) parts.push(tr('images.bytes', { done: mb(detail.bytes) }));
+  parts.push(tr('images.layers', detail));
+  return parts.join(' ');
 }
 
 // Shows a progress bar at `value` (0 to 1), as a bar without a position for -1, or hides it for

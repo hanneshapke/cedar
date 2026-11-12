@@ -17,6 +17,7 @@ mod models;
 mod notify;
 mod paths;
 mod proc;
+mod pull;
 mod supervisor;
 mod tailscale;
 mod tray;
