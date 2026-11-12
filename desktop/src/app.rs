@@ -4,6 +4,7 @@
 
 use crate::config::{Config, VERSION};
 use crate::docker::{self, DockerCli};
+use crate::pull::PullProgress;
 use crate::models;
 use crate::paths::Paths;
 use crate::supervisor::{ServiceState, Supervisor};
@@ -32,7 +33,12 @@ pub enum DockerStatus {
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
 pub enum ImagesStatus {
     Waiting,
-    Pulling(String),
+    /// The image and docker's latest line about it, and how many of its layers are in.
+    Pulling {
+        text: String,
+        #[serde(flatten)]
+        progress: PullProgress,
+    },
     Ready,
     Failed(String),
 }
@@ -384,13 +390,16 @@ pub async fn bootstrap(app: AppHandle) {
         if cli.image_present(&image).await {
             continue;
         }
-        state.set_images(ImagesStatus::Pulling(format!(
-            "{image}: {}",
-            crate::i18n::t("images.starting")
-        )));
+        state.set_images(ImagesStatus::Pulling {
+            text: format!("{image}: {}", crate::i18n::t("images.starting")),
+            progress: PullProgress::default(),
+        });
         let pulled = cli
-            .pull(&image, |line| {
-                state.set_images(ImagesStatus::Pulling(format!("{image}: {line}")))
+            .pull(&image, |line, progress| {
+                state.set_images(ImagesStatus::Pulling {
+                    text: format!("{image}: {line}"),
+                    progress,
+                })
             })
             .await;
         if let Err(e) = pulled {

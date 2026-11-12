@@ -6,6 +6,7 @@
 
 use crate::i18n::tf;
 use crate::proc;
+use crate::pull::{self, Endpoint, PullLayers, PullProgress};
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -222,8 +223,47 @@ impl DockerCli {
         .is_ok()
     }
 
-    /// `docker pull`, reporting each progress line as it comes. Large images take minutes.
-    pub async fn pull(&self, image: &str, mut on_progress: impl FnMut(String)) -> Result<()> {
+    /// The Engine API's address in the CLI's current context, when it is a local socket or pipe.
+    async fn endpoint(&self) -> Option<Endpoint> {
+        let host = self
+            .output(
+                &["context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+                Duration::from_secs(20),
+            )
+            .await
+            .ok()?;
+        Endpoint::parse(&host)
+    }
+
+    /// Pulls `image`, reporting each progress line as it comes, with how far the pull is by
+    /// then. Through the Engine API first, for progress in bytes (see pull.rs); `docker pull`
+    /// takes over when the API can't be reached or its pull fails, since the CLI also has the
+    /// user's registry logins and gives the error messages people know. Large images take
+    /// minutes.
+    pub async fn pull(
+        &self,
+        image: &str,
+        mut on_progress: impl FnMut(String, PullProgress),
+    ) -> Result<()> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(45 * 60);
+        if let Some(endpoint) = self.endpoint().await {
+            match tokio::time::timeout_at(deadline, pull::pull(&endpoint, image, &mut on_progress)).await {
+                Ok(Ok(())) => return Ok(()),
+                Ok(Err(e)) => eprintln!("pulling {image} through the Engine API: {e:#}; trying docker pull"),
+                Err(_) => bail!(tf("images.pull_slow", &[("image", image)])),
+            }
+        }
+        self.pull_with_cli(image, deadline, on_progress).await
+    }
+
+    /// `docker pull`. Without a terminal it prints a line when a layer changes state and no byte
+    /// counts, so the progress is in layers.
+    async fn pull_with_cli(
+        &self,
+        image: &str,
+        deadline: tokio::time::Instant,
+        mut on_progress: impl FnMut(String, PullProgress),
+    ) -> Result<()> {
         let mut child = self
             .command(&["pull", image])
             .stdout(Stdio::piped())
@@ -242,14 +282,15 @@ impl DockerCli {
             }
             text
         });
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(45 * 60);
+        let mut layers = PullLayers::default();
         loop {
             let next = tokio::time::timeout_at(deadline, lines.next_line()).await;
             match next {
                 Ok(Ok(Some(line))) => {
                     let line = line.trim();
                     if !line.is_empty() {
-                        on_progress(line.to_string());
+                        layers.read_line(line);
+                        on_progress(line.to_string(), layers.progress());
                     }
                 }
                 Ok(Ok(None)) => break,

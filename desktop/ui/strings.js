@@ -62,6 +62,9 @@ cedarI18n.add({
     'images.waiting': 'Waiting for Docker.',
     'images.pulling': 'Downloading the image the agent’s tools run in. This happens once per version.',
     'images.failed': 'The download failed.',
+    'images.layers': '{downloaded} of {layers} layers downloaded, {unpacked} unpacked.',
+    'images.bytesOf': '{done} of {total} MB downloaded.',
+    'images.bytes': '{done} MB downloaded.',
     'images.ready': 'Ready.',
     'images.browserToggle': 'Browser tool (downloads a second, larger image with Chromium)',
 
@@ -208,6 +211,9 @@ cedarI18n.add({
     'images.waiting': 'Warte auf Docker.',
     'images.pulling': 'Das Image, in dem die Werkzeuge des Agenten laufen, wird heruntergeladen. Das passiert einmal pro Version.',
     'images.failed': 'Der Download ist fehlgeschlagen.',
+    'images.layers': '{downloaded} von {layers} Schichten heruntergeladen, {unpacked} entpackt.',
+    'images.bytesOf': '{done} von {total} MB heruntergeladen.',
+    'images.bytes': '{done} MB heruntergeladen.',
     'images.ready': 'Bereit.',
     'images.browserToggle': 'Browser-Werkzeug (lädt ein zweites, größeres Image mit Chromium)',
 
@@ -354,6 +360,9 @@ cedarI18n.add({
     'images.waiting': 'En attente de Docker.',
     'images.pulling': 'Téléchargement de l’image dans laquelle s’exécutent les outils de l’agent. Cela se produit une fois par version.',
     'images.failed': 'Le téléchargement a échoué.',
+    'images.layers': '{downloaded} couches sur {layers} téléchargées, {unpacked} décompressées.',
+    'images.bytesOf': '{done} sur {total} Mo téléchargés.',
+    'images.bytes': '{done} Mo téléchargés.',
     'images.ready': 'Prête.',
     'images.browserToggle': 'Outil navigateur (télécharge une seconde image, plus volumineuse, avec Chromium)',
 
@@ -502,6 +511,9 @@ cedarI18n.add({
     'images.waiting': 'Esperando a Docker.',
     'images.pulling': 'Descargando la imagen en la que se ejecutan las herramientas del agente. Esto ocurre una vez por versión.',
     'images.failed': 'La descarga falló.',
+    'images.layers': '{downloaded} de {layers} capas descargadas, {unpacked} descomprimidas.',
+    'images.bytesOf': '{done} de {total} MB descargados.',
+    'images.bytes': '{done} MB descargados.',
     'images.ready': 'Lista.',
     'images.browserToggle': 'Herramienta de navegador (descarga una segunda imagen, más grande, con Chromium)',
 
