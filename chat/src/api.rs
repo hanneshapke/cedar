@@ -36,6 +36,9 @@ use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
+mod agents;
+pub mod hooks;
+
 const MAX_BODY_BYTES: usize = 128 * 1024;
 const MAX_MESSAGE_BYTES: usize = 32_000;
 const MAX_TITLE_CHARS: usize = 200;
@@ -234,6 +237,11 @@ pub struct AppState {
     admin_digest: Option<[u8; 32]>,
     /// Serializes sending messages, so two tabs can't start overlapping runs in one conversation.
     send_lock: Arc<Mutex<()>>,
+    /// Serializes starting the runs events ask for, so a webhook call and a check can't both find
+    /// an agent free (`schedule::start_event`).
+    pub firing: Arc<Mutex<()>>,
+    /// How many webhook calls were taken lately, per hook and in all (`hooks`).
+    pub hook_limits: Arc<hooks::Limits>,
     /// Live notices for the open tabs (`GET /api/events`): a finished response, as `notify` learns
     /// of one from cedar.
     pub notices: broadcast::Sender<Value>,
@@ -262,7 +270,7 @@ impl AppState {
         let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new() })
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new() })
     }
 }
 
@@ -304,6 +312,12 @@ pub fn router(state: AppState) -> Router {
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
+        .route("/agents", get(agents::list).post(agents::create))
+        .route("/agents/test", post(agents::test))
+        .route("/agents/activity", get(agents::activity))
+        .route("/agents/{id}", get(agents::get).patch(agents::update).delete(agents::delete))
+        .route("/agents/{id}/run", post(agents::run_now))
+        .route("/agents/{id}/hook/rotate", post(agents::rotate_hook))
         .route("/settings", get(get_settings).put(put_settings))
         .route("/settings/locale", put(put_locale))
         .route("/pairing", get(get_pairing))
@@ -340,7 +354,10 @@ pub fn router(state: AppState) -> Router {
         .route("/config", get(client_config))
         // Public too: Google redirects the browser here, which can't add the token. The single-use
         // `state` cedar issued for an admin's "Connect Google" is what authorizes it.
-        .route("/oauth/google/callback", get(google_callback));
+        .route("/oauth/google/callback", get(google_callback))
+        // Public as well: whoever calls an agent's webhook has the hook's own secret, not the
+        // access token (see `hooks`).
+        .route("/hooks/{hook_id}", post(hooks::receive).layer(DefaultBodyLimit::max(hooks::MAX_BODY_BYTES)));
 
     let pages = Router::new()
         .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
@@ -603,6 +620,9 @@ async fn create_conversation(
 struct ConversationDetail {
     conversation: Conversation,
     turns: Vec<Turn>,
+    /// The agent whose run this conversation is: `{id, title, trigger_kind}`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent: Option<Value>,
 }
 
 async fn get_conversation(
@@ -611,7 +631,11 @@ async fn get_conversation(
 ) -> Result<Json<ConversationDetail>, AppError> {
     let conversation = find_conversation(&state, &id).await?;
     let turns = refresh_all(&state, state.store.list_turns(conversation.id).await?).await;
-    Ok(Json(ConversationDetail { conversation, turns }))
+    let agent = match conversation.schedule_id {
+        Some(id) => state.store.get_schedule(id).await?.map(|s| json!({ "id": s.id, "title": s.title, "trigger_kind": s.trigger_kind })),
+        None => None,
+    };
+    Ok(Json(ConversationDetail { conversation, turns, agent }))
 }
 
 async fn rename_conversation(
@@ -2207,9 +2231,42 @@ struct ScheduleList {
     schedules: Vec<ScheduleSummary>,
 }
 
+/// A classic schedule, for `/api/schedules`: the apps from before agents had other triggers
+/// read these routes, and would trip over an agent with no time of day. `/api/agents` has them all.
 async fn find_schedule(state: &AppState, raw_id: &str) -> Result<Schedule, AppError> {
     let id = parse_id(raw_id, "schedule not found")?;
-    state.store.get_schedule(id).await?.ok_or(AppError::NotFound("schedule not found"))
+    state.store.get_schedule(id).await?.filter(|s| s.trigger_kind == "time").ok_or(AppError::NotFound("schedule not found"))
+}
+
+/// Whether an agent's latest run is still going.
+pub(crate) async fn run_going(state: &AppState, schedule_id: Uuid) -> Result<bool, AppError> {
+    let newest = state.store.list_schedule_runs(schedule_id, 1).await?;
+    Ok(with_turns(state, newest).await?.pop().is_some_and(|last| last.turn.as_ref().is_some_and(|t| !cedar::is_terminal(&t.status))))
+}
+
+/// Delete an agent with its runs' conversations and their cedar runs, unless one is still going.
+async fn remove_schedule(state: &AppState, schedule: &Schedule) -> Result<(), AppError> {
+    let turns = refresh_all(state, state.store.list_schedule_turns(schedule.id).await?).await;
+    if turns.iter().any(|t| !cedar::is_terminal(&t.status)) {
+        return Err(AppError::Conflict("a run of this agent is still going; stop it first".into()));
+    }
+    for turn in &turns {
+        // Best effort, as for a conversation: the agent is gone either way.
+        if let Err(e) = state.cedar.delete_run(turn.run_id).await {
+            tracing::warn!(run_id = %turn.run_id, error = %e, "could not delete cedar run");
+        }
+    }
+    state.store.delete_schedule(schedule.id).await?;
+    Ok(())
+}
+
+/// Start a run right now, outside what the trigger says. Doesn't move the next one.
+async fn start_now(state: &AppState, schedule: &Schedule) -> Result<RunDetail, AppError> {
+    if run_going(state, schedule.id).await? {
+        return Err(AppError::Conflict("the previous run of this agent is still going".into()));
+    }
+    let run = schedule::fire(state, schedule, schedule::Firing::manual(Utc::now())).await?;
+    Ok(with_turns(state, vec![run]).await?.pop().expect("one run"))
 }
 
 /// Attach each run's turn, refreshed from cedar while it is unfinished.
@@ -2231,7 +2288,7 @@ async fn with_turns(state: &AppState, runs: Vec<ScheduleRun>) -> Result<Vec<RunD
 
 async fn list_schedules(State(state): State<AppState>) -> Result<Json<ScheduleList>, AppError> {
     let mut schedules = Vec::new();
-    for schedule in state.store.list_schedules().await? {
+    for schedule in state.store.list_time_schedules().await? {
         let last = state.store.list_schedule_runs(schedule.id, 1).await?;
         let last_run = with_turns(&state, last).await?.pop();
         schedules.push(ScheduleSummary { schedule, last_run });
@@ -2277,6 +2334,12 @@ async fn create_schedule(
             time_of_day: &timing.time.format("%H:%M").to_string(),
             timezone: timing.tz.name(),
             next_run_at: timing.next_after(Utc::now()),
+            trigger_kind: "time",
+            trigger: None,
+            hook_id: None,
+            hook_secret: None,
+            min_interval_secs: None,
+            max_runs_per_day: None,
         })
         .await?;
     Ok((StatusCode::CREATED, Json(schedule)))
@@ -2334,7 +2397,7 @@ async fn update_schedule(
         }
         schedule.enabled = enabled;
     }
-    if !state.store.update_schedule(&schedule).await? {
+    if !state.store.update_schedule(&schedule, false).await? {
         return Err(AppError::NotFound("schedule not found"));
     }
     schedule.updated_at = Utc::now();
@@ -2343,33 +2406,14 @@ async fn update_schedule(
 
 async fn delete_schedule(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     let schedule = find_schedule(&state, &id).await?;
-    let turns = refresh_all(&state, state.store.list_schedule_turns(schedule.id).await?).await;
-    if turns.iter().any(|t| !cedar::is_terminal(&t.status)) {
-        return Err(AppError::Conflict("a run of this schedule is still going; stop it first".into()));
-    }
-    for turn in &turns {
-        // Best effort, as for a conversation: the schedule is gone either way.
-        if let Err(e) = state.cedar.delete_run(turn.run_id).await {
-            tracing::warn!(run_id = %turn.run_id, error = %e, "could not delete cedar run");
-        }
-    }
-    state.store.delete_schedule(schedule.id).await?;
+    remove_schedule(&state, &schedule).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Start a run right now, outside the schedule. Doesn't move the next scheduled run.
 async fn run_schedule_now(State(state): State<AppState>, Path(id): Path<String>) -> Result<(StatusCode, Json<RunDetail>), AppError> {
     let schedule = find_schedule(&state, &id).await?;
-    let newest = state.store.list_schedule_runs(schedule.id, 1).await?;
-    if let Some(last) = with_turns(&state, newest).await?.pop() {
-        if last.turn.as_ref().is_some_and(|t| !cedar::is_terminal(&t.status)) {
-            return Err(AppError::Conflict("the previous run of this schedule is still going".into()));
-        }
-    }
-    let now = Utc::now();
-    let run = schedule::fire(&state, &schedule, now, now, true).await?;
-    let detail = with_turns(&state, vec![run]).await?.pop().expect("one run");
-    Ok((StatusCode::ACCEPTED, Json(detail)))
+    Ok((StatusCode::ACCEPTED, Json(start_now(&state, &schedule).await?)))
 }
 
 // -- workspace files ------------------------------------------------------------------------

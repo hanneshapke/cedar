@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow};
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
@@ -161,6 +162,60 @@ pub struct Schedule {
     pub last_run_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    // What makes it an agent with a trigger (see `trigger`). None of it is part of the
+    // `/api/schedules` shape, which older apps read; `/api/agents` builds its own.
+    /// `time` for a schedule as above, else the kind of [`crate::trigger::Trigger`] in `trigger`.
+    #[serde(skip)]
+    pub trigger_kind: String,
+    /// The trigger's settings; `None` for a `time` trigger kept in the columns above.
+    #[serde(skip)]
+    pub trigger: Option<Value>,
+    #[serde(skip)]
+    pub trigger_rev: i64,
+    /// What the last check saw, and a delivery held back (see `trigger`).
+    #[serde(skip)]
+    pub state: Option<Value>,
+    #[serde(skip)]
+    pub hook_id: Option<String>,
+    #[serde(skip)]
+    pub hook_secret: Option<String>,
+    #[serde(skip)]
+    pub min_interval_secs: Option<u32>,
+    #[serde(skip)]
+    pub max_runs_per_day: Option<u32>,
+    #[serde(skip)]
+    pub last_checked_at: Option<DateTime<Utc>>,
+    /// Why the last check failed; `None` once one works again.
+    #[serde(skip)]
+    pub last_error: Option<String>,
+    /// How many checks failed in a row.
+    #[serde(skip)]
+    pub failures: u32,
+}
+
+/// `next_run_at` of an agent nothing is due for: a webhook, or a one-off that has run.
+pub const NEVER_MS: i64 = 253_402_300_799_000;
+
+pub fn never() -> DateTime<Utc> {
+    to_dt(NEVER_MS)
+}
+
+/// What a check came to, written back unless the trigger was edited meanwhile.
+pub struct Polled<'a> {
+    pub rev: i64,
+    pub state: Option<&'a Value>,
+    pub next_run_at: DateTime<Utc>,
+    pub checked_at: DateTime<Utc>,
+    pub error: Option<&'a str>,
+    pub failures: u32,
+}
+
+/// One row of the activity feed: a run with the agent it belongs to.
+#[derive(Debug, Clone)]
+pub struct ActivityRow {
+    pub run: ScheduleRun,
+    pub agent_title: String,
+    pub trigger_kind: String,
 }
 
 pub struct NewSchedule<'a> {
@@ -176,6 +231,12 @@ pub struct NewSchedule<'a> {
     pub time_of_day: &'a str,
     pub timezone: &'a str,
     pub next_run_at: DateTime<Utc>,
+    pub trigger_kind: &'a str,
+    pub trigger: Option<&'a Value>,
+    pub hook_id: Option<&'a str>,
+    pub hook_secret: Option<&'a str>,
+    pub min_interval_secs: Option<u32>,
+    pub max_runs_per_day: Option<u32>,
 }
 
 /// One firing of a schedule. `conversation_id` and `turn_id` are `None` when the cedar run could
@@ -190,6 +251,8 @@ pub struct ScheduleRun {
     pub started_at: DateTime<Utc>,
     pub manual: bool,
     pub error: Option<String>,
+    /// What started it: `{kind, summary, excerpt?}`. `None` for "run now" and older runs.
+    pub cause: Option<Value>,
 }
 
 pub struct NewScheduleRun {
@@ -199,6 +262,7 @@ pub struct NewScheduleRun {
     pub due_at: DateTime<Utc>,
     pub manual: bool,
     pub error: Option<String>,
+    pub cause: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -325,6 +389,17 @@ fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
         last_run_at: r.try_get::<Option<i64>, _>("last_run_at")?.map(to_dt),
         created_at: to_dt(r.try_get("created_at")?),
         updated_at: to_dt(r.try_get("updated_at")?),
+        trigger_kind: r.try_get("trigger_kind")?,
+        trigger: opt_json(r, "trigger")?,
+        trigger_rev: r.try_get("trigger_rev")?,
+        state: opt_json(r, "state")?,
+        hook_id: r.try_get("hook_id")?,
+        hook_secret: r.try_get("hook_secret")?,
+        min_interval_secs: r.try_get::<Option<i64>, _>("min_interval_secs")?.map(|n| n as u32),
+        max_runs_per_day: r.try_get::<Option<i64>, _>("max_runs_per_day")?.map(|n| n as u32),
+        last_checked_at: r.try_get::<Option<i64>, _>("last_checked_at")?.map(to_dt),
+        last_error: r.try_get("last_error")?,
+        failures: r.try_get::<i64, _>("failures")? as u32,
     })
 }
 
@@ -338,6 +413,7 @@ fn schedule_run_from_row(r: &SqliteRow) -> Result<ScheduleRun> {
         started_at: to_dt(r.try_get("started_at")?),
         manual: r.try_get::<i64, _>("manual")? != 0,
         error: r.try_get("error")?,
+        cause: opt_json(r, "cause")?,
     })
 }
 
@@ -1011,8 +1087,9 @@ impl Store {
         let now = now_ms();
         sqlx::query(
             "INSERT INTO schedules (id, title, prompt, model, reasoning, source_conversation_id, tools, notify, frequency, \
-             weekday, time_of_day, timezone, enabled, next_run_at, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+             weekday, time_of_day, timezone, enabled, next_run_at, created_at, updated_at, trigger_kind, trigger, hook_id, \
+             hook_secret, min_interval_secs, max_runs_per_day) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(new.title)
@@ -1029,6 +1106,12 @@ impl Store {
         .bind(new.next_run_at.timestamp_millis())
         .bind(now)
         .bind(now)
+        .bind(new.trigger_kind)
+        .bind(to_json(new.trigger)?)
+        .bind(new.hook_id)
+        .bind(new.hook_secret)
+        .bind(new.min_interval_secs.map(i64::from))
+        .bind(new.max_runs_per_day.map(i64::from))
         .execute(&self.pool)
         .await?;
         Ok(self.get_schedule(id).await?.expect("just inserted"))
@@ -1049,11 +1132,26 @@ impl Store {
         Ok(sqlx::query("SELECT COUNT(*) AS n FROM schedules").fetch_one(&self.pool).await?.try_get("n")?)
     }
 
+    /// The classic schedules (`time` triggers), as `/api/schedules` lists them for apps from
+    /// before agents had other triggers.
+    pub async fn list_time_schedules(&self) -> Result<Vec<Schedule>> {
+        let rows = sqlx::query("SELECT * FROM schedules WHERE trigger_kind = 'time' ORDER BY enabled DESC, next_run_at, id").fetch_all(&self.pool).await?;
+        rows.iter().map(schedule_from_row).collect()
+    }
+
+    pub async fn get_schedule_by_hook(&self, hook_id: &str) -> Result<Option<Schedule>> {
+        let row = sqlx::query("SELECT * FROM schedules WHERE hook_id = ?").bind(hook_id).fetch_optional(&self.pool).await?;
+        row.as_ref().map(schedule_from_row).transpose()
+    }
+
     /// Write back a schedule's editable fields (everything but its id, origin and timestamps).
-    pub async fn update_schedule(&self, s: &Schedule) -> Result<bool> {
+    /// `retriggered` says the trigger itself changed: what the old one had seen is dropped, and a
+    /// check of it that is still under way won't write its result.
+    pub async fn update_schedule(&self, s: &Schedule, retriggered: bool) -> Result<bool> {
         let res = sqlx::query(
             "UPDATE schedules SET title = ?, prompt = ?, model = ?, reasoning = ?, tools = ?, notify = ?, frequency = ?, \
-             weekday = ?, time_of_day = ?, timezone = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
+             weekday = ?, time_of_day = ?, timezone = ?, enabled = ?, next_run_at = ?, updated_at = ?, trigger_kind = ?, \
+             trigger = ?, hook_id = ?, hook_secret = ?, min_interval_secs = ?, max_runs_per_day = ? WHERE id = ?",
         )
         .bind(&s.title)
         .bind(&s.prompt)
@@ -1068,10 +1166,72 @@ impl Store {
         .bind(s.enabled as i64)
         .bind(s.next_run_at.timestamp_millis())
         .bind(now_ms())
+        .bind(&s.trigger_kind)
+        .bind(to_json(s.trigger.as_ref())?)
+        .bind(&s.hook_id)
+        .bind(&s.hook_secret)
+        .bind(s.min_interval_secs.map(i64::from))
+        .bind(s.max_runs_per_day.map(i64::from))
         .bind(s.id.to_string())
         .execute(&self.pool)
         .await?;
+        if retriggered {
+            sqlx::query("UPDATE schedules SET trigger_rev = trigger_rev + 1, state = NULL, last_error = NULL, failures = 0, last_checked_at = NULL WHERE id = ?")
+                .bind(s.id.to_string())
+                .execute(&self.pool)
+                .await?;
+        }
         Ok(res.rows_affected() == 1)
+    }
+
+    /// Record what a check came to. Nothing is written if the trigger was edited since the check
+    /// began (`rev` no longer matches): the new trigger starts from scratch.
+    pub async fn mark_polled(&self, id: Uuid, p: &Polled<'_>) -> Result<bool> {
+        let res = sqlx::query(
+            "UPDATE schedules SET state = ?, next_run_at = ?, last_checked_at = ?, last_error = ?, failures = ? \
+             WHERE id = ? AND trigger_rev = ?",
+        )
+        .bind(to_json(p.state)?)
+        .bind(p.next_run_at.timestamp_millis())
+        .bind(p.checked_at.timestamp_millis())
+        .bind(p.error)
+        .bind(p.failures as i64)
+        .bind(id.to_string())
+        .bind(p.rev)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// Switch an agent off without touching anything else (a one-off that has run).
+    pub async fn disable_schedule(&self, id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE schedules SET enabled = 0, next_run_at = ? WHERE id = ?").bind(NEVER_MS).bind(id.to_string()).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    /// How many runs events started for an agent since `since` ("run now" doesn't count).
+    pub async fn count_schedule_runs_since(&self, id: Uuid, since: DateTime<Utc>) -> Result<i64> {
+        Ok(sqlx::query("SELECT COUNT(*) AS n FROM schedule_runs WHERE schedule_id = ? AND manual = 0 AND started_at >= ?")
+            .bind(id.to_string())
+            .bind(since.timestamp_millis())
+            .fetch_one(&self.pool)
+            .await?
+            .try_get("n")?)
+    }
+
+    /// The latest runs of every agent, newest first; `before` (a run's `started_at`) pages back.
+    pub async fn list_activity(&self, before: Option<DateTime<Utc>>, limit: u32) -> Result<Vec<ActivityRow>> {
+        let rows = sqlx::query(
+            "SELECT r.*, s.title AS agent_title, s.trigger_kind AS agent_kind FROM schedule_runs r \
+             JOIN schedules s ON s.id = r.schedule_id WHERE r.started_at < ? ORDER BY r.started_at DESC, r.id DESC LIMIT ?",
+        )
+        .bind(before.map_or(i64::MAX, |t| t.timestamp_millis()))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter()
+            .map(|r| Ok(ActivityRow { run: schedule_run_from_row(r)?, agent_title: r.try_get("agent_title")?, trigger_kind: r.try_get("agent_kind")? }))
+            .collect()
     }
 
     /// Deleting a schedule takes its runs and the conversations they created with it.
@@ -1119,8 +1279,8 @@ impl Store {
     pub async fn insert_schedule_run(&self, new: &NewScheduleRun) -> Result<ScheduleRun> {
         let id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO schedule_runs (id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO schedule_runs (id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error, cause) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(new.schedule_id.to_string())
@@ -1130,6 +1290,7 @@ impl Store {
         .bind(now_ms())
         .bind(new.manual as i64)
         .bind(&new.error)
+        .bind(to_json(new.cause.as_ref())?)
         .execute(&self.pool)
         .await?;
         let row = sqlx::query("SELECT * FROM schedule_runs WHERE id = ?").bind(id.to_string()).fetch_one(&self.pool).await?;
@@ -1223,16 +1384,36 @@ mod tests {
                 time_of_day: "09:00",
                 timezone: "UTC",
                 next_run_at: to_dt(1_000),
+                trigger_kind: "time",
+                trigger: None,
+                hook_id: None,
+                hook_secret: None,
+                min_interval_secs: None,
+                max_runs_per_day: None,
             })
             .await
             .unwrap();
         assert!(s.enabled && s.last_run_at.is_none());
+        assert_eq!((s.trigger_kind.as_str(), s.trigger_rev, s.failures), ("time", 0, 0));
         assert_eq!(s.tools, Some(vec!["weather".to_string()]));
         assert_eq!(s.notify.as_deref(), Some("email"));
         let mut changed = s.clone();
         changed.notify = None;
-        store.update_schedule(&changed).await.unwrap();
+        store.update_schedule(&changed, false).await.unwrap();
         assert_eq!(store.get_schedule(s.id).await.unwrap().unwrap().notify, None);
+
+        // What a check saw is kept for the trigger it was seen for, and dropped with it.
+        let seen = serde_json::json!({ "last": "41.5" });
+        let polled = |rev| Polled { rev, state: Some(&seen), next_run_at: to_dt(2_000), checked_at: to_dt(1_500), error: Some("flaky"), failures: 2 };
+        assert!(store.mark_polled(s.id, &polled(0)).await.unwrap());
+        let after = store.get_schedule(s.id).await.unwrap().unwrap();
+        assert_eq!((after.state.clone(), after.last_error.as_deref(), after.failures), (Some(seen.clone()), Some("flaky"), 2));
+        assert_eq!(after.next_run_at, to_dt(2_000));
+        store.update_schedule(&after, true).await.unwrap();
+        let edited = store.get_schedule(s.id).await.unwrap().unwrap();
+        assert_eq!((edited.state.clone(), edited.last_error.clone(), edited.failures, edited.trigger_rev), (None, None, 0, 1));
+        assert!(!store.mark_polled(s.id, &polled(0)).await.unwrap(), "a check of the old trigger writes nothing");
+        assert_eq!(store.get_schedule(s.id).await.unwrap().unwrap().state, None);
         let plain = store.create_conversation(Some("Mine")).await.unwrap();
         let c = store.create_scheduled_conversation(s.id, "Daily digest · Mon").await.unwrap();
         assert_eq!(c.schedule_id, Some(s.id));
@@ -1246,9 +1427,15 @@ mod tests {
                 due_at: to_dt(1_000),
                 manual: false,
                 error: None,
+                cause: Some(serde_json::json!({ "kind": "clock", "summary": "on schedule" })),
             })
             .await
             .unwrap();
+        assert_eq!(run.cause.as_ref().unwrap()["kind"], "clock");
+        let feed = store.list_activity(None, 10).await.unwrap();
+        assert_eq!((feed.len(), feed[0].agent_title.as_str(), feed[0].trigger_kind.as_str()), (1, "Daily digest", "time"));
+        assert!(store.list_activity(Some(feed[0].run.started_at), 10).await.unwrap().is_empty());
+        assert_eq!(store.count_schedule_runs_since(s.id, to_dt(0)).await.unwrap(), 1);
         assert_eq!(run.turn_id, Some(t.id));
 
         let listed: Vec<Uuid> = store.list_conversations(10).await.unwrap().iter().map(|c| c.id).collect();

@@ -91,6 +91,105 @@ impl Lang {
     }
 }
 
+/// What started an agent's run, in a line: shown with the run, and told to the model (in
+/// English, with no locale). Names, subjects and values are the trigger's own data, cut short
+/// where they were read.
+pub fn event_summary(locale: Option<&str>, event: &crate::trigger::Event) -> String {
+    use crate::trigger::{Event, Op};
+    let lang = Lang::of(locale);
+    let text = match event {
+        Event::Clock => match lang {
+            Lang::En => "on schedule".to_string(),
+            Lang::De => "nach Zeitplan".to_string(),
+            Lang::Fr => "selon la planification".to_string(),
+            Lang::Es => "según lo programado".to_string(),
+        },
+        Event::Changed { from, to } => match lang {
+            Lang::En => format!("the watched value changed from {from:?} to {to:?}"),
+            Lang::De => format!("der beobachtete Wert hat sich von „{from}“ zu „{to}“ geändert"),
+            Lang::Fr => format!("la valeur surveillée est passée de « {from} » à « {to} »"),
+            Lang::Es => format!("el valor vigilado cambió de «{from}» a «{to}»"),
+        },
+        Event::Holds { value, op, target } => {
+            let sign = match op {
+                Op::Gt => ">",
+                Op::Lt => "<",
+                Op::Gte => "≥",
+                Op::Lte => "≤",
+                Op::Equals => "=",
+                Op::Contains | Op::Changes => "",
+            };
+            match (lang, op) {
+                (Lang::En, Op::Contains) => format!("the watched value contains {target:?}"),
+                (Lang::De, Op::Contains) => format!("der beobachtete Wert enthält „{target}“"),
+                (Lang::Fr, Op::Contains) => format!("la valeur surveillée contient « {target} »"),
+                (Lang::Es, Op::Contains) => format!("el valor vigilado contiene «{target}»"),
+                (Lang::En, _) => format!("the watched value is {value} ({sign} {target})"),
+                (Lang::De, _) => format!("der beobachtete Wert ist {value} ({sign} {target})"),
+                (Lang::Fr, _) => format!("la valeur surveillée est {value} ({sign} {target})"),
+                (Lang::Es, _) => format!("el valor vigilado es {value} ({sign} {target})"),
+            }
+        }
+        Event::Webhook { dropped: 0, .. } => match lang {
+            Lang::En => "a webhook was called".to_string(),
+            Lang::De => "ein Webhook wurde aufgerufen".to_string(),
+            Lang::Fr => "un webhook a été appelé".to_string(),
+            Lang::Es => "se llamó a un webhook".to_string(),
+        },
+        Event::Webhook { dropped, .. } => match lang {
+            Lang::En => format!("a webhook was called ({dropped} earlier calls arrived while the agent was busy and were dropped)"),
+            Lang::De => format!("ein Webhook wurde aufgerufen ({dropped} frühere Aufrufe kamen, während der Agent beschäftigt war, und wurden verworfen)"),
+            Lang::Fr => format!("un webhook a été appelé ({dropped} appels précédents, arrivés pendant que l'agent était occupé, ont été ignorés)"),
+            Lang::Es => format!("se llamó a un webhook ({dropped} llamadas anteriores llegaron mientras el agente estaba ocupado y se descartaron)"),
+        },
+        Event::Mail { count: 1, from, subject } => match lang {
+            Lang::En => format!("new mail from {from}: {subject}"),
+            Lang::De => format!("neue E-Mail von {from}: {subject}"),
+            Lang::Fr => format!("nouveau message de {from} : {subject}"),
+            Lang::Es => format!("nuevo correo de {from}: {subject}"),
+        },
+        Event::Mail { count, from, subject } => match lang {
+            Lang::En => format!("{count} new emails, the latest from {from}: {subject}"),
+            Lang::De => format!("{count} neue E-Mails, die neueste von {from}: {subject}"),
+            Lang::Fr => format!("{count} nouveaux messages, le dernier de {from} : {subject}"),
+            Lang::Es => format!("{count} correos nuevos, el último de {from}: {subject}"),
+        },
+        Event::Soon { title, minutes, count } => {
+            let more = count.saturating_sub(1);
+            let base = match lang {
+                Lang::En => format!("\"{title}\" starts in {minutes} min"),
+                Lang::De => format!("„{title}“ beginnt in {minutes} Min."),
+                Lang::Fr => format!("« {title} » commence dans {minutes} min"),
+                Lang::Es => format!("«{title}» empieza en {minutes} min"),
+            };
+            match (lang, more) {
+                (_, 0) => base,
+                (Lang::En, n) => format!("{base} (and {n} more)"),
+                (Lang::De, n) => format!("{base} (und {n} weitere)"),
+                (Lang::Fr, n) => format!("{base} (et {n} de plus)"),
+                (Lang::Es, n) => format!("{base} (y {n} más)"),
+            }
+        }
+        Event::NewEvent { title, count } => {
+            let more = count.saturating_sub(1);
+            let base = match lang {
+                Lang::En => format!("new calendar event: {title}"),
+                Lang::De => format!("neuer Kalendertermin: {title}"),
+                Lang::Fr => format!("nouvel événement dans l'agenda : {title}"),
+                Lang::Es => format!("nuevo evento en el calendario: {title}"),
+            };
+            match (lang, more) {
+                (_, 0) => base,
+                (Lang::En, n) => format!("{base} (and {n} more)"),
+                (Lang::De, n) => format!("{base} (und {n} weitere)"),
+                (Lang::Fr, n) => format!("{base} (et {n} de plus)"),
+                (Lang::Es, n) => format!("{base} (y {n} más)"),
+            }
+        }
+    };
+    Lang::swiss(locale, text)
+}
+
 /// How a finished turn ended, for its notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
@@ -126,13 +225,13 @@ pub fn turn_message(
         (Lang::Es, Outcome::Finished) => ("lista", "está lista"),
     };
     let kind = match (lang, scheduled) {
-        (Lang::En, true) => "A scheduled run",
+        (Lang::En, true) => "An agent's run",
         (Lang::En, false) => "A response",
-        (Lang::De, true) => "Ein geplanter Lauf",
+        (Lang::De, true) => "Ein Agentenlauf",
         (Lang::De, false) => "Eine Antwort",
-        (Lang::Fr, true) => "Une exécution planifiée",
+        (Lang::Fr, true) => "Une exécution d'agent",
         (Lang::Fr, false) => "Une réponse",
-        (Lang::Es, true) => "Una ejecución programada",
+        (Lang::Es, true) => "Una ejecución de agente",
         (Lang::Es, false) => "Una respuesta",
     };
     // How each language quotes the conversation's name.
@@ -209,7 +308,7 @@ mod tests {
             )
         );
         let (_, body) = turn_message(Some("de-CH"), Some("Straße"), Outcome::Finished, true, None, None);
-        assert_eq!(body, "Ein geplanter Lauf in „Strasse“ ist fertig.");
+        assert_eq!(body, "Ein Agentenlauf in „Strasse“ ist fertig.");
         assert_eq!(
             msg(Some("es-MX"), Outcome::Finished, None, Some("Listo.")),
             ("Reise: lista".into(), "Una respuesta en «Reise» está lista:\nListo.".into())
