@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.4
 
 - **The Docker step leads with *Set up Docker for me*.** When no Docker is found on a Mac or PC, the setup page put the button under two paragraphs and the *Check again* / *Get Docker Desktop* row, and people missed it. The button now sits directly under a one-line status, with what it does and Docker's license note below it; installing Docker yourself follows under a divider as the alternative.
 
