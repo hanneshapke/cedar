@@ -2,7 +2,7 @@
 
 A native SwiftUI client for [cedar-chat](../chat/README.md); [android/](../android/README.md) is the same client for Android. The app is a thin client: it talks
 to cedar-chat's `/api`, the same routes the web page uses, so your conversations, their unread
-state, scheduled agents, tool and model settings, and notifications are the same in the app and
+state, agents, tool and model settings, and notifications are the same in the app and
 in the browser. cedar's own API key never leaves the server.
 
 ```
@@ -41,14 +41,28 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Attach PDFs (any model) and photos or images (models registered as multimodal) to a
   message from the paperclip: the photo library or Files. Photos in a type cedar doesn't take,
   such as HEIC, are sent as JPEG; the limits are the server's (10 files, 20 MB each, 32 MB in all)
-- Starred conversations: star a chat or a scheduled run with the star in the chat's toolbar, a
+- Starred conversations: star a chat or an agent's run with the star in the chat's toolbar, a
   swipe or a long press, and find them under **Starred** in the sidebar's switch, most recently
   starred first. Stars are kept by cedar-chat, so they are the same here, on the web and in the
   desktop app
-- Scheduled agents: a **Chats | Starred | Scheduled** switch at the top of the sidebar lists each
-  schedule with its timing, next run and last result; tap one to open its last run as a
-  conversation, or its chevron to see all its runs and open any of them. **Run now**, **Pause** and **Resume** from a swipe or a long press, and
-  read the prompt; creating and editing schedules is done on the web
+- Agents, as on the web: a **Chats | Starred | Agents** switch at the top of the sidebar, and
+  under Agents an **Agents | Activity** switch. Agents lists every agent under what starts it
+  (on a schedule, when something changes, a webhook, mail and calendar) with its trigger in a
+  line, where it stands (next run, watching, waiting for calls, paused, check failing) and its
+  last result; **Run Now**, **Pause**/**Resume**, **Edit** and **Delete** from a swipe or a long
+  press. Activity lists the latest runs of all agents with what started each; tap one to open
+  its conversation
+- An agent's detail (tap it): its trigger, prompt and settings, its runs with what started each,
+  and for a webhook agent the address, the secret (shown once, when it is made or replaced,
+  with a copy button), **New Secret** and a `curl` example
+- Make and change agents in the app: **+** in the Agents list, or **Make Agent** in a finished
+  chat's toolbar (the server writes the prompt from the conversation). The form covers every
+  trigger: daily or weekly, once, every so often, monthly, a condition on a web address, a tool
+  or a record set (with **Try It** to check it once and find the path to a value), a webhook,
+  new mail, and calendar events; and the model, notification method, limits and tools of its
+  runs. A trigger from a newer server that the app doesn't know is shown as it is and left alone
+- A conversation that is an agent's run carries a badge with the agent's title; tap it for the
+  agent
 - Live notices: a response that ends in another conversation marks it unread at once
 - iPhone push notifications when a response ends while you are away (see below)
 - A model and reasoning level picked from what cedar has registered
@@ -106,7 +120,7 @@ even on a private tailnet.
 ## Push notifications
 
 Pushes come from cedar-chat, which already decides what is worth telling you about (Settings →
-Notifications in the web UI: failures, questions and scheduled runs, or every response that
+Notifications in the web UI: failures, questions and agents' runs, or every response that
 ends while nobody is watching). To get them on the phone:
 
 1. In your Apple developer account, under *Certificates, Identifiers & Profiles → Keys*, make a
@@ -117,7 +131,7 @@ ends while nobody is watching). To get them on the phone:
 2. In the web UI, Settings → **Notifications** → **iPhone push**: paste the key, the key id and
    the team id, check the bundle id, pick **Sandbox** for an app installed from Xcode or
    **Production** for TestFlight or the App Store, and save. Choose it as the default method or
-   for a scheduled agent.
+   for an agent.
 3. Open the app and allow notifications when asked (or tap **Allow Notifications** in its
    Settings). The phone registers itself with the server and appears in the web UI's list of
    iPhones, where it can be removed. Changing the server in the app moves the registration.
@@ -194,6 +208,14 @@ simulator, which the layout code's unit tests (`FoldLayoutTests`) cover for the 
   ordinary message in the same text form the web page sends.
 - Images are fetched from `GET /api/conversations/{id}/files/{path}` with the access token.
 - The device token goes to `POST /api/notifications/apns/devices`.
+- Agents are `GET /api/agents` (the list and the server's limits), `GET /api/agents/{id}` (one
+  with its runs), `POST`, `PATCH` and `DELETE` for making, changing (and pausing) and deleting,
+  `POST /api/agents/{id}/run`, `POST /api/agents/{id}/hook/rotate`, `POST /api/agents/test`
+  for Try It, and `GET /api/agents/activity` for the feed. The form's pickers read
+  `GET /api/tools`, `GET /api/records`, `GET /api/models` and `GET /api/notifications`, and
+  Make Agent calls `POST /api/conversations/{id}/compact`. A change leaves the trigger out
+  unless the form changed it (sending one makes the server forget what the old one had seen);
+  the device's time zone always goes along
 - Settings → Memory reads `GET /api/memory` and deletes with `DELETE /api/memory/{id}` and
   `DELETE /api/memory`. A server whose `GET /api/config` has no `memory` flag, or that answers
   `/api/memory` with 404, is older than memory, and the section is hidden or says so.
@@ -201,7 +223,7 @@ simulator, which the layout code's unit tests (`FoldLayoutTests`) cover for the 
   deletes with `DELETE /api/records/{name}` and `DELETE /api/records`; the `records` flag in
   `GET /api/config`, or a 404, hides the section or says the server is older than records.
 - Every message carries the interface language as `locale` (`de-CH`); a language picked in the
-  app also goes to `PUT /api/settings/locale` (`null` for Automatic), so scheduled runs and
+  app also goes to `PUT /api/settings/locale` (`null` for Automatic), so agents' runs and
   notifications follow it. Before a server is set up, it is sent once one is.
 
 ## Languages
@@ -305,7 +327,6 @@ source.
   time.
 - Document cards open on the web rather than being drawn in the app, as does a map, recipe,
   route or stock card whose result the app can't read.
-- Attachments (images and PDFs with a message), scheduled agents and the server's settings are
-  managed in the web UI.
+- The server's settings (tools, integrations, notification methods) are managed in the web UI.
 - iOS suspends network connections in the background. When you return to the app, running
   responses reconnect and catch up from the event log, and the list is refreshed.

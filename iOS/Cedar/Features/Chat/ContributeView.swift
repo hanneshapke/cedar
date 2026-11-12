@@ -220,7 +220,7 @@ struct ContributeView: View {
 
     private func blockedText(_ reason: String, _ p: ContributionPreview) -> String {
         switch reason {
-        case "scheduled": return L10n.string("A scheduled agent's conversation can't be contributed.")
+        case "scheduled": return L10n.string("An agent's run can't be contributed.")
         case "active": return L10n.string("Wait for the current response to finish, or stop it.")
         case "no_turns": return L10n.string("There is no finished response to contribute yet.")
         case "private_tools": return L10n.format("This conversation used %@, whose results are other people's data, so it can't be contributed.", p.privateTools.joined(separator: ", "))

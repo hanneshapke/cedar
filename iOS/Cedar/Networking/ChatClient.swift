@@ -34,6 +34,8 @@ struct ChatClient: Sendable {
     let session: URLSession
 
     static let requestTimeout: TimeInterval = 30
+    /// For the requests the server answers only after a model or a tool has run.
+    static let slowRequestTimeout: TimeInterval = 300
 
     init(baseURL: URL, accessToken: String, session: URLSession = .shared) {
         self.baseURL = baseURL
@@ -184,7 +186,7 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(conversationId)/seen", method: "POST"))
     }
 
-    /// Starred conversations, most recently starred first: chats and scheduled runs alike.
+    /// Starred conversations, most recently starred first: chats and agents' runs alike.
     func starred() async throws -> [Conversation] {
         let list: ConversationList = try await decode(makeRequest("api/starred"))
         return list.conversations
@@ -251,25 +253,78 @@ struct ChatClient: Sendable {
         enum CodingKeys: String, CodingKey { case rating }
     }
 
-    // MARK: Schedules
+    // MARK: Agents
 
-    func schedules() async throws -> [Schedule] {
-        let list: ScheduleList = try await decode(makeRequest("api/schedules"))
-        return list.schedules
+    /// Every agent, enabled first, with the server's limits and defaults.
+    func agents() async throws -> AgentList {
+        try await decode(makeRequest("api/agents"))
     }
 
-    func schedule(id: String) async throws -> ScheduleDetail {
-        try await decode(makeRequest("api/schedules/\(id)"))
+    /// One agent and its runs, newest first.
+    func agent(id: String) async throws -> AgentDetail {
+        try await decode(makeRequest("api/agents/\(id)"))
     }
 
-    /// Starts a run now, without moving the next scheduled one. 409 while the latest is going.
-    func runSchedule(id: String) async throws -> ScheduleRun {
-        try await decode(makeRequest("api/schedules/\(id)/run", method: "POST"))
+    /// 409 once there are as many agents as the server keeps. A webhook agent's answer carries
+    /// its secret, this once.
+    func createAgent(_ body: AgentBody) async throws -> Agent {
+        try await decode(makeRequest("api/agents", method: "POST", json: body))
     }
 
-    /// Pauses or resumes. Resuming skips the slots missed while paused.
-    func setSchedule(id: String, enabled: Bool) async throws -> Schedule {
-        try await decode(makeRequest("api/schedules/\(id)", method: "PATCH", json: ["enabled": enabled]))
+    /// Changes what `body` sets. `enabled` pauses or resumes; resuming skips what was missed
+    /// while paused.
+    func updateAgent(id: String, _ body: AgentBody) async throws -> Agent {
+        try await decode(makeRequest("api/agents/\(id)", method: "PATCH", json: body))
+    }
+
+    /// 409 while one of its runs is still going.
+    func deleteAgent(id: String) async throws {
+        _ = try await send(makeRequest("api/agents/\(id)", method: "DELETE"))
+    }
+
+    /// Starts a run now, without moving the next one. 409 while the latest is going.
+    func runAgent(id: String) async throws -> AgentRun {
+        try await decode(makeRequest("api/agents/\(id)/run", method: "POST"))
+    }
+
+    /// A new secret for a webhook agent; the old one stops working at once. The answer is the
+    /// only time the new one is shown.
+    func rotateHook(id: String) async throws -> Agent {
+        try await decode(makeRequest("api/agents/\(id)/hook/rotate", method: "POST"))
+    }
+
+    /// One check of a watching trigger, with nothing kept. A check calls a tool or a web
+    /// address, so it gets longer than other requests.
+    func testTrigger(_ trigger: Trigger) async throws -> TriggerTest {
+        var request = makeRequest("api/agents/test", method: "POST", json: TriggerTestBody(trigger: trigger))
+        request.timeoutInterval = Self.slowRequestTimeout
+        return try await decode(request)
+    }
+
+    /// The latest runs of every agent, newest first. `before` is the last page's `nextBefore`.
+    func activity(before: String? = nil, limit: Int? = nil) async throws -> ActivityPage {
+        var query: [URLQueryItem] = []
+        if let before { query.append(URLQueryItem(name: "before", value: before)) }
+        if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
+        return try await decode(makeRequest("api/agents/activity", query: query))
+    }
+
+    /// cedar's tools by group, for an agent's tools and a condition's tool source.
+    func tools() async throws -> ToolCatalog {
+        try await decode(makeRequest("api/tools"))
+    }
+
+    /// The default notification method and the ones that are set up.
+    func notificationStatus() async throws -> NotificationStatus {
+        try await decode(makeRequest("api/notifications"))
+    }
+
+    /// Has the model turn a finished conversation into one prompt, for making an agent from
+    /// it. 404 when it has no finished response yet. The model writes it, so it takes a while.
+    func compact(conversationId: String) async throws -> Compacted {
+        var request = makeRequest("api/conversations/\(conversationId)/compact", method: "POST")
+        request.timeoutInterval = Self.slowRequestTimeout
+        return try await decode(request)
     }
 
     // MARK: Messages and turns
@@ -370,7 +425,7 @@ struct ChatClient: Sendable {
         }
     }
 
-    /// Tells the server the interface language, for what it writes on its own: scheduled runs and
+    /// Tells the server the interface language, for what it writes on its own: agents' runs and
     /// notifications.
     func setLocale(_ tag: String?) async throws {
         _ = try await send(makeRequest("api/settings/locale", method: "PUT", json: LocaleSetting(locale: tag)))
@@ -398,6 +453,8 @@ struct ChatClient: Sendable {
         }
         if !query.isEmpty, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             components.queryItems = query
+            // A `+` (a timestamp's offset) would reach the server as a space.
+            components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
             url = components.url ?? url
         }
         var request = URLRequest(url: url, timeoutInterval: Self.requestTimeout)
