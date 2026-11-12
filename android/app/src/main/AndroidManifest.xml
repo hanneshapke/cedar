@@ -47,6 +47,37 @@
             </intent-filter>
         </activity>
 
+        <!-- Cedar in the share sheet: a text or a link another app shares is handed to an agent the
+             user picks. A screen of its own over the app that shared; nothing is sent before the pick. -->
+        <activity
+            android:name=".ShareActivity"
+            android:exported="true"
+            android:label="@string/share_target_label"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- Lets an automation app (Tasker) start an agent: a broadcast to this package with the
+             extras agent_id and, optionally, text. Any app on the phone can send it, so the receiver
+             refuses it unless the user turned on "Allow other apps to start agents" (off by
+             default), starts only agents made for the device, and gives nothing back but a word
+             on how it went. A permission would not help: the apps that are meant to send it could
+             not be granted one of ours. -->
+        <receiver
+            android:name=".AgentIntentReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="dev.cedar.action.RUN_AGENT" />
+            </intent-filter>
+        </receiver>
+
         <!-- The QR scanner, held upright like the rest of the app. -->
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"

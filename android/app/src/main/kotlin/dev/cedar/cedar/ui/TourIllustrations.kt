@@ -43,7 +43,8 @@ import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material.icons.outlined.Update
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -83,7 +84,7 @@ import kotlin.math.min
  * scaled to the room it gets.
  */
 enum class TourIllustration {
-    SERVER, WORK, CARDS, PLANS, SCHEDULES, MEMORY, CONNECT;
+    SERVER, WORK, CARDS, PLANS, AGENTS, MEMORY, CONNECT;
 
     /** [shown]: whether the elements are shown (they fade and rise in, one after another, when a page comes up). */
     @Composable
@@ -93,7 +94,7 @@ enum class TourIllustration {
             WORK -> WorkPicture(shown)
             CARDS -> CardsPicture(shown)
             PLANS -> PlansPicture(shown)
-            SCHEDULES -> SchedulesPicture(shown)
+            AGENTS -> AgentsPicture(shown)
             MEMORY -> MemoryPicture(shown)
             CONNECT -> ConnectPicture(shown)
         }
@@ -433,9 +434,9 @@ private fun Choice(text: String, on: Boolean) {
     }
 }
 
-/** Two scheduled agents in the sidebar, and the notification a finished run sends. */
+/** Three agents in the sidebar, each started by something else (the clock, a change, mail), and the notification a finished run sends. */
 @Composable
-private fun SchedulesPicture(shown: Boolean) {
+private fun AgentsPicture(shown: Boolean) {
     Stage {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Reveal(shown, 0) {
@@ -456,11 +457,11 @@ private fun SchedulesPicture(shown: Boolean) {
             }
             MiniCard(width = 280.dp, padding = 6.dp) {
                 Column {
-                    Reveal(shown, 1) { ScheduleMock(stringResource(R.string.tour_morning_briefing), stringResource(R.string.tour_daily_at_7), unread = true) }
+                    Reveal(shown, 1) { AgentMock(Icons.Outlined.Schedule, stringResource(R.string.tour_morning_briefing), stringResource(R.string.tour_daily_at_7), unread = true) }
                     HorizontalDivider(Modifier.padding(horizontal = 8.dp))
-                    Reveal(shown, 2) { ScheduleMock(stringResource(R.string.tour_competitor_scan), stringResource(R.string.tour_mondays), unread = false) }
+                    Reveal(shown, 2) { AgentMock(Icons.Outlined.Visibility, stringResource(R.string.tour_price_watch), stringResource(R.string.tour_when_price_drops), unread = false) }
                     HorizontalDivider(Modifier.padding(horizontal = 8.dp))
-                    Reveal(shown, 3) { ScheduleMock(stringResource(R.string.tour_inbox_summary), stringResource(R.string.tour_every_evening), unread = false) }
+                    Reveal(shown, 3) { AgentMock(Icons.Outlined.Email, stringResource(R.string.tour_invoices), stringResource(R.string.tour_when_mail_arrives), unread = false) }
                 }
             }
         }
@@ -468,14 +469,14 @@ private fun SchedulesPicture(shown: Boolean) {
 }
 
 @Composable
-private fun ScheduleMock(title: String, cadence: String, unread: Boolean) {
+private fun AgentMock(icon: ImageVector, title: String, trigger: String, unread: Boolean) {
     Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(green.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Outlined.Update, null, Modifier.size(16.dp), tint = green)
+            Icon(icon, null, Modifier.size(16.dp), tint = green)
         }
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 12.sp, fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(cadence, fontSize = 10.sp, color = CedarColors.secondaryText)
+            Text(trigger, fontSize = 10.sp, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (unread) UnreadDot(true, size = 8)
     }

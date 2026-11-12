@@ -93,6 +93,10 @@ impl Tool for CalendarTool {
         &self.name
     }
 
+    fn pollable(&self) -> bool {
+        matches!(self.op, "list_calendars" | "list_events" | "search_events")
+    }
+
     fn description(&self) -> &str {
         match self.op {
             "list_calendars" => {
@@ -526,6 +530,8 @@ fn render_event(e: &Value, full: bool) -> Value {
         "myResponse": me.map(|a| a["responseStatus"].clone()),
         "meetingLink": meeting,
         "description": description,
+        "created": e["created"],
+        "updated": e["updated"],
     });
     if full {
         out["attendees"] = json!(attendees

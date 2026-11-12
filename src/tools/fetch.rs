@@ -120,6 +120,12 @@ impl WebClient {
     }
 }
 
+impl Fetched {
+    pub(crate) fn truncated(&self) -> bool {
+        self.truncated
+    }
+}
+
 pub(crate) struct Fetched {
     /// After redirects.
     pub(crate) final_url: String,
@@ -378,7 +384,7 @@ fn media_type(content_type: &str) -> &str {
     content_type.split(';').next().unwrap_or_default().trim()
 }
 
-pub(super) fn html_to_text(html: &[u8]) -> Result<String> {
+pub(crate) fn html_to_text(html: &[u8]) -> Result<String> {
     let text = html2text::config::plain()
         .no_link_wrapping()
         .allow_width_overflow()

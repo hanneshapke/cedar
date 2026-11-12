@@ -18,4 +18,12 @@
     <string name="notifications_off_footnote">Las notificaciones de Cedar están desactivadas en los Ajustes del sistema. Actívalas ahí para saber cuándo hay una respuesta lista.</string>
     <string name="tour_connect_text">Escanea el código QR de la página Configuración → Móvil del chat, de la app de escritorio de Cedar o del script de la pila, o escribe la dirección y el token. Esa es toda la configuración.</string>
     <string name="viewer_other_app_text">La app muestra por sí misma imágenes, PDF y Markdown. Otra app de este móvil abre este archivo.</string>
+    <string name="notify_method_pushover">Push al móvil con Pushover</string>
+    <string name="agent_tools_footnote_events">La selección prudente deja fuera tus herramientas propias y las que escriben en tu cuenta de Google. Añádelas solo si confías en todo lo que este agente va a leer.</string>
+    <string name="trigger_device">Cuando tu móvil lo pide</string>
+    <string name="device_title">Desde este móvil</string>
+    <string name="allow_automation_footnote">Desactivado hasta que lo actives. Cuando está activado, cualquier app de este móvil que conozca el ID de un agente puede iniciar ese agente y entregarle un texto, pero solo los agentes con el activador «Desde tu móvil». Ninguna app recibe de Cedar nada más que si el agente se inició.</string>
+    <string name="automation_not_device">Cedar: las otras apps solo pueden iniciar agentes con el activador «Desde tu móvil», y «%1$s» tiene otro.</string>
+    <string name="share_no_agents_text">Crea un agente en Cedar o reanuda uno que esté en pausa. Uno con el activador «Desde tu móvil» está hecho para lo que compartes.</string>
+    <string name="trigger_kind_device">Desde tu móvil</string>
 </resources>

@@ -29,7 +29,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.OpenInBrowser
-import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Star
@@ -82,7 +82,7 @@ import dev.cedar.core.searchRanges
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** The list: a search field over Chats | Starred | Scheduled, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
+/** The list: a search field over Chats | Starred | Agents, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(app: AppModel) {
@@ -108,7 +108,7 @@ fun ConversationListScreen(app: AppModel) {
             SidebarMode.CHATS -> {}
             // Stars set on the web or the desktop app since the last refresh.
             SidebarMode.STARRED -> app.refresh()
-            SidebarMode.SCHEDULED -> app.refreshSchedules()
+            SidebarMode.AGENTS -> app.refreshAgents()
         }
     }
 
@@ -148,10 +148,16 @@ fun ConversationListScreen(app: AppModel) {
             )
             // A search looks through all three lists, so the switch steps aside for it.
             if (!app.isSearching) {
-                SidebarSwitch(
-                    mode = app.sidebarMode,
-                    scheduledUnread = app.scheduledUnread,
+                SegmentedSwitch(
+                    options = listOf(
+                        SidebarMode.CHATS to stringResource(R.string.tab_chats),
+                        SidebarMode.STARRED to stringResource(R.string.tab_starred),
+                        SidebarMode.AGENTS to stringResource(R.string.tab_agents),
+                    ),
+                    selected = app.sidebarMode,
                     onSelect = { app.sidebarMode = it },
+                    // How many agents' runs wait to be read.
+                    count = { if (it == SidebarMode.AGENTS) app.agentsUnread else 0 },
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
                 )
             }
@@ -166,7 +172,7 @@ fun ConversationListScreen(app: AppModel) {
                     when (app.sidebarMode) {
                         SidebarMode.CHATS -> ChatRows(app, onAction = ::act, onRename = { renaming = it })
                         SidebarMode.STARRED -> StarredRows(app, onAction = ::act)
-                        SidebarMode.SCHEDULED -> ScheduleRows(app, onAction = ::act)
+                        SidebarMode.AGENTS -> AgentRows(app, onAction = ::act)
                     }
                 }
             }
@@ -250,7 +256,7 @@ private fun ChatRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit, onRe
     }
 }
 
-/** Chats and scheduled runs together, most recently starred first. */
+/** Chats and agents' runs together, most recently starred first. */
 @Composable
 private fun StarredRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
     val context = LocalContext.current
@@ -431,7 +437,7 @@ private fun ConversationRow(
     MenuRow(selected, onClick, menu) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             RowIcon(
-                if (conversation.scheduleId != null) Icons.Outlined.Schedule else Icons.AutoMirrored.Outlined.Chat,
+                if (conversation.scheduleId != null) Icons.Outlined.SmartToy else Icons.AutoMirrored.Outlined.Chat,
                 tint = if (conversation.needsAnswer) CedarColors.clay else MaterialTheme.colorScheme.primary,
                 running = running,
             )
@@ -464,9 +470,10 @@ private fun ConversationRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (conversation.scheduleId != null) {
-                            Icon(Icons.Outlined.Schedule, null, Modifier.size(12.dp), tint = CedarColors.secondaryText)
+                            // An agent's run: say whose.
+                            Icon(Icons.Outlined.SmartToy, null, Modifier.size(12.dp), tint = CedarColors.secondaryText)
                             Text(
-                                conversation.scheduleTitle ?: stringResource(R.string.tab_scheduled),
+                                conversation.scheduleTitle ?: stringResource(R.string.agent),
                                 style = small, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false),
                             )
@@ -542,9 +549,15 @@ private fun RenameDialog(initial: String, onDismiss: () -> Unit, onSave: (String
     )
 }
 
-/** The list's Chats | Starred | Scheduled switch: a pill with the picked one raised. */
+/** A switch between a few choices (the list's Chats | Starred | Agents): a pill with the picked one raised, and a count where there is one. */
 @Composable
-private fun SidebarSwitch(mode: SidebarMode, scheduledUnread: Int, onSelect: (SidebarMode) -> Unit, modifier: Modifier = Modifier) {
+fun <T> SegmentedSwitch(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    count: (T) -> Int = { 0 },
+) {
     Row(
         modifier
             .clip(RoundedCornerShape(50))
@@ -553,39 +566,36 @@ private fun SidebarSwitch(mode: SidebarMode, scheduledUnread: Int, onSelect: (Si
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        listOf(
-            SidebarMode.CHATS to R.string.tab_chats,
-            SidebarMode.STARRED to R.string.tab_starred,
-            SidebarMode.SCHEDULED to R.string.tab_scheduled,
-        ).forEach { (value, label) ->
-            val selected = mode == value
+        options.forEach { (value, label) ->
+            val picked = selected == value
             val fill by animateColorAsState(
-                if (selected) MaterialTheme.colorScheme.surfaceContainer else androidx.compose.ui.graphics.Color.Transparent,
+                if (picked) MaterialTheme.colorScheme.surfaceContainer else androidx.compose.ui.graphics.Color.Transparent,
                 label = "segment",
             )
             Row(
                 Modifier
                     .weight(1f)
-                    .then(if (selected) Modifier.shadow(2.dp, RoundedCornerShape(50)) else Modifier)
+                    .then(if (picked) Modifier.shadow(2.dp, RoundedCornerShape(50)) else Modifier)
                     .clip(RoundedCornerShape(50))
                     .background(fill)
-                    .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(value) })
+                    .selectable(selected = picked, role = Role.Tab, onClick = { onSelect(value) })
                     .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    stringResource(label),
+                    label,
                     style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = if (selected) MaterialTheme.colorScheme.onSurface else CedarColors.secondaryText,
+                    fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (picked) MaterialTheme.colorScheme.onSurface else CedarColors.secondaryText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (value == SidebarMode.SCHEDULED && scheduledUnread > 0) {
+                val waiting = count(value)
+                if (waiting > 0) {
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        "$scheduledUnread",
+                        "$waiting",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSecondary,

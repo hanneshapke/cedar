@@ -9,4 +9,15 @@
     <string name="trip_take_walk">Geh zu Fuss: %1$s</string>
     <string name="walk_to">Zu Fuss nach %1$s</string>
     <string name="walk_minutes">%1$d Min. zu Fuss</string>
+    <string name="agent_tools_footnote">Lass das so, ausser der Agent braucht mehr oder soll weniger dürfen.</string>
+    <string name="op_gt">Grösser ist als</string>
+    <string name="trigger_device">Wenn dein Handy ihn anstösst</string>
+    <string name="memory_delete_all_everything">Cedar vergisst alles, was es über dich weiss, Profil und Archiv eingeschlossen. Das lässt sich nicht rückgängig machen.</string>
+    <string name="records_footnote">Cedar kennt von jedem Satz Name, Grösse und Spalten, nie die Zeilen, bis es sie nachschlägt. Tippe auf einen Satz, um seine Zeilen zu sehen; halte ihn gedrückt, um ihn zu löschen. Datensätze bleiben auf deinem eigenen Server und werden nie an Dritte weitergegeben. Unter Einstellungen → Werkzeuge in der Weboberfläche lassen sie sich ausschalten.</string>
+    <string name="contribute_default_reasoning">Überlegungen des Modells standardmässig mitschicken</string>
+    <string name="contribute_default_fetched">Geladene Seiten standardmässig mitschicken</string>
+    <string name="weather_code_53">Mässiger Nieselregen</string>
+    <string name="weather_code_63">Mässiger Regen</string>
+    <string name="weather_code_73">Mässiger Schneefall</string>
+    <string name="weather_code_81">Mässige Regenschauer</string>
 </resources>

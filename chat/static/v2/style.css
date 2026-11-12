@@ -117,15 +117,15 @@ a { color: var(--accent); }
 #stop { color: var(--error); border-color: var(--error-line); }
 #stop svg { fill: currentColor; stroke: none; }
 
-/* One row in three zones: who (the brand at home, the conversation's title, star and schedule
+/* One row in three zones: who (the brand at home, the conversation's title, star and agent
    chip elsewhere), how the run is going, and what you can do (borderless icons, a More menu for
    the rest, and New, the only labelled button). The menu opens with /more-menu.js. */
 .title-wrap { flex: 1 1 0; min-width: 0; align-items: center; gap: 4px; }
 .title { min-width: 0; max-width: none; margin-left: 0; font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
 .title-input { flex: 1; width: auto; max-width: 520px; font-weight: 600; font-size: 15px; }
-.top .cedar-sched-badge { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 22px; padding: 0 9px; margin-left: 4px; border: 0; background: var(--accent-wash); color: var(--accent); font-size: 12px; }
-.top .cedar-sched-badge[hidden] { display: none; }
-.top .cedar-sched-badge svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.top .cedar-ag-badge { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 22px; padding: 0 9px; margin-left: 4px; border: 0; background: var(--accent-wash); color: var(--accent); font-size: 12px; }
+.top .cedar-ag-badge[hidden] { display: none; }
+.top .cedar-ag-badge svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .top .ghost.icon { width: 34px; height: 34px; border-color: transparent; background: none; color: var(--ink-2); }
 .top .ghost.icon svg { width: 18px; height: 18px; }
 .top .ghost.icon:hover, .top .ghost.icon[aria-expanded="true"] { background: var(--wash); color: var(--ink); }
@@ -143,7 +143,7 @@ a { color: var(--accent); }
 .menu-item.danger, .menu-item.danger svg { color: var(--error); stroke: var(--error); }
 .menu-details { margin: 6px 0; padding: 8px 10px; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); }
 .menu-details:empty { display: none; }
-@media (max-width: 900px) { .top .cedar-sched-badge { width: 22px; padding: 0; justify-content: center; } .top .cedar-sched-badge .lbl { display: none; } }
+@media (max-width: 900px) { .top .cedar-ag-badge { width: 22px; padding: 0; justify-content: center; } .top .cedar-ag-badge .lbl { display: none; } }
 .app:not(.empty) .brand { display: none; }
 .status { margin-left: 0; flex-shrink: 0; }
 

@@ -8,11 +8,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.cedar.cedar.ui.Attachments
 import dev.cedar.cedar.ui.attachmentProblem
+import dev.cedar.core.AgentRef
 import dev.cedar.core.Approval
 import dev.cedar.core.AttachmentInfo
 import dev.cedar.core.ChatClient
 import dev.cedar.core.ChatException
 import dev.cedar.core.ClarifyAnswer
+import dev.cedar.core.FollowUpSuggestion
+import dev.cedar.core.Followup
+import dev.cedar.core.FollowupChoice
 import dev.cedar.core.Notice
 import dev.cedar.core.OutgoingAttachment
 import dev.cedar.core.Plan
@@ -27,6 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.TimeZone
 import java.util.UUID
 import kotlin.math.min
 import kotlin.math.pow
@@ -39,6 +44,20 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         private set
     var turns by mutableStateOf<List<TurnTranscript>>(emptyList())
         private set
+
+    /** The agent whose run this conversation is, once the server said. */
+    var agent by mutableStateOf<AgentRef?>(null)
+        private set
+
+    /**
+     * What was decided about the follow-ups the turns suggested, by turn and tool call
+     * ([followup]); a suggestion without an entry is still open.
+     */
+    private var followups by mutableStateOf<Map<String, Followup>>(emptyMap())
+
+    /** The suggestions a decision is on its way for, and why the last one for each failed. */
+    private var decidingFollowups by mutableStateOf<Set<String>>(emptySet())
+    private var followupErrors by mutableStateOf<Map<String, String>>(emptyMap())
 
     /** The message being sent, shown until the server accepts it, and the files that went with it. */
     var pendingPrompt by mutableStateOf<String?>(null)
@@ -98,6 +117,8 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         try {
             val detail = client.conversation(id)
             app.remember(detail.conversation)
+            agent = detail.agent
+            followups = detail.followups.associateBy { followupKey(it.turnId, it.callId) }
             sync(detail.turns)
             errorMessage = null
         } catch (e: CancellationException) {
@@ -328,6 +349,53 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
             }
         }
     }
+
+    // Follow-ups
+
+    private fun followupKey(turnId: String, callId: String): String = "$turnId/$callId"
+
+    /** What was decided about the follow-up a turn's tool call suggested; `null` while it is open. */
+    fun followup(turnId: String, callId: String): Followup? = followups[followupKey(turnId, callId)]
+
+    fun isDecidingFollowup(turnId: String, callId: String): Boolean = followupKey(turnId, callId) in decidingFollowups
+
+    /** Why the last decision about it didn't go through, in the server's words. */
+    fun followupError(turnId: String, callId: String): String? = followupErrors[followupKey(turnId, callId)]
+
+    /**
+     * Sets a suggested follow-up up (a one-off agent, at its time in this device's zone) or
+     * dismisses it. The first decision stands, so the answer may be one made on another device.
+     */
+    fun decideFollowup(turnId: String, callId: String, suggestion: FollowUpSuggestion, accept: Boolean) {
+        val client = client ?: return
+        val key = followupKey(turnId, callId)
+        if (key in decidingFollowups || key in followups) return
+        decidingFollowups = decidingFollowups + key
+        followupErrors = followupErrors - key
+        val choice = if (accept) {
+            FollowupChoice.Accept(suggestion.title, suggestion.prompt, suggestion.atText, TimeZone.getDefault().id)
+        } else {
+            FollowupChoice.Dismiss
+        }
+        app.scope.launch {
+            try {
+                val decided = client.decideFollowup(turnId, callId, choice)
+                followups = followups + (key to decided.followup)
+                // The agent it became is in the list from now on, and can be opened from the card.
+                decided.agent?.let { app.put(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The server's own words: the time has passed, there are too many agents.
+                followupErrors = followupErrors + (key to app.describe(e))
+            } finally {
+                decidingFollowups = decidingFollowups - key
+            }
+        }
+    }
+
+    /** Opens the agent a follow-up became. */
+    fun openAgent(id: String) = app.openAgent(id)
 
     // Plans and approvals
 

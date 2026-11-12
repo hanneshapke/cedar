@@ -404,7 +404,7 @@ struct SettingsView: View {
         } header: {
             Text("App")
         } footer: {
-            Text("Applies at once. Automatic follows this device's language. Scheduled runs and notifications use the language too.")
+            Text("Applies at once. Automatic follows this device's language. Agents' runs and notifications use the language too.")
         }
     }
 

@@ -18,7 +18,7 @@ const els = {
   app: $('app'), title: $('title'), titleInput: $('title-input'), when: $('when'), status: $('status'), statusText: $('status-text'),
   stop: $('stop'), newChat: $('new-chat'), deleteChat: $('delete-chat'),
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
-  scheduleBtn: $('schedule-btn'), scheduleBadge: $('schedule-badge'), inboxBtn: $('inbox-btn'),
+  agentBtn: $('agent-btn'), agentBadge: $('agent-badge'), inboxBtn: $('inbox-btn'),
   chatsBtn: $('chats-btn'), drawer: $('drawer'), drawerClose: $('drawer-close'), backdrop: $('backdrop'), recents: $('recents'),
   outline: $('outline'), outlineWrap: $('outline-wrap'), cost: $('cost'), examples: $('examples'), greeting: $('greeting'), hero: $('hero'), slip: document.querySelector('.slip'),
   scroll: $('scroll'), briefs: $('briefs'),
@@ -1107,6 +1107,14 @@ function applyEvent(view, event) {
           placeNote(view, n, event.created_at);
           view.stepsEl = null;
         }
+        // A suggested follow-up is a card with the buttons that decide about it.
+        const followUp = tool.name === 'suggest_follow_up' && !tool.is_error && cedarFollowUp.parse(tool.output);
+        if (followUp) {
+          // In the Result, not the Work: the Work folds away once the turn is done, and this
+          // waits for a decision.
+          view.resultBody.append(cedarFollowUp.element(followUp, { turnId: view.turn.id, callId: tool.id }));
+          view.blocks.result.hidden = false;
+        }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
         // A chart drawn as a card isn't shown again.
         if (!tool.is_error && !(tool.name === 'generate_chart' && cedarChart.parse(tool.output, tool.input))) {
@@ -1198,7 +1206,7 @@ function finishTurn(view, event) {
 
 // -- chrome ------------------------------------------------------------------------------------
 
-/** Whether the open conversation has a finished response to schedule. */
+/** Whether the open conversation has a finished response to make an agent from. */
 function hasCompletedTurn() {
   for (const view of state.views.values()) {
     if (view.lastEvent === 'run.completed' || (!view.lastEvent && view.turn.status === 'completed')) return true;
@@ -1215,9 +1223,9 @@ function updateChrome() {
   els.deleteChat.hidden = !c;
   document.getElementById('rename-item').hidden = !c;
   els.filesBtn.hidden = !c;
-  els.scheduleBadge.hidden = !c?.schedule_id;
+  cedarAgents.badge(els.agentBadge, c, c?.agent);
   cedarStar.setCurrent(c);
-  els.scheduleBtn.hidden = !c || busy || state.sending || !hasCompletedTurn();
+  els.agentBtn.hidden = !c || busy || state.sending || !hasCompletedTurn();
   els.stop.hidden = !busy;
   els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString(cedarI18n.locale, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
   els.status.className = 'status' + (busy ? ' live' : latest?.lastEvent === 'run.failed' ? ' error' : '');
@@ -1335,6 +1343,10 @@ async function openConversation(id) {
   }
   if (token !== state.loadToken) return;
   state.current = detail.conversation;
+  // The agent whose run this is, if it is one: the badge in the header links to it.
+  state.current.agent = detail.agent;
+  // What was already decided about the follow-ups suggested in it: their cards say so.
+  cedarFollowUp.known(detail.followups);
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   restorePickers(detail.conversation);
@@ -1383,6 +1395,8 @@ document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   closeDrawer();
+  // The Agents page has the hash to itself (agents.js); everything else is a conversation.
+  if (cedarAgents.route()) return;
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
   if (m) { if (state.current?.id !== m[1]) openConversation(m[1]); } else showNewChat();
 }
@@ -1592,7 +1606,7 @@ els.stop.addEventListener('click', stopActive);
 els.newChat.addEventListener('click', () => { location.hash = '#/'; if (!state.current) els.input.focus(); });
 els.deleteChat.addEventListener('click', () => state.current && deleteConversation(state.current));
 els.filesBtn.addEventListener('click', openFiles);
-els.scheduleBtn.addEventListener('click', () => state.current && cedarSchedule.openCreate(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
+els.agentBtn.addEventListener('click', () => state.current && cedarAgents.newFrom(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
 els.chatsBtn.addEventListener('click', () => (els.drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
@@ -1631,7 +1645,8 @@ async function init() {
   await cedarLanguage.ready; // a new browser is asked for its language before anything else
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
-  cedarSchedule.init({ api, toast, renderMarkdown });
+  cedarAgents.init({ api, toast, renderMarkdown });
+  cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: closeDrawer });
   cedarSearch.init({ api, onOpen: closeDrawer, reveal: openDrawer });
   cedarSettings.init({
@@ -1652,12 +1667,12 @@ async function init() {
   });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast(tr('v4.unreachable')); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
-  cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: loadConversations });
+  cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: () => { loadConversations(); cedarAgents.refresh(); } });
   cedarPairing.init({ api, toast });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
-  cedarSchedule.start();
+  cedarAgents.start();
   cedarStar.start();
   await loadConversations();
   route();

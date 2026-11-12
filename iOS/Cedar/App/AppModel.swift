@@ -2,14 +2,19 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// What the sidebar lists: the conversations, the starred ones (chats and scheduled runs), or
-/// the scheduled agents and their runs.
+/// What the sidebar lists: the conversations, the starred ones (chats and agents' runs), or the
+/// agents and what they did.
 enum SidebarMode: Hashable {
-    case chats, starred, scheduled
+    case chats, starred, agents
 }
 
-/// App-wide state: settings, the conversation list, the starred conversations, the scheduled
-/// agents, the inbox count, and the open chats.
+/// What the sidebar's Agents list shows: the agents, or the latest runs of all of them.
+enum AgentsTab: Hashable {
+    case agents, activity
+}
+
+/// App-wide state: settings, the conversation list, the starred conversations, the agents, the
+/// inbox count, and the open chats.
 @MainActor
 @Observable
 final class AppModel {
@@ -21,24 +26,39 @@ final class AppModel {
     private(set) var isRefreshing = false
     var listError: String?
     var sidebarMode: SidebarMode = .chats
-    private(set) var schedules: [Schedule] = []
-    /// Each expanded schedule's runs, newest first, once loaded.
-    private(set) var scheduleRuns: [String: [ScheduleRun]] = [:]
-    var expandedSchedules: Set<String> = []
-    /// The schedules with a finished run nobody has looked at, and how many runs that is.
-    private(set) var unreadSchedules: Set<String> = []
-    private(set) var scheduledUnread = 0
-    private(set) var schedulesLoaded = false
-    var scheduleError: String?
-    /// Starred conversations, most recently starred first, chats and scheduled runs alike. Stars
+    var agentsTab: AgentsTab = .agents
+    /// The agents, enabled first, as the server lists them.
+    private(set) var agents: [Agent] = []
+    /// The server's limits and the defaults an agent gets when it sets none.
+    private(set) var agentLimits = AgentList.Limits()
+    /// An agent's runs, newest first, once its detail loaded them.
+    private(set) var agentRuns: [String: [AgentRun]] = [:]
+    /// The agents with a finished run nobody has looked at, and how many runs that is.
+    private(set) var unreadAgents: Set<String> = []
+    private(set) var agentsUnread = 0
+    private(set) var agentsLoaded = false
+    var agentError: String?
+    /// A webhook agent's secret, which the server tells once: when the agent is made or the
+    /// secret replaced. Kept until the agent's detail has shown it.
+    private(set) var agentSecrets: [String: String] = [:]
+    /// The latest runs of every agent, newest first, as far as they are loaded; `activityNext`
+    /// asks for the page after them.
+    private(set) var activity: [ActivityItem] = []
+    private(set) var activityNext: String?
+    private(set) var activityLoaded = false
+    private(set) var isLoadingActivity = false
+    var activityError: String?
+    /// The agent each conversation that is a run belongs to, as its chat loaded it.
+    private(set) var conversationAgents: [String: AgentRef] = [:]
+    /// Starred conversations, most recently starred first, chats and agents' runs alike. Stars
     /// are kept by the server, so they are the same on the web, the desktop app and here.
     private(set) var starred: [Conversation] = []
     private(set) var starredLoaded = false
     var starredError: String?
     /// What the list's search field holds. While it holds something, the list shows what the
-    /// server found for it instead of Chats, Starred or Scheduled.
+    /// server found for it instead of Chats, Starred or Agents.
     var searchText = ""
-    /// The conversations found for `searchQuery`, chats and scheduled runs alike, most recently
+    /// The conversations found for `searchQuery`, chats and agents' runs alike, most recently
     /// active first; `nil` until the first answer.
     private(set) var searchResults: [Conversation]?
     var searchError: String?
@@ -74,7 +94,7 @@ final class AppModel {
     private(set) var contributionSettings: ContributionSettings?
     private(set) var contributions: [Contribution] = []
     var contributionsError: String?
-    /// Conversations the list leaves out (a schedule's runs), as their chats loaded them.
+    /// Conversations the list leaves out (an agent's runs), as their chats loaded them.
     private var otherConversations: [String: Conversation] = [:]
     /// The selected conversation id, or a draft chat's key.
     var selection: String?
@@ -122,12 +142,20 @@ final class AppModel {
             searchError = nil
             starred = []
             starredLoaded = false
-            schedules = []
-            scheduleRuns = [:]
-            expandedSchedules = []
-            unreadSchedules = []
-            scheduledUnread = 0
-            schedulesLoaded = false
+            agents = []
+            agentLimits = AgentList.Limits()
+            agentRuns = [:]
+            unreadAgents = []
+            agentsUnread = 0
+            agentsLoaded = false
+            agentError = nil
+            agentSecrets = [:]
+            agentsTab = .agents
+            activity = []
+            activityNext = nil
+            activityLoaded = false
+            activityError = nil
+            conversationAgents = [:]
             models = []
             modelsLoaded = false
             serverHasMemory = false
@@ -186,7 +214,7 @@ final class AppModel {
         set { UserDefaults.standard.set(newValue, forKey: "localePending") }
     }
 
-    /// Sends the picked language to the server (`PUT /api/settings/locale`), for its scheduled runs
+    /// Sends the picked language to the server (`PUT /api/settings/locale`), for its agents' runs
     /// and notifications. Not fatal when it fails: it is sent again on the next launch or change of
     /// server, and messages carry the language anyway.
     private func syncLocale() {
@@ -394,7 +422,7 @@ final class AppModel {
         } catch {
             listError = error.localizedDescription
         }
-        if sidebarMode == .scheduled { await refreshSchedules() }
+        if sidebarMode == .agents { await refreshAgentsList() }
         if isSearching { await search() }
     }
 
@@ -426,9 +454,9 @@ final class AppModel {
 
     private func take(_ inbox: Inbox) {
         inboxUnread = inbox.unread
-        let scheduled = inbox.items.compactMap(\.scheduleId)
-        scheduledUnread = scheduled.count
-        unreadSchedules = Set(scheduled)
+        let runs = inbox.items.compactMap(\.scheduleId)
+        agentsUnread = runs.count
+        unreadAgents = Set(runs)
     }
 
     func conversation(id: String) -> Conversation? {
@@ -437,21 +465,31 @@ final class AppModel {
     }
 
     /// A chat loaded its conversation. One the list leaves out is kept here, so its title shows
-    /// and opening it marks it seen.
-    func remember(_ conversation: Conversation) {
+    /// and opening it marks it seen; `agent` is the agent whose run it is.
+    func remember(_ conversation: Conversation, agent: AgentRef? = nil) {
+        if let agent, conversationAgents[conversation.id] != agent {
+            conversationAgents[conversation.id] = agent
+        }
         guard !conversations.contains(where: { $0.id == conversation.id }) else { return }
         let isNew = otherConversations[conversation.id] == nil
         otherConversations[conversation.id] = conversation
         guard selection == conversation.id else { return }
-        if isNew, let scheduleId = conversation.scheduleId, sidebarMode != .starred, !isSearching,
-           sidebarMode != .scheduled || !expandedSchedules.contains(scheduleId) {
+        if isNew, conversation.scheduleId != nil, sidebarMode == .chats, !isSearching {
             // Opened from a push, say: show where it belongs. One opened from Starred or from a
             // search stays there.
-            sidebarMode = .scheduled
-            expandedSchedules.insert(scheduleId)
-            Task { await refreshSchedules() }
+            sidebarMode = .agents
+            Task { await refreshAgentsList() }
         }
         if isActive { markSeen(conversationId: conversation.id) }
+    }
+
+    /// The agent whose run a conversation is, for the badge in its chat: as the server named
+    /// it, or from what the lists know on a server that doesn't.
+    func agent(ofConversation id: String) -> AgentRef? {
+        if let known = conversationAgents[id] { return known }
+        guard let conversation = conversation(id: id), let agentId = conversation.scheduleId else { return nil }
+        let title = agents.first { $0.id == agentId }?.title ?? conversation.scheduleTitle ?? L10n.string("Agent")
+        return AgentRef(id: agentId, title: title)
     }
 
     func title(for conversation: Conversation) -> String {
@@ -474,7 +512,7 @@ final class AppModel {
         return conversation(id: conversationId)?.isStarred ?? false
     }
 
-    /// Stars or unstars a conversation (a chat or a scheduled run) for every device. The lists
+    /// Stars or unstars a conversation (a chat or an agent's run) for every device. The lists
     /// change at once and go back if the server refuses.
     func setStarred(conversationId: String, _ on: Bool) async throws {
         guard let client else { throw ChatError.notConfigured }
@@ -488,7 +526,7 @@ final class AppModel {
         do {
             let updated = try await client.setStarred(conversationId: conversationId, starred: on)
             replace(updated)
-            // For the schedule's title, and anything starred elsewhere in the meantime.
+            // For the agent's title, and anything starred elsewhere in the meantime.
             if let fresh = try? await client.starred() { starred = fresh }
         } catch {
             starred = before
@@ -519,8 +557,9 @@ final class AppModel {
             if let updated = try? await client.markSeen(conversationId: conversationId) {
                 replace(updated)
                 if let inbox = try? await client.inbox() { take(inbox) }
-                if let scheduleId = updated.scheduleId, scheduleRuns[scheduleId] != nil {
-                    await loadRuns(scheduleId: scheduleId)
+                if let agentId = updated.scheduleId {
+                    if agentRuns[agentId] != nil { await loadAgent(id: agentId) }
+                    if sidebarMode == .agents { await refreshAgentsList() }
                 }
             }
         }
@@ -533,7 +572,7 @@ final class AppModel {
             otherConversations[conversation.id] = conversation
         }
         if let index = starred.firstIndex(where: { $0.id == conversation.id }) {
-            // The list's copy carries the schedule's title, which other responses don't.
+            // The list's copy carries the agent's title, which other responses don't.
             var updated = conversation
             updated.scheduleTitle = updated.scheduleTitle ?? starred[index].scheduleTitle
             starred[index] = updated
@@ -547,70 +586,172 @@ final class AppModel {
         }
     }
 
-    // MARK: Schedules
+    // MARK: Agents
 
-    /// Reads the schedules, and the runs of the ones that are expanded.
-    func refreshSchedules() async {
+    /// Reads what the sidebar's Agents list shows: the agents, and the activity when that is up.
+    func refreshAgentsList() async {
+        await refreshAgents()
+        if agentsTab == .activity { await refreshActivity() }
+    }
+
+    func refreshAgents() async {
         guard let client else { return }
         do {
-            schedules = try await client.schedules()
-            schedulesLoaded = true
-            scheduleError = nil
+            let list = try await client.agents()
+            agents = list.agents
+            agentLimits = list.limits
+            agentsLoaded = true
+            agentError = nil
         } catch is CancellationError {
             return
         } catch let error as URLError where error.code == .cancelled {
             return
+        } catch let error as ChatError where error.status == 404 {
+            agentError = L10n.string("This server is from before agents. Update cedar-chat to use them.")
+            return
         } catch {
-            scheduleError = error.localizedDescription
+            agentError = error.localizedDescription
             return
         }
-        let ids = Set(schedules.map(\.id))
-        scheduleRuns = scheduleRuns.filter { ids.contains($0.key) }
-        expandedSchedules.formIntersection(ids)
-        for id in expandedSchedules {
-            await loadRuns(scheduleId: id)
+        let ids = Set(agents.map(\.id))
+        agentRuns = agentRuns.filter { ids.contains($0.key) }
+        agentSecrets = agentSecrets.filter { ids.contains($0.key) }
+    }
+
+    /// Reads one agent and its runs, for its detail.
+    func loadAgent(id: String) async {
+        guard let client else { return }
+        do {
+            let detail = try await client.agent(id: id)
+            agentRuns[id] = detail.runs
+            take(detail.agent)
+        } catch let error as ChatError where error.status == 404 {
+            agents.removeAll { $0.id == id }
+            agentRuns.removeValue(forKey: id)
+            agentSecrets.removeValue(forKey: id)
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            agentError = error.localizedDescription
         }
     }
 
-    func loadRuns(scheduleId: String) async {
-        guard let client else { return }
-        do {
-            let detail = try await client.schedule(id: scheduleId)
-            scheduleRuns[scheduleId] = detail.runs
-            if let index = schedules.firstIndex(where: { $0.id == scheduleId }) {
-                var schedule = detail.schedule
-                schedule.lastRun = detail.runs.first
-                schedules[index] = schedule
-            }
-        } catch let error as ChatError where error.status == 404 {
-            schedules.removeAll { $0.id == scheduleId }
-            scheduleRuns.removeValue(forKey: scheduleId)
-            expandedSchedules.remove(scheduleId)
-        } catch is CancellationError {
-        } catch let error as URLError where error.code == .cancelled {
-        } catch {
-            scheduleError = error.localizedDescription
+    /// An agent as the server just answered it: it replaces the list's copy (or joins the
+    /// list), and a secret that came with it is kept for its detail to show.
+    private func take(_ agent: Agent) {
+        if let secret = agent.hook?.secret, !secret.isEmpty {
+            agentSecrets[agent.id] = secret
         }
+        if let index = agents.firstIndex(where: { $0.id == agent.id }) {
+            agents[index] = agent
+        } else {
+            agents.append(agent)
+        }
+    }
+
+    /// An agent made outside the form (a follow-up that was set up in a chat) joins the list.
+    func agentWasMade(_ agent: Agent) {
+        take(agent)
+    }
+
+    /// The agent's detail has shown the secret; it isn't kept any longer.
+    func forgetSecret(agentId: String) {
+        agentSecrets.removeValue(forKey: agentId)
     }
 
     /// Starts a run now and opens it, so it streams in.
-    func runNow(_ schedule: Schedule) async throws {
+    func runNow(_ agent: Agent) async throws {
         guard let client else { throw ChatError.notConfigured }
-        let run = try await client.runSchedule(id: schedule.id)
-        expandedSchedules.insert(schedule.id)
-        await loadRuns(scheduleId: schedule.id)
+        let run = try await client.runAgent(id: agent.id)
+        await loadAgent(id: agent.id)
+        if agentsTab == .activity { await refreshActivity() }
         if let conversationId = run.conversationId {
             selection = conversationId
             compactColumn = .detail
         }
     }
 
-    func setEnabled(_ schedule: Schedule, _ enabled: Bool) async throws {
+    func setEnabled(_ agent: Agent, _ enabled: Bool) async throws {
         guard let client else { throw ChatError.notConfigured }
-        var updated = try await client.setSchedule(id: schedule.id, enabled: enabled)
-        if let index = schedules.firstIndex(where: { $0.id == schedule.id }) {
-            updated.lastRun = schedules[index].lastRun
-            schedules[index] = updated
+        take(try await client.updateAgent(id: agent.id, AgentBody(enabled: enabled)))
+    }
+
+    @discardableResult
+    func createAgent(_ body: AgentBody) async throws -> Agent {
+        guard let client else { throw ChatError.notConfigured }
+        let agent = try await client.createAgent(body)
+        take(agent)
+        agentsLoaded = true
+        return agent
+    }
+
+    @discardableResult
+    func updateAgent(id: String, _ body: AgentBody) async throws -> Agent {
+        guard let client else { throw ChatError.notConfigured }
+        let agent = try await client.updateAgent(id: id, body)
+        take(agent)
+        return agent
+    }
+
+    /// Deletes the agent. The server refuses while one of its runs is still going.
+    func deleteAgent(_ agent: Agent) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        do {
+            try await client.deleteAgent(id: agent.id)
+        } catch let error as ChatError where error.status == 404 {
+            // Already gone (another device).
+        }
+        agents.removeAll { $0.id == agent.id }
+        agentRuns.removeValue(forKey: agent.id)
+        agentSecrets.removeValue(forKey: agent.id)
+        activity.removeAll { $0.run.scheduleId == agent.id }
+    }
+
+    /// Replaces a webhook agent's secret; the old one stops working at once.
+    func rotateHook(_ agent: Agent) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        take(try await client.rotateHook(id: agent.id))
+    }
+
+    /// Tries a watching trigger out once, with nothing kept.
+    func testTrigger(_ trigger: Trigger) async throws -> TriggerTest {
+        guard let client else { throw ChatError.notConfigured }
+        return try await client.testTrigger(trigger)
+    }
+
+    /// Reads the newest page of the activity feed.
+    func refreshActivity() async {
+        guard let client else { return }
+        do {
+            let page = try await client.activity()
+            activity = page.items
+            activityNext = page.nextBefore
+            activityLoaded = true
+            activityError = nil
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch let error as ChatError where error.status == 404 {
+            activityError = L10n.string("This server is from before agents. Update cedar-chat to use them.")
+        } catch {
+            activityError = error.localizedDescription
+        }
+    }
+
+    /// Reads the page after the runs already loaded.
+    func loadMoreActivity() async {
+        guard let client, let before = activityNext, !isLoadingActivity else { return }
+        isLoadingActivity = true
+        defer { isLoadingActivity = false }
+        do {
+            let page = try await client.activity(before: before)
+            let known = Set(activity.map(\.id))
+            activity.append(contentsOf: page.items.filter { !known.contains($0.id) })
+            activityNext = page.nextBefore
+            activityError = nil
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            activityError = error.localizedDescription
         }
     }
 

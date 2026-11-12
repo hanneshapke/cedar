@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
-import java.util.TimeZone
 
 // The shapes cedar-chat's `/api` returns (see chat/README.md, "API"), as iOS/Cedar/Models/API.swift
 // has them. Field names are the server's, in snake_case; dates are RFC 3339.
@@ -314,13 +313,14 @@ data class Conversation(
     val title: String? = null,
     val model: String? = null,
     val reasoning: String? = null,
+    /** The agent whose run this is (the server's name for it is from when agents were schedules). */
     @SerialName("schedule_id") val scheduleId: String? = null,
     val tools: List<String>? = null,
     val unread: Boolean = false,
     @SerialName("needs_answer") val needsAnswer: Boolean = false,
     /** When it was starred, on any device; `null` when it isn't. */
     @SerialName("starred_at") val starredAt: Instant? = null,
-    /** The schedule a scheduled run belongs to; only the Starred list and a search send it. */
+    /** The title of the agent a run belongs to; only the Starred list and a search send it. */
     @SerialName("schedule_title") val scheduleTitle: String? = null,
     /** The passage of a message a search matched; only search results carry it. */
     val snippet: String? = null,
@@ -348,8 +348,17 @@ fun searchRanges(text: String, query: String): List<IntRange> =
 @Serializable
 data class ConversationList(val conversations: List<Conversation> = emptyList())
 
+/**
+ * `GET /api/conversations/{id}`; `agent` is there when the conversation is an agent's run, and
+ * `followups` holds what was decided about the follow-ups its turns suggested.
+ */
 @Serializable
-data class ConversationDetail(val conversation: Conversation, val turns: List<Turn> = emptyList())
+data class ConversationDetail(
+    val conversation: Conversation,
+    val turns: List<Turn> = emptyList(),
+    val agent: AgentRef? = null,
+    val followups: List<Followup> = emptyList(),
+)
 
 @Serializable
 enum class TurnStatus {
@@ -408,91 +417,6 @@ data class InboxItem(
 
 @Serializable
 data class Inbox(val items: List<InboxItem> = emptyList(), val unread: Int = 0)
-
-/**
- * A scheduled agent (`GET /api/schedules`): a prompt the server starts as a fresh run whenever it is
- * due, each run in a conversation of its own that the conversation list leaves out.
- */
-@Serializable
-data class Schedule(
-    val id: String,
-    val title: String,
-    val prompt: String = "",
-    val model: String? = null,
-    val reasoning: String? = null,
-    /** `daily`, `weekdays` or `weekly`. */
-    val frequency: String,
-    /** 0–6, Monday–Sunday; weekly only. */
-    val weekday: Int? = null,
-    /** `HH:MM` in `timezone`. */
-    @SerialName("time_of_day") val timeOfDay: String,
-    val timezone: String,
-    val enabled: Boolean = true,
-    @SerialName("next_run_at") val nextRunAt: Instant,
-    @SerialName("last_run_at") val lastRunAt: Instant? = null,
-    /** Only in the list; a schedule as `PATCH` returns it has none. */
-    @SerialName("last_run") val lastRun: ScheduleRun? = null,
-) {
-    /** "Weekdays at 07:30", with the schedule's time zone when it isn't this device's. */
-    fun cadence(deviceZone: String = TimeZone.getDefault().id): String {
-        val names = listOf("Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays")
-        val whenText = when (frequency) {
-            "daily" -> "Daily"
-            "weekdays" -> "Weekdays"
-            "weekly" -> weekday?.let { names.getOrNull(it) } ?: "Weekly"
-            else -> frequency.replaceFirstChar { it.uppercase() }
-        }
-        val zone = zoneLabel(deviceZone)?.let { " ($it)" } ?: ""
-        return "$whenText at $timeOfDay$zone"
-    }
-
-    /** The schedule's time zone, when it isn't this device's. */
-    fun zoneLabel(deviceZone: String = TimeZone.getDefault().id): String? = timezone.takeIf { it != deviceZone }
-}
-
-/**
- * One time a schedule fired, with the turn that carries its run, or the `error` that kept it from
- * starting.
- */
-@Serializable
-data class ScheduleRun(
-    val id: String,
-    @SerialName("schedule_id") val scheduleId: String,
-    @SerialName("conversation_id") val conversationId: String? = null,
-    @SerialName("turn_id") val turnId: String? = null,
-    @SerialName("due_at") val dueAt: Instant,
-    @SerialName("started_at") val startedAt: Instant,
-    /** Started with Run now rather than on schedule. */
-    val manual: Boolean = false,
-    val error: String? = null,
-    val turn: Turn? = null,
-) {
-    enum class Outcome { QUEUED, RUNNING, COMPLETED, NEEDS_ANSWER, FAILED, CANCELLED, NOT_STARTED }
-
-    val outcome: Outcome
-        get() {
-            val turn = turn ?: return Outcome.NOT_STARTED
-            return when (turn.status) {
-                TurnStatus.QUEUED -> Outcome.QUEUED
-                TurnStatus.RUNNING -> Outcome.RUNNING
-                TurnStatus.COMPLETED -> if (turn.needsAnswer) Outcome.NEEDS_ANSWER else Outcome.COMPLETED
-                TurnStatus.FAILED -> Outcome.FAILED
-                TurnStatus.CANCELLED -> Outcome.CANCELLED
-            }
-        }
-
-    val isActive: Boolean get() = turn?.isActive ?: false
-
-    /** A finished response in it nobody has looked at. */
-    val unread: Boolean get() = turn?.let { !it.isActive && !it.seen } ?: false
-}
-
-@Serializable
-data class ScheduleList(val schedules: List<Schedule> = emptyList())
-
-/** `GET /api/schedules/{id}`: the schedule and its runs, newest first. */
-@Serializable
-data class ScheduleDetail(val schedule: Schedule, val runs: List<ScheduleRun> = emptyList())
 
 /** A `turn.finished` notice from `GET /api/events`: a response ended somewhere. */
 @Serializable

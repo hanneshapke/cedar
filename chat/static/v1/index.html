@@ -14,13 +14,14 @@
   <link rel="stylesheet" href="/recipe-view.css">
   <link rel="stylesheet" href="/weather-view.css">
   <link rel="stylesheet" href="/clarify-view.css">
+  <link rel="stylesheet" href="/followup-view.css">
   <link rel="stylesheet" href="/transit-view.css">
   <link rel="stylesheet" href="/stock-view.css">
   <link rel="stylesheet" href="/flight-view.css">
   <link rel="stylesheet" href="/chart-view.css">
   <link rel="stylesheet" href="/product-view.css">
   <link rel="stylesheet" href="/image-view.css">
-  <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/agents.css">
   <link rel="stylesheet" href="/star.css">
   <link rel="stylesheet" href="/search.css">
   <link rel="stylesheet" href="/notify.css">
@@ -55,10 +56,7 @@
       </div>
       <div class="section-label" data-search-hides data-i18n="v1.recents">Recents</div>
       <nav class="conv-list" id="conv-list" data-search-hides></nav>
-      <div class="cedar-sched-side" id="schedules-section" data-schedules data-search-hides hidden>
-        <div class="cedar-sched-side-head"><span class="section-label" data-i18n="v1.scheduledAgents">Scheduled agents</span><span class="cedar-sched-count"></span></div>
-        <nav class="cedar-sched-links" aria-label="Scheduled agents" data-i18n-attr="aria-label:v1.scheduledAgents"></nav>
-      </div>
+      <a class="cedar-ag-nav" id="agents-nav" href="#/agents" data-agents-nav data-search-hides><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="cedar-ag-nav-name" data-i18n="agents.title">Agents</span><span class="cedar-ag-dot" hidden></span><span class="cedar-ag-count"></span></a>
     </aside>
     <div class="backdrop" id="backdrop"></div>
 
@@ -70,11 +68,11 @@
         <div class="title-wrap">
           <button class="title" id="title" type="button" title="Rename" data-i18n-attr="title:v1.rename"></button>
           <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title" data-i18n-attr="aria-label:v1.conversationTitle">
-          <span class="cedar-sched-badge" id="schedule-badge" hidden data-i18n="v1.scheduledRun">Scheduled run</span>
+          <a class="cedar-ag-badge" id="agent-badge" href="#/agents" hidden><span class="lbl" data-i18n="agents.badge">Agent run</span></a>
         </div>
         <button class="icon-btn" id="star-btn" type="button" data-star-toggle hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9l-5.3 2.7 1-5.8-4.2-4.1 5.9-.9z"/></svg></button>
-        <button class="icon-btn" id="schedule-btn" type="button" aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly" data-i18n-attr="aria-label:v1.schedule.label; title:v1.schedule.title" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <button class="icon-btn" id="agent-btn" type="button" hidden aria-label="Make an agent from this chat" title="Make an agent: run this conversation's task on its own, on a schedule or when something happens" data-i18n-attr="aria-label:agents.make.label; title:agents.make.title">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg>
         </button>
         <button class="icon-btn" id="files-btn" type="button" aria-label="Workspace files" title="Workspace files" data-i18n-attr="aria-label:v1.files.title; title:v1.files.title" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
@@ -199,6 +197,7 @@
   <script src="/i18n/common.js"></script>
   <script src="/i18n/settings.js"></script>
   <script src="/i18n/cards.js"></script>
+  <script src="/i18n/agents.js"></script>
   <script src="/i18n/v1.js"></script>
   <script>cedarI18n.apply(document);</script>
   <script src="/ui-pref.js"></script>
@@ -215,13 +214,14 @@
   <script src="/recipe-view.js"></script>
   <script src="/weather-view.js"></script>
   <script src="/clarify-view.js"></script>
+  <script src="/followup-view.js"></script>
   <script src="/transit-view.js"></script>
   <script src="/stock-view.js"></script>
   <script src="/flight-view.js"></script>
   <script src="/chart-view.js"></script>
   <script src="/product-view.js"></script>
   <script src="/models.js"></script>
-  <script src="/schedule.js"></script>
+  <script src="/agents.js"></script>
   <script src="/more-menu.js"></script>
   <script src="/star.js"></script>
   <script src="/search.js"></script>

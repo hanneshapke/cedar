@@ -8,6 +8,8 @@ struct TurnView: View {
     /// The conversation in the web UI, for what the app doesn't draw itself.
     let webURL: URL?
     let isLast: Bool
+    /// Opens the agent a follow-up was set up as: its id, and a title to show until it is loaded.
+    var openAgent: (String, String) -> Void = { _, _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -47,6 +49,16 @@ struct TurnView: View {
                 let documents = turn.documents
                 if !documents.isEmpty {
                     DocumentsView(paths: documents, conversationId: conversationId, client: client)
+                }
+            }
+            // What the model suggested for later (`suggest_follow_up`): nothing is scheduled
+            // until one is set up here.
+            ForEach(turn.followUps) { call in
+                if let followUp = call.followUp {
+                    FollowUpCard(followUp: followUp,
+                                 decision: chat.followUpDecision(for: call, in: turn),
+                                 decide: { accept in try await chat.decideFollowUp(call, in: turn, accept: accept) },
+                                 openAgent: { agentId in openAgent(agentId, followUp.title) })
                 }
             }
             StatusFooter(turn: turn)
@@ -424,6 +436,7 @@ struct ToolCallView: View {
         case "search_products": return "bag"
         case "search_flights": return "airplane"
         case "ask_user": return "questionmark.bubble"
+        case FollowUp.tool: return "calendar.badge.plus"
         case "remember", "forget", "recall": return "bookmark"
         case "browser": return "safari"
         default: return "wrench.and.screwdriver"

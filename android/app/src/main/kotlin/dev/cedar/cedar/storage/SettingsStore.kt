@@ -63,6 +63,16 @@ class SettingsStore(context: Context) {
             prefs.edit().putBoolean(LOCALE_PENDING, value).apply()
         }
 
+    /**
+     * Whether other apps on this phone may start agents (the `RUN_AGENT` intent). Off until the
+     * user turns it on.
+     */
+    var allowAutomation: Boolean
+        get() = prefs.getBoolean(ALLOW_AUTOMATION, false)
+        set(value) {
+            prefs.edit().putBoolean(ALLOW_AUTOMATION, value).apply()
+        }
+
     /** Small values the push registrars keep: the token they last sent, and where to. */
     fun string(key: String): String? = prefs.getString(key, null)
 
@@ -79,6 +89,7 @@ class SettingsStore(context: Context) {
         const val LANGUAGE = "language"
         const val TOUR_SEEN = "tourSeen"
         const val LOCALE_PENDING = "localePending"
+        const val ALLOW_AUTOMATION = "allowAutomation"
     }
 }
 

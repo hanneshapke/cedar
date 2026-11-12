@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -32,9 +33,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Cancel
@@ -44,8 +47,10 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -58,6 +63,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -80,9 +86,12 @@ import androidx.compose.ui.unit.dp
 import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.ChatModel
 import dev.cedar.cedar.R
+import dev.cedar.core.AgentRef
 import dev.cedar.core.AttachmentInfo
 import dev.cedar.core.OutgoingAttachment
+import dev.cedar.core.TurnStatus
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -95,6 +104,9 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
     var starError by remember { mutableStateOf<String?>(null) }
     var showingFiles by remember { mutableStateOf(false) }
     var showingContribute by remember { mutableStateOf(false) }
+    var showingMore by remember { mutableStateOf(false) }
+    var makingAgent by remember { mutableStateOf<Job?>(null) }
+    var agentError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(chat) { chat.start() }
@@ -107,6 +119,11 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
         ?: newChat
     val webURL = conversationId?.let { id -> app.client?.webURL(id) }
     val openQuestions = chat.openQuestions
+    // The agent this conversation is a run of: the server's word, or what the list knew of it.
+    val conversation = conversationId?.let { app.conversation(it) }
+    val agent = chat.agent ?: conversation?.let { c -> c.scheduleId?.let { id -> AgentRef(id, c.scheduleTitle ?: app.agent(id)?.title.orEmpty()) } }
+    // A finished chat can become an agent; an agent's own run can't.
+    val canMakeAgent = conversationId != null && agent == null && !chat.isActive && chat.turns.any { it.turn.status == TurnStatus.COMPLETED }
 
     // Keep the newest content in view as it arrives.
     val signature = listOf(chat.turns.size, chat.turns.lastOrNull()?.lastSeq ?: 0, if (chat.pendingPrompt == null) 0 else 1, if (openQuestions == null) 0 else 1)
@@ -149,15 +166,51 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
                     if (conversationId != null && chat.client != null) {
                         IconButton(onClick = { showingFiles = true }) { Icon(Icons.Outlined.Folder, stringResource(R.string.files)) }
                     }
-                    if (webURL != null) {
-                        IconButton(onClick = { openUrl(context, webURL) }) { Icon(Icons.Outlined.OpenInBrowser, stringResource(R.string.open_on_the_web)) }
+                    if (webURL != null || canMakeAgent) {
+                        Box {
+                            IconButton(onClick = { showingMore = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
+                            DropdownMenu(expanded = showingMore, onDismissRequest = { showingMore = false }) {
+                                if (canMakeAgent) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.make_agent)) },
+                                        leadingIcon = { Icon(Icons.Outlined.SmartToy, null) },
+                                        onClick = {
+                                            showingMore = false
+                                            // The server writes one prompt out of the conversation; the form opens with it.
+                                            makingAgent = scope.launch {
+                                                try {
+                                                    app.makeAgent(conversationId)
+                                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                                    throw e
+                                                } catch (e: Exception) {
+                                                    agentError = context.describe(e)
+                                                } finally {
+                                                    makingAgent = null
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
+                                if (webURL != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.open_on_the_web)) },
+                                        leadingIcon = { Icon(Icons.Outlined.OpenInBrowser, null) },
+                                        onClick = {
+                                            showingMore = false
+                                            openUrl(context, webURL)
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                 },
             )
         },
         bottomBar = { Composer(chat) },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.padding(padding).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (agent != null) AgentBadge(agent.title) { app.openAgent(agent.id) }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.widthIn(max = 820.dp).fillMaxSize(),
@@ -195,12 +248,53 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
         }
     }
     ErrorDialog(stringResource(R.string.could_not_change_star), starError) { starError = null }
+    ErrorDialog(stringResource(R.string.could_not_do_that), agentError) { agentError = null }
+    makingAgent?.let { job ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.make_agent)) },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Text(stringResource(R.string.make_agent_working))
+                }
+            },
+            confirmButton = { TextButton(onClick = { job.cancel() }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
     val client = chat.client
     if (showingContribute && conversationId != null) {
         ContributeDialog(app, conversationId) { showingContribute = false }
     }
     if (showingFiles && conversationId != null && client != null) {
         WorkspaceFilesDialog(client, conversationId) { showingFiles = false }
+    }
+}
+
+/** Over an agent's run: whose it is. A tap opens the agent. */
+@Composable
+private fun AgentBadge(title: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .padding(top = 4.dp, bottom = 2.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+            .clickable(onClickLabel = stringResource(R.string.open_agent), onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(Icons.Outlined.SmartToy, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(
+            title.ifBlank { stringResource(R.string.agent) },
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 260.dp),
+        )
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
     }
 }
 

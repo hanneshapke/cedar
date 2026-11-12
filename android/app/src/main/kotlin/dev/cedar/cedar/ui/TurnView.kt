@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
+import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.BackHand
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.RadioButtonChecked
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ShoppingBag
@@ -61,6 +63,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -87,6 +90,8 @@ import dev.cedar.cedar.ui.cards.ChartCardView
 import dev.cedar.core.Approval
 import dev.cedar.core.ChartCard
 import dev.cedar.core.ClarifyAnswer
+import dev.cedar.core.FollowUpSuggestion
+import dev.cedar.core.Followup
 import dev.cedar.core.Plan
 import dev.cedar.core.Questions
 import dev.cedar.core.ToolCall
@@ -100,6 +105,7 @@ import dev.cedar.core.price
 import dev.cedar.core.str
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
+import java.time.Instant
 
 /** A message and everything the agent did to answer it (iOS/Cedar/Features/Chat/TurnView.swift). */
 @Composable
@@ -123,6 +129,17 @@ fun TurnView(turn: TurnTranscript, chat: ChatModel, webURL: String?, isLast: Boo
         }
         val final = turn.turn.finalText
         if (turn.items.isEmpty() && !final.isNullOrEmpty()) MarkdownView(final)
+        // What the agent suggested to do later: nothing is scheduled until the user says so.
+        for ((callId, suggestion) in turn.followUps) {
+            FollowUpView(
+                suggestion,
+                decision = chat.followup(turn.id, callId),
+                deciding = chat.isDecidingFollowup(turn.id, callId),
+                error = chat.followupError(turn.id, callId),
+                onDecide = { accept -> chat.decideFollowup(turn.id, callId, suggestion, accept) },
+                onOpenAgent = chat::openAgent,
+            )
+        }
         val conversationId = chat.conversationId
         val client = chat.client
         if (!turn.isActive && conversationId != null && client != null) {
@@ -341,6 +358,77 @@ private fun ApprovalView(approval: Approval, canDecide: Boolean, decide: (String
     }
 }
 
+/**
+ * A follow-up the agent suggested (`suggest_follow_up`): what and when, in this device's time, the
+ * prompt folded, and Set Up or Dismiss. Once decided, here or on another device, it says which:
+ * set up, with a way to the agent it became while that exists, or dismissed. One whose time has
+ * passed can only be dismissed.
+ */
+@Composable
+private fun FollowUpView(
+    suggestion: FollowUpSuggestion,
+    decision: Followup?,
+    deciding: Boolean,
+    error: String?,
+    onDecide: (accept: Boolean) -> Unit,
+    onOpenAgent: (String) -> Unit,
+) {
+    var expanded by rememberSaveable(suggestion.atText, suggestion.title) { mutableStateOf(false) }
+    val small = MaterialTheme.typography.bodySmall
+    val secondary = CedarColors.secondaryText
+    Panel {
+        PanelTitle(Icons.Outlined.Alarm, stringResource(R.string.followup_title))
+        Text(suggestion.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Schedule, null, Modifier.size(16.dp), tint = secondary)
+            Spacer(Modifier.width(6.dp))
+            Text(shortDateTime(suggestion.at), style = MaterialTheme.typography.bodyMedium)
+        }
+        Column(Modifier.animateContentSize()) {
+            Row(Modifier.clickable { expanded = !expanded }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.followup_prompt), style = small, color = secondary)
+                Icon(Icons.Outlined.ExpandMore, stringResource(if (expanded) R.string.show_less else R.string.show_more), Modifier.size(16.dp).rotate(if (expanded) 180f else 0f), tint = secondary)
+            }
+            if (expanded) {
+                SelectionContainer { Text(suggestion.prompt, style = small, modifier = Modifier.padding(top = 4.dp)) }
+            }
+        }
+        when {
+            decision?.isAccepted == true -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CheckCircle, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.followup_is_set_up), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                // The agent it became, unless that was deleted since.
+                decision.agentId?.let { id ->
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { onOpenAgent(id) }) { Text(stringResource(R.string.open_agent)) }
+                }
+            }
+            decision != null -> Text(
+                // A status from a newer server, in its own word.
+                if (decision.isDismissed) stringResource(R.string.followup_dismissed) else decision.status,
+                style = small, color = secondary,
+            )
+            else -> {
+                val past = suggestion.isPast(Instant.now())
+                Text(stringResource(if (past) R.string.followup_past else R.string.followup_footnote), style = small, color = secondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (!past) Button(onClick = { onDecide(true) }, enabled = !deciding) { Text(stringResource(R.string.followup_set_up)) }
+                    OutlinedButton(onClick = { onDecide(false) }, enabled = !deciding) { Text(stringResource(R.string.followup_dismiss)) }
+                    if (deciding) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+                error?.let {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Outlined.WarningAmber, null, Modifier.size(16.dp), tint = CedarColors.red)
+                        Spacer(Modifier.width(6.dp))
+                        SelectionContainer { Text(it, style = small, color = CedarColors.red) }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** The clarifying questions the agent asked, as a form whose answer is the next message. */
 @Composable
 fun QuestionsView(questions: Questions, submit: (List<ClarifyAnswer.Answer>) -> Unit) {
@@ -521,6 +609,7 @@ private fun toolIcon(name: String): ImageVector = when (name) {
     "search_flights" -> Icons.Outlined.Flight
     "ask_user" -> Icons.AutoMirrored.Outlined.HelpOutline
     "remember", "forget", "recall" -> Icons.Outlined.BookmarkBorder
+    FollowUpSuggestion.TOOL -> Icons.Outlined.Alarm
     else -> Icons.Outlined.Build
 }
 

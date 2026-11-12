@@ -70,6 +70,10 @@ impl Tool for GmailTool {
         &self.name
     }
 
+    fn pollable(&self) -> bool {
+        self.op == "search_threads"
+    }
+
     fn description(&self) -> &str {
         match self.op {
             "search_threads" => {

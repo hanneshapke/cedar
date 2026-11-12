@@ -17,13 +17,14 @@
   <link rel="stylesheet" href="/recipe-view.css">
   <link rel="stylesheet" href="/weather-view.css">
   <link rel="stylesheet" href="/clarify-view.css">
+  <link rel="stylesheet" href="/followup-view.css">
   <link rel="stylesheet" href="/transit-view.css">
   <link rel="stylesheet" href="/stock-view.css">
   <link rel="stylesheet" href="/flight-view.css">
   <link rel="stylesheet" href="/chart-view.css">
   <link rel="stylesheet" href="/product-view.css">
   <link rel="stylesheet" href="/image-view.css">
-  <link rel="stylesheet" href="/schedule.css">
+  <link rel="stylesheet" href="/agents.css">
   <link rel="stylesheet" href="/star.css">
   <link rel="stylesheet" href="/search.css">
   <link rel="stylesheet" href="/notify.css">
@@ -54,10 +55,7 @@
       </div>
       <div class="label side-label" data-search-hides data-i18n="v4.conversations">Conversations</div>
       <nav class="recents" id="recents" data-search-hides></nav>
-      <div class="cedar-sched-side" id="schedules-section" data-schedules data-search-hides hidden>
-        <div class="cedar-sched-side-head"><span class="label" data-i18n="v4.scheduledAgents">Scheduled agents</span><span class="cedar-sched-count"></span></div>
-        <nav class="cedar-sched-links" aria-label="Scheduled agents" data-i18n-attr="aria-label:v4.scheduledAgents"></nav>
-      </div>
+      <a class="cedar-ag-nav" id="agents-nav" href="#/agents" data-agents-nav data-search-hides><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="cedar-ag-nav-name" data-i18n="agents.title">Agents</span><span class="cedar-ag-dot" hidden></span><span class="cedar-ag-count"></span></a>
       <div class="outline-wrap" id="outline-wrap" data-search-hides hidden>
         <div class="label side-label" data-i18n="v4.inThisBrief">In this brief</div>
         <nav class="outline" id="outline" aria-label="Sections of the open brief" data-i18n-attr="aria-label:v4.outlineLabel"></nav>
@@ -77,7 +75,7 @@
           <button class="title" id="title" type="button" title="Rename" data-i18n-attr="title:v4.rename"></button>
           <input class="title-input" id="title-input" maxlength="200" hidden aria-label="Conversation title" data-i18n-attr="aria-label:v4.titleLabel">
           <button class="ghost icon quiet" id="star-btn" type="button" data-star-toggle hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9l-5.3 2.7 1-5.8-4.2-4.1 5.9-.9z"/></svg></button>
-          <span class="cedar-sched-badge" id="schedule-badge" hidden title="Scheduled run" data-i18n-attr="title:v4.scheduledRun"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl" data-i18n="v4.scheduledRun">Scheduled run</span></span>
+          <a class="cedar-ag-badge" id="agent-badge" href="#/agents" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="lbl" data-i18n="agents.badge">Agent run</span></a>
         </div>
         <button class="ghost" id="stop" type="button" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl" data-i18n="v4.stop">Stop</span>
@@ -85,7 +83,7 @@
         <!-- Actions: borderless icons, the More menu, then New, the only labelled button. -->
         <div class="actions">
           <button class="ghost icon" id="files-btn" type="button" hidden aria-label="Workspace files" title="Workspace files" data-i18n-attr="aria-label:v4.workspaceFiles; title:v4.workspaceFiles"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
-          <button class="ghost icon" id="schedule-btn" type="button" hidden aria-label="Schedule this agent" title="Schedule this agent: run this conversation's task on its own, daily or weekly" data-i18n-attr="aria-label:v4.scheduleAgent; title:v4.scheduleAgentTitle"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button>
+          <button class="ghost icon" id="agent-btn" type="button" hidden aria-label="Make an agent from this chat" title="Make an agent: run this conversation's task on its own, on a schedule or when something happens" data-i18n-attr="aria-label:agents.make.label; title:agents.make.title"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg></button>
           <button class="ghost icon" id="inbox-btn" type="button" aria-label="Finished responses" title="Finished responses" data-i18n-attr="aria-label:v4.finishedResponses; title:v4.finishedResponses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg></button>
           <div class="more" data-more>
             <button class="ghost icon" id="more-btn" type="button" aria-label="More" title="More" data-i18n-attr="aria-label:v4.more; title:v4.more" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu" data-more-toggle><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></button>
@@ -223,6 +221,7 @@
   <script src="/i18n/common.js"></script>
   <script src="/i18n/settings.js"></script>
   <script src="/i18n/cards.js"></script>
+  <script src="/i18n/agents.js"></script>
   <script src="/i18n/v4.js"></script>
   <script>cedarI18n.apply(document);</script>
   <script src="/ui-pref.js"></script>
@@ -239,6 +238,7 @@
   <script src="/recipe-view.js"></script>
   <script src="/weather-view.js"></script>
   <script src="/clarify-view.js"></script>
+  <script src="/followup-view.js"></script>
   <script src="/transit-view.js"></script>
   <script src="/stock-view.js"></script>
   <script src="/flight-view.js"></script>
@@ -246,7 +246,7 @@
   <script src="/product-view.js"></script>
   <script src="/trust-view.js"></script>
   <script src="/models.js"></script>
-  <script src="/schedule.js"></script>
+  <script src="/agents.js"></script>
   <script src="/more-menu.js"></script>
   <script src="/star.js"></script>
   <script src="/search.js"></script>

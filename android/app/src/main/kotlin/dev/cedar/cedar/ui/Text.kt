@@ -9,22 +9,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.res.pluralStringResource
 import dev.cedar.cedar.R
+import dev.cedar.core.Agent
 import dev.cedar.core.ChartCard
 import dev.cedar.core.ChatException
+import dev.cedar.core.DeviceStart
 import dev.cedar.core.FlightsCard
 import dev.cedar.core.OutgoingAttachment
+import dev.cedar.core.Predicate
 import dev.cedar.core.ProductsCard
 import dev.cedar.core.RecipeCard
-import dev.cedar.core.Schedule
+import dev.cedar.core.Span
 import dev.cedar.core.ServerSettings
 import dev.cedar.core.StocksCard
+import dev.cedar.core.Trigger
+import dev.cedar.core.TriggerGroup
+import dev.cedar.core.TriggerKind
+import dev.cedar.core.TriggerProblem
 import dev.cedar.core.TripCard
+import dev.cedar.core.WatchSource
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import java.util.TimeZone
 
 // The app's words for what core describes in English or by key, and formatting in the user's locale
 // (the default Locale, which Language sets to it).
@@ -85,17 +95,183 @@ private val WEEKLY = listOf(
     R.string.schedule_fridays, R.string.schedule_saturdays, R.string.schedule_sundays,
 )
 
-/** "Weekdays at 07:30", with the schedule's time zone when it isn't this device's. */
-fun Context.cadence(schedule: Schedule): String {
-    val time = runCatching { LocalTime.parse(schedule.timeOfDay).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)) }
-        .getOrDefault(schedule.timeOfDay)
-    val text = when (schedule.frequency) {
-        "daily" -> getString(R.string.schedule_daily, time)
-        "weekdays" -> getString(R.string.schedule_weekdays, time)
-        "weekly" -> schedule.weekday?.let { WEEKLY.getOrNull(it) }?.let { getString(it, time) } ?: getString(R.string.schedule_weekly, time)
-        else -> getString(R.string.schedule_other, schedule.frequency.replaceFirstChar { it.uppercase() }, time)
+/** A `HH:MM` as the user's locale writes times; anything else as it is. */
+fun clockText(time: String): String =
+    runCatching { LocalTime.parse(time).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)) }.getOrDefault(time)
+
+/** "Every 15 minutes", "Every 2 hours", "Every day". */
+fun Context.everyText(minutes: Int): String {
+    val (n, unit) = Span.split(minutes)
+    // "Every hour" has words of its own; a plural's `one` can't leave the number out in every language.
+    if (n == 1) {
+        return getString(
+            when (unit) {
+                Span.MINUTES -> R.string.every_one_minute
+                Span.HOURS -> R.string.every_one_hour
+                Span.DAYS -> R.string.every_one_day
+            },
+        )
     }
-    return schedule.zoneLabel()?.let { "$text ($it)" } ?: text
+    val id = when (unit) {
+        Span.MINUTES -> R.plurals.every_minutes
+        Span.HOURS -> R.plurals.every_hours
+        Span.DAYS -> R.plurals.every_days
+    }
+    return resources.getQuantityString(id, n, n)
+}
+
+/** A condition's test in a few words: "changes", "below 40". */
+fun Context.predicateText(predicate: Predicate): String = when (predicate.op) {
+    "changes" -> getString(R.string.op_changes_text)
+    "gt" -> getString(R.string.op_gt_text, predicate.valueText)
+    "gte" -> getString(R.string.op_gte_text, predicate.valueText)
+    "lt" -> getString(R.string.op_lt_text, predicate.valueText)
+    "lte" -> getString(R.string.op_lte_text, predicate.valueText)
+    "equals" -> getString(R.string.op_equals_text, predicate.valueText)
+    "contains" -> getString(R.string.op_contains_text, predicate.valueText)
+    // A newer server's test, in its own word.
+    else -> listOf(predicate.op, predicate.valueText).filter { it.isNotEmpty() }.joinToString(" ")
+}
+
+/** A test's name, for the form's picker. */
+@StringRes
+fun opLabel(op: String): Int? = when (op) {
+    "changes" -> R.string.op_changes
+    "gt" -> R.string.op_gt
+    "gte" -> R.string.op_gte
+    "lt" -> R.string.op_lt
+    "lte" -> R.string.op_lte
+    "equals" -> R.string.op_equals
+    "contains" -> R.string.op_contains
+    else -> null
+}
+
+/**
+ * What starts an agent, in one line: "Weekdays at 07:30", "Every 2 hours", "example.com · price ·
+ * below 40", with the trigger's time zone when it isn't this device's.
+ */
+fun Context.describe(trigger: Trigger): String {
+    val text = when (trigger) {
+        is Trigger.Time -> {
+            val time = clockText(trigger.time)
+            when (trigger.frequency) {
+                "daily" -> getString(R.string.schedule_daily, time)
+                "weekdays" -> getString(R.string.schedule_weekdays, time)
+                "weekly" -> trigger.weekday?.let { WEEKLY.getOrNull(it) }?.let { getString(it, time) } ?: getString(R.string.schedule_weekly, time)
+                else -> getString(R.string.schedule_other, trigger.frequency.replaceFirstChar { it.uppercase() }, time)
+            }
+        }
+        is Trigger.Once -> {
+            val at = runCatching { LocalDateTime.parse(trigger.at).format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)) }
+                .getOrDefault(trigger.at)
+            getString(R.string.trigger_once, at)
+        }
+        is Trigger.Interval -> everyText(trigger.everyMinutes)
+        is Trigger.Monthly -> getString(R.string.trigger_monthly, trigger.day, clockText(trigger.time))
+        is Trigger.Condition -> {
+            val source = when (val s = trigger.source) {
+                // The host says enough; the whole address is on the agent's page.
+                is WatchSource.Url -> runCatching { java.net.URI(s.url).host }.getOrNull()?.takeIf { it.isNotEmpty() } ?: s.url
+                is WatchSource.Tool -> s.name
+                is WatchSource.Records -> getString(R.string.trigger_records, s.set)
+            }
+            listOfNotNull(source, trigger.extract?.takeIf { it.isNotEmpty() }, predicateText(trigger.predicate)).joinToString(" · ")
+        }
+        Trigger.Webhook -> getString(R.string.trigger_webhook)
+        is Trigger.Email -> if (trigger.query.isEmpty()) getString(R.string.trigger_email_any) else getString(R.string.trigger_email, trigger.query)
+        is Trigger.Calendar -> {
+            val before = trigger.minutesBefore?.let { if (it == 0) getString(R.string.trigger_calendar_start) else getString(R.string.trigger_calendar_before, duration(it)) }
+            val new = if (trigger.newEvents) getString(R.string.trigger_calendar_new) else null
+            val filter = trigger.filter?.takeIf { it.isNotEmpty() }?.let { getString(R.string.trigger_calendar_filter, it) }
+            listOfNotNull(before, new, filter).joinToString(" · ")
+        }
+        is Trigger.Records -> getString(if (trigger.on == Trigger.Records.CHANGED) R.string.trigger_records_changed else R.string.trigger_records_added, trigger.set)
+        // The folder's ID says nothing; it is on the agent's page.
+        is Trigger.Drive -> getString(R.string.trigger_drive)
+        Trigger.Device -> getString(R.string.trigger_device)
+        is Trigger.Unknown -> if (trigger.kind.isEmpty()) getString(R.string.trigger_unknown) else getString(R.string.trigger_unknown_kind, trigger.kind)
+    }
+    val zone = trigger.timezone?.takeIf { it != TimeZone.getDefault().id }
+    return zone?.let { "$text ($it)" } ?: text
+}
+
+/** The heading agents with such a trigger are listed under. */
+@StringRes
+fun triggerGroupLabel(group: TriggerGroup): Int = when (group) {
+    TriggerGroup.SCHEDULE -> R.string.agents_group_schedule
+    TriggerGroup.CONDITION -> R.string.agents_group_condition
+    TriggerGroup.WEBHOOK -> R.string.agents_group_webhook
+    TriggerGroup.MAIL_CALENDAR -> R.string.agents_group_mail_calendar
+    TriggerGroup.OTHER -> R.string.agents_group_other
+}
+
+/** A kind of trigger, for the form's picker. */
+@StringRes
+fun triggerKindLabel(kind: TriggerKind): Int = when (kind) {
+    TriggerKind.TIME -> R.string.trigger_kind_time
+    TriggerKind.ONCE -> R.string.trigger_kind_once
+    TriggerKind.INTERVAL -> R.string.trigger_kind_interval
+    TriggerKind.MONTHLY -> R.string.trigger_kind_monthly
+    TriggerKind.CONDITION -> R.string.trigger_kind_condition
+    TriggerKind.WEBHOOK -> R.string.trigger_kind_webhook
+    TriggerKind.EMAIL -> R.string.trigger_kind_email
+    TriggerKind.CALENDAR -> R.string.trigger_kind_calendar
+    TriggerKind.RECORDS -> R.string.trigger_kind_records
+    TriggerKind.DRIVE -> R.string.trigger_kind_drive
+    TriggerKind.DEVICE -> R.string.trigger_kind_device
+}
+
+/** What an agent is doing, for its row: "Next in 2 hours", "Watching · checked 3 minutes ago", "Paused". */
+fun Context.describe(status: Agent.Status): String = when (status) {
+    Agent.Status.Paused -> getString(R.string.paused)
+    Agent.Status.Done -> getString(R.string.outcome_done)
+    is Agent.Status.CheckFailing -> getString(R.string.agent_check_failing)
+    is Agent.Status.NextRun -> status.at?.let { getString(R.string.next_run, relative(it)) } ?: getString(R.string.agent_on)
+    is Agent.Status.Watching -> status.lastCheckedAt?.let { getString(R.string.agent_watching_checked, relative(it)) } ?: getString(R.string.agent_watching)
+    Agent.Status.WaitingForCalls -> getString(R.string.agent_waiting_for_calls)
+    Agent.Status.CallWaiting -> getString(R.string.agent_call_waiting)
+    Agent.Status.WaitingForDevice -> getString(R.string.agent_waiting_for_device)
+    Agent.Status.Active -> getString(R.string.agent_on)
+}
+
+/** Why a trigger being edited can't be saved yet. */
+fun Context.describe(problem: TriggerProblem): String = when (problem) {
+    TriggerProblem.Time -> getString(R.string.trigger_problem_time)
+    TriggerProblem.Date -> getString(R.string.trigger_problem_date)
+    TriggerProblem.InThePast -> getString(R.string.trigger_problem_past)
+    TriggerProblem.Day -> getString(R.string.trigger_problem_day)
+    is TriggerProblem.Every -> getString(R.string.trigger_problem_every, duration(problem.min), duration(problem.max))
+    TriggerProblem.Url -> getString(R.string.trigger_problem_url)
+    TriggerProblem.Tool -> getString(R.string.trigger_problem_tool)
+    TriggerProblem.ToolInput -> getString(R.string.trigger_problem_tool_input)
+    TriggerProblem.RecordSet -> getString(R.string.trigger_problem_record_set)
+    TriggerProblem.Folder -> getString(R.string.trigger_problem_folder)
+    TriggerProblem.Number -> getString(R.string.trigger_problem_number)
+    TriggerProblem.Value -> getString(R.string.trigger_problem_value)
+    TriggerProblem.CalendarNeedsOne -> getString(R.string.trigger_problem_calendar)
+    is TriggerProblem.MinutesBefore -> getString(R.string.trigger_problem_minutes_before, duration(problem.max))
+}
+
+/** Why an agent the device asked for didn't start: the request is not queued, so it says when to ask again. */
+fun Context.describeHeld(held: String?): String = when (held) {
+    DeviceStart.BUSY -> getString(R.string.device_held_busy)
+    DeviceStart.TOO_SOON -> getString(R.string.device_held_too_soon)
+    DeviceStart.DAILY_LIMIT -> getString(R.string.device_held_daily_limit)
+    DeviceStart.CEDAR_BUSY -> getString(R.string.device_held_cedar_busy)
+    // A newer server's reason, in its own word.
+    else -> if (held.isNullOrBlank()) getString(R.string.device_held) else getString(R.string.device_held_other, held)
+}
+
+/** A notification method's name, as the server's Settings calls it; one this app doesn't know as it is. */
+fun Context.notifyMethodLabel(method: String): String = when (method) {
+    "none" -> getString(R.string.notify_method_none)
+    "desktop" -> getString(R.string.notify_method_desktop)
+    "browser" -> getString(R.string.notify_method_browser)
+    "ios" -> getString(R.string.notify_method_ios)
+    "android" -> getString(R.string.notify_method_android)
+    "pushover" -> getString(R.string.notify_method_pushover)
+    "email" -> getString(R.string.notify_method_email)
+    else -> method
 }
 
 /** A date and time in the user's locale, from a skeleton such as `EEEdMMMHHmm` (fields, not order). */

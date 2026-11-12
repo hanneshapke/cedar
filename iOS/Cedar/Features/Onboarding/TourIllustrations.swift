@@ -4,7 +4,7 @@ import SwiftUI
 /// theme's shapes and SF Symbols so they match the real thing in both appearances and need no
 /// image assets. Each is laid out on a 320 × 250 stage and scaled to the room it gets.
 enum TourIllustration: CaseIterable {
-    case server, work, cards, plans, schedules, memory, connect
+    case server, work, cards, plans, agents, memory, connect
 
     /// Whether the elements are shown (they fade and rise in, one after another, when a page
     /// comes up).
@@ -15,7 +15,7 @@ enum TourIllustration: CaseIterable {
         case .work: WorkPicture(shown: shown)
         case .cards: CardsPicture(shown: shown)
         case .plans: PlansPicture(shown: shown)
-        case .schedules: SchedulesPicture(shown: shown)
+        case .agents: AgentsPicture(shown: shown)
         case .memory: MemoryPicture(shown: shown)
         case .connect: ConnectPicture(shown: shown)
         }
@@ -457,8 +457,9 @@ private struct PlansPicture: View {
     }
 }
 
-/// Two scheduled agents in the sidebar, and the notification a finished run sends.
-private struct SchedulesPicture: View {
+/// Three agents in the sidebar, each started by something else (the clock, a value, new mail),
+/// and the notification a finished run sends.
+private struct AgentsPicture: View {
     let shown: Bool
 
     var body: some View {
@@ -489,20 +490,20 @@ private struct SchedulesPicture: View {
                 .reveal(shown, 0)
                 MiniCard(width: 280, padding: 6) {
                     VStack(spacing: 0) {
-                        row("Morning briefing", when: "Daily at 7:00", unread: true).reveal(shown, 1)
+                        row("Morning briefing", when: "Daily at 7:00", systemImage: "clock", unread: true).reveal(shown, 1)
                         Divider().padding(.horizontal, 8)
-                        row("Weekly competitor scan", when: "Mondays", unread: false).reveal(shown, 2)
+                        row("Price watch", when: "When the price drops", systemImage: "eye", unread: false).reveal(shown, 2)
                         Divider().padding(.horizontal, 8)
-                        row("Inbox summary", when: "Every evening", unread: false).reveal(shown, 3)
+                        row("New invoices", when: "When mail arrives", systemImage: "envelope", unread: false).reveal(shown, 3)
                     }
                 }
             }
         }
     }
 
-    private func row(_ title: LocalizedStringKey, when: LocalizedStringKey, unread: Bool) -> some View {
+    private func row(_ title: LocalizedStringKey, when: LocalizedStringKey, systemImage: String, unread: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "clock.arrow.circlepath")
+            Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.green)
                 .frame(width: 30, height: 30)

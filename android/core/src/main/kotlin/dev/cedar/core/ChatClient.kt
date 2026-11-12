@@ -171,7 +171,7 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun markSeen(conversationId: String): Conversation =
         decode(request("api/conversations/$conversationId/seen", "POST", JsonObject(emptyMap())), Conversation.serializer())
 
-    /** Starred conversations, most recently starred first: chats and scheduled runs alike. */
+    /** Starred conversations, most recently starred first: chats and agents' runs alike. */
     suspend fun starred(): List<Conversation> = decode(request("api/starred"), ConversationList.serializer()).conversations
 
     /**
@@ -225,19 +225,70 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun updateContributionSettings(patch: JsonObject): ContributionSettings =
         decode(request("api/settings/contributions", "PUT", patch), ContributionSettings.serializer())
 
-    // Schedules
+    // Agents
 
-    suspend fun schedules(): List<Schedule> = decode(request("api/schedules"), ScheduleList.serializer()).schedules
+    /** The agents, enabled first, and the limits the server sets for them. */
+    suspend fun agents(): AgentList = decode(request("api/agents"), AgentList.serializer())
 
-    suspend fun schedule(id: String): ScheduleDetail = decode(request("api/schedules/$id"), ScheduleDetail.serializer())
+    /** One agent and its runs, newest first. */
+    suspend fun agent(id: String): AgentDetail = decode(request("api/agents/$id"), AgentDetail.serializer())
 
-    /** Starts a run now, without moving the next scheduled one. 409 while the latest is going. */
-    suspend fun runSchedule(id: String): ScheduleRun =
-        decode(request("api/schedules/$id/run", "POST", JsonObject(emptyMap())), ScheduleRun.serializer())
+    /** Makes an agent. A webhook agent's answer carries its secret, this once. 409 at the most agents the server keeps. */
+    suspend fun createAgent(body: AgentBody): Agent = decode(request("api/agents", "POST", body.toJson()), Agent.serializer())
 
-    /** Pauses or resumes. Resuming skips the slots missed while paused. */
-    suspend fun setSchedule(id: String, enabled: Boolean): Schedule =
-        decode(request("api/schedules/$id", "PATCH", buildJsonObject { put("enabled", enabled) }), Schedule.serializer())
+    /**
+     * Changes what `body` names. A trigger replaces the whole trigger (what it had seen is
+     * forgotten); `enabled` pauses or resumes, and resuming skips what was missed while paused.
+     */
+    suspend fun updateAgent(id: String, body: AgentBody): Agent =
+        decode(request("api/agents/$id", "PATCH", body.toJson()), Agent.serializer())
+
+    /** Deletes the agent and its runs. 409 while one of them is still going. */
+    suspend fun deleteAgent(id: String) {
+        send(request("api/agents/$id", "DELETE"))
+    }
+
+    /** Starts a run now, whatever the trigger says. 409 while the latest is going. */
+    suspend fun runAgent(id: String): AgentRun =
+        decode(request("api/agents/$id/run", "POST", JsonObject(emptyMap())), AgentRun.serializer())
+
+    /**
+     * Asks for a run because the user's device says so (something was shared, an automation ran),
+     * with what it brings along. It works for any agent that is switched on (409 while paused);
+     * the answer says whether a run started or why it is held. 413 for more than the server hands a run.
+     */
+    suspend fun triggerAgent(id: String, source: String? = null, text: String? = null, title: String? = null, url: String? = null): DeviceStart =
+        decode(request("api/agents/$id/trigger", "POST", DeviceRequest(source, text, title, url).toJson()), DeviceStart.serializer())
+
+    /** A new secret for a webhook agent, in the answer's `hook.secret` this once; the old one stops working. */
+    suspend fun rotateHook(id: String): Agent =
+        decode(request("api/agents/$id/hook/rotate", "POST", JsonObject(emptyMap())), Agent.serializer())
+
+    /** Tries a watching trigger out (a condition, records, mail, the calendar, a folder): one check, with nothing kept. It can take a while. */
+    suspend fun testTrigger(trigger: Trigger): TriggerTest =
+        decode(request("api/agents/test", "POST", buildJsonObject { put("trigger", trigger.toJson()) }), TriggerTest.serializer(), slowHttp)
+
+    /** The latest runs of every agent, newest first. `before` is the last page's `nextBefore`. */
+    suspend fun activity(before: String? = null, limit: Int? = null): ActivityPage {
+        val query = buildMap<String, String> {
+            before?.let { put("before", it) }
+            limit?.let { put("limit", it.toString()) }
+        }
+        return decode(request("api/agents/activity", query = query), ActivityPage.serializer())
+    }
+
+    /** Cedar's tools by group: which ones a condition can watch, and what an agent's runs may use. */
+    suspend fun tools(): ToolCatalog = decode(request("api/tools"), ToolCatalog.serializer())
+
+    /** The notification methods that are set up, and the default one. */
+    suspend fun notifications(): NotificationStatus = decode(request("api/notifications"), NotificationStatus.serializer())
+
+    /**
+     * Has the model turn a finished conversation into one prompt, to make an agent of it. It takes
+     * as long as a short reply. 404 while the conversation has no finished response.
+     */
+    suspend fun compact(conversationId: String): Compacted =
+        decode(request("api/conversations/$conversationId/compact", "POST", JsonObject(emptyMap())), Compacted.serializer(), slowHttp)
 
     // Messages and turns
 
@@ -286,6 +337,14 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     }
 
     /**
+     * Decides about a follow-up a turn suggested (`callId` is its `suggest_follow_up` tool call):
+     * accepting makes a one-off agent, dismissing only records it. The first decision stands, so
+     * the answer may be an earlier one. 400 when the time has passed, 409 at the most agents.
+     */
+    suspend fun decideFollowup(turnId: String, callId: String, choice: FollowupChoice): FollowupDecision =
+        decode(request("api/turns/$turnId/followups/$callId", "PUT", choice.toJson()), FollowupDecision.serializer())
+
+    /**
      * Streams a turn's events after `after`: a replay of the stored log, then live events. The flow
      * completes after the terminal event, or when the server closes the connection.
      */
@@ -295,7 +354,7 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     // Settings
 
     /**
-     * Sets the server's language (`PUT /api/settings/locale`), which scheduled runs and notifications
+     * Sets the server's language (`PUT /api/settings/locale`), which agents' runs and notifications
      * follow; `null` clears it, for an app that follows the device.
      */
     suspend fun setLocale(locale: String?) {
@@ -362,7 +421,7 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         }.build()
     }
 
-    private suspend fun send(request: Request): ByteArray {
+    private suspend fun send(request: Request, http: OkHttpClient = this.http): ByteArray {
         val response = transport { http.newCall(request).await() }
         response.use {
             val body = it.body?.bytes() ?: ByteArray(0)
@@ -371,8 +430,8 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         }
     }
 
-    private suspend fun <T> decode(request: Request, serializer: KSerializer<T>): T {
-        val data = send(request)
+    private suspend fun <T> decode(request: Request, serializer: KSerializer<T>, http: OkHttpClient = this.http): T {
+        val data = send(request, http)
         return try {
             CedarJson.decodeFromString(serializer, data.toString(Charsets.UTF_8))
         } catch (e: Exception) {
@@ -417,6 +476,9 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     // The stream stays open for as long as the run goes; the server sends a keep-alive every 15 seconds.
     private val streamHttp: OkHttpClient by lazy { http.newBuilder().readTimeout(60, TimeUnit.SECONDS).callTimeout(0, TimeUnit.SECONDS).build() }
 
+    // For the calls that wait on a model or a tool (compacting a conversation, trying a trigger out).
+    private val slowHttp: OkHttpClient by lazy { http.newBuilder().readTimeout(SLOW_TIMEOUT_SECONDS, TimeUnit.SECONDS).build() }
+
     private inline fun <T> transport(body: () -> T): T = try {
         body()
     } catch (e: IOException) {
@@ -425,6 +487,7 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
 
     companion object {
         const val REQUEST_TIMEOUT_SECONDS = 30L
+        const val SLOW_TIMEOUT_SECONDS = 180L
         private val JSON = "application/json".toMediaType()
 
         val defaultHttp: OkHttpClient by lazy {

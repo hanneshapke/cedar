@@ -226,6 +226,30 @@ class TranscriptTest {
     }
 
     @Test
+    fun aSuggestedFollowUpIsKeptWithItsToolCallsId() {
+        var t = TurnTranscript(turn())
+        val input = """{"title":"Has the package shipped?","prompt":"Check the tracking page.","in_minutes":1440}"""
+        val output = """{"follow_up":{"title":"Has the package shipped?","prompt":"Check the tracking page.","at":"2026-12-04T08:00:00Z"},"note":"Say what you suggested."}"""
+        t = t.apply(event(1, "tool.call", """{"id":"call_7","name":"suggest_follow_up","input":$input}"""))
+        assertEquals(emptyList(), t.followUps, "nothing to decide before the result")
+        assertEquals("Has the package shipped?", assertIs<TranscriptItem.Tool>(t.items.last()).call.summary)
+        t = t.apply(event(2, "tool.result", result("call_7", output)))
+        // The id the server knows the suggestion by is the tool call's.
+        val (callId, suggestion) = t.followUps.single()
+        assertEquals("call_7", callId)
+        assertEquals("Check the tracking page.", suggestion.prompt)
+        assertEquals(CedarDate.parse("2026-12-04T08:00:00Z"), suggestion.at)
+        assertNull(t.questions)
+
+        // A call that failed suggested nothing, and neither did another tool with the same words.
+        t = t.apply(event(3, "tool.call", """{"id":"call_8","name":"suggest_follow_up","input":{"title":"x"}}"""))
+        t = t.apply(event(4, "tool.result", result("call_8", "give the prompt as text", isError = true)))
+        t = t.apply(event(5, "tool.call", """{"id":"call_9","name":"bash","input":{"command":"cat out.json"}}"""))
+        t = t.apply(event(6, "tool.result", result("call_9", output)))
+        assertEquals(listOf("call_7"), t.followUps.map { it.first })
+    }
+
+    @Test
     fun aChartDrawnAsACardIsNotShownAgainAsAPicture() {
         var t = TurnTranscript(turn())
         val input = """{"path":"chart.png","kind":"bar","labels":["a"],"series":[{"values":[1]}]}"""

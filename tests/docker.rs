@@ -1039,3 +1039,103 @@ async fn installing_a_tool_takes_over_root_owned_folders_in_its_environment() {
 
     factory.remove_tool_env("rooted").await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs Docker and the cedar-sandbox image"]
+async fn a_personal_tool_called_outside_a_run_leaves_nothing_behind() {
+    use cedar::auth::Owner;
+    use cedar::config::Config;
+    use cedar::polls::Polls;
+    use cedar::store::Store;
+    use cedar::tools::custom::SavedSecrets;
+    use cedar::tools::ToolSet;
+    use serde_json::json;
+
+    // A tool that needs nothing of a workspace: it says what it was asked, as a watcher's source would.
+    let dir = std::env::temp_dir().join(format!("cedar-poll-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(dir.join("air")).unwrap();
+    std::fs::write(
+        dir.join("air/tool.json"),
+        r#"{ "description": "Air quality.", "input_schema": { "type": "object" } }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("air/tool.py"),
+        "import json, sys\nargs = json.load(sys.stdin)\nprint(json.dumps({'aqi': 42, 'city': args.get('city')}))\n",
+    )
+    .unwrap();
+    let dir = std::fs::canonicalize(&dir).unwrap();
+    let mut sandbox = config("none");
+    sandbox.tools_dir = Some(dir.clone());
+    let recorder = Arc::new(Recording { inner: DockerSandboxFactory::new(sandbox), made: Default::default() });
+    let factory: Arc<dyn SandboxFactory> = recorder.clone();
+    let cfg = Config::from_lookup(|k| (k == "CEDAR_API_KEYS").then(|| "key".to_string())).unwrap();
+    let store = Store::connect_memory().await.unwrap();
+    let mut set = ToolSet::standard();
+    set.load_custom(&dir, &SavedSecrets::new()).unwrap();
+    let polls = Polls::new(&cfg).unwrap();
+    let owner = Owner("someone".into());
+
+    let called = polls
+        .call(&cfg, &store, &factory, &set, &owner, "air", &json!({ "city": "Berlin" }))
+        .await
+        .expect("a personal tool can be called outside a run");
+    assert!(!called.is_error, "{}", called.output);
+    assert_eq!(called.json, Some(json!({ "aqi": 42, "city": "Berlin" })));
+
+    // A tool that fails is the call's result too.
+    std::fs::write(dir.join("air/tool.py"), "import sys\nsys.exit('no sensor')\n").unwrap();
+    let failed = polls
+        .call(&cfg, &store, &factory, &set, &owner, "air", &json!({}))
+        .await
+        .unwrap();
+    assert!(failed.is_error && failed.output.contains("no sensor"), "{}", failed.output);
+    assert_eq!(store.list_tool_calls("someone", 10).await.unwrap().len(), 2);
+
+    // Each call got a sandbox and a workspace of its own, and both are gone again.
+    let made = recorder.made.lock().unwrap().clone();
+    assert_eq!(made.len(), 2);
+    for (run, workspace) in made {
+        assert_eq!(docker(&["ps", "-aq", "--filter", &format!("name=cedar-run-{run}")]), "");
+        assert_eq!(docker(&["volume", "ls", "-q", "--filter", &format!("name=cedar-ws-{workspace}")]), "");
+    }
+
+    factory.remove_tool_env("air").await.unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The Docker factory, noting the sandboxes it is asked for: (run, workspace). Other tests make
+/// containers at the same time, so "nothing is left" has to be asked about these ones by name.
+struct Recording {
+    inner: DockerSandboxFactory,
+    made: std::sync::Mutex<Vec<(Uuid, Uuid)>>,
+}
+
+#[async_trait::async_trait]
+impl SandboxFactory for Recording {
+    async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> anyhow::Result<Arc<dyn Sandbox>> {
+        self.made.lock().unwrap().push((run_id, workspace_id));
+        self.inner.create(run_id, workspace_id).await
+    }
+    async fn cleanup_orphans(&self) -> anyhow::Result<usize> {
+        self.inner.cleanup_orphans().await
+    }
+    async fn remove_workspace(&self, workspace_id: Uuid) -> anyhow::Result<()> {
+        self.inner.remove_workspace(workspace_id).await
+    }
+    async fn list_workspaces(&self) -> anyhow::Result<Vec<Uuid>> {
+        self.inner.list_workspaces().await
+    }
+    async fn list_workspace_files(&self, workspace_id: Uuid) -> anyhow::Result<cedar::sandbox::WorkspaceListing> {
+        self.inner.list_workspace_files(workspace_id).await
+    }
+    async fn read_workspace_file(&self, workspace_id: Uuid, path: &str, max_bytes: usize) -> anyhow::Result<Option<cedar::sandbox::FileContent>> {
+        self.inner.read_workspace_file(workspace_id, path, max_bytes).await
+    }
+    async fn health(&self) -> anyhow::Result<()> {
+        self.inner.health().await
+    }
+    async fn remove_tool_env(&self, name: &str) -> anyhow::Result<()> {
+        self.inner.remove_tool_env(name).await
+    }
+}

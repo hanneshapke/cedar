@@ -48,7 +48,7 @@ private val PAGES = listOf(
     TourPage(R.string.tour_work_title, R.string.tour_work_text, TourIllustration.WORK),
     TourPage(R.string.tour_cards_title, R.string.tour_cards_text, TourIllustration.CARDS),
     TourPage(R.string.tour_plans_title, R.string.tour_plans_text, TourIllustration.PLANS),
-    TourPage(R.string.tour_schedules_title, R.string.tour_schedules_text, TourIllustration.SCHEDULES),
+    TourPage(R.string.tour_agents_title, R.string.tour_agents_text, TourIllustration.AGENTS),
     TourPage(R.string.tour_memory_title, R.string.tour_memory_text, TourIllustration.MEMORY),
     TourPage(R.string.tour_connect_title, R.string.tour_connect_text, TourIllustration.CONNECT),
 )

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.Warning
@@ -56,6 +57,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -369,6 +371,13 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                     if (it != language) app.chooseLanguage(it)
                 }
                 Footnote(stringResource(R.string.language_footnote))
+                // Applies at once too: whether other apps on this phone may start agents (AgentIntentReceiver).
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsIcon(Icons.Outlined.PhoneAndroid, Color(0xFFE08A1E))
+                    Text(stringResource(R.string.allow_automation), Modifier.weight(1f))
+                    Switch(checked = app.allowAutomation, onCheckedChange = { app.chooseAllowAutomation(it) })
+                }
+                Footnote(stringResource(R.string.allow_automation_footnote))
 
                 HorizontalDivider()
                 Section(stringResource(R.string.section_about))
@@ -503,12 +512,12 @@ private fun Notifications(app: AppModel, onAllowNotifications: () -> Unit, testS
 }
 
 @Composable
-private fun Section(title: String) {
+fun Section(title: String) {
     Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 }
 
 @Composable
-private fun Footnote(text: String) {
+fun Footnote(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
 }
 
@@ -570,7 +579,7 @@ private fun SettingsRow(
 
 /** A labelled value that opens a menu of choices. */
 @Composable
-private fun Picker(
+fun Picker(
     label: String,
     value: String,
     options: List<Pair<String, String>>,

@@ -15,6 +15,7 @@ use crate::manager::{self, RunManager};
 use crate::marketplace::{InstallRequest, Marketplace};
 use crate::memory::{self, Actor, Memories, Refused};
 use crate::records::{self, Records, SaveOptions};
+use crate::polls::{self, Polls};
 use crate::models::{
     Attachment, CreateRunRequest, ModelEntry, NewRun, Rating, Run, RunStatus, StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
@@ -82,6 +83,8 @@ pub struct AppState {
     /// What owners keep as records across conversations. There even with `RECORDS=off`, so
     /// people can still see and delete what was saved before.
     pub records: Records,
+    /// Tool calls outside a run (`POST /v1/tools/{name}/call`).
+    pub polls: Arc<Polls>,
 }
 
 impl AppState {
@@ -154,6 +157,7 @@ impl AppState {
             cfg.webhook_allow_private,
             cfg.webhook_retry,
         )?);
+        let polls = Arc::new(Polls::new(&cfg)?);
         let marketplace = Arc::new(Marketplace::new(
             cfg.tools_registry_url.clone(),
             cfg.sandbox.tools_dir.clone(),
@@ -172,6 +176,7 @@ impl AppState {
             marketplace,
             memories,
             records,
+            polls,
         })
     }
 }
@@ -198,6 +203,7 @@ pub fn router(state: AppState) -> Router {
         .route("/events", get(stream_notifications))
         .route("/compact", post(compact_conversation))
         .route("/tools", get(list_tools))
+        .route("/tools/{name}/call", post(call_tool))
         .route("/models", get(list_models))
         .route("/defaults", get(defaults))
         .route(
@@ -595,7 +601,54 @@ async fn create_run(
 /// The tool groups a run can switch on or off, with what this server offers in each.
 async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
     let tools = state.integrations.tools().load_full();
-    Json(tools.catalog(&state.integrations.unavailable_reasons()))
+    let mut catalog = tools.catalog(&state.integrations.unavailable_reasons());
+    // What can be called outside a run besides the tools marked `pollable`.
+    catalog["sources"] = match state.cfg.web_fetch {
+        true => json!([polls::url_source()]),
+        false => json!([]),
+    };
+    Json(catalog)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CallToolBody {
+    #[serde(default)]
+    input: serde_json::Value,
+}
+
+/// Call one tool outside a run and return what it returned: for a client that watches
+/// something and starts a run only when it changed. Only tools listed as `pollable` (and the
+/// `url` source) can be called; a tool that fails is a `200` with `is_error`.
+async fn call_tool(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(name): Path<String>,
+    ApiJson(body): ApiJson<CallToolBody>,
+) -> Result<Json<polls::Called>, AppError> {
+    if !body.input.is_object() && !body.input.is_null() {
+        return Err(AppError::BadRequest("input must be an object".into()));
+    }
+    let tools = state.integrations.tools().load_full();
+    let called = state
+        .polls
+        .call(
+            &state.cfg,
+            &state.store,
+            &state.sandboxes,
+            &tools,
+            &owner,
+            &name,
+            &body.input,
+        )
+        .await
+        .map_err(|refused| match refused {
+            polls::Refused::Unknown => AppError::NotFound("no such tool"),
+            polls::Refused::NotPollable => AppError::BadRequest(format!(
+                "{name} can't be called outside a run; GET /v1/tools marks the tools that can as pollable"
+            )),
+        })?;
+    Ok(Json(called))
 }
 
 /// The registered models a run can name, in picker order.

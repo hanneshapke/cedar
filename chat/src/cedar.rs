@@ -32,6 +32,8 @@ pub struct CedarClient {
 }
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// A tool called outside a run may start a container first, and may have to wait for a slot.
+const TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(300);
 /// Starting a run with attachments sends up to tens of MB that cedar decodes before answering.
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 /// Installing a community tool includes `pip install` of its packages.
@@ -122,6 +124,13 @@ impl CedarClient {
     /// The tool groups cedar offers: `{groups: [{id, label, available, reason?, tools}]}`.
     pub async fn tools(&self) -> Result<Value, AppError> {
         self.json(self.http.get(self.url("/tools"))).await
+    }
+
+    /// Call one tool outside a run (`POST /v1/tools/{name}/call`): `{output, is_error, json?,
+    /// truncated}`. For the triggers that watch something; no model is involved.
+    pub async fn call_tool(&self, name: &str, input: &Value) -> Result<Value, AppError> {
+        let req = self.http.post(self.url(&format!("/tools/{name}/call"))).json(&serde_json::json!({ "input": input }));
+        self.json_within(req, TOOL_CALL_TIMEOUT).await
     }
 
     /// cedar's defaults for runs: `{model, model_id, system, max_turns_cap, attachments}`.

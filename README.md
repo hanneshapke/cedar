@@ -73,7 +73,8 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
-| `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes}]}]}`. |
+| `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes, pollable}]}], sources}`. `pollable` marks the tools that can be [called outside a run](#calling-a-tool-outside-a-run), and `sources` lists what else can (`url`, unless `WEB_FETCH` is off). |
+| `POST /v1/tools/{name}/call` | Call one pollable tool, or the `url` source, without starting a run: `{"input": {...}}` → `{output, is_error, json?, truncated}`. `400` for a tool that isn't pollable, `404` for one that isn't offered. See [Calling a tool outside a run](#calling-a-tool-outside-a-run). |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
 | `POST /v1/runs/{id}/feedback` | Your verdict on a finished run: `{"rating": "up" \| "down" \| null}`. Promotes or archives what the run learned (see [Memory](#memory)); returns `{rating, archived}`. `409` while the run is still going. |
@@ -126,6 +127,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `stocks` | `compare_stocks` |
 | `products` | `search_products` |
 | `ask_user` | `ask_user` |
+| `follow_up` | `suggest_follow_up` |
 | `memory` | `remember`, `forget`, `recall`, and what the run is shown from memory (see [Memory](#memory)) |
 | `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
@@ -194,8 +196,8 @@ replaces each image with a note like `[image omitted: photo.png]`.
 
 ### Compacting a run into a prompt
 
-A client that wants to repeat what a conversation achieved (the chat UI's [scheduled
-agents](chat/README.md#scheduled-agents), say) needs one prompt rather than the back-and-forth that
+A client that wants to repeat what a conversation achieved (the chat UI's
+[agents](chat/README.md#agents), say) needs one prompt rather than the back-and-forth that
 led there. `POST /v1/compact` with `{"run_id": "<a finished run of yours>"}` makes a single model
 call over the run's stored conversation, with no tools and no sandbox, asking the model to write a
 prompt a fresh agent could carry out unattended: the concrete inputs, the constraints, the output
@@ -209,6 +211,44 @@ results for the open calls first, as a [continuation](#continuing-a-run) would. 
 "<text>"}` (at most 100 KB) compacts a plain-text conversation instead, for a run cedar no longer
 has. `"model"` works as for a run; without it the run's model (or the default) is used. If the
 model returns no text the response is `502 bad_gateway`.
+
+### Calling a tool outside a run
+
+A client that watches something (a price, an inbox, a calendar) and wants a run only when it
+changed can ask cedar for one tool's result directly: `POST /v1/tools/{name}/call` with
+`{"input": {...}}`. No model is called, nothing joins a conversation, and no run is created.
+[cedar-chat's triggers](chat/README.md#agents) are built on it.
+
+```sh
+curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+     -d '{"input": {"url": "https://api.example.com/price", "as": "json"}}' \
+     localhost:8080/v1/tools/url/call
+# {"output": "{\"eur\":41.5}", "is_error": false, "json": {"eur": 41.5}, "truncated": false}
+```
+
+- Only tools that read and need nothing of a run can be called: `weather_forecast`,
+  `compare_stocks`, `gmail_search_threads`, `calendar_list_calendars`, `calendar_list_events` and
+  `calendar_search_events` and `drive_search_files` (with the built-in Google backend, not
+  `GOOGLE_BACKEND=mcp`), and
+  [personal tools](#personal-tools-in-python). `GET /v1/tools` marks them `pollable`. Everything
+  else (the sandbox tools, `fetch_url`, anything that writes, remembers or asks) is a `400`.
+- `url` is a source of its own rather than a tool: `{"url", "as"?: "json" | "text"}` returns the
+  body as it came, up to 1 MiB (a longer one is an error, not a cut-off value). As `json`, the
+  default for a JSON content type, it must parse; as `text`, an HTML page is reduced to its text.
+  The same address rules as `fetch_url` apply (public addresses only, unless
+  `WEB_FETCH_ALLOW_PRIVATE` is on).
+- A personal tool gets a sandbox and an empty workspace of its own for the one call, removed
+  right after, so each call starts containers: keep the interval long. Its code runs with its
+  declared network and secrets and **without anyone approving the call**, as in a run that isn't
+  interactive.
+- `output` is the tool's text, up to 256 KiB (more than in a run, where the cap protects the
+  model's context); `json` is that text parsed, when it is JSON. A tool that fails is a `200`
+  with `is_error: true` and the message in `output`.
+- Two calls run at a time and the rest wait; they don't take a run's slot
+  (`MAX_CONCURRENT_RUNS`). Every call is logged and recorded in the database (the key's owner id,
+  the tool, when, how long, the error) for a month. The input and output are not kept.
+- Any API key can call it. A key can already read the same data through a run; what differs is
+  that no run, and so no trace, shows what was read.
 
 ### Events
 
@@ -271,7 +311,7 @@ same way, and a second call in the same run is refused, so a request gets at mos
 
 Each wait ends after `APPROVAL_TIMEOUT_SECS`: the plan as proposed is followed, and the call is
 not made. Time spent waiting doesn't count toward `RUN_TIMEOUT_SECS`. A run that isn't
-interactive (the default, and what scheduled runs should use) shows its plan without waiting and
+interactive (the default, and what unattended runs should use) shows its plan without waiting and
 asks nothing.
 
 The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-separated list):
@@ -412,7 +452,7 @@ tools](#personal-tools-in-python) see the locale as `CEDAR_LOCALE` (`de-CH`) and
 [registry/CONTRIBUTING.md](registry/CONTRIBUTING.md#translations)).
 
 The chat asks for the language first, on a new browser or phone, and keeps it in Settings → Language.
-It sends the locale with every message, and saves it on its server too, so scheduled runs and
+It sends the locale with every message, and saves it on its server too, so agents' runs and
 notifications use it. Translators: see [docs/i18n-glossary.md](docs/i18n-glossary.md) for the terms
 and tone.
 
@@ -496,7 +536,7 @@ Memory holds a few facts; it can't hold a running log. For data the user will co
 compare with later (a weekly export, measurements, a diary, a monthly report) cedar keeps
 **records**: named sets of JSON rows per API key, in its own database, that outlive workspaces,
 conversations and runs. Durable data is what makes long-running threads unnecessary: a weekly
-check-in can be a fresh conversation, or a [scheduled agent](chat/README.md#scheduled-agents), and
+check-in can be a fresh conversation, or an [agent](chat/README.md#agents) on a schedule, and
 still see every earlier week.
 
 - **Sets and keys.** A set has a name (`running_log`; lowercase letters, digits and underscores,
@@ -525,8 +565,8 @@ still see every earlier week.
   data they handed over in their messages and files as rows for a set, new or existing; a row is
   saved only if every value of it occurs in the user's own words or files (numbers with a dot or a
   comma, dates taken as given), so nothing from a tool result or a web page gets in, and what was
-  saved and what was refused is in the `memory.updated` event. And a [scheduled
-  agent](chat/README.md#scheduled-agents) whose task produces a result worth comparing over time
+  saved and what was refused is in the `memory.updated` event. And an [agent](chat/README.md#agents)
+  on a schedule whose task produces a result worth comparing over time
   is told, by [compaction](#compacting-a-run-into-a-prompt), to save each run's result into a
   fixed set keyed by date and to compare with the earlier rows before answering.
 - **Health data.** A set saved with `health_data: true` (heart rate, glucose, weight, sleep)
@@ -632,6 +672,7 @@ Settings come from environment variables. The important ones:
 | `RECIPE_WIKIPEDIA_URL` / `RECIPE_COMMONS_URL` | `https://en.wikipedia.org/w/api.php` / `https://commons.wikimedia.org/w/api.php` (the MediaWiki APIs `show_recipe` searches for a photo of the dish) |
 | `TRANSIT` | `on` (set `off` to remove the `plan_trip` tool) |
 | `ASK_USER` | `on` (set `off` to remove the `ask_user` tool, so the model never stops a run to ask a question) |
+| `FOLLOW_UPS` | `on` (set `off` to remove the `suggest_follow_up` tool, so the model can't suggest a later run) |
 | `MEMORY` | `on` (set `off` to remove the `remember`, `forget` and `recall` tools and stop showing runs what they remember; see [Memory](#memory)) |
 | `MEMORY_MAX_ITEMS` | 500 (how many facts, preferences, instructions and temporary memories one API key keeps active; past it the lowest-ranked are archived) |
 | `MEMORY_EXTRACT` | `on` (set `off` to stop noting the facts the user states, from the model call at the end of every interactive run; see [Memory](#memory)) |
@@ -706,6 +747,7 @@ Settings come from environment variables. The important ones:
 | `compare_stocks` | Tracks and compares stocks, ETFs, and indices. Takes `symbols` (1–6 Yahoo Finance tickers such as `AAPL`, `BRK-B`, `SAP.DE`, `^GSPC`, `BTC-USD`), optional `benchmark` (an index to compare against, default `^GSPC`, or `none`), `range` (the period the chart opens on: `1mo`, `3mo`, `6mo`, `1y` (default), `2y`, `5y`), and `news_count` (headlines per symbol, 0–8, default 4). Reads at least a year of daily prices per symbol and the benchmark from Yahoo Finance's chart API and the headlines from its search API, all at once. Returns JSON with each symbol's quote and day's move, 52-week and day ranges, returns over 1 week to 1 year and year to date, indicators (50- and 200-day averages, 14-day RSI, annualized volatility, the past year's maximum drawdown, distance from the 52-week high, beta and 6-month performance against the benchmark), the closes for the chart (thinned to 300 points), and a `rating`: six factors (long-term trend, momentum, performance against the benchmark, RSI, distance from the high, volatility) each score −2 to +2 with a sentence saying why, and their sum makes the call (`buy` at +3 or more, `sell` at −3 or less, else `hold`, with a lean at ±2), with a confidence, a summary, and what would change the view. Headlines several symbols share are listed once. A symbol that can't be found is listed under `unavailable`; it is an error only if none is found, and failing news never fails the call. The rating reads price history only, so the description asks the model to give its own call afterwards, weighing the headlines, and to say it is not financial advice. The chat interfaces draw the JSON as a card with a chart ([chat/README.md](chat/README.md)). Unless `STOCKS=off`. |
 | `search_products` | Finds products to buy in any category, from any shop, and recommends the best. Takes `query` (what the user wants, e.g. `trail running shoes for wide feet`), optional `needs` (what matters to them: use, fit, style, must-haves), `min_price`, `max_price`, and `count` (options to recommend, 1–6, default 4). It runs two Brave web searches, one for reviews and roundups and one for shops, and, with a Best Buy key, searches Best Buy's catalog too. It reads up to eight of the pages it found (shops first, then reviews; through the same public-addresses-only client as `fetch_url`) for the schema.org product data shops embed: name, brand, photos, price and currency, stock, the customer rating with its review count, and a few reviews, falling back on Open Graph product tags; a review article is kept as text. Then the run's own model gets that evidence in one tool-free request and picks the best options for the request, each with why it fits, pros and cons, who it suits, the sources behind it, and the other options it compares with. The reply is held to the evidence: links and photos only come from the pages and search results, a price shown as checked comes from a store page (a price only review text states is kept, marked unchecked; one no source states is dropped), and a rating only counts with its review count. Each rating is also read on its own: the `adjusted` rating shrinks the average toward 4.0 as if fifteen typical reviews were added, with a `verdict` and a `confidence`. The tokens the tool's request takes are added to the run's, as a `usage` event with `purpose: "tool"`. If the model can't be asked or its reply can't be used, the products found are ranked by their adjusted ratings instead (`method: "ratings"`, with a `note`). Returns JSON with the `summary`, the `options` (`badges`, `price`, `price_checked`, `store`, `images`, `reviews`, `why`, `pros`, `cons`, `best_for`, `sources`, `comparable`, ...), the cited `sources`, and how many pages and products were `considered`. A search that finds nothing is an error. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Offered when a Brave Search key or a Best Buy key is set (in the environment or saved by an admin; see [Integrations](#integrations)), unless `PRODUCTS=off`. |
 | `ask_user` | Asks the user clarifying questions when a request is ambiguous and the answer would change what the agent does. Takes `questions` (1–4 objects, each with a `question`, an optional short `header`, up to 8 `options` with a `label` and optional `description`, given as 2 or more or left out for an open question, and `multi_select` to let several options be chosen). An "Other" option is dropped, since the user can always answer in their own words. The run then ends as `completed` with `stop_reason: "ask_user"` and the questions as its `final_text`; the tool result holds them as JSON, which the chat interfaces draw as a form (radio buttons, or checkboxes with `multi_select`, plus a free-form answer). The answer is the prompt of the next run, started with `parent_id`. Unless `ASK_USER=off`. |
+| `suggest_follow_up` | Suggests running a prompt again later, for "remind me", "check again on Friday" and "tell me when it ships". Takes a `title`, a `prompt` that stands on its own (the follow-up starts in a new conversation), and when: `in_minutes` from now, or `at` as an exact time with its UTC offset (at least a minute and at most a year away). **It schedules nothing**: cedar has no scheduler. The result is `{"follow_up": {"title", "prompt", "at"}, "note"}` with `at` in UTC, which a client shows as a suggestion; [cedar-chat](chat/README.md#follow-ups-the-agent-suggests) draws a card and makes a one-off agent only when the user accepts it. So a page or a mail the run read can make the model suggest something, but not start anything. The run goes on after the call. Unless `FOLLOW_UPS=off`. |
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
 | `slack_*` | `slack_list_channels`, `slack_read_messages`, `slack_list_users` and `slack_send_message`: the team's Slack through Slack's Web API, as a Slack app. Only offered when a Slack bot token is set or saved; see [Slack](#slack). |
 | personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Each call runs in a container (or OpenShell sandbox) of its own that sees the workspace and only that tool, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
@@ -1241,7 +1283,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - With the `slack_*` tools enabled (a Slack bot token is set or saved), the model reads the channels the Slack app was invited to and the workspace's list of people, so what your colleagues wrote there goes to your model server like the rest of a run, and what the model posts goes to Slack. The token stays in the cedar process. Set `SLACK=off`, or leave the tools out of a run's `tools`, if that is not acceptable.
 - With `compare_stocks` enabled, the ticker symbols the model looks up leave your machine for Yahoo Finance. Its chart and search APIs are public but unofficial: they need no key, but Yahoo may change or rate-limit them, and its terms limit them to personal use. Set `STOCKS=off` if that is not acceptable.
 - With `search_products` enabled (a Brave or Best Buy key is set or saved), the shopping requests the model makes leave your machine for Brave (and Best Buy, with its key), cedar fetches the shop and review pages they return from its own host, and the chat page loads product photos from the shops' servers. Pages can carry prompt injections like any fetched page; the tool hands the model their text as evidence and keeps only links and photos found on them. The keys are never passed into a container. Remove the keys or set `PRODUCTS=off` if that is not acceptable.
-- With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
+- With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [agents](chat/README.md#agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
 - A run's `callback_url` is a request from the cedar host too, to a URL the API client chooses. It carries only the run's id and final status, never its text, and refuses non-public addresses unless `WEBHOOK_ALLOW_PRIVATE` is on. A `callback_secret` is stored in cedar's database as given (it signs the calls; it is not a credential for anything else) and never returned.
@@ -1250,7 +1292,9 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine (and, with OpenShell on, to its gateway, which may attach volumes). Run cedar on a host or VM you are willing to dedicate to it.
 - Turning networking on for a Docker sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services. [OpenShell sandboxes](#openshell-sandboxes-opt-in) narrow that to the hosts their policy names, from the programs it names; turn them on in Settings → Advanced.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
-- [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
+- [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as cedar-chat's [agents](chat/README.md#agents), call them without asking).
+- [A tool called outside a run](#calling-a-tool-outside-a-run) leaves no run behind, so no conversation or trace shows what it read; only a log line and a database row say that the call was made, by which key, and how long it took. Any API key may make such calls, to the tools that only read (mail and calendar among them, for the one Google account every key shares) and to personal tools, whose code then runs with its declared network and secrets and nobody approving it. Give a key only to clients you would let start a run.
+- Runs that start by themselves from something outside (cedar-chat's [agents](chat/README.md#runs-that-start-from-outside) on a condition, a webhook, mail or the calendar) are given text other people wrote as part of their prompt, and are not interactive, so no tool call waits for approval. The chat marks that text off as data, gives such an agent tools without personal tools or Google writes unless told otherwise, and limits how often it runs. None of that makes a prompt injection impossible: choose such an agent's tools as you would for a stranger's input, and keep the tools that send, write or spend out of it.
 - [Memory](#memory) outlives the conversation it was saved in, so an instruction planted in it would too. The layers against that: only interactive runs can write facts about the user, and a fact is saved only when it quotes the user's own words from that conversation (a check in code, so nothing a tool, page, email or document said can be saved as something the user said); text that looks like a secret or an identifier is refused; what is shown is framed as the user's facts and the agent's notes that don't override the system prompt; every write is visible (a tool step, or the `memory.updated` event with what was saved and what was refused) and every change is an audit row; episodes and procedures are the agent's own account of what it did, written from the conversation's text and never from tool results; and everything can be read, edited, archived and deleted through `/v1/memory` (Settings → Memory in the chat). Memories stay in cedar's database and go to the LLM server with every run that has the `memory` group on, like the conversation itself. Set `MEMORY=off` if that is not acceptable.
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
@@ -1280,7 +1324,7 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 
 - No token-level streaming from the model; events arrive per model turn and per tool call.
 - A run is a single prompt. To follow up, start a new run that [continues](#continuing-a-run) the finished one.
-- cedar has no scheduler of its own: a run starts when a client asks for it. Recurring runs are a [cedar-chat](chat/README.md#scheduled-agents) feature.
+- cedar has no scheduler of its own: a run starts when a client asks for it. Runs on a clock, a condition, a webhook or new mail are [cedar-chat's agents](chat/README.md#agents), which watch through `POST /v1/tools/{name}/call`.
 - Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload into the workspace; [attachments](#attachments) go to the model, not to `/workspace`.
 - One instance: SQLite and the run queue live in the process.
 - Tool calls within a turn run one after another.

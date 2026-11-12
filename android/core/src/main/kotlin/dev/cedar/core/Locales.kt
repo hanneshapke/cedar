@@ -5,7 +5,7 @@ import java.util.Locale
 /**
  * The languages the app speaks and the locale it tells cedar-chat about: with each message
  * (`"locale"` in `POST /api/conversations/{id}/messages`) and as the server's own setting
- * (`PUT /api/settings/locale`), so scheduled runs and notifications follow it too.
+ * (`PUT /api/settings/locale`), so agents' runs and notifications follow it too.
  *
  * A choice is a BCP 47 tag from [OPTIONS], or `null` for Automatic (follow the device).
  */

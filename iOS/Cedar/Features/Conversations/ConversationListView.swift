@@ -5,7 +5,12 @@ struct ConversationListView: View {
     @State private var renaming: Conversation?
     @State private var newTitle = ""
     @State private var actionError: String?
-    @State private var showingPrompt: Schedule?
+    /// The agent whose detail is up, and the form for a new agent or one being changed.
+    @State private var showingAgent: AgentSelection?
+    @State private var agentForm: AgentFormContext?
+    /// The agent the form just made: its detail opens once the form is gone.
+    @State private var createdAgent: AgentSelection?
+    @State private var deletingAgent: Agent?
 
     var body: some View {
         @Bindable var app = app
@@ -16,7 +21,12 @@ struct ConversationListView: View {
                 switch app.sidebarMode {
                 case .chats: chats
                 case .starred: starredRows
-                case .scheduled: ScheduleRows(actionError: $actionError, showingPrompt: $showingPrompt)
+                case .agents:
+                    AgentRows(actionError: $actionError,
+                              show: { showingAgent = AgentSelection(id: $0.id, title: $0.title) },
+                              edit: { agentForm = AgentFormContext(agent: $0, limits: app.agentLimits) },
+                              create: { agentForm = AgentFormContext(limits: app.agentLimits) },
+                              delete: { deletingAgent = $0 })
                 }
             }
         }
@@ -26,11 +36,21 @@ struct ConversationListView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             // A search looks through all three lists, so the switch steps aside for it.
             if !app.isSearching {
-                SidebarSwitch(mode: $app.sidebarMode, scheduledUnread: app.scheduledUnread)
-                    .padding(.horizontal)
-                    .padding(.top, 4)
-                    .padding(.bottom, 10)
-                    .background(Theme.canvas)
+                VStack(spacing: 8) {
+                    SidebarSwitch(mode: $app.sidebarMode, agentsUnread: app.agentsUnread)
+                    if app.sidebarMode == .agents {
+                        Picker("Show", selection: $app.agentsTab) {
+                            Text("Agents").tag(AgentsTab.agents)
+                            Text("Activity").tag(AgentsTab.activity)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+                .background(Theme.canvas)
             }
         }
         .searchable(text: $app.searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search conversations"))
@@ -48,8 +68,11 @@ struct ConversationListView: View {
             case .chats: break
             // Stars set on the web or the desktop app since the last refresh.
             case .starred: Task { await app.refresh() }
-            case .scheduled: Task { await app.refreshSchedules() }
+            case .agents: Task { await app.refreshAgentsList() }
             }
+        }
+        .onChange(of: app.agentsTab) { _, tab in
+            if tab == .activity { Task { await app.refreshActivity() } }
         }
         .overlay {
             if app.isSearching {
@@ -92,20 +115,14 @@ struct ConversationListView: View {
                     if app.starred.isEmpty && app.starredError == nil {
                         if app.starredLoaded {
                             ContentUnavailableView("No Starred Conversations", systemImage: "star",
-                                                   description: Text("Star a chat or a scheduled run, here or on the web, to keep it at hand on every device."))
+                                                   description: Text("Star a chat or an agent's run, here or on the web, to keep it at hand on every device."))
                         } else {
                             ProgressView()
                         }
                     }
-                case .scheduled:
-                    if app.schedules.isEmpty && app.scheduleError == nil {
-                        if app.schedulesLoaded {
-                            ContentUnavailableView("No Scheduled Agents", systemImage: "clock",
-                                                   description: Text("On the web, the Schedule button turns a finished conversation into an agent that runs on its own."))
-                        } else {
-                            ProgressView()
-                        }
-                    }
+                case .agents:
+                    // The Agents list says so itself, in a row, when it has nothing to show.
+                    EmptyView()
                 }
             }
         }
@@ -134,9 +151,43 @@ struct ConversationListView: View {
                 }
                 .disabled(!app.settings.isConfigured)
             }
+            if app.sidebarMode == .agents {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        agentForm = AgentFormContext(limits: app.agentLimits)
+                    } label: {
+                        Label("New Agent", systemImage: "plus")
+                    }
+                    .disabled(!app.settings.isConfigured)
+                }
+            }
         }
-        .sheet(item: $showingPrompt) { schedule in
-            SchedulePromptView(schedule: schedule)
+        .sheet(item: $showingAgent) { selection in
+            AgentDetailView(agentId: selection.id, title: selection.title)
+        }
+        .sheet(item: $agentForm, onDismiss: {
+            // A new agent's detail follows its form, as does one that just got a webhook: the
+            // secret is shown only there.
+            if let createdAgent {
+                self.createdAgent = nil
+                showingAgent = createdAgent
+            }
+        }) { context in
+            AgentFormView(context: context) { agent in
+                if context.agent == nil || agent.hook?.secret != nil {
+                    createdAgent = AgentSelection(id: agent.id, title: agent.title)
+                }
+                Task { await app.refreshAgentsList() }
+            }
+        }
+        .alert("Delete This Agent?", isPresented: Binding(
+            get: { deletingAgent != nil },
+            set: { if !$0 { deletingAgent = nil } }
+        ), presenting: deletingAgent) { agent in
+            Button("Delete", role: .destructive) { delete(agent) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The agent and the conversations of all its runs will be deleted. This can't be undone.")
         }
         .alert("Rename Conversation", isPresented: Binding(
             get: { renaming != nil },
@@ -215,7 +266,7 @@ struct ConversationListView: View {
         }
     }
 
-    /// Chats and scheduled runs together, most recently starred first.
+    /// Chats and agents' runs together, most recently starred first.
     @ViewBuilder
     private var starredRows: some View {
         if let error = app.starredError {
@@ -245,7 +296,7 @@ struct ConversationListView: View {
         }
     }
 
-    /// What a search found in the titles and messages: chats and scheduled runs together, most
+    /// What a search found in the titles and messages: chats and agents' runs together, most
     /// recently active first, each with the passage that matched.
     @ViewBuilder
     private var searchRows: some View {
@@ -300,6 +351,18 @@ struct ConversationListView: View {
         }
     }
 
+    /// Deletes an agent. The server refuses while one of its runs is still going, and says so.
+    private func delete(_ agent: Agent) {
+        Task {
+            do {
+                try await app.deleteAgent(agent)
+            } catch {
+                actionError = error.localizedDescription
+                await app.refreshAgentsList()
+            }
+        }
+    }
+
     private func delete(_ conversation: Conversation) {
         Task {
             do {
@@ -341,7 +404,7 @@ private struct ConversationRow: View {
                 }
                 HStack(spacing: 6) {
                     if conversation.scheduleId != nil {
-                        Label(conversation.scheduleTitle ?? L10n.string("Scheduled"), systemImage: "clock")
+                        Label(conversation.scheduleTitle ?? L10n.string("Agent"), systemImage: "clock")
                             .labelStyle(.titleAndIcon)
                             .lineLimit(1)
                     }
@@ -441,21 +504,21 @@ struct UnreadDot: View {
     }
 }
 
-/// The sidebar's Chats | Starred | Scheduled switch.
+/// The sidebar's Chats | Starred | Agents switch.
 private struct SidebarSwitch: View {
     @Binding var mode: SidebarMode
-    let scheduledUnread: Int
+    let agentsUnread: Int
     @Namespace private var selection
 
     var body: some View {
         HStack(spacing: 2) {
             segment(.chats) { Text("Chats") }
             segment(.starred) { Text("Starred") }
-            segment(.scheduled) {
+            segment(.agents) {
                 HStack(spacing: 5) {
-                    Text("Scheduled")
-                    if scheduledUnread > 0 {
-                        Text(verbatim: "\(scheduledUnread)")
+                    Text("Agents")
+                    if agentsUnread > 0 {
+                        Text(verbatim: "\(agentsUnread)")
                             .font(.caption2.weight(.bold))
                             .monospacedDigit()
                             .foregroundStyle(.white)

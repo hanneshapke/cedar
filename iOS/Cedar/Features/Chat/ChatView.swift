@@ -8,6 +8,11 @@ struct ChatView: View {
     @State private var starError: String?
     @State private var showingFiles = false
     @State private var showingContribute = false
+    /// The detail of the agent whose run this is, and the form that makes an agent from this chat.
+    @State private var showingAgent: AgentSelection?
+    @State private var makingAgent: AgentFormContext?
+    /// The agent the form just made: its detail opens once the form is gone.
+    @State private var madeAgent: AgentSelection?
 
     private let bottomID = "bottom"
 
@@ -23,7 +28,10 @@ struct ChatView: View {
                         }
                     }
                     ForEach(chat.turns) { turn in
-                        TurnView(turn: turn, chat: chat, webURL: webURL, isLast: turn.id == chat.turns.last?.id)
+                        TurnView(turn: turn, chat: chat, webURL: webURL, isLast: turn.id == chat.turns.last?.id,
+                                 openAgent: { agentId, title in
+                                     showingAgent = AgentSelection(id: agentId, title: title)
+                                 })
                     }
                     if let questions = chat.openQuestions, chat.pendingPrompt == nil {
                         QuestionsView(questions: questions) { answers in
@@ -58,6 +66,14 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom) {
             Composer(chat: chat, focused: $composerFocused)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // An agent's run says whose it is; the badge opens the agent.
+            if let agent = runAgent {
+                AgentBadge(agent: agent) {
+                    showingAgent = AgentSelection(id: agent.id, title: agent.title)
+                }
+            }
+        }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.canvas, for: .navigationBar)
@@ -85,6 +101,15 @@ struct ChatView: View {
                         showingContribute = true
                     } label: {
                         Label("Contribute", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
+            if canMakeAgent {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        makeAgent()
+                    } label: {
+                        Label("Make Agent", systemImage: "clock.arrow.circlepath")
                     }
                 }
             }
@@ -123,6 +148,20 @@ struct ChatView: View {
                 WorkspaceFilesView(conversationId: id, client: client)
             }
         }
+        .sheet(item: $showingAgent) { selection in
+            AgentDetailView(agentId: selection.id, title: selection.title)
+        }
+        .sheet(item: $makingAgent, onDismiss: {
+            // The new agent's detail follows its form: a webhook's secret is shown only there.
+            if let madeAgent {
+                self.madeAgent = nil
+                showingAgent = madeAgent
+            }
+        }) { context in
+            AgentFormView(context: context) { agent in
+                madeAgent = AgentSelection(id: agent.id, title: agent.title)
+            }
+        }
         .task { await chat.start() }
         .onAppear {
             if chat.conversationId == nil { composerFocused = true }
@@ -134,6 +173,28 @@ struct ChatView: View {
             return app.title(for: conversation)
         }
         return chat.turns.first.map { firstLine($0.prompt) } ?? L10n.string("New Chat")
+    }
+
+    /// The agent whose run this conversation is, if it is one.
+    private var runAgent: AgentRef? {
+        chat.conversationId.flatMap { app.agent(ofConversation: $0) }
+    }
+
+    /// A chat with a finished response can become an agent; an agent's own run can't.
+    private var canMakeAgent: Bool {
+        chat.conversationId != nil && runAgent == nil && !chat.isActive
+            && chat.turns.contains { $0.turn.status == .completed }
+    }
+
+    /// Opens the agent form for this conversation; the server writes the prompt from it.
+    private func makeAgent() {
+        guard let id = chat.conversationId else { return }
+        let conversation = app.conversation(id: id)
+        makingAgent = AgentFormContext(conversationId: id,
+                                       title: conversation.map { app.title(for: $0) } ?? "",
+                                       model: conversation?.model ?? "",
+                                       reasoning: conversation?.reasoning ?? "",
+                                       limits: app.agentLimits)
     }
 
     private var webURL: URL? {

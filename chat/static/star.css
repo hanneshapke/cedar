@@ -1,6 +1,6 @@
 /* Starred conversations (star.js), shared by every UI: the star button in the header and the
    Starred list in the conversations sidebar. It draws with the variables each UI defines
-   (--ink-2, --muted, --wash, --mono), like schedule.css, so it reads in the light and dark themes
+   (--ink-2, --muted, --wash, --mono), like agents.css, so it reads in the light and dark themes
    alike. The button keeps each UI's own .icon-btn or .ghost look. */
 
 .cedar-star-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
