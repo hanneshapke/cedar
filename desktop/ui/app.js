@@ -52,7 +52,11 @@ function render(s) {
     $('docker-text').textContent = tr('docker.looking');
   } else if (d.state === 'missing') {
     dot($('docker-dot'), 'bad');
-    $('docker-text').textContent = tr('docker.missing', { apps: p.text('dockerApps') });
+    // When Cedar can set Docker up itself, that offer leads and installing it by hand moves below
+    // it (see renderDockerSetup).
+    $('docker-text').textContent = s.docker_setup_available
+      ? tr('docker.missingSetup')
+      : tr('docker.missing', { apps: p.text('dockerApps') });
     dockerHelp.href = 'https://www.docker.com/products/docker-desktop/';
     dockerHelp.classList.remove('hidden');
   } else if (d.state === 'starting') {
@@ -284,6 +288,16 @@ function renderDockerSetup(s, p) {
   const wanted = d.state === 'missing' || (p.setupWhenNotRunning && d.state === 'not_running');
   const show = s.docker_setup_available && (inProgress || st.state === 'failed' || wanted);
   $('docker-setup').classList.toggle('hidden', !show);
+  // No Docker at all: the setup button comes right under the status line, and the do-it-yourself
+  // path (install one, Check again) follows as the alternative. Otherwise Check again stays first.
+  const setupFirst = show && d.state === 'missing';
+  const manual = $('docker-manual');
+  const manualText = $('docker-manual-text');
+  manual.classList.toggle('alternative', setupFirst);
+  manualText.classList.toggle('hidden', !setupFirst);
+  manualText.textContent = setupFirst ? tr('docker.manual', { apps: p.text('dockerApps') }) : '';
+  if (setupFirst) $('docker-setup').after(manual);
+  else $('docker-setup').before(manual);
   if (!show) return;
   $('docker-setup-intro').textContent = p.text('setupIntro');
   const install = $('docker-install');
