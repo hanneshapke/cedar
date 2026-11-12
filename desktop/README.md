@@ -432,7 +432,7 @@ has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-
 picked. The setup page, the tray menu and
 the app's own messages (setup steps, its own errors, the password and permission prompts) follow
 it; what Docker, Tailscale and the installers print stays as they print it. cedar gets it as
-`DEFAULT_LOCALE` (for scheduled agents and their notifications) the next time it starts, unless
+`DEFAULT_LOCALE` (for agents' runs and their notifications) the next time it starts, unless
 `cedar_env` sets one. The setup page's texts are in `ui/strings.js`, the app's own in
 `src/i18n.rs`; both follow [the glossary](../docs/i18n-glossary.md).
 

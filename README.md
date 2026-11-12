@@ -193,8 +193,8 @@ replaces each image with a note like `[image omitted: photo.png]`.
 
 ### Compacting a run into a prompt
 
-A client that wants to repeat what a conversation achieved (the chat UI's [scheduled
-agents](chat/README.md#scheduled-agents), say) needs one prompt rather than the back-and-forth that
+A client that wants to repeat what a conversation achieved (the chat UI's
+[agents](chat/README.md#agents), say) needs one prompt rather than the back-and-forth that
 led there. `POST /v1/compact` with `{"run_id": "<a finished run of yours>"}` makes a single model
 call over the run's stored conversation, with no tools and no sandbox, asking the model to write a
 prompt a fresh agent could carry out unattended: the concrete inputs, the constraints, the output
@@ -307,7 +307,7 @@ same way, and a second call in the same run is refused, so a request gets at mos
 
 Each wait ends after `APPROVAL_TIMEOUT_SECS`: the plan as proposed is followed, and the call is
 not made. Time spent waiting doesn't count toward `RUN_TIMEOUT_SECS`. A run that isn't
-interactive (the default, and what scheduled runs should use) shows its plan without waiting and
+interactive (the default, and what unattended runs should use) shows its plan without waiting and
 asks nothing.
 
 The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-separated list):
@@ -447,7 +447,7 @@ tools](#personal-tools-in-python) see the locale as `CEDAR_LOCALE` (`de-CH`) and
 [registry/CONTRIBUTING.md](registry/CONTRIBUTING.md#translations)).
 
 The chat asks for the language first, on a new browser or phone, and keeps it in Settings → Language.
-It sends the locale with every message, and saves it on its server too, so scheduled runs and
+It sends the locale with every message, and saves it on its server too, so agents' runs and
 notifications use it. Translators: see [docs/i18n-glossary.md](docs/i18n-glossary.md) for the terms
 and tone.
 
@@ -531,7 +531,7 @@ Memory holds a few facts; it can't hold a running log. For data the user will co
 compare with later (a weekly export, measurements, a diary, a monthly report) cedar keeps
 **records**: named sets of JSON rows per API key, in its own database, that outlive workspaces,
 conversations and runs. Durable data is what makes long-running threads unnecessary: a weekly
-check-in can be a fresh conversation, or a [scheduled agent](chat/README.md#scheduled-agents), and
+check-in can be a fresh conversation, or an [agent](chat/README.md#agents) on a schedule, and
 still see every earlier week.
 
 - **Sets and keys.** A set has a name (`running_log`; lowercase letters, digits and underscores,
@@ -560,8 +560,8 @@ still see every earlier week.
   data they handed over in their messages and files as rows for a set, new or existing; a row is
   saved only if every value of it occurs in the user's own words or files (numbers with a dot or a
   comma, dates taken as given), so nothing from a tool result or a web page gets in, and what was
-  saved and what was refused is in the `memory.updated` event. And a [scheduled
-  agent](chat/README.md#scheduled-agents) whose task produces a result worth comparing over time
+  saved and what was refused is in the `memory.updated` event. And an [agent](chat/README.md#agents)
+  on a schedule whose task produces a result worth comparing over time
   is told, by [compaction](#compacting-a-run-into-a-prompt), to save each run's result into a
   fixed set keyed by date and to compare with the earlier rows before answering.
 - **Health data.** A set saved with `health_data: true` (heart rate, glucose, weight, sleep)
@@ -1237,7 +1237,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - With `search_flights` enabled (a SerpApi key is set or saved), the flight searches the model makes (airports, dates, passengers) leave your machine for SerpApi, which runs them on Google Flights, and the chat page loads airline logos from Google's servers. Each search uses up one of the key's monthly searches. The key is never passed into a container. Remove the key or set `FLIGHTS=off` if that is not acceptable.
 - With `compare_stocks` enabled, the ticker symbols the model looks up leave your machine for Yahoo Finance. Its chart and search APIs are public but unofficial: they need no key, but Yahoo may change or rate-limit them, and its terms limit them to personal use. Set `STOCKS=off` if that is not acceptable.
 - With `search_products` enabled (a Brave or Best Buy key is set or saved), the shopping requests the model makes leave your machine for Brave (and Best Buy, with its key), cedar fetches the shop and review pages they return from its own host, and the chat page loads product photos from the shops' servers. Pages can carry prompt injections like any fetched page; the tool hands the model their text as evidence and keeps only links and photos found on them. The keys are never passed into a container. Remove the keys or set `PRODUCTS=off` if that is not acceptable.
-- With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
+- With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [agents](chat/README.md#agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
 - A run's `callback_url` is a request from the cedar host too, to a URL the API client chooses. It carries only the run's id and final status, never its text, and refuses non-public addresses unless `WEBHOOK_ALLOW_PRIVATE` is on. A `callback_secret` is stored in cedar's database as given (it signs the calls; it is not a credential for anything else) and never returned.
@@ -1246,7 +1246,9 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine (and, with OpenShell on, to its gateway, which may attach volumes). Run cedar on a host or VM you are willing to dedicate to it.
 - Turning networking on for a Docker sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services. [OpenShell sandboxes](#openshell-sandboxes-opt-in) narrow that to the hosts their policy names, from the programs it names; turn them on in Settings → Advanced.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
-- [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as scheduled agents, call them without asking).
+- [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as cedar-chat's [agents](chat/README.md#agents), call them without asking).
+- [A tool called outside a run](#calling-a-tool-outside-a-run) leaves no run behind, so no conversation or trace shows what it read; only a log line and a database row say that the call was made, by which key, and how long it took. Any API key may make such calls, to the tools that only read (mail and calendar among them, for the one Google account every key shares) and to personal tools, whose code then runs with its declared network and secrets and nobody approving it. Give a key only to clients you would let start a run.
+- Runs that start by themselves from something outside (cedar-chat's [agents](chat/README.md#runs-that-start-from-outside) on a condition, a webhook, mail or the calendar) are given text other people wrote as part of their prompt, and are not interactive, so no tool call waits for approval. The chat marks that text off as data, gives such an agent tools without personal tools or Google writes unless told otherwise, and limits how often it runs. None of that makes a prompt injection impossible: choose such an agent's tools as you would for a stranger's input, and keep the tools that send, write or spend out of it.
 - [Memory](#memory) outlives the conversation it was saved in, so an instruction planted in it would too. The layers against that: only interactive runs can write facts about the user, and a fact is saved only when it quotes the user's own words from that conversation (a check in code, so nothing a tool, page, email or document said can be saved as something the user said); text that looks like a secret or an identifier is refused; what is shown is framed as the user's facts and the agent's notes that don't override the system prompt; every write is visible (a tool step, or the `memory.updated` event with what was saved and what was refused) and every change is an audit row; episodes and procedures are the agent's own account of what it did, written from the conversation's text and never from tool results; and everything can be read, edited, archived and deleted through `/v1/memory` (Settings → Memory in the chat). Memories stay in cedar's database and go to the LLM server with every run that has the `memory` group on, like the conversation itself. Set `MEMORY=off` if that is not acceptable.
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 

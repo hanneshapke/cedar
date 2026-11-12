@@ -9,18 +9,20 @@ browser  ──/api──▶  cedar-chat  ──/v1 (Bearer CEDAR_API_KEY)──
 
 The cedar API key stays on the server. The browser only talks to cedar-chat.
 
-## Two interfaces
+## Four interfaces
 
 The settings button (sliders icon, top right) switches between:
 
 | | Style | Layout |
 | --- | --- | --- |
-| `/v1/` | **Claude style** | Conversations in a sidebar, one thread with tool calls inline |
+| `/v3/` | **Ledger** | The Cedar-style split, with the plan, approvals, citations and a sources rail |
+| `/v4/` | **Dossier** | One column; each turn is a brief of plan, work, result and sources |
 | `/v2/` | **Cedar style** | Say on the left, show on the right: the conversation (prompts, Cedar's prose, its questions, and a step row per tool call) in a narrow column, and everything a tool produced as full-width cards on a "stage" beside it, grouped by turn |
+| `/v1/` | **Claude style** | Conversations in a sidebar, one thread with tool calls inline |
 
 Your choice is saved in this browser (`localStorage`, key `cedar-chat-ui`) and decides where `/`
-goes. Without a saved choice, `/` opens Cedar style. Switching keeps the open conversation and
-your access token. Opening `/v1/` or `/v2/` directly always shows that interface and does not
+goes. Without a saved choice, `/` opens Ledger. Switching keeps the open conversation and
+your access token. Opening `/v1/` to `/v4/` directly always shows that interface and does not
 change the saved choice.
 
 ## Features
@@ -150,7 +152,7 @@ Both interfaces have all of these, except where noted:
   answer sends what you picked and wrote as your next message, with each question repeated so the
   agent knows which answer is which; you can also just reply in the message box. Once a later
   message is in, the form is closed. Claude style puts it under the tool call, Cedar style in the
-  conversation column (`clarify-view.js` and `clarify-view.css`). A [scheduled agent](#scheduled-agents)'s run is
+  conversation column (`clarify-view.js` and `clarify-view.css`). An [agent](#agents)'s run is
   told nobody is there to answer, so it assumes instead of asking
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
 - Light and dark themes (follows the system), plus a mobile layout
@@ -162,18 +164,18 @@ Both interfaces have all of these, except where noted:
 - [Attachments](#attachments): PDFs, CSV and JSON files go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - Starred conversations: the star button in the header stars the open conversation, a chat or a
-  scheduled run alike, and a **Starred** list at the top of the sidebar (the drawer in the other
-  styles) lists them, most recently starred first, with a clock on scheduled runs. Stars are kept
+  run of an agent alike, and a **Starred** list at the top of the sidebar (the drawer in the other
+  styles) lists them, most recently starred first, with a clock on agents' runs. Stars are kept
   by this server, so the same list shows in every browser, the
   [Cedar app for macOS and Windows](../desktop/README.md) and the Cedar iOS and Android apps; a page picks up
   stars set elsewhere when it comes back into view, and every minute while it is shown
   (`star.js` and `star.css`)
-- [Scheduled agents](#scheduled-agents): a finished conversation can be turned into one prompt that
-  runs on its own every day, on weekdays, or weekly at a local time, listed in the sidebar with
-  every run's result
+- [Agents](#agents): prompts that run on their own, on a schedule, when something changes, when a
+  webhook is called, or when mail or a calendar event comes up, made from scratch or from a
+  finished conversation; a page lists them and every run's result, with what started it
 - [Notifications](#notifications): a response that finishes while you are in another conversation,
   another tab, or away is marked unread in the conversation list and counted in the page title and
-  on the bell button, whose inbox lists it (scheduled runs too); a question the agent asked is
+  on the bell button, whose inbox lists it (agents' runs too); a question the agent asked is
   marked "Needs answer". Out of the app, by the method you pick in Settings: a desktop
   notification from the [Cedar app for macOS and Windows](../desktop/README.md), a browser push (tab open or not), a push to the
   Cedar iOS or Android app, a phone push through Pushover, or an email
@@ -193,7 +195,7 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `flight-view.js` and `flight-view.css` for flights, `clarify-view.js` and `clarify-view.css` for clarifying questions,
-`schedule.js` and `schedule.css` for scheduled agents, `star.js` and `star.css` for starred
+`agents.js` and `agents.css` for the Agents page, `star.js` and `star.css` for starred
 conversations, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
 push, and
@@ -278,7 +280,7 @@ remove the tool.
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
 | `CHAT_MODELS_ACCESS` | `users` | Who may add, change and remove [the models](#models): `users` (everyone the access token lets in) or `admins` (the admin token; set this on a server several people use). API keys and the Google account stay with admins either way |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, except for a browser that opened the chat at a loopback address (`127.0.0.1`, `localhost`), which is sent back to that address |
-| `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for a schedule in that case (at most 60000) |
+| `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for an agent in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
 | `CHAT_FCM_URL` | `https://fcm.googleapis.com` | Where Android pushes through Firebase go (`…/v1/projects/{project}/messages:send`; for tests) |
@@ -350,7 +352,7 @@ What the page does with that:
 - The conversation list marks a conversation with an unseen finished (or failed) response with a
   dot and a bold title, and one whose last response was a question (`ask_user`) with a **Needs
   answer** chip, until the answer is sent.
-- The bell button in the header counts the unseen responses, scheduled runs included, and the
+- The bell button in the header counts the unseen responses, agents' runs included, and the
   page title carries the count (`(2) Cedar`). Clicking the bell lists them, newest first, with
   what happened (finished, failed, needs your answer) and when; a row opens the conversation,
   and **Mark all read** clears the list.
@@ -418,8 +420,8 @@ Which method is used, and for what:
 
 - **Default method** (only in the app, or one of the set-up methods) covers responses in
   conversations, and **Send it for** chooses between what needs you (a failure, a question the
-  agent asked, a scheduled run) and every response that ends while you are not watching it.
-- Each [scheduled agent](#scheduled-agents) has a **Notify me by** picker in its dialog: the
+  agent asked, an agent's run) and every response that ends while you are not watching it.
+- Each [agent](#agents) has a **Notify me by** picker in its form: the
   default, only in the app, or any set-up method, for that agent alone. An agent with a method of
   its own is announced on every finished or failed run, whatever **Send it for** says. The choice is
   shown with the agent in the list.
@@ -428,41 +430,123 @@ The last delivery, test or real, is shown with what the service answered. The cr
 this server's database (`CHAT_DATABASE_URL`), as they are, and are never sent back to the page;
 keep that file as private as the cedar key.
 
-## Scheduled agents
+## Agents
 
-Once a conversation has a finished response, the **Schedule** button (the clock in Claude style,
-"Schedule" in Cedar style) turns it into an agent that runs on its own:
+An agent is a prompt that Cedar runs on its own, with a **trigger** that says when. The **Agents**
+page (`#/agents`, linked from the sidebar in every style) lists them, grouped by what starts them:
 
-1. cedar reviews the whole conversation, tool calls included, and writes one self-contained prompt
-   for it (`POST /v1/compact` in cedar's API). If cedar no longer has the run, the exchanges this
-   service remembers are compacted instead, up to `CHAT_HISTORY_MAX_BYTES`.
-2. You edit the prompt until it stands on its own, name the schedule, and pick a frequency (every
-   day, weekdays, or every week on a weekday), a time of day, the model and its reasoning level.
-   Times are local: the
-   browser's time zone is sent along (an IANA name like `Europe/Berlin`), so daylight-saving
-   changes are handled, and the next run is confirmed in your local time.
-3. From then on the chat server starts the prompt as a **fresh** cedar run each time it is due: a
-   new conversation, a new workspace, no memory of the earlier runs, and no files (a schedule's
-   prompt is text only). It checks every 30 seconds, so a run starts within half a minute of its time.
+| Trigger | Starts a run |
+| --- | --- |
+| On a schedule | Every day, on weekdays, every week on a weekday, every month on a day (the last day in a shorter month), every N minutes, hours or days (at least 15 minutes), or once at a date and time. Times are local: the browser's time zone is sent along (an IANA name like `Europe/Berlin`), so daylight-saving changes are handled |
+| When something changes | Every few minutes (5 unless you say) the chat server looks at a value **without calling a model**, and starts a run only when the value passes a test. The value comes from a web address (a JSON API's reply, or a page's text), one of cedar's tools that can be called outside a run, or one of your [record sets](#records); a path such as `price.eur` picks it out of a JSON result. The test is *changes*, *is below / at most / above / at least* a number, *is exactly*, or *contains* |
+| When a webhook is called | Another app or device sends a `POST` to the agent's address with its secret (see [Webhooks](#webhooks)) |
+| When mail arrives | New mail matching a Gmail search (`from:billing@example.com has:attachment`), or any mail with an empty search |
+| Around calendar events | Some minutes before an event starts, when a new event appears, or both, optionally only for events matching a text |
 
-Scheduled runs are not interactive, so they read what cedar [remembers](#memory) about you (your
-units, your language, your projects) but cannot add to it or change it: nobody is there to see a
-memory being saved, and an agent that reads mail or web pages unattended must not be able to plant
-a standing instruction.
+**New agent** makes one from scratch: a name, the prompt, the trigger, the model and its reasoning
+level, and how you want to be told about its runs. **Make an agent** in a conversation's header
+(once it has a finished response) starts from that chat instead: cedar reviews the whole
+conversation, tool calls included, and writes one self-contained prompt for it (`POST /v1/compact`
+in cedar's API), which you then edit. If cedar no longer has the run, the exchanges this service
+remembers are compacted instead, up to `CHAT_HISTORY_MAX_BYTES`.
 
-Every run lives in a conversation of its own, named after the schedule and the time it was due,
-with the full tool trace and files panel. These conversations stay out of the conversation list;
-**Scheduled agents** in the conversations sidebar lists each schedule with its next run; clicking
-one opens its detail with every run's status and result, an **Open** button that shows a run as a
-conversation, and the prompt that was used. There you can also **Pause** and **Resume** a schedule,
-**Run now**, **Edit** the prompt and timing, and **Delete** it. Deleting a schedule deletes its runs' conversations and
-their cedar runs too.
+A trigger that watches something (a condition, mail, the calendar) has a **Try it** button in the
+form: one check, with nothing kept, that shows the value it found, whether a run would start, and
+what came back, so you can find the path to the value you mean.
 
-If the chat server was down when a run was due, the run starts once at the next start, and the
-schedule then moves on to its next slot (missed slots do not pile up). If cedar refuses the run
-because it is busy (its per-key active-run cap) or can't be reached, the slot is retried every tick
-for an hour, after which it is recorded as a failed run and skipped. Resuming a paused schedule
-skips the slots missed while it was paused. At most 100 schedules can exist.
+Each run is a **fresh** cedar run: a new conversation, a new workspace, no memory of the earlier
+runs, and no files (an agent's prompt is text only). The chat server looks every 30 seconds, so a
+run starts within half a minute of its time. Runs are not interactive, so they read what cedar
+[remembers](#memory) about you (your units, your language, your projects) but cannot add to it or
+change it: nobody is there to see a memory being saved, and an agent that reads mail or web pages
+unattended must not be able to plant a standing instruction.
+
+Every run lives in a conversation of its own, named after the agent and the time, with the full
+tool trace and files panel. These conversations stay out of the conversation list. An agent's page
+(`#/agents/{id}`) shows its trigger, where it stands (its next run, when it last checked, why a
+check failed), its prompt, and every run with what started it, its status and its result; **Open**
+shows a run as a conversation, whose header carries a badge that links back to the agent. There you
+can also **Pause** and **Resume** it, **Run now**, **Edit** it and **Delete** it. Deleting an agent
+deletes its runs' conversations and their cedar runs too. The **Activity** tab (`#/agents/activity`)
+is the other way in: the latest runs of all agents, newest first, each with its agent and what
+started it.
+
+How triggers behave:
+
+- **A first look only learns.** A *changes* condition, a mail trigger and a "new event" trigger
+  start nothing at their first check: what is already there is the starting point, and only what
+  differs or arrives afterwards counts. A threshold (*is below 40*) starts a run when it is first
+  found to hold, and again only after it has stopped holding in between.
+- **A check that fails starts nothing.** The agent's page says why (the address returned an error,
+  nothing is at that path, Google is not connected), and the check is tried again less and less
+  often, up to every six hours, until it works.
+- **Missed times do not pile up.** If the chat server was down when a run was due, the run starts
+  once at the next start and the agent moves on to its next time. If cedar refuses the run because
+  it is busy (its per-key active-run cap) or can't be reached, a clock's slot is retried every tick
+  for an hour, after which it is recorded as a failed run and skipped. Resuming a paused agent
+  skips what was missed while it was paused: a clock moves to its next time, and a watcher learns
+  anew what is there.
+- **A one-off switches itself off** after its run.
+- **Mail and calendar need Google** connected under Settings → Integrations, with cedar's built-in
+  Google backend (not `GOOGLE_BACKEND=mcp`). A calendar trigger looks at timed events; an all-day
+  event has no start to be minutes before.
+- **A personal tool as the thing to watch** runs its code on every check, in a container made for
+  the call, with nobody approving it. It can be checked every 5 minutes at most.
+
+At most 100 agents can exist.
+
+### Runs that start from outside
+
+A run on a clock is given your prompt and nothing else. A run started by a condition, a webhook,
+mail or the calendar is also given **what happened**: the value, the mail's subject and sender, the
+event, the body of the webhook call. That is text other people wrote, and nobody is there to
+approve what the agent does with it (cedar asks for approval only in interactive runs). Three
+things limit what can go wrong:
+
+- **The data is fenced off.** It is appended to the prompt in a block marked with a random number,
+  under a note that it is data and not instructions (at most 16 KiB). The conversation keeps your
+  prompt as you wrote it; the block is in the run's trace. This lowers the odds of an injected
+  instruction being followed. It does not rule it out.
+- **A careful choice of tools.** Unless you choose otherwise, such an agent gets every tool group
+  cedar offers except personal tools, and from the Google groups only the tools that read. The
+  form says so and lets you pick your default tools instead.
+- **Limits on how often.** One run at a time per agent; at most one run every 5 minutes; at most
+  24 runs in any 24 hours. Both numbers can be changed per agent (at least a minute apart, at most
+  500 a day). An event that comes too soon waits: a check decides again the next time round, and a
+  webhook call is kept, the latest in place of any earlier one, until the agent may run. The run
+  is then told how many calls it replaced. **Run now** is your own doing and not held to these.
+
+### Webhooks
+
+Saving a webhook agent gives it an address, `{CHAT_PUBLIC_URL}/api/hooks/<32 hex characters>`, and
+a secret. The secret is shown **once**; afterwards the page shows its last four characters and can
+make a new one, which stops the old one at once. Whatever calls the address with the secret starts
+a run, and the body of the request is handed to the agent as data:
+
+```sh
+curl -X POST 'https://chat.example/api/hooks/6be059e30e9f97a82578455b139de8cb' \
+  -H 'Authorization: Bearer <secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{"door": "open"}'
+# 202 {"started": true, "queued": false, "conversation_id": "…"}
+```
+
+- The route takes **no access token**: the hook's secret is what lets a call in, and it gives
+  access to nothing else on this server. The address is a random id, not the agent's.
+- Instead of the bearer header, a call can carry a signature of its body made with the secret:
+  `X-Cedar-Signature: t=<unix seconds>,v1=<hex>` (HMAC-SHA256 over `<t>.<body>`, the scheme
+  [cedar's own callbacks](../README.md#being-told-when-a-run-ends) use; a timestamp more than five
+  minutes off is refused), or GitHub's `X-Hub-Signature-256: sha256=<hex>` (HMAC-SHA256 over the
+  body), so a repository webhook can point straight at an agent.
+- Anything that doesn't check out (an unknown address, a wrong or missing secret, a paused agent)
+  gets the same `404`. The body may be up to 64 KiB, of any content type; with it, the run is told
+  the `Content-Type` and any `X-…-Event` header. More than 60 calls a minute to one hook (600 to
+  all) get a `429`.
+- `202 {"started": false, "queued": true}` means the call is kept until the agent may run (see the
+  limits above).
+- The sender has to be able to reach this server. On the default `127.0.0.1` that is only this
+  machine; behind Tailscale, only your tailnet. The secret is kept in this server's database
+  (`CHAT_DATABASE_URL`) as it is, like the notification credentials.
 
 ## Tools and settings
 
@@ -479,7 +563,7 @@ change things (sending mail, editing events) ask before they are switched on. Th
 
 The **Tools** button next to the message box changes the tools for the open conversation only
 (in a new chat, for the conversation the first message creates); a dot on it shows the
-conversation has its own choice. A schedule made from a conversation keeps that conversation's
+conversation has its own choice. An agent on a schedule made from a conversation keeps that conversation's
 tools.
 
 Every message sends cedar the resolved choice, `*` when everything is on, so changing the defaults
@@ -570,8 +654,8 @@ what to put in its place (a made-up name reads best; without one, a neutral `red
 and say whether the agent did what you asked. The *Exactly what is sent* tab is the document that
 *Send* posts, byte for byte, and *Download JSON* saves it.
 
-Some conversations can't be contributed, and the dialog says why: one still being answered, a
-scheduled agent's, one that called a Gmail or Calendar tool (other people's data), one whose run
+Some conversations can't be contributed, and the dialog says why: one still being answered, an
+agent's run, one that called a Gmail or Calendar tool (other people's data), one whose run
 cedar no longer has, one from a model the corpus doesn't publish, or one in which a secret is still
 in the text after redaction. The checks the corpus runs are run here first, so a bundle the dialog
 shows as ready is one the corpus will take.
@@ -666,13 +750,13 @@ the model name is not one of them. **Edit**, **Make default** and **Remove** cha
 conversations fail at their next message until another model is picked. The first model
 registered is the default, and a fresh cedar has none: the message box says so until an admin adds
 one. Saving an API key needs cedar's `CEDAR_SECRET_KEY`; a server without one can be registered
-without it. The send button's menu, the default model on the Models page, and the schedule dialog
+without it. The send button's menu, the default model on the Models page, and the agent form
 all follow the list.
 
 ## API
 
 All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
-`Authorization: Bearer <token>` (except `/api/config`). Errors look like cedar's:
+`Authorization: Bearer <token>` (except `/api/config`, and `/api/hooks/{hook_id}`, which takes a [webhook](#webhooks)'s own secret). Errors look like cedar's:
 `{"error": {"code": ..., "message": ...}}`.
 
 | Method and path | Purpose |
@@ -681,9 +765,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
-| `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations a schedule created are left out |
+| `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations that are an agent's runs are left out |
 | `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
-| `GET /api/conversations/{id}` | `{conversation, turns}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen` |
+| `GET /api/conversations/{id}` | `{conversation, turns, agent?}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "plan"?: "off"\|"on"\|"auto"\|"tool", "locale"?: "de-CH", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) (`plan`, the phone apps' Plans setting, overrides the Settings one for this message; `locale`, the language the page or app is shown in, overrides the saved one) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
@@ -698,8 +782,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `DELETE /api/contributions/{id}` | Withdraw it from the corpus; answers the receipt with `withdrawn_at`. `404` for an unknown receipt |
 | `GET` / `PUT /api/settings/contributions` | The one-time choices: `{license, pseudonym, include_reasoning, include_fetched, accepted_at, available, host, licenses}`. `PUT` takes any of `license`, `pseudonym` (`"new"` makes one, `""` drops it), `include_reasoning`, `include_fetched` and `enabled` (sets or clears `accepted_at`) |
 | `PUT /api/turns/{id}/rating` | `{"rating": 1 \| -1 \| null}`: your thumb on a response; answers the turn |
-| `PUT` / `DELETE /api/conversations/{id}/star` | Star or unstar the conversation (a chat or a scheduled run) for every client. Both are idempotent; starring again keeps the first `starred_at`. Returns the conversation |
-| `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, scheduled runs included, each with `schedule_title` (the schedule a run belongs to, else `null`) |
+| `PUT` / `DELETE /api/conversations/{id}/star` | Star or unstar the conversation (a chat or an agent's run) for every client. Both are idempotent; starring again keeps the first `starred_at`. Returns the conversation |
+| `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, agents' runs included, each with `schedule_title` (the agent a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
 | `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
@@ -718,12 +802,17 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `DELETE /api/notifications/android/devices/{id}` | Remove a registered Android phone |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
-| `GET /api/schedules` | Every schedule, enabled ones first, with its `last_run` |
-| `POST /api/schedules` | Create one: `{"title", "prompt", "frequency": "daily"\|"weekdays"\|"weekly", "weekday"?: 0–6 (Monday–Sunday, weekly only), "time": "HH:MM", "timezone": "<IANA name>", "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?}`. `model` must be registered with cedar and `reasoning` one of its levels (or the default model's, without `model`); blank means the default. Without `tools` the schedule takes the conversation's own tools, if it has any, else it follows the defaults. `notify` is how its finished runs are announced: a method set up under [Notifications](#out-of-the-app) (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method |
-| `GET /api/schedules/{id}` | `{schedule, runs}`, newest run first, each with its `turn` (refreshed while unfinished) or an `error` if the run could not be started |
-| `PATCH /api/schedules/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A changed timing (or resuming) recomputes the next run |
-| `DELETE /api/schedules/{id}` | Delete the schedule with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
-| `POST /api/schedules/{id}/run` | Start a run now, without moving the next scheduled one. Returns 409 while its latest run is still going |
+| `GET /api/agents` | `{agents, limits}`: every [agent](#agents), enabled ones first, each `{id, title, prompt, model, reasoning, tools, notify, enabled, source_conversation_id, timezone, trigger, next_run_at, next_check_at, last_run_at, last_checked_at, last_error, waiting, min_interval_secs, max_runs_per_day, hook, last_run, created_at, updated_at}`. `next_run_at` is set for an agent on a clock and `next_check_at` for one that watches; `last_error` says why its last check failed; `waiting` that a webhook call is held until it may run; `hook` is `{url, path, secret_last4}` for a webhook agent. `limits` has the defaults (`max_agents`, `min_interval_secs`, `max_runs_per_day`, `min_interval_minutes`, `check_minutes`, `personal_check_minutes`) |
+| `POST /api/agents` | Create one: `{"title", "prompt", "trigger", "timezone"?, "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?, "enabled"?, "min_interval_secs"?, "max_runs_per_day"?}`. `trigger` is one of the shapes below. Without `tools`, an agent that events start gets the [careful choice](#runs-that-start-from-outside), and one on a clock the conversation's tools or the defaults; `null` means the defaults. `notify` is how its finished runs are announced: a method set up under Notifications (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method. Returns `201` with the agent; a webhook agent's `hook.secret` is in this response only. 409 at 100 agents |
+| `GET /api/agents/{id}` | `{agent, runs}`, newest run first (at most 100), each `{id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error, cause, turn}`. `cause` is what started it, `{kind, summary, excerpt?}` with `kind` one of `clock`, `changed`, `holds`, `webhook`, `mail`, `soon`, `new_event`, and `summary` a line in the saved language; `null` for "run now". `turn` is refreshed while unfinished; `error` says why a run could not be started |
+| `PATCH /api/agents/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A `trigger` replaces the whole trigger and forgets what the old one had seen; resuming skips what was missed. A webhook agent that gets another trigger loses its address |
+| `DELETE /api/agents/{id}` | Delete the agent with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
+| `POST /api/agents/{id}/run` | Start a run now, whatever the trigger says. Returns 409 while its latest run is still going |
+| `POST /api/agents/{id}/hook/rotate` | A new secret for a webhook agent, returned in `hook.secret` this once; the old one stops working. 409 if the agent has no webhook |
+| `POST /api/agents/test` | Try a watching trigger out, keeping nothing: `{"trigger"}` → `{ok: true, value, would_fire, summary?, sample: {text, cut, json}}`, or `{ok: false, error, sample?}` when the check fails. 400 for a trigger that doesn't watch |
+| `GET /api/agents/activity` | The latest runs of all agents, newest first: `{items, next_before}`, each item a run as above plus `agent: {id, title, trigger_kind}`. `?limit=` (30, at most 100) and `?before=` (the previous page's `next_before`) page back |
+| `POST /api/hooks/{hook_id}` | **No access token**: [a webhook agent's address](#webhooks). `202 {started, queued, conversation_id?}`; `404` for anything that doesn't check out; `413` over 64 KiB; `429` over 60 calls a minute |
+| `GET /api/schedules`, `POST /api/schedules`, `GET` / `PATCH` / `DELETE /api/schedules/{id}`, `POST /api/schedules/{id}/run` | The agents API from before triggers, kept for the iPhone and Android apps of that time: the same agents, but only those on a daily, weekday or weekly clock, in the old shape (`frequency`, `weekday`, `time_of_day`, `timezone`, `next_run_at` on the agent itself). Any other agent is a `404` here. New clients use `/api/agents` |
 | `GET /api/settings` | The defaults for new runs: `{tools, model, system, max_turns, plan, locale}` (`null` means cedar's own), plus `defaults`: cedar's own model (`model` and `model_id`, `null` until one is registered), system prompt and turn limit (`null` if cedar can't be reached) |
 | `PUT /api/settings/locale` | `{"locale": "de-CH"}` saves the user's language and region (`null` goes back to cedar's `DEFAULT_LOCALE`). Scheduled runs and messages that don't name a locale use it, and notifications are written in it. The pages and apps ask for it first and keep it in Settings → Language |
 | `PUT /api/settings` | Replace them (all but `locale`, which has its own route). Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
@@ -752,6 +841,19 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/integrations/google/connect` | Admin: `{url}` of Google's consent page |
 | `DELETE /api/integrations/google` | Admin: disconnect the Google account |
 | `GET /api/oauth/google/callback` | Where Google sends the browser back. Needs no token: the single-use `state` cedar issued for the admin's "Connect Google" is the check. Redirects to `/?integrations=connected` or `/?integrations=error&message=…` |
+
+A `trigger` is `{"kind", ...}`:
+
+| `kind` | Fields |
+| --- | --- |
+| `time` | `frequency`: `daily` \| `weekdays` \| `weekly`, `weekday`?: 0–6 (Monday–Sunday, weekly only), `time`: `HH:MM`, `timezone`: an IANA name |
+| `once` | `at`: `YYYY-MM-DDTHH:MM`, local to `timezone`; `timezone`. In the future |
+| `interval` | `every_minutes`: 15 to 10080 |
+| `monthly` | `day`: 1–31, `time`, `timezone` |
+| `condition` | `source`: `{"type": "url", "url", "as"?: "json" \| "text"}`, `{"type": "tool", "name", "input"}` (a tool `GET /api/tools` marks `pollable`) or `{"type": "records", "set"}` (seen as `{count, updated_at, records}`); `extract`?: a JSON pointer (`/price/eur`) or dotted path (`price.eur`); `predicate`: `{"op": "changes" \| "gt" \| "lt" \| "gte" \| "lte" \| "equals" \| "contains", "value"?}`; `every_minutes`: 1 to 10080 (5 unless given; at least 5 for a personal tool) |
+| `webhook` | none |
+| `email` | `query`: a Gmail search; `every_minutes` |
+| `calendar` | `calendar_id`?, `filter`?, `minutes_before`?, `new_events`?: at least one of the last two; `every_minutes` |
 
 ## Tests
 

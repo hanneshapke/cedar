@@ -43,7 +43,11 @@ server (they are for developers).
 | run (one agent run) | Lauf | exécution | ejecución |
 | task | Aufgabe | tâche | tarea |
 | agent | Agent | agent | agente |
-| scheduled agent, schedule | geplanter Agent, Zeitplan | agent planifié, planification | agente programado, programación |
+| agent (a prompt that runs on its own), schedule | Agent, Zeitplan | agent, horaire | agente, horario |
+| trigger (what starts an agent's run) | Auslöser | déclencheur | activador |
+| webhook, secret | Webhook, Geheimnis | webhook, secret | webhook, secreto |
+| record set | Datensatz | jeu de données | conjunto de registros |
+| check (a look at what an agent watches) | Prüfung, prüfen | vérification, vérifier | comprobación, comprobar |
 | plan, step | Plan, Schritt | plan, étape | plan, paso |
 | approve, approval | freigeben, Freigabe | approuver, approbation | aprobar, aprobación |
 | Allow / Allow always / Deny | Erlauben / Immer erlauben / Ablehnen | Autoriser / Toujours autoriser / Refuser | Permitir / Permitir siempre / Denegar |
