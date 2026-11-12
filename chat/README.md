@@ -201,7 +201,7 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
-`stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `flight-view.js` and `flight-view.css` for flights, `clarify-view.js` and `clarify-view.css` for clarifying questions,
+`stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `flight-view.js` and `flight-view.css` for flights, `clarify-view.js` and `clarify-view.css` for clarifying questions, `followup-view.js` and `followup-view.css` for suggested follow-ups,
 `agents.js` and `agents.css` for the Agents page, `star.js` and `star.css` for starred
 conversations, `search.js` and `search.css` for the search over the conversations, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
@@ -449,6 +449,9 @@ page (`#/agents`, linked from the sidebar in every style) lists them, grouped by
 | When a webhook is called | Another app or device sends a `POST` to the agent's address with its secret (see [Webhooks](#webhooks)) |
 | When mail arrives | New mail matching a Gmail search (`from:billing@example.com has:attachment`), or any mail with an empty search |
 | Around calendar events | Some minutes before an event starts, when a new event appears, or both, optionally only for events matching a text |
+| When records are added | A row is added to one of your [record sets](#records), or added or changed. The run is handed those rows, so "a new row in `expenses`" can start a budget check. Nothing leaves your machine for this one |
+| When a file arrives | A new file appears in a Google Drive folder (give the folder's address from the browser, or its ID). The run is handed the files' names and IDs and reads them with the Drive tools. Folders inside the folder don't count |
+| From your phone | The Cedar app on your phone asks for a run (see [Your phone](#your-phone)): a Shortcuts action on an iPhone, the share sheet or an automation app on Android. Text or a link sent along goes to the run as data |
 
 **New agent** makes one from scratch: a name, the prompt, the trigger, the model and its reasoning
 level, and how you want to be told about its runs. **Make an agent** in a conversation's header
@@ -457,7 +460,7 @@ conversation, tool calls included, and writes one self-contained prompt for it (
 in cedar's API), which you then edit. If cedar no longer has the run, the exchanges this service
 remembers are compacted instead, up to `CHAT_HISTORY_MAX_BYTES`.
 
-A trigger that watches something (a condition, mail, the calendar) has a **Try it** button in the
+A trigger that watches something (a condition, records, mail, the calendar, a Drive folder) has a **Try it** button in the
 form: one check, with nothing kept, that shows the value it found, whether a run would start, and
 what came back, so you can find the path to the value you mean.
 
@@ -480,8 +483,8 @@ started it.
 
 How triggers behave:
 
-- **A first look only learns.** A *changes* condition, a mail trigger and a "new event" trigger
-  start nothing at their first check: what is already there is the starting point, and only what
+- **A first look only learns.** A *changes* condition and the mail, "new event", records and
+  Drive triggers start nothing at their first check: what is already there is the starting point, and only what
   differs or arrives afterwards counts. A threshold (*is below 40*) starts a run when it is first
   found to hold, and again only after it has stopped holding in between.
 - **A check that fails starts nothing.** The agent's page says why (the address returned an error,
@@ -494,7 +497,7 @@ How triggers behave:
   skips what was missed while it was paused: a clock moves to its next time, and a watcher learns
   anew what is there.
 - **A one-off switches itself off** after its run.
-- **Mail and calendar need Google** connected under Settings → Integrations, with cedar's built-in
+- **Mail, calendar and Drive need Google** connected under Settings → Integrations, with cedar's built-in
   Google backend (not `GOOGLE_BACKEND=mcp`). A calendar trigger looks at timed events; an all-day
   event has no start to be minutes before.
 - **A personal tool as the thing to watch** runs its code on every check, in a container made for
@@ -504,9 +507,10 @@ At most 100 agents can exist.
 
 ### Runs that start from outside
 
-A run on a clock is given your prompt and nothing else. A run started by a condition, a webhook,
-mail or the calendar is also given **what happened**: the value, the mail's subject and sender, the
-event, the body of the webhook call. That is text other people wrote, and nobody is there to
+A run on a clock is given your prompt and nothing else. A run started by a condition, records, a
+webhook, your phone, mail, the calendar or a Drive folder is also given **what happened**: the
+value, the new rows, the mail's subject and sender, the event, the files' names, the body of the
+webhook call, what your phone shared. That is text other people wrote, and nobody is there to
 approve what the agent does with it (cedar asks for approval only in interactive runs). Three
 things limit what can go wrong:
 
@@ -522,6 +526,45 @@ things limit what can go wrong:
   500 a day). An event that comes too soon waits: a check decides again the next time round, and a
   webhook call is kept, the latest in place of any earlier one, until the agent may run. The run
   is then told how many calls it replaced. **Run now** is your own doing and not held to these.
+
+### Your phone
+
+`POST /api/agents/{id}/trigger` starts an agent's run because your own device asked. It takes the
+access token like every other route (it is you asking, not a stranger with a secret), works for
+any agent that isn't paused, and can bring something along: `{"source"?, "text"?, "title"?,
+"url"?}`, at most 16 KiB together, handed to the run as data. `source` says what on the device
+asked (`shortcut`, `share`, `automation`) and shows with the run.
+
+- On an **iPhone**, the Cedar app adds a **Run Cedar Agent** action to the Shortcuts app, with the
+  agent to run and an optional text. Shortcuts' own automations can run it when you arrive at or
+  leave a place, connect to CarPlay, at a time, or from the share sheet through a shortcut.
+- On **Android**, the app is a **share target** (share text or a link to Cedar and pick the
+  agent), and other apps such as Tasker can start an agent with an intent once you allow that in
+  the app.
+
+An automation can ask often, so these runs are held to the agent's limits like any other that
+starts from outside; a request that comes too soon is answered `{"started": false, "held":
+"too_soon"}` (or `busy`, `daily_limit`, `cedar_busy`) instead of being queued. An agent with the
+*From your phone* trigger has no other way to start, besides **Run now**.
+
+### Follow-ups the agent suggests
+
+"Remind me on Friday", "check again tomorrow", "tell me when it ships": cedar's
+`suggest_follow_up` tool lets the model answer these honestly. It **schedules nothing**. The chat
+shows what the model suggested as a card under the reply: the title, when, the prompt the
+follow-up would run, and **Set up** and **Dismiss**.
+
+- **Set up** makes a one-off agent that runs the suggested prompt at the suggested time, in a new
+  conversation, and notifies you like any agent. It shows under Agents, where you can change or
+  delete it. Because the model wrote the prompt, perhaps after reading a page or a mail, the agent
+  gets the [careful choice of tools](#runs-that-start-from-outside).
+- **Dismiss** only records that you saw it. A suggestion whose time has passed can only be dismissed.
+- The first decision stands, on every device, so the same suggestion can't be set up twice.
+- To keep watching something, the follow-up's own run can suggest the next check, which again
+  waits for you: nothing chains by itself.
+
+This is why a prompt injection can at most put a suggestion in front of you: an agent only comes
+to exist when you press the button, and you see its prompt first.
 
 ### Webhooks
 
@@ -774,7 +817,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
 | `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations that are an agent's runs are left out |
 | `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
-| `GET /api/conversations/{id}` | `{conversation, turns, agent?}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run |
+| `GET /api/conversations/{id}` | `{conversation, turns, agent?, followups}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run; `followups` lists what was decided about the [follow-ups suggested](#follow-ups-the-agent-suggests) in its turns (one not listed is still open) |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "plan"?: "off"\|"on"\|"auto"\|"tool", "locale"?: "de-CH", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) (`plan`, the phone apps' Plans setting, overrides the Settings one for this message; `locale`, the language the page or app is shown in, overrides the saved one) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
@@ -812,11 +855,13 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
 | `GET /api/agents` | `{agents, limits}`: every [agent](#agents), enabled ones first, each `{id, title, prompt, model, reasoning, tools, notify, enabled, source_conversation_id, timezone, trigger, next_run_at, next_check_at, last_run_at, last_checked_at, last_error, waiting, min_interval_secs, max_runs_per_day, hook, last_run, created_at, updated_at}`. `next_run_at` is set for an agent on a clock and `next_check_at` for one that watches; `last_error` says why its last check failed; `waiting` that a webhook call is held until it may run; `hook` is `{url, path, secret_last4}` for a webhook agent. `limits` has the defaults (`max_agents`, `min_interval_secs`, `max_runs_per_day`, `min_interval_minutes`, `check_minutes`, `personal_check_minutes`) |
 | `POST /api/agents` | Create one: `{"title", "prompt", "trigger", "timezone"?, "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?, "enabled"?, "min_interval_secs"?, "max_runs_per_day"?}`. `trigger` is one of the shapes below. Without `tools`, an agent that events start gets the [careful choice](#runs-that-start-from-outside), and one on a clock the conversation's tools or the defaults; `null` means the defaults. `notify` is how its finished runs are announced: a method set up under Notifications (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method. Returns `201` with the agent; a webhook agent's `hook.secret` is in this response only. 409 at 100 agents |
-| `GET /api/agents/{id}` | `{agent, runs}`, newest run first (at most 100), each `{id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error, cause, turn}`. `cause` is what started it, `{kind, summary, excerpt?}` with `kind` one of `clock`, `changed`, `holds`, `webhook`, `mail`, `soon`, `new_event`, and `summary` a line in the saved language; `null` for "run now". `turn` is refreshed while unfinished; `error` says why a run could not be started |
+| `GET /api/agents/{id}` | `{agent, runs}`, newest run first (at most 100), each `{id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error, cause, turn}`. `cause` is what started it, `{kind, summary, excerpt?}` with `kind` one of `clock`, `changed`, `holds`, `rows`, `webhook`, `device`, `mail`, `soon`, `new_event`, `files`, and `summary` a line in the saved language; `null` for "run now". `turn` is refreshed while unfinished; `error` says why a run could not be started |
 | `PATCH /api/agents/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A `trigger` replaces the whole trigger and forgets what the old one had seen; resuming skips what was missed. A webhook agent that gets another trigger loses its address |
 | `DELETE /api/agents/{id}` | Delete the agent with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/agents/{id}/run` | Start a run now, whatever the trigger says. Returns 409 while its latest run is still going |
 | `POST /api/agents/{id}/hook/rotate` | A new secret for a webhook agent, returned in `hook.secret` this once; the old one stops working. 409 if the agent has no webhook |
+| `POST /api/agents/{id}/trigger` | [Your phone](#your-phone) asks for a run of any agent that isn't paused: `{"source"?, "text"?, "title"?, "url"?}` (the body may be left out; at most 16 KiB, else `413`). `202 {started: true, conversation_id}` or `202 {started: false, held: "busy" \| "too_soon" \| "daily_limit" \| "cedar_busy"}`; `409` for a paused agent |
+| `PUT /api/turns/{id}/followups/{call_id}` | Decide about [a follow-up the model suggested](#follow-ups-the-agent-suggests) in that turn (`call_id` is the `suggest_follow_up` call's id in the run's events): `{"decision": "accept", "title", "prompt", "at", "timezone"}` makes a one-off agent, `{"decision": "dismiss"}` records that. Returns `{followup: {turn_id, call_id, status, agent_id, decided_at}, agent}`. The first decision stands; deciding again returns it. `400` if the time has passed |
 | `POST /api/agents/test` | Try a watching trigger out, keeping nothing: `{"trigger"}` → `{ok: true, value, would_fire, summary?, sample: {text, cut, json}}`, or `{ok: false, error, sample?}` when the check fails. 400 for a trigger that doesn't watch |
 | `GET /api/agents/activity` | The latest runs of all agents, newest first: `{items, next_before}`, each item a run as above plus `agent: {id, title, trigger_kind}`. `?limit=` (30, at most 100) and `?before=` (the previous page's `next_before`) page back |
 | `POST /api/hooks/{hook_id}` | **No access token**: [a webhook agent's address](#webhooks). `202 {started, queued, conversation_id?}`; `404` for anything that doesn't check out; `413` over 64 KiB; `429` over 60 calls a minute |
@@ -863,6 +908,9 @@ A `trigger` is `{"kind", ...}`:
 | `webhook` | none |
 | `email` | `query`: a Gmail search; `every_minutes` |
 | `calendar` | `calendar_id`?, `filter`?, `minutes_before`?, `new_events`?: at least one of the last two; `every_minutes` |
+| `records` | `set`: a record set's name; `on`: `added` (the default) or `changed` (added or changed); `every_minutes` |
+| `drive` | `folder`: a Google Drive folder's ID or its address; `every_minutes` |
+| `device` | none; started through `POST /api/agents/{id}/trigger` |
 
 ## Tests
 

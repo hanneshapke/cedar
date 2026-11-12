@@ -33,9 +33,11 @@ const cedarAgents = (() => {
   const REFRESH_MS = 10_000;
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   /** The kinds of trigger, by the group the list shows them in. */
-  const GROUPS = { schedule: ['time', 'once', 'interval', 'monthly'], condition: ['condition'], webhook: ['webhook'], mail: ['email', 'calendar'] };
-  /** What the form's picker offers: mail and calendar are one group in the list, two choices here. */
-  const PICKS = ['schedule', 'condition', 'webhook', 'email', 'calendar'];
+  const GROUPS = { schedule: ['time', 'once', 'interval', 'monthly'], condition: ['condition', 'records'], webhook: ['webhook', 'device'], mail: ['email', 'calendar', 'drive'] };
+  /** What the form's picker offers: one choice for the clock, and one for each other kind. */
+  const PICKS = ['schedule', 'condition', 'records', 'webhook', 'device', 'email', 'calendar', 'drive'];
+  /** The kinds that check something between runs, which can be tried out before saving. */
+  const WATCHING = ['condition', 'records', 'email', 'calendar', 'drive'];
   const FREQUENCIES = ['daily', 'weekdays', 'weekly', 'monthly', 'interval', 'once'];
   const OPS = ['changes', 'lt', 'lte', 'gt', 'gte', 'equals', 'contains'];
   const SIGNS = { lt: '<', lte: '≤', gt: '>', gte: '≥', equals: '=' };
@@ -46,6 +48,9 @@ const cedarAgents = (() => {
     email: '<rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path>',
     calendar: '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path>',
     mail: '<rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path>',
+    records: '<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18M3 15h18M9 4v16"></path>',
+    drive: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>',
+    device: '<rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M11 18h2"></path>',
     back: '<path d="M15 6l-6 6 6 6"></path>',
     agents: '<rect x="4" y="8" width="16" height="11" rx="3"></rect><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"></path>',
   };
@@ -119,7 +124,7 @@ const cedarAgents = (() => {
 
   /** Whether something outside starts the runs (not the clock): these get limits and careful tools. */
   function byEvent(kind) {
-    return ['condition', 'webhook', 'email', 'calendar'].includes(kind);
+    return WATCHING.includes(kind) || kind === 'webhook' || kind === 'device';
   }
 
   /** "Every 2 hours", from minutes. */
@@ -164,6 +169,9 @@ const cedarAgents = (() => {
         return `${text} · ${tr('agents.checkEvery', { count: t.every_minutes })}`;
       }
       case 'webhook': return tr('agents.desc.webhook');
+      case 'device': return tr('agents.desc.device');
+      case 'records': return `${tr(t.on === 'changed' ? 'agents.desc.rowsChanged' : 'agents.desc.rowsAdded', { set: t.set })} · ${tr('agents.checkEvery', { count: t.every_minutes })}`;
+      case 'drive': return `${tr('agents.desc.drive')} · ${tr('agents.checkEvery', { count: t.every_minutes })}`;
       case 'email': return t.query ? tr('agents.desc.email', { query: t.query }) : tr('agents.desc.emailAny');
       case 'calendar': {
         const soon = t.minutes_before == null ? null : t.minutes_before === 0 ? tr('agents.desc.calStart') : tr('agents.desc.calSoon', { count: t.minutes_before });
@@ -182,6 +190,7 @@ const cedarAgents = (() => {
     if (a.last_error) return [tr('agents.status.failing'), 'err'];
     if (a.waiting) return [tr('agents.status.held'), 'live'];
     if (kind === 'webhook') return [tr('agents.status.listening'), 'ok'];
+    if (kind === 'device') return [tr('agents.status.device'), 'ok'];
     if (byEvent(kind)) return [a.last_checked_at ? tr('agents.status.watchingChecked', { when: when(a.last_checked_at) }) : tr('agents.status.watching'), 'ok'];
     if (a.next_run_at) return [tr('agents.status.next', { when: when(a.next_run_at) }), ''];
     return ['', ''];
@@ -400,7 +409,7 @@ const cedarAgents = (() => {
     const last = a.last_run;
     if (last) meta.append(chip(last), el('span', '', tr('agents.lastRun', { when: when(last.started_at) })));
     else meta.append(el('span', '', tr('agents.neverRan')));
-    c.append(icon(groupOf(kind) === 'mail' ? kind : groupOf(kind)), title, el('div', 'cedar-ag-sub', describe(a.trigger)), meta);
+    c.append(icon(ICONS[kind] ? kind : groupOf(kind)), title, el('div', 'cedar-ag-sub', describe(a.trigger)), meta);
     const snippet = a.last_error || last?.error || last?.turn?.error || last?.turn?.final_text;
     if (snippet) c.append(el('div', 'cedar-ag-snippet', String(snippet).replace(/[#*_`>]/g, '').slice(0, 300)));
     return c;
@@ -819,6 +828,34 @@ const cedarAgents = (() => {
     const webhookSet = el('fieldset', 'cedar-ag-set');
     webhookSet.append(el('div', 'cedar-ag-note', `${tr('agents.form.webhookNote')} ${tr('agents.hook.reach')}`));
 
+    // -- the user's own device
+    const deviceSet = el('fieldset', 'cedar-ag-set');
+    deviceSet.append(el('div', 'cedar-ag-note', tr('agents.form.deviceNote')));
+
+    // -- rows of a record set
+    const rec = t.kind === 'records' ? t : { on: 'added' };
+    const recSet = el('select');
+    for (const s of sets) recSet.append(new Option(s, s));
+    if (rec.set && !sets.includes(rec.set)) recSet.append(new Option(rec.set, rec.set));
+    if (rec.set) recSet.value = rec.set;
+    const recOn = select([['added', tr('agents.rows.added')], ['changed', tr('agents.rows.changed')]], rec.on);
+    const recEvery = everyField(t.kind === 'records' ? t.every_minutes : undefined);
+    const recRow = el('div', 'cedar-ag-row');
+    recRow.append(field(tr('agents.form.set'), recSet), field(tr('agents.form.rowsWhen'), recOn), recEvery.wrap);
+    const recordsSet = el('fieldset', 'cedar-ag-set');
+    const recEmpty = el('div', 'cedar-ag-note', tr('agents.form.noSets'));
+    recEmpty.hidden = recSet.options.length > 0;
+    recRow.hidden = !recSet.options.length;
+    recordsSet.append(recRow, recEmpty, help(tr('agents.form.rowsHelp')));
+
+    // -- a Drive folder
+    const folder = input('text', { placeholder: 'https://drive.google.com/drive/folders/…', value: t.kind === 'drive' ? t.folder : '', spellcheck: false, required: true });
+    const driveEvery = everyField(t.kind === 'drive' ? t.every_minutes : undefined);
+    const driveRow = el('div', 'cedar-ag-row');
+    driveRow.append(driveEvery.wrap);
+    const driveSet = el('fieldset', 'cedar-ag-set');
+    driveSet.append(field(tr('agents.form.folder'), folder), help(`${tr('agents.form.folderHelp')} ${tr('agents.form.googleNote')}`), driveRow);
+
     // -- mail
     const query = input('text', { placeholder: tr('agents.form.queryPlaceholder'), value: t.kind === 'email' ? t.query : '', spellcheck: false });
     const mailEvery = everyField(t.kind === 'email' ? t.every_minutes : undefined);
@@ -892,10 +929,10 @@ const cedarAgents = (() => {
     form.append(
       field(tr('agents.form.name'), name), field(tr('agents.form.prompt'), prompt), promptHelp,
       el('div', 'cedar-ag-legend', tr('agents.form.trigger')), picks,
-      scheduleSet, conditionSet, webhookSet, mailSet, calendarSet, tryBox,
+      scheduleSet, conditionSet, recordsSet, webhookSet, deviceSet, mailSet, calendarSet, driveSet, tryBox,
       safety, limitsRow, limitsHelp, runRow2, help(tr('agents.form.notifyHelp')), error, actions,
     );
-    const sets2 = { schedule: scheduleSet, condition: conditionSet, webhook: webhookSet, email: mailSet, calendar: calendarSet };
+    const sets2 = { schedule: scheduleSet, condition: conditionSet, records: recordsSet, webhook: webhookSet, device: deviceSet, email: mailSet, calendar: calendarSet, drive: driveSet };
     const syncPick = () => {
       const pick = picked();
       for (const [id, fieldset] of Object.entries(sets2)) {
@@ -904,7 +941,7 @@ const cedarAgents = (() => {
         fieldset.disabled = id !== pick;
       }
       const outside = pick !== 'schedule';
-      tryBox.hidden = !['condition', 'email', 'calendar'].includes(pick);
+      tryBox.hidden = !WATCHING.includes(pick);
       safety.hidden = !outside;
       // On a clock, a new agent takes the chat's tools (or the defaults): nothing to choose.
       toolsField.hidden = !agent && !outside;
@@ -950,6 +987,9 @@ const cedarAgents = (() => {
           return out;
         }
         case 'webhook': return { kind: 'webhook' };
+        case 'device': return { kind: 'device' };
+        case 'records': return { kind: 'records', set: recSet.value, on: recOn.value, every_minutes: everyOf(recEvery) };
+        case 'drive': return { kind: 'drive', folder: folder.value.trim(), every_minutes: everyOf(driveEvery) };
         case 'email': return { kind: 'email', query: query.value.trim(), every_minutes: everyOf(mailEvery) };
         default: {
           if (!soonOn.checked && !newOn.checked) throw new Error(tr('agents.form.calNeed'));
@@ -977,6 +1017,8 @@ const cedarAgents = (() => {
           const firstOnly = kind !== 'condition' ? !r.would_fire : body.trigger.predicate.op === 'changes';
           if (kind === 'email') out.push(el('b', '', tr('agents.try.threads', { count: Number(r.value) })));
           else if (kind === 'calendar') out.push(el('b', '', tr('agents.try.events', { count: Number(r.value) })));
+          else if (kind === 'records') out.push(el('b', '', tr('agents.try.rows', { count: Number(r.value) })));
+          else if (kind === 'drive') out.push(el('b', '', tr('agents.try.files', { count: Number(r.value) })));
           else out.push(el('b', '', tr('agents.try.value', { value: r.value })));
           if (r.would_fire) out.push(el('div', '', r.summary ? `${tr('agents.try.wouldFire')} (${r.summary})` : tr('agents.try.wouldFire')));
           else out.push(el('div', 'cedar-ag-note', firstOnly ? tr('agents.try.firstLook') : tr('agents.try.wouldNot')));

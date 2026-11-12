@@ -90,6 +90,9 @@ const WEATHER_VIEW_CSS: &str = include_str!("../static/weather-view.css");
 /// Draws the `ask_user` tool's result as a form with choices and a free-form answer; both UIs load it.
 const CLARIFY_VIEW_JS: &str = include_str!("../static/clarify-view.js");
 const CLARIFY_VIEW_CSS: &str = include_str!("../static/clarify-view.css");
+/// The card for a follow-up the model suggested, with the buttons that decide about it; every UI loads it.
+const FOLLOWUP_VIEW_JS: &str = include_str!("../static/followup-view.js");
+const FOLLOWUP_VIEW_CSS: &str = include_str!("../static/followup-view.css");
 /// Draws the `plan_trip` tool's result as a route map with the options; it needs the map view.
 const TRANSIT_VIEW_JS: &str = include_str!("../static/transit-view.js");
 const TRANSIT_VIEW_CSS: &str = include_str!("../static/transit-view.css");
@@ -389,6 +392,8 @@ pub fn router(state: AppState) -> Router {
         .route("/weather-view.css", get(|| async { asset(CSS, WEATHER_VIEW_CSS) }))
         .route("/clarify-view.js", get(|| async { asset(JS, CLARIFY_VIEW_JS) }))
         .route("/clarify-view.css", get(|| async { asset(CSS, CLARIFY_VIEW_CSS) }))
+        .route("/followup-view.js", get(|| async { asset(JS, FOLLOWUP_VIEW_JS) }))
+        .route("/followup-view.css", get(|| async { asset(CSS, FOLLOWUP_VIEW_CSS) }))
         .route("/transit-view.js", get(|| async { asset(JS, TRANSIT_VIEW_JS) }))
         .route("/transit-view.css", get(|| async { asset(CSS, TRANSIT_VIEW_CSS) }))
         .route("/stock-view.js", get(|| async { asset(JS, STOCK_VIEW_JS) }))

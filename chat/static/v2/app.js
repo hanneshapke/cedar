@@ -1041,6 +1041,14 @@ function applyEvent(view, event) {
           placeNote(view, n);
           view.stepsEl = null;
         }
+        // A suggested follow-up is a card in the conversation, with the buttons that decide about it.
+        const followUp = tool.name === 'suggest_follow_up' && !tool.is_error && cedarFollowUp.parse(tool.output);
+        if (followUp) {
+          const n = note('clarify', escapeHtml(tr('followup.suggests')), '');
+          n.lastChild.append(cedarFollowUp.element(followUp, { turnId: view.turn.id, callId: tool.id }));
+          placeNote(view, n);
+          view.stepsEl = null;
+        }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
         // A chart drawn as a card isn't shown again.
         if (!tool.is_error && !(tool.name === 'generate_chart' && cedarChart.parse(tool.output, tool.input))) {
@@ -1315,6 +1323,8 @@ async function openConversation(id) {
   state.current = detail.conversation;
   // The agent whose run this is, if it is one: the badge in the header links to it.
   state.current.agent = detail.agent;
+  // What was already decided about the follow-ups suggested in it: their cards say so.
+  cedarFollowUp.known(detail.followups);
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   restorePickers(detail.conversation);
@@ -1603,6 +1613,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: closeDrawer });
   cedarSearch.init({ api, onOpen: closeDrawer, reveal: openDrawer });
   cedarSettings.init({

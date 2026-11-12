@@ -1,0 +1,18 @@
+/* A follow-up the model suggested (followup-view.js), shared by every UI: a card with what and
+   when, and the two buttons that decide about it. It draws with the variables each UI defines
+   (--sheet, --ink, --ink-2, --muted, --line, --accent, --mono); buttons reuse each UI's .copy-btn
+   and .primary. */
+
+.cedar-followup { display: flex; flex-direction: column; gap: 8px; max-width: 560px; margin: 10px 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 12px; background: var(--sheet); color: var(--ink); font-size: 13.5px; }
+.cedar-followup.settled { border-color: var(--line); }
+.cedar-followup-head { display: flex; flex-direction: column; gap: 2px; }
+.cedar-followup-head b { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.cedar-followup-head span { color: var(--ink-2); }
+.cedar-followup-prompt > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.cedar-followup-prompt pre { margin: 6px 0 0; padding: 8px 10px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 8px; background: rgba(128, 128, 128, .08); font: 12.5px/1.5 var(--mono, ui-monospace, monospace); }
+.cedar-followup-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cedar-followup-note { flex: 1 1 220px; color: var(--muted); font-size: 12.5px; }
+.cedar-followup-done { flex: 1; color: var(--accent); font-weight: 500; }
+.cedar-followup-foot .copy-btn, .cedar-followup-foot .primary { padding: 5px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: none; }
+.cedar-followup-foot .copy-btn { border: 1px solid var(--line); background: none; color: var(--ink); }
+.cedar-followup-foot button:disabled { opacity: .5; cursor: default; }

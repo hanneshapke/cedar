@@ -436,6 +436,8 @@ async function openConversation(id) {
   state.current = detail.conversation;
   // The agent whose run this is, if it is one: the badge in the header links to it.
   state.current.agent = detail.agent;
+  // What was already decided about the follow-ups suggested in it: their cards say so.
+  cedarFollowUp.known(detail.followups);
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   setHeader();
@@ -877,6 +879,14 @@ function toolResult(view, d) {
       scrollToBottom(false);
     }
   }
+  // A suggest_follow_up result is a card with the suggestion and the buttons that decide about it.
+  if (details.dataset.tool === 'suggest_follow_up' && !d.is_error) {
+    const spec = cedarFollowUp.parse(text);
+    if (spec) {
+      details.after(cedarFollowUp.element(spec, { turnId: view.turn.id, callId: d.id }));
+      scrollToBottom(false);
+    }
+  }
   // The images a call produced (a picture it saved, or one a command or script wrote) are shown
   // with the reply, once each: see finishTurn. A chart drawn as a card isn't shown again.
   if (!d.is_error && !carded) {
@@ -1244,6 +1254,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: () => toggleSidebar(false) });
   cedarSearch.init({ api, onOpen: () => toggleSidebar(false), reveal: () => toggleSidebar(true) });
   cedarSettings.init({
