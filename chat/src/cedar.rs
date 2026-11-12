@@ -304,6 +304,18 @@ impl CedarClient {
         admin(self.send(req).await.map(drop))
     }
 
+    /// Save a Slack bot token for the `slack_*` tools; cedar checks it with Slack first and
+    /// answers with the integrations status.
+    pub async fn set_slack_token(&self, token: &str) -> Result<Value, AppError> {
+        let req = self.http.put(self.url("/admin/integrations/slack")).json(&json!({ "api_key": token }));
+        admin(self.json(req).await)
+    }
+
+    pub async fn remove_slack_token(&self) -> Result<(), AppError> {
+        let req = self.http.delete(self.url("/admin/integrations/slack")).timeout(REQUEST_TIMEOUT);
+        admin(self.send(req).await.map(drop))
+    }
+
     /// Save the Google OAuth client "Connect Google" goes through; cedar checks it with Google
     /// first and answers with the integrations status.
     pub async fn set_google_client(&self, client_id: &str, client_secret: &str) -> Result<Value, AppError> {

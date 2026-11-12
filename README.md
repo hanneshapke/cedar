@@ -97,10 +97,11 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
 | `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
-| `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key, a Best Buy key and a SerpApi key are set, a Google OAuth client is set up (`google.client`, with its `client_id`) and a Google account connected, and where from (`bestbuy` also says whether `PRODUCTS` is on, `serpapi` whether `FLIGHTS` is). Never returns a secret. |
+| `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key, a Best Buy key, a SerpApi key and a Slack bot token are set (`slack`, with the workspace a saved token belongs to), a Google OAuth client is set up (`google.client`, with its `client_id`) and a Google account connected, and where from (`bestbuy` also says whether `PRODUCTS` is on, `serpapi` whether `FLIGHTS` is, `slack` whether `SLACK` is). Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
 | `PUT` / `DELETE /v1/admin/integrations/bestbuy` | Admin: save a Best Buy key (`{"api_key"}`; checked with one small product search first), which adds Best Buy's catalog to `search_products`, or remove it. |
 | `PUT` / `DELETE /v1/admin/integrations/serpapi` | Admin: save a SerpApi key (`{"api_key"}`; checked against SerpApi's account endpoint first, which costs no search), which turns `search_flights` on, or remove it. |
+| `PUT` / `DELETE /v1/admin/integrations/slack` | Admin: save a Slack app's bot token (`{"api_key"}`; checked with Slack's `auth.test` first), which turns the `slack_*` tools on, or remove it. See [Slack](#slack). |
 | `PUT` / `DELETE /v1/admin/integrations/google/client` | Admin: save the Google OAuth client "Connect Google" goes through (`{"client_id", "client_secret"}`; checked against Google's token endpoint first) or remove it, which also disconnects the account it connected. Saving a different client disconnects the account too. |
 | `POST /v1/admin/integrations/google/authorize` | Admin: start connecting a Google account. Body `{"redirect_uri"}`; returns `{url}` to send the browser to. `409` until a client is set up. |
 | `POST /v1/admin/integrations/google/callback` | Admin: finish it with the `{"state", "code"}` Google sent to the redirect URI. Returns `{account}`. |
@@ -129,6 +130,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
 | `gmail`, `calendar`, `drive`, `sheets` | every `gmail_*`, `calendar_*`, `drive_*` or `sheets_*` tool, or name single ones (`gmail_search_threads`) |
+| `slack` | every `slack_*` tool, or name single ones (`slack_read_messages` to read without posting) |
 | `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
 
 The sandbox tools (`bash`, the file, Python, document, PDF, and chart tools) are always included,
@@ -277,6 +279,7 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 | Rule | Calls |
 | --- | --- |
 | `email` | Gmail tools that send, draft or change mail |
+| `slack` | `slack_send_message`; asked every time, with the channel and the message's first line |
 | `downloads` | `download_file`; "always" is per host |
 | `installs` | `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`, when the sandbox has a network; "always" is per package |
 | `deletes` | `rm`, `rmdir`, `shred`, `unlink` and `find -delete` in `bash`; asked every time |
@@ -604,7 +607,7 @@ Settings come from environment variables. The important ones:
 | --- | --- |
 | `CEDAR_API_KEYS` | required, comma-separated bearer tokens |
 | `CEDAR_ADMIN_KEYS` | empty (the keys that may register models and manage integrations; see [Models](#models)) |
-| `CEDAR_SECRET_KEY` | empty (needed to save a model server's API key, a Brave, Best Buy or SerpApi key or a Google account) |
+| `CEDAR_SECRET_KEY` | empty (needed to save a model server's API key, a Brave, Best Buy or SerpApi key, a Slack token or a Google account) |
 | `BIND_ADDR` | `127.0.0.1:8080` |
 | `DATABASE_URL` | `sqlite://cedar.db` |
 | `MAX_TURNS_CAP` | 25 |
@@ -613,7 +616,7 @@ Settings come from environment variables. The important ones:
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 |
 | `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first, `tool` to let the model propose a plan when it judges a request needs one; see [Plans and approvals](#plans-and-approvals)) |
-| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `downloads`, `installs`, `deletes`, `network`, `community`) |
+| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `slack`, `downloads`, `installs`, `deletes`, `network`, `community`) |
 | `APPROVAL_TIMEOUT_SECS` | 300 (how long an interactive run waits for its plan to be agreed or a call to be approved) |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
 | `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
@@ -643,6 +646,9 @@ Settings come from environment variables. The important ones:
 | `SERPAPI_API_KEY` | empty (set it, or save one in the chat UI's Settings → Server, to offer `search_flights`; a key from [SerpApi](https://serpapi.com), whose free plan covers a limited number of searches a month) |
 | `FLIGHTS` | `on` (set `off` to remove the `search_flights` tool even with a SerpApi key) |
 | `FLIGHTS_API_URL` | `https://serpapi.com` (SerpApi's root; `search_flights` calls its `/search.json` with `engine=google_flights`, and the key check its `/account.json`) |
+| `SLACK_BOT_TOKEN` | empty (set it, or save one in the chat UI's Settings → Server, to offer the `slack_*` tools; the bot token, `xoxb-…`, of a Slack app installed to your workspace, see [Slack](#slack)) |
+| `SLACK` | `on` (set `off` to remove the `slack_*` tools even with a token) |
+| `SLACK_API_URL` | `https://slack.com/api` (the root of Slack's Web API) |
 | `STOCKS` | `on` (set `off` to remove the `compare_stocks` tool) |
 | `STOCKS_CHART_URL` / `STOCKS_NEWS_URL` | `https://query1.finance.yahoo.com/v8/finance/chart` / `https://query1.finance.yahoo.com/v1/finance/search` (Yahoo Finance's chart API, which `compare_stocks` reads daily prices from, and its search API, which it reads headlines from) |
 | `BESTBUY_API_KEY` | empty (set it, or save one in the chat UI's Settings → Server, to add Best Buy's catalog to `search_products`, which otherwise searches the web with the Brave key; a free key from the [Best Buy developer portal](https://developer.bestbuy.com/)) |
@@ -701,6 +707,7 @@ Settings come from environment variables. The important ones:
 | `search_products` | Finds products to buy in any category, from any shop, and recommends the best. Takes `query` (what the user wants, e.g. `trail running shoes for wide feet`), optional `needs` (what matters to them: use, fit, style, must-haves), `min_price`, `max_price`, and `count` (options to recommend, 1–6, default 4). It runs two Brave web searches, one for reviews and roundups and one for shops, and, with a Best Buy key, searches Best Buy's catalog too. It reads up to eight of the pages it found (shops first, then reviews; through the same public-addresses-only client as `fetch_url`) for the schema.org product data shops embed: name, brand, photos, price and currency, stock, the customer rating with its review count, and a few reviews, falling back on Open Graph product tags; a review article is kept as text. Then the run's own model gets that evidence in one tool-free request and picks the best options for the request, each with why it fits, pros and cons, who it suits, the sources behind it, and the other options it compares with. The reply is held to the evidence: links and photos only come from the pages and search results, a price shown as checked comes from a store page (a price only review text states is kept, marked unchecked; one no source states is dropped), and a rating only counts with its review count. Each rating is also read on its own: the `adjusted` rating shrinks the average toward 4.0 as if fifteen typical reviews were added, with a `verdict` and a `confidence`. The tokens the tool's request takes are added to the run's, as a `usage` event with `purpose: "tool"`. If the model can't be asked or its reply can't be used, the products found are ranked by their adjusted ratings instead (`method: "ratings"`, with a `note`). Returns JSON with the `summary`, the `options` (`badges`, `price`, `price_checked`, `store`, `images`, `reviews`, `why`, `pros`, `cons`, `best_for`, `sources`, `comparable`, ...), the cited `sources`, and how many pages and products were `considered`. A search that finds nothing is an error. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Offered when a Brave Search key or a Best Buy key is set (in the environment or saved by an admin; see [Integrations](#integrations)), unless `PRODUCTS=off`. |
 | `ask_user` | Asks the user clarifying questions when a request is ambiguous and the answer would change what the agent does. Takes `questions` (1–4 objects, each with a `question`, an optional short `header`, up to 8 `options` with a `label` and optional `description`, given as 2 or more or left out for an open question, and `multi_select` to let several options be chosen). An "Other" option is dropped, since the user can always answer in their own words. The run then ends as `completed` with `stop_reason: "ask_user"` and the questions as its `final_text`; the tool result holds them as JSON, which the chat interfaces draw as a form (radio buttons, or checkboxes with `multi_select`, plus a free-form answer). The answer is the prompt of the next run, started with `parent_id`. Unless `ASK_USER=off`. |
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
+| `slack_*` | `slack_list_channels`, `slack_read_messages`, `slack_list_users` and `slack_send_message`: the team's Slack through Slack's Web API, as a Slack app. Only offered when a Slack bot token is set or saved; see [Slack](#slack). |
 | personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Each call runs in a container (or OpenShell sandbox) of its own that sees the workspace and only that tool, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
 
@@ -951,6 +958,40 @@ Drive and Sheets APIs enabled in the Cloud project, and the `drive.readonly` sco
 Nothing here creates, changes, shares or deletes anything in Drive. What documents say is shown
 to the model as information, with the same warning as for emails.
 
+### Slack
+
+With a Slack app's bot token, the model can look around your team's Slack and post to it:
+
+| Tool | What it does |
+| --- | --- |
+| `slack_list_channels` | The channels the app can see, with their IDs, topics and whether the app is a member. `query` matches names, topics and purposes; `member_only` and `limit` (default 50, at most 200) narrow the list. |
+| `slack_read_messages` | A channel's messages, oldest first, each with its author's name, time and `ts`. `channel` is a name (`#general`) or an ID; `oldest` and `latest` (a date, an RFC 3339 time or a `ts`) pick a period, `limit` how many (default 30, at most 100), and `cursor` reads on. `thread_ts` reads one thread instead. Mentions, channel links and links are turned into plain text. |
+| `slack_list_users` | The people in the workspace with their IDs, names, titles and time zones (and addresses, with `users:read.email`). `query` matches names, addresses and titles. |
+| `slack_send_message` | Posts `text` (Slack's mrkdwn, at most 4,000 characters) to `channel`: a channel's name or ID, or a user's ID for a direct message. `thread_ts` replies in a thread. |
+
+To set it up:
+
+1. Create an app at [api.slack.com/apps](https://api.slack.com/apps) (*From scratch*), and under
+   *OAuth & Permissions* give it the bot token scopes `channels:read`, `channels:history`,
+   `chat:write` and `users:read`. Add `groups:read` and `groups:history` for private channels, and
+   `users:read.email` if the model should see people's addresses. Without the private-channel
+   scopes the tools work on public channels only; without `users:read`, authors are shown by ID.
+2. Install the app to the workspace and copy its *Bot User OAuth Token* (`xoxb-…`) into
+   `SLACK_BOT_TOKEN`, or save it in the chat UI's Settings → Server (`PUT
+   /v1/admin/integrations/slack`), which checks it with Slack first and shows the workspace it
+   belongs to.
+3. Invite the app to the channels it should read or post in (`/invite @your-app`). Slack lets a
+   bot read only the channels it is a member of; the tools say so when it isn't.
+
+The tools run in the cedar process, so the token never reaches the sandbox, and it is only ever
+sent to `SLACK_API_URL`. Messages are posted as the app, not as you. In an interactive run a
+`slack_send_message` call waits for your OK (the `slack` rule of `TOOL_APPROVALS`, see
+[Plans and approvals](#plans-and-approvals)), showing the channel and the start of the message;
+a run that isn't interactive, a scheduled one included, posts without asking, so leave
+`slack_send_message` out of such a run's `tools` unless posting is what it is for. What people
+wrote in Slack reaches the model as information: the system prompt tells it not to take
+instructions from messages, but as with email, a channel anyone can post in is a way to try.
+
 ### Models
 
 The models runs can use live in a registry that admins manage through `PUT /v1/admin/models/{id}`,
@@ -989,7 +1030,7 @@ the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_UR
 
 ### Integrations
 
-Instead of putting `BRAVE_API_KEY`, `BESTBUY_API_KEY`, `SERPAPI_API_KEY`, `GOOGLE_CLIENT_ID`,
+Instead of putting `BRAVE_API_KEY`, `BESTBUY_API_KEY`, `SERPAPI_API_KEY`, `SLACK_BOT_TOKEN`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` in the environment, an admin can set them up
 through the API, which is what the chat UI's Settings → Server does, next to the models:
 
@@ -1008,7 +1049,7 @@ through the API, which is what the chat UI's Settings → Server does, next to t
    `GOOGLE_CLIENT_SECRET`) is used instead of a saved one; leave `GOOGLE_REFRESH_TOKEN` unset to
    connect the account from the UI.
 
-A saved Brave or Best Buy key is checked with one search before it is kept, a SerpApi key with SerpApi's account endpoint (which uses up no search), a Google client against Google's token endpoint. Saving or removing a credential
+A saved Brave or Best Buy key is checked with one search before it is kept, a SerpApi key with SerpApi's account endpoint (which uses up no search), a Slack token with Slack's `auth.test`, a Google client against Google's token endpoint. Saving or removing a credential
 rebuilds the tool set at once: the next run sees the change, runs already going keep the tools they
 started with. A value set in the environment always wins; the API reports it as `"source": "env"`
 and refuses to change it.
@@ -1197,6 +1238,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - With `weather_forecast` enabled, the place names and coordinates the model asks about leave your machine for Open-Meteo. With `show_map` enabled, so do the place names it looks up. With `plan_trip` enabled, a trip's start, destination, and time go to the transit planner and the driving router (Transitous and the OSRM demo server by default). Set `WEATHER=off`, `MAPS=off`, and `TRANSIT=off` if that is not acceptable.
 - With `show_recipe` enabled, the names of the dishes the model writes recipes for leave your machine for Wikipedia and Wikimedia Commons. Set `RECIPES=off` if that is not acceptable.
 - With `search_flights` enabled (a SerpApi key is set or saved), the flight searches the model makes (airports, dates, passengers) leave your machine for SerpApi, which runs them on Google Flights, and the chat page loads airline logos from Google's servers. Each search uses up one of the key's monthly searches. The key is never passed into a container. Remove the key or set `FLIGHTS=off` if that is not acceptable.
+- With the `slack_*` tools enabled (a Slack bot token is set or saved), the model reads the channels the Slack app was invited to and the workspace's list of people, so what your colleagues wrote there goes to your model server like the rest of a run, and what the model posts goes to Slack. The token stays in the cedar process. Set `SLACK=off`, or leave the tools out of a run's `tools`, if that is not acceptable.
 - With `compare_stocks` enabled, the ticker symbols the model looks up leave your machine for Yahoo Finance. Its chart and search APIs are public but unofficial: they need no key, but Yahoo may change or rate-limit them, and its terms limit them to personal use. Set `STOCKS=off` if that is not acceptable.
 - With `search_products` enabled (a Brave or Best Buy key is set or saved), the shopping requests the model makes leave your machine for Brave (and Best Buy, with its key), cedar fetches the shop and review pages they return from its own host, and the chat page loads product photos from the shops' servers. Pages can carry prompt injections like any fetched page; the tool hands the model their text as evidence and keeps only links and photos found on them. The keys are never passed into a container. Remove the keys or set `PRODUCTS=off` if that is not acceptable.
 - With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [scheduled agents](chat/README.md#scheduled-agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.

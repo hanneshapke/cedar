@@ -235,6 +235,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(put_serpapi_key).delete(delete_serpapi_key),
         )
         .route(
+            "/admin/integrations/slack",
+            axum::routing::put(put_slack_token).delete(delete_slack_token),
+        )
+        .route(
             "/admin/integrations/google",
             axum::routing::delete(delete_google),
         )
@@ -1241,6 +1245,26 @@ async fn delete_serpapi_key(
 ) -> Result<StatusCode, AppError> {
     require_admin(admin)?;
     state.integrations.remove_serpapi_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Save a Slack bot token (`{"api_key"}`, the same body as the Brave key's) once Slack knows it.
+async fn put_slack_token(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    state.integrations.set_slack_token(&body.api_key).await?;
+    Ok(Json(state.integrations.status().await?))
+}
+
+async fn delete_slack_token(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+) -> Result<StatusCode, AppError> {
+    require_admin(admin)?;
+    state.integrations.remove_slack_token().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -26,6 +26,8 @@ pub const DEFAULT_DRIVING_BASE_URL: &str = "https://router.project-osrm.org";
 /// Yahoo Finance's chart API (daily prices; the symbol goes under it) and search API (news).
 /// SerpApi, whose Google Flights API `search_flights` searches.
 pub const DEFAULT_FLIGHTS_API_URL: &str = "https://serpapi.com";
+/// Slack's Web API, which the `slack_*` tools call.
+pub const DEFAULT_SLACK_API_URL: &str = "https://slack.com/api";
 pub const DEFAULT_STOCKS_CHART_URL: &str = "https://query1.finance.yahoo.com/v8/finance/chart";
 pub const DEFAULT_STOCKS_NEWS_URL: &str = "https://query1.finance.yahoo.com/v1/finance/search";
 /// Best Buy's Products API (the search filter goes after it in parentheses), which
@@ -270,6 +272,13 @@ pub struct Config {
     pub serpapi_api_key: Option<String>,
     /// SerpApi's root; overridable so tests can point at a mock.
     pub flights_api_url: String,
+    /// Offer the `slack_*` tools (on by default), which still need `slack_bot_token`.
+    pub slack: bool,
+    /// A Slack app's bot token (`xoxb-...`). The `slack_*` tools are only offered to the model
+    /// when this is set (or saved).
+    pub slack_bot_token: Option<String>,
+    /// The root of Slack's Web API; overridable so tests can point at a mock.
+    pub slack_api_url: String,
     /// Offer the `compare_stocks` tool (on by default).
     pub stocks: bool,
     /// The chart API `compare_stocks` reads prices from, and the search API it reads news from.
@@ -610,6 +619,11 @@ impl Config {
                 .filter(|k| !k.is_empty()),
             flights_api_url: get("FLIGHTS_API_URL")
                 .unwrap_or_else(|| DEFAULT_FLIGHTS_API_URL.into()),
+            slack: flag("SLACK", true)?,
+            slack_bot_token: get("SLACK_BOT_TOKEN")
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty()),
+            slack_api_url: get("SLACK_API_URL").unwrap_or_else(|| DEFAULT_SLACK_API_URL.into()),
             stocks: flag("STOCKS", true)?,
             stocks_chart_url: get("STOCKS_CHART_URL")
                 .unwrap_or_else(|| DEFAULT_STOCKS_CHART_URL.into()),
@@ -989,6 +1003,24 @@ mod tests {
         assert!(!cfg.flights);
         assert_eq!(cfg.serpapi_api_key.as_deref(), Some("serp-secret"));
         assert_eq!(cfg.flights_api_url, "http://localhost:9999/serpapi");
+    }
+
+    #[test]
+    fn slack_needs_a_token_and_its_api_can_be_moved() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(cfg.slack);
+        assert_eq!(cfg.slack_bot_token, None);
+        assert_eq!(cfg.slack_api_url, DEFAULT_SLACK_API_URL);
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("SLACK", "off"),
+            ("SLACK_BOT_TOKEN", " xoxb-secret "),
+            ("SLACK_API_URL", "http://localhost:9999/api"),
+        ]))
+        .unwrap();
+        assert!(!cfg.slack);
+        assert_eq!(cfg.slack_bot_token.as_deref(), Some("xoxb-secret"));
+        assert_eq!(cfg.slack_api_url, "http://localhost:9999/api");
     }
 
     #[test]

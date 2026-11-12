@@ -561,6 +561,13 @@ async fn put_serpapi(State(s): State<Shared>, Json(body): Json<Value>) -> axum::
     Json(json!({ "serpapi": { "configured": true, "source": "ui", "last4": "5678", "enabled": true } })).into_response()
 }
 
+async fn put_slack(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "put_slack", body.clone()).await {
+        return refused;
+    }
+    Json(json!({ "slack": { "configured": true, "source": "ui", "last4": "4321", "team": "Acme", "user": "cedar", "enabled": true } })).into_response()
+}
+
 async fn delete_integration(s: Shared, which: &str) -> axum::response::Response {
     if let Some(refused) = admin(&s, &format!("delete_{which}"), Value::Null).await {
         return refused;
@@ -691,6 +698,10 @@ impl Harness {
             .route(
                 "/v1/admin/integrations/serpapi",
                 axum::routing::put(put_serpapi).delete(|State(s): State<Shared>| delete_integration(s, "serpapi")),
+            )
+            .route(
+                "/v1/admin/integrations/slack",
+                axum::routing::put(put_slack).delete(|State(s): State<Shared>| delete_integration(s, "slack")),
             )
             .route("/v1/admin/integrations/google", axum::routing::delete(|State(s): State<Shared>| delete_integration(s, "google")))
             .route(
@@ -2094,9 +2105,18 @@ async fn integrations_need_the_admin_token() {
     assert!(err["error"]["message"].as_str().unwrap().contains("between 256 and 8192"));
     let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/settings", None, Some(json!({ "max_image_side": 1024 }))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+    // The Slack bot token for the slack_ tools goes the same way as the keys.
+    let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/slack", Some("admin"), Some(json!({ "api_key": "xoxb-4321" }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["slack"]["team"], "Acme");
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/slack", None, Some(json!({ "api_key": "xoxb-4321" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/slack", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "put_google_client", "put_google_client", "delete_google_client", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings"]);
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "put_google_client", "put_google_client", "delete_google_client", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings", "put_slack", "delete_slack"]);
+    assert_eq!(calls[19].1, json!({ "api_key": "xoxb-4321" }), "the token goes through");
     assert_eq!(calls[4].1, json!({ "api_key": "serp-5678" }), "the key goes through");
     assert_eq!(calls[8].1, json!({ "client_id": "c-1.apps", "client_secret": "s-1" }), "the client goes through");
     assert_eq!(calls[11].1, query, "the body goes through as it is");

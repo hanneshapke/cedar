@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Slack.** With a Slack app's bot token, the model can look around your team's Slack and post to it, through four new tools that run in the cedar process: `slack_list_channels` (the channels the app can see, searchable by name, topic and purpose), `slack_read_messages` (a channel's messages, or one thread's, oldest first with their authors' names, by period and in pages), `slack_list_users` (the people in the workspace) and `slack_send_message` (a message to a channel, a thread, or one person). The token goes in `SLACK_BOT_TOKEN` or is saved in the web chat's Settings → Server (`PUT /v1/admin/integrations/slack`), where it is checked with Slack first and shown with the workspace it belongs to; `SLACK=off` removes the tools. The app reads only the channels it was invited to and posts as itself. In an interactive run, posting waits for your OK under a new `slack` approval rule that shows the channel and the start of the message. The tools form a `slack` tool group whose single tools can be chosen, so a run can read without being able to post. See *Slack* in the README for the app's scopes.
+
 ## 0.6.4
 
 - **The Docker step leads with *Set up Docker for me*.** When no Docker is found on a Mac or PC, the setup page put the button under two paragraphs and the *Check again* / *Get Docker Desktop* row, and people missed it. The button now sits directly under a one-line status, with what it does and Docker's license note below it; installing Docker yourself follows under a divider as the alternative.
