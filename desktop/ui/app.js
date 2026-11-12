@@ -341,13 +341,21 @@ function renderTailscaleSetup(s, p) {
   const done = st.state === 'installed' && s.share.state === 'on';
   const show = s.docker_setup_available && !done && (st.state !== 'idle' || !s.tailscale_installed);
   $('ts-setup').classList.toggle('hidden', !show);
+  // While the offer shows, it leads the section (as in the Docker step): the button comes right
+  // under one line on what Tailscale is for, and the long explanation follows below a divider.
+  const about = $('share-about');
+  about.classList.toggle('alternative', show);
+  if (show) $('ts-setup').after(about);
+  else $('ts-setup').before(about);
   if (!show) return;
+  $('ts-setup-lead').textContent = tr('tsSetup.lead', { computer: p.text('computer') });
   const install = $('ts-install');
   const text = $('ts-setup-text');
   const detail = $('ts-setup-detail');
   $('ts-setup-intro').textContent = tr('tsSetup.intro', { intro: p.text('tailscaleIntro') });
   $('ts-setup-intro').classList.toggle('hidden', st.state === 'installed');
   install.classList.toggle('hidden', st.state === 'installed');
+  install.parentElement.classList.toggle('hidden', st.state === 'installed');
   install.disabled = st.state === 'running';
   install.textContent = st.state === 'failed' ? tr('common.tryAgain') : tr('tsSetup.install');
   text.className = st.state === 'failed' ? 'error' : 'muted';

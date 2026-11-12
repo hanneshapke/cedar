@@ -65,8 +65,8 @@
   .qr svg { width: 220px; height: 220px; }
   .hidden { display: none; }
   .fine { font-size: 12px; }
-  #docker-setup-text:empty, #docker-setup-detail:empty { display: none; }
-  /* The do-it-yourself path, once it sits below Cedar's own offer to set Docker up. */
+  #docker-setup-text:empty, #docker-setup-detail:empty, #ts-setup-text:empty, #ts-setup-detail:empty { display: none; }
+  /* What follows Cedar's own offer to set Docker or Tailscale up: doing it yourself, the details. */
   .alternative { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
   .alternative .row { margin-top: 8px; }
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
@@ -229,14 +229,17 @@
 
 <section id="share">
   <h2><span class="dot" id="share-dot"></span><span data-i18n="share.title">iPhone, iPad &amp; Android</span></h2>
-  <p class="muted" data-i18n-html="html.share.about">The Cedar iOS and Android apps connect over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on <span class="this-computer">this computer</span> and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
+  <p class="muted" id="share-about" data-i18n-html="html.share.about">The Cedar iOS and Android apps connect over HTTPS only. Cedar can serve the chat on your <a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a> network with <code>tailscale serve</code>, so devices logged in to the same tailnet reach it and nothing else does. This needs Tailscale on <span class="this-computer">this computer</span> and the phone, and MagicDNS and HTTPS Certificates turned on in the admin console. Turning it on or off restarts Cedar once, so the chat learns its new address; a response still running is stopped.</p>
+  <!-- Offered while Tailscale isn't installed. app.js then moves the paragraph above below this
+       block, so the button that does the work comes first. -->
   <div id="ts-setup" class="hidden">
-    <p class="muted" id="ts-setup-intro"></p>
+    <p class="muted" id="ts-setup-lead"></p>
     <div class="row">
       <button class="primary" id="ts-install" data-i18n="tsSetup.install">Set up Tailscale for me</button>
     </div>
     <p id="ts-setup-text" class="muted"></p>
     <p class="detail" id="ts-setup-detail"></p>
+    <p class="muted" id="ts-setup-intro"></p>
   </div>
   <div class="row">
     <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
