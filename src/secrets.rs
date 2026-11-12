@@ -12,6 +12,8 @@ use sqlx::Row;
 pub const BRAVE_API_KEY: &str = "brave_api_key";
 pub const BESTBUY_API_KEY: &str = "bestbuy_api_key";
 pub const SERPAPI_API_KEY: &str = "serpapi_api_key";
+/// A Slack app's bot token; the metadata names the workspace and the app's user.
+pub const SLACK_BOT_TOKEN: &str = "slack_bot_token";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
 /// The Google OAuth client an admin saved: the value is the client secret, the metadata holds
 /// the client ID (which identifies the deployment and is not secret).

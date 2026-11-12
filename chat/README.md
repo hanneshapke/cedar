@@ -158,7 +158,7 @@ Both interfaces have all of these, except where noted:
   of the registered models with the levels each declares; an optional access token
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
-  [the models](#models) cedar can use, its Brave Search, Best Buy and SerpApi keys and its Google account
+  [the models](#models) cedar can use, its Brave Search, Best Buy and SerpApi keys, its Slack token and its Google account
 - [Attachments](#attachments): PDFs, CSV and JSON files go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - Starred conversations: the star button in the header stars the open conversation, a chat or a
@@ -621,7 +621,7 @@ and the error is relayed.
 
 Settings → **Server** is where the API keys go. Without `CHAT_ADMIN_TOKEN` it only explains how
 to turn it on and which tool groups lack a key. With it, the page is unlocked with that token for
-the browser session and manages cedar's Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
+the browser session and manages cedar's Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search), its Slack bot token, which turns on the Slack tools (the `xoxb-…` token of a Slack app installed to your workspace; it is checked with Slack, and the row then names the workspace and the app it posts as) (the others are each checked with one search before they are saved, then shown
 as its last four characters), its Google OAuth client (the ID and secret of a client made in your
 own Google Cloud project, or the JSON file the console downloads pasted into the form; the page
 walks through making one) and its Google account ("Connect Google" goes through Google's consent
@@ -742,6 +742,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `PUT` / `DELETE /api/integrations/bestbuy` | Admin: save (`{"api_key"}`) or remove cedar's Best Buy key |
 | `PUT` / `DELETE /api/integrations/serpapi` | Admin: save (`{"api_key"}`) or remove cedar's SerpApi key, which turns on `search_flights` |
+| `PUT` / `DELETE /api/integrations/slack` | Admin: save (`{"api_key"}`) or remove cedar's Slack bot token, which turns on the `slack_*` tools |
 | `GET /api/integrations/tools` | Admin: cedar's personal tools with their permissions and which secrets are saved (`GET /v1/admin/tools`), relayed |
 | `PUT` / `DELETE /api/integrations/tools/{name}/secrets/{secret}` | Admin: save (`{"value"}`) or remove a secret a personal tool declares |
 | `POST /api/integrations/tools/{name}/setup` | Admin: install a personal tool's packages again |

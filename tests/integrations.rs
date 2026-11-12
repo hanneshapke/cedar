@@ -219,8 +219,13 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "calendar",
             "drive",
             "sheets",
+            "slack",
             "custom"
         ]
+    );
+    assert_eq!(
+        group(&catalog, "slack")["reason"],
+        "Needs a Slack bot token"
     );
     let products = group(&catalog, "products");
     assert_eq!(products["available"], false);
