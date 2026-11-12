@@ -1330,7 +1330,7 @@ async fn both_uis_are_served() {
             assert!(page.contains("href=\"/chart-view.css\""), "{uri} loads the chart styles");
             assert!(page.contains("<script src=\"/models.js\">"), "{uri} loads the model registry script");
             assert!(
-                page.find("/models.js") < page.find("/schedule.js") && page.find("/models.js") < page.find("src=\"/settings.js\""),
+                page.find("/models.js") < page.find("src=\"/agents.js\"") && page.find("/models.js") < page.find("src=\"/settings.js\""),
                 "{uri} loads the models before the scripts that fill the pickers from them"
             );
             assert!(
@@ -1348,8 +1348,9 @@ async fn both_uis_are_served() {
             );
             assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
             assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
-            assert!(page.contains("<script src=\"/schedule.js\">"), "{uri} loads the scheduling script");
-            assert!(page.contains("href=\"/schedule.css\""), "{uri} loads the scheduling styles");
+            assert!(page.contains("<script src=\"/agents.js\">"), "{uri} loads the agents script");
+            assert!(page.find("/i18n/agents.js") < page.find("src=\"/agents.js\""), "{uri} loads the agents' words before the script that uses them");
+            assert!(page.contains("href=\"/agents.css\""), "{uri} loads the agents styles");
             assert!(page.contains("<script src=\"/star.js\">"), "{uri} loads the starring script");
             assert!(page.contains("href=\"/star.css\""), "{uri} loads the starring styles");
             assert!(page.contains("data-starred") && page.contains("data-star-toggle"), "{uri} has the Starred list and the star button");
@@ -1368,8 +1369,9 @@ async fn both_uis_are_served() {
                 page.find("/ui-pref.js") < page.find("/settings-shell.js") && page.find("/settings-shell.js") < page.find("src=\"/settings.js\""),
                 "{uri} loads the Settings frame after the UI choice and before the pages that register with it"
             );
-            assert!(page.contains("id=\"schedules-section\""), "{uri} lists scheduled agents in the sidebar");
-            assert!(page.contains("id=\"schedule-btn\""), "{uri} has a Schedule button");
+            assert!(page.contains("id=\"agents-nav\" href=\"#/agents\""), "{uri} links to the Agents page from the sidebar");
+            assert!(page.contains("id=\"agent-badge\""), "{uri} links a run's conversation to its agent");
+            assert!(page.contains("id=\"agent-btn\""), "{uri} has a Make-an-agent button");
         }
         let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
@@ -1411,8 +1413,9 @@ async fn both_uis_are_served() {
         ("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8", ".leaflet-container"),
         ("/models.js", "text/javascript; charset=utf-8", "cedarModels"),
         ("/models.css", "text/css; charset=utf-8", ".cedar-send-menu"),
-        ("/schedule.js", "text/javascript; charset=utf-8", "cedarSchedule"),
-        ("/schedule.css", "text/css; charset=utf-8", ".cedar-sched"),
+        ("/agents.js", "text/javascript; charset=utf-8", "cedarAgents"),
+        ("/i18n/agents.js", "text/javascript; charset=utf-8", "agents.title"),
+        ("/agents.css", "text/css; charset=utf-8", ".cedar-ag-page"),
         ("/star.js", "text/javascript; charset=utf-8", "cedarStar"),
         ("/star.css", "text/css; charset=utf-8", ".cedar-star"),
         ("/settings-shell.js", "text/javascript; charset=utf-8", "cedarSettingsShell"),

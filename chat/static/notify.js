@@ -16,7 +16,7 @@
 //     worker at /sw.js, a push to the Cedar iOS or Android app, a phone push through Pushover, an
 //     email) as one list of methods, the
 //     chosen one unfolding its credentials and a test send, and which responses are worth it
-//     (GET/PUT /api/notifications). schedule.js asks cedarNotify for the set-up methods to offer
+//     (GET/PUT /api/notifications). agents.js asks cedarNotify for the set-up methods to offer
 //     in a scheduled agent's own picker.
 //
 // The app hands over its helpers through cedarNotify.init():

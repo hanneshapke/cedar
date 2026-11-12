@@ -1,7 +1,7 @@
 'use strict';
 
 // The models cedar has registered (GET /api/models), shared by both UIs (/v1 and /v2) and by
-// settings.js and schedule.js. Each entry is cedar's
+// settings.js and agents.js. Each entry is cedar's
 // `{id, label, model, reasoning_levels, default_reasoning, is_default}`. This file fills the
 // pickers: a model <select> (ids, shown by label) and a reasoning <select> that offers the chosen
 // model's levels and hides itself when the model has none.

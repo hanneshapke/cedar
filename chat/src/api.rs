@@ -127,6 +127,7 @@ const I18N_CATALOGS: &[(&str, &str)] = &[
     ("common.js", include_str!("../static/i18n/common.js")),
     ("settings.js", include_str!("../static/i18n/settings.js")),
     ("cards.js", include_str!("../static/i18n/cards.js")),
+    ("agents.js", include_str!("../static/i18n/agents.js")),
     ("v1.js", include_str!("../static/i18n/v1.js")),
     ("v2.js", include_str!("../static/i18n/v2.js")),
     ("v3.js", include_str!("../static/i18n/v3.js")),
@@ -134,9 +135,10 @@ const I18N_CATALOGS: &[(&str, &str)] = &[
 ];
 const ATTACH_JS: &str = include_str!("../static/attach.js");
 const ATTACH_CSS: &str = include_str!("../static/attach.css");
-/// Scheduling a conversation as a recurring agent, and the Settings list of schedules; both UIs load it.
-const SCHEDULE_JS: &str = include_str!("../static/schedule.js");
-const SCHEDULE_CSS: &str = include_str!("../static/schedule.css");
+/// The Agents page (every agent and its runs, the activity feed, the form that makes one), the link
+/// to it in the sidebar and the badge on a run's conversation; every UI loads it.
+const AGENTS_JS: &str = include_str!("../static/agents.js");
+const AGENTS_CSS: &str = include_str!("../static/agents.css");
 /// The star button and the Starred list in the conversations sidebar; every UI loads it.
 const STAR_JS: &str = include_str!("../static/star.js");
 const MORE_MENU_JS: &str = include_str!("../static/more-menu.js");
@@ -400,8 +402,8 @@ pub fn router(state: AppState) -> Router {
         .route("/settings.css", get(|| async { asset(CSS, SETTINGS_CSS) }))
         .route("/attach.js", get(|| async { asset(JS, ATTACH_JS) }))
         .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
-        .route("/schedule.js", get(|| async { asset(JS, SCHEDULE_JS) }))
-        .route("/schedule.css", get(|| async { asset(CSS, SCHEDULE_CSS) }))
+        .route("/agents.js", get(|| async { asset(JS, AGENTS_JS) }))
+        .route("/agents.css", get(|| async { asset(CSS, AGENTS_CSS) }))
         .route("/star.js", get(|| async { asset(JS, STAR_JS) }))
         .route("/more-menu.js", get(|| async { asset(JS, MORE_MENU_JS) }))
         .route("/star.css", get(|| async { asset(CSS, STAR_CSS) }))
