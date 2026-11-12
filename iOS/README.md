@@ -45,6 +45,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   swipe or a long press, and find them under **Starred** in the sidebar's switch, most recently
   starred first. Stars are kept by cedar-chat, so they are the same here, on the web and in the
   desktop app
+- Search: the search field over the list finds chats and agents' runs by their title and by
+  what was said in them, on the server (`GET /api/conversations/search`), and shows each with the
+  passage that matched
 - Agents, as on the web: a **Chats | Starred | Agents** switch at the top of the sidebar, and
   under Agents an **Agents | Activity** switch. Agents lists every agent under what starts it
   (on a schedule, when something changes, a webhook, mail and calendar) with its trigger in a

@@ -95,6 +95,13 @@
     .busy .activity-icon { animation: pulse 1.2s infinite; border-top-color: var(--busy); }
     .dot.busy { animation: none; }
   }
+  /* How far the image download is (see pullProgress() in app.js); no value while that is unknown. */
+  progress { display: block; width: 100%; height: 6px; margin: 8px 0 4px; border: 0; border-radius: 3px;
+    overflow: hidden; background: var(--line); accent-color: var(--busy); appearance: none; -webkit-appearance: none; }
+  progress::-webkit-progress-bar { background: var(--line); }
+  progress::-webkit-progress-value { background: var(--busy); transition: width 0.3s; }
+  progress::-moz-progress-bar { background: var(--busy); }
+  progress:indeterminate { animation: pulse 1.2s infinite; }
   .lang-pick { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
   .lang-pick select { width: auto; padding: 3px 6px; font-size: 12px; }
   .onboarding { max-width: 440px; margin: 40px auto 0; }
@@ -136,6 +143,7 @@
   <div class="grow">
     <strong id="activity-title"></strong>
     <p id="activity-text" class="muted"></p>
+    <progress id="activity-progress" class="hidden" max="1"></progress>
   </div>
   <span class="go" id="activity-go" data-i18n="activity.go">Show me</span>
 </section>
@@ -177,6 +185,8 @@
 <section id="images">
   <h2><span class="dot" id="images-dot"></span><span data-i18n="images.title">Sandbox image</span></h2>
   <p id="images-text" class="muted" data-i18n="images.waiting">Waiting for Docker.</p>
+  <progress id="images-progress" class="hidden" max="1"></progress>
+  <p id="images-progress-text" class="muted fine"></p>
   <p class="detail" id="images-detail"></p>
   <div class="row">
     <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">

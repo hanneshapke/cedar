@@ -113,6 +113,10 @@
     <string name="delete">Delete</string>
     <string name="empty_starred_title">No Starred Conversations</string>
     <string name="empty_starred_text">Star a chat or an agent\'s run, here or on the web, to keep it at hand on every device.</string>
+    <string name="search_conversations">Search conversations</string>
+    <string name="clear_search">Clear the search</string>
+    <string name="search_empty_title">No Results</string>
+    <string name="search_empty_text">Nothing found for “%1$s”. Titles and messages are searched.</string>
     <string name="unread">Unread</string>
     <string name="needs_answer">Needs answer</string>
     <string name="rename_conversation">Rename Conversation</string>

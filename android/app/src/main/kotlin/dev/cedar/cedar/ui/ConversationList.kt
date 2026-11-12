@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.OpenInBrowser
@@ -44,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,16 +64,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.R
 import dev.cedar.cedar.SidebarMode
 import dev.cedar.core.Conversation
+import dev.cedar.core.searchRanges
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** The list: Chats | Starred | Agents, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
+/** The list: a search field over Chats | Starred | Agents, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(app: AppModel) {
@@ -100,6 +112,14 @@ fun ConversationListScreen(app: AppModel) {
         }
     }
 
+    LaunchedEffect(app.searchQuery) {
+        // A moment after the last keystroke; an emptied field clears the results at once.
+        if (app.isSearching) delay(250)
+        app.search()
+    }
+    // Back leaves the search before it leaves the app.
+    androidx.activity.compose.BackHandler(enabled = app.searchText.isNotEmpty()) { app.searchText = "" }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -121,27 +141,39 @@ fun ConversationListScreen(app: AppModel) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            SegmentedSwitch(
-                options = listOf(
-                    SidebarMode.CHATS to stringResource(R.string.tab_chats),
-                    SidebarMode.STARRED to stringResource(R.string.tab_starred),
-                    SidebarMode.AGENTS to stringResource(R.string.tab_agents),
-                ),
-                selected = app.sidebarMode,
-                onSelect = { app.sidebarMode = it },
-                // How many agents' runs wait to be read.
-                count = { if (it == SidebarMode.AGENTS) app.agentsUnread else 0 },
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+            SearchField(
+                text = app.searchText,
+                onChange = { app.searchText = it },
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp),
             )
+            // A search looks through all three lists, so the switch steps aside for it.
+            if (!app.isSearching) {
+                SegmentedSwitch(
+                    options = listOf(
+                        SidebarMode.CHATS to stringResource(R.string.tab_chats),
+                        SidebarMode.STARRED to stringResource(R.string.tab_starred),
+                        SidebarMode.AGENTS to stringResource(R.string.tab_agents),
+                    ),
+                    selected = app.sidebarMode,
+                    onSelect = { app.sidebarMode = it },
+                    // How many agents' runs wait to be read.
+                    count = { if (it == SidebarMode.AGENTS) app.agentsUnread else 0 },
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+                )
+            }
             PullToRefreshBox(
                 isRefreshing = app.isRefreshing,
                 onRefresh = { scope.launch { app.refresh() } },
                 modifier = Modifier.fillMaxSize(),
             ) {
-                when (app.sidebarMode) {
-                    SidebarMode.CHATS -> ChatRows(app, onAction = ::act, onRename = { renaming = it })
-                    SidebarMode.STARRED -> StarredRows(app, onAction = ::act)
-                    SidebarMode.AGENTS -> AgentRows(app, onAction = ::act)
+                if (app.isSearching) {
+                    SearchRows(app, onAction = ::act)
+                } else {
+                    when (app.sidebarMode) {
+                        SidebarMode.CHATS -> ChatRows(app, onAction = ::act, onRename = { renaming = it })
+                        SidebarMode.STARRED -> StarredRows(app, onAction = ::act)
+                        SidebarMode.AGENTS -> AgentRows(app, onAction = ::act)
+                    }
                 }
             }
         }
@@ -263,6 +295,84 @@ private fun StarredRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
     }
 }
 
+/** The search field over the list: it looks through the titles and messages of every conversation. */
+@Composable
+private fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val focus = LocalFocusManager.current
+    OutlinedTextField(
+        value = text,
+        onValueChange = { onChange(it.take(200)) },
+        modifier = modifier,
+        singleLine = true,
+        placeholder = { Text(stringResource(R.string.search_conversations), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = { Icon(Icons.Outlined.Search, null, Modifier.size(20.dp)) },
+        trailingIcon = {
+            if (text.isNotEmpty()) {
+                IconButton(onClick = { onChange("") }) { Icon(Icons.Outlined.Close, stringResource(R.string.clear_search), Modifier.size(18.dp)) }
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+        shape = RoundedCornerShape(50),
+        colors = OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ),
+    )
+}
+
+/**
+ * What a search found in the titles and messages: chats and scheduled runs together, most recently
+ * active first, each with the passage that matched.
+ */
+@Composable
+private fun SearchRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
+    val context = LocalContext.current
+    val results = app.searchResults
+    if (results.isNullOrEmpty() && app.searchError == null) {
+        LazyColumn(Modifier.fillMaxSize()) {
+            item {
+                if (results != null) {
+                    EmptyState(
+                        Icons.Outlined.Search, stringResource(R.string.search_empty_title), stringResource(R.string.search_empty_text, app.searchQuery),
+                        Modifier.padding(top = 80.dp),
+                    )
+                } else {
+                    Loading()
+                }
+            }
+        }
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize()) {
+        app.searchError?.let { error -> item { ErrorLine(error) } }
+        items(results.orEmpty(), key = { it.id }) { conversation ->
+            val starred = app.isStarred(conversation.id)
+            ConversationRow(
+                conversation = conversation,
+                selected = app.selection == conversation.id,
+                running = app.isRunning(conversation.id),
+                starred = starred,
+                onClick = { app.selection = conversation.id },
+                menu = listOf(
+                    MenuAction(
+                        stringResource(if (starred) R.string.unstar else R.string.star),
+                        if (starred) Icons.Outlined.StarBorder else Icons.Outlined.Star,
+                    ) {
+                        onAction { app.setStarred(conversation.id, !starred) }
+                    },
+                    MenuAction(stringResource(R.string.open_on_web), Icons.Outlined.OpenInBrowser) {
+                        app.client?.let { openUrl(context, it.webURL(conversation.id)) }
+                    },
+                ),
+                snippet = conversation.snippet,
+                query = app.searchQuery,
+            )
+        }
+    }
+}
+
 /** One entry of a row's long-press menu. */
 data class MenuAction(
     val label: String,
@@ -320,6 +430,9 @@ private fun ConversationRow(
     starred: Boolean,
     onClick: () -> Unit,
     menu: List<MenuAction>,
+    /** The passage a search matched, shown under the row with the words of `query` marked. */
+    snippet: String? = null,
+    query: String = "",
 ) {
     MenuRow(selected, onClick, menu) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -378,6 +491,22 @@ private fun ConversationRow(
                     } else if (conversation.unread) {
                         UnreadDot(true, size = 9)
                     }
+                }
+                if (!snippet.isNullOrEmpty()) {
+                    val found = SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        buildAnnotatedString {
+                            var at = 0
+                            for (range in searchRanges(snippet, query)) {
+                                if (range.first < at) continue
+                                append(snippet.substring(at, range.first))
+                                withStyle(found) { append(snippet.substring(range)) }
+                                at = range.last + 1
+                            }
+                            append(snippet.substring(at))
+                        },
+                        style = small, color = CedarColors.secondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }

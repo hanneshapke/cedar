@@ -110,6 +110,10 @@
     <string name="delete">Supprimer</string>
     <string name="empty_starred_title">Aucune conversation favorite</string>
     <string name="empty_starred_text">Ajoutez une conversation ou l\'exécution d\'un agent aux favoris, ici ou sur le web, pour l\'avoir sous la main sur tous vos appareils.</string>
+    <string name="search_conversations">Rechercher des conversations</string>
+    <string name="clear_search">Effacer la recherche</string>
+    <string name="search_empty_title">Aucun résultat</string>
+    <string name="search_empty_text">Aucun résultat pour « %1$s ». La recherche porte sur les titres et les messages.</string>
     <string name="unread">Non lu</string>
     <string name="needs_answer">Réponse attendue</string>
     <string name="rename_conversation">Renommer la conversation</string>

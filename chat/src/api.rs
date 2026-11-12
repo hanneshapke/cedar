@@ -11,7 +11,7 @@ use crate::notify;
 use crate::pairing;
 use crate::update;
 use crate::contrib;
-use crate::store::{AttachmentInfo, Contribution, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, StarredConversation, Store, Turn};
+use crate::store::{AttachmentInfo, Contribution, Conversation, InboxItem, NewSchedule, Preferences, Schedule, ScheduleRun, SearchHit, StarredConversation, Store, Turn};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use chrono::Utc;
 use futures_util::Stream;
@@ -43,6 +43,9 @@ const MAX_BODY_BYTES: usize = 128 * 1024;
 const MAX_MESSAGE_BYTES: usize = 32_000;
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_CONVERSATIONS: u32 = 500;
+/// How many conversations a search returns, and how long what is searched for may be.
+const MAX_SEARCH_RESULTS: u32 = 50;
+const MAX_SEARCH_CHARS: usize = 200;
 const MAX_SCHEDULES: i64 = 100;
 const MAX_SCHEDULE_RUNS: u32 = 100;
 const MAX_TOOLS: usize = 100;
@@ -139,6 +142,9 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// to it in the sidebar and the badge on a run's conversation; every UI loads it.
 const AGENTS_JS: &str = include_str!("../static/agents.js");
 const AGENTS_CSS: &str = include_str!("../static/agents.css");
+/// The search box of the conversations sidebar and its results; every UI loads it.
+const SEARCH_JS: &str = include_str!("../static/search.js");
+const SEARCH_CSS: &str = include_str!("../static/search.css");
 /// The star button and the Starred list in the conversations sidebar; every UI loads it.
 const STAR_JS: &str = include_str!("../static/star.js");
 const MORE_MENU_JS: &str = include_str!("../static/more-menu.js");
@@ -279,6 +285,7 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/conversations", get(list_conversations).post(create_conversation))
+        .route("/conversations/search", get(search_conversations))
         .route("/conversations/{id}", get(get_conversation).patch(rename_conversation).delete(delete_conversation))
         // Only this route takes attachments, so only it gets the room for them.
         .route("/conversations/{id}/messages", post(send_message).layer(DefaultBodyLimit::max(MAX_MESSAGE_BODY_BYTES)))
@@ -338,6 +345,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/brave", put(put_brave_key).delete(delete_brave_key))
         .route("/integrations/bestbuy", put(put_bestbuy_key).delete(delete_bestbuy_key))
         .route("/integrations/serpapi", put(put_serpapi_key).delete(delete_serpapi_key))
+        .route("/integrations/slack", put(put_slack_token).delete(delete_slack_token))
         .route("/integrations/models", get(get_models))
         .route("/integrations/server-models", post(list_server_models))
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
@@ -405,6 +413,8 @@ pub fn router(state: AppState) -> Router {
         .route("/agents.js", get(|| async { asset(JS, AGENTS_JS) }))
         .route("/agents.css", get(|| async { asset(CSS, AGENTS_CSS) }))
         .route("/star.js", get(|| async { asset(JS, STAR_JS) }))
+        .route("/search.js", get(|| async { asset(JS, SEARCH_JS) }))
+        .route("/search.css", get(|| async { asset(CSS, SEARCH_CSS) }))
         .route("/more-menu.js", get(|| async { asset(JS, MORE_MENU_JS) }))
         .route("/star.css", get(|| async { asset(CSS, STAR_CSS) }))
         .route("/notify.js", get(|| async { asset(JS, NOTIFY_JS) }))
@@ -593,6 +603,27 @@ struct ConversationList {
 
 async fn list_conversations(State(state): State<AppState>) -> Result<Json<ConversationList>, AppError> {
     Ok(Json(ConversationList { conversations: state.store.list_conversations(MAX_CONVERSATIONS).await? }))
+}
+
+#[derive(Deserialize)]
+struct SearchQuery {
+    #[serde(default)]
+    q: String,
+}
+
+#[derive(Serialize)]
+struct SearchResults {
+    conversations: Vec<SearchHit>,
+}
+
+/// The conversations that have every word of `q` in their title or messages, most recently
+/// active first, chats and scheduled runs alike: the search box of every client (the web pages,
+/// the desktop app, the iOS and Android apps). An empty `q` finds nothing.
+async fn search_conversations(State(state): State<AppState>, ApiQuery(query): ApiQuery<SearchQuery>) -> Result<Json<SearchResults>, AppError> {
+    if query.q.chars().count() > MAX_SEARCH_CHARS {
+        return Err(AppError::BadRequest(format!("q is longer than {MAX_SEARCH_CHARS} characters")));
+    }
+    Ok(Json(SearchResults { conversations: state.store.search_conversations(&query.q, MAX_SEARCH_RESULTS).await? }))
 }
 
 #[derive(Deserialize)]
@@ -1889,6 +1920,21 @@ async fn put_serpapi_key(
 async fn delete_serpapi_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_serpapi_key().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn put_slack_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(body): ApiJson<BraveKeyBody>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(state.cedar.set_slack_token(&body.api_key).await?))
+}
+
+async fn delete_slack_token(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_admin(&state, &headers)?;
+    state.cedar.remove_slack_token().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

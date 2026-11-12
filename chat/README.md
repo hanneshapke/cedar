@@ -160,7 +160,7 @@ Both interfaces have all of these, except where noted:
   of the registered models with the levels each declares; an optional access token
 - [Tools and settings](#tools-and-settings): the tools, model, turn limit and system prompt every
   conversation gets, a Tools button to change the tools of one conversation, and (for admins)
-  [the models](#models) cedar can use, its Brave Search, Best Buy and SerpApi keys and its Google account
+  [the models](#models) cedar can use, its Brave Search, Best Buy and SerpApi keys, its Slack token and its Google account
 - [Attachments](#attachments): PDFs, CSV and JSON files go with a message to any model, and images to a model registered as
   accepting them, by the paperclip button, by dropping them on the message box, or by pasting an image
 - Starred conversations: the star button in the header stars the open conversation, a chat or a
@@ -170,6 +170,13 @@ Both interfaces have all of these, except where noted:
   [Cedar app for macOS and Windows](../desktop/README.md) and the Cedar iOS and Android apps; a page picks up
   stars set elsewhere when it comes back into view, and every minute while it is shown
   (`star.js` and `star.css`)
+- Search: a search box at the top of the sidebar (the drawer in the other styles) finds
+  conversations, chats and agents' runs alike, by their title and by what was said in them, your
+  messages and Cedar's answers. A conversation matches when it has every word you typed, in any
+  case; the results take the place of the sidebar's lists, most recently active first, each with
+  the passage that matched and the words marked. Ctrl+K (⌘K on a Mac) puts the cursor in the box,
+  the arrow keys walk the results, Enter opens the first one and Escape empties the box
+  (`search.js` and `search.css`)
 - [Agents](#agents): prompts that run on their own, on a schedule, when something changes, when a
   webhook is called, or when mail or a calendar event comes up, made from scratch or from a
   finished conversation; a page lists them and every run's result, with what started it
@@ -196,7 +203,7 @@ The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` and `v2/` for the 
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `flight-view.js` and `flight-view.css` for flights, `clarify-view.js` and `clarify-view.css` for clarifying questions,
 `agents.js` and `agents.css` for the Agents page, `star.js` and `star.css` for starred
-conversations, `notify.js` and `notify.css` for the inbox
+conversations, `search.js` and `search.css` for the search over the conversations, `notify.js` and `notify.css` for the inbox
 of finished responses and the Notifications settings, `sw.js` for the service worker behind browser
 push, and
 `models.js` and `models.css` for the send button's model menu, `settings-shell.js` for the Settings
@@ -508,7 +515,7 @@ things limit what can go wrong:
   prompt as you wrote it; the block is in the run's trace. This lowers the odds of an injected
   instruction being followed. It does not rule it out.
 - **A careful choice of tools.** Unless you choose otherwise, such an agent gets every tool group
-  cedar offers except personal tools, and from the Google groups only the tools that read. The
+  cedar offers except personal tools, and from the Google and Slack groups only the tools that read. The
   form says so and lets you pick your default tools instead.
 - **Limits on how often.** One run at a time per agent; at most one run every 5 minutes; at most
   24 runs in any 24 hours. Both numbers can be changed per agent (at least a minute apart, at most
@@ -705,7 +712,7 @@ and the error is relayed.
 
 Settings → **Server** is where the API keys go. Without `CHAT_ADMIN_TOKEN` it only explains how
 to turn it on and which tool groups lack a key. With it, the page is unlocked with that token for
-the browser session and manages cedar's Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search) (the others are each checked with one search before they are saved, then shown
+the browser session and manages cedar's Brave Search key (which also turns on product search), its Best Buy key, which adds Best Buy's catalog to it, and its SerpApi key, which turns on flight search (a key from serpapi.com, whose free plan includes a limited number of searches a month; it is checked against SerpApi's account page, which uses up no search), its Slack bot token, which turns on the Slack tools (the `xoxb-…` token of a Slack app installed to your workspace; it is checked with Slack, and the row then names the workspace and the app it posts as) (the others are each checked with one search before they are saved, then shown
 as its last four characters), its Google OAuth client (the ID and secret of a client made in your
 own Google Cloud project, or the JSON file the console downloads pasted into the form; the page
 walks through making one) and its Google account ("Connect Google" goes through Google's consent
@@ -783,6 +790,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET` / `PUT /api/settings/contributions` | The one-time choices: `{license, pseudonym, include_reasoning, include_fetched, accepted_at, available, host, licenses}`. `PUT` takes any of `license`, `pseudonym` (`"new"` makes one, `""` drops it), `include_reasoning`, `include_fetched` and `enabled` (sets or clears `accepted_at`) |
 | `PUT /api/turns/{id}/rating` | `{"rating": 1 \| -1 \| null}`: your thumb on a response; answers the turn |
 | `PUT` / `DELETE /api/conversations/{id}/star` | Star or unstar the conversation (a chat or an agent's run) for every client. Both are idempotent; starring again keeps the first `starred_at`. Returns the conversation |
+| `GET /api/conversations/search?q=` | `{conversations}`: up to 50 conversations that have every word of `q` (at most 200 characters; the first 8 words count) in their title, a message or a response, whatever the case, most recently active first, agents' runs included. Each has `schedule_title` like the starred ones and `snippet`: the passage of the first message that matched, or `null` when only the title did. An empty `q` finds nothing |
 | `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, agents' runs included, each with `schedule_title` (the agent a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
@@ -831,6 +839,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT` / `DELETE /api/integrations/brave` | Admin: save (`{"api_key"}`) or remove cedar's Brave Search key |
 | `PUT` / `DELETE /api/integrations/bestbuy` | Admin: save (`{"api_key"}`) or remove cedar's Best Buy key |
 | `PUT` / `DELETE /api/integrations/serpapi` | Admin: save (`{"api_key"}`) or remove cedar's SerpApi key, which turns on `search_flights` |
+| `PUT` / `DELETE /api/integrations/slack` | Admin: save (`{"api_key"}`) or remove cedar's Slack bot token, which turns on the `slack_*` tools |
 | `GET /api/integrations/tools` | Admin: cedar's personal tools with their permissions and which secrets are saved (`GET /v1/admin/tools`), relayed |
 | `PUT` / `DELETE /api/integrations/tools/{name}/secrets/{secret}` | Admin: save (`{"value"}`) or remove a secret a personal tool declares |
 | `POST /api/integrations/tools/{name}/setup` | Admin: install a personal tool's packages again |

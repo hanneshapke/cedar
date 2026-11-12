@@ -320,8 +320,10 @@ data class Conversation(
     @SerialName("needs_answer") val needsAnswer: Boolean = false,
     /** When it was starred, on any device; `null` when it isn't. */
     @SerialName("starred_at") val starredAt: Instant? = null,
-    /** The title of the agent a run belongs to; only the Starred list sends it. */
+    /** The title of the agent a run belongs to; only the Starred list and a search send it. */
     @SerialName("schedule_title") val scheduleTitle: String? = null,
+    /** The passage of a message a search matched; only search results carry it. */
+    val snippet: String? = null,
     @SerialName("created_at") val createdAt: Instant,
     @SerialName("updated_at") val updatedAt: Instant,
 ) {
@@ -332,6 +334,16 @@ data class Conversation(
     fun titleOr(placeholder: String): String = title?.trim().orEmpty().ifEmpty { placeholder }
     val isStarred: Boolean get() = starredAt != null
 }
+
+/** Where the words of `query` are in `text`, whatever their case, in the order they come: what a search result marks. */
+fun searchRanges(text: String, query: String): List<IntRange> =
+    query.split(Regex("\\s+")).filter { it.isNotEmpty() }.distinct()
+        .flatMap { word ->
+            generateSequence(text.indexOf(word, ignoreCase = true).takeIf { it >= 0 }) { at ->
+                text.indexOf(word, at + word.length, ignoreCase = true).takeIf { it >= 0 }
+            }.map { it until it + word.length }.toList()
+        }
+        .sortedBy { it.first }
 
 @Serializable
 data class ConversationList(val conversations: List<Conversation> = emptyList())

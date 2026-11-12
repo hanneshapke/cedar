@@ -9633,6 +9633,28 @@
         }
       }
     },
+    "No Results" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Ergebnisse"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin resultados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun résultat"
+          }
+        }
+      }
+    },
     "No Rows" : {
       "localizations" : {
         "de" : {
@@ -10122,6 +10144,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rien de retenu pour l'instant"
+          }
+        }
+      }
+    },
+    "Nothing found for “%@”. Titles and messages are searched." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nichts gefunden für „%@“. Durchsucht werden Titel und Nachrichten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontró nada para «%@». Se busca en títulos y mensajes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun résultat pour « %@ ». La recherche porte sur les titres et les messages."
           }
         }
       }
@@ -13343,6 +13387,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Score %lld sur une échelle de −%lld, vendre, à +%lld, acheter"
+          }
+        }
+      }
+    },
+    "Search conversations" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterhaltungen durchsuchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar conversaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher des conversations"
           }
         }
       }

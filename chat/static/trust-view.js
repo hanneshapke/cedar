@@ -142,6 +142,7 @@ const cedarTrust = (() => {
   // What cedar's approval rules (`approval.required.rule`) are about.
   const RULE_WHAT = {
     email: 'trust.what.email',
+    slack: 'trust.what.slack',
     downloads: 'trust.what.download',
     installs: 'trust.what.installs',
     deletes: 'trust.what.deletes',

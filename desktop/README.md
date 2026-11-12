@@ -153,7 +153,10 @@ The setup window shows three steps:
 - **Docker**: found and running, or what to do. *Set up Docker for me* does it (see below), and
   a Docker Desktop that isn't running is started (on a Mac, OrbStack or Rancher Desktop too, when
   the `docker` command is theirs).
-- **Sandbox image**: pulled once per version from `ghcr.io/hanneshapke/cedar-sandbox`. Tick
+- **Sandbox image**: pulled once per version from `ghcr.io/hanneshapke/cedar-sandbox`, with a
+  progress bar in megabytes (the pull goes through the Docker Engine API on the current context's
+  socket; when that can't be reached, or for a TCP or SSH context, `docker pull` does it and the
+  bar counts layers). Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
   tool.
 - **Model server**: pick a preset or type the address, add an API key if the server needs one,

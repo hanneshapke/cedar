@@ -111,6 +111,10 @@
     <string name="delete">Eliminar</string>
     <string name="empty_starred_title">No hay conversaciones destacadas</string>
     <string name="empty_starred_text">Destaca una conversación o la ejecución de un agente, aquí o en la web, para tenerla a mano en todos tus dispositivos.</string>
+    <string name="search_conversations">Buscar conversaciones</string>
+    <string name="clear_search">Borrar la búsqueda</string>
+    <string name="search_empty_title">Sin resultados</string>
+    <string name="search_empty_text">No se encontró nada para «%1$s». Se busca en títulos y mensajes.</string>
     <string name="unread">No leída</string>
     <string name="needs_answer">Necesita respuesta</string>
     <string name="rename_conversation">Cambiar nombre de la conversación</string>

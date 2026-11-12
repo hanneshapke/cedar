@@ -1,15 +1,15 @@
 //! Integrations an admin can set up through the API instead of the environment: the model
 //! registry (the models runs can use, each with its server and API key), a Brave Search key, a
-//! Best Buy key, a SerpApi key, a Google OAuth client and, through it, a Google account ("Connect
-//! Google"). Credentials are kept encrypted (see [`crate::secrets`]).
+//! Best Buy key, a SerpApi key, a Slack bot token, a Google OAuth client and, through it, a Google
+//! account ("Connect Google"). Credentials are kept encrypted (see [`crate::secrets`]).
 //! Saving or removing a key rebuilds the tool set, and a change to the registry rebuilds the
 //! model clients, so the next run (or the next model call of one already going) sees the change
 //! without a restart. Runs already going keep the tools they started with.
 //!
 //! Personal tools get their secrets here too, one per variable their manifest declares.
 //!
-//! The environment wins for the Brave, Best Buy and SerpApi keys, the Google client and the Google
-//! account: a credential set there is reported as such and can't be changed here. Models are only
+//! The environment wins for the Brave, Best Buy and SerpApi keys, the Slack token, the Google
+//! client and the Google account: a credential set there is reported as such and can't be changed here. Models are only
 //! ever registered here.
 
 use crate::api::MAX_MODEL_LEN;
@@ -23,7 +23,7 @@ use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
 use crate::tools::custom::SavedSecrets;
-use crate::tools::{BestBuy, BraveSearch, Overrides, SearchFlights, Tool, ToolSet};
+use crate::tools::{BestBuy, BraveSearch, Overrides, SearchFlights, SlackApi, Tool, ToolSet};
 use anyhow::{Context, Result};
 use arc_swap::{ArcSwap, ArcSwapOption};
 use base64::Engine;
@@ -173,6 +173,7 @@ impl Integrations {
                 (secrets::BRAVE_API_KEY, &mut overrides.brave_api_key),
                 (secrets::BESTBUY_API_KEY, &mut overrides.bestbuy_api_key),
                 (secrets::SERPAPI_API_KEY, &mut overrides.serpapi_api_key),
+                (secrets::SLACK_BOT_TOKEN, &mut overrides.slack_bot_token),
                 (
                     secrets::GOOGLE_REFRESH_TOKEN,
                     &mut overrides.google_refresh_token,
@@ -722,6 +723,14 @@ impl Integrations {
             ("drive", google("drive", "DRIVE")),
             ("sheets", google("sheets", "SHEETS")),
             (
+                "slack",
+                if cfg.slack {
+                    "Needs a Slack bot token".to_string()
+                } else {
+                    off("SLACK")
+                },
+            ),
+            (
                 "custom",
                 match &cfg.sandbox.tools_dir {
                     None => "No TOOLS_DIR is set".to_string(),
@@ -768,6 +777,19 @@ impl Integrations {
             (None, None) => json!({ "configured": false, "source": null }),
         };
         serpapi["enabled"] = json!(self.cfg.flights);
+        let mut slack = match (
+            &self.cfg.slack_bot_token,
+            meta(secrets::SLACK_BOT_TOKEN).await?,
+        ) {
+            (Some(token), _) => {
+                json!({ "configured": true, "source": "env", "last4": secrets::last4(token) })
+            }
+            (None, Some(m)) => {
+                json!({ "configured": true, "source": "ui", "last4": m["last4"], "team": m["team"], "user": m["user"] })
+            }
+            (None, None) => json!({ "configured": false, "source": null }),
+        };
+        slack["enabled"] = json!(self.cfg.slack);
         // The client: from the environment, saved here, or missing.
         let client = match (&self.cfg.google_oauth, meta(secrets::GOOGLE_CLIENT).await?) {
             (Some(c), _) => {
@@ -814,6 +836,7 @@ impl Integrations {
             "brave": brave,
             "bestbuy": bestbuy,
             "serpapi": serpapi,
+            "slack": slack,
             "google": google,
         }))
     }
@@ -949,6 +972,45 @@ impl Integrations {
         }
         self.reload().await?;
         tracing::info!("SerpApi key removed");
+        Ok(())
+    }
+
+    /// Check a Slack bot token with Slack's `auth.test`, then save it with the workspace it
+    /// belongs to and rebuild the tools, which turns the `slack_*` tools on unless `SLACK=off`.
+    pub async fn set_slack_token(&self, token: &str) -> Result<(), AppError> {
+        let secrets = self.writable(self.cfg.slack_bot_token.is_some())?;
+        let token = token.trim();
+        if token.is_empty() || token.len() > MAX_SECRET_LEN || token.chars().any(char::is_control)
+        {
+            return Err(AppError::BadRequest(
+                "api_key is missing or malformed".into(),
+            ));
+        }
+        let who = SlackApi::new(token.to_string(), self.cfg.slack_api_url.clone())?
+            .check_token(REQUEST_TIMEOUT)
+            .await
+            .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;
+        let _guard = self.changing.lock().await;
+        secrets
+            .put(
+                secrets::SLACK_BOT_TOKEN,
+                token,
+                &json!({ "last4": secrets::last4(token), "team": who["team"], "user": who["user"] }),
+            )
+            .await?;
+        self.reload().await?;
+        tracing::info!("Slack token saved; the slack tools are on");
+        Ok(())
+    }
+
+    pub async fn remove_slack_token(&self) -> Result<(), AppError> {
+        let secrets = self.writable(self.cfg.slack_bot_token.is_some())?;
+        let _guard = self.changing.lock().await;
+        if !secrets.delete(secrets::SLACK_BOT_TOKEN).await? {
+            return Err(AppError::NotFound("no Slack token is saved"));
+        }
+        self.reload().await?;
+        tracing::info!("Slack token removed");
         Ok(())
     }
 

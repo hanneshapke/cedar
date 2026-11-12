@@ -78,6 +78,18 @@ class ChatClientTest {
     }
 
     @Test
+    fun searchesTheConversations() = runBlocking {
+        server.enqueue(json("""{"conversations":[{"id":"c1","title":"C++ notes","snippet":"…templates & more…",
+            "created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:36:00Z"}]}"""))
+
+        val found = client.search("c++ & more")
+
+        assertEquals("GET /api/conversations/search?q=c%2B%2B%20%26%20more", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals(listOf("c1"), found.map { it.id })
+        assertEquals("…templates & more…", found[0].snippet)
+    }
+
+    @Test
     fun starsAndRegistersThePhone() = runBlocking {
         val conversation = """{"id":"c1","unread":false,"needs_answer":false,"starred_at":"2026-10-23T08:00:00Z",
             "created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:36:00Z"}"""

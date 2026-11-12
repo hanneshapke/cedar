@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/agents.css">
   <link rel="stylesheet" href="/star.css">
+  <link rel="stylesheet" href="/search.css">
   <link rel="stylesheet" href="/notify.css">
   <link rel="stylesheet" href="/update.css">
   <link rel="stylesheet" href="/settings.css">
@@ -157,12 +158,13 @@
     <a class="drawer-new" href="#/" id="drawer-new">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="v3.newConversation">New conversation</span>
     </a>
-    <div class="cedar-star-side" id="starred-section" data-starred hidden>
+    <div data-search></div>
+    <div class="cedar-star-side" id="starred-section" data-starred data-search-hides hidden>
       <div class="cedar-star-side-head"><span class="label" data-i18n="v3.starred">Starred</span><span class="cedar-star-count"></span></div>
       <nav class="cedar-star-links" aria-label="Starred conversations" data-i18n-attr="aria-label:v3.starredConversations"></nav>
     </div>
-    <nav class="recents" id="recents"></nav>
-    <a class="cedar-ag-nav" id="agents-nav" href="#/agents" data-agents-nav><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="cedar-ag-nav-name" data-i18n="agents.title">Agents</span><span class="cedar-ag-dot" hidden></span><span class="cedar-ag-count"></span></a>
+    <nav class="recents" id="recents" data-search-hides></nav>
+    <a class="cedar-ag-nav" id="agents-nav" href="#/agents" data-agents-nav data-search-hides><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="cedar-ag-nav-name" data-i18n="agents.title">Agents</span><span class="cedar-ag-dot" hidden></span><span class="cedar-ag-count"></span></a>
   </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
@@ -272,6 +274,7 @@
   <script src="/agents.js"></script>
   <script src="/more-menu.js"></script>
   <script src="/star.js"></script>
+  <script src="/search.js"></script>
   <script src="/notify.js"></script>
   <script src="/update.js"></script>
   <script src="/pairing.js"></script>

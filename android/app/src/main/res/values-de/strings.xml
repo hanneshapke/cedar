@@ -110,6 +110,10 @@
     <string name="delete">Löschen</string>
     <string name="empty_starred_title">Keine markierten Unterhaltungen</string>
     <string name="empty_starred_text">Markiere einen Chat oder den Lauf eines Agenten, hier oder im Web, um ihn auf jedem Gerät griffbereit zu haben.</string>
+    <string name="search_conversations">Unterhaltungen durchsuchen</string>
+    <string name="clear_search">Suche leeren</string>
+    <string name="search_empty_title">Keine Ergebnisse</string>
+    <string name="search_empty_text">Nichts gefunden für „%1$s“. Durchsucht werden Titel und Nachrichten.</string>
     <string name="unread">Ungelesen</string>
     <string name="needs_answer">Braucht Antwort</string>
     <string name="rename_conversation">Unterhaltung umbenennen</string>

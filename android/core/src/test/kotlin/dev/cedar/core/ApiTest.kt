@@ -89,6 +89,27 @@ class ApiTest {
     }
 
     @Test
+    fun decodesSearchResultsAndFindsTheirWords() {
+        val list = CedarJson.decodeFromString(ConversationList.serializer(), """
+        {"conversations":[{"id":"c9","title":"Weekend in Lisbon","model":null,"reasoning":null,"schedule_id":null,
+           "tools":null,"unread":false,"needs_answer":false,"starred_at":null,"schedule_title":null,
+           "snippet":"…take tram 28 up to the Alfama district…",
+           "created_at":"2026-10-20T08:00:00Z","updated_at":"2026-10-21T08:00:00Z"},
+          {"id":"c8","title":"Tax return","model":null,"reasoning":null,"schedule_id":null,"tools":null,"unread":false,
+           "needs_answer":false,"starred_at":null,"schedule_title":null,"snippet":null,
+           "created_at":"2026-10-20T08:00:00Z","updated_at":"2026-10-20T08:00:00Z"}]}
+        """)
+        assertEquals("…take tram 28 up to the Alfama district…", list.conversations[0].snippet)
+        // Only the title matched.
+        assertNull(list.conversations[1].snippet)
+
+        val text = "Take tram 28 to the Alfama. TRAM again."
+        assertEquals(listOf("tram", "Alfama", "TRAM"), searchRanges(text, " tram  alfama ").map { text.substring(it) })
+        assertTrue(searchRanges(text, "bus").isEmpty())
+        assertTrue(searchRanges(text, "  ").isEmpty())
+    }
+
+    @Test
     fun decodesStarredConversations() {
         val list = CedarJson.decodeFromString(ConversationList.serializer(), """
         {"conversations":[{"id":"c2","title":"Morning digest · Fri 23 Oct","model":null,"reasoning":null,"schedule_id":"s1",

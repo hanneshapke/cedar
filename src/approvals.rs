@@ -1,7 +1,8 @@
 //! Which tool calls wait for the user's OK before they run, in runs whose client answers
-//! (`interactive`). The rules are a heuristic on the tool and its input: sending email, saving
-//! files from the web, installing packages (when the sandbox reaches a network at all), deleting
-//! files, and every call of a community tool installed from the marketplace. The `network` rule
+//! (`interactive`). The rules are a heuristic on the tool and its input: sending email, posting
+//! to Slack, saving files from the web, installing packages (when the sandbox reaches a network
+//! at all), deleting files, and every call of a community tool installed from the marketplace.
+//! The `network` rule
 //! depends on the sandbox's runtime: a Docker sandbox with a network asks before running any code,
 //! since that code can reach anything; an OpenShell sandbox asks afterwards, when its policy
 //! refused a connection, whether to let that program reach that host from then on.
@@ -19,6 +20,8 @@ use std::collections::BTreeSet;
 pub enum Rule {
     /// Gmail tools that send, draft or change mail.
     Email,
+    /// Slack tools that post a message.
+    Slack,
     /// `download_file`.
     Downloads,
     /// `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`.
@@ -34,8 +37,9 @@ pub enum Rule {
 }
 
 impl Rule {
-    pub const ALL: [Rule; 6] = [
+    pub const ALL: [Rule; 7] = [
         Rule::Email,
+        Rule::Slack,
         Rule::Downloads,
         Rule::Installs,
         Rule::Deletes,
@@ -46,6 +50,7 @@ impl Rule {
     pub fn as_str(self) -> &'static str {
         match self {
             Rule::Email => "email",
+            Rule::Slack => "slack",
             Rule::Downloads => "downloads",
             Rule::Installs => "installs",
             Rule::Deletes => "deletes",
@@ -203,6 +208,25 @@ pub fn check(rules: &Rules, name: &str, input: &Value, reach: &Reach) -> Option<
             reason.push('.');
             Some(Gate {
                 rule: Rule::Email,
+                reason,
+                scope: None,
+                grants: vec![],
+            })
+        }
+        _ if rules.has(Rule::Slack) && group_of(name) == "slack" && writes(name) => {
+            let mut reason = format!("{} in Slack", humanize(name));
+            if let Some(channel) = input["channel"].as_str().filter(|c| !c.is_empty()) {
+                reason.push_str(&format!(" to {}", one_line(channel)));
+            }
+            if input["thread_ts"].as_str().is_some_and(|t| !t.is_empty()) {
+                reason.push_str(" (in a thread)");
+            }
+            if let Some(text) = input["text"].as_str().filter(|t| !t.is_empty()) {
+                reason.push_str(&format!(": \"{}\"", one_line(text)));
+            }
+            reason.push('.');
+            Some(Gate {
+                rule: Rule::Slack,
                 reason,
                 scope: None,
                 grants: vec![],
@@ -448,6 +472,36 @@ mod tests {
             "Send message in your Gmail to a@x.org: \"Q3 numbers\"."
         );
         assert!(check(&all(), "gmail_search_threads", &json!({}), &Reach::Nothing).is_none());
+        assert!(check(
+            &Rules::parse("slack").unwrap(),
+            "gmail_send_message",
+            &json!({}),
+            &Reach::Nothing
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn posting_to_slack_asks_every_time_but_reading_does_not() {
+        let gate = check(
+            &all(),
+            "slack_send_message",
+            &json!({ "channel": "#launch", "text": "We ship on Friday.\nDetails follow.",
+                     "thread_ts": "1700000000.000200" }),
+            &Reach::Nothing,
+        )
+        .unwrap();
+        assert_eq!(gate.rule, Rule::Slack);
+        assert_eq!(gate.scope, None);
+        assert_eq!(
+            gate.reason,
+            "Send message in Slack to #launch (in a thread): \"We ship on Friday.…\"."
+        );
+        for read in ["slack_read_messages", "slack_list_channels", "slack_list_users"] {
+            assert!(check(&all(), read, &json!({ "channel": "#launch" }), &Reach::Nothing).is_none());
+        }
+        let email_only = Rules::parse("email").unwrap();
+        assert!(check(&email_only, "slack_send_message", &json!({}), &Reach::Nothing).is_none());
         assert!(check(&all(), "calendar_create_event", &json!({}), &Reach::Nothing).is_none());
     }
 

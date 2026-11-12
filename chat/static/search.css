@@ -1,0 +1,37 @@
+/* Search over the conversations (search.js), shared by every UI: the search box in the
+   conversations sidebar and the results that stand in for the sidebar's lists while something is
+   typed. It draws with the variables each UI defines (--ink, --ink-2, --muted, --line, --wash,
+   --sheet, --accent), like star.css, so it reads in the light and dark themes alike. */
+
+.cedar-search { display: flex; flex-direction: column; gap: 8px; flex: none; min-height: 0; margin: 6px 0 2px; }
+.cedar-search.is-active { flex: 1; }
+.cedar-searching [data-search-hides] { display: none !important; }
+
+.cedar-search-box { display: flex; align-items: center; gap: 8px; flex: none; height: 34px; padding: 0 6px 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sheet); color: var(--muted); cursor: text; transition: border-color .15s, box-shadow .15s; }
+.cedar-search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.cedar-search-box > svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.cedar-search-input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: none; color: var(--ink); font: inherit; font-size: 13px; appearance: none; }
+.cedar-search-input::placeholder { color: var(--muted); opacity: 1; }
+.cedar-search-input::-webkit-search-cancel-button, .cedar-search-input::-webkit-search-decoration { appearance: none; display: none; }
+.cedar-search-clear { display: grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.cedar-search-clear:hover { background: var(--wash); color: var(--ink); }
+.cedar-search-clear[hidden] { display: none; }
+.cedar-search-clear svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+/* -- the results ----------------------------------------------------------------------------- */
+
+.cedar-search-results { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto; }
+.cedar-search-results[hidden] { display: none; }
+.cedar-search-note { margin: 0; padding: 8px 10px; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.cedar-search-hit { display: flex; flex-direction: column; gap: 2px; flex: none; padding: 7px 10px; border-radius: 7px; color: var(--ink-2); font-size: 13px; text-decoration: none; }
+.cedar-search-hit:hover, .cedar-search-hit:focus-visible { background: var(--wash); outline: none; }
+.cedar-search-hit:focus-visible { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.cedar-search-hit.active { background: var(--wash); }
+.cedar-search-hit.active .cedar-search-hit-title { font-weight: 500; }
+.cedar-search-hit.is-unread .cedar-search-hit-title { font-weight: 600; }
+.cedar-search-hit-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.cedar-search-hit-head svg { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.cedar-search-hit-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink); }
+.cedar-search-hit-when { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.cedar-search-hit-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.cedar-search mark { padding: 0 1px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--ink); font-weight: 500; }

@@ -20,7 +20,9 @@ The same as the iOS app:
 - The conversation list as cedar-chat keeps it, with a dot and a bold title on an unread
   response and a **Needs answer** chip when the agent asked a question; pull to refresh, and
   star, rename, open on the web or delete from a long press
-- A **Chats | Starred | Agents** switch at the top. Starred lists chats and agents' runs,
+- A search field at the top that finds chats and agents' runs by their title and by what was
+  said in them, each shown with the passage that matched.
+- A **Chats | Starred | Agents** switch under it. Starred lists chats and agents' runs,
   most recently starred first (stars are kept by cedar-chat, so they are the same everywhere)
 - **Agents**: prompts that run on their own, as on the web. The list groups them by what starts
   them (on a schedule, when something changes, when a webhook is called, mail and calendar), each
@@ -229,7 +231,7 @@ As the iOS app (see its README): `GET /api/conversations`, `GET /api/conversatio
 `POST /api/conversations/{id}/messages`, each turn rebuilt from `GET /api/turns/{id}/events` and
 followed live (reconnecting from the last event), `GET /api/events` while in front,
 `POST /api/conversations/{id}/seen`, stars (`PUT`/`DELETE /api/conversations/{id}/star`,
-`GET /api/starred`), agents (`GET`/`POST /api/agents`, `GET`/`PATCH`/`DELETE /api/agents/{id}`,
+`GET /api/starred`), search (`GET /api/conversations/search`), agents (`GET`/`POST /api/agents`, `GET`/`PATCH`/`DELETE /api/agents/{id}`,
 `POST /api/agents/{id}/run`, `POST /api/agents/{id}/hook/rotate`, `POST /api/agents/test`,
 `GET /api/agents/activity`; for the form, `GET /api/tools`, `GET /api/records`,
 `GET /api/notifications` and `POST /api/conversations/{id}/compact`), plans and approvals, files, and the

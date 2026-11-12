@@ -192,6 +192,13 @@ struct ChatClient: Sendable {
         return list.conversations
     }
 
+    /// The conversations with every word of `query` in their title or messages, most recently
+    /// active first: chats and agents' runs alike, each with the passage that matched.
+    func search(query: String) async throws -> [Conversation] {
+        let list: ConversationList = try await decode(makeRequest("api/conversations/search", query: [URLQueryItem(name: "q", value: query)]))
+        return list.conversations
+    }
+
     /// Stars or unstars the conversation, for every device. Both are idempotent.
     func setStarred(conversationId: String, starred: Bool) async throws -> Conversation {
         try await decode(makeRequest("api/conversations/\(conversationId)/star", method: starred ? "PUT" : "DELETE"))
@@ -453,7 +460,7 @@ struct ChatClient: Sendable {
         }
         if !query.isEmpty, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             components.queryItems = query
-            // A `+` (a timestamp's offset) would reach the server as a space.
+            // `URLComponents` leaves "+" as it is, and the server reads one as a space.
             components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
             url = components.url ?? url
         }

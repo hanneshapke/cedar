@@ -583,6 +583,13 @@ async fn put_serpapi(State(s): State<Shared>, Json(body): Json<Value>) -> axum::
     Json(json!({ "serpapi": { "configured": true, "source": "ui", "last4": "5678", "enabled": true } })).into_response()
 }
 
+async fn put_slack(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    if let Some(refused) = admin(&s, "put_slack", body.clone()).await {
+        return refused;
+    }
+    Json(json!({ "slack": { "configured": true, "source": "ui", "last4": "4321", "team": "Acme", "user": "cedar", "enabled": true } })).into_response()
+}
+
 async fn delete_integration(s: Shared, which: &str) -> axum::response::Response {
     if let Some(refused) = admin(&s, &format!("delete_{which}"), Value::Null).await {
         return refused;
@@ -714,6 +721,10 @@ impl Harness {
             .route(
                 "/v1/admin/integrations/serpapi",
                 axum::routing::put(put_serpapi).delete(|State(s): State<Shared>| delete_integration(s, "serpapi")),
+            )
+            .route(
+                "/v1/admin/integrations/slack",
+                axum::routing::put(put_slack).delete(|State(s): State<Shared>| delete_integration(s, "slack")),
             )
             .route("/v1/admin/integrations/google", axum::routing::delete(|State(s): State<Shared>| delete_integration(s, "google")))
             .route(
@@ -1354,6 +1365,9 @@ async fn both_uis_are_served() {
             assert!(page.contains("<script src=\"/star.js\">"), "{uri} loads the starring script");
             assert!(page.contains("href=\"/star.css\""), "{uri} loads the starring styles");
             assert!(page.contains("data-starred") && page.contains("data-star-toggle"), "{uri} has the Starred list and the star button");
+            assert!(page.contains("<script src=\"/search.js\">"), "{uri} loads the search script");
+            assert!(page.contains("href=\"/search.css\""), "{uri} loads the search styles");
+            assert!(page.contains("data-search") && page.contains("data-search-hides"), "{uri} has the search box, and lists it stands in for");
             assert!(page.contains("<script src=\"/attach.js\">"), "{uri} loads the attachments script");
             assert!(page.contains("href=\"/attach.css\""), "{uri} loads the attachments styles");
             assert!(page.contains("<script src=\"/notify.js\">"), "{uri} loads the inbox script");
@@ -1788,6 +1802,46 @@ async fn run_now_starts_a_run_without_moving_the_schedule() {
 }
 
 #[tokio::test]
+async fn search_finds_chats_and_scheduled_runs() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("Plan a weekend in Lisbon", "Take tram 28 to the Alfama district.").await;
+    // Reading the conversation stores the finished response, as the page does.
+    h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    h.json(Method::POST, "/api/conversations", Some(json!({ "title": "Tax return" }))).await;
+    let (_, s) = h.json(Method::POST, "/api/schedules", Some(schedule_body(&cid))).await;
+    let sid = s["id"].as_str().unwrap().to_string();
+    let (_, run) = h.json(Method::POST, &format!("/api/schedules/{sid}/run"), None).await;
+    let run_cid = run["conversation_id"].as_str().unwrap().to_string();
+
+    let search = async |q: &str| h.json(Method::GET, &format!("/api/conversations/search?q={q}"), None).await;
+    // What cedar answered is searched too; the passage comes with it.
+    let (status, found) = search("alfama").await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    let items = found["conversations"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{found}");
+    assert_eq!(items[0]["id"], cid);
+    assert_eq!(items[0]["snippet"], "Take tram 28 to the Alfama district.");
+    assert_eq!(items[0]["schedule_title"], Value::Null);
+    // A scheduled run's conversation is found as well, under its schedule's title.
+    let (_, found) = search("summarize%20news").await;
+    let items = found["conversations"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{found}");
+    assert_eq!(items[0]["id"], run_cid);
+    assert_eq!(items[0]["schedule_id"], sid);
+    assert_eq!(items[0]["schedule_title"], "Morning digest");
+    // A title; every word has to match; nothing is asked for, nothing is found.
+    let (_, found) = search("tax%20RETURN").await;
+    assert_eq!(found["conversations"].as_array().unwrap().len(), 1, "{found}");
+    assert_eq!(found["conversations"][0]["snippet"], Value::Null);
+    let (_, found) = search("tax%20lisbon").await;
+    assert_eq!(found["conversations"], json!([]));
+    let (status, found) = h.json(Method::GET, "/api/conversations/search", None).await;
+    assert_eq!((status, &found["conversations"]), (StatusCode::OK, &json!([])));
+    let (status, _) = search(&"x".repeat(201)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn chats_and_scheduled_runs_can_be_starred() {
     let h = Harness::new(&[]).await;
     let (cid, _) = h.finished_conversation("hi", "hello").await;
@@ -2155,9 +2209,18 @@ async fn integrations_need_the_admin_token() {
     assert!(err["error"]["message"].as_str().unwrap().contains("between 256 and 8192"));
     let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/settings", None, Some(json!({ "max_image_side": 1024 }))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+    // The Slack bot token for the slack_ tools goes the same way as the keys.
+    let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/slack", Some("admin"), Some(json!({ "api_key": "xoxb-4321" }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["slack"]["team"], "Acme");
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/slack", None, Some(json!({ "api_key": "xoxb-4321" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/slack", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "put_google_client", "put_google_client", "delete_google_client", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings"]);
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "put_google_client", "put_google_client", "delete_google_client", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings", "put_slack", "delete_slack"]);
+    assert_eq!(calls[19].1, json!({ "api_key": "xoxb-4321" }), "the token goes through");
     assert_eq!(calls[4].1, json!({ "api_key": "serp-5678" }), "the key goes through");
     assert_eq!(calls[8].1, json!({ "client_id": "c-1.apps", "client_secret": "s-1" }), "the client goes through");
     assert_eq!(calls[11].1, query, "the body goes through as it is");

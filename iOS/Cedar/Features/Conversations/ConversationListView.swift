@@ -15,36 +15,53 @@ struct ConversationListView: View {
     var body: some View {
         @Bindable var app = app
         List(selection: $app.selection) {
-            switch app.sidebarMode {
-            case .chats: chats
-            case .starred: starredRows
-            case .agents:
-                AgentRows(actionError: $actionError,
-                          show: { showingAgent = AgentSelection(id: $0.id, title: $0.title) },
-                          edit: { agentForm = AgentFormContext(agent: $0, limits: app.agentLimits) },
-                          create: { agentForm = AgentFormContext(limits: app.agentLimits) },
-                          delete: { deletingAgent = $0 })
+            if app.isSearching {
+                searchRows
+            } else {
+                switch app.sidebarMode {
+                case .chats: chats
+                case .starred: starredRows
+                case .agents:
+                    AgentRows(actionError: $actionError,
+                              show: { showingAgent = AgentSelection(id: $0.id, title: $0.title) },
+                              edit: { agentForm = AgentFormContext(agent: $0, limits: app.agentLimits) },
+                              create: { agentForm = AgentFormContext(limits: app.agentLimits) },
+                              delete: { deletingAgent = $0 })
+                }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.canvas)
         .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 8) {
-                SidebarSwitch(mode: $app.sidebarMode, agentsUnread: app.agentsUnread)
-                if app.sidebarMode == .agents {
-                    Picker("Show", selection: $app.agentsTab) {
-                        Text("Agents").tag(AgentsTab.agents)
-                        Text("Activity").tag(AgentsTab.activity)
+            // A search looks through all three lists, so the switch steps aside for it.
+            if !app.isSearching {
+                VStack(spacing: 8) {
+                    SidebarSwitch(mode: $app.sidebarMode, agentsUnread: app.agentsUnread)
+                    if app.sidebarMode == .agents {
+                        Picker("Show", selection: $app.agentsTab) {
+                            Text("Agents").tag(AgentsTab.agents)
+                            Text("Activity").tag(AgentsTab.activity)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
                 }
+                .padding(.horizontal)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+                .background(Theme.canvas)
             }
-            .padding(.horizontal)
-            .padding(.top, 4)
-            .padding(.bottom, 10)
-            .background(Theme.canvas)
+        }
+        .searchable(text: $app.searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search conversations"))
+        .autocorrectionDisabled()
+        .task(id: app.searchQuery) {
+            // A moment after the last keystroke; an emptied field clears the results at once.
+            if app.isSearching {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+            }
+            await app.search()
         }
         .onChange(of: app.sidebarMode) { _, mode in
             switch mode {
@@ -58,43 +75,55 @@ struct ConversationListView: View {
             if tab == .activity { Task { await app.refreshActivity() } }
         }
         .overlay {
-            switch app.sidebarMode {
-            case .chats:
-                if app.conversations.isEmpty && !app.isRefreshing {
-                    if let error = app.listError {
-                        // Nothing to list and no server: say what went wrong and where to fix it.
-                        ContentUnavailableView {
-                            Label("Can't Reach the Server", systemImage: "wifi.exclamationmark")
-                        } description: {
-                            Text(error)
-                        } actions: {
-                            Button {
-                                app.showingSettings = true
-                            } label: {
-                                Label("Server Settings", systemImage: "gearshape")
+            if app.isSearching {
+                if app.searchResults?.isEmpty == true && app.searchError == nil {
+                    ContentUnavailableView {
+                        Label("No Results", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Nothing found for “\(app.searchQuery)”. Titles and messages are searched.")
+                    }
+                } else if app.searchResults == nil && app.searchError == nil {
+                    ProgressView()
+                }
+            } else {
+                switch app.sidebarMode {
+                case .chats:
+                    if app.conversations.isEmpty && !app.isRefreshing {
+                        if let error = app.listError {
+                            // Nothing to list and no server: say what went wrong and where to fix it.
+                            ContentUnavailableView {
+                                Label("Can't Reach the Server", systemImage: "wifi.exclamationmark")
+                            } description: {
+                                Text(error)
+                            } actions: {
+                                Button {
+                                    app.showingSettings = true
+                                } label: {
+                                    Label("Server Settings", systemImage: "gearshape")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                Button("Try Again") {
+                                    Task { await app.refresh() }
+                                }
                             }
-                            .buttonStyle(.borderedProminent)
-                            Button("Try Again") {
-                                Task { await app.refresh() }
-                            }
+                        } else {
+                            ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
+                                                   description: Text("Start a new chat to run the agent."))
                         }
-                    } else {
-                        ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
-                                               description: Text("Start a new chat to run the agent."))
                     }
-                }
-            case .starred:
-                if app.starred.isEmpty && app.starredError == nil {
-                    if app.starredLoaded {
-                        ContentUnavailableView("No Starred Conversations", systemImage: "star",
-                                               description: Text("Star a chat or an agent's run, here or on the web, to keep it at hand on every device."))
-                    } else {
-                        ProgressView()
+                case .starred:
+                    if app.starred.isEmpty && app.starredError == nil {
+                        if app.starredLoaded {
+                            ContentUnavailableView("No Starred Conversations", systemImage: "star",
+                                                   description: Text("Star a chat or an agent's run, here or on the web, to keep it at hand on every device."))
+                        } else {
+                            ProgressView()
+                        }
                     }
+                case .agents:
+                    // The Agents list says so itself, in a row, when it has nothing to show.
+                    EmptyView()
                 }
-            case .agents:
-                // The Agents list says so itself, in a row, when it has nothing to show.
-                EmptyView()
             }
         }
         .navigationTitle(Text(verbatim: "cedar"))
@@ -267,6 +296,39 @@ struct ConversationListView: View {
         }
     }
 
+    /// What a search found in the titles and messages: chats and agents' runs together, most
+    /// recently active first, each with the passage that matched.
+    @ViewBuilder
+    private var searchRows: some View {
+        if let error = app.searchError {
+            Section {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .sidebarRow()
+            }
+        }
+        ForEach(app.searchResults ?? []) { conversation in
+            let starred = app.isStarred(conversationId: conversation.id)
+            ConversationRow(title: app.title(for: conversation), conversation: conversation,
+                            isActive: app.isActive(conversationId: conversation.id), starred: starred,
+                            snippet: conversation.snippet, query: app.searchQuery)
+                .tag(conversation.id)
+                .sidebarRow(selected: app.selection == conversation.id)
+                .swipeActions(edge: .leading) {
+                    StarButton(starred: starred) { setStarred(conversation, !starred) }
+                }
+                .contextMenu {
+                    StarButton(starred: starred) { setStarred(conversation, !starred) }
+                    if let client = app.client {
+                        Link(destination: client.webURL(conversationId: conversation.id)) {
+                            Label("Open on the Web", systemImage: "safari")
+                        }
+                    }
+                }
+        }
+    }
+
     private func setStarred(_ conversation: Conversation, _ on: Bool) {
         Task {
             do {
@@ -319,6 +381,9 @@ private struct ConversationRow: View {
     let isActive: Bool
     /// Marks the row with a star (the Chats list; the Starred list needs none).
     let starred: Bool
+    /// The passage a search matched, shown under the row with the words of `query` marked.
+    var snippet: String?
+    var query = ""
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -362,12 +427,45 @@ private struct ConversationRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                if let snippet, !snippet.isEmpty {
+                    Text(SearchPassage.marked(snippet, query: query))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel([title, starred ? L10n.string("starred") : nil, conversation.unread ? L10n.string("unread") : nil]
             .compactMap { $0 }.joined(separator: ", "))
+    }
+}
+
+/// The passage a search matched, as its row shows it.
+enum SearchPassage {
+    /// Where the words of `query` are in `text`, whatever their case, in the order they come.
+    static func ranges(in text: String, query: String) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        for word in query.split(whereSeparator: \.isWhitespace) {
+            var from = text.startIndex
+            while from < text.endIndex, let found = text.range(of: word, options: .caseInsensitive, range: from..<text.endIndex) {
+                ranges.append(found)
+                from = found.upperBound
+            }
+        }
+        return ranges.sorted { $0.lowerBound < $1.lowerBound }
+    }
+
+    /// `text` with every word of `query` in the primary color and a heavier weight.
+    static func marked(_ text: String, query: String) -> AttributedString {
+        var marked = AttributedString(text)
+        for found in ranges(in: text, query: query) {
+            guard let range = Range(found, in: marked) else { continue }
+            marked[range].swiftUI.foregroundColor = .primary
+            marked[range].swiftUI.font = .caption.weight(.semibold)
+        }
+        return marked
     }
 }
 

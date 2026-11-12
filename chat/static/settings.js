@@ -25,8 +25,8 @@
 
 const cedarSettings = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
-  /** The tool groups that act for the connected Google account; their single tools can be chosen. */
-  const GOOGLE_GROUPS = ['gmail', 'calendar', 'drive', 'sheets'];
+  /** The tool groups that act for a connected account (Google's or Slack's); their single tools can be chosen. */
+  const GOOGLE_GROUPS = ['gmail', 'calendar', 'drive', 'sheets', 'slack'];
   // A model's reply limit when it is registered without one, and the highest cedar takes.
   const DEFAULT_MAX_TOKENS = 16384;
   const MAX_MAX_TOKENS = 1000000;
@@ -611,7 +611,7 @@ const cedarSettings = (() => {
     if (!status.storage) {
       parts.push(note(tr('settings.server.noStorage')));
     }
-    parts.push(block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block(tr('settings.google.block'), googleClientRow(status), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
+    parts.push(block('Brave Search', braveRow(status)), block('Best Buy', bestbuyRow(status)), block('SerpApi', serpapiRow(status)), block('Slack', slackRow(status)), block(tr('settings.google.block'), googleClientRow(status), googleRow(status)), block(tr('settings.server.attachments'), await imageSizeRow()), block(tr('settings.server.sandbox'), await sandboxIdleRow()));
     const tools = await personalToolsBlock();
     if (tools) parts.push(block(tr('settings.server.personalTools'), tools));
     const market = await marketplaceBlock();
@@ -1194,6 +1194,25 @@ const cedarSettings = (() => {
       saved: tr('settings.serpapi.saved'),
       removeAsk: tr('settings.serpapi.remove'),
     });
+  }
+
+  function slackRow(status) {
+    const k = status.slack || {};
+    if (k.enabled === false) {
+      const { row, side } = integrationRow('Slack', tr('settings.slack.off'));
+      side.append(badge(tr('settings.off')));
+      return row;
+    }
+    const row = keyRow(k, status.storage, {
+      name: 'Slack',
+      what: tr('settings.slack.what'),
+      path: '/integrations/slack',
+      saved: tr('settings.slack.saved'),
+      removeAsk: tr('settings.slack.remove'),
+    });
+    // Whose token it is, so the admin sees which workspace cedar posts to.
+    if (k.team) row.querySelector('.cedar-set-integration-main').append(el('small', '', tr('settings.slack.workspace', { team: k.team, user: k.user || '' })));
+    return row;
   }
 
   /**
