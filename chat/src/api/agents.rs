@@ -4,8 +4,9 @@
 //! only the agents on a daily or weekly clock, for the apps from before there were other triggers.
 
 use super::*;
-use crate::store::{never, Polled, NEVER_MS};
-use crate::trigger::{self, Source, Trigger};
+use crate::schedule::{start_event, Held, Started};
+use crate::store::{never, Followup, Polled, NEVER_MS};
+use crate::trigger::{self, Event, Source, Trigger};
 use chrono::{DateTime, Duration};
 
 /// How many runs the activity feed returns at once, and at most.
@@ -437,6 +438,169 @@ pub(super) async fn activity(State(state): State<AppState>, ApiQuery(q): ApiQuer
         })
         .collect();
     Ok(Json(json!({ "items": items, "next_before": next_before })))
+}
+
+/// What a device sends along when it asks for a run.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(super) struct DeviceBody {
+    /// What on the device asked: `shortcut`, `share`, `automation`, or a word of the app's own.
+    source: Option<String>,
+    /// Shared or dictated text, a page's title, a link: handed to the run as data.
+    text: Option<String>,
+    title: Option<String>,
+    url: Option<String>,
+}
+
+/// The most a device may send along, in bytes: what a run is handed at most anyway.
+const MAX_DEVICE_BYTES: usize = crate::prompt::MAX_FENCED_BYTES;
+
+/// Start an agent's run because the user's own device asked: a Shortcuts action, a share-sheet
+/// item, an automation app. Unlike a webhook this takes the access token, so it is the user
+/// asking; unlike "run now" it can bring something along (shared text, a link), which the run
+/// gets as data, and it is held to the agent's limits, because an automation can call often.
+pub(super) async fn from_device(State(state): State<AppState>, Path(id): Path<String>, body: axum::body::Bytes) -> Result<(StatusCode, Json<Value>), AppError> {
+    let schedule = find(&state, &id).await?;
+    if !schedule.enabled {
+        return Err(AppError::Conflict("this agent is paused".into()));
+    }
+    // A shortcut that only says "run" may send no body at all.
+    let body: DeviceBody = match body.iter().all(u8::is_ascii_whitespace) {
+        true => DeviceBody::default(),
+        false => serde_json::from_slice(&body).map_err(|e| AppError::BadRequest(format!("the body is not what a device sends: {e}")))?,
+    };
+    let source: String = body.source.as_deref().unwrap_or("device").trim().to_ascii_lowercase().chars().filter(|c| c.is_ascii_lowercase() || *c == '_').take(30).collect();
+    let source = if source.is_empty() { "device".to_string() } else { source };
+    let mut parts = Vec::new();
+    for (label, value) in [("Title", &body.title), ("Link", &body.url)] {
+        if let Some(v) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            parts.push(format!("{label}: {v}"));
+        }
+    }
+    if let Some(text) = body.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        parts.push(text.to_string());
+    }
+    let data = parts.join("\n\n");
+    if data.len() > MAX_DEVICE_BYTES {
+        return Err(AppError::PayloadTooLarge(format!("at most {MAX_DEVICE_BYTES} bytes can be handed to a run")));
+    }
+    let data = (!data.is_empty()).then_some(data);
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(match start_event(&state, schedule.id, Event::Device { source }, data, Utc::now()).await? {
+            Started::Run(run) => json!({ "started": true, "conversation_id": run.conversation_id }),
+            Started::Held(why) => json!({ "started": false, "held": match why {
+                Held::Busy => "busy",
+                Held::TooSoon => "too_soon",
+                Held::DailyLimit => "daily_limit",
+                Held::Cedar => "cedar_busy",
+            } }),
+            Started::Failed(e) => return Err(e),
+        }),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FollowupBody {
+    /// `accept` or `dismiss`.
+    decision: String,
+    /// For `accept`: the suggestion as the user saw it (and may have changed it), and when.
+    title: Option<String>,
+    prompt: Option<String>,
+    /// The time, RFC 3339 (the tool's result gives it in UTC).
+    at: Option<DateTime<Utc>>,
+    /// The user's time zone, which the agent's time is kept and shown in.
+    timezone: Option<String>,
+}
+
+fn followup_view(state: &AppState, followup: &Followup, agent: Option<&Schedule>) -> Value {
+    json!({ "followup": followup, "agent": agent.map(|a| view(state, a, None, None)) })
+}
+
+/// Decide about a follow-up the model suggested in a turn (cedar's `suggest_follow_up`):
+/// accepting it makes a one-off agent that runs the suggested prompt at the suggested time;
+/// dismissing it only records that it was seen. Nothing is scheduled before this. The first
+/// decision stands, so two devices showing the same suggestion can't set it up twice.
+pub(super) async fn decide_followup(
+    State(state): State<AppState>,
+    Path((turn_id, call_id)): Path<(String, String)>,
+    ApiJson(body): ApiJson<FollowupBody>,
+) -> Result<Json<Value>, AppError> {
+    let turn = find_turn(&state, &turn_id).await?;
+    if call_id.is_empty() || call_id.len() > 200 {
+        return Err(AppError::BadRequest("the suggestion's id is not one a tool call has".into()));
+    }
+    if let Some(done) = state.store.get_followup(turn.id, &call_id).await? {
+        let agent = match done.agent_id {
+            Some(id) => state.store.get_schedule(id).await?,
+            None => None,
+        };
+        return Ok(Json(followup_view(&state, &done, agent.as_ref())));
+    }
+    match body.decision.as_str() {
+        "dismiss" => {
+            let done = state.store.decide_followup(turn.id, &call_id, "dismissed", None).await?;
+            Ok(Json(followup_view(&state, &done, None)))
+        }
+        "accept" => {
+            let title = clean_title(body.title)?.ok_or_else(|| AppError::BadRequest("title must not be empty".into()))?;
+            let prompt = clean_message("prompt", body.prompt.as_deref().unwrap_or_default())?;
+            let at = body.at.ok_or_else(|| AppError::BadRequest("at is required: when the follow-up should run".into()))?;
+            let timezone = clean_zone(body.timezone.as_deref())?.unwrap_or_else(|| "UTC".into());
+            let tz: chrono_tz::Tz = timezone.parse().unwrap_or(chrono_tz::UTC);
+            let local = at.with_timezone(&tz).format("%Y-%m-%dT%H:%M").to_string();
+            let trigger = Trigger::Once { at: local, timezone: timezone.clone() }.checked().map_err(AppError::BadRequest)?;
+            let next_run_at = first_due(&trigger, Utc::now())?;
+            if state.store.count_schedules().await? >= MAX_SCHEDULES {
+                return Err(AppError::Conflict(format!("at most {MAX_SCHEDULES} agents; delete one first")));
+            }
+            // The model wrote this prompt, perhaps after reading a page or a mail, so it gets
+            // the tools an agent started from outside gets; and the chat's model, while it is
+            // still registered.
+            let tools = careful_tools(&state).await?;
+            let conversation = state.store.get_conversation(turn.conversation_id).await?;
+            let chosen = conversation.as_ref().map(|c| (c.model.clone(), c.reasoning.clone())).unwrap_or_default();
+            let (model, reasoning) = clean_model_choice(&state, chosen.0.as_deref(), chosen.1.as_deref()).await.unwrap_or((None, None));
+            let stored = serde_json::to_value(&trigger).map_err(|e| AppError::Internal(e.into()))?;
+            let (frequency, weekday, time_of_day) = columns(&trigger);
+            let schedule = state
+                .store
+                .create_schedule(&NewSchedule {
+                    title: &title,
+                    prompt: &prompt,
+                    model: model.as_deref(),
+                    reasoning: reasoning.as_deref(),
+                    source_conversation_id: conversation.map(|c| c.id),
+                    tools: Some(&tools),
+                    notify: None,
+                    frequency: &frequency,
+                    weekday,
+                    time_of_day: &time_of_day,
+                    timezone: &timezone,
+                    next_run_at,
+                    trigger_kind: trigger.kind(),
+                    trigger: Some(&stored),
+                    hook_id: None,
+                    hook_secret: None,
+                    min_interval_secs: None,
+                    max_runs_per_day: None,
+                })
+                .await?;
+            let done = state.store.decide_followup(turn.id, &call_id, "accepted", Some(schedule.id)).await?;
+            // Two devices at once: the first decision stands, and this agent is one too many.
+            if done.agent_id != Some(schedule.id) {
+                state.store.delete_schedule(schedule.id).await?;
+                let agent = match done.agent_id {
+                    Some(id) => state.store.get_schedule(id).await?,
+                    None => None,
+                };
+                return Ok(Json(followup_view(&state, &done, agent.as_ref())));
+            }
+            Ok(Json(followup_view(&state, &done, Some(&schedule))))
+        }
+        other => Err(AppError::BadRequest(format!("decision must be \"accept\" or \"dismiss\", not {other:?}"))),
+    }
 }
 
 /// Keep a webhook delivery for later (the agent may not start a run yet), in place of one

@@ -142,6 +142,56 @@ pub fn event_summary(locale: Option<&str>, event: &crate::trigger::Event) -> Str
             Lang::Fr => format!("un webhook a été appelé ({dropped} appels précédents, arrivés pendant que l'agent était occupé, ont été ignorés)"),
             Lang::Es => format!("se llamó a un webhook ({dropped} llamadas anteriores llegaron mientras el agente estaba ocupado y se descartaron)"),
         },
+        Event::Rows { set, added, changed } => match (lang, *added, *changed) {
+            (Lang::En, a, 0) => format!("{a} new in the record set {set}"),
+            (Lang::En, 0, c) => format!("{c} changed in the record set {set}"),
+            (Lang::En, a, c) => format!("{a} new and {c} changed in the record set {set}"),
+            (Lang::De, a, 0) => format!("{a} neu im Datensatz {set}"),
+            (Lang::De, 0, c) => format!("{c} geändert im Datensatz {set}"),
+            (Lang::De, a, c) => format!("{a} neu und {c} geändert im Datensatz {set}"),
+            (Lang::Fr, a, 0) => format!("{a} ajout(s) dans le jeu de données {set}"),
+            (Lang::Fr, 0, c) => format!("{c} modification(s) dans le jeu de données {set}"),
+            (Lang::Fr, a, c) => format!("{a} ajout(s) et {c} modification(s) dans le jeu de données {set}"),
+            (Lang::Es, a, 0) => format!("{a} nuevo(s) en el conjunto {set}"),
+            (Lang::Es, 0, c) => format!("{c} cambiado(s) en el conjunto {set}"),
+            (Lang::Es, a, c) => format!("{a} nuevo(s) y {c} cambiado(s) en el conjunto {set}"),
+        },
+        Event::Device { source } => {
+            // What on the device asked; anything else is named as it came.
+            let what = match (lang, source.as_str()) {
+                (Lang::En, "shortcut") => "a shortcut",
+                (Lang::De, "shortcut") => "ein Kurzbefehl",
+                (Lang::Fr, "shortcut") => "un raccourci",
+                (Lang::Es, "shortcut") => "un atajo",
+                (Lang::En, "share") => "something shared from another app",
+                (Lang::De, "share") => "etwas aus einer anderen App Geteiltes",
+                (Lang::Fr, "share") => "un partage depuis une autre application",
+                (Lang::Es, "share") => "algo compartido desde otra aplicación",
+                (Lang::En, "automation") => "an automation",
+                (Lang::De, "automation") => "eine Automation",
+                (Lang::Fr, "automation") => "une automatisation",
+                (Lang::Es, "automation") => "una automatización",
+                (_, other) => other,
+            };
+            match lang {
+                Lang::En => format!("started from your device by {what}"),
+                Lang::De => format!("von deinem Gerät gestartet durch {what}"),
+                Lang::Fr => format!("lancé depuis votre appareil par {what}"),
+                Lang::Es => format!("iniciado desde tu dispositivo por {what}"),
+            }
+        }
+        Event::Files { count: 1, name } => match lang {
+            Lang::En => format!("a new file in the watched folder: {name}"),
+            Lang::De => format!("eine neue Datei im beobachteten Ordner: {name}"),
+            Lang::Fr => format!("un nouveau fichier dans le dossier surveillé : {name}"),
+            Lang::Es => format!("un archivo nuevo en la carpeta vigilada: {name}"),
+        },
+        Event::Files { count, name } => match lang {
+            Lang::En => format!("{count} new files in the watched folder, the latest {name}"),
+            Lang::De => format!("{count} neue Dateien im beobachteten Ordner, die neueste {name}"),
+            Lang::Fr => format!("{count} nouveaux fichiers dans le dossier surveillé, le dernier {name}"),
+            Lang::Es => format!("{count} archivos nuevos en la carpeta vigilada, el último {name}"),
+        },
         Event::Mail { count: 1, from, subject } => match lang {
             Lang::En => format!("new mail from {from}: {subject}"),
             Lang::De => format!("neue E-Mail von {from}: {subject}"),

@@ -292,6 +292,9 @@ pub struct Config {
     pub products_api_url: String,
     /// Offer the `ask_user` tool (on by default), which ends a run with clarifying questions.
     pub ask_user: bool,
+    /// Offer the `suggest_follow_up` tool (on by default), which suggests running a prompt again
+    /// later; a client turns an accepted suggestion into something that runs.
+    pub follow_ups: bool,
     /// Offer the `remember` and `forget` tools and show runs what they remember about the user
     /// (on by default; see [`crate::memory`]).
     pub memory: bool,
@@ -636,6 +639,7 @@ impl Config {
             products_api_url: get("PRODUCTS_API_URL")
                 .unwrap_or_else(|| DEFAULT_PRODUCTS_API_URL.into()),
             ask_user: flag("ASK_USER", true)?,
+            follow_ups: flag("FOLLOW_UPS", true)?,
             memory: flag("MEMORY", true)?,
             memory_max_items: parse(
                 "MEMORY_MAX_ITEMS",

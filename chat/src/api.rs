@@ -318,6 +318,7 @@ pub fn router(state: AppState) -> Router {
         .route("/turns/{id}/cancel", post(cancel_turn))
         .route("/turns/{id}/plan", post(approve_plan))
         .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))
+        .route("/turns/{id}/followups/{call_id}", put(agents::decide_followup))
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
@@ -326,6 +327,7 @@ pub fn router(state: AppState) -> Router {
         .route("/agents/activity", get(agents::activity))
         .route("/agents/{id}", get(agents::get).patch(agents::update).delete(agents::delete))
         .route("/agents/{id}/run", post(agents::run_now))
+        .route("/agents/{id}/trigger", post(agents::from_device))
         .route("/agents/{id}/hook/rotate", post(agents::rotate_hook))
         .route("/settings", get(get_settings).put(put_settings))
         .route("/settings/locale", put(put_locale))
@@ -656,6 +658,8 @@ struct ConversationDetail {
     /// The agent whose run this conversation is: `{id, title, trigger_kind}`.
     #[serde(skip_serializing_if = "Option::is_none")]
     agent: Option<Value>,
+    /// What was decided about the follow-ups suggested in its turns; one not listed is open.
+    followups: Vec<crate::store::Followup>,
 }
 
 async fn get_conversation(
@@ -668,7 +672,8 @@ async fn get_conversation(
         Some(id) => state.store.get_schedule(id).await?.map(|s| json!({ "id": s.id, "title": s.title, "trigger_kind": s.trigger_kind })),
         None => None,
     };
-    Ok(Json(ConversationDetail { conversation, turns, agent }))
+    let followups = state.store.list_followups(conversation.id).await?;
+    Ok(Json(ConversationDetail { conversation, turns, agent, followups }))
 }
 
 async fn rename_conversation(

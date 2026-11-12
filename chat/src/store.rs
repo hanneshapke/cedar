@@ -294,6 +294,19 @@ pub struct Schedule {
     pub failures: u32,
 }
 
+/// What the user decided about a follow-up the model suggested in a turn.
+#[derive(Debug, Clone, Serialize)]
+pub struct Followup {
+    pub turn_id: Uuid,
+    /// The id of the `suggest_follow_up` call in the turn's run.
+    pub call_id: String,
+    /// `accepted` or `dismissed`.
+    pub status: String,
+    /// The agent an accepted suggestion became, while it exists.
+    pub agent_id: Option<Uuid>,
+    pub decided_at: DateTime<Utc>,
+}
+
 /// `next_run_at` of an agent nothing is due for: a webhook, or a one-off that has run.
 pub const NEVER_MS: i64 = 253_402_300_799_000;
 
@@ -501,6 +514,16 @@ fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
         last_checked_at: r.try_get::<Option<i64>, _>("last_checked_at")?.map(to_dt),
         last_error: r.try_get("last_error")?,
         failures: r.try_get::<i64, _>("failures")? as u32,
+    })
+}
+
+fn followup_from_row(r: &SqliteRow) -> Result<Followup> {
+    Ok(Followup {
+        turn_id: Uuid::parse_str(r.try_get("turn_id")?)?,
+        call_id: r.try_get("call_id")?,
+        status: r.try_get("status")?,
+        agent_id: opt_uuid(r, "schedule_id")?,
+        decided_at: to_dt(r.try_get("decided_at")?),
     })
 }
 
@@ -1362,6 +1385,34 @@ impl Store {
                 .await?;
         }
         Ok(res.rows_affected() == 1)
+    }
+
+    /// Record the user's decision on a suggested follow-up. The first decision stands: asking
+    /// again returns it.
+    pub async fn decide_followup(&self, turn_id: Uuid, call_id: &str, status: &str, schedule_id: Option<Uuid>) -> Result<Followup> {
+        sqlx::query("INSERT OR IGNORE INTO followups (turn_id, call_id, status, schedule_id, decided_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(turn_id.to_string())
+            .bind(call_id)
+            .bind(status)
+            .bind(schedule_id.map(|s| s.to_string()))
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        Ok(self.get_followup(turn_id, call_id).await?.expect("just inserted"))
+    }
+
+    pub async fn get_followup(&self, turn_id: Uuid, call_id: &str) -> Result<Option<Followup>> {
+        let row = sqlx::query("SELECT * FROM followups WHERE turn_id = ? AND call_id = ?").bind(turn_id.to_string()).bind(call_id).fetch_optional(&self.pool).await?;
+        row.as_ref().map(followup_from_row).transpose()
+    }
+
+    /// The decisions made on the follow-ups suggested in a conversation's turns.
+    pub async fn list_followups(&self, conversation_id: Uuid) -> Result<Vec<Followup>> {
+        let rows = sqlx::query("SELECT f.* FROM followups f JOIN turns t ON t.id = f.turn_id WHERE t.conversation_id = ? ORDER BY f.decided_at, f.call_id")
+            .bind(conversation_id.to_string())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter().map(followup_from_row).collect()
     }
 
     /// Record what a check came to. Nothing is written if the trigger was edited since the check

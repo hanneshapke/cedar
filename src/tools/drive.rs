@@ -63,6 +63,11 @@ impl Tool for DriveTool {
         &self.name
     }
 
+    /// A search lists files and their details; it reads none of their content.
+    fn pollable(&self) -> bool {
+        self.op == "search_files"
+    }
+
     fn description(&self) -> &str {
         match self.op {
             "search_files" => {

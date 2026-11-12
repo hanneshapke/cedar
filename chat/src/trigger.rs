@@ -2,10 +2,12 @@
 //!
 //! An agent is a prompt with a trigger. Some triggers are a clock ([`Trigger::Time`],
 //! [`Trigger::Once`], [`Trigger::Interval`], [`Trigger::Monthly`]): the run starts when the time
-//! comes. Some watch ([`Trigger::Condition`], [`Trigger::Email`], [`Trigger::Calendar`]): every
-//! few minutes the scheduler asks cedar for one tool's result, with no model involved (see
-//! `poll`), and [`Trigger::evaluate`] decides from that and from what the last check saw whether
-//! a run starts. And [`Trigger::Webhook`] waits to be called (see `api::hooks`).
+//! comes. Some watch ([`Trigger::Condition`], [`Trigger::Records`], [`Trigger::Email`],
+//! [`Trigger::Calendar`], [`Trigger::Drive`]): every few minutes the scheduler asks cedar for one
+//! tool's result or one record set, with no model involved (see `poll`), and
+//! [`Trigger::evaluate`] decides from that and from what the last check saw whether a run
+//! starts. And two wait to be called: [`Trigger::Webhook`] by anything that has its secret (see
+//! `api::hooks`), [`Trigger::Device`] by the user's own phone (`POST /api/agents/{id}/trigger`).
 //!
 //! Everything here is plain data in and out, so it can be tested without a server: what a
 //! trigger is and whether it is valid, when it is next due, what to ask cedar, and what an
@@ -36,6 +38,10 @@ pub const DEFAULT_MAX_RUNS_PER_DAY: u32 = 24;
 pub const MAX_MAX_RUNS_PER_DAY: u32 = 500;
 /// The mail threads a trigger remembers having seen.
 const MAX_SEEN_THREADS: usize = 500;
+/// The Drive files a trigger remembers having seen.
+const MAX_SEEN_FILES: usize = 1000;
+/// How many of a folder's files one check looks at, newest first.
+const DRIVE_PAGE: usize = 100;
 /// The calendar events a trigger remembers.
 const MAX_KNOWN_EVENTS: usize = 2000;
 /// How far ahead a calendar trigger looks for new events.
@@ -47,6 +53,10 @@ const MAX_URL_CHARS: usize = 2000;
 
 fn default_check() -> u32 {
     DEFAULT_CHECK_MINUTES
+}
+
+fn default_on() -> String {
+    "added".into()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -77,8 +87,27 @@ pub enum Trigger {
         #[serde(default = "default_check")]
         every_minutes: u32,
     },
+    /// A run when rows are added to a record set (`on: "added"`), or added or changed
+    /// (`on: "changed"`). The run is handed those rows.
+    Records {
+        set: String,
+        #[serde(default = "default_on")]
+        on: String,
+        #[serde(default = "default_check")]
+        every_minutes: u32,
+    },
     /// A run when `POST /api/hooks/{hook_id}` is called with the agent's secret.
     Webhook {},
+    /// A run when the user's own device asks for one (`POST /api/agents/{id}/trigger`, with the
+    /// access token): a Shortcuts action, a share-sheet item, an automation app. What the device
+    /// sends along (shared text, a link) is handed to the run as data.
+    Device {},
+    /// A run when a new file appears in a Google Drive folder. `folder` is its ID.
+    Drive {
+        folder: String,
+        #[serde(default = "default_check")]
+        every_minutes: u32,
+    },
     /// A run when mail matching `query` (Gmail's search syntax) arrives.
     Email {
         query: String,
@@ -195,6 +224,12 @@ pub enum Event {
     /// A watched value passes its test.
     Holds { value: String, op: Op, target: String },
     Webhook { bytes: usize, dropped: u32 },
+    /// Rows were added to a record set, or changed in it.
+    Rows { set: String, added: usize, changed: usize },
+    /// The user's device asked: `source` says what on it did (`shortcut`, `share`, ...).
+    Device { source: String },
+    /// New files in a watched folder.
+    Files { count: usize, name: String },
     Mail { count: usize, from: String, subject: String },
     /// An event starts in `minutes`.
     Soon { title: String, minutes: i64, count: usize },
@@ -244,6 +279,9 @@ impl Trigger {
             Trigger::Monthly { .. } => "monthly",
             Trigger::Condition { .. } => "condition",
             Trigger::Webhook {} => "webhook",
+            Trigger::Records { .. } => "records",
+            Trigger::Device {} => "device",
+            Trigger::Drive { .. } => "drive",
             Trigger::Email { .. } => "email",
             Trigger::Calendar { .. } => "calendar",
         }
@@ -251,13 +289,13 @@ impl Trigger {
 
     /// Whether the scheduler checks something for it between runs.
     pub fn watches(&self) -> bool {
-        matches!(self, Trigger::Condition { .. } | Trigger::Email { .. } | Trigger::Calendar { .. })
+        matches!(self, Trigger::Condition { .. } | Trigger::Email { .. } | Trigger::Calendar { .. } | Trigger::Records { .. } | Trigger::Drive { .. })
     }
 
     /// Whether something outside starts its runs (a value, mail, an event, a call) rather than
     /// the clock: these get the limits on how often, and the careful choice of tools.
     pub fn by_event(&self) -> bool {
-        self.watches() || matches!(self, Trigger::Webhook {})
+        self.watches() || matches!(self, Trigger::Webhook {} | Trigger::Device {})
     }
 
     /// The time zone its times are in, for the triggers that have one.
@@ -271,9 +309,11 @@ impl Trigger {
     /// How often it checks, for the triggers that watch.
     pub fn every(&self) -> Option<Duration> {
         match self {
-            Trigger::Condition { every_minutes, .. } | Trigger::Email { every_minutes, .. } | Trigger::Calendar { every_minutes, .. } => {
-                Some(Duration::minutes(i64::from(*every_minutes)))
-            }
+            Trigger::Condition { every_minutes, .. }
+            | Trigger::Email { every_minutes, .. }
+            | Trigger::Calendar { every_minutes, .. }
+            | Trigger::Records { every_minutes, .. }
+            | Trigger::Drive { every_minutes, .. } => Some(Duration::minutes(i64::from(*every_minutes))),
             _ => None,
         }
     }
@@ -368,6 +408,20 @@ impl Trigger {
                 Trigger::Condition { source, extract, predicate, every_minutes: every(every_minutes, 1, "every_minutes")? }
             }
             Trigger::Webhook {} => Trigger::Webhook {},
+            Trigger::Device {} => Trigger::Device {},
+            Trigger::Records { set, on, every_minutes } => {
+                let set = set.trim().to_string();
+                if set.is_empty() || set.len() > 100 {
+                    return Err("set must name a record set".into());
+                }
+                if on != "added" && on != "changed" {
+                    return Err(format!("on must be \"added\" or \"changed\", not {on:?}"));
+                }
+                Trigger::Records { set, on, every_minutes: every(every_minutes, 1, "every_minutes")? }
+            }
+            Trigger::Drive { folder, every_minutes } => {
+                Trigger::Drive { folder: folder_id(&folder)?, every_minutes: every(every_minutes, 1, "every_minutes")? }
+            }
             Trigger::Email { query, every_minutes } => {
                 let query = query.trim().to_string();
                 if query.chars().count() > MAX_QUERY_CHARS {
@@ -418,8 +472,10 @@ impl Trigger {
                 }
                 None
             }
-            Trigger::Condition { .. } | Trigger::Email { .. } | Trigger::Calendar { .. } => Some(after + self.every()?),
-            Trigger::Webhook {} => None,
+            Trigger::Condition { .. } | Trigger::Email { .. } | Trigger::Calendar { .. } | Trigger::Records { .. } | Trigger::Drive { .. } => {
+                Some(after + self.every()?)
+            }
+            Trigger::Webhook {} | Trigger::Device {} => None,
         }
     }
 
@@ -438,6 +494,9 @@ impl Trigger {
                 Source::Records { set } => Request::Records { set: set.clone() },
             },
             Trigger::Email { query, .. } => Request::Tool { name: "gmail_search_threads".into(), input: json!({ "query": query, "pageSize": 25 }) },
+            Trigger::Records { set, .. } => Request::Records { set: set.clone() },
+            // Without words to search for, Drive lists the folder's files newest first.
+            Trigger::Drive { folder, .. } => Request::Tool { name: "drive_search_files".into(), input: json!({ "folderId": folder, "pageSize": DRIVE_PAGE }) },
             Trigger::Calendar { calendar_id, filter, minutes_before, new_events, every_minutes } => {
                 // Far enough to see an event before its lead time begins, even if a check is late.
                 let lead = i64::from(minutes_before.unwrap_or(0)) + 2 * i64::from(*every_minutes) + 5;
@@ -461,10 +520,27 @@ impl Trigger {
         match self {
             Trigger::Condition { extract, predicate, .. } => condition(extract.as_deref(), predicate, state, seen),
             Trigger::Email { .. } => mail(state, seen),
+            Trigger::Records { set, on, .. } => rows(set, on == "changed", state, seen),
+            Trigger::Drive { .. } => files(state, seen),
             Trigger::Calendar { minutes_before, new_events, .. } => calendar(*minutes_before, *new_events, state, seen, now),
             _ => Err("this trigger doesn't watch anything".into()),
         }
     }
+}
+
+/// A Drive folder's ID, from the ID itself or from the folder's address in the browser
+/// (`https://drive.google.com/drive/folders/<id>?…`).
+fn folder_id(folder: &str) -> Result<String, String> {
+    let folder = folder.trim();
+    let id = match folder.split_once("/folders/") {
+        Some((_, rest)) => rest.split(['?', '/', '#']).next().unwrap_or_default(),
+        None => folder,
+    };
+    let ok = (5..=120).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if !ok {
+        return Err("folder must be a Google Drive folder's ID, or its address (https://drive.google.com/drive/folders/…)".into());
+    }
+    Ok(id.to_string())
 }
 
 fn zone(name: &str) -> Result<Tz, String> {
@@ -632,6 +708,80 @@ fn mail(state: Option<&Value>, seen: &Observation) -> Result<Outcome, String> {
         .map(|t| json!({ "id": t["id"], "subject": t["subject"], "from": t["from"], "lastFrom": t["lastFrom"], "date": t["date"], "messageCount": t["messageCount"], "snippet": t["snippet"] }))
         .collect();
     let data = format!("New mail (read a thread with gmail_get_thread and its id):\n{}", serde_json::to_string_pretty(&rows).unwrap_or_default());
+    Ok(Outcome { fire: Some(event), data: Some(data), state: next, shown })
+}
+
+/// Rows added to a record set, or changed in it, since the last check: told by the times cedar
+/// keeps with every row. `seen` is `{rows: [{key, data, created_at, updated_at}]}`.
+fn rows(set: &str, or_changed: bool, state: Option<&Value>, seen: &Observation) -> Result<Outcome, String> {
+    let all = seen.json.as_ref().and_then(|j| j["rows"].as_array()).ok_or("the record set came back as something unexpected")?;
+    let at = |row: &Value, key: &str| row[key].as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok()).map(|t| t.timestamp_millis());
+    let newest = all.iter().filter_map(|r| at(r, "updated_at").max(at(r, "created_at"))).max().unwrap_or(0);
+    let shown = format!("{}", all.len());
+    // The first check only learns how far the set has come.
+    let Some(since) = state.and_then(|s| s["since"].as_i64()) else {
+        return Ok(Outcome { fire: None, data: None, state: json!({ "since": newest }), shown });
+    };
+    let (mut added, mut changed) = (Vec::new(), Vec::new());
+    for row in all {
+        let created = at(row, "created_at").unwrap_or(0);
+        let updated = at(row, "updated_at").unwrap_or(created);
+        if created > since {
+            added.push(row);
+        } else if updated > since {
+            changed.push(row);
+        }
+    }
+    let next = json!({ "since": newest.max(since) });
+    if added.is_empty() && (changed.is_empty() || !or_changed) {
+        return Ok(Outcome { fire: None, data: None, state: next, shown });
+    }
+    let brief = |rows: &[&Value]| serde_json::to_string_pretty(&rows.iter().map(|r| json!({ "key": r["key"], "data": r["data"] })).collect::<Vec<_>>()).unwrap_or_default();
+    let mut parts = Vec::new();
+    if !added.is_empty() {
+        parts.push(format!("New rows in the record set {set}:\n{}", brief(&added)));
+    }
+    if or_changed && !changed.is_empty() {
+        parts.push(format!("Changed rows in the record set {set}:\n{}", brief(&changed)));
+    }
+    let event = Event::Rows { set: set.to_string(), added: added.len(), changed: if or_changed { changed.len() } else { 0 } };
+    Ok(Outcome { fire: Some(event), data: Some(parts.join("\n\n")), state: next, shown })
+}
+
+/// Files that are in a Drive folder now and weren't at an earlier check. `seen` is
+/// `drive_search_files`' result, `{files: [{id, name, ...}]}`, newest first.
+fn files(state: Option<&Value>, seen: &Observation) -> Result<Outcome, String> {
+    let listed = seen.json.as_ref().and_then(|j| j["files"].as_array()).ok_or("the folder listing came back as something unexpected")?;
+    let mut known: Vec<String> = state.and_then(|s| s["seen"].as_array()).map(|ids| ids.iter().filter_map(|i| i.as_str().map(String::from)).collect()).unwrap_or_default();
+    let mut fresh = Vec::new();
+    for file in listed.iter().rev() {
+        let Some(id) = file["id"].as_str() else { continue };
+        // A folder inside the folder is not a file that arrived.
+        if file["kind"] == "folder" {
+            continue;
+        }
+        match known.iter().position(|k| k == id) {
+            Some(i) => {
+                known.remove(i);
+            }
+            None => fresh.push(file),
+        }
+        known.insert(0, id.to_string());
+    }
+    known.truncate(MAX_SEEN_FILES);
+    fresh.reverse();
+    let next = json!({ "seen": known });
+    let shown = format!("{}", listed.len());
+    // The first check only learns what is already in the folder.
+    if state.is_none() || fresh.is_empty() {
+        return Ok(Outcome { fire: None, data: None, state: next, shown });
+    }
+    let event = Event::Files { count: fresh.len(), name: shorten(fresh[0]["name"].as_str().unwrap_or_default(), 120) };
+    let brief: Vec<Value> = fresh
+        .iter()
+        .map(|f| json!({ "id": f["id"], "name": f["name"], "kind": f["kind"], "mimeType": f["mimeType"], "size": f["size"], "modifiedTime": f["modifiedTime"], "owner": f["owner"], "link": f["link"] }))
+        .collect();
+    let data = format!("New in the Drive folder (read one with drive_read_document or drive_get_file and its id):\n{}", serde_json::to_string_pretty(&brief).unwrap_or_default());
     Ok(Outcome { fire: Some(event), data: Some(data), state: next, shown })
 }
 
@@ -896,6 +1046,79 @@ mod tests {
         let second = t.evaluate(Some(&first.state), &cal, at("2026-03-02T08:05:00Z")).unwrap();
         assert_eq!(second.fire, Some(Event::NewEvent { title: "Event e2".into(), count: 1 }));
         assert_eq!(t.evaluate(Some(&second.state), &cal, at("2026-03-02T08:10:00Z")).unwrap().fire, None);
+    }
+
+    fn set_rows(rows: &[(&str, &str, &str)]) -> Observation {
+        let rows: Vec<Value> = rows.iter().map(|(key, created, updated)| json!({ "key": key, "data": { "item": key }, "created_at": created, "updated_at": updated })).collect();
+        Observation::of_json(json!({ "count": rows.len(), "rows": rows }))
+    }
+
+    #[test]
+    fn rows_added_or_changed_since_the_last_look_start_a_run() {
+        let added = Trigger::parse(json!({ "kind": "records", "set": "expenses" })).unwrap();
+        assert_eq!(added, Trigger::Records { set: "expenses".into(), on: "added".into(), every_minutes: DEFAULT_CHECK_MINUTES });
+        let changed = Trigger::parse(json!({ "kind": "records", "set": "expenses", "on": "changed" })).unwrap();
+        assert!(Trigger::parse(json!({ "kind": "records", "set": "expenses", "on": "deleted" })).is_err());
+        assert!(Trigger::parse(json!({ "kind": "records", "set": " " })).is_err());
+
+        let (t1, t2, t3) = ("2026-03-01T08:00:00Z", "2026-03-02T08:00:00Z", "2026-03-03T08:00:00Z");
+        let first = added.evaluate(None, &set_rows(&[("a", t1, t1)]), Utc::now()).unwrap();
+        assert_eq!((first.fire.clone(), first.shown.as_str()), (None, "1"), "what is there at the first look is not new");
+        assert_eq!(added.evaluate(Some(&first.state), &set_rows(&[("a", t1, t1)]), Utc::now()).unwrap().fire, None);
+
+        // A row that changed counts only for a trigger that asked for changes.
+        let edited = set_rows(&[("a", t1, t2)]);
+        assert_eq!(added.evaluate(Some(&first.state), &edited, Utc::now()).unwrap().fire, None);
+        let hit = changed.evaluate(Some(&first.state), &edited, Utc::now()).unwrap();
+        assert_eq!(hit.fire, Some(Event::Rows { set: "expenses".into(), added: 0, changed: 1 }));
+        assert!(hit.data.unwrap().starts_with("Changed rows in the record set expenses:"));
+
+        // A new row counts for both, once.
+        let more = set_rows(&[("a", t1, t2), ("b", t3, t3)]);
+        let hit = added.evaluate(Some(&first.state), &more, Utc::now()).unwrap();
+        assert_eq!(hit.fire, Some(Event::Rows { set: "expenses".into(), added: 1, changed: 0 }));
+        let data = hit.data.unwrap();
+        assert!(data.contains("\"item\": \"b\"") && !data.contains("\"item\": \"a\""), "{data}");
+        assert_eq!(added.evaluate(Some(&hit.state), &more, Utc::now()).unwrap().fire, None);
+        assert_eq!(changed.evaluate(Some(&first.state), &more, Utc::now()).unwrap().fire, Some(Event::Rows { set: "expenses".into(), added: 1, changed: 1 }));
+
+        // An empty set's first row is new.
+        let empty = added.evaluate(None, &set_rows(&[]), Utc::now()).unwrap();
+        assert!(added.evaluate(Some(&empty.state), &set_rows(&[("a", t1, t1)]), Utc::now()).unwrap().fire.is_some());
+        assert_eq!(added.request(Utc::now()), Some(Request::Records { set: "expenses".into() }));
+    }
+
+    fn folder(files: &[(&str, &str)]) -> Observation {
+        let files: Vec<Value> = files.iter().map(|(id, kind)| json!({ "id": id, "name": format!("{id}.pdf"), "kind": kind, "link": format!("https://drive.example/{id}") })).collect();
+        Observation::of_json(json!({ "files": files }))
+    }
+
+    #[test]
+    fn a_file_that_arrives_in_a_folder_starts_a_run_once() {
+        let t = Trigger::parse(json!({ "kind": "drive", "folder": " https://drive.google.com/drive/folders/1AbC_def-123?usp=sharing " })).unwrap();
+        assert_eq!(t, Trigger::Drive { folder: "1AbC_def-123".into(), every_minutes: DEFAULT_CHECK_MINUTES });
+        assert!(Trigger::parse(json!({ "kind": "drive", "folder": "1AbC_def-123" })).is_ok());
+        assert!(Trigger::parse(json!({ "kind": "drive", "folder": "my receipts" })).is_err());
+        assert!(Trigger::parse(json!({ "kind": "drive", "folder": "a' or name contains '" })).is_err());
+        assert_eq!(t.request(Utc::now()), Some(Request::Tool { name: "drive_search_files".into(), input: json!({ "folderId": "1AbC_def-123", "pageSize": 100 }) }));
+
+        let first = t.evaluate(None, &folder(&[("f1", "pdf")]), Utc::now()).unwrap();
+        assert_eq!(first.fire, None, "what is in the folder at the first look is not new");
+        let second = t.evaluate(Some(&first.state), &folder(&[("f3", "folder"), ("f2", "pdf"), ("f1", "pdf")]), Utc::now()).unwrap();
+        assert_eq!(second.fire, Some(Event::Files { count: 1, name: "f2.pdf".into() }), "a subfolder is not a file");
+        let data = second.data.unwrap();
+        assert!(data.contains("\"id\": \"f2\"") && !data.contains("\"id\": \"f1\""), "{data}");
+        assert_eq!(t.evaluate(Some(&second.state), &folder(&[("f2", "pdf"), ("f1", "pdf")]), Utc::now()).unwrap().fire, None);
+        assert!(t.evaluate(None, &Observation::of_text("oops"), Utc::now()).is_err());
+    }
+
+    #[test]
+    fn a_device_trigger_waits_to_be_asked() {
+        let t = Trigger::parse(json!({ "kind": "device" })).unwrap();
+        assert_eq!(t.kind(), "device");
+        assert!(t.by_event() && !t.watches());
+        assert_eq!(t.next_after(Utc::now()), None);
+        assert_eq!(t.request(Utc::now()), None);
     }
 
     #[test]

@@ -9,6 +9,7 @@
 //! `run_python`.
 
 mod ask_user;
+mod follow_up;
 mod bash;
 mod bestbuy;
 mod browser;
@@ -41,6 +42,7 @@ mod weather;
 mod web_search;
 
 pub use ask_user::{as_text as question_text, AskUser, NAME as ASK_USER};
+pub use follow_up::{SuggestFollowUp, NAME as SUGGEST_FOLLOW_UP};
 pub use bash::Bash;
 pub use bestbuy::BestBuy;
 pub use browser::BrowserTool;
@@ -314,6 +316,9 @@ impl ToolSet {
             set.tools
                 .push(Box::new(SearchProducts::new(brave, bestbuy, web)));
         }
+        if cfg.follow_ups {
+            set.tools.push(Box::new(SuggestFollowUp));
+        }
         if cfg.ask_user {
             set.tools.push(Box::new(AskUser));
         }
@@ -539,6 +544,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("stocks", "Stocks & markets"),
     ("products", "Shopping"),
     ("ask_user", "Clarifying questions"),
+    ("follow_up", "Follow-ups"),
     ("memory", "Memory"),
     ("records", "Records"),
     ("browser", "Browser"),
@@ -571,6 +577,7 @@ pub fn group_of(name: &str) -> &'static str {
         "compare_stocks" => "stocks",
         "search_products" => "products",
         "ask_user" => "ask_user",
+        "suggest_follow_up" => "follow_up",
         REMEMBER | FORGET | RECALL => "memory",
         RECORDS_LIST | RECORDS_DESCRIBE | RECORDS_SAVE | RECORDS_LOOKUP | RECORDS_DROP => "records",
         "browser" => "browser",
@@ -724,6 +731,14 @@ impl<'a> ToolView<'a> {
                  ask_user, offering the likely choices, instead of guessing; don't ask about what \
                  you can find out or reasonably assume. Don't use ask_user to show a plan or to \
                  ask whether to go ahead with one: ask about the choice itself.",
+            );
+        }
+        if self.get(SUGGEST_FOLLOW_UP).is_some() {
+            note.push_str(
+                " When the user asks to be reminded, to have something checked again later, or \
+                 to be told when something happens that only another look can tell, suggest it \
+                 with suggest_follow_up; the user decides whether it is set up. Don't promise \
+                 to come back to something by yourself: without it you can't.",
             );
         }
         if ["bash", "run_python", "write_file", "generate_chart"]
@@ -1101,6 +1116,7 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1124,6 +1140,7 @@ mod tests {
                 "plan_trip",
                 "compare_stocks",
                 "search_products",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1146,6 +1163,7 @@ mod tests {
                 "plan_trip",
                 "compare_stocks",
                 "search_products",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1171,6 +1189,7 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1191,6 +1210,7 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1211,6 +1231,7 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1231,6 +1252,7 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1251,6 +1273,7 @@ mod tests {
                 "show_map",
                 "plan_trip",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1271,6 +1294,7 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1291,6 +1315,7 @@ mod tests {
                 "show_map",
                 "show_recipe",
                 "plan_trip",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",
@@ -1312,6 +1337,7 @@ mod tests {
                 ("TRANSIT", "off"),
                 ("STOCKS", "off"),
                 ("ASK_USER", "off"),
+                ("FOLLOW_UPS", "off"),
                 ("MEMORY", "off"),
                 ("RECORDS", "off")
             ])),
@@ -1327,6 +1353,7 @@ mod tests {
                 "show_recipe",
                 "plan_trip",
                 "compare_stocks",
+                "suggest_follow_up",
                 "ask_user",
                 "remember",
                 "forget",

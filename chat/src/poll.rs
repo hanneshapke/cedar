@@ -34,8 +34,12 @@ pub async fn observe(state: &AppState, trigger: &Trigger, now: DateTime<Utc>) ->
                 AppError::Upstream { status: StatusCode::NOT_FOUND, .. } => format!("there is no record set {set:?}"),
                 other => other.to_string(),
             })?;
-            let records: Vec<_> = reply["records"].as_array().map(|rows| rows.iter().map(|r| r["data"].clone()).collect()).unwrap_or_default();
-            Ok(Observation::of_json(json!({ "count": records.len(), "updated_at": reply["set"]["updated_at"], "records": records })))
+            let all = reply["records"].as_array().cloned().unwrap_or_default();
+            let records: Vec<_> = all.iter().map(|r| r["data"].clone()).collect();
+            // `rows` is for a trigger on the set's rows, which needs each row's key and times;
+            // a condition looks at `count`, `updated_at` and `records`.
+            let rows: Vec<_> = all.iter().map(|r| json!({ "key": r["key"], "data": r["data"], "created_at": r["created_at"], "updated_at": r["updated_at"] })).collect();
+            Ok(Observation::of_json(json!({ "count": records.len(), "updated_at": reply["set"]["updated_at"], "records": records, "rows": rows })))
         }
     }
 }
@@ -45,7 +49,7 @@ fn why(name: &str, e: AppError) -> String {
         AppError::Upstream { status: StatusCode::NOT_FOUND, .. } if name == "url" => {
             "cedar can't read web addresses right now (WEB_FETCH is off, or cedar is older than this feature)".to_string()
         }
-        AppError::Upstream { status: StatusCode::NOT_FOUND, .. } if name.starts_with("gmail_") || name.starts_with("calendar_") => {
+        AppError::Upstream { status: StatusCode::NOT_FOUND, .. } if name.starts_with("gmail_") || name.starts_with("calendar_") || name.starts_with("drive_") => {
             format!("cedar doesn't offer {name}: connect Google under Settings → Integrations (and use the built-in Google backend, not GOOGLE_BACKEND=mcp)")
         }
         AppError::Upstream { status: StatusCode::NOT_FOUND, .. } => format!("cedar doesn't offer a tool called {name} right now"),
