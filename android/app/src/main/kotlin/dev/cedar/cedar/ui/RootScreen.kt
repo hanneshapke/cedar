@@ -34,7 +34,8 @@ import dev.cedar.cedar.R
 
 /**
  * The list and the open chat: side by side on a tablet, a foldable or a phone in landscape (the
- * iPad's split view), one at a time on a phone, where Back returns to the list. Onboarding comes
+ * iPad's split view), one at a time on a phone, where Back returns to the list. An agent's page
+ * takes the chat's place until one of its runs is opened over it. Onboarding comes
  * first: the language, the feature tour, then the server (Settings).
  */
 @Composable
@@ -57,6 +58,9 @@ fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
         } else if (app.showingContribute) {
             BackHandler { app.showingContribute = false }
             ContributeSettingsScreen(app)
+        } else if (app.agentForm != null) {
+            // Over the list and the chat, like Settings; it asks before dropping what was typed.
+            app.agentForm?.let { request -> key(request) { AgentFormScreen(app, request) } }
         } else if (app.showingSettings) {
             BackHandler(enabled = app.settings.isConfigured) { app.showingSettings = false }
             SettingsScreen(app, onAllowNotifications)
@@ -71,7 +75,11 @@ fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
             } else {
                 val selection = app.selection
                 if (selection != null) {
+                    // Back from an agent's run returns to the agent's page, when it was opened from there.
                     BackHandler { app.selection = null }
+                    Detail(app, showBack = true)
+                } else if (app.showingAgent != null) {
+                    BackHandler { app.closeAgent() }
                     Detail(app, showBack = true)
                 } else {
                     ConversationListScreen(app)
@@ -85,7 +93,12 @@ fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
 private fun Detail(app: AppModel, showBack: Boolean) {
     val selection = app.selection
     if (selection == null) {
-        Placeholder(onNewChat = { app.newChat() })
+        val agentId = app.showingAgent
+        if (agentId != null) {
+            key(agentId) { AgentDetailScreen(app, agentId, onBack = if (showBack) ({ app.closeAgent() }) else null) }
+        } else {
+            Placeholder(onNewChat = { app.newChat() })
+        }
         return
     }
     val chat = app.chat(selection)

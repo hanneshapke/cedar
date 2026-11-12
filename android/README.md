@@ -3,7 +3,7 @@
 A native Kotlin and Jetpack Compose client for [cedar-chat](../chat/README.md), the Android
 counterpart of the [iOS app](../iOS/README.md). Like that app it is a thin client: it talks to
 cedar-chat's `/api`, the same routes the web page uses, so your conversations, their unread state,
-stars, scheduled agents and notifications are the same in the app, the iOS app and the browser.
+stars, agents and notifications are the same in the app, the iOS app and the browser.
 cedar's own API key never leaves the server.
 
 ```
@@ -20,12 +20,23 @@ The same as the iOS app:
 - The conversation list as cedar-chat keeps it, with a dot and a bold title on an unread
   response and a **Needs answer** chip when the agent asked a question; pull to refresh, and
   star, rename, open on the web or delete from a long press
-- A **Chats | Starred | Scheduled** switch at the top. Starred lists chats and scheduled runs,
-  most recently starred first (stars are kept by cedar-chat, so they are the same everywhere).
-  Scheduled lists each scheduled agent with its timing, next run and last result; tap one to open
-  its last run, or its chevron to see all its runs and open any of them; **Run now**, **Pause**,
-  **Resume**, **Show runs** and **Show prompt** from a long press. Creating and editing schedules
-  is done on the web
+- A **Chats | Starred | Agents** switch at the top. Starred lists chats and agents' runs,
+  most recently starred first (stars are kept by cedar-chat, so they are the same everywhere)
+- **Agents**: prompts that run on their own, as on the web. The list groups them by what starts
+  them (on a schedule, when something changes, when a webhook is called, mail and calendar), each
+  with its trigger in a line, what it is doing (next run, watching and when it last checked,
+  waiting for calls, paused, a failing check) and how its last run went; **Run now**, **Pause**,
+  **Resume**, **Edit** and **Delete** from a long press. **Activity** next to it lists the latest
+  runs of all agents with what started each. Tap an agent for its page: the trigger, the prompt,
+  a webhook's address, secret (shown once, when it is made or renewed) and a `curl` example, and
+  its runs; a run opens as a conversation, which carries a badge that leads back to its agent
+- **New Agent**, **Edit**, and **Make Agent** in a finished chat's ⋮ menu (the server writes the
+  prompt out of the conversation) open the agent form: name, prompt, and the trigger with its own
+  fields: a time (daily, weekdays, weekly), once, every so often, monthly, a condition on a web
+  address, a tool or a record set (with a path, a test and **Try It**, which shows what the check
+  returns), a webhook, new mail, or calendar events; then the model, how to be notified, the
+  tools its runs may use, and for agents that events start, how often they may run. A trigger
+  from a newer server that the app doesn't know is listed and shown, and left as it is
 - Replies stream in as the agent works: the model's reasoning (folded), text, tool calls with
   their input, output, duration and sources, token usage and cost; a stop button cancels
 - A Plan Approval setting for your messages, whether Cedar shows a plan first: the server's, when
@@ -105,7 +116,7 @@ app's language in the system settings (`res/xml/locales_config.xml`).
 
 Each message carries the locale (`"locale": "de-CH"`; for Automatic the phone's when it is English,
 German, French or Spanish, else `en`), so the agent answers in it, and the app tells the server
-(`PUT /api/settings/locale`, once connected) so that scheduled runs and notifications follow it too.
+(`PUT /api/settings/locale`, once connected) so that agents' runs and notifications follow it too.
 Dates, times, numbers and prices are written the locale's way.
 
 The text is in `app/src/main/res/values*/strings.xml`: `values` is English and the source,
@@ -122,7 +133,7 @@ choice itself (`AppLocalesMetadataHolderService` in the manifest).
 ## Push notifications
 
 cedar-chat decides what is worth telling you about (Settings → Notifications in the web UI:
-failures, questions and scheduled runs, or every response that ends while nobody is watching).
+failures, questions and agents' runs, or every response that ends while nobody is watching).
 Choose **Android push** as the method there. The push itself carries only which conversation
 finished; the app then fetches the title and text from your server and shows the notification, so
 neither Google nor an ntfy server sees what was said. A tap opens the conversation; nothing is shown
@@ -202,10 +213,10 @@ You can also open `android/` in Android Studio and run the `app` configuration.
 
 | Path | Contents |
 | --- | --- |
-| `core/` | Plain Kotlin, no Android: the `/api` types, the event-to-transcript reducer, the cards' parsers, the Markdown block parser, the attachment rules, the connection code, the locales, the SSE parser and the OkHttp client. Builds and tests without the Android SDK |
+| `core/` | Plain Kotlin, no Android: the `/api` types, agents and their triggers (`Agents.kt`: the shapes, what an agent is doing, the form's draft and its checks), the event-to-transcript reducer, the cards' parsers, the Markdown block parser, the attachment rules, the connection code, the locales, the SSE parser and the OkHttp client. Builds and tests without the Android SDK |
 | `core/src/test` | Unit tests ported from `iOS/CedarTests`, plus the client against a mock server |
 | `app/…/AppModel.kt`, `ChatModel.kt` | App state (settings, the lists, the inbox count, live notices, open chats) and one conversation's turns and streams, as the iOS app's models |
-| `app/…/ui/` | Compose screens: root (list and chat side by side when wide), list (chats, starred, scheduled), chat (turns, questions, approvals, images, workspace files and the PDF/image viewer, composer), settings (with the QR scanner), cards |
+| `app/…/ui/` | Compose screens: root (list and chat side by side when wide), list (chats, starred, agents and their activity), an agent's page and the agent form, chat (turns, questions, approvals, images, workspace files and the PDF/image viewer, composer), settings (with the QR scanner), cards |
 | `app/…/push/` | `PushManager` (FCM or UnifiedPush, registration with the server), the two services, and `Notifier`, which fetches the text and shows the notification |
 | `app/…/storage/` | Settings, with the token encrypted by an Android Keystore key |
 | `app/…/Language.kt`, `ui/Text.kt` | The app's language (AppCompat per-app locales) and the app's words for what `core` names by key |
@@ -218,8 +229,10 @@ As the iOS app (see its README): `GET /api/conversations`, `GET /api/conversatio
 `POST /api/conversations/{id}/messages`, each turn rebuilt from `GET /api/turns/{id}/events` and
 followed live (reconnecting from the last event), `GET /api/events` while in front,
 `POST /api/conversations/{id}/seen`, stars (`PUT`/`DELETE /api/conversations/{id}/star`,
-`GET /api/starred`), schedules (`GET /api/schedules`, `GET /api/schedules/{id}`,
-`POST /api/schedules/{id}/run`, `PATCH /api/schedules/{id}`), plans and approvals, files, and the
+`GET /api/starred`), agents (`GET`/`POST /api/agents`, `GET`/`PATCH`/`DELETE /api/agents/{id}`,
+`POST /api/agents/{id}/run`, `POST /api/agents/{id}/hook/rotate`, `POST /api/agents/test`,
+`GET /api/agents/activity`; for the form, `GET /api/tools`, `GET /api/records`,
+`GET /api/notifications` and `POST /api/conversations/{id}/compact`), plans and approvals, files, and the
 language (`PUT /api/settings/locale`, and `locale` with each message), and memory
 (`GET /api/memory`, `DELETE /api/memory/{id}`, `DELETE /api/memory`; a 404 means an older server).
 Records come from `GET /api/records`, a set's rows from `GET /api/records/{name}`, and go with
@@ -243,7 +256,7 @@ it to the GitHub Release with its checksum. It needs these repository secrets:
 
 - Events arrive per model turn and per tool call, not per token, so text appears a turn at a time.
 - Document cards open on the web, as does a card whose result the app can't read.
-- Creating and editing scheduled agents and the server's settings are done in the web UI.
+- The server's settings (models, integrations, notification methods) are changed in the web UI.
 - Android cuts network connections in the background. When you return to the app, running
   responses reconnect and catch up from the event log, and the list is refreshed. Push
   notifications cover the time away.

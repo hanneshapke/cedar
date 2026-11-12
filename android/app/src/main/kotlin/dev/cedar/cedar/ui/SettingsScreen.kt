@@ -503,12 +503,12 @@ private fun Notifications(app: AppModel, onAllowNotifications: () -> Unit, testS
 }
 
 @Composable
-private fun Section(title: String) {
+fun Section(title: String) {
     Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 }
 
 @Composable
-private fun Footnote(text: String) {
+fun Footnote(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
 }
 
@@ -570,7 +570,7 @@ private fun SettingsRow(
 
 /** A labelled value that opens a menu of choices. */
 @Composable
-private fun Picker(
+fun Picker(
     label: String,
     value: String,
     options: List<Pair<String, String>>,

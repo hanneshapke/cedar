@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.cedar.cedar.ui.Attachments
 import dev.cedar.cedar.ui.attachmentProblem
+import dev.cedar.core.AgentRef
 import dev.cedar.core.Approval
 import dev.cedar.core.AttachmentInfo
 import dev.cedar.core.ChatClient
@@ -38,6 +39,10 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     var conversationId by mutableStateOf(conversationId)
         private set
     var turns by mutableStateOf<List<TurnTranscript>>(emptyList())
+        private set
+
+    /** The agent whose run this conversation is, once the server said. */
+    var agent by mutableStateOf<AgentRef?>(null)
         private set
 
     /** The message being sent, shown until the server accepts it, and the files that went with it. */
@@ -98,6 +103,7 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         try {
             val detail = client.conversation(id)
             app.remember(detail.conversation)
+            agent = detail.agent
             sync(detail.turns)
             errorMessage = null
         } catch (e: CancellationException) {

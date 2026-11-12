@@ -2,7 +2,6 @@ package dev.cedar.cedar
 
 import android.content.Context
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,6 +9,10 @@ import dev.cedar.cedar.push.PushManager
 import dev.cedar.cedar.push.Notifier
 import dev.cedar.cedar.storage.SettingsStore
 import dev.cedar.cedar.ui.describe
+import dev.cedar.core.Agent
+import dev.cedar.core.AgentBody
+import dev.cedar.core.AgentLimits
+import dev.cedar.core.AgentRun
 import dev.cedar.core.ChatClient
 import dev.cedar.core.ChatException
 import dev.cedar.core.Conversation
@@ -27,8 +30,6 @@ import dev.cedar.core.RecordsLimits
 import kotlinx.serialization.json.JsonObject
 import dev.cedar.core.ModelInfo
 import dev.cedar.core.Notice
-import dev.cedar.core.Schedule
-import dev.cedar.core.ScheduleRun
 import dev.cedar.core.ServerSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -44,12 +45,26 @@ import java.time.Instant
 import kotlin.math.min
 import kotlin.math.pow
 
-/** What the list shows: the conversations, the starred ones (chats and scheduled runs), or the scheduled agents and their runs. */
-enum class SidebarMode { CHATS, STARRED, SCHEDULED }
+/** What the list shows: the conversations, the starred ones (chats and agents' runs), or the agents and what they did. */
+enum class SidebarMode { CHATS, STARRED, AGENTS }
+
+/** Inside Agents: the agents themselves, or the latest runs of all of them. */
+enum class AgentsTab { AGENTS, ACTIVITY }
+
+/**
+ * What the agent form opens with: an agent to edit, or a new one, which may come from a finished
+ * conversation (`conversationId`, with the prompt the server made of it).
+ */
+data class AgentFormRequest(
+    val agent: Agent? = null,
+    val conversationId: String? = null,
+    val title: String = "",
+    val prompt: String = "",
+)
 
 /**
  * App-wide state, as iOS/Cedar/App/AppModel.swift has it: settings, the conversation list, the
- * starred conversations, the scheduled agents, the inbox count, and the open chats.
+ * starred conversations, the agents, the inbox count, and the open chats.
  */
 class AppModel(private val context: Context, private val store: SettingsStore, val push: PushManager) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -85,24 +100,52 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var listError by mutableStateOf<String?>(null)
     var sidebarMode by mutableStateOf(SidebarMode.CHATS)
 
-    var schedules by mutableStateOf<List<Schedule>>(emptyList())
+    var agentsTab by mutableStateOf(AgentsTab.AGENTS)
+
+    /** The agents, enabled first, and what the server allows and assumes for them. */
+    var agents by mutableStateOf<List<Agent>>(emptyList())
+        private set
+    var agentLimits by mutableStateOf(AgentLimits())
         private set
 
-    /** Each expanded schedule's runs, newest first, once loaded. */
-    val scheduleRuns = mutableStateMapOf<String, List<ScheduleRun>>()
-    val expandedSchedules = mutableStateListOf<String>()
+    /** The runs of each agent whose page was opened, newest first, once loaded. */
+    val agentRuns = mutableStateMapOf<String, List<AgentRun>>()
 
-    /** The schedules with a finished run nobody has looked at, and how many runs that is. */
-    var unreadSchedules by mutableStateOf<Set<String>>(emptySet())
+    /** The agents with a finished run nobody has looked at, and how many runs that is. */
+    var unreadAgents by mutableStateOf<Set<String>>(emptySet())
         private set
-    var scheduledUnread by mutableStateOf(0)
+    var agentsUnread by mutableStateOf(0)
         private set
-    var schedulesLoaded by mutableStateOf(false)
+    var agentsLoaded by mutableStateOf(false)
         private set
-    var scheduleError by mutableStateOf<String?>(null)
+    var agentError by mutableStateOf<String?>(null)
+
+    /** The latest runs of every agent, newest first, as far as they were paged in; `activityNext` asks for more. */
+    var activity by mutableStateOf<List<AgentRun>>(emptyList())
+        private set
+    var activityNext by mutableStateOf<String?>(null)
+        private set
+    var activityLoaded by mutableStateOf(false)
+        private set
+    var activityLoadingMore by mutableStateOf(false)
+        private set
+    var activityError by mutableStateOf<String?>(null)
+
+    /** The agent whose page is open (its id), under the conversation that may be open over it. */
+    var showingAgent by mutableStateOf<String?>(null)
+        private set
+
+    /** The agent form, over everything else, while an agent is being made or edited. */
+    var agentForm by mutableStateOf<AgentFormRequest?>(null)
 
     /**
-     * Starred conversations, most recently starred first, chats and scheduled runs alike. Stars are
+     * Webhook secrets the server just handed out (on creating the agent, or for a new secret), by
+     * agent: shown on the agent's page until it is closed, and kept nowhere.
+     */
+    val hookSecrets = mutableStateMapOf<String, String>()
+
+    /**
+     * Starred conversations, most recently starred first, chats and agents' runs alike. Stars are
      * kept by the server, so they are the same on the web, the desktop app, the iOS app and here.
      */
     var starred by mutableStateOf<List<Conversation>>(emptyList())
@@ -168,7 +211,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         private set
     var contributionsError by mutableStateOf<String?>(null)
 
-    /** Conversations the list leaves out (a schedule's runs), as their chats loaded them. */
+    /** Conversations the list leaves out (an agent's runs), as their chats loaded them. */
     private val otherConversations = mutableStateMapOf<String, Conversation>()
 
     /** The selected conversation id, or a draft chat's key. */
@@ -218,7 +261,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
 
     /**
      * The user picked a language ("" for Automatic), in onboarding or Settings: the app switches to it
-     * at once (activities are recreated in it), and the server is told so that scheduled runs and
+     * at once (activities are recreated in it), and the server is told so that agents' runs and
      * notifications follow it, now or once a server is connected.
      */
     fun chooseLanguage(choice: String) {
@@ -264,12 +307,20 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             otherConversations.clear()
             starred = emptyList()
             starredLoaded = false
-            schedules = emptyList()
-            scheduleRuns.clear()
-            expandedSchedules.clear()
-            unreadSchedules = emptySet()
-            scheduledUnread = 0
-            schedulesLoaded = false
+            agents = emptyList()
+            agentLimits = AgentLimits()
+            agentRuns.clear()
+            unreadAgents = emptySet()
+            agentsUnread = 0
+            agentsLoaded = false
+            agentError = null
+            activity = emptyList()
+            activityNext = null
+            activityLoaded = false
+            activityError = null
+            showingAgent = null
+            agentForm = null
+            hookSecrets.clear()
             models = emptyList()
             modelsLoaded = false
             serverHasMemory = false
@@ -512,14 +563,14 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         } finally {
             isRefreshing = false
         }
-        if (sidebarMode == SidebarMode.SCHEDULED) refreshSchedules()
+        if (sidebarMode == SidebarMode.AGENTS || showingAgent != null) refreshAgents()
     }
 
     private fun take(inbox: Inbox) {
         inboxUnread = inbox.unread
-        val scheduled = inbox.items.mapNotNull { it.scheduleId }
-        scheduledUnread = scheduled.size
-        unreadSchedules = scheduled.toSet()
+        val ofAgents = inbox.items.mapNotNull { it.scheduleId }
+        agentsUnread = ofAgents.size
+        unreadAgents = ofAgents.toSet()
     }
 
     fun conversation(id: String): Conversation? =
@@ -531,14 +582,10 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         val isNew = otherConversations[conversation.id] == null
         otherConversations[conversation.id] = conversation
         if (selection != conversation.id) return
-        val scheduleId = conversation.scheduleId
-        if (isNew && scheduleId != null && sidebarMode != SidebarMode.STARRED &&
-            (sidebarMode != SidebarMode.SCHEDULED || scheduleId !in expandedSchedules)
-        ) {
+        if (isNew && conversation.scheduleId != null && sidebarMode == SidebarMode.CHATS) {
             // Opened from a push, say: show where it belongs. One opened from Starred stays there.
-            sidebarMode = SidebarMode.SCHEDULED
-            if (scheduleId !in expandedSchedules) expandedSchedules += scheduleId
-            scope.launch { refreshSchedules() }
+            sidebarMode = SidebarMode.AGENTS
+            scope.launch { refreshAgents() }
         }
         if (inForeground) markSeen(conversation.id)
     }
@@ -555,7 +602,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         if (starredLoaded) starred.any { it.id == conversationId } else conversation(conversationId)?.isStarred ?: false
 
     /**
-     * Stars or unstars a conversation (a chat or a scheduled run) for every device. The lists change at
+     * Stars or unstars a conversation (a chat or an agent's run) for every device. The lists change at
      * once and go back if the server refuses.
      */
     suspend fun setStarred(conversationId: String, on: Boolean) {
@@ -569,7 +616,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         }
         try {
             replace(client.setStarred(conversationId, on))
-            // For the schedule's title, and anything starred elsewhere in the meantime.
+            // For the agent's title, and anything starred elsewhere in the meantime.
             runCatching { client.starred() }.getOrNull()?.let { starred = it }
         } catch (e: Exception) {
             starred = before
@@ -597,8 +644,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             val updated = runCatching { client.markSeen(conversationId) }.getOrNull() ?: return@launch
             replace(updated)
             runCatching { client.inbox() }.getOrNull()?.let(::take)
-            val scheduleId = updated.scheduleId
-            if (scheduleId != null && scheduleRuns.containsKey(scheduleId)) loadRuns(scheduleId)
+            val agentId = updated.scheduleId ?: return@launch
+            if (agentRuns.containsKey(agentId)) loadAgent(agentId)
+            if (activityLoaded) activity = activity.map { run -> if (run.conversationId == conversationId) run.copy(turn = run.turn?.copy(seen = true)) else run }
         }
     }
 
@@ -608,89 +656,183 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         } else if (otherConversations.containsKey(conversation.id)) {
             otherConversations[conversation.id] = conversation
         }
-        // The list's copy carries the schedule's title, which other responses don't.
+        // The list's copy carries the agent's title, which other responses don't.
         starred = starred.map { if (it.id == conversation.id) conversation.copy(scheduleTitle = conversation.scheduleTitle ?: it.scheduleTitle) else it }
     }
 
-    // Schedules
+    // Agents
 
-    /** Reads the schedules, and the runs of the ones that are expanded. */
-    suspend fun refreshSchedules() {
+    /** Reads the agents, and with them whatever else of theirs is on screen: the open agent's runs, the activity. */
+    suspend fun refreshAgents() {
         val client = client ?: return
         try {
-            schedules = client.schedules()
-            schedulesLoaded = true
-            scheduleError = null
+            val list = client.agents()
+            agents = list.agents
+            agentLimits = list.limits
+            agentsLoaded = true
+            agentError = null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            scheduleError = describe(e)
+            agentError = describe(e)
             return
         }
-        val ids = schedules.map { it.id }.toSet()
-        scheduleRuns.keys.filter { it !in ids }.forEach { scheduleRuns.remove(it) }
-        expandedSchedules.retainAll(ids)
-        for (id in expandedSchedules.toList()) loadRuns(id)
+        val ids = agents.map { it.id }.toSet()
+        agentRuns.keys.filter { it !in ids }.forEach { agentRuns.remove(it) }
+        showingAgent?.let { id -> if (id in ids) loadAgent(id) else closeAgent() }
+        if (sidebarMode == SidebarMode.AGENTS && agentsTab == AgentsTab.ACTIVITY) refreshActivity()
     }
 
-    suspend fun loadRuns(scheduleId: String) {
+    fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
+
+    /** Reads one agent and its runs, for its page. */
+    suspend fun loadAgent(id: String) {
         val client = client ?: return
         try {
-            val detail = client.schedule(scheduleId)
-            scheduleRuns[scheduleId] = detail.runs
-            schedules = schedules.map { if (it.id == scheduleId) detail.schedule.copy(lastRun = detail.runs.firstOrNull()) else it }
+            val detail = client.agent(id)
+            agentRuns[id] = detail.runs
+            put(detail.agent)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ChatException.Api) {
             if (e.status == 404) {
-                schedules = schedules.filter { it.id != scheduleId }
-                scheduleRuns.remove(scheduleId)
-                expandedSchedules.remove(scheduleId)
+                // Deleted elsewhere.
+                agents = agents.filter { it.id != id }
+                agentRuns.remove(id)
+                if (showingAgent == id) closeAgent()
             } else {
-                scheduleError = describe(e)
+                agentError = describe(e)
             }
         } catch (e: Exception) {
-            scheduleError = describe(e)
+            agentError = describe(e)
         }
     }
 
-    /** The newest run of [schedule] that has a conversation: the loaded runs' first such, or the list's last run. */
-    fun lastConversation(schedule: Schedule): String? =
-        scheduleRuns[schedule.id]?.let { runs -> runs.firstOrNull { it.conversationId != null }?.conversationId }
-            ?: schedule.lastRun?.conversationId
+    /** Takes the server's latest word on an agent: replaces it in the list, or adds it. */
+    private fun put(agent: Agent) {
+        // An answer without the last run (a new agent's has none to give) keeps the one the list had.
+        val known = agents.firstOrNull { it.id == agent.id }
+        val fresh = if (agent.lastRun == null && known?.lastRun != null) agent.copy(lastRun = known.lastRun) else agent
+        agents = if (known != null) agents.map { if (it.id == agent.id) fresh else it } else listOf(fresh) + agents
+        // A secret comes once; the agent's page shows it until it is closed.
+        agent.hook?.secret?.let { hookSecrets[agent.id] = it }
+    }
 
-    /** Opens the schedule's last run as a conversation, and shows its runs under it. */
-    fun openLastRun(schedule: Schedule) {
-        val conversationId = lastConversation(schedule) ?: return
-        selection = conversationId
-        if (schedule.id !in expandedSchedules) {
-            expandedSchedules += schedule.id
-            scope.launch { loadRuns(schedule.id) }
+    /** Opens an agent's page: what starts it, its prompt and its runs. */
+    fun openAgent(id: String) {
+        sidebarMode = SidebarMode.AGENTS
+        showingAgent = id
+        selection = null
+        showingSettings = false
+        scope.launch {
+            if (agent(id) == null) refreshAgents() else loadAgent(id)
         }
     }
 
-    fun toggleExpanded(schedule: Schedule) {
-        if (schedule.id in expandedSchedules) {
-            expandedSchedules.remove(schedule.id)
-        } else {
-            expandedSchedules += schedule.id
-            scope.launch { loadRuns(schedule.id) }
+    fun closeAgent() {
+        showingAgent?.let { hookSecrets.remove(it) }
+        showingAgent = null
+    }
+
+    /** The first page of every agent's latest runs. */
+    suspend fun refreshActivity() {
+        val client = client ?: return
+        try {
+            val page = client.activity()
+            val fresh = page.items.map { it.id }.toSet()
+            val last = page.items.lastOrNull()?.time
+            // Pages read further down stay: only the top is new.
+            val older = if (page.nextBefore != null && last != null) activity.filter { it.id !in fresh && (it.time ?: Instant.MAX) <= last } else emptyList()
+            activity = page.items + older
+            if (older.isEmpty()) activityNext = page.nextBefore
+            activityLoaded = true
+            activityError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            activityError = describe(e)
+        }
+    }
+
+    /** The page after the ones shown, when there is one. */
+    suspend fun loadMoreActivity() {
+        val client = client ?: return
+        val before = activityNext ?: return
+        if (activityLoadingMore) return
+        activityLoadingMore = true
+        try {
+            val page = client.activity(before = before)
+            val known = activity.map { it.id }.toSet()
+            activity = activity + page.items.filter { it.id !in known }
+            activityNext = page.nextBefore
+            activityError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            activityError = describe(e)
+        } finally {
+            activityLoadingMore = false
         }
     }
 
     /** Starts a run now and opens it, so it streams in. */
-    suspend fun runNow(schedule: Schedule) {
+    suspend fun runNow(agent: Agent) {
         val client = client ?: throw ChatException.NotConfigured
-        val run = client.runSchedule(schedule.id)
-        if (schedule.id !in expandedSchedules) expandedSchedules += schedule.id
-        loadRuns(schedule.id)
+        val run = client.runAgent(agent.id)
+        loadAgent(agent.id)
         run.conversationId?.let { selection = it }
     }
 
-    suspend fun setEnabled(schedule: Schedule, enabled: Boolean) {
+    /** Pauses or resumes. Resuming skips what was missed while paused. */
+    suspend fun setEnabled(agent: Agent, enabled: Boolean) {
         val client = client ?: throw ChatException.NotConfigured
-        val updated = client.setSchedule(schedule.id, enabled)
-        schedules = schedules.map { if (it.id == schedule.id) updated.copy(lastRun = it.lastRun) else it }
+        put(client.updateAgent(agent.id, AgentBody(enabled = enabled)))
+    }
+
+    /** Makes the agent, or changes the one with `id`, and reads the list again (it is ordered by the server). */
+    suspend fun saveAgent(id: String?, body: AgentBody): Agent {
+        val client = client ?: throw ChatException.NotConfigured
+        val saved = if (id == null) client.createAgent(body) else client.updateAgent(id, body)
+        put(saved)
+        refreshAgents()
+        return saved
+    }
+
+    /** Deletes the agent and its runs. The server refuses while one of them is still going. */
+    suspend fun deleteAgent(agent: Agent) {
+        val client = client ?: throw ChatException.NotConfigured
+        try {
+            client.deleteAgent(agent.id)
+        } catch (e: ChatException.Api) {
+            // Already gone (another device): the list catches up below.
+            if (e.status != 404) throw e
+        }
+        if (showingAgent == agent.id) closeAgent()
+        agents = agents.filter { it.id != agent.id }
+        val runs = agentRuns.remove(agent.id).orEmpty().mapNotNull { it.conversationId }.toSet()
+        if (selection in runs) selection = null
+        activity = activity.filter { it.agentId != agent.id }
+        refresh()
+    }
+
+    /** A new secret for a webhook agent; the old one stops working at once. */
+    suspend fun rotateHook(agent: Agent) {
+        val client = client ?: throw ChatException.NotConfigured
+        put(client.rotateHook(agent.id))
+    }
+
+    /**
+     * Has the server turn a finished conversation into one prompt, and opens the form for a new
+     * agent with it.
+     */
+    suspend fun makeAgent(conversationId: String) {
+        val client = client ?: throw ChatException.NotConfigured
+        val compacted = client.compact(conversationId)
+        agentForm = AgentFormRequest(
+            conversationId = conversationId,
+            title = conversation(conversationId)?.title?.trim().orEmpty(),
+            prompt = compacted.prompt,
+        )
     }
 
     // Notices
@@ -749,6 +891,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     // Chats
 
     fun newChat() {
+        showingAgent?.let { closeAgent() }
         val chat = ChatModel(this)
         chats[chat.key] = chat
         selection = chat.key

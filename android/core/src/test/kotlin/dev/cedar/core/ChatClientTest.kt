@@ -78,27 +78,21 @@ class ChatClientTest {
     }
 
     @Test
-    fun starsSchedulesAndRegistersThePhone() = runBlocking {
+    fun starsAndRegistersThePhone() = runBlocking {
         val conversation = """{"id":"c1","unread":false,"needs_answer":false,"starred_at":"2026-10-23T08:00:00Z",
             "created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:36:00Z"}"""
         server.enqueue(json(conversation))
         server.enqueue(json(conversation))
-        server.enqueue(json("""{"id":"s1","title":"News","frequency":"daily","time_of_day":"07:30","timezone":"UTC","enabled":false,"next_run_at":"2026-10-26T06:30:00Z"}"""))
         server.enqueue(json("""{"device":{"id":"d1","transport":"unifiedpush","name":"Pixel"},"device_id":"d1"}"""))
         server.enqueue(json("{}"))
 
         client.setStarred("c1", true)
         client.setStarred("c1", false)
-        client.setSchedule("s1", enabled = false)
         val device = client.registerAndroidDevice("unifiedpush", "https://ntfy.sh/upAbc", "Pixel")
         client.unregisterAndroidDevice("https://ntfy.sh/upAbc")
 
         assertEquals("PUT /api/conversations/c1/star", server.takeRequest().let { "${it.method} ${it.path}" })
         assertEquals("DELETE /api/conversations/c1/star", server.takeRequest().let { "${it.method} ${it.path}" })
-        server.takeRequest().let {
-            assertEquals("PATCH /api/schedules/s1", "${it.method} ${it.path}")
-            assertEquals(j("""{"enabled":false}"""), j(it.body.readUtf8()))
-        }
         server.takeRequest().let {
             assertEquals("POST /api/notifications/android/devices", "${it.method} ${it.path}")
             assertEquals(j("""{"transport":"unifiedpush","token":"https://ntfy.sh/upAbc","name":"Pixel"}"""), j(it.body.readUtf8()))
@@ -217,6 +211,135 @@ class ChatClientTest {
         assertEquals("DELETE /api/records/running_log", server.takeRequest().let { "${it.method} ${it.path}" })
         assertEquals("DELETE /api/records", server.takeRequest().let { "${it.method} ${it.path}" })
         assertEquals("GET /api/records", server.takeRequest().let { "${it.method} ${it.path}" })
+    }
+
+    @Test
+    fun listsMakesChangesAndDeletesAgents() = runBlocking {
+        val agent = """{"id":"a1","title":"Door","prompt":"Say who came","enabled":true,"trigger":{"kind":"webhook"},
+            "hook":{"url":"https://cedar.example/api/hooks/ab","path":"/api/hooks/ab","secret_last4":"cdef"}}"""
+        val withSecret = """{"id":"a1","title":"Door","enabled":true,"trigger":{"kind":"webhook"},
+            "hook":{"url":"https://cedar.example/api/hooks/ab","path":"/api/hooks/ab","secret_last4":"cdef","secret":"0123cdef"}}"""
+        server.enqueue(json("""{"agents":[$agent],"limits":{"max_agents":100,"min_interval_secs":300,"max_runs_per_day":24,
+            "min_interval_minutes":15,"check_minutes":5,"personal_check_minutes":5}}"""))
+        server.enqueue(json("""{"agent":$agent,"runs":[{"id":"r1","schedule_id":"a1","conversation_id":"c1","turn_id":"t1",
+            "due_at":"2026-11-12T08:00:00Z","started_at":"2026-11-12T08:00:00Z","manual":false,"error":null,
+            "cause":{"kind":"webhook","summary":"A webhook call"},"turn":null}]}"""))
+        server.enqueue(json(withSecret, 201))
+        server.enqueue(json(agent))
+        server.enqueue(json(agent))
+        server.enqueue(json("""{"id":"r2","schedule_id":"a1","conversation_id":"c2","turn_id":"t2","due_at":"2026-11-12T09:00:00Z",
+            "started_at":"2026-11-12T09:00:00Z","manual":true,"error":null,"cause":null,"turn":null}""", 202))
+        server.enqueue(json(withSecret))
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val list = client.agents()
+        assertEquals(listOf("Door"), list.agents.map { it.title })
+        assertEquals(100, list.limits.maxAgents)
+        val detail = client.agent("a1")
+        assertEquals("A webhook call", detail.runs.single().startedBy)
+        val made = client.createAgent(AgentBody(title = "Door", prompt = "Say who came", trigger = Trigger.Webhook, timezone = "Europe/Zurich", conversationId = "c0"))
+        assertEquals("0123cdef", made.hook?.secret)
+        client.updateAgent("a1", AgentBody(enabled = false))
+        client.updateAgent(
+            "a1",
+            AgentBody(
+                title = "Door", prompt = "p", model = "", reasoning = "", tools = Change.Clear, notify = Change.Set("none"),
+                trigger = Trigger.Email("is:unread", 10), timezone = "Europe/Zurich", minIntervalSecs = Change.Set(600), maxRunsPerDay = Change.Clear,
+            ),
+        )
+        val run = client.runAgent("a1")
+        assertEquals("c2", run.conversationId)
+        assertEquals("0123cdef", client.rotateHook("a1").hook?.secret)
+        client.deleteAgent("a1")
+
+        assertEquals("GET /api/agents", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/agents/a1", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("POST /api/agents", "${it.method} ${it.path}")
+            assertEquals("Bearer tok", it.getHeader("Authorization"))
+            assertEquals(
+                j("""{"title":"Door","prompt":"Say who came","conversation_id":"c0","trigger":{"kind":"webhook"},"timezone":"Europe/Zurich"}"""),
+                j(it.body.readUtf8()),
+            )
+        }
+        server.takeRequest().let {
+            assertEquals("PATCH /api/agents/a1", "${it.method} ${it.path}")
+            assertEquals(j("""{"enabled":false}"""), j(it.body.readUtf8()))
+        }
+        server.takeRequest().let {
+            assertEquals("PATCH /api/agents/a1", "${it.method} ${it.path}")
+            assertEquals(
+                j("""{"title":"Door","prompt":"p","model":"","reasoning":"","tools":null,"notify":"none",
+                      "trigger":{"kind":"email","query":"is:unread","every_minutes":10},"timezone":"Europe/Zurich",
+                      "min_interval_secs":600,"max_runs_per_day":null}"""),
+                j(it.body.readUtf8()),
+            )
+        }
+        assertEquals("POST /api/agents/a1/run", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("POST /api/agents/a1/hook/rotate", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("DELETE /api/agents/a1", server.takeRequest().let { "${it.method} ${it.path}" })
+
+        // Deleting while a run is going: the server's words reach the user.
+        server.enqueue(json("""{"error":{"code":"conflict","message":"wait for its current run to finish, or stop it"}}""", 409))
+        val e = assertFailsWith<ChatException.Api> { client.deleteAgent("a1") }
+        assertEquals(409, e.status)
+        assertEquals("wait for its current run to finish, or stop it", e.message)
+    }
+
+    @Test
+    fun triesATriggerAndPagesTheActivity() = runBlocking {
+        server.enqueue(json("""{"ok":true,"value":"38.5","would_fire":true,"summary":"Below 40","sample":{"text":"{}","cut":false,"json":true}}"""))
+        server.enqueue(json("""{"error":{"code":"bad_request","message":"only a trigger that watches something can be tried out"}}""", 400))
+        server.enqueue(json("""{"items":[{"id":"r2","schedule_id":"a1","agent":{"id":"a1","title":"News","trigger_kind":"time"}}],"next_before":"2026-11-12T07:00:00.123456Z"}"""))
+        server.enqueue(json("""{"items":[],"next_before":null}"""))
+
+        val trigger = Trigger.Condition(WatchSource.Url("https://example.com/p", "json"), "price", Predicate.of("lt", "40")!!, 10)
+        val tried = client.testTrigger(trigger)
+        assertEquals(true, tried.wouldFire)
+        assertEquals("only a trigger that watches something can be tried out", assertFailsWith<ChatException.Api> { client.testTrigger(Trigger.Webhook) }.message)
+        val first = client.activity()
+        assertEquals("News", first.items.single().agent?.title)
+        val second = client.activity(before = first.nextBefore, limit = 50)
+        assertEquals(null, second.nextBefore)
+
+        server.takeRequest().let {
+            assertEquals("POST /api/agents/test", "${it.method} ${it.path}")
+            assertEquals(
+                j("""{"trigger":{"kind":"condition","source":{"type":"url","url":"https://example.com/p","as":"json"},"extract":"price",
+                      "predicate":{"op":"lt","value":40},"every_minutes":10}}"""),
+                j(it.body.readUtf8()),
+            )
+        }
+        assertEquals(j("""{"trigger":{"kind":"webhook"}}"""), j(server.takeRequest().body.readUtf8()))
+        assertEquals("GET /api/agents/activity", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("GET", it.method)
+            assertEquals("/api/agents/activity", it.requestUrl?.encodedPath)
+            assertEquals("2026-11-12T07:00:00.123456Z", it.requestUrl?.queryParameter("before"))
+            assertEquals("50", it.requestUrl?.queryParameter("limit"))
+        }
+    }
+
+    @Test
+    fun readsWhatTheAgentFormNeeds() = runBlocking {
+        server.enqueue(json("""{"groups":[{"id":"weather","label":"Weather","available":true,"tools":[{"name":"weather","description":"","writes":false,"pollable":true}]}],
+            "sources":[{"name":"url","description":"A web address"}]}"""))
+        server.enqueue(json("""{"default_method":"android","scope":"all","configured":["android"],"desktop":{"listening":false}}"""))
+        server.enqueue(json("""{"prompt":"Summarize today's news about cedar trees.","source":"run"}"""))
+        server.enqueue(json("""{"error":{"code":"not_found","message":"the conversation has no finished response to schedule yet"}}""", 404))
+
+        assertEquals(listOf("weather"), client.tools().pollable.map { it.second.name })
+        assertEquals(listOf("android"), client.notifications().configured)
+        assertEquals("Summarize today's news about cedar trees.", client.compact("c1").prompt)
+        assertEquals(404, assertFailsWith<ChatException.Api> { client.compact("c2") }.status)
+
+        assertEquals("GET /api/tools", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/notifications", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("POST /api/conversations/c1/compact", "${it.method} ${it.path}")
+            assertEquals("Bearer tok", it.getHeader("Authorization"))
+        }
+        assertEquals("POST /api/conversations/c2/compact", server.takeRequest().let { "${it.method} ${it.path}" })
     }
 
     @Test
