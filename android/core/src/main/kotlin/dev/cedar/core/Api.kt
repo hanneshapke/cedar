@@ -348,12 +348,16 @@ fun searchRanges(text: String, query: String): List<IntRange> =
 @Serializable
 data class ConversationList(val conversations: List<Conversation> = emptyList())
 
-/** `GET /api/conversations/{id}`; `agent` is there when the conversation is an agent's run. */
+/**
+ * `GET /api/conversations/{id}`; `agent` is there when the conversation is an agent's run, and
+ * `followups` holds what was decided about the follow-ups its turns suggested.
+ */
 @Serializable
 data class ConversationDetail(
     val conversation: Conversation,
     val turns: List<Turn> = emptyList(),
     val agent: AgentRef? = null,
+    val followups: List<Followup> = emptyList(),
 )
 
 @Serializable

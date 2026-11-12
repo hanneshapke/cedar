@@ -36,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.cedar.cedar.AgentFormRequest
+import dev.cedar.cedar.AgentIntentReceiver
 import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.R
 import dev.cedar.core.Agent
@@ -67,8 +69,9 @@ import kotlinx.coroutines.launch
 
 /**
  * One agent: what starts it and what it is doing, Run now and Pause or Resume, a webhook's
- * address and secret, its prompt, and its runs, newest first, each with what started it. Edit and
- * Delete are in the top bar. Tapping a run opens it as a conversation over this page.
+ * address and secret or how the device starts it, its prompt, and its runs, newest first, each
+ * with what started it. Edit and Delete are in the top bar. Tapping a run opens it as a
+ * conversation over this page.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,6 +127,12 @@ fun AgentDetailScreen(app: AppModel, agentId: String, onBack: (() -> Unit)?) {
                     item(key = "hook") {
                         HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                         WebhookSection(hook, secret = app.hookSecrets[agent.id]) { rotating = true }
+                    }
+                }
+                if (agent.trigger is Trigger.Device) {
+                    item(key = "device") {
+                        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                        DeviceSection(agent, allowed = app.allowAutomation, onAllow = app::chooseAllowAutomation)
                     }
                 }
                 item(key = "prompt") {
@@ -259,6 +268,11 @@ private fun TriggerDetails(agent: Agent) {
             is WatchSource.Records -> {}
         }
     }
+    if (trigger is Trigger.Drive) {
+        SelectionContainer {
+            Text(stringResource(R.string.label_value, stringResource(R.string.agent_drive_folder), trigger.folder), style = small, fontFamily = FontFamily.Monospace, color = CedarColors.secondaryText)
+        }
+    }
     trigger.checkMinutes?.let {
         Text(stringResource(R.string.label_value, stringResource(R.string.agent_checks), context.everyText(it)), style = small, color = CedarColors.secondaryText)
     }
@@ -284,6 +298,33 @@ private fun WebhookSection(hook: Hook, secret: String?, onRotate: () -> Unit) {
         OutlinedButton(onClick = onRotate) { Text(stringResource(R.string.hook_new_secret)) }
         Copyable(stringResource(R.string.hook_example), hook.curlExample(secret), scrolls = true)
         Text(stringResource(R.string.hook_reachable), style = small, color = CedarColors.secondaryText)
+    }
+}
+
+/**
+ * How this device starts the agent: the share sheet, and the broadcast another app (Tasker, an
+ * automation app) can send, with everything it has to be told, to copy. Other apps are let in by
+ * a switch that is off until the user turns it on; it is the app's, not this agent's.
+ */
+@Composable
+private fun DeviceSection(agent: Agent, allowed: Boolean, onAllow: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    val small = MaterialTheme.typography.bodySmall
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Heading(stringResource(R.string.device_title))
+        Text(stringResource(R.string.device_share_text), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.device_automation_text), style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.allow_automation), Modifier.weight(1f))
+            Switch(checked = allowed, onCheckedChange = onAllow)
+        }
+        Text(stringResource(R.string.allow_automation_footnote), style = small, color = CedarColors.secondaryText)
+        Copyable(stringResource(R.string.device_action), AgentIntentReceiver.ACTION)
+        Copyable(stringResource(R.string.device_package), context.packageName)
+        Copyable(stringResource(R.string.device_agent_id), agent.id)
+        // The extras as an automation app asks for them: a name and a value each.
+        Copyable(stringResource(R.string.device_extras), "${AgentIntentReceiver.EXTRA_AGENT_ID}: ${agent.id}\n${AgentIntentReceiver.EXTRA_TEXT}: …")
+        Text(stringResource(R.string.device_extras_footnote), style = small, color = CedarColors.secondaryText)
     }
 }
 

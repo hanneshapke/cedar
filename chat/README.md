@@ -539,8 +539,8 @@ asked (`shortcut`, `share`, `automation`) and shows with the run.
   agent to run and an optional text. Shortcuts' own automations can run it when you arrive at or
   leave a place, connect to CarPlay, at a time, or from the share sheet through a shortcut.
 - On **Android**, the app is a **share target** (share text or a link to Cedar and pick the
-  agent), and other apps such as Tasker can start an agent with an intent once you allow that in
-  the app.
+  agent), and other apps such as Tasker can start an agent that has the *From your phone*
+  trigger with an intent, once you allow that in the app's settings (it is off by default).
 
 An automation can ask often, so these runs are held to the agent's limits like any other that
 starts from outside; a request that comes too soon is answered `{"started": false, "held":

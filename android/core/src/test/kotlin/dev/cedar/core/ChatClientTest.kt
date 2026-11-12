@@ -333,6 +333,79 @@ class ChatClientTest {
     }
 
     @Test
+    fun asksForARunFromTheDevice() = runBlocking {
+        server.enqueue(json("""{"started":true,"conversation_id":"c7"}""", 202))
+        server.enqueue(json("""{"started":false,"held":"too_soon"}""", 202))
+        server.enqueue(json("""{"error":{"code":"conflict","message":"this agent is paused"}}""", 409))
+        server.enqueue(json("""{"error":{"code":"payload_too_large","message":"at most 16384 bytes can be handed to a run"}}""", 413))
+
+        val started = client.triggerAgent("a1", source = "share", text = "Worth a look", title = "An article", url = "https://example.com/a")
+        assertEquals(true, started.started)
+        assertEquals("c7", started.conversationId)
+        val held = client.triggerAgent("a1", source = "automation")
+        assertEquals(false, held.started)
+        assertEquals(DeviceStart.TOO_SOON, held.held)
+        val paused = assertFailsWith<ChatException.Api> { client.triggerAgent("a2", source = "automation", text = "door open") }
+        assertEquals(409, paused.status)
+        assertEquals("this agent is paused", paused.message)
+        assertEquals(413, assertFailsWith<ChatException.Api> { client.triggerAgent("a1", text = "x".repeat(20_000)) }.status)
+
+        server.takeRequest().let {
+            assertEquals("POST /api/agents/a1/trigger", "${it.method} ${it.path}")
+            assertEquals("Bearer tok", it.getHeader("Authorization"))
+            assertEquals(j("""{"source":"share","text":"Worth a look","title":"An article","url":"https://example.com/a"}"""), j(it.body.readUtf8()))
+        }
+        server.takeRequest().let {
+            assertEquals("POST /api/agents/a1/trigger", "${it.method} ${it.path}")
+            // Only what there is: the server refuses fields it doesn't know, and takes none at all.
+            assertEquals(j("""{"source":"automation"}"""), j(it.body.readUtf8()))
+        }
+        server.takeRequest().let {
+            assertEquals("POST /api/agents/a2/trigger", "${it.method} ${it.path}")
+            assertEquals(j("""{"source":"automation","text":"door open"}"""), j(it.body.readUtf8()))
+        }
+        assertEquals("POST /api/agents/a1/trigger", server.takeRequest().let { "${it.method} ${it.path}" })
+    }
+
+    @Test
+    fun decidesAboutASuggestedFollowUp() = runBlocking {
+        server.enqueue(json("""{"followup":{"turn_id":"t1","call_id":"call_7","status":"accepted","agent_id":"a9","decided_at":"2026-11-12T10:00:00Z"},
+            "agent":{"id":"a9","title":"Has the package shipped?","trigger":{"kind":"once","at":"2026-12-04T09:00","timezone":"Europe/Zurich"}}}"""))
+        server.enqueue(json("""{"followup":{"turn_id":"t1","call_id":"call 8","status":"dismissed","agent_id":null,"decided_at":"2026-11-12T10:01:00Z"},"agent":null}"""))
+        server.enqueue(json("""{"error":{"code":"bad_request","message":"at must be in the future"}}""", 400))
+        server.enqueue(json("""{"conversation":{"id":"c1","created_at":"2026-11-12T09:00:00Z","updated_at":"2026-11-12T09:05:00Z"},"turns":[],
+            "followups":[{"turn_id":"t1","call_id":"call_7","status":"accepted","agent_id":"a9","decided_at":"2026-11-12T10:00:00Z"}]}"""))
+
+        val accept = FollowupChoice.Accept("Has the package shipped?", "Check the tracking page.", "2026-12-04T08:00:00Z", "Europe/Zurich")
+        val accepted = client.decideFollowup("t1", "call_7", accept)
+        assertEquals(true, accepted.followup.isAccepted)
+        assertEquals("a9", accepted.agent?.id)
+        val dismissed = client.decideFollowup("t1", "call 8", FollowupChoice.Dismiss)
+        assertEquals(true, dismissed.followup.isDismissed)
+        assertEquals(null, dismissed.agent)
+        val late = assertFailsWith<ChatException.Api> { client.decideFollowup("t1", "call_9", accept) }
+        assertEquals(400, late.status)
+        assertEquals("at must be in the future", late.message)
+        assertEquals(listOf("call_7"), client.conversation("c1").followups.map { it.callId })
+
+        server.takeRequest().let {
+            assertEquals("PUT /api/turns/t1/followups/call_7", "${it.method} ${it.path}")
+            assertEquals("Bearer tok", it.getHeader("Authorization"))
+            assertEquals(
+                j("""{"decision":"accept","title":"Has the package shipped?","prompt":"Check the tracking page.","at":"2026-12-04T08:00:00Z","timezone":"Europe/Zurich"}"""),
+                j(it.body.readUtf8()),
+            )
+        }
+        server.takeRequest().let {
+            // The call's id is one path component, whatever is in it.
+            assertEquals("PUT /api/turns/t1/followups/call%208", "${it.method} ${it.path}")
+            assertEquals(j("""{"decision":"dismiss"}"""), j(it.body.readUtf8()))
+        }
+        assertEquals("PUT /api/turns/t1/followups/call_9", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/conversations/c1", server.takeRequest().let { "${it.method} ${it.path}" })
+    }
+
+    @Test
     fun readsWhatTheAgentFormNeeds() = runBlocking {
         server.enqueue(json("""{"groups":[{"id":"weather","label":"Weather","available":true,"tools":[{"name":"weather","description":"","writes":false,"pollable":true}]}],
             "sources":[{"name":"url","description":"A web address"}]}"""))

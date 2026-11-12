@@ -274,13 +274,28 @@ class ApiTest {
             trigger("""{"kind":"calendar","filter":"standup","minutes_before":15,"new_events":true,"every_minutes":5}"""),
         )
         assertEquals(Trigger.Calendar(calendarId = "work", newEvents = true), trigger("""{"kind":"calendar","calendar_id":"work","new_events":true}"""))
+        // New rows unless it says, and the server's default for how often.
+        assertEquals(Trigger.Records("expenses", "added", 5), trigger("""{"kind":"records","set":"expenses"}"""))
+        assertEquals(Trigger.Records("expenses", "changed", 30), trigger("""{"kind":"records","set":"expenses","on":"changed","every_minutes":30}"""))
+        assertEquals(Trigger.Drive("1AbC_def-123", 15), trigger("""{"kind":"drive","folder":"1AbC_def-123","every_minutes":15}"""))
+        assertEquals(Trigger.Device, trigger("""{"kind":"device"}"""))
 
         assertEquals(
-            listOf(TriggerGroup.SCHEDULE, TriggerGroup.SCHEDULE, TriggerGroup.SCHEDULE, TriggerGroup.SCHEDULE, TriggerGroup.CONDITION, TriggerGroup.WEBHOOK, TriggerGroup.MAIL_CALENDAR, TriggerGroup.MAIL_CALENDAR),
-            listOf("time", "once", "interval", "monthly", "condition", "webhook", "email", "calendar").map { TriggerKind.of(it)!!.group },
+            listOf(
+                TriggerGroup.SCHEDULE, TriggerGroup.SCHEDULE, TriggerGroup.SCHEDULE, TriggerGroup.SCHEDULE, TriggerGroup.CONDITION, TriggerGroup.CONDITION,
+                TriggerGroup.WEBHOOK, TriggerGroup.WEBHOOK, TriggerGroup.MAIL_CALENDAR, TriggerGroup.MAIL_CALENDAR, TriggerGroup.MAIL_CALENDAR,
+            ),
+            listOf("time", "once", "interval", "monthly", "condition", "records", "webhook", "device", "email", "calendar", "drive").map { TriggerKind.of(it)!!.group },
         )
+        assertEquals(TriggerKind.entries.map { it.group }, TriggerKind.entries.map { kind -> trigger("""{"kind":"${kind.id}","set":"s","folder":"folder1","frequency":"daily","time":"09:00","timezone":"UTC","at":"2026-12-03T09:00","every_minutes":60,"day":1,"source":{"type":"records","set":"s"},"predicate":{"op":"changes"}}""").group })
         assertTrue(tool.watches && tool.byEvent && !tool.isClock)
         assertTrue(Trigger.Webhook.byEvent && !Trigger.Webhook.watches)
+        // Records and a folder are watched (and can be tried out); a device only starts runs.
+        assertTrue(Trigger.Records("expenses").watches && Trigger.Records("expenses").byEvent && TriggerKind.RECORDS.watches)
+        assertTrue(Trigger.Drive("folder1").watches && Trigger.Drive("folder1").byEvent && TriggerKind.DRIVE.watches)
+        assertTrue(Trigger.Device.byEvent && !Trigger.Device.watches && !Trigger.Device.isClock)
+        assertTrue(TriggerKind.DEVICE.byEvent && !TriggerKind.DEVICE.watches)
+        assertEquals(listOf(30, 15, null), listOf(Trigger.Records("s", "changed", 30), Trigger.Drive("folder1", 15), Trigger.Device).map { it.checkMinutes })
         assertTrue(Trigger.Interval(15).isClock && !Trigger.Interval(15).byEvent)
         assertEquals("Europe/Berlin", Trigger.Once("2026-12-03T09:00", "Europe/Berlin").timezone)
         assertNull(Trigger.Interval(15).timezone)
@@ -295,9 +310,14 @@ class ApiTest {
                    {"id":"a3","title":"Odd source","trigger":{"kind":"condition","source":{"type":"sensor","pin":4},"predicate":{"op":"changes"}}},
                    {"id":"a4","title":"No trigger","trigger":null},
                    {"id":"a5","title":"Not an object","trigger":"soon"},
-                   {"id":"a6","title":"News","trigger":{"kind":"interval","every_minutes":60}}]}
+                   {"id":"a6","title":"News","trigger":{"kind":"interval","every_minutes":60}},
+                   {"id":"a7","title":"Odd rows","trigger":{"kind":"records","set":"expenses","on":"deleted"}},
+                   {"id":"a8","title":"No folder","trigger":{"kind":"drive","every_minutes":5}}]}
         """)
-        assertEquals(6, list.agents.size)
+        assertEquals(8, list.agents.size)
+        // A way of watching records this app doesn't know is not shown as one it does.
+        assertEquals("records", (list.agents[6].trigger as Trigger.Unknown).kind)
+        assertEquals("drive", (list.agents[7].trigger as Trigger.Unknown).kind)
         val tide = list.agents[0].trigger as Trigger.Unknown
         assertEquals("tide", tide.kind)
         assertEquals(4.5, tide.raw["above_m"].dbl)
@@ -338,6 +358,18 @@ class ApiTest {
         assertEquals(Agent.Status.Watching(null), agent(email).status)
         assertEquals(Agent.Status.WaitingForCalls, agent(""""trigger":{"kind":"webhook"}""").status)
         assertEquals(Agent.Status.CallWaiting, agent(""""waiting":true,"trigger":{"kind":"webhook"}""").status)
+        // A device agent has no next run and no next check: it waits to be asked.
+        assertEquals(Agent.Status.WaitingForDevice, agent(""""next_run_at":null,"next_check_at":null,"trigger":{"kind":"device"}""").status)
+        assertEquals(Agent.Status.Paused, agent(""""enabled":false,"trigger":{"kind":"device"}""").status)
+        assertEquals(
+            Agent.Status.Watching(CedarDate.parse("2026-11-12T10:00:00Z")),
+            agent(""""last_checked_at":"2026-11-12T10:00:00Z","trigger":{"kind":"records","set":"expenses"}""").status,
+        )
+        assertEquals(Agent.Status.Watching(null), agent(""""trigger":{"kind":"drive","folder":"1AbC_def-123"}""").status)
+        assertEquals(
+            Agent.Status.CheckFailing("Google is not connected"),
+            agent(""""last_error":"Google is not connected","trigger":{"kind":"drive","folder":"1AbC_def-123"}""").status,
+        )
     }
 
     @Test
@@ -441,6 +473,10 @@ class ApiTest {
         expect("""{"kind":"email","query":"is:unread","every_minutes":5}""", Trigger.Email("is:unread"))
         expect("""{"kind":"calendar","filter":"standup","minutes_before":15,"new_events":false,"every_minutes":5}""", Trigger.Calendar(filter = "standup", minutesBefore = 15))
         expect("""{"kind":"calendar","calendar_id":"work","new_events":true,"every_minutes":30}""", Trigger.Calendar(calendarId = "work", newEvents = true, everyMinutes = 30))
+        expect("""{"kind":"records","set":"expenses","on":"added","every_minutes":5}""", Trigger.Records("expenses"))
+        expect("""{"kind":"records","set":"expenses","on":"changed","every_minutes":60}""", Trigger.Records("expenses", Trigger.Records.CHANGED, 60))
+        expect("""{"kind":"drive","folder":"1AbC_def-123","every_minutes":5}""", Trigger.Drive("1AbC_def-123"))
+        expect("""{"kind":"device"}""", Trigger.Device)
 
         assertNull(Predicate.of("gt", "warm"), "a threshold needs a number")
         assertNull(Predicate.of("equals", "  "), "equals needs something to compare with")
@@ -520,6 +556,25 @@ class ApiTest {
         assertEquals(TriggerProblem.CalendarNeedsOne, problem(calendar.copy(beforeEvents = false)))
         assertEquals(TriggerProblem.MinutesBefore(10080), problem(calendar.copy(minutesBefore = "20000")))
 
+        val rows = draft.copy(kind = TriggerKind.RECORDS, recordSet = " expenses ")
+        assertEquals(Trigger.Records("expenses", "added", 5), ready(rows))
+        assertEquals(Trigger.Records("expenses", "changed", 60), ready(rows.copy(recordsOn = "changed", check = "1", checkUnit = Span.HOURS)))
+        assertEquals(TriggerProblem.RecordSet, problem(rows.copy(recordSet = "")))
+        assertEquals(TriggerProblem.Every(1, 10080), problem(rows.copy(check = "")))
+
+        // A folder's address in the browser, or its ID; the ID is what is sent.
+        val folder = draft.copy(kind = TriggerKind.DRIVE, folder = " https://drive.google.com/drive/folders/1AbC_def-123?usp=sharing ")
+        assertEquals(Trigger.Drive("1AbC_def-123", 5), ready(folder))
+        assertEquals(Trigger.Drive("1AbC_def-123", 30), ready(folder.copy(folder = "1AbC_def-123", check = "30")))
+        assertEquals("1AbC_def-123", Trigger.Drive.folderId("https://drive.google.com/drive/u/0/folders/1AbC_def-123/"))
+        assertEquals(TriggerProblem.Folder, problem(folder.copy(folder = "my receipts")))
+        assertEquals(TriggerProblem.Folder, problem(folder.copy(folder = "")))
+        assertEquals(TriggerProblem.Folder, problem(folder.copy(folder = "https://drive.google.com/drive/folders/")))
+        assertEquals(TriggerProblem.Folder, problem(folder.copy(folder = "a' or name contains '")))
+        assertEquals(TriggerProblem.Every(1, 10080), problem(folder.copy(check = "8", checkUnit = Span.DAYS)))
+
+        assertEquals(Trigger.Device, ready(draft.copy(kind = TriggerKind.DEVICE)))
+
         // Editing: the draft of a trigger builds that trigger again, in the trigger's own zone.
         val triggers = listOf(
             Trigger.Time("weekly", 6, "07:30", "Asia/Tokyo"),
@@ -535,6 +590,10 @@ class ApiTest {
             Trigger.Email("label:invoices", 15),
             Trigger.Calendar("work", "standup", 0, true, 5),
             Trigger.Calendar(null, null, null, true, 5),
+            Trigger.Records("expenses", "changed", 120),
+            Trigger.Records("expenses"),
+            Trigger.Drive("1AbC_def-123", 15),
+            Trigger.Device,
         )
         for (trigger in triggers) {
             assertEquals(trigger, ready(TriggerDraft.from(trigger, "Europe/Zurich")!!), "$trigger")
@@ -544,6 +603,123 @@ class ApiTest {
         assertEquals(90 to Span.MINUTES, Span.split(90))
         assertEquals(2 to Span.HOURS, Span.split(120))
         assertEquals(7 to Span.DAYS, Span.split(10080))
+    }
+
+    @Test
+    fun decodesWhatADeviceGetsWhenItAsksForARun() {
+        val started = CedarJson.decodeFromString(DeviceStart.serializer(), """{"started":true,"conversation_id":"c9"}""")
+        assertTrue(started.started)
+        assertEquals("c9", started.conversationId)
+        assertNull(started.held)
+        for (why in listOf(DeviceStart.BUSY, DeviceStart.TOO_SOON, DeviceStart.DAILY_LIMIT, DeviceStart.CEDAR_BUSY, "something_new")) {
+            val held = CedarJson.decodeFromString(DeviceStart.serializer(), """{"started":false,"held":"$why"}""")
+            assertFalse(held.started)
+            assertEquals(why, held.held)
+            assertNull(held.conversationId)
+        }
+        assertEquals(listOf("busy", "too_soon", "daily_limit", "cedar_busy"), listOf(DeviceStart.BUSY, DeviceStart.TOO_SOON, DeviceStart.DAILY_LIMIT, DeviceStart.CEDAR_BUSY))
+
+        // What goes along: blank fields are left out, and nothing at all is an empty object.
+        assertEquals(j("{}"), DeviceRequest().toJson())
+        assertEquals(j("""{"source":"automation"}"""), DeviceRequest(source = "automation", text = "  ", title = "", url = null).toJson())
+        assertEquals(
+            j("""{"source":"share","text":"Read this","title":"An article","url":"https://example.com/a"}"""),
+            DeviceRequest("share", " Read this ", " An article ", "https://example.com/a").toJson(),
+        )
+
+        // Shared from another app: the subject is the title, and the first link in the text the URL.
+        assertEquals(
+            DeviceRequest("share", "Worth a look: https://example.com/a?b=1. And https://example.org", "An article", "https://example.com/a?b=1"),
+            DeviceRequest.shared("  Worth a look: https://example.com/a?b=1. And https://example.org ", " An article "),
+        )
+        // A browser shares the address alone: it is not sent twice.
+        assertEquals(DeviceRequest("share", null, "Cedars", "https://example.com/cedars"), DeviceRequest.shared("https://example.com/cedars", "Cedars"))
+        assertEquals(DeviceRequest("share", "Buy milk", null, null), DeviceRequest.shared("Buy milk", " "))
+        assertEquals(DeviceRequest("share", "(see http://example.com/x)", null, "http://example.com/x"), DeviceRequest.shared("(see http://example.com/x)", null))
+        assertEquals("https://en.wikipedia.org/wiki/Cedar_(plant)", DeviceRequest.shared("Cedars: https://en.wikipedia.org/wiki/Cedar_(plant).", null).url)
+        assertEquals(DeviceRequest("share"), DeviceRequest.shared(null, null))
+        assertEquals(16384, DeviceRequest.MAX_BYTES)
+
+        // An id another app hands over is used in a path: only what an id can be gets through.
+        assertEquals("3f2b8c1e-5d4a-4f6b-9c7d-0a1b2c3d4e5f", DeviceRequest.agentId(" 3f2b8c1e-5d4a-4f6b-9c7d-0a1b2c3d4e5f "))
+        for (bad in listOf(null, "", " ", "..", "a1/run", "../conversations/c1", "a1?x=1", "a1#", "a%2F", "a b", "ä1", "a".repeat(65))) {
+            assertNull(DeviceRequest.agentId(bad), "$bad")
+        }
+    }
+
+    @Test
+    fun decodesAndEncodesFollowupDecisions() {
+        val accepted = CedarJson.decodeFromString(FollowupDecision.serializer(), """
+        {"followup":{"turn_id":"t1","call_id":"call_7","status":"accepted","agent_id":"a9","decided_at":"2026-11-12T10:00:00.123456Z"},
+         "agent":{"id":"a9","title":"Has the package shipped?","prompt":"Check the tracking page.","enabled":true,"timezone":"Europe/Zurich",
+                  "trigger":{"kind":"once","at":"2026-12-04T09:00","timezone":"Europe/Zurich"},"next_run_at":"2026-12-04T08:00:00Z"}}
+        """)
+        assertTrue(accepted.followup.isAccepted && !accepted.followup.isDismissed)
+        assertEquals("call_7", accepted.followup.callId)
+        assertEquals("a9", accepted.followup.agentId)
+        assertEquals(CedarDate.parse("2026-11-12T10:00:00.123456Z"), accepted.followup.decidedAt)
+        assertEquals(Trigger.Once("2026-12-04T09:00", "Europe/Zurich"), accepted.agent?.trigger)
+
+        val dismissed = CedarJson.decodeFromString(
+            FollowupDecision.serializer(),
+            """{"followup":{"turn_id":"t1","call_id":"call_8","status":"dismissed","agent_id":null,"decided_at":"2026-11-12T10:00:00Z"},"agent":null}""",
+        )
+        assertTrue(dismissed.followup.isDismissed && !dismissed.followup.isAccepted)
+        assertNull(dismissed.followup.agentId)
+        assertNull(dismissed.agent)
+        // Accepted, and the agent deleted since: there is nothing to open.
+        val gone = CedarJson.decodeFromString(FollowupDecision.serializer(), """{"followup":{"turn_id":"t1","call_id":"c","status":"accepted","agent_id":null},"agent":null}""")
+        assertTrue(gone.followup.isAccepted)
+        assertNull(gone.followup.agentId)
+
+        assertEquals(j("""{"decision":"dismiss"}"""), FollowupChoice.Dismiss.toJson())
+        assertEquals(
+            j("""{"decision":"accept","title":"Has the package shipped?","prompt":"Check the tracking page.","at":"2026-12-04T08:00:00Z","timezone":"Europe/Zurich"}"""),
+            FollowupChoice.Accept("Has the package shipped?", "Check the tracking page.", "2026-12-04T08:00:00Z", "Europe/Zurich").toJson(),
+        )
+    }
+
+    @Test
+    fun decodesAConversationWithItsFollowups() {
+        val turn = """{"id":"t1","conversation_id":"c1","seq":1,"run_id":"r1","prompt":"Track my package","status":"completed"}"""
+        val conversation = """{"id":"c1","title":"Package","created_at":"2026-11-12T09:00:00Z","updated_at":"2026-11-12T09:05:00Z"}"""
+        val detail = CedarJson.decodeFromString(ConversationDetail.serializer(), """
+        {"conversation":$conversation,"turns":[$turn],
+         "followups":[{"turn_id":"t1","call_id":"call_7","status":"accepted","agent_id":"a9","decided_at":"2026-11-12T10:00:00Z"},
+                      {"turn_id":"t1","call_id":"call_8","status":"dismissed","agent_id":null,"decided_at":"2026-11-12T10:01:00Z"}]}
+        """)
+        assertEquals(listOf("call_7" to "accepted", "call_8" to "dismissed"), detail.followups.map { it.callId to it.status })
+        assertEquals(listOf("t1", "t1"), detail.followups.map { it.turnId })
+        assertEquals("a9", detail.followups[0].agentId)
+        assertNull(detail.agent)
+        // A server from before follow-ups leaves the field out: every suggestion is still open.
+        val old = CedarJson.decodeFromString(ConversationDetail.serializer(), """{"conversation":$conversation,"turns":[$turn]}""")
+        assertEquals(emptyList(), old.followups)
+    }
+
+    @Test
+    fun parsesASuggestedFollowUp() {
+        val output = """{"follow_up":{"title":" Has the package shipped? ","prompt":"Check https://example.com/track/123 and say whether it shipped.","at":"2026-12-04T08:00:00Z"},
+                         "note":"Tell the user what you suggested and when; don't say it is scheduled."}"""
+        val suggestion = FollowUpSuggestion.parse(output)!!
+        assertEquals("Has the package shipped?", suggestion.title)
+        assertEquals("Check https://example.com/track/123 and say whether it shipped.", suggestion.prompt)
+        assertEquals(CedarDate.parse("2026-12-04T08:00:00Z"), suggestion.at)
+        assertEquals("2026-12-04T08:00:00Z", suggestion.atText, "accepting sends the time back as the tool gave it")
+        assertEquals("Tell the user what you suggested and when; don't say it is scheduled.", suggestion.note)
+        // One whose time has passed can only be dismissed.
+        assertFalse(suggestion.isPast(CedarDate.parse("2026-12-04T07:59:59Z")!!))
+        assertTrue(suggestion.isPast(CedarDate.parse("2026-12-04T08:00:00Z")!!))
+        assertTrue(suggestion.isPast(CedarDate.parse("2026-12-05T08:00:00Z")!!))
+        // A time with an offset or fractional seconds reads too.
+        assertEquals(suggestion.at, FollowUpSuggestion.parse("""{"follow_up":{"title":"t","prompt":"p","at":"2026-12-04T09:00:00.000+01:00"}}""")?.at)
+
+        assertNull(FollowUpSuggestion.parse("""{"follow_up":{"title":"t","prompt":"p"}}"""), "no time")
+        assertNull(FollowUpSuggestion.parse("""{"follow_up":{"title":"t","prompt":"p","at":"on Friday"}}"""))
+        assertNull(FollowUpSuggestion.parse("""{"follow_up":{"title":" ","prompt":"p","at":"2026-12-04T08:00:00Z"}}"""))
+        assertNull(FollowUpSuggestion.parse("""{"follow_up":{"title":"t","prompt":"","at":"2026-12-04T08:00:00Z"}}"""))
+        assertNull(FollowUpSuggestion.parse("""{"questions":[]}"""))
+        assertNull(FollowUpSuggestion.parse("give title as text"))
     }
 
     @Test

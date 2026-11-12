@@ -12,6 +12,7 @@ import dev.cedar.cedar.R
 import dev.cedar.core.Agent
 import dev.cedar.core.ChartCard
 import dev.cedar.core.ChatException
+import dev.cedar.core.DeviceStart
 import dev.cedar.core.FlightsCard
 import dev.cedar.core.OutgoingAttachment
 import dev.cedar.core.Predicate
@@ -184,6 +185,10 @@ fun Context.describe(trigger: Trigger): String {
             val filter = trigger.filter?.takeIf { it.isNotEmpty() }?.let { getString(R.string.trigger_calendar_filter, it) }
             listOfNotNull(before, new, filter).joinToString(" · ")
         }
+        is Trigger.Records -> getString(if (trigger.on == Trigger.Records.CHANGED) R.string.trigger_records_changed else R.string.trigger_records_added, trigger.set)
+        // The folder's ID says nothing; it is on the agent's page.
+        is Trigger.Drive -> getString(R.string.trigger_drive)
+        Trigger.Device -> getString(R.string.trigger_device)
         is Trigger.Unknown -> if (trigger.kind.isEmpty()) getString(R.string.trigger_unknown) else getString(R.string.trigger_unknown_kind, trigger.kind)
     }
     val zone = trigger.timezone?.takeIf { it != TimeZone.getDefault().id }
@@ -211,6 +216,9 @@ fun triggerKindLabel(kind: TriggerKind): Int = when (kind) {
     TriggerKind.WEBHOOK -> R.string.trigger_kind_webhook
     TriggerKind.EMAIL -> R.string.trigger_kind_email
     TriggerKind.CALENDAR -> R.string.trigger_kind_calendar
+    TriggerKind.RECORDS -> R.string.trigger_kind_records
+    TriggerKind.DRIVE -> R.string.trigger_kind_drive
+    TriggerKind.DEVICE -> R.string.trigger_kind_device
 }
 
 /** What an agent is doing, for its row: "Next in 2 hours", "Watching · checked 3 minutes ago", "Paused". */
@@ -222,6 +230,7 @@ fun Context.describe(status: Agent.Status): String = when (status) {
     is Agent.Status.Watching -> status.lastCheckedAt?.let { getString(R.string.agent_watching_checked, relative(it)) } ?: getString(R.string.agent_watching)
     Agent.Status.WaitingForCalls -> getString(R.string.agent_waiting_for_calls)
     Agent.Status.CallWaiting -> getString(R.string.agent_call_waiting)
+    Agent.Status.WaitingForDevice -> getString(R.string.agent_waiting_for_device)
     Agent.Status.Active -> getString(R.string.agent_on)
 }
 
@@ -236,10 +245,21 @@ fun Context.describe(problem: TriggerProblem): String = when (problem) {
     TriggerProblem.Tool -> getString(R.string.trigger_problem_tool)
     TriggerProblem.ToolInput -> getString(R.string.trigger_problem_tool_input)
     TriggerProblem.RecordSet -> getString(R.string.trigger_problem_record_set)
+    TriggerProblem.Folder -> getString(R.string.trigger_problem_folder)
     TriggerProblem.Number -> getString(R.string.trigger_problem_number)
     TriggerProblem.Value -> getString(R.string.trigger_problem_value)
     TriggerProblem.CalendarNeedsOne -> getString(R.string.trigger_problem_calendar)
     is TriggerProblem.MinutesBefore -> getString(R.string.trigger_problem_minutes_before, duration(problem.max))
+}
+
+/** Why an agent the device asked for didn't start: the request is not queued, so it says when to ask again. */
+fun Context.describeHeld(held: String?): String = when (held) {
+    DeviceStart.BUSY -> getString(R.string.device_held_busy)
+    DeviceStart.TOO_SOON -> getString(R.string.device_held_too_soon)
+    DeviceStart.DAILY_LIMIT -> getString(R.string.device_held_daily_limit)
+    DeviceStart.CEDAR_BUSY -> getString(R.string.device_held_cedar_busy)
+    // A newer server's reason, in its own word.
+    else -> if (held.isNullOrBlank()) getString(R.string.device_held) else getString(R.string.device_held_other, held)
 }
 
 /** A notification method's name, as the server's Settings calls it; one this app doesn't know as it is. */

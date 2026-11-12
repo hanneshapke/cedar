@@ -252,11 +252,19 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun runAgent(id: String): AgentRun =
         decode(request("api/agents/$id/run", "POST", JsonObject(emptyMap())), AgentRun.serializer())
 
+    /**
+     * Asks for a run because the user's device says so (something was shared, an automation ran),
+     * with what it brings along. It works for any agent that is switched on (409 while paused);
+     * the answer says whether a run started or why it is held. 413 for more than the server hands a run.
+     */
+    suspend fun triggerAgent(id: String, source: String? = null, text: String? = null, title: String? = null, url: String? = null): DeviceStart =
+        decode(request("api/agents/$id/trigger", "POST", DeviceRequest(source, text, title, url).toJson()), DeviceStart.serializer())
+
     /** A new secret for a webhook agent, in the answer's `hook.secret` this once; the old one stops working. */
     suspend fun rotateHook(id: String): Agent =
         decode(request("api/agents/$id/hook/rotate", "POST", JsonObject(emptyMap())), Agent.serializer())
 
-    /** Tries a watching trigger out (a condition, mail, the calendar): one check, with nothing kept. It can take a while. */
+    /** Tries a watching trigger out (a condition, records, mail, the calendar, a folder): one check, with nothing kept. It can take a while. */
     suspend fun testTrigger(trigger: Trigger): TriggerTest =
         decode(request("api/agents/test", "POST", buildJsonObject { put("trigger", trigger.toJson()) }), TriggerTest.serializer(), slowHttp)
 
@@ -327,6 +335,14 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun decideApproval(turnId: String, approvalId: String, decision: String) {
         send(request("api/turns/$turnId/approvals/$approvalId", "POST", buildJsonObject { put("decision", decision) }))
     }
+
+    /**
+     * Decides about a follow-up a turn suggested (`callId` is its `suggest_follow_up` tool call):
+     * accepting makes a one-off agent, dismissing only records it. The first decision stands, so
+     * the answer may be an earlier one. 400 when the time has passed, 409 at the most agents.
+     */
+    suspend fun decideFollowup(turnId: String, callId: String, choice: FollowupChoice): FollowupDecision =
+        decode(request("api/turns/$turnId/followups/$callId", "PUT", choice.toJson()), FollowupDecision.serializer())
 
     /**
      * Streams a turn's events after `after`: a replay of the stored log, then live events. The flow

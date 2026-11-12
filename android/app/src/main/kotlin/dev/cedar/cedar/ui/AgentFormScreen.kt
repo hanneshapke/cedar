@@ -85,6 +85,7 @@ import dev.cedar.core.RecordSet
 import dev.cedar.core.Span
 import dev.cedar.core.ToolCatalog
 import dev.cedar.core.ToolGroup
+import dev.cedar.core.Trigger
 import dev.cedar.core.TriggerDraft
 import dev.cedar.core.TriggerKind
 import dev.cedar.core.TriggerTest
@@ -117,8 +118,9 @@ private sealed interface Trial {
 /**
  * The form an agent is made and edited with, as the web chat's: its name and prompt, what starts
  * it (a picker of triggers, and each one's own fields), Try it for the triggers that watch
- * something, then the model, how to be notified, the tools its runs may use, and for agents that
- * events start, how often they may run. Save sends it; closing asks before dropping what was typed.
+ * something (a condition, records, mail, the calendar, a Drive folder), then the model, how to be
+ * notified, the tools its runs may use, and for agents that events start, how often they may run.
+ * Save sends it; closing asks before dropping what was typed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -508,6 +510,29 @@ private fun TriggerFields(
             Footnote(stringResource(R.string.trigger_monthly_footnote))
         }
         TriggerKind.CONDITION -> ConditionFields(draft, limits, catalog, recordSets, personalTool, edit)
+        TriggerKind.RECORDS -> {
+            RecordSetPicker(draft, recordSets, edit)
+            val ways = listOf(
+                Trigger.Records.ADDED to stringResource(R.string.records_on_added),
+                Trigger.Records.CHANGED to stringResource(R.string.records_on_changed),
+            )
+            Picker(
+                label = stringResource(R.string.trigger_records_on),
+                value = ways.firstOrNull { it.first == draft.recordsOn }?.second ?: draft.recordsOn,
+                options = ways,
+            ) { edit(draft.copy(recordsOn = it)) }
+            Footnote(stringResource(R.string.trigger_records_footnote))
+            CheckEvery(draft, edit)
+        }
+        TriggerKind.DRIVE -> {
+            PlainField(
+                stringResource(R.string.trigger_drive_folder), draft.folder,
+                placeholder = "https://drive.google.com/drive/folders/…", keyboard = KeyboardType.Uri,
+            ) { edit(draft.copy(folder = it)) }
+            Footnote(stringResource(R.string.trigger_drive_footnote))
+            CheckEvery(draft, edit)
+        }
+        TriggerKind.DEVICE -> Footnote(stringResource(R.string.trigger_device_footnote))
         TriggerKind.WEBHOOK -> Footnote(stringResource(R.string.trigger_webhook_footnote))
         TriggerKind.EMAIL -> {
             PlainField(stringResource(R.string.trigger_email_query), draft.query, placeholder = "from:someone@example.com is:unread") { edit(draft.copy(query = it)) }
@@ -569,16 +594,7 @@ private fun ConditionFields(
             Footnote(stringResource(R.string.source_tool_input_footnote))
         }
         TriggerDraft.SOURCE_RECORDS -> {
-            val names = (recordSets.map { it.name } + listOfNotNull(draft.recordSet.takeIf { it.isNotEmpty() })).distinct()
-            if (names.isEmpty()) {
-                Footnote(stringResource(R.string.source_records_none))
-            } else {
-                Picker(
-                    label = stringResource(R.string.source_record_set),
-                    value = draft.recordSet.ifEmpty { stringResource(R.string.choose) },
-                    options = names.map { it to it },
-                ) { edit(draft.copy(recordSet = it)) }
-            }
+            RecordSetPicker(draft, recordSets, edit)
             Footnote(stringResource(R.string.source_records_footnote))
         }
         else -> {
@@ -616,6 +632,22 @@ private fun ConditionFields(
     Footnote(stringResource(if (draft.op == Predicate.CHANGES) R.string.trigger_changes_footnote else R.string.trigger_holds_footnote))
     CheckEvery(draft, edit)
     if (personalTool) Footnote(stringResource(R.string.trigger_personal_check_footnote, context.duration(limits.personalCheckMinutes)))
+}
+
+/** The record sets cedar keeps (`GET /api/records`), to pick the one to watch. */
+@Composable
+private fun RecordSetPicker(draft: TriggerDraft, recordSets: List<RecordSet>, edit: (TriggerDraft) -> Unit) {
+    // The set it has stays on offer, whatever became of it.
+    val names = (recordSets.map { it.name } + listOfNotNull(draft.recordSet.takeIf { it.isNotEmpty() })).distinct()
+    if (names.isEmpty()) {
+        Footnote(stringResource(R.string.source_records_none))
+    } else {
+        Picker(
+            label = stringResource(R.string.source_record_set),
+            value = draft.recordSet.ifEmpty { stringResource(R.string.choose) },
+            options = names.map { it to it },
+        ) { edit(draft.copy(recordSet = it)) }
+    }
 }
 
 /** How often a watching trigger checks. */

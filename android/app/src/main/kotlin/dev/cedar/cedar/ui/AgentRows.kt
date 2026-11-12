@@ -23,18 +23,21 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.TableRows
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.Webhook
@@ -75,10 +78,10 @@ import kotlinx.coroutines.launch
 
 /**
  * The Agents list, as the web chat's Agents page has it: an Agents | Activity switch, then either
- * every agent under what starts it (a schedule, a change, a webhook, mail and the calendar), each
- * with its trigger in a line, what it is doing and how its last run went; or the latest runs of
- * all of them. Tapping an agent opens its page; a long press offers Run now, Pause or Resume,
- * Edit and Delete. Tapping a run opens it as a conversation.
+ * every agent under what starts it (a schedule, a change, a webhook or the device, mail, the
+ * calendar and files), each with its trigger in a line, what it is doing and how its last run
+ * went; or the latest runs of all of them. Tapping an agent opens its page; a long press offers
+ * Run now, Pause or Resume, Edit and Delete. Tapping a run opens it as a conversation.
  */
 @Composable
 fun AgentRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
@@ -184,6 +187,9 @@ fun triggerIcon(trigger: Trigger): ImageVector = when (trigger) {
     Trigger.Webhook -> Icons.Outlined.Webhook
     is Trigger.Email -> Icons.Outlined.Email
     is Trigger.Calendar -> Icons.Outlined.Event
+    is Trigger.Records -> Icons.Outlined.TableRows
+    is Trigger.Drive -> Icons.Outlined.Folder
+    Trigger.Device -> Icons.Outlined.PhoneAndroid
     is Trigger.Unknown -> triggerKindIcon(trigger.kind)
 }
 
@@ -194,6 +200,9 @@ fun triggerKindIcon(kind: String): ImageVector = when (TriggerKind.of(kind)) {
     TriggerKind.WEBHOOK -> Icons.Outlined.Webhook
     TriggerKind.EMAIL -> Icons.Outlined.Email
     TriggerKind.CALENDAR -> Icons.Outlined.Event
+    TriggerKind.RECORDS -> Icons.Outlined.TableRows
+    TriggerKind.DRIVE -> Icons.Outlined.Folder
+    TriggerKind.DEVICE -> Icons.Outlined.PhoneAndroid
     null -> Icons.Outlined.Extension
 }
 

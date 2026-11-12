@@ -25,7 +25,11 @@ import java.time.Instant
 // without Android: which group a trigger belongs to, what an agent is doing right now, and whether
 // a trigger being edited is one the server will take.
 
-/** Where the list puts an agent, by what starts its runs. */
+/**
+ * Where the list puts an agent, by what starts its runs: a clock, something that changes (a
+ * condition, a record set), a call from outside (a webhook, the user's own device), or mail, the
+ * calendar and files.
+ */
 enum class TriggerGroup { SCHEDULE, CONDITION, WEBHOOK, MAIL_CALENDAR, OTHER }
 
 /** The triggers the app can make and edit; the server's `kind`. */
@@ -35,15 +39,18 @@ enum class TriggerKind(val id: String, val group: TriggerGroup) {
     INTERVAL("interval", TriggerGroup.SCHEDULE),
     MONTHLY("monthly", TriggerGroup.SCHEDULE),
     CONDITION("condition", TriggerGroup.CONDITION),
+    RECORDS("records", TriggerGroup.CONDITION),
     WEBHOOK("webhook", TriggerGroup.WEBHOOK),
+    DEVICE("device", TriggerGroup.WEBHOOK),
     EMAIL("email", TriggerGroup.MAIL_CALENDAR),
-    CALENDAR("calendar", TriggerGroup.MAIL_CALENDAR);
+    CALENDAR("calendar", TriggerGroup.MAIL_CALENDAR),
+    DRIVE("drive", TriggerGroup.MAIL_CALENDAR);
 
     /** The scheduler checks something for it between runs (it can be tried out). */
-    val watches: Boolean get() = this == CONDITION || this == EMAIL || this == CALENDAR
+    val watches: Boolean get() = this == CONDITION || this == RECORDS || this == EMAIL || this == CALENDAR || this == DRIVE
 
     /** Something outside starts its runs, not the clock: these have limits and a careful choice of tools. */
-    val byEvent: Boolean get() = watches || this == WEBHOOK
+    val byEvent: Boolean get() = watches || this == WEBHOOK || this == DEVICE
 
     companion object {
         fun of(id: String): TriggerKind? = entries.firstOrNull { it.id == id }
@@ -109,6 +116,43 @@ sealed interface Trigger {
         override val kind: String get() = "calendar"
     }
 
+    /**
+     * A run when rows are added to the record set `set` (`on` is `added`), or added or changed
+     * (`changed`). The first check only learns what is there.
+     */
+    data class Records(val set: String, val on: String = ADDED, val everyMinutes: Int = AgentLimits.DEFAULT_CHECK_MINUTES) : Trigger {
+        override val kind: String get() = "records"
+
+        companion object {
+            const val ADDED = "added"
+            const val CHANGED = "changed"
+        }
+    }
+
+    /** A run when a new file appears in the Google Drive folder with the ID `folder` (subfolders don't count). */
+    data class Drive(val folder: String, val everyMinutes: Int = AgentLimits.DEFAULT_CHECK_MINUTES) : Trigger {
+        override val kind: String get() = "drive"
+
+        companion object {
+            /**
+             * A folder's ID, from the ID itself or from the folder's address in the browser
+             * (`https://drive.google.com/drive/folders/<id>?…`), as the server reads it; `null`
+             * for anything else.
+             */
+            fun folderId(text: String): String? {
+                val folder = text.trim()
+                val id = if ("/folders/" in folder) folder.substringAfter("/folders/").takeWhile { it != '?' && it != '/' && it != '#' } else folder
+                val ok = id.length in 5..120 && id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '_' || it == '-' }
+                return id.takeIf { ok }
+            }
+        }
+    }
+
+    /** A run when the user's own device asks for one: a shared text, an automation app. */
+    data object Device : Trigger {
+        override val kind: String get() = "device"
+    }
+
     /** A kind from a newer server, or one of ours that doesn't read as it should. */
     data class Unknown(override val kind: String, val raw: JsonObject = JsonObject(emptyMap())) : Trigger
 
@@ -117,9 +161,9 @@ sealed interface Trigger {
     /** A clock starts its runs: it has a next run. */
     val isClock: Boolean get() = this is Time || this is Once || this is Interval || this is Monthly
 
-    val watches: Boolean get() = this is Condition || this is Email || this is Calendar
+    val watches: Boolean get() = this is Condition || this is Records || this is Email || this is Calendar || this is Drive
 
-    val byEvent: Boolean get() = watches || this is Webhook
+    val byEvent: Boolean get() = watches || this is Webhook || this is Device
 
     /** The time zone its times are in, for the triggers that have one. */
     val timezone: String? get() = null
@@ -128,8 +172,10 @@ sealed interface Trigger {
     val checkMinutes: Int?
         get() = when (this) {
             is Condition -> everyMinutes
+            is Records -> everyMinutes
             is Email -> everyMinutes
             is Calendar -> everyMinutes
+            is Drive -> everyMinutes
             else -> null
         }
 
@@ -178,6 +224,18 @@ sealed interface Trigger {
             put("new_events", newEvents)
             put("every_minutes", everyMinutes)
         }
+        is Records -> buildJsonObject {
+            put("kind", kind)
+            put("set", set)
+            put("on", on)
+            put("every_minutes", everyMinutes)
+        }
+        is Drive -> buildJsonObject {
+            put("kind", kind)
+            put("folder", folder)
+            put("every_minutes", everyMinutes)
+        }
+        Device -> buildJsonObject { put("kind", kind) }
         is Unknown -> raw
     }
 
@@ -213,6 +271,13 @@ sealed interface Trigger {
                 "webhook" -> Webhook
                 "email" -> Email(o["query"].str.orEmpty(), every)
                 "calendar" -> Calendar(o["calendar_id"].str, o["filter"].str, o["minutes_before"].int, o["new_events"].bool ?: false, every)
+                "records" -> {
+                    // Added rows unless it says; a way of watching this app doesn't know is shown as it came.
+                    val on = o["on"].str ?: Records.ADDED
+                    o["set"].str?.takeIf { on == Records.ADDED || on == Records.CHANGED }?.let { Records(it, on, every) }
+                }
+                "drive" -> o["folder"].str?.let { Drive(it, every) }
+                "device" -> Device
                 else -> null
             }
             return known ?: Unknown(kind, o)
@@ -402,6 +467,9 @@ data class Agent(
         /** A webhook whose call is held until the agent may run. */
         data object CallWaiting : Status
 
+        /** It waits to be asked by the user's own device. */
+        data object WaitingForDevice : Status
+
         /** A trigger this app doesn't know, switched on. */
         data object Active : Status
     }
@@ -413,6 +481,7 @@ data class Agent(
             trigger.isClock -> Status.NextRun(nextRunAt)
             trigger.watches -> Status.Watching(lastCheckedAt)
             trigger is Trigger.Webhook -> if (waiting) Status.CallWaiting else Status.WaitingForCalls
+            trigger is Trigger.Device -> Status.WaitingForDevice
             else -> Status.Active
         }
 
@@ -420,7 +489,10 @@ data class Agent(
     fun zoneLabel(deviceZone: String = java.util.TimeZone.getDefault().id): String? = trigger.timezone?.takeIf { it != deviceZone }
 }
 
-/** What started a run: `kind` is `clock`, `changed`, `holds`, `webhook`, `mail`, `soon` or `new_event`. */
+/**
+ * What started a run: `kind` is `clock`, `changed`, `holds`, `webhook`, `mail`, `soon`, `new_event`,
+ * `rows`, `files` or `device`. The app shows `summary`, whatever the kind.
+ */
 @Serializable
 data class RunCause(
     val kind: String = "",
@@ -546,6 +618,132 @@ data class TriggerTest(
             is JsonPrimitive -> v.content
             else -> v.pretty()
         }
+}
+
+/**
+ * What a device hands an agent when it asks for a run (`POST /api/agents/{id}/trigger`): where the
+ * request comes from (`share`, `automation`), and what was shared, which the run gets as data.
+ */
+data class DeviceRequest(
+    val source: String? = null,
+    val text: String? = null,
+    val title: String? = null,
+    val url: String? = null,
+) {
+    /** Blank fields are left out (the server refuses fields it doesn't know, and needs none). */
+    fun toJson(): JsonObject = buildJsonObject {
+        source?.trim()?.takeIf { it.isNotEmpty() }?.let { put("source", it) }
+        text?.trim()?.takeIf { it.isNotEmpty() }?.let { put("text", it) }
+        title?.trim()?.takeIf { it.isNotEmpty() }?.let { put("title", it) }
+        url?.trim()?.takeIf { it.isNotEmpty() }?.let { put("url", it) }
+    }
+
+    companion object {
+        /** The most a device may hand over, everything together, in bytes; beyond it the server answers 413. */
+        const val MAX_BYTES = 16 * 1024
+
+        /**
+         * An agent's id as another app handed it over, if it can be one: letters, digits and
+         * hyphens only, so that nothing in it can lead to another path of the API.
+         */
+        fun agentId(raw: String?): String? = raw?.trim()?.takeIf { id -> id.length in 1..64 && id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' } }
+
+        private val LINK = Regex("""https?://[^\s<>"]+""")
+
+        /**
+         * What another app shared, as text and its subject: the first link in the text goes as
+         * `url`, and a text that is nothing but that link is not sent twice.
+         */
+        fun shared(text: String?, subject: String?): DeviceRequest {
+            val body = text?.trim().orEmpty()
+            // A sentence's full stop after a link is not part of it, nor a bracket the link was put in.
+            val link = LINK.find(body)?.value?.trimEnd('.', ',', ';', ':', '!', '?', '\'')?.let { if ('(' in it) it else it.trimEnd(')', '.', ',') }
+            return DeviceRequest(
+                source = "share",
+                text = body.takeIf { it.isNotEmpty() && it != link },
+                title = subject?.trim()?.takeIf { it.isNotEmpty() },
+                url = link,
+            )
+        }
+    }
+}
+
+/**
+ * The answer to a device asking for a run: it started (in `conversationId`), or it is held and
+ * `held` says why. A held request is not queued: the device asks again later.
+ */
+@Serializable
+data class DeviceStart(
+    val started: Boolean = false,
+    @SerialName("conversation_id") val conversationId: String? = null,
+    /** `busy`, `too_soon`, `daily_limit` or `cedar_busy`. */
+    val held: String? = null,
+) {
+    companion object {
+        /** A run of the agent is still going. */
+        const val BUSY = "busy"
+
+        /** Its last run started less than its limit ago. */
+        const val TOO_SOON = "too_soon"
+
+        /** It has had its runs for today. */
+        const val DAILY_LIMIT = "daily_limit"
+
+        /** Cedar has no room for another run right now. */
+        const val CEDAR_BUSY = "cedar_busy"
+    }
+}
+
+/**
+ * What the user decided about a follow-up the model suggested (`followups` of a conversation, and
+ * the answer to deciding): `status` is `accepted`, with the one-off agent that was made of it
+ * while that still exists, or `dismissed`. A suggestion without one is still open.
+ */
+@Serializable
+data class Followup(
+    @SerialName("turn_id") val turnId: String = "",
+    /** The id of the `suggest_follow_up` tool call, as the transcript has it. */
+    @SerialName("call_id") val callId: String = "",
+    val status: String = "",
+    @SerialName("agent_id") val agentId: String? = null,
+    @SerialName("decided_at") val decidedAt: Instant? = null,
+) {
+    val isAccepted: Boolean get() = status == ACCEPTED
+    val isDismissed: Boolean get() = status == DISMISSED
+
+    companion object {
+        const val ACCEPTED = "accepted"
+        const val DISMISSED = "dismissed"
+    }
+}
+
+/**
+ * `PUT /api/turns/{turn_id}/followups/{call_id}`: the decision that stands (an earlier one, if
+ * there was one, on this device or another), and the agent accepting made.
+ */
+@Serializable
+data class FollowupDecision(val followup: Followup, val agent: Agent? = null)
+
+/** What the user decides about a suggested follow-up. */
+sealed interface FollowupChoice {
+    data object Dismiss : FollowupChoice
+
+    /**
+     * Make a one-off agent of it: the suggestion as it was shown, `at` as the tool gave it
+     * (RFC 3339), and the device's IANA time zone, which the agent's time is kept and shown in.
+     */
+    data class Accept(val title: String, val prompt: String, val at: String, val timezone: String) : FollowupChoice
+
+    fun toJson(): JsonObject = when (this) {
+        Dismiss -> buildJsonObject { put("decision", "dismiss") }
+        is Accept -> buildJsonObject {
+            put("decision", "accept")
+            put("title", title)
+            put("prompt", prompt)
+            put("at", at)
+            put("timezone", timezone)
+        }
+    }
 }
 
 /** `POST /api/conversations/{id}/compact`: the conversation as one prompt, for making an agent of it. */
@@ -690,6 +888,9 @@ sealed interface TriggerProblem {
     /** No record set is picked. */
     data object RecordSet : TriggerProblem
 
+    /** The Google Drive folder is neither an ID nor a folder's address. */
+    data object Folder : TriggerProblem
+
     /** A threshold needs a number. */
     data object Number : TriggerProblem
 
@@ -741,6 +942,7 @@ data class TriggerDraft(
     val urlFormat: String = "",
     val tool: String = "",
     val toolInput: String = "{}",
+    /** The record set a condition watches, and the one a records trigger does. */
     val recordSet: String = "",
     val extract: String = "",
     val op: String = Predicate.CHANGES,
@@ -756,6 +958,12 @@ data class TriggerDraft(
     val beforeEvents: Boolean = true,
     val minutesBefore: String = "30",
     val newEvents: Boolean = false,
+    // Records
+    /** `added`, or `changed` for added or changed. */
+    val recordsOn: String = Trigger.Records.ADDED,
+    // Drive
+    /** The folder's ID or its address in the browser, as typed. */
+    val folder: String = "",
 ) {
     sealed interface Built {
         data class Ready(val trigger: Trigger) : Built
@@ -832,6 +1040,18 @@ data class TriggerDraft(
                 val n = checkEvery(1) ?: return invalid(TriggerProblem.Every(1, AgentLimits.MAX_EVERY_MINUTES))
                 Built.Ready(Trigger.Calendar(calendarId?.trim()?.ifEmpty { null }, filter.trim().ifEmpty { null }, before, newEvents, n))
             }
+            TriggerKind.RECORDS -> {
+                if (recordSet.isBlank()) return invalid(TriggerProblem.RecordSet)
+                val n = checkEvery(1) ?: return invalid(TriggerProblem.Every(1, AgentLimits.MAX_EVERY_MINUTES))
+                Built.Ready(Trigger.Records(recordSet.trim(), if (recordsOn == Trigger.Records.CHANGED) Trigger.Records.CHANGED else Trigger.Records.ADDED, n))
+            }
+            TriggerKind.DRIVE -> {
+                // The ID is what the server keeps, so that is what is sent.
+                val id = Trigger.Drive.folderId(folder) ?: return invalid(TriggerProblem.Folder)
+                val n = checkEvery(1) ?: return invalid(TriggerProblem.Every(1, AgentLimits.MAX_EVERY_MINUTES))
+                Built.Ready(Trigger.Drive(id, n))
+            }
+            TriggerKind.DEVICE -> Built.Ready(Trigger.Device)
         }
     }
 
@@ -887,6 +1107,9 @@ data class TriggerDraft(
                     minutesBefore = (trigger.minutesBefore ?: 30).toString(),
                     newEvents = trigger.newEvents,
                 ).checking(trigger.everyMinutes)
+                is Trigger.Records -> base.copy(kind = TriggerKind.RECORDS, recordSet = trigger.set, recordsOn = trigger.on).checking(trigger.everyMinutes)
+                is Trigger.Drive -> base.copy(kind = TriggerKind.DRIVE, folder = trigger.folder).checking(trigger.everyMinutes)
+                Trigger.Device -> base.copy(kind = TriggerKind.DEVICE)
                 is Trigger.Unknown -> null
             }
         }

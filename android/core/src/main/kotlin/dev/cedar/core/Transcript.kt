@@ -29,6 +29,8 @@ data class ToolCall(
     val card: Card? = null,
     /** Charts any other tool printed (`[chart] {spec}` lines), drawn after it. */
     val charts: List<ChartCard> = emptyList(),
+    /** What a finished `suggest_follow_up` suggested, parsed once when its result arrives. */
+    val followUp: FollowUpSuggestion? = null,
 ) {
     val isFinished: Boolean get() = output != null
     val isCard: Boolean get() = name in CARD_TOOLS
@@ -45,6 +47,7 @@ data class ToolCall(
             "remember" -> input["text"].str ?: ""
             "forget" -> ""
             "recall" -> input["query"].str ?: ""
+            FollowUpSuggestion.TOOL -> input["title"].str ?: ""
             "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast" -> cardTitle ?: ""
             else -> input.pretty().replace("\n", " ")
         }
@@ -125,6 +128,37 @@ data class Questions(val questions: List<Question>, val note: String?) {
             }
             if (questions.isEmpty()) return null
             return Questions(questions, value["note"].str)
+        }
+    }
+}
+
+/**
+ * A follow-up the model suggested with `suggest_follow_up`: run `prompt` again at `at`. Nothing is
+ * scheduled by it; the user sets it up (a one-off agent) or dismisses it.
+ */
+data class FollowUpSuggestion(
+    val title: String,
+    val prompt: String,
+    val at: java.time.Instant,
+    /** `at` as the tool gave it, which is what accepting sends back. */
+    val atText: String,
+    val note: String? = null,
+) {
+    /** Its time has passed: it can only be dismissed. */
+    fun isPast(now: java.time.Instant = java.time.Instant.now()): Boolean = !at.isAfter(now)
+
+    companion object {
+        const val TOOL = "suggest_follow_up"
+
+        /** Parses the tool's JSON result. `null` when it holds no suggestion with a title, a prompt and a time. */
+        fun parse(output: String): FollowUpSuggestion? {
+            val result = parseJson(output)
+            val value = result["follow_up"] ?: return null
+            val title = value["title"].str?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val prompt = value["prompt"].str?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val atText = value["at"].str ?: return null
+            val at = CedarDate.parse(atText) ?: return null
+            return FollowUpSuggestion(title, prompt, at, atText, result["note"].str)
         }
     }
 }
@@ -293,6 +327,8 @@ data class TurnTranscript(
                 var call = item.call.copy(output = output, isError = isError, durationMs = data["duration_ms"].int)
                 if (call.isCard && !isError) {
                     call = call.copy(card = Card.parse(call.name, output, call.input))
+                } else if (call.name == FollowUpSuggestion.TOOL && !isError) {
+                    call = call.copy(followUp = FollowUpSuggestion.parse(output))
                 } else if (!isError) {
                     call = call.copy(charts = ChartCard.inOutput(output).charts)
                 }
@@ -340,6 +376,10 @@ data class TurnTranscript(
     /** The plan the run is waiting to have agreed, if any. */
     val awaitingPlan: Plan?
         get() = items.asReversed().firstNotNullOfOrNull { (it as? TranscriptItem.PlanItem)?.plan?.takeIf(Plan::awaiting) }
+
+    /** The follow-ups the turn's finished tool calls suggested, in order, each with its tool call's id. */
+    val followUps: List<Pair<String, FollowUpSuggestion>>
+        get() = items.mapNotNull { item -> (item as? TranscriptItem.Tool)?.call?.let { call -> call.followUp?.let { call.id to it } } }
 
     /** The images the turn's finished tool calls produced, each once, in order: workspace paths. */
     val images: List<String>

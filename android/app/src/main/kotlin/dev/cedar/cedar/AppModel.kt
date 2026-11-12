@@ -135,6 +135,18 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var showingAgent by mutableStateOf<String?>(null)
         private set
 
+    /**
+     * Whether other apps on this phone may start agents with the `RUN_AGENT` intent
+     * ([AgentIntentReceiver]). Off until the user turns it on, in Settings or on a device agent's page.
+     */
+    var allowAutomation by mutableStateOf(store.allowAutomation)
+        private set
+
+    fun chooseAllowAutomation(allow: Boolean) {
+        store.allowAutomation = allow
+        allowAutomation = allow
+    }
+
     /** The agent form, over everything else, while an agent is being made or edited. */
     var agentForm by mutableStateOf<AgentFormRequest?>(null)
 
@@ -764,7 +776,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     }
 
     /** Takes the server's latest word on an agent: replaces it in the list, or adds it. */
-    private fun put(agent: Agent) {
+    fun put(agent: Agent) {
         // An answer without the last run (a new agent's has none to give) keeps the one the list had.
         val known = agents.firstOrNull { it.id == agent.id }
         val fresh = if (agent.lastRun == null && known?.lastRun != null) agent.copy(lastRun = known.lastRun) else agent
