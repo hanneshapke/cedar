@@ -721,7 +721,9 @@ kept in the chat's database like its other credentials.
 **Settings → Phone** has what the [iOS app](../iOS/README.md) and the Android app need to connect: the chat's
 HTTPS address, the access token (and the admin token, if this browser has entered it), and the QR
 code both apps scan under Settings → **Scan QR Code** (`cedar://connect?server=…&token=…`, drawn by
-the server and shown only on request, since it holds the token). The apps connect over HTTPS only,
+the server and shown only on request, since it holds the token). *Copy connection link* copies
+the same link as text, which the [desktop app](../desktop/README.md#using-cedar-that-runs-on-another-computer)
+takes to use this server from another computer. The apps connect over HTTPS only,
 so the address is `CHAT_PUBLIC_URL` when it is an `https://` one: the tailnet address that the
 [desktop app](../desktop/README.md#using-it-from-an-iphone-or-ipad) and `scripts/cedar-stack.sh`
 start the chat with when they serve it with `tailscale serve`, or your own. The page also runs

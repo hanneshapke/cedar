@@ -171,8 +171,36 @@ function render(s) {
   $('open-chat').disabled = !running;
   $('open-browser').disabled = !running;
 
+  renderRemote(s);
   renderUpdate(s);
   renderActivity(s, p);
+}
+
+// A chat server on another computer (src/remote.rs): offered, folded, while unused; while in use,
+// its state replaces the sections about this computer's own servers.
+function renderRemote(s) {
+  const inUse = Boolean(s.remote_server);
+  document.body.classList.toggle('remote', inUse);
+  $('remote-offer').classList.toggle('hidden', inUse);
+  $('remote-in-use').classList.toggle('hidden', !inUse);
+  if (!inUse) return;
+  const r = s.remote;
+  $('remote-detail').textContent = '';
+  if (r.state === 'connected') {
+    dot($('remote-dot'), 'ok');
+    $('remote-text').textContent = tr('remote.connected', { url: s.remote_server });
+  } else if (r.state === 'failed') {
+    dot($('remote-dot'), 'bad');
+    $('remote-text').textContent = tr('remote.failed', { url: s.remote_server });
+    $('remote-detail').textContent = r.detail;
+  } else {
+    dot($('remote-dot'), 'busy');
+    $('remote-text').textContent = tr('remote.checking', { url: s.remote_server });
+  }
+  const ready = r.state === 'connected';
+  $('remote-open').disabled = !ready;
+  $('remote-browser').disabled = !ready;
+  $('remote-retry').disabled = r.state === 'checking';
 }
 
 // The banner under the header: the one thing that is going on, from the whole status. Either
@@ -189,6 +217,13 @@ function activity(s, p) {
   const sh = s.share;
   const sv = s.services;
   const m = s.model;
+  // A chat server on another computer: nothing else applies.
+  if (s.remote_server) {
+    const r = s.remote;
+    if (r.state === 'connected') return { mode: 'ready', text: tr('activity.remoteReady', { url: s.remote_server }), target: 'remote' };
+    if (r.state === 'failed') return waiting(tr('activity.remoteFailed', { url: s.remote_server }), 'remote');
+    return busy(tr('remote.checking', { url: s.remote_server }), 'remote');
+  }
   // Docker, and setting it up from here.
   if (ds.state === 'running') return busy(tr('activity.dockerSetup', { detail: ds.detail }), 'docker');
   if (ds.state === 'needs_restart') return waiting(tr('activity.restart'), 'docker');
@@ -397,13 +432,77 @@ function renderTailscaleSetup(s, p) {
 // The language: on a first launch (none saved yet) the page asks for it before anything else;
 // after that the header's Language menu changes it. It is saved in the app's config.json, so the
 // tray menu and the app's own messages follow it too.
-let shown = null; // 'onboarding' or 'panel', once the first status is in
+//
+// Then, once, how Cedar is used: on this computer, or a server on another one
+// (status.needs_choice). On a first launch the app starts nothing before that, so someone
+// connecting to another computer isn't sent off to install Docker or download the sandbox image.
+// Someone who set Cedar up with an earlier version (status.configured) is asked too, with their
+// setup kept running meanwhile, and "this computer" worded as keeping it.
+let shown = null; // 'onboarding', 'choose' or 'panel', once the first status is in
 
 function show(which) {
   shown = which;
   $('onboarding').classList.toggle('hidden', which !== 'onboarding');
+  $('choose').classList.toggle('hidden', which !== 'choose');
   $('panel').classList.toggle('hidden', which !== 'panel');
+  if (which !== 'choose') chooseStep(null);
 }
+
+/** The step after the language, or the panel once the question is answered. */
+function afterLanguage(s) {
+  if (s && s.needs_choice) {
+    renderChoose(s);
+    chooseStep(null);
+    show('choose');
+    $('choose-local').focus();
+  } else {
+    show('panel');
+  }
+}
+
+/** The question's wording: a first setup, or one that already runs here. */
+function renderChoose(s) {
+  const keep = Boolean(s.configured);
+  const say = (id, key) => { $(id).dataset.i18n = key; $(id).textContent = tr(key); };
+  say('choose-intro', keep ? 'choose.introExisting' : 'choose.intro');
+  say('choose-local-title', keep ? 'choose.localKeep' : 'choose.local');
+  say('choose-local-text', keep ? 'choose.localKeepText' : 'choose.localText');
+}
+
+// The two options, or (`remote`) the connect form, which lives in the panel's remote section and
+// is moved here while the step shows, so there is one form with one set of handlers.
+function chooseStep(step) {
+  const remote = step === 'remote';
+  $('choose-options').classList.toggle('hidden', remote);
+  $('choose-remote-step').classList.toggle('hidden', !remote);
+  const form = $('remote-form');
+  if (remote) {
+    $('choose-remote-slot').append(form);
+    $('remote-server').focus();
+  } else if (form.parentElement !== $('remote-offer')) {
+    $('remote-offer').append(form);
+  }
+}
+
+$('choose-local').addEventListener('click', async () => {
+  $('choose-error').textContent = '';
+  try {
+    await invoke('choose_local');
+    show('panel');
+    await refresh();
+  } catch (e) {
+    $('choose-error').textContent = String(e);
+  }
+});
+$('choose-remote').addEventListener('click', () => {
+  $('choose-error').textContent = '';
+  chooseStep('remote');
+});
+$('choose-back').addEventListener('click', () => {
+  $('remote-error').textContent = '';
+  chooseStep(null);
+  $('choose-remote').focus();
+});
 
 /** Put the whole page into the current language. */
 function relabel() {
@@ -460,7 +559,7 @@ $('onboarding-continue').addEventListener('click', async () => {
   try {
     await saveLocale(tag);
     fillLanguageMenu();
-    show('panel');
+    afterLanguage(lastStatus);
     relabel();
   } catch (e) {
     $('onboarding-error').textContent = String(e);
@@ -493,12 +592,15 @@ async function refresh() {
       cedarI18n.use(s.locale);
       fillLanguageMenu();
       cedarI18n.apply(document);
-      show('panel');
+      afterLanguage(s);
     } else {
       lastStatus = s;
       showOnboarding();
     }
   }
+  // Answered elsewhere meanwhile (the menu's Restart, a config.json edited by hand).
+  if (shown === 'choose' && !s.needs_choice) show('panel');
+  if (shown === 'choose') renderChoose(s);
   if (shown === 'panel') render(s);
   else lastStatus = s;
 }
@@ -626,6 +728,37 @@ $('updates-toggle').addEventListener('change', (ev) => {
   invoke('set_check_updates', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
 });
 $('open-logs').addEventListener('click', () => invoke('open_logs').catch((e) => alert(e)));
+
+// Connecting checks the server first; once it answers, the app restarts into it and this page
+// goes away, so the call only comes back when something is wrong.
+$('remote-connect').addEventListener('click', async () => {
+  $('remote-error').textContent = '';
+  $('remote-connect').disabled = true;
+  $('remote-connect-status').textContent = tr('remote.connecting');
+  try {
+    await invoke('connect_remote', {
+      link: $('remote-link').value,
+      server: $('remote-server').value,
+      token: $('remote-token').value,
+    });
+  } catch (e) {
+    $('remote-error').textContent = String(e);
+  } finally {
+    $('remote-connect').disabled = false;
+    $('remote-connect-status').textContent = '';
+  }
+});
+$('remote-open').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
+$('remote-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));
+$('remote-copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
+$('remote-retry').addEventListener('click', () => invoke('recheck').then(refresh));
+$('remote-disconnect').addEventListener('click', () => {
+  $('remote-error').textContent = '';
+  $('remote-disconnect').disabled = true;
+  invoke('disconnect_remote')
+    .catch((e) => { $('remote-error').textContent = String(e); })
+    .finally(() => { $('remote-disconnect').disabled = false; });
+});
 
 refresh();
 setInterval(refresh, 1500);

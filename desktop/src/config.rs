@@ -39,6 +39,12 @@ pub struct Config {
     /// the tray menu, and cedar's `DEFAULT_LOCALE`. Empty until one is picked: the page then
     /// asks first.
     pub locale: String,
+    /// A chat server on another computer to use instead of starting the two servers here (see
+    /// [`Remote`]). `None`: everything runs on this computer.
+    pub remote: Option<Remote>,
+    /// The user chose to run the servers on this computer, on the setup page's question (see
+    /// [`Self::asks_choice`]).
+    pub run_locally: bool,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
@@ -47,6 +53,18 @@ pub struct Config {
     /// Keys this version doesn't know, kept as they are.
     #[serde(flatten)]
     pub other: BTreeMap<String, serde_json::Value>,
+}
+
+/// A cedar-chat on another computer (an always-on machine, so scheduled agents run while this one
+/// sleeps). The app starts neither server, needs no Docker, and its window shows that chat, as the
+/// phone apps do. Set from the same `cedar://connect` link they scan.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct Remote {
+    /// Its origin, `https://host[:port]` (see `cedar_pairing::connect::server_origin`).
+    pub server: String,
+    /// Its access token (`CHAT_ACCESS_TOKEN`).
+    pub token: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -78,6 +96,8 @@ impl Default for Config {
             check_updates: true,
             dismissed_update: String::new(),
             locale: String::new(),
+            remote: None,
+            run_locally: false,
             cedar_env: BTreeMap::new(),
             chat_env: BTreeMap::new(),
             secrets: Secrets::default(),
@@ -171,8 +191,53 @@ impl Config {
         format!("http://127.0.0.1:{}", self.cedar_port)
     }
 
+    /// The chat the window shows: the remote one when set, else the one this app starts.
     pub fn chat_url(&self) -> String {
+        match self.remote_server() {
+            Some(r) => r.server.clone(),
+            None => self.local_chat_url(),
+        }
+    }
+
+    /// The chat this app starts, whichever chat the window shows.
+    pub fn local_chat_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.chat_port)
+    }
+
+    /// The setup page asks whether Cedar runs here or uses another computer's, once: until it is
+    /// answered (`run_locally`) or a remote server is set. Someone who set the app up with an
+    /// earlier version is asked too, after updating, since the choice is new.
+    pub fn asks_choice(&self) -> bool {
+        self.remote_server().is_none() && !self.run_locally
+    }
+
+    /// While the question is open on a first launch (no model server chosen either), nothing is
+    /// started, checked or downloaded. An earlier setup keeps starting as before meanwhile, so its
+    /// scheduled agents don't stop until the question is answered.
+    pub fn holds_start(&self) -> bool {
+        self.asks_choice() && !self.configured()
+    }
+
+    /// The chat on another computer, when one is set.
+    pub fn remote_server(&self) -> Option<&Remote> {
+        self.remote.as_ref().filter(|r| !r.server.trim().is_empty())
+    }
+
+    /// The access token of the chat [`Self::chat_url`] points at.
+    pub fn chat_token(&self) -> &str {
+        match self.remote_server() {
+            Some(r) => &r.token,
+            None => &self.secrets.chat_access_token,
+        }
+    }
+
+    /// The admin token handed to the chat page. Only this app's own chat's is known; a remote
+    /// chat's Settings page asks for its admin token itself.
+    pub fn chat_admin_token(&self) -> &str {
+        match self.remote_server() {
+            Some(_) => "",
+            None => &self.secrets.chat_admin_token,
+        }
     }
 }
 
@@ -216,5 +281,48 @@ mod tests {
         let back = serde_json::to_value(&cfg).unwrap();
         assert_eq!(back["future_setting"], 1);
         assert_eq!(cfg.sandbox_image(), format!("{IMAGE_REPOSITORY}/cedar-sandbox:{VERSION}"));
+        assert!(cfg.remote_server().is_none());
+        assert!(cfg.asks_choice() && cfg.holds_start());
+    }
+
+    #[test]
+    fn the_question_is_asked_once() {
+        // A first launch: asked, and nothing starts meanwhile.
+        let mut cfg = Config::default();
+        assert!(cfg.asks_choice() && cfg.holds_start());
+        cfg.run_locally = true;
+        assert!(!cfg.asks_choice() && !cfg.holds_start());
+        // Set up with an earlier version (a model server chosen): asked once too, but its servers
+        // keep starting meanwhile.
+        let mut cfg: Config = serde_json::from_str(r#"{"llm_base_url": "http://x/v1", "llm_model": "m"}"#).unwrap();
+        assert!(cfg.asks_choice() && !cfg.holds_start());
+        cfg.run_locally = true;
+        assert!(!cfg.asks_choice());
+        // Connected to another computer: that was the answer.
+        let cfg = Config {
+            remote: Some(Remote { server: "https://s.t.ts.net".into(), token: "t".into() }),
+            ..Config::default()
+        };
+        assert!(!cfg.asks_choice() && !cfg.holds_start());
+    }
+
+    #[test]
+    fn a_remote_server_replaces_the_local_chat() {
+        let mut cfg = Config::default();
+        cfg.secrets.chat_access_token = "local".into();
+        cfg.secrets.chat_admin_token = "admin".into();
+        assert_eq!(cfg.chat_url(), "http://127.0.0.1:13000");
+        assert_eq!(cfg.chat_token(), "local");
+        assert_eq!(cfg.chat_admin_token(), "admin");
+        cfg.remote = Some(Remote { server: "https://spark.t.ts.net".into(), token: "remote".into() });
+        assert_eq!(cfg.chat_url(), "https://spark.t.ts.net");
+        assert_eq!(cfg.chat_token(), "remote");
+        assert_eq!(cfg.chat_admin_token(), "");
+        let back: Config = serde_json::from_value(serde_json::to_value(&cfg).unwrap()).unwrap();
+        assert_eq!(back.remote, cfg.remote);
+        // An empty address left in the file by hand means none.
+        cfg.remote = Some(Remote::default());
+        assert!(cfg.remote_server().is_none());
+        assert_eq!(cfg.chat_url(), "http://127.0.0.1:13000");
     }
 }

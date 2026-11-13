@@ -1,11 +1,11 @@
 //! Notification Center on a Mac, toast notifications on Windows: cedar-chat's `desktop`
 //! notification method. While the servers run, the app follows
 //! `GET /api/notifications/desktop/events` on the chat and shows each message there; a click opens
-//! the conversation it is about. Which responses are worth a message (the scope,
+//! the conversation it is about. With a chat server on another computer (remote.rs), it follows
+//! that one's stream, so agents running there notify here. Which responses are worth a message (the scope,
 //! a scheduled agent's own method, not if it was looked at meanwhile) is cedar-chat's decision.
 
 use crate::app::AppState;
-use crate::supervisor::ServiceState;
 use crate::window;
 use anyhow::{anyhow, Result};
 use futures_util::StreamExt;
@@ -42,7 +42,7 @@ pub fn start(app: AppHandle) {
         let http = reqwest::Client::new();
         let mut failures: u32 = 0;
         loop {
-            if app.state::<AppState>().supervisor.state() != ServiceState::Running {
+            if !app.state::<AppState>().chat_ready() {
                 failures = 0;
                 tokio::time::sleep(POLL).await;
                 continue;
@@ -109,7 +109,7 @@ async fn follow(app: &AppHandle, http: &reqwest::Client) -> Result<()> {
             "{}/api/notifications/desktop/events",
             cfg.chat_url()
         ))
-        .bearer_auth(&cfg.secrets.chat_access_token)
+        .bearer_auth(cfg.chat_token())
         .send()
         .await?;
     if !resp.status().is_success() {
