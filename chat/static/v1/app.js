@@ -1097,7 +1097,7 @@ function updateComposer() {
   els.send.disabled = state.sending || state.noModels || (!busy && !els.input.value.trim());
   els.input.placeholder = state.noModels ? NO_MODELS : tr(state.current ? 'v1.placeholder.reply' : 'v1.greeting.day');
   els.hint.textContent = busy ? tr('v1.hint.working') : '';
-  els.agentBtn.hidden = !state.current || busy || state.sending || !hasCompletedTurn();
+  els.agentBtn.hidden = Boolean(!state.current || state.current.schedule_id || busy || state.sending || !hasCompletedTurn());
 }
 
 function autosize() {

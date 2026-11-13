@@ -407,11 +407,33 @@ const cedarAgents = (() => {
     const [text, cls] = status(a);
     if (text) meta.append(el('span', `cedar-ag-status ${cls}`, text));
     const last = a.last_run;
-    if (last) meta.append(chip(last), el('span', '', tr('agents.lastRun', { when: when(last.started_at) })));
-    else meta.append(el('span', '', tr('agents.neverRan')));
+    // The card opens the agent, but what it shows of the last run opens that run: its result is
+    // what was clicked. (A check that failed is the agent's, not a run's, and stays with the card.)
+    const result = [];
+    if (last) {
+      const ran = el('span', '', tr('agents.lastRun', { when: when(last.started_at) }));
+      const state = chip(last);
+      meta.append(state, ran);
+      result.push(state, ran);
+    } else {
+      meta.append(el('span', '', tr('agents.neverRan')));
+    }
     c.append(icon(ICONS[kind] ? kind : groupOf(kind)), title, el('div', 'cedar-ag-sub', describe(a.trigger)), meta);
     const snippet = a.last_error || last?.error || last?.turn?.error || last?.turn?.final_text;
-    if (snippet) c.append(el('div', 'cedar-ag-snippet', String(snippet).replace(/[#*_`>]/g, '').slice(0, 300)));
+    if (snippet) {
+      const text = el('div', 'cedar-ag-snippet', String(snippet).replace(/[#*_`>]/g, '').slice(0, 300));
+      if (!a.last_error) result.push(text);
+      c.append(text);
+    }
+    if (last?.conversation_id) {
+      for (const node of result) node.classList.add('cedar-ag-last');
+      c.addEventListener('click', (e) => {
+        if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (!e.target.closest?.('.cedar-ag-last')) return;
+        e.preventDefault();
+        location.hash = `#/c/${last.conversation_id}`;
+      });
+    }
     return c;
   }
 
