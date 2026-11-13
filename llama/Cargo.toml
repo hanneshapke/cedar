@@ -2,12 +2,28 @@
 name = "cedar-llama"
 version.workspace = true
 edition = "2021"
-description = "Running llama.cpp for Cedar: which build and which model suit a machine's GPU, and where to get them"
+description = "Running llama.cpp for Cedar: which build and which model suit a machine's GPU, and installing them"
 license = "Apache-2.0"
 
-# Shared by the desktop app (its setup page installs and runs llama-server) and, later, a command
-# for Linux. No I/O here: each caller runs the probes and the downloads its own way, and this
-# crate reads what the probes print and says what to fetch.
+# Shared by the desktop app (its setup page installs and runs llama-server) and the cedar-llama
+# command for Linux. Choosing is separate from doing: gpu, release, catalog and server only read
+# and decide; install downloads, checks and unpacks what they chose.
 [dependencies]
+# The free space of the disk, before a download of many gigabytes.
+fs4 = "0.13"
+flate2 = "1"
+futures-util = "0.3"
+hex = "0.4"
+# The system's certificates rather than a built-in list, so that a download also works behind a
+# proxy whose certificate authority the machine was told to trust.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+tar = "0.4"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "time"] }
+tokio-util = "0.7"
+zip = { version = "4", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["net"] }

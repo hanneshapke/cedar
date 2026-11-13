@@ -1,10 +1,12 @@
 //! Running llama.cpp's `llama-server` as Cedar's model server, shared by the desktop app and the
 //! Linux command: what GPU a machine has ([`gpu`]), which pinned llama.cpp build suits it
 //! ([`release`]), which model fits its memory ([`catalog`]), and how the server is started
-//! ([`server`]). Nothing here touches the machine or the network.
+//! ([`server`]). Those four only read and decide; [`install`] downloads and unpacks what they chose.
 
 pub mod catalog;
 pub mod gpu;
+pub mod install;
+pub mod probe;
 pub mod release;
 pub mod server;
 
