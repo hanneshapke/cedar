@@ -319,7 +319,7 @@ up](#setting-it-up)); later, open **Use Cedar running on another computer** at t
 setup page. Enter the server's address and access token, both of which the other computer's chat shows under
 Settings → Phone (or its Cedar app's setup page under *iPhone, iPad & Android*). You can paste a
 `cedar://connect?server=…&token=…` link instead, the one the phone apps' QR code carries
-(`scripts/cedar-stack.sh --pair` prints it). *Connect* first checks that the server answers and
+(*Copy connection link* on the chat's Settings → Phone page copies it; `scripts/cedar-stack.sh --pair` prints it). *Connect* first checks that the server answers and
 accepts the token; then the app stops its own servers and tailnet sharing, saves the server as
 `remote` in [`config.json`](#configjson) and restarts into it.
 
