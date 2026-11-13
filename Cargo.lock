@@ -377,6 +377,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cedar-llama"
+version = "0.8.1"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cedar-pairing"
 version = "0.8.1"
 dependencies = [

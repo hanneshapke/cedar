@@ -1,0 +1,13 @@
+[package]
+name = "cedar-llama"
+version.workspace = true
+edition = "2021"
+description = "Running llama.cpp for Cedar: which build and which model suit a machine's GPU, and where to get them"
+license = "Apache-2.0"
+
+# Shared by the desktop app (its setup page installs and runs llama-server) and, later, a command
+# for Linux. No I/O here: each caller runs the probes and the downloads its own way, and this
+# crate reads what the probes print and says what to fetch.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
