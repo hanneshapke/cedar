@@ -122,6 +122,8 @@ function render(s) {
     $('model-text').textContent = tr('model.notChosen');
   }
 
+  renderLlama(s, p);
+
   // Services
   const sv = s.services;
   $('services-detail').textContent = '';
@@ -242,11 +244,23 @@ function activity(s, p) {
   if (i.state === 'failed') return waiting(tr('activity.pullFailed'), 'images');
   // Installing Tailscale runs on its own; while it does, it is what the page waits for.
   if (ts.state === 'running') return busy(tr('activity.tsSetup', { detail: ts.detail }), 'share');
-  // The model server, the servers, and the model in cedar's registry.
-  if (!s.configured) return waiting(tr('activity.chooseModel'), 'model');
+  // The model server (llama.cpp set up from here, or the user's own), the servers, and the model
+  // in cedar's registry.
+  const l = s.llama;
+  if (l.setup.state === 'running') {
+    const progress = typeof l.progress === 'number' ? l.progress : undefined;
+    return { ...busy(tr('activity.llamaSetup', { detail: l.setup.detail }), 'model'), progress };
+  }
+  if (l.setup.state === 'failed') return waiting(tr('activity.llamaFailed'), 'model');
+  if (!s.configured) {
+    if (l.offer) return waiting(tr('activity.chooseModelOffer', { computer: p.text('computer') }), 'model');
+    return waiting(tr('activity.chooseModel'), 'model');
+  }
   if (sh.state === 'starting') return busy(tr('share.starting'), 'share');
   if (sv.state === 'starting') return busy(tr('activity.starting', { detail: sv.detail }), 'services');
   if (sv.state === 'crashed') return waiting(tr('activity.crashed'), 'services');
+  if (l.model && l.server.state === 'starting') return busy(tr('activity.llamaLoading', { model: l.model }), 'model');
+  if (l.model && l.server.state === 'crashed') return waiting(tr('activity.llamaCrashed'), 'model');
   if (m.state === 'registering') return busy(tr('activity.registering', { model: s.llm_model }), 'model');
   if (sv.state !== 'running') return waiting(tr('activity.notRunning'), 'services');
   if (m.state === 'failed') return waiting(tr('activity.modelFailed', { model: s.llm_model }), 'model');
@@ -346,6 +360,82 @@ function renderUpdate(s) {
 
 // Setting Docker up from here (Windows and macOS): offered while Docker is missing (on Windows,
 // also while it won't start), and shown until it has finished.
+// How far a llama.cpp download is for a progress bar: 0 to 1, or -1 for a step without a
+// position (checking, unpacking).
+function llamaProgress(l) {
+  return typeof l.progress === 'number' ? l.progress : -1;
+}
+
+// llama.cpp as the model server, set up and run by the app (src/llamasetup.rs): offered when this
+// computer's GPU can run one of Cedar's models, with the download's progress while it is set up,
+// and what it runs once it is.
+function renderLlama(s, p) {
+  const l = s.llama;
+  const st = l.setup;
+  const offer = l.offer;
+  const installed = !!l.model;
+  const running = st.state === 'running';
+  const failed = st.state === 'failed';
+  const show = installed || !!offer || running || failed;
+  $('llama').classList.toggle('hidden', !show);
+  if (!show) return;
+
+  const gb = (bytes) => Math.round(bytes / 1e9);
+  const intro = $('llama-intro');
+  if (installed) {
+    intro.textContent = tr('llama.running', { model: l.model, computer: p.text('computer') });
+  } else if (offer) {
+    intro.textContent = tr(offer.unified ? 'llama.offerUnified' : 'llama.offer', {
+      computer: p.text('computer'),
+      gpu: offer.gpu,
+      memory: Math.round(offer.memory_mb / 1024),
+      model: offer.model,
+      size: gb(offer.download_bytes),
+    });
+  } else {
+    intro.textContent = '';
+  }
+
+  const install = $('llama-install');
+  // Once installed there is nothing to set up, unless a newer llama.cpp could not be fetched.
+  install.classList.toggle('hidden', installed && !failed);
+  install.disabled = running;
+  install.textContent = failed ? tr('common.tryAgain') : tr('llama.install');
+  install.dataset.command = installed ? 'recheck' : 'install_llama';
+  $('llama-cancel').classList.toggle('hidden', !(running && typeof l.progress === 'number'));
+  $('llama-remove').classList.toggle('hidden', !installed || running);
+  showProgress($('llama-progress'), running ? llamaProgress(l) : null);
+
+  const text = $('llama-text');
+  const detail = $('llama-detail');
+  text.className = 'muted';
+  text.textContent = '';
+  detail.textContent = '';
+  if (running) {
+    text.textContent = st.detail;
+  } else if (failed) {
+    text.className = 'error';
+    text.textContent = tr('llama.failed');
+    detail.textContent = st.detail;
+  } else if (installed && l.server.state === 'starting') {
+    text.textContent = tr('llama.loading', { model: l.model });
+  } else if (installed && l.server.state === 'crashed') {
+    text.className = 'error';
+    text.textContent = tr('llama.crashed');
+    detail.textContent = l.server.detail;
+  }
+
+  const license = $('llama-license');
+  if (offer && !installed) {
+    license.replaceChildren(
+      tr('llama.license', { model: offer.model, license: offer.license }) + ' ',
+      link(offer.model_page, tr('llama.modelPage')),
+    );
+  } else {
+    license.replaceChildren();
+  }
+}
+
 function renderDockerSetup(s, p) {
   const st = s.docker_setup;
   const d = s.docker;
@@ -607,6 +697,18 @@ async function refresh() {
 
 $('docker-recheck').addEventListener('click', () => invoke('recheck').then(refresh));
 $('docker-install').addEventListener('click', () => invoke('install_docker').then(refresh).catch((e) => alert(e)));
+// "Set up a model for me", or after an install whose newer llama.cpp did not arrive, the launch
+// sequence again (renderLlama says which).
+$('llama-install').addEventListener('click', (e) => {
+  invoke(e.currentTarget.dataset.command || 'install_llama').then(refresh).catch((err) => alert(err));
+});
+$('llama-cancel').addEventListener('click', () => invoke('cancel_llama').then(refresh).catch((e) => alert(e)));
+$('llama-remove').addEventListener('click', () => {
+  const model = (lastStatus && lastStatus.llama.model) || '';
+  const computer = platform(lastStatus && lastStatus.platform).text('computer');
+  if (!confirm(tr('llama.removeConfirm', { model, computer }))) return;
+  invoke('remove_llama').then(refresh).catch((e) => alert(e));
+});
 $('ts-install').addEventListener('click', () => invoke('install_tailscale').then(refresh).catch((e) => alert(e)));
 $('docker-finish').addEventListener('click', () => invoke('finish_docker_setup').catch((e) => alert(e)));
 $('browser-toggle').addEventListener('change', (ev) => {

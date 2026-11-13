@@ -1070,6 +1070,29 @@ by an earlier version of cedar (through the old `/v1/admin/integrations/llm` rou
 the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_URL`, `LLM_API_KEY`,
 `LLM_MODEL` and `ALLOWED_MODELS` in the environment are ignored with a warning.
 
+#### llama.cpp on a machine with a GPU
+
+On a Linux machine with a GPU, `cedar-llama` (in the Linux tarball of a release, or
+`cargo build --release -p cedar-llama`) sets up [llama.cpp](https://github.com/ggml-org/llama.cpp)
+as the model server, with a model sized to the GPU's memory. The desktop app does the same from
+its setup page on macOS and Windows (see [desktop/README.md](desktop/README.md#setting-a-model-up-with-llamacpp),
+which also lists the models).
+
+```sh
+cedar-llama detect     # the GPU, and the llama.cpp build and model that suit it
+cedar-llama install    # downloads both into ~/.local/share/cedar (Ctrl-C stops; run it again to continue)
+cedar-llama serve      # runs llama-server on 127.0.0.1:18081
+```
+
+`install` ends by printing the `PUT /v1/admin/models/<id>` call that registers the server with
+cedar. An NVIDIA card with driver 570.26 or newer gets the CUDA 12 build, which needs nothing but
+the driver; an older driver and AMD cards get the Vulkan build, which needs the Vulkan loader and
+the card's Vulkan driver (`libvulkan1` and `mesa-vulkan-drivers` on Ubuntu). The memory is read
+with `nvidia-smi` for NVIDIA cards and from the `amdgpu` driver for AMD ones; with less than
+16 GB, or on a GPU it cannot read, name what to install yourself with `--build` and `--model`.
+Only x86_64 is covered so far. Every download is checked against a size and SHA-256 compiled into
+`cedar-llama`. `scripts/systemd/cedar-llama.service` runs `serve` under systemd.
+
 ### Integrations
 
 Instead of putting `BRAVE_API_KEY`, `BESTBUY_API_KEY`, `SERPAPI_API_KEY`, `SLACK_BOT_TOKEN`, `GOOGLE_CLIENT_ID`,

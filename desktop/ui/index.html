@@ -279,6 +279,19 @@
   <h2><span class="dot" id="model-dot"></span><span data-i18n="model.title">Model server</span></h2>
   <p id="model-text" class="muted" data-i18n="model.notChosen">Not chosen yet.</p>
   <p class="detail" id="model-detail"></p>
+  <div id="llama" class="hidden">
+    <p id="llama-intro" class="muted"></p>
+    <div class="row">
+      <button class="primary" id="llama-install" data-i18n="llama.install">Set up a model for me</button>
+      <button class="hidden" id="llama-cancel" data-i18n="llama.cancel">Stop the download</button>
+      <button class="hidden" id="llama-remove" data-i18n="llama.remove">Remove</button>
+    </div>
+    <progress id="llama-progress" class="hidden" max="1"></progress>
+    <p id="llama-text" class="muted"></p>
+    <p class="detail" id="llama-detail"></p>
+    <p class="muted fine" id="llama-license"></p>
+    <p class="muted" data-i18n="llama.own">Or use a model server of your own:</p>
+  </div>
   <p class="muted" data-i18n-html="html.model.about">Any OpenAI-compatible server that supports tool calling. Ollama, LM Studio, and vLLM all work; the server can run on <span class="this-computer">this computer</span> or on another machine. More models can be added from the chat's Settings.</p>
   <div class="row presets">
     <span class="muted" data-i18n="model.presets">Presets:</span>
@@ -361,7 +374,7 @@
   </div>
 </section>
 
-<footer class="local-only" data-i18n-html="html.footer">Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.</footer>
+<footer class="local-only" data-i18n-html="html.footer">Each agent run gets its own Docker container. The sandbox image is <code id="sandbox-image"></code>.</footer>
 
 </div>
 
