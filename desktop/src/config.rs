@@ -42,6 +42,9 @@ pub struct Config {
     /// A chat server on another computer to use instead of starting the two servers here (see
     /// [`Remote`]). `None`: everything runs on this computer.
     pub remote: Option<Remote>,
+    /// The user chose to run the servers on this computer, on the setup page's first question
+    /// (see [`Self::needs_choice`]).
+    pub run_locally: bool,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
@@ -94,6 +97,7 @@ impl Default for Config {
             dismissed_update: String::new(),
             locale: String::new(),
             remote: None,
+            run_locally: false,
             cedar_env: BTreeMap::new(),
             chat_env: BTreeMap::new(),
             secrets: Secrets::default(),
@@ -200,6 +204,13 @@ impl Config {
         format!("http://127.0.0.1:{}", self.chat_port)
     }
 
+    /// Nothing says yet whether Cedar runs here or uses another computer's: no remote server, no
+    /// model server (as everyone who set the app up before had to choose), and no choice made. The
+    /// setup page then asks first, and nothing is started, checked or downloaded meanwhile.
+    pub fn needs_choice(&self) -> bool {
+        self.remote_server().is_none() && !self.configured() && !self.run_locally
+    }
+
     /// The chat on another computer, when one is set.
     pub fn remote_server(&self) -> Option<&Remote> {
         self.remote.as_ref().filter(|r| !r.server.trim().is_empty())
@@ -264,6 +275,21 @@ mod tests {
         assert_eq!(back["future_setting"], 1);
         assert_eq!(cfg.sandbox_image(), format!("{IMAGE_REPOSITORY}/cedar-sandbox:{VERSION}"));
         assert!(cfg.remote_server().is_none());
+        assert!(cfg.needs_choice());
+    }
+
+    #[test]
+    fn the_first_question_is_asked_until_answered() {
+        let mut cfg = Config::default();
+        assert!(cfg.needs_choice());
+        cfg.run_locally = true;
+        assert!(!cfg.needs_choice());
+        // Set up before the question existed: a model server was chosen.
+        let cfg: Config = serde_json::from_str(r#"{"llm_base_url": "http://x/v1", "llm_model": "m"}"#).unwrap();
+        assert!(!cfg.needs_choice());
+        let mut cfg = Config::default();
+        cfg.remote = Some(Remote { server: "https://s.t.ts.net".into(), token: "t".into() });
+        assert!(!cfg.needs_choice());
     }
 
     #[test]

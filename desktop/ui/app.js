@@ -432,13 +432,65 @@ function renderTailscaleSetup(s, p) {
 // The language: on a first launch (none saved yet) the page asks for it before anything else;
 // after that the header's Language menu changes it. It is saved in the app's config.json, so the
 // tray menu and the app's own messages follow it too.
-let shown = null; // 'onboarding' or 'panel', once the first status is in
+//
+// Then, until it is answered, how Cedar is used: on this computer, or a server on another one
+// (status.needs_choice). The app starts nothing before that, so someone connecting to another
+// computer isn't sent off to install Docker or download the sandbox image.
+let shown = null; // 'onboarding', 'choose' or 'panel', once the first status is in
 
 function show(which) {
   shown = which;
   $('onboarding').classList.toggle('hidden', which !== 'onboarding');
+  $('choose').classList.toggle('hidden', which !== 'choose');
   $('panel').classList.toggle('hidden', which !== 'panel');
+  if (which !== 'choose') chooseStep(null);
 }
+
+/** The step after the language, or the panel once the question is answered. */
+function afterLanguage(s) {
+  if (s && s.needs_choice) {
+    chooseStep(null);
+    show('choose');
+    $('choose-local').focus();
+  } else {
+    show('panel');
+  }
+}
+
+// The two options, or (`remote`) the connect form, which lives in the panel's remote section and
+// is moved here while the step shows, so there is one form with one set of handlers.
+function chooseStep(step) {
+  const remote = step === 'remote';
+  $('choose-options').classList.toggle('hidden', remote);
+  $('choose-remote-step').classList.toggle('hidden', !remote);
+  const form = $('remote-form');
+  if (remote) {
+    $('choose-remote-slot').append(form);
+    $('remote-server').focus();
+  } else if (form.parentElement !== $('remote-offer')) {
+    $('remote-offer').append(form);
+  }
+}
+
+$('choose-local').addEventListener('click', async () => {
+  $('choose-error').textContent = '';
+  try {
+    await invoke('choose_local');
+    show('panel');
+    await refresh();
+  } catch (e) {
+    $('choose-error').textContent = String(e);
+  }
+});
+$('choose-remote').addEventListener('click', () => {
+  $('choose-error').textContent = '';
+  chooseStep('remote');
+});
+$('choose-back').addEventListener('click', () => {
+  $('remote-error').textContent = '';
+  chooseStep(null);
+  $('choose-remote').focus();
+});
 
 /** Put the whole page into the current language. */
 function relabel() {
@@ -495,7 +547,7 @@ $('onboarding-continue').addEventListener('click', async () => {
   try {
     await saveLocale(tag);
     fillLanguageMenu();
-    show('panel');
+    afterLanguage(lastStatus);
     relabel();
   } catch (e) {
     $('onboarding-error').textContent = String(e);
@@ -528,12 +580,14 @@ async function refresh() {
       cedarI18n.use(s.locale);
       fillLanguageMenu();
       cedarI18n.apply(document);
-      show('panel');
+      afterLanguage(s);
     } else {
       lastStatus = s;
       showOnboarding();
     }
   }
+  // Answered elsewhere meanwhile (the menu's Restart, a config.json edited by hand).
+  if (shown === 'choose' && !s.needs_choice) show('panel');
   if (shown === 'panel') render(s);
   else lastStatus = s;
 }

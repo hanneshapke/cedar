@@ -114,6 +114,14 @@
   .onboarding .locales label { display: flex; align-items: center; gap: 10px; margin: 0; padding: 8px 10px;
     border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 14px; cursor: pointer; }
   .onboarding .locales label:has(input:checked) { border-color: var(--accent); }
+  .choices { display: flex; flex-direction: column; gap: 10px; margin: 16px 0 8px; }
+  .choice { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px;
+    border-radius: 10px; background: var(--panel); }
+  .choice strong { font-size: 15px; }
+  .choice span { color: var(--muted); }
+  .choice:hover, .choice:focus-visible { border-color: var(--accent); outline: none; }
+  #choose { max-width: 520px; }
+  .choices.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -126,6 +134,31 @@
     <button class="primary" id="onboarding-continue" data-i18n="onboarding.continue">Continue</button>
   </div>
   <p id="onboarding-error" class="error"></p>
+</section>
+
+<!-- The second step on a first launch: run Cedar here, or use it on another computer. Nothing is
+     started, checked or downloaded before this is answered (see needs_choice in src/config.rs). -->
+<section id="choose" class="onboarding hidden" aria-labelledby="choose-title">
+  <h1 id="choose-title" data-i18n="choose.title">How do you want to use Cedar?</h1>
+  <p class="muted" data-i18n="choose.intro">You can switch later on this setup page.</p>
+  <div class="choices" id="choose-options">
+    <button type="button" class="choice" id="choose-local">
+      <strong data-i18n="choose.local">Run everything on this computer</strong>
+      <span data-i18n="choose.localText">Cedar runs its servers here. It needs Docker, which Cedar can set up for you, and a model server such as Ollama or LM Studio, on this computer or another. Scheduled agents run while this computer is awake.</span>
+    </button>
+    <button type="button" class="choice" id="choose-remote">
+      <strong data-i18n="choose.remote">Connect to Cedar on another computer</strong>
+      <span data-i18n="choose.remoteText">Cedar already runs on a computer that stays on, such as a DGX Spark or a mini PC. This computer needs nothing else, and scheduled agents keep running while it sleeps.</span>
+    </button>
+  </div>
+  <div id="choose-remote-step" class="hidden">
+    <p class="muted" data-i18n="choose.remoteIntro">Enter the other computer’s address and access token.</p>
+    <div id="choose-remote-slot"></div>
+    <div class="row">
+      <button type="button" id="choose-back" data-i18n="choose.back">Back</button>
+    </div>
+  </div>
+  <p id="choose-error" class="error"></p>
 </section>
 
 <div id="panel" class="hidden">
@@ -168,22 +201,26 @@
 <section id="remote">
   <details id="remote-offer">
     <summary data-i18n="remote.offer">Use Cedar running on another computer</summary>
-    <p class="muted" data-i18n="remote.about">If Cedar already runs on a computer that stays on (a DGX Spark, a mini PC, another Mac), this app can show that server’s chat instead of running its own. Scheduled agents then keep running there while this computer sleeps, and their notifications still show up here. This computer needs no Docker or model server. Conversations and agents stay on that server.</p>
-    <label for="remote-server" data-i18n="remote.server">Server address</label>
-    <input type="text" id="remote-server" placeholder="https://spark.tailnet-name.ts.net" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <label for="remote-token" data-i18n="remote.token">Access token</label>
-    <input type="password" id="remote-token" autocomplete="off">
-    <p class="muted fine" data-i18n="remote.help">Copy both from the other computer: in the chat’s Settings → Phone, or on the Cedar app’s setup page under iPhone, iPad &amp; Android. The address is its https:// address on your tailnet.</p>
-    <details>
-      <summary class="muted fine" data-i18n="remote.linkOffer">Paste a connection link instead</summary>
-      <label for="remote-link" data-i18n="remote.link">Connection link (cedar://connect…, as in the QR code)</label>
-      <input type="password" id="remote-link" placeholder="cedar://connect?server=…&amp;token=…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    </details>
-    <div class="row">
-      <button class="primary" id="remote-connect" data-i18n="remote.connect">Connect</button>
-      <span id="remote-connect-status" class="muted"></span>
+    <p class="muted" data-i18n="remote.about">If Cedar already runs on a computer that stays on (a DGX Spark, a mini PC, another Mac), this app can show that server’s chat instead of running its own. Scheduled agents then keep running there while this computer sleeps, and their notifications can show up here (with Desktop notification picked in that chat’s Settings → Notifications). This computer needs no Docker or model server. Conversations and agents stay on that server.</p>
+    <!-- Moved into the first question's "another computer" step while that shows (see show() in app.js). -->
+    <div id="remote-form">
+      <label for="remote-server" data-i18n="remote.server">Server address</label>
+      <input type="text" id="remote-server" placeholder="https://spark.tailnet-name.ts.net" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <label for="remote-token" data-i18n="remote.token">Access token</label>
+      <input type="password" id="remote-token" autocomplete="off">
+      <p class="muted fine" data-i18n="remote.help">Copy both from the other computer: in the chat’s Settings → Phone, or on the Cedar app’s setup page under iPhone, iPad &amp; Android. The address is its https:// address on your tailnet.</p>
+      <details>
+        <summary class="muted fine" data-i18n="remote.linkOffer">Paste a connection link instead</summary>
+        <label for="remote-link" data-i18n="remote.link">Connection link (cedar://connect…, as in the QR code)</label>
+        <input type="password" id="remote-link" placeholder="cedar://connect?server=…&amp;token=…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </details>
+      <div class="row">
+        <button class="primary" id="remote-connect" data-i18n="remote.connect">Connect</button>
+        <span id="remote-connect-status" class="muted"></span>
+      </div>
+      <p class="muted fine" data-i18n="remote.restartNote">Cedar restarts to connect, and stops its servers on this computer if they run.</p>
+      <p id="remote-error" class="error"></p>
     </div>
-    <p class="muted fine" data-i18n="remote.restartNote">Connecting stops the servers on this computer and restarts Cedar.</p>
   </details>
   <div id="remote-in-use" class="hidden">
     <h2><span class="dot" id="remote-dot"></span><span data-i18n="remote.title">Cedar on another computer</span></h2>
@@ -198,7 +235,6 @@
     </div>
     <p class="muted fine" data-i18n="remote.inUseNote">Models, tools and sharing with the phone apps are set up on that server, in the chat’s Settings; the admin token is asked for there. Disconnect to run Cedar on this computer again (Cedar restarts).</p>
   </div>
-  <p id="remote-error" class="error"></p>
 </section>
 
 <section id="docker" class="local-only">

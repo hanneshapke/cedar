@@ -148,7 +148,19 @@ there and sandboxes run on Docker.
 
 ### Setting it up
 
-The setup window shows three steps:
+On a first launch the setup window asks for the language, then **How do you want to use Cedar?**:
+
+- **Run everything on this computer**: the app runs both servers here, with the steps below.
+- **Connect to Cedar on another computer**: it asks for that server's address and access token
+  instead (see [Using Cedar that runs on another computer](#using-cedar-that-runs-on-another-computer)).
+
+Until one is picked, the app starts nothing: it doesn't look for Docker, start Docker Desktop or
+download the sandbox image, so connecting to another computer never sends you off to install
+Docker. The question isn't asked again once a choice is made (`run_locally` or `remote` in
+[`config.json`](#configjson)), nor of anyone who chose a model server with an earlier version.
+Either way can be switched later on the setup page.
+
+Running everything here, the setup window shows three steps:
 
 - **Docker**: found and running, or what to do. *Set up Docker for me* does it (see below), and
   a Docker Desktop that isn't running is started (on a Mac, OrbStack or Rancher Desktop too, when
@@ -302,8 +314,9 @@ Cedar (menu bar / tray) ── window ──HTTPS──▶ cedar-chat ──▶ 
         └── notifications ◀── /api/notifications/desktop/events ──┘
 ```
 
-At the top of the setup page, open **Use Cedar running on another computer** and enter the
-server's address and access token, both of which the other computer's chat shows under
+On a first launch, pick **Connect to Cedar on another computer** (see [Setting it
+up](#setting-it-up)); later, open **Use Cedar running on another computer** at the top of the
+setup page. Enter the server's address and access token, both of which the other computer's chat shows under
 Settings → Phone (or its Cedar app's setup page under *iPhone, iPad & Android*). You can paste a
 `cedar://connect?server=…&token=…` link instead, the one the phone apps' QR code carries
 (`scripts/cedar-stack.sh --pair` prints it). *Connect* first checks that the server answers and
@@ -466,6 +479,7 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "dismissed_update": "",
   "locale": "de-CH",
   "remote": null,
+  "run_locally": true,
   "cedar_env": { "SANDBOX_NETWORK": "bridge", "RUN_TIMEOUT_SECS": "1800" },
   "chat_env": {},
   "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…", "chat_admin_token": "…" }
@@ -480,6 +494,9 @@ version; set them to use an image you built yourself (`docker build -t cedar-san
 `remote` is the chat server on another computer the app uses instead of its own, set by
 *Connect* on the setup page (see [Using Cedar that runs on another computer](#using-cedar-that-runs-on-another-computer)):
 `{"server": "https://spark.tail1234.ts.net", "token": "…"}`, or `null` to run the servers here.
+`run_locally` records the first launch's answer *Run everything on this computer*; while it is
+`false`, no `remote` is set and no model server is chosen, the setup page asks that question again
+and the app starts nothing.
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,

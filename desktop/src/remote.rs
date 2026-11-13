@@ -58,7 +58,12 @@ pub async fn switch(app: AppHandle, remote: Option<Remote>) -> Result<()> {
     if let Some(r) = &remote {
         check(r).await?;
     }
-    state.update_config(|c| c.remote = remote)?;
+    // Disconnecting is a choice to run here, so the first question isn't asked again.
+    let local = remote.is_none();
+    state.update_config(|c| {
+        c.remote = remote;
+        c.run_locally |= local;
+    })?;
     state.supervisor.stop().await;
     state.stop_share().await;
     app.restart();

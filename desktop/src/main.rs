@@ -94,6 +94,7 @@ fn main() {
             commands::set_check_updates,
             commands::set_locale,
             commands::connect_remote,
+            commands::choose_local,
             commands::disconnect_remote,
         ])
         .build(tauri::generate_context!())

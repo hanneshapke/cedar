@@ -139,6 +139,9 @@ pub struct Status {
     /// Sharing is turned on (it is served once the servers run and Tailscale is ready).
     pub tailscale_share: bool,
     pub configured: bool,
+    /// The setup page asks first whether Cedar runs here or uses another computer's; nothing has
+    /// been started yet.
+    pub needs_choice: bool,
     /// The chat server on another computer this app uses instead of its own, or empty.
     pub remote_server: String,
     pub remote: RemoteStatus,
@@ -323,6 +326,7 @@ impl AppState {
             share: self.share.lock().unwrap().clone(),
             tailscale_share: cfg.tailscale_share,
             configured: cfg.configured(),
+            needs_choice: cfg.needs_choice(),
             remote_server: cfg.remote_server().map(|r| r.server.clone()).unwrap_or_default(),
             remote: self.remote.lock().unwrap().clone(),
             llm_base_url: cfg.llm_base_url.clone(),
@@ -401,6 +405,11 @@ pub async fn bootstrap(app: AppHandle) {
             }
             Err(e) => state.set_remote(RemoteStatus::Failed(format!("{e:#}"))),
         }
+        return;
+    }
+    // Not before the user said Cedar runs here: Docker isn't looked for (or started), and no
+    // image is downloaded, for someone about to connect to another computer instead.
+    if state.config().needs_choice() {
         return;
     }
 
