@@ -270,7 +270,14 @@ pub struct AppState {
     /// Cancelled when the server begins to shut down. Ends the event streams, which would
     /// otherwise hold the graceful shutdown open for as long as a client stays connected.
     pub shutdown: CancellationToken,
+    /// The `state` of each "Connect Google" the desktop app sent to the default browser
+    /// (`?browser=1`). Google's redirect lands in that browser, not in the app, so the callback
+    /// shows a page that says to go back to the app instead of loading the chat there.
+    google_in_browser: Arc<std::sync::Mutex<Vec<String>>>,
 }
+
+/// How many "Connect Google" sign-ins started in the browser are remembered at once.
+const GOOGLE_IN_BROWSER_MAX: usize = 16;
 
 impl AppState {
     pub fn new(cfg: Config, store: Store) -> anyhow::Result<Self> {
@@ -281,7 +288,7 @@ impl AppState {
         let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new() })
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default() })
     }
 }
 
@@ -2015,10 +2022,27 @@ async fn uninstall_tool(State(state): State<AppState>, headers: HeaderMap, Path(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn connect_google(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+async fn connect_google(State(state): State<AppState>, headers: HeaderMap, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     let url = state.cedar.google_authorize(&redirect_uri(&state, &headers)).await?;
+    // The desktop app opens Google's page in the default browser: its embedded web view can't
+    // offer every way to sign in (passkeys and Sign in with Apple, for one).
+    if params.contains_key("browser") {
+        if let Some(s) = google_state(&url) {
+            let mut pending = state.google_in_browser.lock().unwrap_or_else(|e| e.into_inner());
+            if pending.len() >= GOOGLE_IN_BROWSER_MAX {
+                pending.remove(0);
+            }
+            pending.push(s);
+        }
+    }
     Ok(Json(json!({ "url": url })))
+}
+
+/// The `state` parameter of Google's sign-in URL.
+fn google_state(url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(url).ok()?;
+    url.query_pairs().find(|(k, _)| k == "state").map(|(_, v)| v.into_owned())
 }
 
 async fn delete_google(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
@@ -2028,22 +2052,51 @@ async fn delete_google(State(state): State<AppState>, headers: HeaderMap) -> Res
 }
 
 /// Google sends the browser here after "Connect Google". Hand the code to cedar, then go back to
-/// the page, which reports the outcome from the query string.
-async fn google_callback(State(state): State<AppState>, Query(params): Query<HashMap<String, String>>) -> Redirect {
+/// the page, which reports the outcome from the query string. A sign-in the desktop app started
+/// in the default browser gets a page of its own instead: the outcome, and a word to go back to
+/// the app, whose Settings page checks again when its window comes forward.
+async fn google_callback(State(state): State<AppState>, Query(params): Query<HashMap<String, String>>) -> Response {
+    let in_browser = params.get("state").is_some_and(|s| {
+        let mut pending = state.google_in_browser.lock().unwrap_or_else(|e| e.into_inner());
+        pending.iter().position(|p| p == s).map(|i| pending.remove(i)).is_some()
+    });
     let outcome = match (params.get("state"), params.get("code"), params.get("error")) {
         (_, _, Some(error)) => Err(format!("Google sign-in was not completed ({error})")),
-        (Some(s), Some(code), None) => state.cedar.google_callback(s, code).await.map_err(|e| e.to_string()),
+        (Some(s), Some(code), None) => state.cedar.google_callback(s, code).await.map(|_| ()).map_err(|e| e.to_string()),
         _ => Err("the sign-in response from Google is incomplete".to_string()),
     };
+    if let Err(message) = &outcome {
+        tracing::warn!(error = %message, "Connect Google failed");
+    }
+    if in_browser {
+        return google_done_page(&outcome);
+    }
     let mut url = reqwest::Url::parse("http://local/").expect("static URL");
     match outcome {
-        Ok(_) => url.query_pairs_mut().append_pair("integrations", "connected"),
-        Err(message) => {
-            tracing::warn!(error = %message, "Connect Google failed");
-            url.query_pairs_mut().append_pair("integrations", "error").append_pair("message", &message)
-        }
+        Ok(()) => url.query_pairs_mut().append_pair("integrations", "connected"),
+        Err(message) => url.query_pairs_mut().append_pair("integrations", "error").append_pair("message", &message),
     };
-    Redirect::to(&format!("/?{}", url.query().unwrap_or_default()))
+    Redirect::to(&format!("/?{}", url.query().unwrap_or_default())).into_response()
+}
+
+/// What the browser shows after a "Connect Google" the desktop app started there.
+fn google_done_page(outcome: &Result<(), String>) -> Response {
+    let (title, detail) = match outcome {
+        Ok(()) => ("Google account connected".to_string(), "You can close this tab and go back to Cedar.".to_string()),
+        Err(message) => ("Google was not connected".to_string(), format!("{}. Close this tab and try again in Cedar.", html_escape(message))),
+    };
+    let html = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Cedar</title>\
+         <style>body{{font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;\
+         color:#222;background:#fafaf7}}@media (prefers-color-scheme:dark){{body{{color:#eee;background:#1b1b19}}}}\
+         h1{{font-size:1.4rem}}</style></head><body><h1>{title}</h1><p>{detail}</p></body></html>"
+    );
+    ([(CACHE_CONTROL, "no-store")], axum::response::Html(html)).into_response()
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;")
 }
 
 // -- compaction -----------------------------------------------------------------------------

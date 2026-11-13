@@ -2329,6 +2329,36 @@ async fn the_google_callback_needs_no_token_and_redirects_to_the_page() {
     assert!(headers["location"].to_str().unwrap().contains("incomplete"));
 }
 
+#[tokio::test]
+async fn a_google_sign_in_the_app_sent_to_the_browser_ends_on_a_page_of_its_own() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+    let get = |uri: &str| Request::builder().uri(uri).body(Body::empty()).unwrap();
+
+    let (status, _) = admin_call(&h, Method::POST, "/api/integrations/google/connect?browser=1", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, headers, body) = h.call_full(get("/api/oauth/google/callback?state=st-1&code=c0de")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers["content-type"].to_str().unwrap().starts_with("text/html"));
+    assert!(body.contains("Google account connected"), "{body}");
+    assert!(body.contains("go back to Cedar"), "{body}");
+
+    // Only once: the same state again is an ordinary callback.
+    let (status, _, _) = h.call_full(get("/api/oauth/google/callback?state=st-1&code=c0de")).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+
+    // A failure is said on the page, escaped.
+    admin_call(&h, Method::POST, "/api/integrations/google/connect?browser=1", Some("admin"), None).await;
+    let (status, _, body) = h.call_full(get("/api/oauth/google/callback?state=st-1&error=%3Cb%3E")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Google was not connected") && body.contains("&lt;b&gt;"), "{body}");
+
+    // Without ?browser=1, the page in the window reports it, as before.
+    admin_call(&h, Method::POST, "/api/integrations/google/connect", Some("admin"), None).await;
+    let (status, headers, _) = h.call_full(get("/api/oauth/google/callback?state=st-1&code=c0de")).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(headers["location"], "/?integrations=connected");
+}
+
 // -- being told when a response finishes -------------------------------------------------------
 
 #[tokio::test]
