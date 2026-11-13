@@ -45,6 +45,10 @@ pub struct Config {
     /// The user chose to run the servers on this computer, on the setup page's question (see
     /// [`Self::asks_choice`]).
     pub run_locally: bool,
+    /// Which of the setup page's three ways the model server was chosen by: `llama` (the app
+    /// runs llama.cpp), `own` (a server the user runs) or `hosted` (a provider). Empty in a config
+    /// from before the page recorded it; see `models::source`.
+    pub model_source: String,
     /// llama.cpp installed and run by the app as the model server (see llamasetup.rs), which
     /// `llm_base_url` and `llm_model` then point at. `None`: a model server of the user's own.
     pub llama: Option<Llama>,
@@ -116,6 +120,7 @@ impl Default for Config {
             locale: String::new(),
             remote: None,
             run_locally: false,
+            model_source: String::new(),
             llama: None,
             llama_port: 18081,
             cedar_env: BTreeMap::new(),

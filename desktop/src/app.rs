@@ -170,6 +170,11 @@ pub struct Status {
     pub llm_base_url: String,
     pub llm_model: String,
     pub has_api_key: bool,
+    /// Which of the page's three ways the model server was chosen by (`llama`, `own`,
+    /// `hosted`), or empty while none is.
+    pub model_source: &'static str,
+    /// The hosted providers the page offers.
+    pub providers: &'static [models::Provider],
     pub browser: bool,
     pub chat_url: String,
     pub access_token: String,
@@ -409,6 +414,8 @@ impl AppState {
             llm_base_url: cfg.llm_base_url.clone(),
             llm_model: cfg.llm_model.clone(),
             has_api_key: !cfg.llm_api_key.trim().is_empty(),
+            model_source: models::source(&cfg.model_source, cfg.llama.is_some(), &cfg.llm_base_url),
+            providers: models::PROVIDERS,
             browser: cfg.browser,
             chat_url: cfg.chat_url(),
             access_token: cfg.chat_token().to_string(),

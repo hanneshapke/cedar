@@ -7,6 +7,11 @@ const $ = (id) => document.getElementById(id);
 
 let lastStatus = null;
 let formTouched = false;
+// The Model server step's option whose form is open ('llama', 'own', 'hosted' or none), and
+// whether the user opened or closed one themselves; until then it follows the saved choice.
+let openSource = null;
+let sourceTouched = false;
+let hostedTouched = false;
 let shareBusy = false;
 
 function dot(el, cls) {
@@ -96,11 +101,15 @@ function render(s) {
   const toggle = $('browser-toggle');
   if (document.activeElement !== toggle) toggle.checked = s.browser;
 
-  // Model server form: filled from the saved config until the user starts typing.
+  // The forms of the user's own server and of a hosted provider: each filled from the saved
+  // config while that is the option in use, until the user starts typing.
   if (!formTouched) {
-    $('base-url').value = s.llm_base_url || '';
-    if (s.has_api_key && !$('api-key').value) $('api-key').placeholder = tr('model.saved');
+    const own = s.model_source === 'own';
+    $('base-url').value = own ? s.llm_base_url || '' : '';
+    $('api-key').placeholder = own && s.has_api_key ? tr('model.saved') : '';
   }
+  renderHosted(s);
+  renderModelChoice(s, p);
   const m = s.model;
   $('model-detail').textContent = '';
   if (m.state === 'registering') {
@@ -360,6 +369,59 @@ function renderUpdate(s) {
 
 // Setting Docker up from here (Windows and macOS): offered while Docker is missing (on Windows,
 // also while it won't start), and shown until it has finished.
+// The Model server step's three options (see index.html): running a model on this computer with
+// llama.cpp, a server the user already runs, or a hosted provider. The one in use is tagged and
+// its form is open, until the user opens another; a llama.cpp setup that is running or failed
+// keeps its own open. The first is greyed out when no GPU here can run one of Cedar's models.
+function renderModelChoice(s, p) {
+  const l = s.llama;
+  const settingUp = l.setup.state === 'running' || l.setup.state === 'failed';
+  const canLlama = !!l.offer || !!l.model || settingUp;
+  if (!sourceTouched) openSource = settingUp ? 'llama' : s.model_source || null;
+  if (openSource === 'llama' && !canLlama) openSource = null;
+
+  $('pick-llama').disabled = !canLlama;
+  $('pick-llama-text').textContent = canLlama
+    ? tr('pick.llamaText', { computer: p.text('computer') })
+    : tr('pick.llamaNo', { computer: p.text('computer') });
+  for (const source of ['llama', 'own', 'hosted']) {
+    const card = $(`pick-${source}`);
+    const open = openSource === source;
+    card.classList.toggle('open', open);
+    card.setAttribute('aria-expanded', String(open));
+    $(source).classList.toggle('hidden', !open);
+    const tag = $(`pick-${source}-tag`);
+    const inUse = s.configured && s.model_source === source;
+    const recommended = source === 'llama' && !!l.offer && !s.configured;
+    tag.textContent = inUse ? tr('pick.inUse') : recommended ? tr('pick.recommended') : '';
+    tag.classList.toggle('hidden', !inUse && !recommended);
+  }
+}
+
+// The hosted provider's form: the list of providers (from src/models.rs, with "Other" for one
+// that is not on it), the link to the chosen one's documentation, and, while a provider is the
+// option in use, the saved one selected.
+function renderHosted(s) {
+  const select = $('hosted-provider');
+  if (!select.options.length) {
+    for (const provider of s.providers) select.add(new Option(provider.name, provider.base_url));
+    select.add(new Option(tr('hosted.other'), ''));
+  }
+  select.options[select.options.length - 1].textContent = tr('hosted.other');
+  if (!hostedTouched) {
+    const hosted = s.model_source === 'hosted';
+    const known = hosted && s.providers.some((provider) => provider.base_url === s.llm_base_url);
+    select.value = !hosted || known ? (hosted ? s.llm_base_url : s.providers[0].base_url) : '';
+    $('hosted-url').value = hosted && !known ? s.llm_base_url : '';
+    $('hosted-key').placeholder = hosted && s.has_api_key ? tr('model.saved') : '';
+  }
+  const provider = s.providers.find((item) => item.base_url === select.value);
+  $('hosted-other').classList.toggle('hidden', !!provider);
+  const docs = $('hosted-docs');
+  if (provider) docs.replaceChildren(link(provider.docs, tr('hosted.docs', { provider: provider.name })));
+  else docs.replaceChildren();
+}
+
 // How far a llama.cpp download is for a progress bar: 0 to 1, or -1 for a step without a
 // position (checking, unpacking).
 function llamaProgress(l) {
@@ -376,9 +438,6 @@ function renderLlama(s, p) {
   const installed = !!l.model;
   const running = st.state === 'running';
   const failed = st.state === 'failed';
-  const show = installed || !!offer || running || failed;
-  $('llama').classList.toggle('hidden', !show);
-  if (!show) return;
 
   const gb = (bytes) => Math.round(bytes / 1e9);
   const intro = $('llama-intro');
@@ -714,59 +773,110 @@ $('docker-finish').addEventListener('click', () => invoke('finish_docker_setup')
 $('browser-toggle').addEventListener('change', (ev) => {
   invoke('set_browser', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
 });
-for (const b of document.querySelectorAll('.presets button')) {
-  b.addEventListener('click', () => {
-    formTouched = true;
-    $('base-url').value = b.dataset.url;
-    $('model-pick').classList.add('hidden');
+for (const card of document.querySelectorAll('.sources .choice')) {
+  card.addEventListener('click', () => {
+    sourceTouched = true;
+    openSource = openSource === card.dataset.source ? null : card.dataset.source;
+    if (lastStatus) render(lastStatus);
   });
 }
-for (const id of ['base-url', 'api-key']) {
-  $(id).addEventListener('input', () => { formTouched = true; $('model-pick').classList.add('hidden'); });
+
+// "List models" and "Save" of one of the two forms that name a model server: the user's own
+// (`own`) or a hosted provider (`hosted`). `address` gives the address the form stands for,
+// `touched` records that the user changed the form, and `filter`, where the list is long,
+// narrows the model list as they type.
+function modelForm({ source, address, key, probe, status, pick, select, save, error, filter, touched }) {
+  let listed = [];
+  const fill = () => {
+    const words = filter ? $(filter).value.trim().toLowerCase().split(/\s+/).filter(Boolean) : [];
+    const before = $(select).value || (lastStatus && lastStatus.llm_model);
+    const shown = listed.filter((model) => words.every((word) => model.toLowerCase().includes(word)));
+    $(select).replaceChildren(...shown.map((model) => new Option(model, model, false, model === before)));
+    $(save).disabled = !shown.length;
+  };
+  if (filter) $(filter).addEventListener('input', fill);
+  // A changed address or key makes the listed models someone else's.
+  const changed = () => { touched(true); $(pick).classList.add('hidden'); };
+
+  $(probe).addEventListener('click', async () => {
+    touched(true);
+    $(error).textContent = '';
+    $(status).textContent = tr('model.asking');
+    $(probe).disabled = true;
+    try {
+      listed = await invoke('list_models', { baseUrl: address(), apiKey: $(key).value });
+      if (filter) $(filter).value = '';
+      fill();
+      $(status).textContent = tr('model.count', { count: listed.length });
+      $(pick).classList.remove('hidden');
+    } catch (e) {
+      $(status).textContent = '';
+      $(error).textContent = String(e);
+    } finally {
+      $(probe).disabled = false;
+    }
+  });
+
+  $(save).addEventListener('click', async () => {
+    $(error).textContent = '';
+    try {
+      await invoke('save_model_server', { baseUrl: address(), apiKey: $(key).value, model: $(select).value, source });
+      touched(false);
+      // The saved option is the one in use now: the page follows it again.
+      sourceTouched = false;
+      $(key).value = '';
+      $(pick).classList.add('hidden');
+      $(status).textContent = tr('model.savedNote');
+      refresh();
+    } catch (e) {
+      $(error).textContent = String(e);
+    }
+  });
+  return changed;
 }
 
-$('probe').addEventListener('click', async () => {
-  formTouched = true;
-  $('model-error').textContent = '';
-  $('probe-status').textContent = tr('model.asking');
-  $('probe').disabled = true;
-  try {
-    const models = await invoke('list_models', { baseUrl: $('base-url').value, apiKey: $('api-key').value });
-    const select = $('model-select');
-    select.innerHTML = '';
-    for (const m of models) {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      if (lastStatus && m === lastStatus.llm_model) opt.selected = true;
-      select.appendChild(opt);
-    }
-    $('probe-status').textContent = tr('model.count', { count: models.length });
-    $('model-pick').classList.remove('hidden');
-  } catch (e) {
-    $('probe-status').textContent = '';
-    $('model-error').textContent = String(e);
-  } finally {
-    $('probe').disabled = false;
-  }
+const ownChanged = modelForm({
+  source: 'own',
+  address: () => $('base-url').value,
+  key: 'api-key',
+  probe: 'probe',
+  status: 'probe-status',
+  pick: 'model-pick',
+  select: 'model-select',
+  save: 'save',
+  error: 'model-error',
+  touched: (value) => { formTouched = value; },
 });
+for (const b of document.querySelectorAll('.presets button')) {
+  b.addEventListener('click', () => {
+    $('base-url').value = b.dataset.url;
+    ownChanged();
+  });
+}
+for (const id of ['base-url', 'api-key']) $(id).addEventListener('input', ownChanged);
 
-$('save').addEventListener('click', async () => {
-  $('model-error').textContent = '';
-  try {
-    await invoke('save_model_server', {
-      baseUrl: $('base-url').value,
-      apiKey: $('api-key').value,
-      model: $('model-select').value,
-    });
-    formTouched = false;
-    $('model-pick').classList.add('hidden');
-    $('probe-status').textContent = tr('model.savedNote');
-    refresh();
-  } catch (e) {
-    $('model-error').textContent = String(e);
-  }
+const hostedChanged = modelForm({
+  source: 'hosted',
+  // The chosen provider's address, or the one typed for a provider that is not on the list.
+  address: () => $('hosted-provider').value || $('hosted-url').value,
+  key: 'hosted-key',
+  probe: 'hosted-probe',
+  status: 'hosted-status',
+  pick: 'hosted-pick',
+  select: 'hosted-select',
+  save: 'hosted-save',
+  error: 'hosted-error',
+  filter: 'hosted-filter',
+  touched: (value) => { hostedTouched = value; },
 });
+$('hosted-provider').addEventListener('change', () => {
+  hostedChanged();
+  // Another provider's key is not this one's.
+  $('hosted-key').value = '';
+  $('hosted-key').placeholder = '';
+  if (lastStatus) renderHosted(lastStatus);
+});
+for (const id of ['hosted-url', 'hosted-key']) $(id).addEventListener('input', hostedChanged);
 
 $('share-toggle').addEventListener('change', async (ev) => {
   await setShare(ev.target.checked);

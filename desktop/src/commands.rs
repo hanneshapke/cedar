@@ -83,14 +83,21 @@ pub async fn list_models(base_url: String, api_key: String) -> Result<Vec<String
 }
 
 /// Saves the model server and registers it with cedar (starting the servers first if needed).
+/// `source` is `own` or `hosted`, for the page to show which of its options is in use.
 #[tauri::command]
 pub fn save_model_server(
     app: AppHandle,
     base_url: String,
     api_key: String,
     model: String,
+    source: String,
 ) -> Result<(), String> {
     let base_url = models::normalize_base_url(&base_url).map_err(fail)?;
+    // Which of the page's forms it came from: a server of the user's own, or a hosted provider.
+    let source = match source.as_str() {
+        models::SOURCE_HOSTED => models::SOURCE_HOSTED,
+        _ => models::SOURCE_OWN,
+    };
     let state = app.state::<AppState>();
     app::refuse_when_remote(&state.config()).map_err(fail)?;
     let model = model.trim().to_string();
@@ -103,6 +110,7 @@ pub fn save_model_server(
     state
         .update_config(|c| {
             c.llama = None;
+            c.model_source = source.to_string();
             c.llm_base_url = base_url;
             c.llm_api_key = api_key.trim().to_string();
             c.llm_model = model;

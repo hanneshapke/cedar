@@ -15,7 +15,8 @@ outside the app, and so does the model server unless the app sets one up:
 - **The model server.** vLLM doesn't run on macOS or Windows, so the app asks for the address of
   any OpenAI-compatible server with tool calling: Ollama or LM Studio on the same computer, or a
   vLLM on another machine (a DGX Spark over Tailscale, say). It lists the server's models and you
-  pick one. On a computer whose GPU has the memory for it, the app can instead download
+  pick one. A hosted provider such as Baseten, Nebius or Doubleword works the same way, with an
+  API key. On a computer whose GPU has the memory for it, the app can instead download
   llama.cpp and a model and run them itself (see
   [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)).
 
@@ -175,11 +176,18 @@ Running everything here, the setup window shows three steps:
   bar counts layers). Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
   tool.
-- **Model server**: pick a preset or type the address, add an API key if the server needs one,
-  click *List models*, choose one, and *Save*. The app registers it in cedar's model registry (as
-  the entry `default`), which cedar keeps in its database. Where the GPU allows it, *Set up a
-  model for me* above the form does all of this with llama.cpp (see
-  [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)).
+- **Model server**: three options, each opening its form under it. The one in use is marked.
+  - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
+    (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out
+    when no GPU here has the memory for it.
+  - *Use a model server you already run*: pick a preset (Ollama, LM Studio, vLLM, llama.cpp,
+    SGLang) or type the address, add an API key if the server needs one, click *List models*,
+    choose one, and *Save*.
+  - *Use a hosted provider*: pick the provider, enter its API key, click *List models*, choose
+    one, and *Save* (see [Using a hosted provider](#using-a-hosted-provider)).
+
+  Whichever it is, the app registers it in cedar's model registry (as the entry `default`),
+  which cedar keeps in its database.
 
 The window switches to the chat once both servers answer and the model is registered.
 
@@ -286,8 +294,9 @@ signature and running it. Its progress and any error go to `docker-setup.log` in
 ### Setting a model up with llama.cpp
 
 When the app starts it looks at the computer's GPU. If one of the models below fits its memory,
-the Model server step offers *Set up a model for me*, which names the GPU, the model and the size
-of the download. Otherwise the step shows only the form for a server of your own.
+the Model server step's first option, *Run a model here with llama.cpp*, opens to *Set up a model
+for me*, which names the GPU, the model and the size of the download. Otherwise that option is
+greyed out and the other two remain.
 
 | GPU memory | Model | Download |
 | --- | --- | --- |
@@ -327,10 +336,32 @@ data folder (see [Where things are](#where-things-are)). The app starts `llama-s
 two servers and stops it when you quit; one that a crash of the app left running is ended the
 next time the app starts. `llama-server.log` in the logs folder is its output.
 
-*Remove* stops it and deletes llama.cpp and the model. Saving a server of your own in the form
-below stops it too and keeps the files, so the button brings it back without a download. An
+*Remove* stops it and deletes llama.cpp and the model. Saving one of the other two options
+stops it too and keeps the files, so the button brings it back without a download. An
 update of Cedar that pins a newer llama.cpp downloads that build on its first start; the model
 is kept.
+
+### Using a hosted provider
+
+The third option sends the agent's model calls to a provider that runs open models and charges
+for what you use, so it needs no GPU: only an account there and an API key. The list has
+Baseten, Nebius and Doubleword first, then Cerebras, DeepInfra, DeepSeek, Fireworks AI, Groq,
+Hugging Face, Hyperbolic, Mistral, OpenRouter, SambaNova, Scaleway and Together AI, each with the
+address its own documentation gives for an OpenAI-compatible client (`PROVIDERS` in
+`src/models.rs`). *Other…* takes the address of any provider that is not on it. The link under
+the list opens the provider's documentation, which says how to get a key.
+
+Two things differ from a server of your own:
+
+- **What leaves the computer.** Your conversations, the system prompt and what the agent's tools
+  return are sent to the provider with every model call. The tools themselves still run in
+  Docker on this computer.
+- **The model list is long.** A provider lists hundreds of models, and not all of them call
+  tools, which Cedar needs. *Find a model* narrows the list as you type; the provider's
+  documentation says which models support tool calling (or function calling).
+
+The key is saved like any model server's: in `config.json` (mode 0600 on a Mac, in your profile
+folder on Windows) and, encrypted, in cedar's database.
 
 ## Updates
 
@@ -555,6 +586,12 @@ version; set them to use an image you built yourself (`docker build -t cedar-san
 `remote` is set, the setup page asks the question again, and with no model server chosen either
 the app starts nothing meanwhile.
 
+`model_source` records which of the setup page's three options the model server was chosen by:
+`llama`, `own` or `hosted`; in a file from before the page had them it is missing, and the
+address decides. `llama` (`{"build": "macos-arm64", "model": "gpt-oss-20b"}`, or `null`) names
+what the app installed when it runs llama.cpp itself, on `llama_port` (18081) with the key in
+`secrets.llama_api_key`; `llm_base_url` and `llm_model` then point at it.
+
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,
 `fr-FR`, `fr-BE`, `fr-CH`, `fr-CA`, `es-ES`, `es-MX`, `es-419` or `es-US`, empty until one is
@@ -708,9 +745,10 @@ One-time setup:
 | The image download fails with "denied" | The GHCR package is private or this version's images haven't been published yet (see above). You can also build the image yourself and set `sandbox_image` in `config.json`. |
 | *List models* fails | The address needs the API path (usually `/v1`). Ollama: `http://127.0.0.1:11434/v1`, LM Studio: `http://127.0.0.1:1234/v1`. A remote server must be reachable from this computer. |
 | "Cedar could not register …" | cedar checks the model server itself before keeping the entry, so the server must be running when you save and when the app starts. Start it and click *Save* again; a model registered earlier keeps working meanwhile. |
-| No *Set up a model for me* button | No GPU here has 16 GB of memory (a Mac: 32 GB in all), or it is an Intel Mac or Windows on Arm. An NVIDIA card is read with `nvidia-smi`, which comes with its driver. Use a model server of your own. |
+| *Run a model here with llama.cpp* is greyed out | No GPU here has 16 GB of memory (a Mac: 32 GB in all), or it is an Intel Mac or Windows on Arm. An NVIDIA card is read with `nvidia-smi`, which comes with its driver. Use one of the other two options. |
 | "llama.cpp did not find the GPU" | Update the graphics driver, then *Try again*; nothing is downloaded twice. `llama-server.log` and `llama-server --list-devices` in the `llama` folder say what it sees. |
 | "llama-server did not answer … within 900s" or it stops while loading | The model did not fit beside what else uses the GPU's memory. Close other programs that use it and *Check again*; `llama-server.log` has the reason. |
+| A hosted provider "rejected the API key" | The key is for another provider, was revoked, or has no credit. Create a new one in the provider's console (the link under the list) and click *List models* again. |
 | Runs finish instantly with tool calls printed as text | The model or server doesn't do tool calling. Pick a model that does; for vLLM see the [deployment guide](../DEPLOYMENT.md#2-make-sure-vllm-is-ready-for-cedar). |
 | "port … is already in use" | Something else listens on 18080 or 13000 (or 18081, llama.cpp's). Change `cedar_port`, `chat_port` or `llama_port` in `config.json`, then *Restart Services*. |
 | No notification when a response finishes | Settings → Notifications in the chat should list *Desktop notification* as set up and the default (the app sets that up on its first start, unless another method was already chosen). A response you looked at within a few seconds of it ending isn't announced. |

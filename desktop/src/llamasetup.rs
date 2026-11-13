@@ -171,6 +171,7 @@ async fn run(state: &AppState, cancel: &CancellationToken) -> Result<(), Stop> {
     state
         .update_config(|c| {
             c.llama = Some(Llama { build: plan.build.id().to_string(), model: plan.model.id.to_string() });
+            c.model_source = crate::models::SOURCE_LLAMA.to_string();
             c.llm_base_url = server::base_url(c.llama_port);
             c.llm_model = plan.model.id.to_string();
             c.llm_api_key = c.secrets.llama_api_key.clone();
@@ -213,6 +214,7 @@ pub async fn remove(app: AppHandle) -> anyhow::Result<()> {
     state.llama.stop().await;
     state.update_config(|c| {
         c.llama = None;
+        c.model_source.clear();
         c.llm_base_url.clear();
         c.llm_model.clear();
         c.llm_api_key.clear();

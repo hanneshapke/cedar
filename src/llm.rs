@@ -435,13 +435,14 @@ pub async fn list_models(
         .json()
         .await
         .map_err(|_| anyhow!("{url} did not answer like an OpenAI-compatible server"))?;
-    let models = body["data"]
-        .as_array()
-        .ok_or_else(|| anyhow!("{url} did not answer like an OpenAI-compatible server"))?
-        .iter()
-        .filter_map(|m| m["id"].as_str().map(String::from))
-        .collect();
-    Ok(models)
+    model_ids(&body).ok_or_else(|| anyhow!("{url} did not answer like an OpenAI-compatible server"))
+}
+
+/// The ids in a model list: OpenAI's `{"data": [{"id": ...}]}`, or the bare array of the same
+/// objects that some hosted providers answer with.
+fn model_ids(body: &Value) -> Option<Vec<String>> {
+    let list = body.get("data").and_then(Value::as_array).or_else(|| body.as_array())?;
+    Some(list.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
 }
 
 /// The innermost error message ("Connection refused"), which says more than reqwest's own.
@@ -456,6 +457,18 @@ fn root_cause(e: &(dyn std::error::Error + 'static)) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_lists_with_and_without_a_data_field() {
+        let ids = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(model_ids(&json!({"object": "list", "data": [{"id": "a"}, {"id": "b"}]})), Some(ids.clone()));
+        assert_eq!(model_ids(&json!([{"id": "a", "type": "chat"}, {"id": "b"}])), Some(ids));
+        assert_eq!(model_ids(&json!({"data": []})), Some(vec![]));
+        // Not a list at all: an error page, or another API's answer.
+        assert_eq!(model_ids(&json!({"error": "no"})), None);
+        assert_eq!(model_ids(&json!({"data": "x"})), None);
+        assert_eq!(model_ids(&json!("ok")), None);
+    }
 
     fn request(messages: &[Value]) -> Value {
         build_request(&MessageRequest {
