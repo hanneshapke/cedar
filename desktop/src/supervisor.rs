@@ -213,7 +213,7 @@ impl Runner {
                 return Err(e);
             }
         };
-        if let Err(e) = wait_healthy(&mut chat.child, &self.cfg.chat_url(), "cedar-chat", &chat_log).await {
+        if let Err(e) = wait_healthy(&mut chat.child, &self.cfg.local_chat_url(), "cedar-chat", &chat_log).await {
             terminate(&mut chat).await;
             terminate(&mut cedar).await;
             return Err(e);

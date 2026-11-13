@@ -232,6 +232,10 @@
 
 .cedar-pair-token { font-family: var(--mono); }
 .cedar-pair-acts { display: flex; gap: 8px; }
+/* Each UI's .copy-btn is a bare text button (it sits inside rows elsewhere); here it stands beside
+   Show QR code as a button of its own, the same height. */
+.cedar-pair-acts .copy-btn { padding: 7px 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-weight: 500; cursor: pointer; }
+.cedar-pair-acts .copy-btn:hover { background: var(--wash); }
 /* Black on white whatever the theme, so cameras read it. */
 .cedar-pair-qr { display: flex; flex-direction: column; gap: 8px; }
 .cedar-pair-qr[hidden] { display: none; }

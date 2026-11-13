@@ -251,7 +251,12 @@ const cedarPairing = (() => {
       const { toggle, wrap } = qrBlock(p);
       const acts = el('div', 'cedar-pair-acts');
       acts.append(toggle);
-      pair.push(acts, wrap);
+      // The same cedar://connect link as text, for the desktop app on another computer, which
+      // takes it in place of the address and token (desktop/README.md).
+      if (p.link) acts.append(button(tr('pairing.copyLink'), () => copy(p.link, tr('pairing.link'))));
+      pair.push(acts);
+      if (p.link) pair.push(note(tr('pairing.linkNote')));
+      pair.push(wrap);
     }
     parts.push(block(tr('pairing.pair'), ...pair));
 

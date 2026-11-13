@@ -1,8 +1,8 @@
-//! The one window: the setup page the app serves itself, or the chat served by cedar-chat.
+//! The one window: the setup page the app serves itself, or the chat served by cedar-chat (the
+//! app's own, or one on another computer, see remote.rs).
 
 use crate::app::AppState;
 use crate::config::Config;
-use crate::supervisor::ServiceState;
 use anyhow::{anyhow, Context, Result};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -31,12 +31,9 @@ fn setup_url() -> Url {
 }
 
 pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
-    let script = token_script(
-        &cfg.chat_url(),
-        &cfg.secrets.chat_access_token,
-        &cfg.secrets.chat_admin_token,
-    );
+    let script = token_script(&cfg.chat_url(), cfg.chat_token(), cfg.chat_admin_token());
     let chat = cfg.chat_url();
+    let remote = cfg.remote_server().is_some();
     let handle = app.clone();
     let win = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Cedar")
@@ -49,7 +46,7 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
             }
             NewWindowResponse::Deny
         })
-        .on_navigation(move |url| match page_action(url, &chat) {
+        .on_navigation(move |url| match page_action(url, &chat, remote) {
             Some(PageAction::OpenInBrowser(target)) => {
                 if let Err(e) = open_web_link(&target) {
                     eprintln!("opening {target}: {e:#}");
@@ -88,16 +85,21 @@ pub fn open_web_link(url: &Url) -> Result<()> {
 /// token the server expects (so there is no token prompt) and the admin token its Settings page
 /// sends with changes to cedar's models and integrations, and tells it that it runs in the app
 /// (whose web view can't take browser push; it offers desktop notifications instead); anywhere
-/// else it does nothing.
+/// else it does nothing. Without an admin token (a chat on another computer) the page keeps the
+/// one its Settings asked for.
 fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
     let origin = serde_json::to_string(chat_url).unwrap_or_default();
     let token = serde_json::to_string(token).unwrap_or_default();
-    let admin = serde_json::to_string(admin_token).unwrap_or_default();
+    let admin = if admin_token.is_empty() {
+        String::new()
+    } else {
+        let admin = serde_json::to_string(admin_token).unwrap_or_default();
+        format!("window.sessionStorage.setItem('cedar-chat-admin', {admin});\n      ")
+    };
     format!(
         "(function () {{\n  try {{\n    if (window.location.origin === {origin}) {{\n      \
          window.localStorage.setItem('cedar-chat-token', {token});\n      \
-         window.sessionStorage.setItem('cedar-chat-admin', {admin});\n      \
-         window.__CEDAR_DESKTOP_APP__ = true;\n    }}\n  }} catch (e) {{}}\n}})();"
+         {admin}window.__CEDAR_DESKTOP_APP__ = true;\n    }}\n  }} catch (e) {{}}\n}})();"
     )
 }
 
@@ -114,16 +116,21 @@ enum PageAction {
     /// "Connect Google", which a web view can't do every way of (passkeys, Sign in with Apple).
     /// Only https.
     OpenInBrowser(Url),
+    /// A request caught but not acted on.
+    Ignore,
 }
 
-/// The page's request, when `url` is the chat's address for one.
-fn page_action(url: &Url, chat: &str) -> Option<PageAction> {
+/// The page's request, when `url` is the chat's address for one. A chat on another computer
+/// (`remote`) can't turn on sharing this computer's chat, which isn't running; it is caught all
+/// the same, so the window doesn't load the path from that server.
+fn page_action(url: &Url, chat: &str, remote: bool) -> Option<PageAction> {
     if url.origin().ascii_serialization() != chat {
         return None;
     }
     match url.path().strip_prefix(APP_PATH)? {
         "update/install" => Some(PageAction::Install),
         "update/dismiss" => Some(PageAction::Dismiss),
+        "share/on" if remote => Some(PageAction::Ignore),
         "share/on" => Some(PageAction::ShareOn),
         "open" => url
             .query_pairs()
@@ -152,6 +159,7 @@ fn run_page_action(app: &AppHandle, action: PageAction) {
         }
         // Handled in `create`, which needs no app handle for it.
         PageAction::OpenInBrowser(_) => {}
+        PageAction::Ignore => {}
     }
 }
 
@@ -242,10 +250,11 @@ pub fn show_setup(app: &AppHandle) -> Result<()> {
     present(&win)
 }
 
-/// What "Open Cedar" shows: the chat while it runs, the setup page otherwise.
+/// What "Open Cedar" shows: the chat while it runs (or answers, on another computer), the setup
+/// page otherwise.
 pub fn show(app: &AppHandle) -> Result<()> {
     let state = app.state::<AppState>();
-    if state.supervisor.state() == ServiceState::Running {
+    if state.chat_ready() {
         show_chat(app)
     } else {
         show_setup(app)
@@ -263,6 +272,12 @@ mod tests {
         assert!(s.contains(r#"localStorage.setItem('cedar-chat-token', "abc\"def")"#));
         assert!(s.contains(r#"sessionStorage.setItem('cedar-chat-admin', "adm")"#));
         assert!(s.contains("window.__CEDAR_DESKTOP_APP__ = true;"));
+        // A remote chat: its own admin token, from its Settings, is left alone.
+        let s = token_script("https://spark.t.ts.net", "tok", "");
+        assert!(s.contains(r#"window.location.origin === "https://spark.t.ts.net""#));
+        assert!(s.contains(r#"localStorage.setItem('cedar-chat-token', "tok")"#));
+        assert!(!s.contains("cedar-chat-admin"));
+        assert!(s.contains("window.__CEDAR_DESKTOP_APP__ = true;"));
     }
 
     #[test]
@@ -279,7 +294,7 @@ mod tests {
     #[test]
     fn only_the_chats_own_requests_reach_the_app() {
         let chat = "http://127.0.0.1:13000";
-        let at = |u: &str| page_action(&Url::parse(u).unwrap(), chat);
+        let at = |u: &str| page_action(&Url::parse(u).unwrap(), chat, false);
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), Some(PageAction::Install));
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/dismiss?x=1"), Some(PageAction::Dismiss));
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/share/on"), Some(PageAction::ShareOn));
@@ -295,6 +310,12 @@ mod tests {
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/open?url=http%3A%2F%2Fexample.com%2F"), None);
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/open"), None);
         assert_eq!(at(&open.replace("13000", "13001")), None);
+
+        let remote = "https://spark.t.ts.net";
+        let at = |u: &str| page_action(&Url::parse(u).unwrap(), remote, true);
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/update/install"), Some(PageAction::Install));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/share/on"), Some(PageAction::Ignore));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), None);
     }
 
     fn urlencoding(s: &str) -> String {

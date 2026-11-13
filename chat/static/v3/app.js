@@ -1225,7 +1225,7 @@ function updateChrome() {
   els.filesBtn.hidden = !c;
   cedarAgents.badge(els.agentBadge, c, c?.agent);
   cedarStar.setCurrent(c);
-  els.agentBtn.hidden = !c || busy || state.sending || !hasCompletedTurn();
+  els.agentBtn.hidden = Boolean(!c || c.schedule_id || busy || state.sending || !hasCompletedTurn());
   els.stop.hidden = !busy;
   els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString(cedarI18n.locale, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
   els.status.className = 'status' + (busy ? ' live' : latest?.lastEvent === 'run.failed' ? ' error' : '');

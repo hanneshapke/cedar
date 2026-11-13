@@ -148,7 +148,21 @@ there and sandboxes run on Docker.
 
 ### Setting it up
 
-The setup window shows three steps:
+On a first launch the setup window asks for the language, then **How do you want to use Cedar?**:
+
+- **Run everything on this computer**: the app runs both servers here, with the steps below.
+- **Connect to Cedar on another computer**: it asks for that server's address and access token
+  instead (see [Using Cedar that runs on another computer](#using-cedar-that-runs-on-another-computer)).
+
+On a first launch the app starts nothing until one is picked: it doesn't look for Docker, start
+Docker Desktop or download the sandbox image, so connecting to another computer never sends you
+off to install Docker. The question is asked once: not again after an answer (`run_locally` or
+`remote` in [`config.json`](#configjson)). Someone who set Cedar up with an earlier version is
+asked once too, after updating, with the first option worded *Keep running everything on this
+computer*; their servers start as before meanwhile, so scheduled agents don't stop, and the window
+shows the chat once the question is answered. Either way can be switched later on the setup page.
+
+Running everything here, the setup window shows three steps:
 
 - **Docker**: found and running, or what to do. *Set up Docker for me* does it (see below), and
   a Docker Desktop that isn't running is started (on a Mac, OrbStack or Rancher Desktop too, when
@@ -290,6 +304,54 @@ The chat page in the window gets no access to the app: its banner only shows wha
 it, and its buttons send the window to `/__cedar-app/update/install` or `…/dismiss` on the chat's
 own address, which the window catches instead of loading (`src/window.rs`).
 
+## Using Cedar that runs on another computer
+
+The app normally runs both servers on this computer, so scheduled agents only run while it is
+awake and the app is open. If Cedar already runs on a machine that stays on (a DGX Spark set up
+with [DEPLOYMENT.md](../DEPLOYMENT.md), a mini PC, or another Mac running this app with sharing
+turned on), the app can be a window onto that server instead, the way the phone apps are:
+
+```
+Cedar (menu bar / tray) ── window ──HTTPS──▶ cedar-chat ──▶ cedar ──▶ model server   (the other computer)
+        └── notifications ◀── /api/notifications/desktop/events ──┘
+```
+
+On a first launch, pick **Connect to Cedar on another computer** (see [Setting it
+up](#setting-it-up)); later, open **Use Cedar running on another computer** at the top of the
+setup page. Enter the server's address and access token, both of which the other computer's chat shows under
+Settings → Phone (or its Cedar app's setup page under *iPhone, iPad & Android*). You can paste a
+`cedar://connect?server=…&token=…` link instead, the one the phone apps' QR code carries
+(*Copy connection link* on the chat's Settings → Phone page copies it; `scripts/cedar-stack.sh --pair` prints it). *Connect* first checks that the server answers and
+accepts the token; then the app stops its own servers and tailnet sharing, saves the server as
+`remote` in [`config.json`](#configjson) and restarts into it.
+
+While it is connected:
+
+- The app starts no servers and needs no Docker and no model server. The setup page shows only
+  the server, its state, and *Open chat*, *Open in browser*, *Copy access token*, *Check again*
+  and *Disconnect*. *Open Cedar* in the menu shows its chat once it answered; *Restart Services*
+  checks the server again.
+- Conversations, agents, memory, records, workspaces and personal tools all live on that server.
+  Agents run there whether or not this computer is on.
+- The app follows that server's desktop notification stream, so its responses and agents notify
+  here. The chat sends to one default method; pick *Desktop notification* in its Settings →
+  Notifications (or as an agent's own method) for them to show up on this computer.
+- Models, tools, integrations and sharing are set up in that chat's Settings. The window doesn't
+  hand it an admin token: the Settings page asks for that server's own once, as in a browser.
+- The address must be HTTPS (on a tailnet, the `https://<computer>.<tailnet>.ts.net` address
+  `tailscale serve` gives it), since the access token goes with every request; plain HTTP is only
+  accepted for `localhost`. A model server on this computer (Ollama, LM Studio) is not reachable
+  from the other one unless you expose it there yourself.
+- The other server's pages get no access to the app, as the local chat's don't
+  (`capabilities/default.json` grants the app's commands only to its own setup page). They can
+  only ask for the update banner's *Update* and *Dismiss*, which act on this app's own, signed
+  update; *Turn on sharing* is ignored.
+
+*Disconnect* removes the setting and restarts the app, which then runs its own servers again, with
+the conversations it had before. Switching either way restarts Cedar, which stops a response still
+running on this computer's own servers; the window hands the chat page its token from a script
+that is fixed when the window is built, so the switch takes a restart.
+
 ## Using it from an iPhone, iPad or Android phone
 
 The [iOS app](../iOS/README.md) and the Android app connect over HTTPS only, so the setup page's
@@ -418,6 +480,8 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "check_updates": true,
   "dismissed_update": "",
   "locale": "de-CH",
+  "remote": null,
+  "run_locally": true,
   "cedar_env": { "SANDBOX_NETWORK": "bridge", "RUN_TIMEOUT_SECS": "1800" },
   "chat_env": {},
   "secrets": { "cedar_api_key": "…", "cedar_secret_key": "…", "chat_access_token": "…", "chat_admin_token": "…" }
@@ -428,6 +492,13 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
 [README](../README.md#configuration) or [chat/README.md](../chat/README.md#configuration) can be
 set there. An empty `sandbox_image` or `browser_image` means the published image for this app
 version; set them to use an image you built yourself (`docker build -t cedar-sandbox sandbox/`).
+
+`remote` is the chat server on another computer the app uses instead of its own, set by
+*Connect* on the setup page (see [Using Cedar that runs on another computer](#using-cedar-that-runs-on-another-computer)):
+`{"server": "https://spark.tail1234.ts.net", "token": "…"}`, or `null` to run the servers here.
+`run_locally` records the answer *Run everything on this computer*; while it is `false` and no
+`remote` is set, the setup page asks the question again, and with no model server chosen either
+the app starts nothing meanwhile.
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,
@@ -588,6 +659,8 @@ One-time setup:
 | iPhone, iPad & Android: "HTTPS is not enabled" or "no tailnet name" | Turn on HTTPS Certificates and MagicDNS in the Tailscale admin console's DNS page, then click *Try again*. |
 | The iOS or Android app can't connect | Use the `https://…ts.net` address from the setup page, without a port; check that the phone is logged in to the same tailnet, that the computer is awake, and that `tailscale serve status` on it lists the chat port. The first connection can take a few seconds while Tailscale gets the certificate. |
 | Cedar stopped with an error | *Open Logs Folder*; `cedar.log` says why. After three quick crashes the app stops retrying until *Restart Services*. |
+| Cedar on another computer: "can't reach …" | The other computer must be on, serving the chat (`tailscale serve status` there lists it), and this computer on the same tailnet. Then *Check again*. |
+| Cedar on another computer: "didn't accept the access token" | The server's access token changed. *Disconnect*, then connect again with the new one. |
 
 ### macOS
 
