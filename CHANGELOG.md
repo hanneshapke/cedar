@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 - **The desktop app can use Cedar running on another computer.** Agents run where the chat server runs, so with Cedar in the Mac or Windows app they ran only while that computer was awake and the app open. The setup page now has **Use Cedar running on another computer**: enter the address and access token of a chat server on a machine that stays on (a DGX Spark, a mini PC, another Mac sharing its chat over Tailscale), or paste the `cedar://connect` link the phone apps scan, and the app becomes a window onto that server, as the phone apps are. It starts no servers and needs no Docker or model server; agents keep running on the server while this computer sleeps, and its desktop notifications still arrive here. *Connect* checks that the server answers and accepts the token before switching; the address must be HTTPS (plain HTTP only to `localhost`). *Disconnect* goes back to the servers on this computer. Either switch restarts the app. Saved as `remote` in `config.json`.
 - **The desktop app asks first how it is used.** On a first launch, after the language, the setup window asks whether to **run everything on this computer** or **connect to Cedar on another computer**, and starts nothing until it is answered: it no longer looks for Docker, starts Docker Desktop or downloads the sandbox image right away, so someone connecting to another computer isn't sent off to install Docker. The answer is kept (`run_locally` in `config.json`). Someone who set Cedar up with an earlier version is asked once too, after updating, with *keep running everything on this computer* as the first option; their servers start as before while the question is open, so scheduled agents don't stop.
+- **The last result on an agent's card opens that run.** On the web chat's Agents page, a click on what a card shows of the latest run now opens that run's conversation; the rest of the card opens the agent as before. A conversation that is an agent's run no longer offers *Make an agent*, as in the iPhone and Android apps.
 
 ## 0.7.0
 
