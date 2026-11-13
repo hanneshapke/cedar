@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- **The desktop app opens Google's sign-in in your browser.** *Connect Google* in Settings loaded Google's consent page inside the app's window, where passkeys and Sign in with Apple don't work. In the Mac and Windows app it now opens in the default browser; once you have signed in, the page there says to go back to Cedar, and Settings shows the connected account when the window comes forward. In a browser the sign-in stays in the page as before.
+
 ## 0.8.0
 
 - **The desktop app can use Cedar running on another computer.** Agents run where the chat server runs, so with Cedar in the Mac or Windows app they ran only while that computer was awake and the app open. The setup page now has **Use Cedar running on another computer**: enter the address and access token of a chat server on a machine that stays on (a DGX Spark, a mini PC, another Mac sharing its chat over Tailscale), or paste the `cedar://connect` link the phone apps scan, and the app becomes a window onto that server, as the phone apps are. It starts no servers and needs no Docker or model server; agents keep running on the server while this computer sleeps, and its desktop notifications still arrive here. *Connect* checks that the server answers and accepts the token before switching; the address must be HTTPS (plain HTTP only to `localhost`). *Disconnect* goes back to the servers on this computer. Either switch restarts the app. Saved as `remote` in `config.json`.
