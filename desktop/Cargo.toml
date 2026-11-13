@@ -19,6 +19,8 @@ anyhow = "1"
 base64 = "0.22"
 # The QR code and the Tailscale checks, shared with cedar-chat's Settings page.
 cedar-pairing = { path = "../pairing" }
+# Which llama.cpp build and model suit this computer's GPU, and installing them (src/llamasetup.rs).
+cedar-llama = { path = "../llama" }
 futures-util = "0.3"
 hex = "0.4"
 open = "5"

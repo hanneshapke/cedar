@@ -5,6 +5,8 @@
 
 use crate::config::{Config, VERSION};
 use crate::docker::{self, DockerCli};
+use crate::llamaserver::LlamaServer;
+use crate::llamasetup;
 use crate::pull::PullProgress;
 use crate::models;
 use crate::paths::Paths;
@@ -18,6 +20,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
@@ -44,8 +47,8 @@ pub enum ImagesStatus {
     Failed(String),
 }
 
-/// Setting Docker up from the setup page (Windows and macOS, see winsetup.rs and macsetup.rs), or
-/// installing Tailscale (tssetup.rs).
+/// Setting Docker up from the setup page (Windows and macOS, see winsetup.rs and macsetup.rs),
+/// installing Tailscale (tssetup.rs), or installing llama.cpp and a model (llamasetup.rs).
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
 pub enum SetupStatus {
@@ -97,6 +100,19 @@ pub enum ShareStatus {
     Failed(String),
 }
 
+/// llama.cpp as the model server, set up and run by the app (llamasetup.rs, llamaserver.rs).
+#[derive(Serialize, Clone, Debug)]
+pub struct LlamaStatus {
+    /// What the page offers to install: this computer's GPU can run one of Cedar's models.
+    pub offer: Option<llamasetup::Offer>,
+    pub setup: SetupStatus,
+    /// How far the download is, from 0 to 1, while there is one.
+    pub progress: Option<f64>,
+    /// The model it runs, once installed; `None` while the model server is the user's own.
+    pub model: Option<String>,
+    pub server: ServiceState,
+}
+
 pub struct AppState {
     pub paths: Paths,
     config: Mutex<Config>,
@@ -115,6 +131,12 @@ pub struct AppState {
     /// Whether a newer release is out, and how far installing it got (see update.rs).
     update: Mutex<UpdateStatus>,
     pub supervisor: Supervisor,
+    /// What suits this computer's GPU, once it was looked at (see `llamasetup::detect`).
+    llama_plan: Mutex<Option<cedar_llama::Plan>>,
+    llama_setup: Mutex<(SetupStatus, Option<f64>)>,
+    /// Stops the download that is under way.
+    llama_cancel: Mutex<CancellationToken>,
+    pub llama: LlamaServer,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
 }
@@ -155,6 +177,7 @@ pub struct Status {
     pub config_path: String,
     pub sandbox_image: String,
     pub update: UpdateStatus,
+    pub llama: LlamaStatus,
     pub check_updates: bool,
     /// The language picked on the page; empty until one is (the page then asks first).
     pub locale: String,
@@ -164,6 +187,10 @@ impl AppState {
     pub fn new(paths: Paths, config: Config, exe_dir: PathBuf) -> Self {
         Self {
             supervisor: Supervisor::new(exe_dir, paths.clone()),
+            llama_plan: Mutex::new(None),
+            llama_setup: Mutex::new((SetupStatus::Idle, None)),
+            llama_cancel: Mutex::new(CancellationToken::new()),
+            llama: LlamaServer::new(paths.clone()),
             paths,
             config: Mutex::new(config),
             docker: Mutex::new(DockerStatus::Checking),
@@ -217,6 +244,56 @@ impl AppState {
     /// Marks installing Tailscale as started, unless it already runs.
     pub fn begin_tailscale_setup(&self) -> bool {
         begin(&self.tailscale_setup)
+    }
+
+    pub fn set_llama_plan(&self, plan: Option<cedar_llama::Plan>) {
+        *self.llama_plan.lock().unwrap() = plan;
+    }
+
+    pub fn llama_plan(&self) -> Option<cedar_llama::Plan> {
+        self.llama_plan.lock().unwrap().clone()
+    }
+
+    /// The step the llama.cpp setup is on and, during a download, how far it is.
+    pub fn set_llama_setup(&self, s: SetupStatus, progress: Option<f64>) {
+        *self.llama_setup.lock().unwrap() = (s, progress);
+    }
+
+    /// Marks the llama.cpp setup as started, unless it already runs.
+    pub fn begin_llama_setup(&self) -> bool {
+        let mut setup = self.llama_setup.lock().unwrap();
+        if matches!(setup.0, SetupStatus::Running(_)) {
+            return false;
+        }
+        *setup = (SetupStatus::Running(crate::i18n::t("setup.starting")), None);
+        true
+    }
+
+    /// A fresh token for a download that starts now; [`Self::cancel_llama`] stops that download.
+    pub fn new_llama_cancel(&self) -> CancellationToken {
+        let token = CancellationToken::new();
+        *self.llama_cancel.lock().unwrap() = token.clone();
+        token
+    }
+
+    /// Stops the llama.cpp download; what arrived stays for the next try.
+    pub fn cancel_llama(&self) {
+        self.llama_cancel.lock().unwrap().cancel();
+    }
+
+    fn llama_status(&self, cfg: &Config) -> LlamaStatus {
+        let (setup, progress) = self.llama_setup.lock().unwrap().clone();
+        let installed = cfg.llama.as_ref().map(|l| {
+            let known = cedar_llama::catalog::by_id(&l.model);
+            known.map_or_else(|| l.model.clone(), |m| m.label.to_string())
+        });
+        LlamaStatus {
+            offer: self.llama_plan().as_ref().map(llamasetup::offer),
+            setup,
+            progress,
+            model: installed,
+            server: self.llama.state(),
+        }
     }
 
     pub fn update(&self) -> UpdateStatus {
@@ -339,25 +416,43 @@ impl AppState {
             config_path: self.paths.config().to_string_lossy().into_owned(),
             sandbox_image: cfg.sandbox_image(),
             update: self.update(),
+            llama: self.llama_status(&cfg),
             check_updates: cfg.check_updates,
             locale: cfg.locale.clone(),
         }
     }
 
-    /// Puts the chosen model server into cedar's registry. cedar must be running.
-    async fn register_model(&self) -> bool {
+    /// Puts the chosen model server into cedar's registry. cedar must be running. A model the app
+    /// installed for llama.cpp comes with its label, reply length and reasoning levels; `reset`
+    /// puts cedar's defaults back in their place, once, when the user's own server replaces it.
+    async fn register_model(&self, reset: bool) -> bool {
         let cfg = self.config();
         if !cfg.configured() {
             self.set_model(ModelStatus::Unset);
             return false;
         }
         self.set_model(ModelStatus::Registering);
+        let installed = cfg.llama.as_ref().and_then(|l| cedar_llama::catalog::by_id(&l.model));
+        let extras = match installed {
+            Some(m) => Some(models::Extras {
+                label: m.label,
+                max_tokens: m.max_tokens,
+                reasoning_levels: m.reasoning_levels,
+            }),
+            None if reset => Some(models::Extras {
+                label: cfg.llm_model.trim(),
+                max_tokens: models::DEFAULT_MAX_TOKENS,
+                reasoning_levels: &[],
+            }),
+            None => None,
+        };
         let result = models::register(
             &cfg.cedar_url(),
             &cfg.secrets.cedar_api_key,
             &cfg.llm_base_url,
             &cfg.llm_api_key,
             &cfg.llm_model,
+            extras,
         )
         .await;
         match result {
@@ -481,12 +576,39 @@ pub async fn bootstrap(app: AppHandle) {
         state.serve_share(&cfg, url).await;
     }
 
-    // 4. The model, into cedar's registry. A failure here (the model server is down, say) leaves
+    // 4. llama.cpp, when the app runs it as the model server: the model is loaded before cedar
+    //    is told about it, since cedar asks a model server for its models when it registers one.
+    if !start_llama(&state).await {
+        return;
+    }
+
+    // 5. The model, into cedar's registry. A failure here (the model server is down, say) leaves
     //    the servers up: cedar keeps the last registered model, and the page says what's wrong.
     //    While the setup page asks how Cedar is used, the window stays on the question.
-    if state.register_model().await && !state.config().asks_choice() {
+    if state.register_model(false).await && !state.config().asks_choice() {
         if let Err(e) = window::show_chat(&app) {
             eprintln!("showing the chat: {e:#}");
+        }
+    }
+}
+
+/// Starts the app's llama-server when llama.cpp is the model server (downloading a build first
+/// if an update of the app pinned a newer one), and stops it when the user has their own. `false`
+/// with the reason on the page when the model could not be loaded.
+async fn start_llama(state: &AppState) -> bool {
+    let started = match llamasetup::ensure(state).await {
+        Ok(None) => {
+            state.llama.stop().await;
+            return true;
+        }
+        Ok(Some(spec)) => state.llama.start(spec).await.map_err(|e| format!("{e:#}")),
+        Err(why) => Err(why),
+    };
+    match started {
+        Ok(()) => true,
+        Err(why) => {
+            state.set_model(ModelStatus::Failed(why));
+            false
         }
     }
 }
@@ -534,14 +656,17 @@ async fn start_docker_desktop(state: &AppState, cli: &DockerCli) -> Option<Resul
 
 /// After the model server was changed on the setup page: registers it with the running cedar,
 /// or runs the launch sequence if the servers aren't up yet. No restart, so a run in progress
-/// goes on.
-pub async fn apply_model_server(app: AppHandle) {
+/// goes on. `reset`: the user's own server replaces the model the app ran with llama.cpp.
+pub async fn apply_model_server(app: AppHandle, reset: bool) {
     let state = app.state::<AppState>();
     if state.supervisor.state() != ServiceState::Running {
         bootstrap(app.clone()).await;
         return;
     }
-    if state.register_model().await {
+    if !start_llama(&state).await {
+        return;
+    }
+    if state.register_model(reset).await {
         if let Err(e) = window::show_chat(&app) {
             eprintln!("showing the chat: {e:#}");
         }

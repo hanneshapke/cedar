@@ -97,15 +97,42 @@ pub fn save_model_server(
     if model.is_empty() {
         return Err(t("cmd.pick_model"));
     }
+    // The user's own server takes the place of the llama.cpp the app ran, which then stops;
+    // what was downloaded for it stays until "Remove".
+    let was_llama = state.config().llama.is_some();
     state
         .update_config(|c| {
+            c.llama = None;
             c.llm_base_url = base_url;
             c.llm_api_key = api_key.trim().to_string();
             c.llm_model = model;
         })
         .map_err(fail)?;
-    tauri::async_runtime::spawn(app::apply_model_server(app));
+    tauri::async_runtime::spawn(app::apply_model_server(app, was_llama));
     Ok(())
+}
+
+/// Installs llama.cpp and the model that suits this computer's GPU, and makes it the model
+/// server. The page follows along in `llama.setup`.
+#[tauri::command]
+pub fn install_llama(app: AppHandle) -> Result<(), String> {
+    if !app.state::<AppState>().begin_llama_setup() {
+        return Err(t("cmd.llama_busy"));
+    }
+    tauri::async_runtime::spawn(crate::llamasetup::install(app));
+    Ok(())
+}
+
+/// Stops the download; "Set up for me" continues it later.
+#[tauri::command]
+pub fn cancel_llama(state: State<'_, AppState>) {
+    state.cancel_llama();
+}
+
+/// Stops llama.cpp and deletes it and its model.
+#[tauri::command]
+pub async fn remove_llama(app: AppHandle) -> Result<(), String> {
+    crate::llamasetup::remove(app).await.map_err(fail)
 }
 
 /// Turns the browser tool on or off; on pulls its image and restarts cedar with `BROWSER=on`.

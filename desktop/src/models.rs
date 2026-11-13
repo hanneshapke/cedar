@@ -94,6 +94,16 @@ mod tests {
 /// The registry entry the app manages. The chat's Settings page can add others beside it.
 pub const REGISTRY_ID: &str = "default";
 
+/// cedar's own default for the most tokens of one reply.
+pub const DEFAULT_MAX_TOKENS: u32 = 16384;
+
+/// What the app knows about a model beyond its name: the ones it installs for llama.cpp.
+pub struct Extras<'a> {
+    pub label: &'a str,
+    pub max_tokens: u32,
+    pub reasoning_levels: &'a [&'a str],
+}
+
 #[derive(Serialize)]
 struct ModelSpec<'a> {
     base_url: &'a str,
@@ -102,6 +112,14 @@ struct ModelSpec<'a> {
     /// An empty string removes a saved key, which is what an emptied field means.
     api_key: &'a str,
     is_default: bool,
+    /// Left out, cedar keeps what the entry has (the chat's Settings may have changed it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_levels: Option<&'a [&'a str]>,
+    /// Empty: no default level, since one of another model's levels would be refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_reasoning: Option<&'a str>,
 }
 
 /// Registers (or updates) the model server in cedar's registry: `PUT /v1/admin/models/default`.
@@ -113,6 +131,7 @@ pub async fn register(
     base_url: &str,
     api_key: &str,
     model: &str,
+    extras: Option<Extras<'_>>,
 ) -> Result<()> {
     let base = normalize_base_url(base_url)?;
     let model = model.trim();
@@ -129,9 +148,12 @@ pub async fn register(
         .json(&ModelSpec {
             base_url: &base,
             model,
-            label: model,
+            label: extras.as_ref().map_or(model, |e| e.label),
             api_key: api_key.trim(),
             is_default: true,
+            max_tokens: extras.as_ref().map(|e| e.max_tokens),
+            reasoning_levels: extras.as_ref().map(|e| e.reasoning_levels),
+            default_reasoning: extras.as_ref().map(|_| ""),
         })
         .send()
         .await

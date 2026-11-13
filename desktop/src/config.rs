@@ -45,6 +45,11 @@ pub struct Config {
     /// The user chose to run the servers on this computer, on the setup page's question (see
     /// [`Self::asks_choice`]).
     pub run_locally: bool,
+    /// llama.cpp installed and run by the app as the model server (see llamasetup.rs), which
+    /// `llm_base_url` and `llm_model` then point at. `None`: a model server of the user's own.
+    pub llama: Option<Llama>,
+    /// The port the app's llama-server listens on, on this computer only.
+    pub llama_port: u16,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
@@ -67,6 +72,17 @@ pub struct Remote {
     pub token: String,
 }
 
+/// What the app installed for llama.cpp: names from cedar-llama's lists, so that a later version
+/// of the app finds the same build and model again.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct Llama {
+    /// `cedar_llama::release::Build::id`, such as `macos-arm64`.
+    pub build: String,
+    /// `cedar_llama::catalog::Model::id`, such as `gpt-oss-20b`.
+    pub model: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default)]
 pub struct Secrets {
@@ -78,6 +94,8 @@ pub struct Secrets {
     pub chat_access_token: String,
     /// Lets the chat's Settings page manage cedar's integrations; seeded into the page too.
     pub chat_admin_token: String,
+    /// The key the app's llama-server asks for, so that only cedar uses it.
+    pub llama_api_key: String,
 }
 
 impl Default for Config {
@@ -98,6 +116,8 @@ impl Default for Config {
             locale: String::new(),
             remote: None,
             run_locally: false,
+            llama: None,
+            llama_port: 18081,
             cedar_env: BTreeMap::new(),
             chat_env: BTreeMap::new(),
             secrets: Secrets::default(),
@@ -128,6 +148,7 @@ impl Config {
             &mut self.secrets.cedar_api_key,
             &mut self.secrets.chat_access_token,
             &mut self.secrets.chat_admin_token,
+            &mut self.secrets.llama_api_key,
         ] {
             if slot.trim().is_empty() {
                 *slot = random_hex(24);
