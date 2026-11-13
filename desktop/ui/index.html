@@ -136,15 +136,16 @@
   <p id="onboarding-error" class="error"></p>
 </section>
 
-<!-- The second step on a first launch: run Cedar here, or use it on another computer. Nothing is
-     started, checked or downloaded before this is answered (see needs_choice in src/config.rs). -->
+<!-- After the language, once: run Cedar here, or use it on another computer. On a first launch
+     nothing is started, checked or downloaded before this is answered; an earlier setup keeps
+     running meanwhile (see asks_choice and holds_start in src/config.rs). -->
 <section id="choose" class="onboarding hidden" aria-labelledby="choose-title">
   <h1 id="choose-title" data-i18n="choose.title">How do you want to use Cedar?</h1>
-  <p class="muted" data-i18n="choose.intro">You can switch later on this setup page.</p>
+  <p class="muted" id="choose-intro" data-i18n="choose.intro">You can switch later on this setup page.</p>
   <div class="choices" id="choose-options">
     <button type="button" class="choice" id="choose-local">
-      <strong data-i18n="choose.local">Run everything on this computer</strong>
-      <span data-i18n="choose.localText">Cedar runs its servers here. It needs Docker, which Cedar can set up for you, and a model server such as Ollama or LM Studio, on this computer or another. Scheduled agents run while this computer is awake.</span>
+      <strong id="choose-local-title" data-i18n="choose.local">Run everything on this computer</strong>
+      <span id="choose-local-text" data-i18n="choose.localText">Cedar runs its servers here. It needs Docker, which Cedar can set up for you, and a model server such as Ollama or LM Studio, on this computer or another. Scheduled agents run while this computer is awake.</span>
     </button>
     <button type="button" class="choice" id="choose-remote">
       <strong data-i18n="choose.remote">Connect to Cedar on another computer</strong>

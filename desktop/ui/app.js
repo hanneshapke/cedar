@@ -433,9 +433,11 @@ function renderTailscaleSetup(s, p) {
 // after that the header's Language menu changes it. It is saved in the app's config.json, so the
 // tray menu and the app's own messages follow it too.
 //
-// Then, until it is answered, how Cedar is used: on this computer, or a server on another one
-// (status.needs_choice). The app starts nothing before that, so someone connecting to another
-// computer isn't sent off to install Docker or download the sandbox image.
+// Then, once, how Cedar is used: on this computer, or a server on another one
+// (status.needs_choice). On a first launch the app starts nothing before that, so someone
+// connecting to another computer isn't sent off to install Docker or download the sandbox image.
+// Someone who set Cedar up with an earlier version (status.configured) is asked too, with their
+// setup kept running meanwhile, and "this computer" worded as keeping it.
 let shown = null; // 'onboarding', 'choose' or 'panel', once the first status is in
 
 function show(which) {
@@ -449,12 +451,22 @@ function show(which) {
 /** The step after the language, or the panel once the question is answered. */
 function afterLanguage(s) {
   if (s && s.needs_choice) {
+    renderChoose(s);
     chooseStep(null);
     show('choose');
     $('choose-local').focus();
   } else {
     show('panel');
   }
+}
+
+/** The question's wording: a first setup, or one that already runs here. */
+function renderChoose(s) {
+  const keep = Boolean(s.configured);
+  const say = (id, key) => { $(id).dataset.i18n = key; $(id).textContent = tr(key); };
+  say('choose-intro', keep ? 'choose.introExisting' : 'choose.intro');
+  say('choose-local-title', keep ? 'choose.localKeep' : 'choose.local');
+  say('choose-local-text', keep ? 'choose.localKeepText' : 'choose.localText');
 }
 
 // The two options, or (`remote`) the connect form, which lives in the panel's remote section and
@@ -588,6 +600,7 @@ async function refresh() {
   }
   // Answered elsewhere meanwhile (the menu's Restart, a config.json edited by hand).
   if (shown === 'choose' && !s.needs_choice) show('panel');
+  if (shown === 'choose') renderChoose(s);
   if (shown === 'panel') render(s);
   else lastStatus = s;
 }

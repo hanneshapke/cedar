@@ -187,14 +187,11 @@ pub async fn connect_remote(
     crate::remote::switch(app, Some(remote)).await.map_err(fail)
 }
 
-/// The first question's "Run everything on this computer": the launch sequence starts.
+/// The question's "this computer": the launch sequence starts, or the chat shows if it already
+/// runs (see `app::choose_local`).
 #[tauri::command]
 pub fn choose_local(app: AppHandle) -> Result<(), String> {
-    app.state::<AppState>()
-        .update_config(|c| c.run_locally = true)
-        .map_err(fail)?;
-    tauri::async_runtime::spawn(app::bootstrap(app));
-    Ok(())
+    app::choose_local(app).map_err(fail)
 }
 
 /// Goes back to running the servers on this computer; the app restarts.

@@ -42,8 +42,8 @@ pub struct Config {
     /// A chat server on another computer to use instead of starting the two servers here (see
     /// [`Remote`]). `None`: everything runs on this computer.
     pub remote: Option<Remote>,
-    /// The user chose to run the servers on this computer, on the setup page's first question
-    /// (see [`Self::needs_choice`]).
+    /// The user chose to run the servers on this computer, on the setup page's question (see
+    /// [`Self::asks_choice`]).
     pub run_locally: bool,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
@@ -204,11 +204,18 @@ impl Config {
         format!("http://127.0.0.1:{}", self.chat_port)
     }
 
-    /// Nothing says yet whether Cedar runs here or uses another computer's: no remote server, no
-    /// model server (as everyone who set the app up before had to choose), and no choice made. The
-    /// setup page then asks first, and nothing is started, checked or downloaded meanwhile.
-    pub fn needs_choice(&self) -> bool {
-        self.remote_server().is_none() && !self.configured() && !self.run_locally
+    /// The setup page asks whether Cedar runs here or uses another computer's, once: until it is
+    /// answered (`run_locally`) or a remote server is set. Someone who set the app up with an
+    /// earlier version is asked too, after updating, since the choice is new.
+    pub fn asks_choice(&self) -> bool {
+        self.remote_server().is_none() && !self.run_locally
+    }
+
+    /// While the question is open on a first launch (no model server chosen either), nothing is
+    /// started, checked or downloaded. An earlier setup keeps starting as before meanwhile, so its
+    /// scheduled agents don't stop until the question is answered.
+    pub fn holds_start(&self) -> bool {
+        self.asks_choice() && !self.configured()
     }
 
     /// The chat on another computer, when one is set.
@@ -275,21 +282,28 @@ mod tests {
         assert_eq!(back["future_setting"], 1);
         assert_eq!(cfg.sandbox_image(), format!("{IMAGE_REPOSITORY}/cedar-sandbox:{VERSION}"));
         assert!(cfg.remote_server().is_none());
-        assert!(cfg.needs_choice());
+        assert!(cfg.asks_choice() && cfg.holds_start());
     }
 
     #[test]
-    fn the_first_question_is_asked_until_answered() {
+    fn the_question_is_asked_once() {
+        // A first launch: asked, and nothing starts meanwhile.
         let mut cfg = Config::default();
-        assert!(cfg.needs_choice());
+        assert!(cfg.asks_choice() && cfg.holds_start());
         cfg.run_locally = true;
-        assert!(!cfg.needs_choice());
-        // Set up before the question existed: a model server was chosen.
-        let cfg: Config = serde_json::from_str(r#"{"llm_base_url": "http://x/v1", "llm_model": "m"}"#).unwrap();
-        assert!(!cfg.needs_choice());
-        let mut cfg = Config::default();
-        cfg.remote = Some(Remote { server: "https://s.t.ts.net".into(), token: "t".into() });
-        assert!(!cfg.needs_choice());
+        assert!(!cfg.asks_choice() && !cfg.holds_start());
+        // Set up with an earlier version (a model server chosen): asked once too, but its servers
+        // keep starting meanwhile.
+        let mut cfg: Config = serde_json::from_str(r#"{"llm_base_url": "http://x/v1", "llm_model": "m"}"#).unwrap();
+        assert!(cfg.asks_choice() && !cfg.holds_start());
+        cfg.run_locally = true;
+        assert!(!cfg.asks_choice());
+        // Connected to another computer: that was the answer.
+        let cfg = Config {
+            remote: Some(Remote { server: "https://s.t.ts.net".into(), token: "t".into() }),
+            ..Config::default()
+        };
+        assert!(!cfg.asks_choice() && !cfg.holds_start());
     }
 
     #[test]

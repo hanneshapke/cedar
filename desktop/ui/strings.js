@@ -7,6 +7,9 @@
 
 cedarI18n.add({
   en: {
+    'choose.introExisting': 'New in this version: Cedar can also use a server on another computer, so scheduled agents keep running while this one sleeps. Your setup here keeps running until you choose, and you can switch later on this setup page.',
+    'choose.localKeep': 'Keep running everything on this computer',
+    'choose.localKeepText': 'Nothing changes: Cedar keeps its servers, your model server and your conversations here. Scheduled agents run while this computer is awake.',
     'choose.title': 'How do you want to use Cedar?',
     'choose.intro': 'You can switch later on this setup page.',
     'choose.local': 'Run everything on this computer',
@@ -182,6 +185,9 @@ cedarI18n.add({
   },
 
   de: {
+    'choose.introExisting': 'Neu in dieser Version: Cedar kann auch einen Server auf einem anderen Computer nutzen, damit geplante Agenten weiterlaufen, während dieser schläft. Deine Einrichtung hier läuft weiter, bis du wählst, und du kannst später auf dieser Einrichtungsseite wechseln.',
+    'choose.localKeep': 'Weiter alles auf diesem Computer ausführen',
+    'choose.localKeepText': 'Es ändert sich nichts: Cedar behält seine Server, deinen Modellserver und deine Unterhaltungen hier. Geplante Agenten laufen, solange dieser Computer wach ist.',
     'choose.title': 'Wie möchtest du Cedar nutzen?',
     'choose.intro': 'Du kannst das später auf dieser Einrichtungsseite ändern.',
     'choose.local': 'Alles auf diesem Computer ausführen',
@@ -357,6 +363,9 @@ cedarI18n.add({
   },
 
   fr: {
+    'choose.introExisting': 'Nouveau dans cette version : Cedar peut aussi utiliser un serveur sur un autre ordinateur, pour que les agents planifiés continuent de s’exécuter pendant que celui-ci est en veille. Votre configuration ici continue de tourner jusqu’à votre choix, et vous pourrez changer plus tard sur cette page de configuration.',
+    'choose.localKeep': 'Continuer à tout exécuter sur cet ordinateur',
+    'choose.localKeepText': 'Rien ne change : Cedar garde ici ses serveurs, votre serveur de modèles et vos conversations. Les agents planifiés s’exécutent tant que cet ordinateur est allumé.',
     'choose.title': 'Comment voulez-vous utiliser Cedar ?',
     'choose.intro': 'Vous pourrez changer plus tard sur cette page de configuration.',
     'choose.local': 'Tout exécuter sur cet ordinateur',
@@ -534,6 +543,9 @@ cedarI18n.add({
   // Neutral Latin American Spanish (tú, computadora, celular); es-ES below holds only what Spain
   // says differently. A Windows PC is "el equipo", as Windows itself calls it in both.
   es: {
+    'choose.introExisting': 'Novedad de esta versión: Cedar también puede usar un servidor en otra computadora, para que los agentes programados sigan ejecutándose mientras esta está en reposo. Tu configuración aquí sigue funcionando hasta que elijas, y puedes cambiarlo más tarde en esta página de configuración.',
+    'choose.localKeep': 'Seguir ejecutando todo en esta computadora',
+    'choose.localKeepText': 'No cambia nada: Cedar mantiene aquí sus servidores, tu servidor de modelos y tus conversaciones. Los agentes programados se ejecutan mientras esta computadora está encendida.',
     'choose.title': '¿Cómo quieres usar Cedar?',
     'choose.intro': 'Puedes cambiarlo más tarde en esta página de configuración.',
     'choose.local': 'Ejecutar todo en esta computadora',
@@ -710,6 +722,9 @@ cedarI18n.add({
 
   // Spain: el Mac, ordenador, móvil, icono, añadir.
   'es-ES': {
+    'choose.introExisting': 'Novedad de esta versión: Cedar también puede usar un servidor en otro ordenador, para que los agentes programados sigan ejecutándose mientras este está en reposo. Tu configuración aquí sigue funcionando hasta que elijas, y puedes cambiarlo más tarde en esta página de configuración.',
+    'choose.localKeep': 'Seguir ejecutando todo en este ordenador',
+    'choose.localKeepText': 'No cambia nada: Cedar mantiene aquí sus servidores, tu servidor de modelos y tus conversaciones. Los agentes programados se ejecutan mientras este ordenador está encendido.',
     'choose.local': 'Ejecutar todo en este ordenador',
     'choose.localText': 'Cedar ejecuta sus servidores aquí. Necesita Docker, que Cedar puede configurar por ti, y un servidor de modelos como Ollama o LM Studio, en este ordenador o en otro. Los agentes programados se ejecutan mientras este ordenador está encendido.',
     'choose.remote': 'Conectarse a Cedar en otro ordenador',

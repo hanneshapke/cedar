@@ -154,11 +154,13 @@ On a first launch the setup window asks for the language, then **How do you want
 - **Connect to Cedar on another computer**: it asks for that server's address and access token
   instead (see [Using Cedar that runs on another computer](#using-cedar-that-runs-on-another-computer)).
 
-Until one is picked, the app starts nothing: it doesn't look for Docker, start Docker Desktop or
-download the sandbox image, so connecting to another computer never sends you off to install
-Docker. The question isn't asked again once a choice is made (`run_locally` or `remote` in
-[`config.json`](#configjson)), nor of anyone who chose a model server with an earlier version.
-Either way can be switched later on the setup page.
+On a first launch the app starts nothing until one is picked: it doesn't look for Docker, start
+Docker Desktop or download the sandbox image, so connecting to another computer never sends you
+off to install Docker. The question is asked once: not again after an answer (`run_locally` or
+`remote` in [`config.json`](#configjson)). Someone who set Cedar up with an earlier version is
+asked once too, after updating, with the first option worded *Keep running everything on this
+computer*; their servers start as before meanwhile, so scheduled agents don't stop, and the window
+shows the chat once the question is answered. Either way can be switched later on the setup page.
 
 Running everything here, the setup window shows three steps:
 
@@ -494,9 +496,9 @@ version; set them to use an image you built yourself (`docker build -t cedar-san
 `remote` is the chat server on another computer the app uses instead of its own, set by
 *Connect* on the setup page (see [Using Cedar that runs on another computer](#using-cedar-that-runs-on-another-computer)):
 `{"server": "https://spark.tail1234.ts.net", "token": "…"}`, or `null` to run the servers here.
-`run_locally` records the first launch's answer *Run everything on this computer*; while it is
-`false`, no `remote` is set and no model server is chosen, the setup page asks that question again
-and the app starts nothing.
+`run_locally` records the answer *Run everything on this computer*; while it is `false` and no
+`remote` is set, the setup page asks the question again, and with no model server chosen either
+the app starts nothing meanwhile.
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,

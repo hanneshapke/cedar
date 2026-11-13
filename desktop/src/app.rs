@@ -139,8 +139,8 @@ pub struct Status {
     /// Sharing is turned on (it is served once the servers run and Tailscale is ready).
     pub tailscale_share: bool,
     pub configured: bool,
-    /// The setup page asks first whether Cedar runs here or uses another computer's; nothing has
-    /// been started yet.
+    /// The setup page asks whether Cedar runs here or uses another computer's (once; see
+    /// `Config::asks_choice`). With `configured` (an earlier setup) the servers run meanwhile.
     pub needs_choice: bool,
     /// The chat server on another computer this app uses instead of its own, or empty.
     pub remote_server: String,
@@ -326,7 +326,7 @@ impl AppState {
             share: self.share.lock().unwrap().clone(),
             tailscale_share: cfg.tailscale_share,
             configured: cfg.configured(),
-            needs_choice: cfg.needs_choice(),
+            needs_choice: cfg.asks_choice(),
             remote_server: cfg.remote_server().map(|r| r.server.clone()).unwrap_or_default(),
             remote: self.remote.lock().unwrap().clone(),
             llm_base_url: cfg.llm_base_url.clone(),
@@ -408,8 +408,9 @@ pub async fn bootstrap(app: AppHandle) {
         return;
     }
     // Not before the user said Cedar runs here: Docker isn't looked for (or started), and no
-    // image is downloaded, for someone about to connect to another computer instead.
-    if state.config().needs_choice() {
+    // image is downloaded, for someone about to connect to another computer instead. An earlier
+    // setup starts as before while the question is open (see step 4).
+    if state.config().holds_start() {
         return;
     }
 
@@ -482,11 +483,33 @@ pub async fn bootstrap(app: AppHandle) {
 
     // 4. The model, into cedar's registry. A failure here (the model server is down, say) leaves
     //    the servers up: cedar keeps the last registered model, and the page says what's wrong.
-    if state.register_model().await {
+    //    While the setup page asks how Cedar is used, the window stays on the question.
+    if state.register_model().await && !state.config().asks_choice() {
         if let Err(e) = window::show_chat(&app) {
             eprintln!("showing the chat: {e:#}");
         }
     }
+}
+
+/// The question's "this computer": recorded, then the chat once the servers run and the model is
+/// registered. An earlier setup's servers are already up (or the launch sequence is still on its
+/// way and shows the chat at its end), so they are not started again, which would restart them.
+pub fn choose_local(app: AppHandle) -> Result<()> {
+    let state = app.state::<AppState>();
+    state.update_config(|c| c.run_locally = true)?;
+    let launching = state.bootstrap.try_lock().is_err();
+    let registered = matches!(*state.model.lock().unwrap(), ModelStatus::Registered(_));
+    if launching {
+        return Ok(());
+    }
+    if state.supervisor.state() == ServiceState::Running {
+        if registered {
+            window::show_chat(&app)?;
+        }
+        return Ok(());
+    }
+    tauri::async_runtime::spawn(bootstrap(app.clone()));
+    Ok(())
 }
 
 /// Starts Docker Desktop (on a Mac, whichever app the CLI comes from) when its daemon doesn't
