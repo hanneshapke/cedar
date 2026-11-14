@@ -76,6 +76,8 @@ const CONFIRM_JS: &str = include_str!("../static/confirm.js");
 /// The hosted providers and the presets of model servers people run themselves, for Settings'
 /// "Add a model". The desktop app compiles the same file in for its setup page.
 const MODEL_SERVERS_JSON: &str = include_str!("../static/model-servers.json");
+/// Which model to suggest at each hosted provider, once it has listed its models.
+const SUGGESTED_MODELS_JSON: &str = include_str!("../static/suggested-models.json");
 /// Shows the images the agent produces in the response; both UIs load it, before the viewer.
 const IMAGE_VIEW_JS: &str = include_str!("../static/image-view.js");
 const IMAGE_VIEW_CSS: &str = include_str!("../static/image-view.css");
@@ -392,6 +394,7 @@ pub fn router(state: AppState) -> Router {
         .route("/language.css", get(|| async { asset(CSS, LANGUAGE_CSS) }))
         .route("/confirm.js", get(|| async { asset(JS, CONFIRM_JS) }))
         .route("/model-servers.json", get(|| async { asset(JSON, MODEL_SERVERS_JSON) }))
+        .route("/suggested-models.json", get(|| async { asset(JSON, SUGGESTED_MODELS_JSON) }))
         .route("/image-view.js", get(|| async { asset(JS, IMAGE_VIEW_JS) }))
         .route("/image-view.css", get(|| async { asset(CSS, IMAGE_VIEW_CSS) }))
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
@@ -2661,7 +2664,18 @@ mod tests {
 
 #[cfg(test)]
 mod model_servers_tests {
-    use super::MODEL_SERVERS_JSON;
+    use super::{MODEL_SERVERS_JSON, SUGGESTED_MODELS_JSON};
+
+    #[test]
+    fn the_suggested_models_name_providers_on_the_list() {
+        let list: serde_json::Value = serde_json::from_str(MODEL_SERVERS_JSON).unwrap();
+        let suggested: serde_json::Value = serde_json::from_str(SUGGESTED_MODELS_JSON).unwrap();
+        assert!(!suggested["default"].as_array().unwrap().is_empty());
+        for (name, models) in suggested["providers"].as_object().unwrap() {
+            assert!(list["providers"].as_array().unwrap().iter().any(|p| p["name"] == name.as_str()), "{name}");
+            assert!(models.as_array().unwrap().iter().all(|m| m.is_string()), "{name}");
+        }
+    }
 
     /// Settings' "Add a model" reads this file as it is served; the desktop app's tests check the
     /// addresses themselves (desktop/src/models.rs).

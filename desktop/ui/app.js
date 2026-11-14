@@ -830,13 +830,28 @@ for (const card of document.querySelectorAll('.sources .choice')) {
 // (`own`) or a hosted provider (`hosted`). `address` gives the address the form stands for,
 // `touched` records that the user changed the form, and `filter`, where the list is long,
 // narrows the model list as they type.
-function modelForm({ source, address, key, probe, status, pick, select, save, error, filter, touched }) {
+// The model to suggest among those a provider listed: the first of `wanted` (names to look for,
+// best first; chat/static/suggested-models.json) that one of them carries. Case and punctuation
+// don't count, and the shortest of several matches wins.
+function suggestedModel(listed, wanted) {
+  const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const name of wanted || []) {
+    const hits = listed.filter((model) => plain(model).includes(plain(name)));
+    if (hits.length) return hits.sort((a, b) => a.length - b.length)[0];
+  }
+  return '';
+}
+
+function modelForm({ source, address, key, probe, status, pick, select, save, error, filter, touched, suggest }) {
   let listed = [];
+  let suggestion = '';
   const fill = () => {
     const words = filter ? $(filter).value.trim().toLowerCase().split(/\s+/).filter(Boolean) : [];
-    const before = $(select).value || (lastStatus && lastStatus.llm_model);
+    const current = $(select).value || (lastStatus && lastStatus.llm_model);
     const shown = listed.filter((model) => words.every((word) => model.toLowerCase().includes(word)));
-    $(select).replaceChildren(...shown.map((model) => new Option(model, model, false, model === before)));
+    // Nothing chosen yet that this server has: start on the suggested one.
+    const before = shown.includes(current) ? current : suggestion;
+    $(select).replaceChildren(...shown.map((model) => new Option(model === suggestion ? tr('model.suggested', { model }) : model, model, false, model === before)));
     $(save).disabled = !shown.length;
   };
   if (filter) $(filter).addEventListener('input', fill);
@@ -851,8 +866,9 @@ function modelForm({ source, address, key, probe, status, pick, select, save, er
     try {
       listed = await invoke('list_models', { baseUrl: address(), apiKey: $(key).value });
       if (filter) $(filter).value = '';
+      suggestion = suggest ? suggestedModel(listed, suggest()) : '';
       fill();
-      $(status).textContent = tr('model.count', { count: listed.length });
+      $(status).textContent = tr('model.count', { count: listed.length }) + (suggestion ? '. ' + tr('model.suggestedNote', { model: suggestion }) : '');
       $(pick).classList.remove('hidden');
     } catch (e) {
       $(status).textContent = '';
@@ -932,6 +948,8 @@ const hostedForm = modelForm({
   error: 'hosted-error',
   filter: 'hosted-filter',
   touched: (value) => { hostedTouched = value; },
+  // What to suggest at the chosen provider; nothing for one that is not on the list.
+  suggest: () => ((lastStatus ? lastStatus.providers : []).find((p) => p.base_url === $('hosted-provider').value) || {}).suggested,
 });
 $('hosted-provider').addEventListener('change', () => {
   hostedForm.changed();

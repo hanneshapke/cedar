@@ -952,8 +952,14 @@ const cedarSettings = (() => {
    */
   let modelServersLoad = null;
   function modelServers() {
-    modelServersLoad ??= fetch('/model-servers.json')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    const json = (path) => fetch(path).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
+    // Each provider also gets the names to look for when suggesting one of its models
+    // (/suggested-models.json: its own, then the default ones).
+    modelServersLoad ??= Promise.all([json('/model-servers.json'), json('/suggested-models.json').catch(() => ({}))])
+      .then(([servers, suggested]) => ({
+        ...servers,
+        providers: servers.providers.map((p) => ({ ...p, suggested: [...((suggested.providers || {})[p.name] || []), ...(suggested.default || [])] })),
+      }))
       .catch(() => { modelServersLoad = null; return { providers: [], presets: [] }; });
     return modelServersLoad;
   }
@@ -1116,6 +1122,17 @@ const cedarSettings = (() => {
     const listBtn = button(tr('settings.form.list'), () => listServerModels());
     const modelRow = el('div', 'cedar-set-server-models');
     modelRow.append(model, listBtn);
+    // The model suggested among those a hosted provider listed, marked in the list.
+    let suggestion = '';
+    const suggestedModel = (names) => {
+      const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const wanted = (servers.providers.find((p) => p.base_url === address.value.trim()) || {}).suggested || [];
+      for (const name of wanted) {
+        const hits = names.filter((m) => plain(m).includes(plain(name)));
+        if (hits.length) return hits.sort((a, b) => a.length - b.length)[0];
+      }
+      return '';
+    };
     const fillModels = (names, selected) => {
       model.textContent = '';
       if (!names) {
@@ -1127,7 +1144,7 @@ const cedarSettings = (() => {
       const options = [...names];
       if (selected && !options.includes(selected)) options.unshift(selected);
       model.append(new Option(options.length ? tr('settings.form.choose') : tr('settings.form.noModels'), ''));
-      for (const m of options) model.append(new Option(m === selected && !names.includes(m) ? tr('settings.form.unlisted', { model: m }) : m, m));
+      for (const m of options) model.append(new Option(m === selected && !names.includes(m) ? tr('settings.form.unlisted', { model: m }) : m === suggestion ? tr('settings.form.suggested', { model: m }) : m, m));
       model.value = selected && options.includes(selected) ? selected : options.length === 1 ? options[0] : '';
     };
     fillModels(entry ? entry.listed_models || [entry.model] : null, entry?.model || '');
@@ -1147,6 +1164,7 @@ const cedarSettings = (() => {
     // A changed address or key may serve other models: list again before saving.
     const stale = () => {
       listed = null;
+      suggestion = '';
       filter.value = '';
       filter.hidden = true;
       if (!model.disabled) fillModels(null);
@@ -1168,7 +1186,9 @@ const cedarSettings = (() => {
       listBtn.textContent = tr('settings.form.listing');
       try {
         const found = await adminApi('POST', '/integrations/server-models', body);
-        fillModels(found.models || [], found.models?.includes(previous) ? previous : '');
+        suggestion = kind === 'hosted' ? suggestedModel(found.models || []) : '';
+        // Nothing chosen before that this server has: start on the suggested one.
+        fillModels(found.models || [], found.models?.includes(previous) ? previous : suggestion);
         listed = found.models || [];
         filter.value = '';
         filter.hidden = kind !== 'hosted' || listed.length < 8;

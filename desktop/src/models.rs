@@ -62,6 +62,17 @@ pub struct Provider {
     pub name: String,
     pub base_url: String,
     pub docs: String,
+    /// Names to look for in the provider's model list, best first, to suggest one of them
+    /// (`chat/static/suggested-models.json`: the provider's own, then the default ones).
+    #[serde(default)]
+    pub suggested: Vec<String>,
+}
+
+/// `chat/static/suggested-models.json`: which model to suggest at each hosted provider.
+#[derive(Deserialize, Debug)]
+struct SuggestedModels {
+    default: Vec<String>,
+    providers: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// A model server people run themselves: where it listens by default, and the key of the hint
@@ -84,8 +95,20 @@ pub struct ModelServers {
 /// (`/model-servers.json`).
 pub fn model_servers() -> &'static ModelServers {
     static LIST: std::sync::LazyLock<ModelServers> = std::sync::LazyLock::new(|| {
-        serde_json::from_str(include_str!("../../chat/static/model-servers.json"))
-            .expect("chat/static/model-servers.json is checked by a test")
+        let mut list: ModelServers = serde_json::from_str(include_str!("../../chat/static/model-servers.json"))
+            .expect("chat/static/model-servers.json is checked by a test");
+        let suggested: SuggestedModels = serde_json::from_str(include_str!("../../chat/static/suggested-models.json"))
+            .expect("chat/static/suggested-models.json is checked by a test");
+        for provider in &mut list.providers {
+            let own = suggested.providers.get(&provider.name).cloned().unwrap_or_default();
+            provider.suggested = own.into_iter().chain(suggested.default.iter().cloned()).fold(Vec::new(), |mut all, name| {
+                if !all.contains(&name) {
+                    all.push(name);
+                }
+                all
+            });
+        }
+        list
     });
     &LIST
 }
@@ -199,6 +222,22 @@ mod tests {
         for p in &list.presets {
             assert_eq!(normalize_base_url(&p.base_url).unwrap(), p.base_url, "{}", p.name);
             assert!(p.hint.starts_with("preset."), "{}", p.name);
+        }
+    }
+
+    #[test]
+    fn every_provider_has_models_to_suggest_and_the_file_names_only_known_providers() {
+        let list = model_servers();
+        for p in &list.providers {
+            assert!(!p.suggested.is_empty(), "{}", p.name);
+        }
+        // A provider's own suggestions come before the default ones.
+        let deepseek = list.providers.iter().find(|p| p.name == "DeepSeek").unwrap();
+        assert_eq!(deepseek.suggested.last().map(String::as_str), Some("gemma 4 31b"));
+        assert!(deepseek.suggested.contains(&"deepseek chat".to_string()));
+        let file: SuggestedModels = serde_json::from_str(include_str!("../../chat/static/suggested-models.json")).unwrap();
+        for name in file.providers.keys() {
+            assert!(list.providers.iter().any(|p| &p.name == name), "{name} is not in model-servers.json");
         }
     }
 
