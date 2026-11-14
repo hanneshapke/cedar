@@ -7,6 +7,9 @@ From ../cedar-intro.mp4 and ../timeline.json (or ../cedar-intro.<lang>.mp4 and i
 ../loop/, with .<lang> before the extension for de, fr and es:
 
     loop.mp4, loop.webm     1280x720, silent, made to repeat: for a web page (autoplay, muted, loop)
+    hero.mp4, hero.webm     1000x800, silent, repeating, zoomed in like the reel: for a small spot on
+                            a page, where the whole screen would be too small to read. Copied, with
+                            a still picture, to ../../landing/shots/hero-<lang>.* for the landing page
     loop-music.mp4          1920x1080 with the upbeat piece of music.py and a closing card
     reel.mp4                1080x1920 for a reel or a short: each part cropped to what matters, a
                             line of text over it, the same music and closing card
@@ -16,6 +19,7 @@ ffmpeg, numpy (for the music) and Node with Playwright (for the text cards).
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,10 +41,17 @@ PARTS = [
     ("result", 4.5, 10.5, 3.8),    # the pointer across the chart
     ("result", 13.2, 17.2, 2.8),   # the PDF
 ]
+# The zoomed films (hero, reel) look at the results while Cedar works, where nothing happens until
+# the first step lands: their second part starts later and runs slower.
+ZOOM_PARTS = [PARTS[0], ("work", 2.8, 18.0, 8.4), PARTS[2], PARTS[3]]
 # What the reel shows of each part, in the take's 1920x1080 pixels (x, y, width, height): the
 # conversation column for the plan, the results beside it for the rest.
 BOX = (1000, 1140)
 CROPS = [(0, 76, 587, 669), (621, 82, 933, 998), (621, 82, 933, 998), (621, 82, 933, 998)]
+# The same for the hero film, which is wider than tall.
+HERO_BOX = (1000, 800)
+HERO_CROPS = [(0, 76, 775, 620), (621, 82, 933, 746), (621, 82, 933, 746), (621, 82, 933, 746)]
+LANDING = os.path.join(ROOT, "..", "landing", "shots")
 
 TEXT = {
     "en": {"steps": ["It shows you its plan first.", "Then does the work<br>in a sealed box.", "A chart you can explore.", "And the finished PDF."],
@@ -63,11 +74,11 @@ def ffmpeg(*args):
     run("ffmpeg", "-loglevel", "error", "-y", *args)
 
 
-def parts_filter(times, shape):
+def parts_filter(times, shape, parts=PARTS):
     """The filter that cuts the four parts from input 0, each fitted by `shape(i)`, and cross-fades
     them into [film]; also the times in the loop at which each part takes over."""
     chains, starts, at = [], [0.0], 0.0
-    for i, (scene, a, b, length) in enumerate(PARTS):
+    for i, (scene, a, b, length) in enumerate(parts):
         start = times[scene]["start"] + a
         speed = (b - a) / length
         chains.append(f"[0:v]trim={start:.3f}:{start + (b - a):.3f},setpts=(PTS-STARTPTS)/{speed:.4f},"
@@ -100,6 +111,20 @@ def build(lang, tmp):
            "-crf", "26", "-movflags", "+faststart", out("loop", "mp4"))
     ffmpeg("-i", out("loop", "mp4"), "-an", "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", out("loop", "webm"))
 
+    # 1b. the hero film: the same parts, zoomed in
+    w, h = HERO_BOX
+    def zoom(i):
+        x, y, cw, ch = HERO_CROPS[i]
+        return f"crop={cw}:{ch}:{x}:{y},scale={w}:{h}:flags=lanczos"
+    graph, _ = parts_filter(times, zoom, ZOOM_PARTS)
+    ffmpeg("-i", film, "-filter_complex", f"{graph};{ends}", "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "slow",
+           "-crf", "26", "-movflags", "+faststart", out("hero", "mp4"))
+    ffmpeg("-i", out("hero", "mp4"), "-an", "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", out("hero", "webm"))
+    if os.path.isdir(LANDING):
+        for ext in ("mp4", "webm"):
+            shutil.copyfile(out("hero", ext), os.path.join(LANDING, f"hero-{lang}.{ext}"))
+        ffmpeg("-ss", "3.2", "-i", out("hero", "mp4"), "-frames:v", "1", "-q:v", "5", os.path.join(LANDING, f"hero-{lang}.jpg"))
+
     # the closing card comes in over the film's last moments and stays while the last chord rings
     total = LENGTH + RING
     closing = lambda card: (f"[{card}:v]format=yuva420p,fade=t=in:st={LENGTH - 0.3}:d=0.5:alpha=1[end];"
@@ -119,7 +144,7 @@ def build(lang, tmp):
         x, y, cw, ch = CROPS[i]
         return (f"crop={cw}:{ch}:{x}:{y},scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos,"
                 f"pad={w}:{h}:(ow-iw)/2:0:color={PAPER}")
-    graph, starts = parts_filter(times, fit)
+    graph, starts = parts_filter(times, fit, ZOOM_PARTS)
     inputs = ["-i", film, "-i", music]
     for i in range(len(PARTS)):
         inputs += ["-loop", "1", "-t", total, "-i", os.path.join(cards, f"reel-{i}.png")]
