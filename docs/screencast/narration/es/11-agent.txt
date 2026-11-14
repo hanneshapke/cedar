@@ -1,0 +1,1 @@
+Y cuando una conversación cumplió su propósito, conviértela en un agente. Cedar escribe el prompt a partir de la conversación. Tú eliges el activador: un horario, un cambio que vigila, un correo nuevo, un archivo que llega. Este se ejecutará cada mes.

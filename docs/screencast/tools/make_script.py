@@ -5,9 +5,10 @@ timeline.json.
     make_script.py [timeline.json]     (default: ../timeline.json)
 
 Writes, next to the timeline: script.md, narration-elevenlabs.txt, narration/NN-<scene>.txt (one
-clip each) and captions.srt.
+clip each) and captions.srt; and for each narration.<lang>.json here, narration-elevenlabs.<lang>.txt,
+narration/<lang>/NN-<scene>.txt and captions.<lang>.srt.
 """
-import json, os, re, sys
+import glob, json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 timeline_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "..", "timeline.json")
@@ -63,4 +64,34 @@ for i, s in enumerate(scenes, 1):
 open(os.path.join(OUT, "script.md"), "w").write("\n".join(md + [""] + body))
 open(os.path.join(OUT, "narration-elevenlabs.txt"), "w").write("\n".join(voice).rstrip() + "\n")
 open(os.path.join(OUT, "captions.srt"), "w").write("\n".join(srt))
-print(f"{len(scenes)} scenes, {sum(len(s['text'].split()) for s in scenes)} words, {n_cap} captions")
+print(f"en: {len(scenes)} scenes, {sum(len(s['text'].split()) for s in scenes)} words, {n_cap} captions")
+
+# The translations (narration.<lang>.json: scene id -> text; terms as in docs/i18n-glossary.md).
+# The film is the English take, so a translated scene has the English scene's time. Speech is
+# estimated at CPS characters a second, the pace the English text has at 150 words a minute.
+CPS = 13.5
+SENTENCE = re.compile(r"[^.!?]+[.!?]+")
+for path in sorted(glob.glob(os.path.join(HERE, "narration.*.json"))):
+    lang = os.path.basename(path).split(".")[1]
+    texts = json.load(open(path))
+    os.makedirs(os.path.join(OUT, "narration", lang), exist_ok=True)
+    voice, srt, n_cap, tight = [], [], 0, []
+    for i, s in enumerate(scenes, 1):
+        text, t = texts[s["id"]], times[s["id"]]
+        voice += [spoken(text), ""]
+        open(os.path.join(OUT, "narration", lang, f"{i:02d}-{s['id']}.txt"), "w").write(spoken(text) + "\n")
+        at = t["start"] + LEAD
+        room = t["end"] - at - 0.2
+        need = len(text) / CPS
+        if need > room:
+            tight.append(f"{i} {s['id']} (about {need:.0f} s of speech, {room:.0f} s of film)")
+        span = min(room, need)
+        for sentence in (x.strip() for x in SENTENCE.findall(text)):
+            d = span * len(sentence) / len(text)
+            n_cap += 1
+            srt += [str(n_cap), f"{clock(at, True)} --> {clock(at + d, True)}", sentence, ""]
+            at += d
+    open(os.path.join(OUT, f"narration-elevenlabs.{lang}.txt"), "w").write("\n".join(voice).rstrip() + "\n")
+    open(os.path.join(OUT, f"captions.{lang}.srt"), "w").write("\n".join(srt))
+    print(f"{lang}: {sum(len(x.split()) for x in texts.values())} words, {n_cap} captions"
+          + ("; may run over: " + "; ".join(tight) if tight else "; every scene fits"))

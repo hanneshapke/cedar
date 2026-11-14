@@ -1,0 +1,23 @@
+Voici Cedar : un assistant open source qui tourne sur votre propre ordinateur et fait un vrai travail pour vous.
+
+Au premier lancement, Cedar vous demande dans quelle langue vous souhaitez travailler. Ensuite, il ne lui faut qu’une chose : un modèle pour réfléchir.
+
+Cedar n’est lié à aucune entreprise d’IA. Dans Réglages, Modèles, vous choisissez d’où vient le modèle. L’application Cedar pour Mac et Windows peut en télécharger un et le faire tourner avec llama C P P. Vous pouvez utiliser un fournisseur hébergé avec une clé API. Ou indiquer à Cedar un serveur de modèles que vous avez déjà. Ici, c’est V L L M sur cette machine. Cedar liste les modèles que le serveur propose. Choisissez-en un : il renseigne les niveaux de raisonnement que le modèle accepte et s’il sait lire les images. Puis il revérifie l’adresse et l’enregistre.
+
+Passons à une tâche. Je joins une année de dépenses du foyer et je demande à Cedar de trouver où part l’argent, d’en faire un graphique et de rédiger un résumé d’une page avec trois pistes d’économies.
+
+Cedar ne se lance pas tout de suite. Pour une tâche importante, il vous montre d’abord son plan. Vous pouvez reformuler une étape, en supprimer une ou en ajouter. Quand tout vous convient, dites-lui de commencer.
+
+Le travail se fait dans une boîte scellée : un conteneur à part, sans réseau, qui ne voit pas le reste de votre ordinateur. Cedar fait les calculs en Python, trace le graphique et écrit le PDF. Chaque étape reste dans la conversation : vous pouvez l’ouvrir et voir exactement ce qui a été exécuté.
+
+Le graphique est interactif : pointez un mois pour lire chaque catégorie. Le résumé terminé se trouve à droite, avec les trois suggestions, prêt à être téléchargé. Et la version courte est dans la conversation.
+
+Certaines choses, Cedar ne les fait pas seul. Demandez-lui de supprimer un fichier : il s’arrête et demande d’abord. De même pour les téléchargements, les installations et les e-mails. Rien de risqué sans votre accord.
+
+Cedar mémorise aussi ce que vous lui demandez de retenir. Dans Réglages, Mémoire, vous voyez tout ce qu’il a gardé à votre sujet. Épinglez-le, archivez-le ou supprimez-le définitivement. Cela reste sur votre propre serveur Cedar.
+
+Chaque capacité a son interrupteur. Lecture de pages web, météo, cartes, itinéraires, Bourse. Activez ce que Cedar peut atteindre. Tout le reste demeure éteint.
+
+Et quand une conversation a rempli son rôle, faites-en un agent. Cedar rédige le prompt à partir de la conversation. Vous choisissez le déclencheur : un horaire, un changement qu’il surveille, un nouvel e-mail, l’arrivée d’un fichier. Celui-ci s’exécutera chaque mois.
+
+Cedar est gratuit et open source. Il fonctionne sur Mac, Windows et Linux, avec des apps pour iPhone et Android. Votre propre assistant. Il vit chez vous, à vos ordres.

@@ -1,0 +1,179 @@
+1
+00:00:00,767 --> 00:00:09,063
+Voici Cedar : un assistant open source qui tourne sur votre propre ordinateur et fait un vrai travail pour vous.
+
+2
+00:00:09,723 --> 00:00:16,093
+Au premier lancement, Cedar vous demande dans quelle langue vous souhaitez travailler.
+
+3
+00:00:16,093 --> 00:00:20,834
+Ensuite, il ne lui faut qu’une chose : un modèle pour réfléchir.
+
+4
+00:00:21,943 --> 00:00:24,980
+Cedar n’est lié à aucune entreprise d’IA.
+
+5
+00:00:24,980 --> 00:00:29,499
+Dans Réglages, Modèles, vous choisissez d’où vient le modèle.
+
+6
+00:00:29,499 --> 00:00:36,462
+L’application Cedar pour Mac et Windows peut en télécharger un et le faire tourner avec llama.
+
+7
+00:00:36,462 --> 00:00:36,758
+cpp.
+
+8
+00:00:36,758 --> 00:00:41,276
+Vous pouvez utiliser un fournisseur hébergé avec une clé API.
+
+9
+00:00:41,276 --> 00:00:45,795
+Ou indiquer à Cedar un serveur de modèles que vous avez déjà.
+
+10
+00:00:45,795 --> 00:00:48,313
+Ici, c’est vLLM sur cette machine.
+
+11
+00:00:48,313 --> 00:00:51,795
+Cedar liste les modèles que le serveur propose.
+
+12
+00:00:51,795 --> 00:01:00,017
+Choisissez-en un : il renseigne les niveaux de raisonnement que le modèle accepte et s’il sait lire les images.
+
+13
+00:01:00,017 --> 00:01:03,276
+Puis il revérifie l’adresse et l’enregistre.
+
+14
+00:01:04,659 --> 00:01:06,140
+Passons à une tâche.
+
+15
+00:01:06,140 --> 00:01:19,474
+Je joins une année de dépenses du foyer et je demande à Cedar de trouver où part l’argent, d’en faire un graphique et de rédiger un résumé d’une page avec trois pistes d’économies.
+
+16
+00:01:21,026 --> 00:01:23,618
+Cedar ne se lance pas tout de suite.
+
+17
+00:01:23,618 --> 00:01:27,867
+Pour une tâche importante, il vous montre d’abord son plan.
+
+18
+00:01:27,867 --> 00:01:32,548
+Vous pouvez reformuler une étape, en supprimer une ou en ajouter.
+
+19
+00:01:32,548 --> 00:01:36,076
+Quand tout vous convient, dites-lui de commencer.
+
+20
+00:01:36,893 --> 00:01:46,004
+Le travail se fait dans une boîte scellée : un conteneur à part, sans réseau, qui ne voit pas le reste de votre ordinateur.
+
+21
+00:01:46,004 --> 00:01:51,115
+Cedar fait les calculs en Python, trace le graphique et écrit le PDF.
+
+22
+00:01:51,115 --> 00:01:58,745
+Chaque étape reste dans la conversation : vous pouvez l’ouvrir et voir exactement ce qui a été exécuté.
+
+23
+00:02:01,764 --> 00:02:07,171
+Le graphique est interactif : pointez un mois pour lire chaque catégorie.
+
+24
+00:02:07,171 --> 00:02:13,764
+Le résumé terminé se trouve à droite, avec les trois suggestions, prêt à être téléchargé.
+
+25
+00:02:13,764 --> 00:02:17,171
+Et la version courte est dans la conversation.
+
+26
+00:02:26,879 --> 00:02:29,952
+Certaines choses, Cedar ne les fait pas seul.
+
+27
+00:02:29,952 --> 00:02:34,732
+Demandez-lui de supprimer un fichier : il s’arrête et demande d’abord.
+
+28
+00:02:34,732 --> 00:02:39,307
+De même pour les téléchargements, les installations et les e-mails.
+
+29
+00:02:39,307 --> 00:02:41,560
+Rien de risqué sans votre accord.
+
+30
+00:02:42,366 --> 00:02:46,588
+Cedar mémorise aussi ce que vous lui demandez de retenir.
+
+31
+00:02:46,588 --> 00:02:51,847
+Dans Réglages, Mémoire, vous voyez tout ce qu’il a gardé à votre sujet.
+
+32
+00:02:51,847 --> 00:02:55,996
+Épinglez-le, archivez-le ou supprimez-le définitivement.
+
+33
+00:02:55,996 --> 00:02:59,107
+Cela reste sur votre propre serveur Cedar.
+
+34
+00:03:05,243 --> 00:03:07,836
+Chaque capacité a son interrupteur.
+
+35
+00:03:07,836 --> 00:03:12,058
+Lecture de pages web, météo, cartes, itinéraires, Bourse.
+
+36
+00:03:12,058 --> 00:03:14,724
+Activez ce que Cedar peut atteindre.
+
+37
+00:03:14,724 --> 00:03:16,873
+Tout le reste demeure éteint.
+
+38
+00:03:18,572 --> 00:03:23,313
+Et quand une conversation a rempli son rôle, faites-en un agent.
+
+39
+00:03:23,313 --> 00:03:27,091
+Cedar rédige le prompt à partir de la conversation.
+
+40
+00:03:27,091 --> 00:03:35,757
+Vous choisissez le déclencheur : un horaire, un changement qu’il surveille, un nouvel e-mail, l’arrivée d’un fichier.
+
+41
+00:03:35,757 --> 00:03:38,202
+Celui-ci s’exécutera chaque mois.
+
+42
+00:03:41,289 --> 00:03:43,652
+Cedar est gratuit et open source.
+
+43
+00:03:43,652 --> 00:03:49,237
+Il fonctionne sur Mac, Windows et Linux, avec des apps pour iPhone et Android.
+
+44
+00:03:49,237 --> 00:03:50,884
+Votre propre assistant.
+
+45
+00:03:50,884 --> 00:03:53,103
+Il vit chez vous, à vos ordres.

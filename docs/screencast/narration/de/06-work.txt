@@ -1,0 +1,1 @@
+Die Arbeit geschieht in einer abgeschotteten Box: einem eigenen Container ohne Netzwerk, der den Rest deines Computers nicht sehen kann. Cedar rechnet in Python, zeichnet das Diagramm und schreibt das PDF. Jeder Schritt bleibt in der Unterhaltung, sodass du ihn öffnen und genau sehen kannst, was gelaufen ist.

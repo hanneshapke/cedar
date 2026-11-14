@@ -1,0 +1,179 @@
+1
+00:00:00,767 --> 00:00:08,841
+Este es Cedar: un asistente de código abierto que funciona en tu computadora y hace trabajo de verdad por ti.
+
+2
+00:00:09,723 --> 00:00:15,501
+La primera vez que lo abres, Cedar te pregunta en qué idioma quieres trabajar.
+
+3
+00:00:15,501 --> 00:00:19,945
+Después solo necesita una cosa: un modelo con el que pensar.
+
+4
+00:00:21,943 --> 00:00:25,202
+Cedar no está atado a ninguna empresa de IA.
+
+5
+00:00:25,202 --> 00:00:29,573
+En Configuración, Modelos, eliges de dónde viene el modelo.
+
+6
+00:00:29,573 --> 00:00:35,869
+La app de Cedar para Mac y Windows puede descargar uno y ejecutarlo por ti con llama.
+
+7
+00:00:35,869 --> 00:00:36,165
+cpp.
+
+8
+00:00:36,165 --> 00:00:40,165
+Puedes usar un proveedor alojado con una clave de API.
+
+9
+00:00:40,165 --> 00:00:45,647
+O puedes indicarle a Cedar un servidor de modelos que ya tengas en marcha.
+
+10
+00:00:45,647 --> 00:00:48,239
+Aquí es vLLM en esta misma máquina.
+
+11
+00:00:48,239 --> 00:00:51,869
+Cedar muestra los modelos que ofrece el servidor.
+
+12
+00:00:51,869 --> 00:00:58,980
+Elige uno, y completa los niveles de razonamiento que acepta el modelo y si puede leer imágenes.
+
+13
+00:00:58,980 --> 00:01:02,906
+Luego comprueba la dirección una vez más y la guarda.
+
+14
+00:01:04,659 --> 00:01:05,918
+Ahora, una tarea.
+
+15
+00:01:05,918 --> 00:01:18,955
+Adjunto un año de gastos del hogar y le pido a Cedar que averigüe adónde se va el dinero, que haga un gráfico y que escriba un resumen de una página con tres formas de ahorrar.
+
+16
+00:01:21,026 --> 00:01:22,878
+Cedar no empieza sin más.
+
+17
+00:01:22,878 --> 00:01:26,878
+Para una tarea más grande, primero te muestra su plan.
+
+18
+00:01:26,878 --> 00:01:31,026
+Puedes reformular un paso, quitar uno o agregar el tuyo.
+
+19
+00:01:31,026 --> 00:01:34,063
+Cuando te parezca bien, dile que empiece.
+
+20
+00:01:36,893 --> 00:01:45,856
+El trabajo ocurre dentro de una caja sellada: un contenedor propio, sin red, que no puede ver el resto de tu computadora.
+
+21
+00:01:45,856 --> 00:01:51,041
+Cedar hace los cálculos en Python, dibuja el gráfico y escribe el PDF.
+
+22
+00:01:51,041 --> 00:01:57,856
+Cada paso queda en la conversación, así que puedes abrirlo y ver exactamente qué se ejecutó.
+
+23
+00:02:01,764 --> 00:02:06,801
+El gráfico es interactivo: apunta a un mes para leer cada categoría.
+
+24
+00:02:06,801 --> 00:02:13,245
+El resumen terminado está a la derecha, con las tres sugerencias, listo para descargar.
+
+25
+00:02:13,245 --> 00:02:16,431
+Y la versión corta está en la conversación.
+
+26
+00:02:26,879 --> 00:02:29,828
+Hay cosas que Cedar no hace por su cuenta.
+
+27
+00:02:29,828 --> 00:02:34,111
+Pídele que elimine un archivo: se detiene y pregunta primero.
+
+28
+00:02:34,111 --> 00:02:38,675
+Con las descargas, las instalaciones y los correos pasa lo mismo.
+
+29
+00:02:38,675 --> 00:02:41,554
+Nada arriesgado ocurre sin tu aprobación.
+
+30
+00:02:42,366 --> 00:02:46,218
+Cedar también recuerda lo que le pides que recuerde.
+
+31
+00:02:46,218 --> 00:02:50,959
+En Configuración, Memoria, ves todo lo que ha guardado sobre ti.
+
+32
+00:02:50,959 --> 00:02:54,144
+Fíjalo, archívalo o elimínalo para siempre.
+
+33
+00:02:54,144 --> 00:02:57,107
+Se queda en tu propio servidor de Cedar.
+
+34
+00:03:05,243 --> 00:03:07,910
+Cada habilidad tiene su interruptor.
+
+35
+00:03:07,910 --> 00:03:12,206
+Leer páginas web, el clima, mapas, indicaciones, la bolsa.
+
+36
+00:03:12,206 --> 00:03:14,799
+Activa lo que Cedar puede alcanzar.
+
+37
+00:03:14,799 --> 00:03:16,873
+Todo lo demás queda apagado.
+
+38
+00:03:18,572 --> 00:03:23,979
+Y cuando una conversación cumplió su propósito, conviértela en un agente.
+
+39
+00:03:23,979 --> 00:03:27,831
+Cedar escribe el prompt a partir de la conversación.
+
+40
+00:03:27,831 --> 00:03:34,942
+Tú eliges el activador: un horario, un cambio que vigila, un correo nuevo, un archivo que llega.
+
+41
+00:03:34,942 --> 00:03:36,942
+Este se ejecutará cada mes.
+
+42
+00:03:41,289 --> 00:03:44,104
+Cedar es gratuito y de código abierto.
+
+43
+00:03:44,104 --> 00:03:48,919
+Funciona en Mac, Windows y Linux, con apps para iPhone y Android.
+
+44
+00:03:48,919 --> 00:03:50,400
+Tu propio asistente.
+
+45
+00:03:50,400 --> 00:03:52,696
+Vive en tu casa, a tus órdenes.

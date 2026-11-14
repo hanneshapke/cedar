@@ -10,6 +10,7 @@ work in the sandbox, an approval, memory, the tool switches, and an agent made f
 | `narration-elevenlabs.txt` | The narration as one text for a text-to-speech voice |
 | `narration/NN-<scene>.txt` | The same, one file a scene, for one clip each |
 | `captions.srt` | Captions, timed by word count within each scene |
+| `narration-elevenlabs.<lang>.txt`, `narration/<lang>/`, `captions.<lang>.srt` | The narration and the captions in German (`de`), French (`fr`) and Spanish (`es`) |
 | `timeline.json` | When each scene of the take starts and ends, in seconds |
 | `tools/` | Everything that makes the above |
 
@@ -40,6 +41,19 @@ The texts spell three things the way they should be said: "V L L M", "llama C P 
 The wording as written is in `script.md`. If a clip runs longer than its scene (the times are in
 `script.md`), slow the film instead of the voice: lower `WPS` (words a second) in `tools/record.js` and
 record again.
+
+## German, French and Spanish
+
+The film itself is the English take: the chat on screen is in English. The narration and the
+captions are translated, with the terms and the form of address of `docs/i18n-glossary.md`
+(German *du*, French *vous*, Latin American Spanish *tú*), so a menu the voice names (Einstellungen,
+Réglages, Configuración) reads "Settings" on screen. The translations are in
+`tools/narration.<lang>.json`, one text a scene; `tools/make_script.py` writes the files from them
+and says which scenes may run longer than the film, at the pace the English has.
+
+For a narrated film in one of them, generate the clips from `narration/<lang>/` and run
+`tools/mux.sh <folder with the clips> cedar-intro-<lang>.mp4`. A clip that outlasts its scene
+pushes the next one back instead of talking over it, and `mux.sh` says where that happened.
 
 ## Recording it again
 

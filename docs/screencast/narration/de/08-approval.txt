@@ -1,0 +1,1 @@
+Manches tut Cedar nicht von sich aus. Soll es eine Datei löschen, hält es an und fragt erst nach. Für Downloads, Installationen und E-Mails gilt dasselbe. Nichts Riskantes geschieht ohne deine Freigabe.
