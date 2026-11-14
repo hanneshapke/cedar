@@ -2,12 +2,14 @@
 """Cut the short loop from a take: the plan appears, Cedar works, the chart, the PDF. 18 seconds.
 
     loop.py [--reel] [lang ...]     (default: every language whose silent take is here;
-                                    --reel makes only the films with music)
+                                    --reel makes only the films with music,
+                                    --silent only loop.mp4 and loop.webm)
 
 From ../cedar-intro.mp4 and ../timeline.json (or ../cedar-intro.<lang>.mp4 and its timeline), into
 ../loop/, with .<lang> before the extension for de, fr and es:
 
-    loop.mp4, loop.webm     1280x720, silent, made to repeat: for a web page (autoplay, muted, loop)
+    loop.mp4, loop.webm     1280x720, silent, made to repeat: an opening card for two seconds, then
+                            the loop. For a web page (autoplay, muted, loop)
     hero.mp4, hero.webm     1000x800, silent, repeating, zoomed in like the reel: for a small spot on
                             a page, where the whole screen would be too small to read. Copied, with
                             a still picture, to ../../landing/shots/hero-<lang>.* for the landing page
@@ -116,13 +118,25 @@ def build(lang, tmp):
 
     ends = f"[film]fade=t=in:d=0.25:color={PAPER},fade=t=out:st={LENGTH - 0.25}:d=0.25:color={PAPER}[v]"
     if not REEL_ONLY:
-        # 1. the silent loop, 1280x720: fades from and to the page's paper so the repeat is soft
+        # 1. the silent loop, 1280x720: the opening card, then the film; it fades from and to the
+        # page's paper so the repeat is soft
         graph, _ = parts_filter(times, lambda i: "scale=1280:720:flags=lanczos")
-        ffmpeg("-i", film, "-filter_complex", f"{graph};{ends}", "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "slow",
+        whole = OPENING + LENGTH
+        opened = (f"[film]tpad=start_mode=clone:start_duration={OPENING}[late];"
+                  f"[1:v]scale=1280:720:flags=lanczos,format=yuva420p,fade=t=out:st={OPENING}:d=0.4:alpha=1[open];"
+                  f"[late][open]overlay=enable='lt(t,{OPENING + 0.4})',"
+                  f"fade=t=in:d=0.25:color={PAPER},fade=t=out:st={whole - 0.25}:d=0.25:color={PAPER}[v]")
+        ffmpeg("-i", film, "-loop", "1", "-t", whole, "-i", os.path.join(cards, "wide-start.png"),
+               "-filter_complex", f"{graph};{opened}", "-map", "[v]", "-an", "-t", whole, "-c:v", "libx264", "-preset", "slow",
                "-crf", "26", "-movflags", "+faststart", out("loop", "mp4"))
         ffmpeg("-i", out("loop", "mp4"), "-an", "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", out("loop", "webm"))
 
-        # 1b. the hero film: the same parts, zoomed in
+        if SILENT_ONLY:
+            print(lang, "done")
+            return
+
+        # 1b. the hero film: the same parts, zoomed in, and without a card: the page beside it
+        # says what the card would
         w, h = HERO_BOX
         def zoom(i):
             x, y, cw, ch = HERO_CROPS[i]
@@ -188,12 +202,14 @@ def reel(lang, tmp, film, times, out, cards):
 
 
 REEL_ONLY = False
+SILENT_ONLY = False
 
 
 def main():
-    global REEL_ONLY
-    args = [a for a in sys.argv[1:] if a != "--reel"]
+    global REEL_ONLY, SILENT_ONLY
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     REEL_ONLY = "--reel" in sys.argv[1:]
+    SILENT_ONLY = "--silent" in sys.argv[1:]
     langs = args or [l for l in TEXT if os.path.exists(os.path.join(ROOT, "cedar-intro.mp4" if l == "en" else f"cedar-intro.{l}.mp4"))]
     os.makedirs(OUT, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
