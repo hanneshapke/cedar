@@ -12,6 +12,16 @@ let formTouched = false;
 let openSource = null;
 let sourceTouched = false;
 let hostedTouched = false;
+
+// The model servers people run themselves, for the own-server form: where each listens by
+// default, and (in strings.js) what it needs to work with Cedar.
+const PRESETS = [
+  { name: 'Ollama', url: 'http://127.0.0.1:11434/v1', hint: 'preset.ollama' },
+  { name: 'LM Studio', url: 'http://127.0.0.1:1234/v1', hint: 'preset.lmstudio' },
+  { name: 'vLLM', url: 'http://127.0.0.1:8000/v1', hint: 'preset.vllm' },
+  { name: 'llama.cpp', url: 'http://127.0.0.1:8080/v1', hint: 'preset.llamacpp' },
+  { name: 'SGLang', url: 'http://127.0.0.1:30000/v1', hint: 'preset.sglang' },
+];
 let shareBusy = false;
 
 function dot(el, cls) {
@@ -108,6 +118,7 @@ function render(s) {
     $('base-url').value = own ? s.llm_base_url || '' : '';
     $('api-key').placeholder = own && s.has_api_key ? tr('model.saved') : '';
   }
+  renderPreset();
   renderHosted(s);
   renderModelChoice(s, p);
   const m = s.model;
@@ -372,7 +383,8 @@ function renderUpdate(s) {
 // The Model server step's three options (see index.html): running a model on this computer with
 // llama.cpp, a server the user already runs, or a hosted provider. The one in use is tagged and
 // its form is open, until the user opens another; a llama.cpp setup that is running or failed
-// keeps its own open. The first is greyed out when no GPU here can run one of Cedar's models.
+// keeps its own open. The first is greyed out when no GPU here can run one of Cedar's models,
+// and the provider is the recommended one then.
 function renderModelChoice(s, p) {
   const l = s.llama;
   const settingUp = l.setup.state === 'running' || l.setup.state === 'failed';
@@ -392,10 +404,26 @@ function renderModelChoice(s, p) {
     $(source).classList.toggle('hidden', !open);
     const tag = $(`pick-${source}-tag`);
     const inUse = s.configured && s.model_source === source;
-    const recommended = source === 'llama' && !!l.offer && !s.configured;
+    // Until something is chosen: running a model here where the GPU can, a provider where not.
+    const recommended = !s.configured && source === (l.offer ? 'llama' : 'hosted');
     tag.textContent = inUse ? tr('pick.inUse') : recommended ? tr('pick.recommended') : '';
     tag.classList.toggle('hidden', !inUse && !recommended);
   }
+}
+
+// The own-server form's presets: the one whose address is in the field is marked, with its hint
+// under the row. Any other address has neither.
+function renderPreset() {
+  const address = $('base-url').value.trim().replace(/\/+$/, '');
+  let hint = '';
+  for (const button of document.querySelectorAll('#presets button')) {
+    const preset = PRESETS[Number(button.dataset.preset)];
+    const chosen = preset.url === address;
+    button.classList.toggle('chosen', chosen);
+    button.setAttribute('aria-pressed', String(chosen));
+    if (chosen) hint = tr(preset.hint);
+  }
+  $('preset-hint').textContent = hint;
 }
 
 // The hosted provider's form: the list of providers (from src/models.rs, with "Other" for one
@@ -798,7 +826,7 @@ function modelForm({ source, address, key, probe, status, pick, select, save, er
   // A changed address or key makes the listed models someone else's.
   const changed = () => { touched(true); $(pick).classList.add('hidden'); };
 
-  $(probe).addEventListener('click', async () => {
+  const list = async () => {
     touched(true);
     $(error).textContent = '';
     $(status).textContent = tr('model.asking');
@@ -815,7 +843,8 @@ function modelForm({ source, address, key, probe, status, pick, select, save, er
     } finally {
       $(probe).disabled = false;
     }
-  });
+  };
+  $(probe).addEventListener('click', list);
 
   $(save).addEventListener('click', async () => {
     $(error).textContent = '';
@@ -832,10 +861,10 @@ function modelForm({ source, address, key, probe, status, pick, select, save, er
       $(error).textContent = String(e);
     }
   });
-  return changed;
+  return { changed, list };
 }
 
-const ownChanged = modelForm({
+const ownForm = modelForm({
   source: 'own',
   address: () => $('base-url').value,
   key: 'api-key',
@@ -847,15 +876,29 @@ const ownChanged = modelForm({
   error: 'model-error',
   touched: (value) => { formTouched = value; },
 });
-for (const b of document.querySelectorAll('.presets button')) {
-  b.addEventListener('click', () => {
-    $('base-url').value = b.dataset.url;
-    ownChanged();
+// A preset fills in its server's address and asks it for its models at once: with the server
+// running, one click leads to the model list.
+PRESETS.forEach((preset, index) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = preset.name;
+  button.dataset.preset = String(index);
+  button.addEventListener('click', () => {
+    $('base-url').value = preset.url;
+    ownForm.changed();
+    renderPreset();
+    ownForm.list();
+  });
+  $('presets').appendChild(button);
+});
+for (const id of ['base-url', 'api-key']) {
+  $(id).addEventListener('input', () => {
+    ownForm.changed();
+    renderPreset();
   });
 }
-for (const id of ['base-url', 'api-key']) $(id).addEventListener('input', ownChanged);
 
-const hostedChanged = modelForm({
+const hostedForm = modelForm({
   source: 'hosted',
   // The chosen provider's address, or the one typed for a provider that is not on the list.
   address: () => $('hosted-provider').value || $('hosted-url').value,
@@ -870,13 +913,13 @@ const hostedChanged = modelForm({
   touched: (value) => { hostedTouched = value; },
 });
 $('hosted-provider').addEventListener('change', () => {
-  hostedChanged();
+  hostedForm.changed();
   // Another provider's key is not this one's.
   $('hosted-key').value = '';
   $('hosted-key').placeholder = '';
   if (lastStatus) renderHosted(lastStatus);
 });
-for (const id of ['hosted-url', 'hosted-key']) $(id).addEventListener('input', hostedChanged);
+for (const id of ['hosted-url', 'hosted-key']) $(id).addEventListener('input', hostedForm.changed);
 
 $('share-toggle').addEventListener('change', async (ev) => {
   await setShare(ev.target.checked);

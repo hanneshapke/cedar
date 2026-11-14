@@ -180,11 +180,16 @@ Running everything here, the setup window shows three steps:
   - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
     (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out
     when no GPU here has the memory for it.
-  - *Use a model server you already run*: pick a preset (Ollama, LM Studio, vLLM, llama.cpp,
-    SGLang) or type the address, add an API key if the server needs one, click *List models*,
-    choose one, and *Save*.
   - *Use a hosted provider*: pick the provider, enter its API key, click *List models*, choose
     one, and *Save* (see [Using a hosted provider](#using-a-hosted-provider)).
+  - *Use a model server you already run*: click a preset (Ollama, LM Studio, vLLM, llama.cpp,
+    SGLang), which fills in the server's usual address, says under the row what that server
+    needs to work with Cedar (a longer context, the tool-calling flags), and lists its models at
+    once. Or type the address, add an API key if the server needs one, and click *List models*.
+    Then choose a model and *Save*.
+
+  Until one is chosen, the page marks one as *Recommended*: running a model here where the GPU
+  can, a hosted provider where it cannot.
 
   Whichever it is, the app registers it in cedar's model registry (as the entry `default`),
   which cedar keeps in its database.
@@ -343,7 +348,7 @@ is kept.
 
 ### Using a hosted provider
 
-The third option sends the agent's model calls to a provider that runs open models and charges
+The second option sends the agent's model calls to a provider that runs open models and charges
 for what you use, so it needs no GPU: only an account there and an API key. The list has
 Baseten, Nebius and Doubleword first, then Cerebras, DeepInfra, DeepSeek, Fireworks AI, Groq,
 Hugging Face, Hyperbolic, Mistral, OpenRouter, SambaNova, Scaleway and Together AI, each with the

@@ -60,6 +60,8 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
   button:disabled { opacity: 0.5; cursor: default; }
   .presets button { font-size: 12px; padding: 4px 10px; }
+  .presets button.chosen { border-color: var(--accent); }
+  .presets { flex-wrap: wrap; }
   .error { color: var(--bad); }
   .qr { margin-top: 12px; width: 220px; padding: 0; border-radius: 8px; overflow: hidden; line-height: 0; }
   .qr svg { width: 220px; height: 220px; }
@@ -307,38 +309,6 @@
       <p class="muted fine" id="llama-license"></p>
     </div>
 
-    <button type="button" class="choice" id="pick-own" data-source="own" aria-expanded="false" aria-controls="own">
-      <strong><span data-i18n="pick.own">Use a model server you already run</span><span class="tag hidden" id="pick-own-tag"></span></strong>
-      <span data-i18n="pick.ownText">Ollama, LM Studio, vLLM, llama.cpp, SGLang or any other OpenAI-compatible server, on this computer or on another one.</span>
-    </button>
-    <div id="own" class="source-panel hidden">
-      <p class="muted" data-i18n-html="html.model.about">The server must support tool calling. It can run on <span class="this-computer">this computer</span> or on another machine. More models can be added from the chat's Settings.</p>
-      <div class="row presets">
-        <span class="muted" data-i18n="model.presets">Presets:</span>
-        <button data-url="http://127.0.0.1:11434/v1">Ollama</button>
-        <button data-url="http://127.0.0.1:1234/v1">LM Studio</button>
-        <button data-url="http://127.0.0.1:8000/v1">vLLM</button>
-        <button data-url="http://127.0.0.1:8080/v1">llama.cpp</button>
-        <button data-url="http://127.0.0.1:30000/v1">SGLang</button>
-      </div>
-      <label for="base-url" data-i18n="model.address">Address</label>
-      <input type="text" id="base-url" placeholder="http://127.0.0.1:11434/v1" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <label for="api-key" data-i18n="model.apiKey">API key (only if the server needs one)</label>
-      <input type="password" id="api-key" autocomplete="off">
-      <div class="row">
-        <button id="probe" data-i18n="model.list">List models</button>
-        <span id="probe-status" class="muted"></span>
-      </div>
-      <div id="model-pick" class="hidden">
-        <label for="model-select" data-i18n="model.model">Model</label>
-        <select id="model-select"></select>
-        <div class="row">
-          <button class="primary" id="save" data-i18n="model.save">Save</button>
-        </div>
-      </div>
-      <p id="model-error" class="error"></p>
-    </div>
-
     <button type="button" class="choice" id="pick-hosted" data-source="hosted" aria-expanded="false" aria-controls="hosted">
       <strong><span data-i18n="pick.hosted">Use a hosted provider</span><span class="tag hidden" id="pick-hosted-tag"></span></strong>
       <span data-i18n="pick.hostedText">Baseten, Nebius, Doubleword and others run the model for you and charge for what you use. No GPU needed; you need an API key.</span>
@@ -368,6 +338,34 @@
         </div>
       </div>
       <p id="hosted-error" class="error"></p>
+    </div>
+
+    <button type="button" class="choice" id="pick-own" data-source="own" aria-expanded="false" aria-controls="own">
+      <strong><span data-i18n="pick.own">Use a model server you already run</span><span class="tag hidden" id="pick-own-tag"></span></strong>
+      <span data-i18n="pick.ownText">Ollama, LM Studio, vLLM, llama.cpp, SGLang or any other OpenAI-compatible server, on this computer or on another one.</span>
+    </button>
+    <div id="own" class="source-panel hidden">
+      <p class="muted" data-i18n-html="html.model.about">The server must support tool calling. It can run on <span class="this-computer">this computer</span> or on another machine. More models can be added from the chat's Settings.</p>
+      <div class="row presets" id="presets">
+        <span class="muted" data-i18n="model.presets">Presets:</span>
+      </div>
+      <p class="muted fine" id="preset-hint"></p>
+      <label for="base-url" data-i18n="model.address">Address</label>
+      <input type="text" id="base-url" placeholder="http://127.0.0.1:11434/v1" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <label for="api-key" data-i18n="model.apiKey">API key (only if the server needs one)</label>
+      <input type="password" id="api-key" autocomplete="off">
+      <div class="row">
+        <button id="probe" data-i18n="model.list">List models</button>
+        <span id="probe-status" class="muted"></span>
+      </div>
+      <div id="model-pick" class="hidden">
+        <label for="model-select" data-i18n="model.model">Model</label>
+        <select id="model-select"></select>
+        <div class="row">
+          <button class="primary" id="save" data-i18n="model.save">Save</button>
+        </div>
+      </div>
+      <p id="model-error" class="error"></p>
     </div>
   </div>
 </section>
