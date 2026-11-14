@@ -14,7 +14,7 @@ use crate::proc;
 use cedar_llama::catalog::{self, Model};
 use cedar_llama::install::{self, Event};
 use cedar_llama::release::{Build, Manifest};
-use cedar_llama::{probe, server, Plan};
+use cedar_llama::{probe, Plan};
 use serde::Serialize;
 use std::path::Path;
 use std::time::Duration;
@@ -60,6 +60,7 @@ pub async fn detect(app: AppHandle) {
         None => None,
     };
     app.state::<AppState>().set_llama_plan(plan);
+    crate::window::push_llama(&app);
 }
 
 /// Why a setup ended without an install.
@@ -141,7 +142,7 @@ async fn list_devices(exe: &Path) -> Vec<String> {
 }
 
 /// The setup page's "Set up for me": installs what [`detect`] chose, checks that llama.cpp sees
-/// the GPU, makes it the model server, and starts it. The page follows along in `llama.setup`.
+/// the GPU, adds it to cedar's models, and starts it. The page follows along in `llama.setup`.
 pub async fn install(app: AppHandle) {
     let state = app.state::<AppState>();
     let cancel = state.new_llama_cancel();
@@ -149,7 +150,9 @@ pub async fn install(app: AppHandle) {
     match outcome {
         Ok(()) => {
             state.set_llama_setup(SetupStatus::Idle, None);
-            app::apply_model_server(app.clone(), false).await;
+            // The one just set up is the one new chats use.
+            state.choose(app::Chosen::Llama);
+            app::apply_model_server(app.clone()).await;
         }
         Err(Stop::Cancelled) => state.set_llama_setup(SetupStatus::Idle, None),
         Err(Stop::Failed(why)) => state.set_llama_setup(SetupStatus::Failed(why), None),
@@ -171,10 +174,6 @@ async fn run(state: &AppState, cancel: &CancellationToken) -> Result<(), Stop> {
     state
         .update_config(|c| {
             c.llama = Some(Llama { build: plan.build.id().to_string(), model: plan.model.id.to_string() });
-            c.model_source = crate::models::SOURCE_LLAMA.to_string();
-            c.llm_base_url = server::base_url(c.llama_port);
-            c.llm_model = plan.model.id.to_string();
-            c.llm_api_key = c.secrets.llama_api_key.clone();
         })
         .map_err(failed)?;
     Ok(())
@@ -204,26 +203,22 @@ pub async fn ensure(state: &AppState) -> Result<Option<Spec>, String> {
     result
 }
 
-/// The page's "Remove": stops the server, deletes llama.cpp and the model, and leaves the model
-/// server unset. Models the app did not pick are left where they are.
+/// The page's "Remove": stops the server, deletes llama.cpp and the model, and takes its entry
+/// out of cedar's registry. A model server named beside it is left as it is, and so are model
+/// files the app did not pick.
 pub async fn remove(app: AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     let Some(llama) = state.config().llama else {
         return Ok(());
     };
     state.llama.stop().await;
-    state.update_config(|c| {
-        c.llama = None;
-        c.model_source.clear();
-        c.llm_base_url.clear();
-        c.llm_model.clear();
-        c.llm_api_key.clear();
-    })?;
+    state.update_config(|c| c.llama = None)?;
     let _ = tokio::fs::remove_dir_all(state.paths.llama()).await;
     if let Some(model) = catalog::by_id(&llama.model) {
         let _ = tokio::fs::remove_file(install::model_path(&state.paths.models(), model)).await;
     }
-    app::apply_model_server(app.clone(), false).await;
+    // Registering again takes its entry out of cedar's registry; a model server beside it stays.
+    app::apply_model_server(app.clone()).await;
     Ok(())
 }
 

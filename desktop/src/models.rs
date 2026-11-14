@@ -55,41 +55,43 @@ impl ModelList {
     }
 }
 
-/// A hosted provider the setup page offers: its name, the address of its OpenAI-compatible API,
-/// and where its documentation says how to get a key. Each address is the one the provider's own
-/// documentation gives for the OpenAI SDK's `base_url`.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+/// A hosted provider the pages offer: its name, the address of its OpenAI-compatible API (the one
+/// its own documentation gives for the OpenAI SDK's `base_url`), and where that documentation is.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Provider {
-    pub name: &'static str,
-    pub base_url: &'static str,
-    pub docs: &'static str,
+    pub name: String,
+    pub base_url: String,
+    pub docs: String,
 }
 
-const fn provider(name: &'static str, base_url: &'static str, docs: &'static str) -> Provider {
-    Provider { name, base_url, docs }
+/// A model server people run themselves: where it listens by default, and the key of the hint
+/// (in each page's own texts) that says what it needs to work with Cedar.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Preset {
+    pub name: String,
+    pub base_url: String,
+    pub hint: String,
 }
 
-/// The page lists them in this order: three first, then by name.
-pub const PROVIDERS: &[Provider] = &[
-    provider("Baseten", "https://inference.baseten.co/v1", "https://docs.baseten.co/"),
-    provider("Nebius", "https://api.tokenfactory.nebius.com/v1", "https://docs.tokenfactory.nebius.com/"),
-    provider("Doubleword", "https://api.doubleword.ai/v1", "https://docs.doubleword.ai/"),
-    provider("Cerebras", "https://api.cerebras.ai/v1", "https://inference-docs.cerebras.ai/"),
-    provider("DeepInfra", "https://api.deepinfra.com/v1/openai", "https://docs.deepinfra.com/"),
-    provider("DeepSeek", "https://api.deepseek.com/v1", "https://api-docs.deepseek.com/"),
-    provider("Fireworks AI", "https://api.fireworks.ai/inference/v1", "https://docs.fireworks.ai/"),
-    provider("Groq", "https://api.groq.com/openai/v1", "https://console.groq.com/docs"),
-    provider("Hugging Face", "https://router.huggingface.co/v1", "https://huggingface.co/docs/inference-providers"),
-    provider("Hyperbolic", "https://api.hyperbolic.xyz/v1", "https://docs.hyperbolic.ai/"),
-    provider("Mistral", "https://api.mistral.ai/v1", "https://docs.mistral.ai/"),
-    provider("OpenRouter", "https://openrouter.ai/api/v1", "https://openrouter.ai/docs"),
-    provider("SambaNova", "https://api.sambanova.ai/v1", "https://docs.sambanova.ai/"),
-    provider("Scaleway", "https://api.scaleway.ai/v1", "https://www.scaleway.com/en/docs/generative-apis/"),
-    provider("Together AI", "https://api.together.ai/v1", "https://docs.together.ai/"),
-];
+/// The providers and presets, in the order the pages list them.
+#[derive(Deserialize, Debug)]
+pub struct ModelServers {
+    pub providers: Vec<Provider>,
+    pub presets: Vec<Preset>,
+}
 
-/// The three ways the setup page offers to get a model.
-pub const SOURCE_LLAMA: &str = "llama";
+/// One list for the setup page and the chat's Settings, which gets the same file from cedar-chat
+/// (`/model-servers.json`).
+pub fn model_servers() -> &'static ModelServers {
+    static LIST: std::sync::LazyLock<ModelServers> = std::sync::LazyLock::new(|| {
+        serde_json::from_str(include_str!("../../chat/static/model-servers.json"))
+            .expect("chat/static/model-servers.json is checked by a test")
+    });
+    &LIST
+}
+
+/// The two ways to name a model server on the setup page (the third, llama.cpp run by the app,
+/// is `Config::llama`).
 pub const SOURCE_OWN: &str = "own";
 pub const SOURCE_HOSTED: &str = "hosted";
 
@@ -97,13 +99,9 @@ fn host_of(base_url: &str) -> Option<String> {
     url::Url::parse(base_url.trim()).ok()?.host_str().map(str::to_ascii_lowercase)
 }
 
-/// Which of the three ways the saved model server is: what the page recorded when it was saved
-/// (`saved`), or for a config from before it did, what the address says. Empty when no model
-/// server is chosen.
-pub fn source(saved: &str, llama: bool, base_url: &str) -> &'static str {
-    if llama {
-        return SOURCE_LLAMA;
-    }
+/// Which of the two the saved model server is: what the page recorded when it was saved
+/// (`saved`), or for a config from before it did, what the address says. Empty when none is set.
+pub fn source(saved: &str, base_url: &str) -> &'static str {
     if base_url.trim().is_empty() {
         return "";
     }
@@ -112,7 +110,7 @@ pub fn source(saved: &str, llama: bool, base_url: &str) -> &'static str {
         SOURCE_HOSTED => SOURCE_HOSTED,
         _ => {
             let host = host_of(base_url);
-            let hosted = host.is_some() && PROVIDERS.iter().any(|p| host_of(p.base_url) == host);
+            let hosted = host.is_some() && model_servers().providers.iter().any(|p| host_of(&p.base_url) == host);
             if hosted {
                 SOURCE_HOSTED
             } else {
@@ -179,45 +177,71 @@ mod tests {
     }
 
     #[test]
-    fn providers_are_well_formed() {
+    fn the_shared_list_is_well_formed() {
+        let list = model_servers();
         let mut hosts = Vec::new();
-        for p in PROVIDERS {
+        for p in &list.providers {
             assert!(p.base_url.starts_with("https://"), "{}", p.name);
             assert!(p.docs.starts_with("https://"), "{}", p.name);
             // Saved as it is listed: nothing is added to or cut from the address.
-            assert_eq!(normalize_base_url(p.base_url).unwrap(), p.base_url, "{}", p.name);
-            hosts.push(host_of(p.base_url).unwrap());
+            assert_eq!(normalize_base_url(&p.base_url).unwrap(), p.base_url, "{}", p.name);
+            hosts.push(host_of(&p.base_url).unwrap());
         }
         let count = hosts.len();
         hosts.sort();
         hosts.dedup();
         assert_eq!(hosts.len(), count, "two providers share a host");
-        assert_eq!(PROVIDERS[..3].iter().map(|p| p.name).collect::<Vec<_>>(), ["Baseten", "Nebius", "Doubleword"]);
+        assert_eq!(list.providers[..3].iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Baseten", "Nebius", "Doubleword"]);
+        assert_eq!(
+            list.presets.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            ["Ollama", "LM Studio", "vLLM", "llama.cpp", "SGLang"]
+        );
+        for p in &list.presets {
+            assert_eq!(normalize_base_url(&p.base_url).unwrap(), p.base_url, "{}", p.name);
+            assert!(p.hint.starts_with("preset."), "{}", p.name);
+        }
     }
 
     #[test]
     fn the_source_of_a_model_server() {
         // Nothing chosen.
-        assert_eq!(source("", false, ""), "");
-        assert_eq!(source("hosted", false, " "), "");
-        // llama.cpp set up by the app, whatever else is recorded.
-        assert_eq!(source("own", true, "http://127.0.0.1:18081/v1"), SOURCE_LLAMA);
+        assert_eq!(source("", ""), "");
+        assert_eq!(source("hosted", " "), "");
         // What the page recorded.
-        assert_eq!(source("hosted", false, "https://llm.example.com/v1"), SOURCE_HOSTED);
-        assert_eq!(source("own", false, "https://api.groq.com/openai/v1"), SOURCE_OWN);
+        assert_eq!(source("hosted", "https://llm.example.com/v1"), SOURCE_HOSTED);
+        assert_eq!(source("own", "https://api.groq.com/openai/v1"), SOURCE_OWN);
         // A config from before it was recorded: by the address.
-        for p in PROVIDERS {
-            assert_eq!(source("", false, p.base_url), SOURCE_HOSTED, "{}", p.name);
+        for p in &model_servers().providers {
+            assert_eq!(source("", &p.base_url), SOURCE_HOSTED, "{}", p.name);
         }
-        assert_eq!(source("", false, "https://API.Together.ai/v1/"), SOURCE_HOSTED);
-        assert_eq!(source("", false, "http://127.0.0.1:11434/v1"), SOURCE_OWN);
-        assert_eq!(source("", false, "https://llm.example.com/v1"), SOURCE_OWN);
-        assert_eq!(source("llama", false, "http://10.0.0.5:8000/v1"), SOURCE_OWN);
+        assert_eq!(source("", "https://API.Together.ai/v1/"), SOURCE_HOSTED);
+        assert_eq!(source("", "http://127.0.0.1:11434/v1"), SOURCE_OWN);
+        assert_eq!(source("", "https://llm.example.com/v1"), SOURCE_OWN);
+        assert_eq!(source("llama", "http://10.0.0.5:8000/v1"), SOURCE_OWN);
+    }
+
+    #[test]
+    fn what_cedar_is_sent_for_an_entry() {
+        let own = Entry { id: REGISTRY_ID, base_url: "x", api_key: " key ", model: " qwen3:30b ", extras: None, make_default: false };
+        let json = serde_json::to_value(spec(&own, "http://127.0.0.1:11434/v1")).unwrap();
+        assert_eq!(json, serde_json::json!({
+            "base_url": "http://127.0.0.1:11434/v1", "model": "qwen3:30b", "label": "qwen3:30b", "api_key": "key",
+        }));
+        // The one just chosen becomes the default; one the app installed brings what it knows.
+        let extras = Extras { label: "gpt-oss 20B", max_tokens: 8192, reasoning_levels: &["low", "high"] };
+        let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gpt-oss-20b", extras: Some(extras), make_default: true };
+        let json = serde_json::to_value(spec(&llama, "http://127.0.0.1:18081/v1")).unwrap();
+        assert_eq!(json, serde_json::json!({
+            "base_url": "http://127.0.0.1:18081/v1", "model": "gpt-oss-20b", "label": "gpt-oss 20B", "api_key": "k",
+            "is_default": true, "max_tokens": 8192, "reasoning_levels": ["low", "high"], "default_reasoning": "",
+        }));
     }
 }
 
-/// The registry entry the app manages. The chat's Settings page can add others beside it.
+/// The registry entries the app manages: the model server the user named on the setup page, and
+/// the model the app runs with llama.cpp. The chat's Settings page can add others beside them.
 pub const REGISTRY_ID: &str = "default";
+pub const LLAMA_ID: &str = "llama";
 
 /// cedar's own default for the most tokens of one reply.
 pub const DEFAULT_MAX_TOKENS: u32 = 16384;
@@ -236,7 +260,10 @@ struct ModelSpec<'a> {
     label: &'a str,
     /// An empty string removes a saved key, which is what an emptied field means.
     api_key: &'a str,
-    is_default: bool,
+    /// Sent only for the entry the user just chose: left out, cedar keeps the default it has,
+    /// which may be one picked in the chat's Settings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_default: Option<bool>,
     /// Left out, cedar keeps what the entry has (the chat's Settings may have changed it).
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
@@ -247,39 +274,75 @@ struct ModelSpec<'a> {
     default_reasoning: Option<&'a str>,
 }
 
-/// Registers (or updates) the model server in cedar's registry: `PUT /v1/admin/models/default`.
-/// cedar checks the server by listing its models before it keeps the entry, and stores it in its
+/// One entry for cedar's registry.
+pub struct Entry<'a> {
+    /// [`REGISTRY_ID`] or [`LLAMA_ID`].
+    pub id: &'a str,
+    pub base_url: &'a str,
+    pub api_key: &'a str,
+    pub model: &'a str,
+    pub extras: Option<Extras<'a>>,
+    /// The user just chose this one: it becomes the model new chats use.
+    pub make_default: bool,
+}
+
+fn spec<'a>(entry: &'a Entry<'a>, base: &'a str) -> ModelSpec<'a> {
+    let model = entry.model.trim();
+    let extras = entry.extras.as_ref();
+    ModelSpec {
+        base_url: base,
+        model,
+        label: extras.map_or(model, |e| e.label),
+        api_key: entry.api_key.trim(),
+        is_default: entry.make_default.then_some(true),
+        max_tokens: extras.map(|e| e.max_tokens),
+        reasoning_levels: extras.map(|e| e.reasoning_levels),
+        default_reasoning: extras.map(|_| ""),
+    }
+}
+
+fn admin_client() -> Result<reqwest::Client> {
+    // cedar itself gives the model server 20 s to answer.
+    Ok(reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?)
+}
+
+/// Removes an entry from cedar's registry; one that is not there is fine.
+pub async fn unregister(cedar_url: &str, cedar_api_key: &str, id: &str) -> Result<()> {
+    let resp = admin_client()?
+        .delete(format!("{cedar_url}/v1/admin/models/{id}"))
+        .bearer_auth(cedar_api_key)
+        .send()
+        .await
+        .context("could not reach cedar to remove the model")?;
+    let status = resp.status();
+    if status.is_success() || status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(());
+    }
+    bail!("cedar did not remove the model ({status})")
+}
+
+/// The address of an entry in cedar's registry, if it has that entry.
+pub async fn registered_address(cedar_url: &str, cedar_api_key: &str, id: &str) -> Option<String> {
+    let resp = admin_client().ok()?.get(format!("{cedar_url}/v1/admin/models")).bearer_auth(cedar_api_key).send().await.ok()?;
+    let body: serde_json::Value = resp.json().await.ok()?;
+    let entry = body["models"].as_array()?.iter().find(|m| m["id"] == id)?;
+    entry["base_url"].as_str().map(str::to_string)
+}
+
+/// Registers (or updates) an entry in cedar's registry: `PUT /v1/admin/models/<id>`. cedar
+/// checks the server by listing its models before it keeps the entry, and stores it in its
 /// database, so this only needs to happen when the choice changes, but it is safe to repeat.
-pub async fn register(
-    cedar_url: &str,
-    cedar_api_key: &str,
-    base_url: &str,
-    api_key: &str,
-    model: &str,
-    extras: Option<Extras<'_>>,
-) -> Result<()> {
+pub async fn register(cedar_url: &str, cedar_api_key: &str, entry: Entry<'_>) -> Result<()> {
+    let Entry { id, base_url, model, .. } = entry;
     let base = normalize_base_url(base_url)?;
     let model = model.trim();
     if model.is_empty() {
         bail!(t("cmd.pick_model"));
     }
-    let client = reqwest::Client::builder()
-        // cedar itself gives the model server 20 s to answer.
-        .timeout(Duration::from_secs(30))
-        .build()?;
-    let resp = client
-        .put(format!("{cedar_url}/v1/admin/models/{REGISTRY_ID}"))
+    let resp = admin_client()?
+        .put(format!("{cedar_url}/v1/admin/models/{id}"))
         .bearer_auth(cedar_api_key)
-        .json(&ModelSpec {
-            base_url: &base,
-            model,
-            label: extras.as_ref().map_or(model, |e| e.label),
-            api_key: api_key.trim(),
-            is_default: true,
-            max_tokens: extras.as_ref().map(|e| e.max_tokens),
-            reasoning_levels: extras.as_ref().map(|e| e.reasoning_levels),
-            default_reasoning: extras.as_ref().map(|_| ""),
-        })
+        .json(&spec(&entry, &base))
         .send()
         .await
         .context("could not reach cedar to register the model")?;

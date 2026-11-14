@@ -104,19 +104,17 @@ pub fn save_model_server(
     if model.is_empty() {
         return Err(t("cmd.pick_model"));
     }
-    // The user's own server takes the place of the llama.cpp the app ran, which then stops;
-    // what was downloaded for it stays until "Remove".
-    let was_llama = state.config().llama.is_some();
     state
         .update_config(|c| {
-            c.llama = None;
             c.model_source = source.to_string();
             c.llm_base_url = base_url;
             c.llm_api_key = api_key.trim().to_string();
             c.llm_model = model;
         })
         .map_err(fail)?;
-    tauri::async_runtime::spawn(app::apply_model_server(app, was_llama));
+    // The one just saved is the one new chats use; a model the app runs with llama.cpp stays.
+    state.choose(app::Chosen::Server);
+    tauri::async_runtime::spawn(app::apply_model_server(app));
     Ok(())
 }
 

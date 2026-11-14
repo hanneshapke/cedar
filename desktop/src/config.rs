@@ -45,12 +45,12 @@ pub struct Config {
     /// The user chose to run the servers on this computer, on the setup page's question (see
     /// [`Self::asks_choice`]).
     pub run_locally: bool,
-    /// Which of the setup page's three ways the model server was chosen by: `llama` (the app
-    /// runs llama.cpp), `own` (a server the user runs) or `hosted` (a provider). Empty in a config
-    /// from before the page recorded it; see `models::source`.
+    /// How the model server above was named on the setup page: `own` (a server the user runs) or
+    /// `hosted` (a provider). Empty in a config from before the page recorded it; see
+    /// `models::source`.
     pub model_source: String,
-    /// llama.cpp installed and run by the app as the model server (see llamasetup.rs), which
-    /// `llm_base_url` and `llm_model` then point at. `None`: a model server of the user's own.
+    /// A model the app runs itself with llama.cpp (see llamasetup.rs), beside or instead of the
+    /// model server above: cedar gets it as an entry of its own.
     pub llama: Option<Llama>,
     /// The port the app's llama-server listens on, on this computer only.
     pub llama_port: u16,
@@ -141,10 +141,29 @@ impl Config {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
             Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
         };
-        if cfg.fill_secrets() {
+        let moved = cfg.split_llama();
+        if cfg.fill_secrets() || moved {
             cfg.save(path)?;
         }
         Ok(cfg)
+    }
+
+    /// The address the app's llama-server answers at.
+    pub fn llama_url(&self) -> String {
+        cedar_llama::server::base_url(self.llama_port)
+    }
+
+    /// An early build of the llama.cpp setup wrote llama-server's address into the model server
+    /// fields too. It is an entry of its own now, so those fields are emptied again.
+    fn split_llama(&mut self) -> bool {
+        let doubled = self.llama.is_some() && self.llm_base_url.trim() == self.llama_url();
+        if doubled {
+            self.llm_base_url.clear();
+            self.llm_model.clear();
+            self.llm_api_key.clear();
+            self.model_source.clear();
+        }
+        doubled
     }
 
     fn fill_secrets(&mut self) -> bool {
@@ -192,9 +211,14 @@ impl Config {
         Ok(())
     }
 
-    /// Both the model server and the model name are known.
-    pub fn configured(&self) -> bool {
+    /// A model server is named: both its address and the model name are known.
+    pub fn has_server(&self) -> bool {
         !self.llm_base_url.trim().is_empty() && !self.llm_model.trim().is_empty()
+    }
+
+    /// There is a model to register with cedar: a model server, or one the app runs itself.
+    pub fn configured(&self) -> bool {
+        self.has_server() || self.llama.is_some()
     }
 
     pub fn sandbox_image(&self) -> String {
@@ -309,6 +333,44 @@ mod tests {
         assert_eq!(cfg.sandbox_image(), format!("{IMAGE_REPOSITORY}/cedar-sandbox:{VERSION}"));
         assert!(cfg.remote_server().is_none());
         assert!(cfg.asks_choice() && cfg.holds_start());
+    }
+
+    #[test]
+    fn a_model_server_or_llama_is_enough() {
+        let mut cfg = Config::default();
+        assert!(!cfg.has_server() && !cfg.configured());
+        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gpt-oss-20b".into() });
+        assert!(!cfg.has_server() && cfg.configured());
+        cfg.llm_base_url = "https://api.groq.com/openai/v1".into();
+        assert!(!cfg.has_server(), "an address without a model is not a server yet");
+        cfg.llm_model = "openai/gpt-oss-120b".into();
+        assert!(cfg.has_server() && cfg.configured());
+        cfg.llama = None;
+        assert!(cfg.has_server() && cfg.configured());
+    }
+
+    /// A config from the first build of the llama.cpp setup: the model server fields held
+    /// llama-server's address. They are emptied; a real model server beside llama.cpp is kept.
+    #[test]
+    fn llama_gets_out_of_the_model_server_fields() {
+        let mut cfg = Config::default();
+        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gpt-oss-20b".into() });
+        cfg.llm_base_url = "http://127.0.0.1:18081/v1".into();
+        cfg.llm_model = "gpt-oss-20b".into();
+        cfg.llm_api_key = "k".into();
+        cfg.model_source = "llama".into();
+        assert!(cfg.split_llama());
+        assert!(cfg.llm_base_url.is_empty() && cfg.llm_model.is_empty() && cfg.llm_api_key.is_empty());
+        assert!(cfg.model_source.is_empty() && cfg.llama.is_some() && cfg.configured());
+        assert!(!cfg.split_llama(), "once");
+
+        cfg.llm_base_url = "https://api.groq.com/openai/v1".into();
+        cfg.llm_model = "m".into();
+        assert!(!cfg.split_llama());
+        assert!(cfg.has_server());
+        // Without llama.cpp, a server on that port is simply the user's.
+        let mut own = Config { llm_base_url: "http://127.0.0.1:18081/v1".into(), llm_model: "m".into(), ..Config::default() };
+        assert!(!own.split_llama() && own.has_server());
     }
 
     #[test]

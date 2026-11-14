@@ -14,14 +14,9 @@ let sourceTouched = false;
 let hostedTouched = false;
 
 // The model servers people run themselves, for the own-server form: where each listens by
-// default, and (in strings.js) what it needs to work with Cedar.
-const PRESETS = [
-  { name: 'Ollama', url: 'http://127.0.0.1:11434/v1', hint: 'preset.ollama' },
-  { name: 'LM Studio', url: 'http://127.0.0.1:1234/v1', hint: 'preset.lmstudio' },
-  { name: 'vLLM', url: 'http://127.0.0.1:8000/v1', hint: 'preset.vllm' },
-  { name: 'llama.cpp', url: 'http://127.0.0.1:8080/v1', hint: 'preset.llamacpp' },
-  { name: 'SGLang', url: 'http://127.0.0.1:30000/v1', hint: 'preset.sglang' },
-];
+// default, and the key of its hint in strings.js. From the app (chat/static/model-servers.json,
+// which the chat's Settings uses too); the buttons are built when the first status arrives.
+let PRESETS = [];
 let shareBusy = false;
 
 function dot(el, cls) {
@@ -122,21 +117,26 @@ function render(s) {
   renderHosted(s);
   renderModelChoice(s, p);
   const m = s.model;
+  // What the line names: the model server, or with none, the model the app runs with llama.cpp.
+  const name = s.llm_model.trim() || s.llama.model || '';
+  const using = s.llm_model.trim()
+    ? tr('model.using', { model: s.llm_model.trim(), url: s.llm_base_url.trim() })
+    : tr('llama.running', { model: name, computer: p.text('computer') });
   $('model-detail').textContent = '';
   if (m.state === 'registering') {
     dot($('model-dot'), 'busy');
-    $('model-text').textContent = tr('model.registering', { model: s.llm_model });
+    $('model-text').textContent = tr('model.registering', { model: name });
   } else if (m.state === 'registered') {
     dot($('model-dot'), 'ok');
     // m.detail says the same in English; the page words it in the user's language.
-    $('model-text').textContent = tr('model.using', { model: s.llm_model.trim(), url: s.llm_base_url.trim() });
+    $('model-text').textContent = using;
   } else if (m.state === 'failed') {
     dot($('model-dot'), 'bad');
-    $('model-text').textContent = tr('model.failed', { model: s.llm_model });
+    $('model-text').textContent = tr('model.failed', { model: name });
     $('model-detail').textContent = m.detail;
   } else if (s.configured) {
     dot($('model-dot'), 'warn');
-    $('model-text').textContent = tr('model.pending', { model: s.llm_model, url: s.llm_base_url });
+    $('model-text').textContent = s.llm_model.trim() ? tr('model.pending', { model: s.llm_model, url: s.llm_base_url }) : using;
   } else {
     dot($('model-dot'), 'warn');
     $('model-text').textContent = tr('model.notChosen');
@@ -281,9 +281,9 @@ function activity(s, p) {
   if (sv.state === 'crashed') return waiting(tr('activity.crashed'), 'services');
   if (l.model && l.server.state === 'starting') return busy(tr('activity.llamaLoading', { model: l.model }), 'model');
   if (l.model && l.server.state === 'crashed') return waiting(tr('activity.llamaCrashed'), 'model');
-  if (m.state === 'registering') return busy(tr('activity.registering', { model: s.llm_model }), 'model');
+  if (m.state === 'registering') return busy(tr('activity.registering', { model: s.llm_model.trim() || l.model || '' }), 'model');
   if (sv.state !== 'running') return waiting(tr('activity.notRunning'), 'services');
-  if (m.state === 'failed') return waiting(tr('activity.modelFailed', { model: s.llm_model }), 'model');
+  if (m.state === 'failed') return waiting(tr('activity.modelFailed', { model: s.llm_model.trim() || l.model || '' }), 'model');
   // Sharing with the phone apps, only once it was asked for.
   if (ts.state === 'installed' && sh.state !== 'on') return waiting(tr('activity.tsLogin'), 'share');
   if (ts.state === 'failed') return waiting(tr('activity.tsFailed'), 'share');
@@ -381,15 +381,16 @@ function renderUpdate(s) {
 // Setting Docker up from here (Windows and macOS): offered while Docker is missing (on Windows,
 // also while it won't start), and shown until it has finished.
 // The Model server step's three options (see index.html): running a model on this computer with
-// llama.cpp, a server the user already runs, or a hosted provider. The one in use is tagged and
-// its form is open, until the user opens another; a llama.cpp setup that is running or failed
+// llama.cpp, a hosted provider, or a server the user already runs. What is in use is tagged (the
+// first can be in use beside one of the others) and a form is open, until the user opens another; a llama.cpp setup that is running or failed
 // keeps its own open. The first is greyed out when no GPU here can run one of Cedar's models,
 // and the provider is the recommended one then.
 function renderModelChoice(s, p) {
   const l = s.llama;
   const settingUp = l.setup.state === 'running' || l.setup.state === 'failed';
   const canLlama = !!l.offer || !!l.model || settingUp;
-  if (!sourceTouched) openSource = settingUp ? 'llama' : s.model_source || null;
+  // What is in use is open: the model server's form, or with none, the llama.cpp one.
+  if (!sourceTouched) openSource = settingUp ? 'llama' : s.model_source || (l.model ? 'llama' : null);
   if (openSource === 'llama' && !canLlama) openSource = null;
 
   $('pick-llama').disabled = !canLlama;
@@ -403,7 +404,8 @@ function renderModelChoice(s, p) {
     card.setAttribute('aria-expanded', String(open));
     $(source).classList.toggle('hidden', !open);
     const tag = $(`pick-${source}-tag`);
-    const inUse = s.configured && s.model_source === source;
+    // A model the app runs and a model server can both be in use: cedar has an entry for each.
+    const inUse = source === 'llama' ? !!l.model : s.model_source === source;
     // Until something is chosen: running a model here where the GPU can, a provider where not.
     const recommended = !s.configured && source === (l.offer ? 'llama' : 'hosted');
     tag.textContent = inUse ? tr('pick.inUse') : recommended ? tr('pick.recommended') : '';
@@ -414,6 +416,7 @@ function renderModelChoice(s, p) {
 // The own-server form's presets: the one whose address is in the field is marked, with its hint
 // under the row. Any other address has neither.
 function renderPreset() {
+  buildPresets();
   const address = $('base-url').value.trim().replace(/\/+$/, '');
   let hint = '';
   for (const button of document.querySelectorAll('#presets button')) {
@@ -801,6 +804,17 @@ $('docker-finish').addEventListener('click', () => invoke('finish_docker_setup')
 $('browser-toggle').addEventListener('change', (ev) => {
   invoke('set_browser', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
 });
+// The chat's Settings sends the window here with #llama for its "Run a model here with llama.cpp"
+// and for "Manage…" on the model the app runs: that option is opened and scrolled to.
+function openFromHash() {
+  if (window.location.hash !== '#llama') return;
+  sourceTouched = true;
+  openSource = 'llama';
+  if (lastStatus) render(lastStatus);
+  $('model').scrollIntoView({ block: 'start' });
+}
+window.addEventListener('hashchange', openFromHash);
+
 for (const card of document.querySelectorAll('.sources .choice')) {
   card.addEventListener('click', () => {
     sourceTouched = true;
@@ -878,19 +892,23 @@ const ownForm = modelForm({
 });
 // A preset fills in its server's address and asks it for its models at once: with the server
 // running, one click leads to the model list.
-PRESETS.forEach((preset, index) => {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = preset.name;
-  button.dataset.preset = String(index);
-  button.addEventListener('click', () => {
-    $('base-url').value = preset.url;
-    ownForm.changed();
-    renderPreset();
-    ownForm.list();
+function buildPresets() {
+  if (PRESETS.length || !lastStatus) return;
+  PRESETS = lastStatus.presets.map((preset) => ({ name: preset.name, url: preset.base_url, hint: preset.hint }));
+  PRESETS.forEach((preset, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = preset.name;
+    button.dataset.preset = String(index);
+    button.addEventListener('click', () => {
+      $('base-url').value = preset.url;
+      ownForm.changed();
+      renderPreset();
+      ownForm.list();
+    });
+    $('presets').appendChild(button);
   });
-  $('presets').appendChild(button);
-});
+}
 for (const id of ['base-url', 'api-key']) {
   $(id).addEventListener('input', () => {
     ownForm.changed();
@@ -1015,5 +1033,5 @@ $('remote-disconnect').addEventListener('click', () => {
     .finally(() => { $('remote-disconnect').disabled = false; });
 });
 
-refresh();
+refresh().then(openFromHash);
 setInterval(refresh, 1500);
