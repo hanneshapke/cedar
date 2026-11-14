@@ -73,6 +73,29 @@ pub struct Provider {
 struct SuggestedModels {
     default: Vec<String>,
     providers: std::collections::HashMap<String, Vec<String>>,
+    /// Which models read images: the first entry whose `match` a model's name contains.
+    #[serde(default)]
+    images: Vec<ImagesEntry>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ImagesEntry {
+    #[serde(rename = "match")]
+    name: String,
+    images: bool,
+}
+
+/// What the list of known models says about `model` reading images; `None` when it does not
+/// name it. Names are compared loosely, as the pages do: case and punctuation don't count.
+pub fn listed_images(model: &str) -> Option<bool> {
+    static LIST: std::sync::LazyLock<Vec<ImagesEntry>> = std::sync::LazyLock::new(|| {
+        serde_json::from_str::<SuggestedModels>(include_str!("../../chat/static/suggested-models.json"))
+            .expect("chat/static/suggested-models.json is checked by a test")
+            .images
+    });
+    let plain = |name: &str| name.chars().filter(char::is_ascii_alphanumeric).collect::<String>().to_ascii_lowercase();
+    let model = plain(model);
+    LIST.iter().find(|entry| model.contains(&plain(&entry.name))).map(|entry| entry.images)
 }
 
 /// A model server people run themselves: where it listens by default, and the key of the hint
@@ -265,7 +288,16 @@ mod tests {
         let json = serde_json::to_value(spec(&own, "http://127.0.0.1:11434/v1")).unwrap();
         assert_eq!(json, serde_json::json!({
             "base_url": "http://127.0.0.1:11434/v1", "model": "qwen3:30b", "label": "qwen3:30b", "api_key": "key",
+            // Nobody said whether it reads images, and the list doesn't name it: cedar tries it.
+            "detect_images": true,
         }));
+        // A model the list names goes with what the list says.
+        let listed = Entry { id: REGISTRY_ID, base_url: "x", api_key: "", model: "zai-org/GLM-5.3", extras: None, make_default: false };
+        let json = serde_json::to_value(spec(&listed, "https://api.doubleword.ai/v1")).unwrap();
+        assert_eq!((&json["detect_images"], &json["images_hint"]), (&serde_json::json!(true), &serde_json::json!(false)));
+        assert_eq!(listed_images("deepseek-ai/DeepSeek-V4.1-Flash"), Some(true));
+        assert_eq!(listed_images("deepseek-ai/DeepSeek-V4-Pro-0813"), Some(false));
+        assert_eq!(listed_images("some/unknown-model"), None);
         // The one just chosen becomes the default; one the app installed brings what it knows.
         let extras = Extras { label: "Gemma 4 12B", max_tokens: 8192, reasoning_levels: &["low", "high"], multimodal: true };
         let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), make_default: true };
@@ -313,6 +345,13 @@ struct ModelSpec<'a> {
     default_reasoning: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     multimodal: Option<bool>,
+    /// For a server of the user's own or a provider, where nobody says whether the model reads
+    /// images: cedar finds out once, from `images_hint` or by trying the model with an image,
+    /// and keeps what it has while the model stays the same.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detect_images: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    images_hint: Option<bool>,
 }
 
 /// One entry for cedar's registry.
@@ -340,6 +379,8 @@ fn spec<'a>(entry: &'a Entry<'a>, base: &'a str) -> ModelSpec<'a> {
         reasoning_levels: extras.map(|e| e.reasoning_levels),
         default_reasoning: extras.map(|_| ""),
         multimodal: extras.map(|e| e.multimodal),
+        detect_images: extras.is_none().then_some(true),
+        images_hint: if extras.is_none() { listed_images(model) } else { None },
     }
 }
 

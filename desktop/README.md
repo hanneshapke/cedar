@@ -384,6 +384,11 @@ Two things differ from a server of your own:
 The key is saved like any model server's: in `config.json` (mode 0600 on a Mac, in your profile
 folder on Windows) and, encrypted, in cedar's database.
 
+Neither form asks whether the model reads images. The app looks the model up in the list of known
+models (`chat/static/suggested-models.json`); for one the list does not name, cedar tries it with one
+small image when it is registered, and keeps the answer while the model stays the same. The chat's
+Settings → Models → *Edit* → *Advanced* can overrule it.
+
 ## Updates
 
 A minute after it starts and then every six hours, Cedar asks the latest GitHub Release whether

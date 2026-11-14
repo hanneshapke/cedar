@@ -438,6 +438,53 @@ pub async fn list_models(
     model_ids(&body).ok_or_else(|| anyhow!("{url} did not answer like an OpenAI-compatible server"))
 }
 
+/// What a model server made of a prompt that carries an image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageProbe {
+    /// It answered: the model takes images.
+    Accepts,
+    /// It refused the request as it stands: the model takes text only.
+    Rejects,
+    /// It could not be asked (unreachable, an error of its own, a refused key).
+    Unknown,
+}
+
+/// A small white square, as a data URL: the image of [`accepts_images`]. 32 pixels a side,
+/// because some servers refuse an image that is only a few pixels wide.
+const PROBE_IMAGE: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAJklEQVR42u3NMQ0AAAwDoPo33arYsQQMkB6LQCAQCAQCgUAg+BIMi1X0ptsIcT0AAAAASUVORK5CYII=";
+
+/// Whether `model` at an OpenAI-compatible server takes images: one chat completion with a small
+/// image and room for a single token. A server that answers accepts them; one that refuses the
+/// request (400, 404, 415, 422) does not. A server that silently drops the image looks like one
+/// that accepts it, which no request can tell apart.
+pub async fn accepts_images(
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    timeout: Duration,
+) -> ImageProbe {
+    let Ok(http) = reqwest::Client::builder().connect_timeout(timeout).timeout(timeout).build() else {
+        return ImageProbe::Unknown;
+    };
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let mut req = http.post(&url).json(&json!({
+        "model": model,
+        "max_tokens": 1,
+        "messages": [{ "role": "user", "content": [
+            { "type": "text", "text": "." },
+            { "type": "image_url", "image_url": { "url": PROBE_IMAGE } },
+        ] }],
+    }));
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    match req.send().await.map(|resp| resp.status().as_u16()) {
+        Ok(200..=299) => ImageProbe::Accepts,
+        Ok(400 | 404 | 415 | 422) => ImageProbe::Rejects,
+        _ => ImageProbe::Unknown,
+    }
+}
+
 /// The ids in a model list: OpenAI's `{"data": [{"id": ...}]}`, or the bare array of the same
 /// objects that some hosted providers answer with.
 fn model_ids(body: &Value) -> Option<Vec<String>> {

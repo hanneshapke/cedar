@@ -9,7 +9,10 @@
     "Suggest only models that call tools well: Cedar acts through tool calls.",
     "'reasoning' fills the reasoning-levels dropdown of the chat's Settings: 'presets' are the sets it",
     "offers, and 'models' says which levels a model takes ('match' is loose in the same way; the first",
-    "entry that a model's name contains wins). A model no entry matches starts without reasoning levels."
+    "entry that a model's name contains wins). A model no entry matches starts without reasoning levels.",
+    "'images' says which models read images, for a model saved without being told ('match' is loose in",
+    "the same way; the first entry that a model's name contains wins, so put the narrower name first).",
+    "A model no entry matches is tried with a small image when it is saved."
   ],
   "default": [
     "deepseek v4.1 flash",
@@ -43,5 +46,18 @@
       { "match": "deepseek v4", "levels": ["none", "low", "high", "max"] },
       { "match": "gpt oss", "levels": ["low", "medium", "high"] }
     ]
-  }
+  },
+  "images": [
+    { "match": "deepseek v4.1 flash", "images": true },
+    { "match": "deepseek v4", "images": false },
+    { "match": "kimi k2.6", "images": true },
+    { "match": "glm 5.3", "images": false },
+    { "match": "gpt oss", "images": false },
+    { "match": "qwen3.6", "images": true },
+    { "match": "qwen3.5", "images": true },
+    { "match": "gemma 4", "images": true },
+    { "match": "mistral small 4", "images": true },
+    { "match": "nemotron 3.5 super vl", "images": true },
+    { "match": "nemotron 3.5 lightning", "images": false }
+  ]
 }

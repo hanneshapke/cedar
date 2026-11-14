@@ -961,6 +961,8 @@ const cedarSettings = (() => {
         providers: servers.providers.map((p) => ({ ...p, suggested: [...((suggested.providers || {})[p.name] || []), ...(suggested.default || [])] })),
         // The sets the reasoning-levels dropdown offers, and which of them a model takes.
         reasoning: { presets: suggested.reasoning?.presets || [], models: suggested.reasoning?.models || [] },
+        // Which models read images, by name.
+        images: suggested.images || [],
       }))
       .catch(() => { modelServersLoad = null; return { providers: [], presets: [] }; });
     return modelServersLoad;
@@ -1308,14 +1310,32 @@ const cedarSettings = (() => {
     const maxTokensHead = el('span', 'cedar-set-field-head');
     maxTokensHead.append(el('span', '', tr('settings.form.maxTokens')), tokenValue);
     maxTokensField.append(maxTokensHead, tokenSlider, maxTokens, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
-    const multimodalLabel = el('label', 'cedar-set-check plain');
-    const multimodalBox = el('input');
-    multimodalBox.type = 'checkbox';
-    multimodalBox.checked = Boolean(entry?.multimodal);
-    const multimodalText = el('span');
-    multimodalText.append(el('strong', '', tr('settings.form.images')));
-    multimodalText.append(el('small', '', tr('settings.form.imagesNote')));
-    multimodalLabel.append(multimodalBox, multimodalText);
+    // Whether the model reads images is not asked: the list of known models says
+    // (/suggested-models.json), and cedar tries a model the list doesn't name with a small image
+    // when it is saved. One line shows which; "Advanced" has a dropdown to say it outright.
+    const imagesSet = el('select', 'settings-input');
+    imagesSet.setAttribute('aria-label', tr('settings.form.imagesLabel'));
+    imagesSet.append(new Option(tr('settings.form.imagesAuto'), ''), new Option(tr('settings.form.imagesAccept'), 'yes'), new Option(tr('settings.form.imagesText'), 'no'));
+    // A saved model keeps what it has; a new one, or one whose model is changed, is worked out.
+    imagesSet.value = entry ? (entry.multimodal ? 'yes' : 'no') : '';
+    let imagesTouched = false;
+    const listedImages = () => {
+      const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (servers.images || []).find((m) => plain(model.value).includes(plain(m.match)))?.images;
+    };
+    const imagesLine = el('p', 'cedar-set-note');
+    const showImages = () => {
+      const says = imagesSet.value ? imagesSet.value === 'yes' : listedImages();
+      imagesLine.hidden = !model.value && !imagesSet.value;
+      imagesLine.textContent = tr(says === undefined ? 'settings.form.imagesOnSave' : says ? 'settings.form.imagesYes' : 'settings.form.imagesNo');
+    };
+    imagesSet.addEventListener('change', () => { imagesTouched = true; showImages(); });
+    model.addEventListener('change', () => {
+      if (!imagesTouched && entry && model.value && model.value !== entry.model) imagesSet.value = '';
+      showImages();
+    });
+    showImages();
+    advanced.append(imagesSet);
     const makeDefault = el('label', 'cedar-set-check small plain');
     const defaultBox = el('input');
     defaultBox.type = 'checkbox';
@@ -1383,7 +1403,7 @@ const cedarSettings = (() => {
       if (entry?.api_key_set && canSaveKey) form.append(clearKey);
       form.append(modelRow);
     }
-    form.append(reasonLine, advanced, maxTokensField, multimodalLabel, makeDefault);
+    form.append(reasonLine, imagesLine, advanced, maxTokensField, makeDefault);
     form.append(el('small', 'cedar-set-field-note', tr('settings.form.note')));
     form.append(saveBtn, button(tr('settings.cancel'), onDone));
     form.addEventListener('submit', async (e) => {
@@ -1404,7 +1424,8 @@ const cedarSettings = (() => {
         label: label.value.trim() || model.value,
         reasoning_levels: parseLevels(),
         default_reasoning: defaultLevel.value,
-        multimodal: multimodalBox.checked,
+        // Said outright under Advanced, or left to cedar with what the list says as a hint.
+        ...(imagesSet.value ? { multimodal: imagesSet.value === 'yes' } : { detect_images: true, ...(listedImages() === undefined ? {} : { images_hint: listedImages() }) }),
         max_tokens: limit,
         is_default: defaultBox.checked,
       };
@@ -1414,6 +1435,7 @@ const cedarSettings = (() => {
       saveBtn.textContent = tr('settings.checking');
       try {
         const saved = await adminApi('PUT', `/integrations/models/${encodeURIComponent(id.value.trim())}`, body);
+        if (saved.images_checked === 'failed') deps.toast(tr('settings.form.imagesFailed', { model: saved.label || saved.model }));
         deps.toast(`${saved.label || saved.id}: ${tr('settings.models.at', { model: saved.model, url: saved.base_url })}`);
         await modelsChanged();
         refreshModels();

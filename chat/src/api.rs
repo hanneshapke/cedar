@@ -2686,6 +2686,12 @@ mod model_servers_tests {
         for set in presets {
             assert!(!set.as_array().unwrap().is_empty() && set.as_array().unwrap().iter().all(level));
         }
+        // Which models read images: a name to look for and a yes or no.
+        let images = suggested["images"].as_array().unwrap();
+        assert!(!images.is_empty());
+        for model in images {
+            assert!(!model["match"].as_str().unwrap().trim().is_empty() && model["images"].is_boolean());
+        }
         for model in suggested["reasoning"]["models"].as_array().unwrap() {
             assert!(!model["match"].as_str().unwrap().trim().is_empty());
             assert!(!model["levels"].as_array().unwrap().is_empty() && model["levels"].as_array().unwrap().iter().all(level));

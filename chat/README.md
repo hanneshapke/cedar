@@ -739,8 +739,7 @@ A paperclip button by the message box attaches files to a message; they can also
 the box or pasted (a screenshot, say). PDFs, CSV and JSON files go to any model: cedar saves them
 in the run's workspace under `attachments/` and tells the agent, which reads a PDF with its
 `read_document` tool; a CSV or JSON file is also imported into a [record set](#records) named
-after the file, unless the cedar server has that off, and the agent is told where its rows went. Images go only to a model registered with **Accepts images** (a checkbox on its entry under
-[Models](#models)), and only while the send button names it (the default model, until another is
+after the file, unless the cedar server has that off, and the agent is told where its rows went. Images go only to a model registered as accepting images (Cedar works that out when the model is added; see [Models](#models))), and only while the send button names it (the default model, until another is
 picked); such a model is also shown the first pages of each PDF as images. PNG, JPEG, GIF, WebP,
 PDF, CSV and JSON files are taken, at most 10 per message, 20 MB each and 32 MB together; the chosen files
 are shown as chips, with a thumbnail for images, until the message is sent, and a message still
@@ -813,8 +812,10 @@ typed, else the entry's saved one) and the model is picked from that list, never
 the address or key empties the list until it is listed again. Then come the reasoning levels it takes as `reasoning_effort`
 (they follow the chosen model where `static/suggested-models.json` names it and show as one line; *Advanced* opens
 a dropdown of the usual sets, like `none, low, high, max`, with *Other…* for a list typed by hand, and the level to use when a message picks none),
-whether it accepts images (see [Attachments](#attachments)), and whether it is the
-default for new chats. cedar checks the address by listing the server's models
+and whether it is the
+default for new chats. Whether the model reads images (see [Attachments](#attachments)) is not asked: a list of known
+models in `static/suggested-models.json` says, a model it does not name is tried with one small image when
+it is saved, and *Advanced* has a dropdown to say it outright. cedar checks the address by listing the server's models
 again before saving; the edit form starts with the names it listed last time, with a warning on the entry if
 the model name is not one of them. **Edit**, **Make default** and **Remove** change an entry; a removed model's
 conversations fail at their next message until another model is picked. The first model

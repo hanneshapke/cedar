@@ -1784,3 +1784,105 @@ async fn a_model_server_saved_by_an_earlier_version_becomes_the_default_entry() 
         1
     );
 }
+
+/// A model server that lists `m-1` and answers every chat completion with `status`, counting them.
+async fn start_model_server_answering(status: StatusCode) -> (String, Arc<Mutex<u32>>) {
+    let asked = Arc::new(Mutex::new(0));
+    let count = asked.clone();
+    let app = Router::new()
+        .route(
+            "/v1/models",
+            get(|| async { Json(json!({ "data": [{ "id": "m-1" }] })) }),
+        )
+        .route(
+            "/v1/chat/completions",
+            post(move || {
+                *count.lock().unwrap() += 1;
+                async move { (status, Json(json!({ "error": { "message": "this model takes text only" } }))) }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), asked)
+}
+
+#[tokio::test]
+async fn a_model_saved_with_detect_images_is_tried_with_an_image_once() {
+    let (server_url, server) = start_model_server(None, "ok").await;
+    let app = app_with_real_llm(&admin_env(&[])).await;
+    let spec = json!({ "base_url": format!("{server_url}/v1"), "model": "m-1", "detect_images": true });
+
+    // A server that answers a prompt with an image: the model takes images.
+    let (code, saved) = put_model(&app, "m", spec.clone()).await;
+    assert_eq!(code, StatusCode::OK, "{saved}");
+    assert_eq!(saved["multimodal"], true);
+    assert_eq!(saved["images_checked"], "tested");
+    let asked = server.completions.lock().unwrap().clone();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].1["max_tokens"], 1);
+    assert_eq!(asked[0].1["messages"][0]["content"][1]["type"], "image_url");
+
+    // Saved again as it is (the desktop app registers at every launch): not asked again.
+    let (_, again) = put_model(&app, "m", spec).await;
+    assert_eq!(again["multimodal"], true);
+    assert!(again.get("images_checked").is_none(), "{again}");
+    assert_eq!(server.completions.lock().unwrap().len(), 1);
+
+    // Told outright, nothing is tried.
+    let (_, told) = put_model(
+        &app,
+        "told",
+        json!({ "base_url": format!("{server_url}/v1"), "model": "m-1", "multimodal": false, "detect_images": true }),
+    )
+    .await;
+    assert_eq!(told["multimodal"], false);
+    assert_eq!(server.completions.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_model_that_refuses_the_image_is_text_only_and_one_that_cannot_be_asked_is_reported() {
+    let app = app_with_real_llm(&admin_env(&[])).await;
+
+    let (text_only, asked) = start_model_server_answering(StatusCode::BAD_REQUEST).await;
+    let (code, saved) = put_model(
+        &app,
+        "text",
+        json!({ "base_url": format!("{text_only}/v1"), "model": "m-1", "detect_images": true }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{saved}");
+    assert_eq!(saved["multimodal"], false);
+    assert_eq!(saved["images_checked"], "tested");
+    assert_eq!(*asked.lock().unwrap(), 1);
+
+    // An error of the server's own says nothing about images: saved as text only, and said so.
+    let (broken, _) = start_model_server_answering(StatusCode::INTERNAL_SERVER_ERROR).await;
+    let (code, saved) = put_model(
+        &app,
+        "broken",
+        json!({ "base_url": format!("{broken}/v1"), "model": "m-1", "detect_images": true }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{saved}");
+    assert_eq!(saved["multimodal"], false);
+    assert_eq!(saved["images_checked"], "failed");
+
+    // What a list of known models says is taken without asking the model.
+    let (listed, asked) = start_model_server_answering(StatusCode::BAD_REQUEST).await;
+    let (_, saved) = put_model(
+        &app,
+        "listed",
+        json!({ "base_url": format!("{listed}/v1"), "model": "m-1", "detect_images": true, "images_hint": true }),
+    )
+    .await;
+    assert_eq!(saved["multimodal"], true);
+    assert_eq!(saved["images_checked"], "list");
+    assert_eq!(*asked.lock().unwrap(), 0);
+
+    // Without detect_images nothing is tried and a new entry is text only, as before.
+    let (plain, asked) = start_model_server_answering(StatusCode::OK).await;
+    let (_, saved) = put_model(&app, "plain", json!({ "base_url": format!("{plain}/v1"), "model": "m-1" })).await;
+    assert_eq!(saved["multimodal"], false);
+    assert_eq!(*asked.lock().unwrap(), 0);
+}

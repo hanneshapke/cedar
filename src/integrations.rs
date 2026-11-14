@@ -17,7 +17,7 @@ use crate::config::{
     Config, GoogleClientConfig, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL,
 };
 use crate::error::AppError;
-use crate::llm::{list_models, ChatCompletionsClient, LlmClient, LlmRouter};
+use crate::llm::{accepts_images, list_models, ChatCompletionsClient, ImageProbe, LlmClient, LlmRouter};
 use crate::mcp::http_client;
 use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
@@ -88,6 +88,14 @@ pub struct ModelSpec {
     /// The model accepts images with a prompt. Absent keeps the saved value (`false`
     /// for a new entry).
     pub multimodal: Option<bool>,
+    /// With `multimodal` absent: find out by asking the model with a small image, once. A saved
+    /// entry with the same model and address keeps its value and is not asked again.
+    #[serde(default)]
+    pub detect_images: Option<bool>,
+    /// With `detect_images`: what a list of known models says about this one. It is taken in
+    /// place of asking the model, and likewise only for a new entry or a changed model.
+    #[serde(default)]
+    pub images_hint: Option<bool>,
     /// The most tokens one reply may take, a reasoning model's thinking included (1 to
     /// 1000000). Absent keeps the saved value (16384 for a new entry).
     pub max_tokens: Option<u32>,
@@ -528,9 +536,6 @@ impl Integrations {
         let is_default = spec
             .is_default
             .unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.is_default));
-        let multimodal = spec
-            .multimodal
-            .unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.multimodal));
         let max_tokens = spec.max_tokens.unwrap_or_else(|| {
             existing
                 .as_ref()
@@ -571,6 +576,24 @@ impl Integrations {
         let listed = list_models(&url, key.as_deref(), REQUEST_TIMEOUT)
             .await
             .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;
+        // Whether it takes images: as told, else (when asked to find out) as a saved entry for
+        // the same model has it, else by trying it; `images_checked` says how a try went.
+        let mut images_checked = None;
+        let unchanged = existing.as_ref().filter(|e| e.model == model && e.base_url == url);
+        let multimodal = match (spec.multimodal, spec.detect_images, unchanged) {
+            (Some(told), _, _) => told,
+            (None, Some(true), Some(saved)) => saved.multimodal,
+            (None, Some(true), None) if spec.images_hint.is_some() => {
+                images_checked = Some("list");
+                spec.images_hint == Some(true)
+            }
+            (None, Some(true), None) => {
+                let probe = accepts_images(&url, key.as_deref(), &model, REQUEST_TIMEOUT).await;
+                images_checked = Some(if probe == ImageProbe::Unknown { "failed" } else { "tested" });
+                probe == ImageProbe::Accepts
+            }
+            (None, _, _) => existing.as_ref().is_some_and(|e| e.multimodal),
+        };
 
         let _guard = self.changing.lock().await;
         let now = Utc::now();
@@ -610,7 +633,11 @@ impl Integrations {
             listed = saved.listed_models.as_ref().map_or(0, Vec::len),
             "model registered"
         );
-        Ok(self.model_status(&saved).await?)
+        let mut status = self.model_status(&saved).await?;
+        if let Some(how) = images_checked {
+            status["images_checked"] = json!(how);
+        }
+        Ok(status)
     }
 
     /// The models the server at `base_url` lists, so an admin picks a name it serves. Nothing is
