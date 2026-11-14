@@ -786,15 +786,45 @@ mod tests {
         assert_eq!(std::fs::read(out.join("ggml-vulkan.dll")).unwrap(), b"dll");
     }
 
+    /// The catalog's split model with every file a few thousand bytes long. The test below makes
+    /// files of the sizes the catalog states, and the real ones are 77 GB together: a file made
+    /// with `set_len` takes no room on Linux or macOS, but Windows writes all of it out.
+    fn small(model: &Model) -> Model {
+        let sized = |file: &crate::catalog::File, size| crate::catalog::File {
+            path: file.path,
+            size,
+            sha256: file.sha256,
+        };
+        let weights: Vec<_> = model
+            .weights
+            .iter()
+            .zip(3000..)
+            .map(|(file, size)| sized(file, size))
+            .collect();
+        Model {
+            id: model.id,
+            label: model.label,
+            repo: model.repo,
+            commit: model.commit,
+            weights: weights.leak(),
+            mmproj: sized(&model.mmproj, 2000),
+            min_budget_mb: model.min_budget_mb,
+            max_tokens: model.max_tokens,
+            reasoning_levels: model.reasoning_levels,
+            license: model.license,
+            small: model.small,
+        }
+    }
+
     #[test]
     fn a_model_is_installed_when_all_its_files_are() {
         let models = temp("modelfiles");
-        let model = crate::catalog::by_id("qwen3.5-122b-a10b").unwrap();
+        let model = &small(crate::catalog::by_id("qwen3.5-122b-a10b").unwrap());
         let dir = model_dir(&models, model);
         assert_eq!(dir, models.join("qwen3.5-122b-a10b"));
         assert_eq!(installed_model(&models, model), None);
         std::fs::create_dir_all(&dir).unwrap();
-        // Files of the right size (sparse, so they take no room): all but the projector.
+        // Files of the right size: all but the projector.
         let touch = |file: &crate::catalog::File| {
             std::fs::File::create(dir.join(file.name()))
                 .unwrap()

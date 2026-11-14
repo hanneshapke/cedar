@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """Cut the short loop from a take: the plan appears, Cedar works, the chart, the PDF. 18 seconds.
 
-    loop.py [lang ...]        (default: every language whose silent take is here)
+    loop.py [--reel] [lang ...]     (default: every language whose silent take is here;
+                                    --reel makes only the films with music,
+                                    --silent only loop.mp4 and loop.webm)
 
 From ../cedar-intro.mp4 and ../timeline.json (or ../cedar-intro.<lang>.mp4 and its timeline), into
 ../loop/, with .<lang> before the extension for de, fr and es:
 
-    loop.mp4, loop.webm     1280x720, silent, made to repeat: for a web page (autoplay, muted, loop)
+    loop.mp4, loop.webm     1280x720, silent, made to repeat: an opening card for two seconds, then
+                            the loop. For a web page (autoplay, muted, loop)
     hero.mp4, hero.webm     1000x800, silent, repeating, zoomed in like the reel: for a small spot on
                             a page, where the whole screen would be too small to read. Copied, with
                             a still picture, to ../../landing/shots/hero-<lang>.* for the landing page
-    loop-music.mp4          1920x1080 with the upbeat piece of music.py and a closing card
-    reel.mp4                1080x1920 for a reel or a short: each part cropped to what matters, a
-                            line of text over it, the same music and closing card
+    loop-music.mp4          1920x1080 with the upbeat piece of music.py: an opening card for two
+                            seconds, the loop, and a closing card
+    reel.mp4                1080x1920 for a reel or a short: the same opening card, then each part
+                            cropped to what matters with a line of text over it, the music and the
+                            closing card
 
 The four parts are found from the scenes' start times, sped up to fit, and cross-faded. Needs
 ffmpeg, numpy (for the music) and Node with Playwright (for the text cards).
@@ -31,6 +36,7 @@ FPS = 30
 LENGTH = 18.0           # the loop
 RING = LENGTH / 8       # one more bar for the music's last chord, under the closing card
 FADE = 0.3              # the cross-fade between two parts
+OPENING = 2.0           # the opening card of the films with music
 PAPER = "0xf7f5f0"
 
 # The parts: the scene, the seconds into it where the part starts and ends, and how long it lasts
@@ -74,6 +80,15 @@ def ffmpeg(*args):
     run("ffmpeg", "-loglevel", "error", "-y", *args)
 
 
+def long_music(tmp):
+    """The upbeat piece for the films with cards: ten bars, the first under the opening card and
+    the last for the final chord under the closing one."""
+    music = os.path.join(tmp, "upbeat.wav")
+    if not os.path.exists(music):
+        run("python3", os.path.join(HERE, "music.py"), music, OPENING + LENGTH + RING, "upbeat", 10)
+    return music
+
+
 def parts_filter(times, shape, parts=PARTS):
     """The filter that cuts the four parts from input 0, each fitted by `shape(i)`, and cross-fades
     them into [film]; also the times in the loop at which each part takes over."""
@@ -100,66 +115,102 @@ def build(lang, tmp):
     cards = os.path.join(tmp, lang)
     os.makedirs(cards)
     run("node", os.path.join(HERE, "loop_cards.js"), cards, json.dumps({**TEXT[lang], "url": URL}))
-    music = os.path.join(tmp, "upbeat.wav")
-    if not os.path.exists(music):
-        run("python3", os.path.join(HERE, "music.py"), music, LENGTH + RING, "upbeat")
 
-    # 1. the silent loop, 1280x720: fades from and to the page's paper so the repeat is soft
-    graph, _ = parts_filter(times, lambda i: "scale=1280:720:flags=lanczos")
     ends = f"[film]fade=t=in:d=0.25:color={PAPER},fade=t=out:st={LENGTH - 0.25}:d=0.25:color={PAPER}[v]"
-    ffmpeg("-i", film, "-filter_complex", f"{graph};{ends}", "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "slow",
-           "-crf", "26", "-movflags", "+faststart", out("loop", "mp4"))
-    ffmpeg("-i", out("loop", "mp4"), "-an", "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", out("loop", "webm"))
+    if not REEL_ONLY:
+        # 1. the silent loop, 1280x720: the opening card, then the film; it fades from and to the
+        # page's paper so the repeat is soft
+        graph, _ = parts_filter(times, lambda i: "scale=1280:720:flags=lanczos")
+        whole = OPENING + LENGTH
+        opened = (f"[film]tpad=start_mode=clone:start_duration={OPENING}[late];"
+                  f"[1:v]scale=1280:720:flags=lanczos,format=yuva420p,fade=t=out:st={OPENING}:d=0.4:alpha=1[open];"
+                  f"[late][open]overlay=enable='lt(t,{OPENING + 0.4})',"
+                  f"fade=t=in:d=0.25:color={PAPER},fade=t=out:st={whole - 0.25}:d=0.25:color={PAPER}[v]")
+        ffmpeg("-i", film, "-loop", "1", "-t", whole, "-i", os.path.join(cards, "wide-start.png"),
+               "-filter_complex", f"{graph};{opened}", "-map", "[v]", "-an", "-t", whole, "-c:v", "libx264", "-preset", "slow",
+               "-crf", "26", "-movflags", "+faststart", out("loop", "mp4"))
+        ffmpeg("-i", out("loop", "mp4"), "-an", "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", out("loop", "webm"))
 
-    # 1b. the hero film: the same parts, zoomed in
-    w, h = HERO_BOX
-    def zoom(i):
-        x, y, cw, ch = HERO_CROPS[i]
-        return f"crop={cw}:{ch}:{x}:{y},scale={w}:{h}:flags=lanczos"
-    graph, _ = parts_filter(times, zoom, ZOOM_PARTS)
-    ffmpeg("-i", film, "-filter_complex", f"{graph};{ends}", "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "slow",
-           "-crf", "26", "-movflags", "+faststart", out("hero", "mp4"))
-    ffmpeg("-i", out("hero", "mp4"), "-an", "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", out("hero", "webm"))
-    if os.path.isdir(LANDING):
-        for ext in ("mp4", "webm"):
-            shutil.copyfile(out("hero", ext), os.path.join(LANDING, f"hero-{lang}.{ext}"))
-        ffmpeg("-ss", "3.2", "-i", out("hero", "mp4"), "-frames:v", "1", "-q:v", "5", os.path.join(LANDING, f"hero-{lang}.jpg"))
+        if SILENT_ONLY:
+            print(lang, "done")
+            return
 
-    # the closing card comes in over the film's last moments and stays while the last chord rings
-    total = LENGTH + RING
-    closing = lambda card: (f"[{card}:v]format=yuva420p,fade=t=in:st={LENGTH - 0.3}:d=0.5:alpha=1[end];"
-                            f"[body][end]overlay=enable='gte(t,{LENGTH - 0.3})',fade=t=out:st={total - 0.4}:d=0.4:color={PAPER}[v]")
-    audio = ["-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-t", f"{total}", "-movflags", "+faststart"]
+        # 1b. the hero film: the same parts, zoomed in, and without a card: the page beside it
+        # says what the card would
+        w, h = HERO_BOX
+        def zoom(i):
+            x, y, cw, ch = HERO_CROPS[i]
+            return f"crop={cw}:{ch}:{x}:{y},scale={w}:{h}:flags=lanczos"
+        graph, _ = parts_filter(times, zoom, ZOOM_PARTS)
+        ffmpeg("-i", film, "-filter_complex", f"{graph};{ends}", "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "slow",
+               "-crf", "26", "-movflags", "+faststart", out("hero", "mp4"))
+        ffmpeg("-i", out("hero", "mp4"), "-an", "-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", out("hero", "webm"))
+        if os.path.isdir(LANDING):
+            for ext in ("mp4", "webm"):
+                shutil.copyfile(out("hero", ext), os.path.join(LANDING, f"hero-{lang}.{ext}"))
+            ffmpeg("-ss", "3.2", "-i", out("hero", "mp4"), "-frames:v", "1", "-q:v", "5", os.path.join(LANDING, f"hero-{lang}.jpg"))
+
+    # 2. the same in 1920x1080 with the music: the opening card, the film, and the closing card,
+    # which comes in over the film's last moments and stays while the last chord rings
+    total = OPENING + LENGTH + RING
     video = ["-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-r", str(FPS)]
-
-    # 2. the same in 1920x1080 with the music
+    still = lambda name: ["-loop", "1", "-t", total, "-i", os.path.join(cards, name)]
     graph, _ = parts_filter(times, lambda i: "scale=1920:1080")
-    ffmpeg("-i", film, "-i", music, "-loop", "1", "-t", total, "-i", os.path.join(cards, "wide-end.png"), "-filter_complex",
-           f"{graph};[film]tpad=stop_mode=clone:stop_duration={RING},fade=t=in:d=0.25:color={PAPER}[body];{closing(2)}",
-           "-map", "[v]", *video, *audio, out("loop-music", "mp4"))
+    layers = (f"[film]tpad=start_mode=clone:start_duration={OPENING}:stop_mode=clone:stop_duration={RING}[l0];"
+              f"[3:v]format=yuva420p,fade=t=out:st={OPENING}:d=0.4:alpha=1[open];"
+              f"[l0][open]overlay=enable='lt(t,{OPENING + 0.4})',fade=t=in:d=0.25:color={PAPER}[body];"
+              f"[2:v]format=yuva420p,fade=t=in:st={total - RING - 0.3}:d=0.5:alpha=1[end];"
+              f"[body][end]overlay=enable='gte(t,{total - RING - 0.3})',fade=t=out:st={total - 0.4}:d=0.4:color={PAPER}[v]")
+    ffmpeg("-i", film, "-i", long_music(tmp), *still("wide-end.png"), *still("wide-start.png"), "-filter_complex",
+           f"{graph};{layers}", "-map", "[v]", *video,
+           "-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-t", f"{total}", "-movflags", "+faststart", out("loop-music", "mp4"))
 
-    # 3. the reel: each part cropped and fitted into the box, on the frame loop_cards.js drew
+    reel(lang, tmp, film, times, out, cards)
+
+
+def reel(lang, tmp, film, times, out, cards):
+    video = ["-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-r", str(FPS)]
+    # 3. the reel: an opening card, then each part cropped and fitted into the box, on the frame
+    # loop_cards.js drew. Its music has a bar more, for the opening.
     w, h = BOX
     def fit(i):
         x, y, cw, ch = CROPS[i]
         return (f"crop={cw}:{ch}:{x}:{y},scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos,"
                 f"pad={w}:{h}:(ow-iw)/2:0:color={PAPER}")
     graph, starts = parts_filter(times, fit, ZOOM_PARTS)
-    inputs = ["-i", film, "-i", music]
+    starts = [OPENING + t for t in starts]
+    total = OPENING + LENGTH + RING
+    still = lambda name: ["-loop", "1", "-t", total, "-i", os.path.join(cards, name)]
+    inputs = ["-i", film, "-i", long_music(tmp)]
     for i in range(len(PARTS)):
-        inputs += ["-loop", "1", "-t", total, "-i", os.path.join(cards, f"reel-{i}.png")]
-    inputs += ["-loop", "1", "-t", total, "-i", os.path.join(cards, "reel-end.png")]
-    layers = f"color=c={PAPER}:s=1080x1920:r={FPS}:d={total}[bg];[film]tpad=stop_mode=clone:stop_duration={RING}[boxed];[bg][boxed]overlay=40:450[l0]"
-    for i in range(len(PARTS)):
-        until = starts[i + 1] if i + 1 < len(PARTS) else total
+        inputs += still(f"reel-{i}.png")
+    inputs += still("reel-end.png") + still("reel-start.png")
+    n = len(PARTS)
+    layers = (f"color=c={PAPER}:s=1080x1920:r={FPS}:d={total}[bg];"
+              f"[film]tpad=start_mode=clone:start_duration={OPENING}:stop_mode=clone:stop_duration={RING}[boxed];[bg][boxed]overlay=40:450[l0]")
+    for i in range(n):
+        until = starts[i + 1] if i + 1 < n else total
         layers += f";[l{i}][{i + 2}:v]overlay=enable='between(t,{starts[i]:.3f},{until:.3f})'[l{i + 1}]"
-    layers += f";[l{len(PARTS)}]fade=t=in:d=0.25:color={PAPER}[body];{closing(len(PARTS) + 2)}"
-    ffmpeg(*inputs, "-filter_complex", f"{graph};{layers}", "-map", "[v]", *video, *audio, out("reel", "mp4"))
+    # the opening card covers everything, then fades away over the film's first moments
+    layers += (f";[{n + 3}:v]format=yuva420p,fade=t=out:st={OPENING}:d=0.4:alpha=1[open];"
+               f"[l{n}][open]overlay=enable='lt(t,{OPENING + 0.4})',fade=t=in:d=0.25:color={PAPER}[body];"
+               f"[{n + 2}:v]format=yuva420p,fade=t=in:st={total - RING - 0.3}:d=0.5:alpha=1[end];"
+               f"[body][end]overlay=enable='gte(t,{total - RING - 0.3})',fade=t=out:st={total - 0.4}:d=0.4:color={PAPER}[v]")
+    ffmpeg(*inputs, "-filter_complex", f"{graph};{layers}", "-map", "[v]", *video,
+           "-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-t", f"{total}", "-movflags", "+faststart", out("reel", "mp4"))
     print(lang, "done")
 
 
+REEL_ONLY = False
+SILENT_ONLY = False
+
+
 def main():
-    langs = sys.argv[1:] or [l for l in TEXT if os.path.exists(os.path.join(ROOT, "cedar-intro.mp4" if l == "en" else f"cedar-intro.{l}.mp4"))]
+    global REEL_ONLY, SILENT_ONLY
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    REEL_ONLY = "--reel" in sys.argv[1:]
+    SILENT_ONLY = "--silent" in sys.argv[1:]
+    langs = args or [l for l in TEXT if os.path.exists(os.path.join(ROOT, "cedar-intro.mp4" if l == "en" else f"cedar-intro.{l}.mp4"))]
     os.makedirs(OUT, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         for lang in langs:

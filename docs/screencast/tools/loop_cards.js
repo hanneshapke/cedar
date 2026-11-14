@@ -3,18 +3,20 @@
 //
 //   node loop_cards.js <out-dir> '<json: {tagline, steps: [..4], free, url}>'
 //
-// Writes reel-0.png .. reel-3.png (1080x1920, transparent where the film shows), reel-end.png
-// and wide-end.png (1920x1080). The fonts are the chat's own, read from chat/static/fonts.
+// Writes reel-0.png .. reel-3.png (1080x1920, transparent where the film shows), reel-start.png,
+// reel-end.png, and wide-start.png and wide-end.png (1920x1080). The fonts are the chat's own, read from chat/static/fonts.
 const { chromium } = require('playwright');
 const path = require('path');
 const [out, json] = process.argv.slice(2);
 const T = JSON.parse(json);
 const FONTS = path.resolve(__dirname, '../../../chat/static/fonts');
+// Inlined: a page made with setContent may not read files, and would fall back to system fonts.
+const font = (file) => `url(data:font/woff2;base64,${require('fs').readFileSync(path.join(FONTS, file)).toString('base64')}) format("woff2")`;
 const MARK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect x="6" y="6" width="36" height="6" rx="2" fill="#3a5f4b"/><rect x="6" y="16" width="12" height="6" rx="2" fill="#3a5f4b"/><rect x="6" y="26" width="12" height="6" rx="2" fill="#3a5f4b"/><rect x="6" y="36" width="36" height="6" rx="2" fill="#3a5f4b"/><rect x="33" y="21" width="9" height="6" rx="2" fill="#b5553a"/></svg>';
 const css = `
-  @font-face{font-family:Figtree;font-weight:400 600;src:url("file://${FONTS}/figtree-latin.woff2") format("woff2")}
-  @font-face{font-family:Lora;font-weight:400 600;src:url("file://${FONTS}/lora-latin.woff2") format("woff2")}
-  @font-face{font-family:Mono;src:url("file://${FONTS}/jetbrains-mono-latin.woff2") format("woff2")}
+  @font-face{font-family:Figtree;font-weight:300 900;src:${font('figtree-latin.woff2')}}
+  @font-face{font-family:Lora;font-weight:400 700;src:${font('lora-latin.woff2')}}
+  @font-face{font-family:Mono;font-weight:100 800;src:${font('jetbrains-mono-latin.woff2')}}
   html,body{margin:0;height:100%;font-family:Figtree,sans-serif;color:#1c1b19;-webkit-font-smoothing:antialiased}
   .lock{display:flex;align-items:center;justify-content:center;gap:16px;font-weight:600;letter-spacing:-.02em}
   .lock svg{display:block}
@@ -27,20 +29,28 @@ const reel = (step) => `<style>${css} body{background:transparent}
   h1{position:absolute;left:60px;right:60px;top:278px;height:150px;display:flex;align-items:center;justify-content:center;font-size:54px}
   .url{position:absolute;left:0;right:0;top:1622px;font-size:30px}</style>
   <div class="lock">${MARK}<span>Cedar</span></div><h1>${step}</h1><div class="url">${T.url}</div>`;
+// The reel's opening card: the mark and the tagline, large, and nothing else.
+const start = (wide) => `<style>${css} body{background:#f7f5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px}
+  .lock{font-size:${wide ? 104 : 92}px}.lock svg{width:${wide ? 140 : 124}px;height:${wide ? 140 : 124}px}h1{font-size:${wide ? 96 : 64}px;white-space:nowrap}</style>
+  <div class="lock">${MARK}<span>Cedar</span></div><h1>${T.tagline}</h1>`;
 const end = (w, h, k) => `<style>${css} body{background:#f7f5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:${36 * k}px}
   .lock{font-size:${60 * k}px}.lock svg{width:${84 * k}px;height:${84 * k}px}
-  h1{font-size:${64 * k}px;max-width:${w - 120}px}.url{font-size:${26 * k}px}.free{font-size:${22 * k}px}</style>
+  h1{font-size:${w < 1200 ? 64 : 64 * k}px;white-space:nowrap}.url{font-size:${26 * k}px}.free{font-size:${22 * k}px}</style>
   <div class="lock">${MARK}<span>Cedar</span></div><h1>${T.tagline}</h1><div class="url">${T.url}</div><div class="free">${T.free}</div>`;
 (async () => {
   const browser = await chromium.launch();
   const shot = async (name, w, h, html, clear) => {
     const page = await browser.newPage({ viewport: { width: w, height: h } });
     await page.setContent('<!doctype html><meta charset="utf-8">' + html);
-    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(async () => { await Promise.all([...document.fonts].map((f) => f.load())); await document.fonts.ready; });
+    const missing = await page.evaluate(() => ['600 20px Figtree', '500 20px Lora', '20px Mono'].filter((f) => !document.fonts.check(f)));
+    if (missing.length) throw new Error('fonts not loaded: ' + missing.join(', '));
     await page.screenshot({ path: path.join(out, name), omitBackground: clear });
     await page.close();
   };
   for (let i = 0; i < T.steps.length; i++) await shot(`reel-${i}.png`, 1080, 1920, reel(T.steps[i]), true);
+  await shot('reel-start.png', 1080, 1920, start(false), false);
+  await shot('wide-start.png', 1920, 1080, start(true), false);
   await shot('reel-end.png', 1080, 1920, end(1080, 1920, 1.25), false);
   await shot('wide-end.png', 1920, 1080, end(1920, 1080, 1.25), false);
   await browser.close();
