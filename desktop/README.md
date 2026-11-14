@@ -313,13 +313,16 @@ greyed out and the other two remain.
 | --- | --- | --- |
 | under 16 GB | not offered | |
 | 16 GB | gpt-oss 20B | 12 GB |
-| 24 GB | Qwen3.6 27B | 19 GB |
-| 32 GB and more | Qwen3.6 35B-A3B | 21 GB |
+| 24 GB and more | Qwen3.6 35B-A3B | 21 GB |
 | 72 GB and more | gpt-oss 120B | 63 GB |
 
+These are the [model guide](https://hanneshapke.github.io/cedar/models.html)'s own first
+suggestions for text; the list is `llama/src/catalog.rs`.
+
 On a Mac the GPU shares the computer's memory and macOS lets it have about two thirds, so the
-memory that counts is two thirds of the Mac's: a 32 GB Mac gets gpt-oss 20B, a 48 GB or 64 GB
-one Qwen3.6 35B-A3B, a 128 GB one gpt-oss 120B. On Windows it is the memory of the graphics card
+memory that counts is two thirds of the Mac's: a 32 GB Mac gets gpt-oss 20B, a Mac with 36 to
+96 GB Qwen3.6 35B-A3B, a 128 GB one gpt-oss 120B. A Mac with less than 32 GB is not offered a
+setup: the model would leave macOS and Docker too little. On Windows it is the memory of the graphics card
 with the most; several cards are not added up. Every model is under the Apache-2.0 license.
 
 The button does this, with each step on the page:

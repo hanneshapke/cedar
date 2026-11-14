@@ -21,11 +21,20 @@ pub struct Plan {
     pub model: &'static catalog::Model,
 }
 
+/// The least memory, in MiB, of a machine whose GPU shares it: a little under 32 GB.
+const MIN_UNIFIED_MB: u64 = 31_000;
+
 /// The plan for a machine, or nothing when no GPU on it can run a model from the catalog (the
 /// caller then offers only the model servers the user sets up themselves). With several GPUs the
 /// one with the most memory is used; they are not added up.
 pub fn plan(os: release::Os, arch: release::Arch, gpus: &[gpu::Gpu]) -> Option<Plan> {
     let gpu = gpus.iter().max_by_key(|g| g.budget_mb())?;
+    // A Mac shares its memory with the model, and macOS, Docker and Cedar need theirs: below
+    // 32 GB a model that works well for Cedar leaves them too little (the website asks for 32 GB
+    // too, and says of smaller Macs that a hosted provider does much better).
+    if gpu.unified && gpu.memory_mb < MIN_UNIFIED_MB {
+        return None;
+    }
     let build = release::choose_build(os, arch, gpu)?;
     let model = catalog::choose_model(gpu.budget_mb())?;
     Some(Plan {
@@ -51,7 +60,7 @@ mod tests {
         let plan = plan(Os::Windows, Arch::X64, &[small.clone(), big.clone()]).unwrap();
         assert_eq!(plan.gpu, big);
         assert_eq!(plan.build, Build::WinCuda);
-        assert_eq!(plan.model.id, "qwen3.6-27b");
+        assert_eq!(plan.model.id, "qwen3.6-35b-a3b");
         // The integrated one alone is not enough for any model.
         assert_eq!(super::plan(Os::Windows, Arch::X64, &[small]), None);
         assert_eq!(super::plan(Os::Windows, Arch::X64, &[]), None);
@@ -61,8 +70,13 @@ mod tests {
     fn macs_by_memory() {
         let mac = |gb: u64| plan(Os::Macos, Arch::Arm64, &[Gpu::apple(gb << 30)]);
         assert_eq!(mac(16), None);
+        // Two thirds of 24 GB would hold the smallest model, but leave the system too little.
+        assert_eq!(mac(24), None);
         assert_eq!(mac(32).unwrap().model.id, "gpt-oss-20b");
+        assert_eq!(mac(36).unwrap().model.id, "qwen3.6-35b-a3b");
         assert_eq!(mac(48).unwrap().model.id, "qwen3.6-35b-a3b");
+        assert_eq!(mac(64).unwrap().model.id, "qwen3.6-35b-a3b");
+        assert_eq!(mac(96).unwrap().model.id, "qwen3.6-35b-a3b");
         assert_eq!(mac(128).unwrap().model.id, "gpt-oss-120b");
         assert_eq!(mac(32).unwrap().build, Build::MacosMetal);
         // An Intel Mac has no build with Metal.

@@ -829,10 +829,10 @@ mod tests {
         assert_eq!(say(&none), serde_json::json!({ "state": "available", "model": "gpt-oss 20B" }));
 
         // One is installed: that is the one, whatever else the GPU could run.
-        let llama = Some(Llama { build: "macos-arm64".into(), model: "qwen3.6-27b".into() });
+        let llama = Some(Llama { build: "macos-arm64".into(), model: "qwen3.6-35b-a3b".into() });
         let installed = state(Config { llama: llama.clone(), ..Config::default() });
         installed.set_llama_plan(plan.clone());
-        assert_eq!(say(&installed), serde_json::json!({ "state": "installed", "model": "Qwen3.6 27B" }));
+        assert_eq!(say(&installed), serde_json::json!({ "state": "installed", "model": "Qwen3.6 35B-A3B" }));
 
         // The chat is another computer's: nothing runs here.
         let remote = Some(Remote { server: "https://spark.t.ts.net".into(), token: "t".into() });

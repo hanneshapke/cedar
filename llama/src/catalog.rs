@@ -1,6 +1,10 @@
 //! The models Cedar downloads for llama.cpp, one per size of GPU memory. Each is a single GGUF
-//! file from llama.cpp's own organization on Hugging Face, pinned to a commit and a SHA-256, and
-//! each calls tools well (see the website's list of models).
+//! file from llama.cpp's own organization on Hugging Face, pinned to a commit and a SHA-256.
+//!
+//! They are the website's own first suggestions for text (`PICKS` in docs/landing/models.html):
+//! gpt-oss 20B for the smallest machines, Qwen3.6 35B-A3B from there up, gpt-oss 120B where 128 GB
+//! allow it. Keep the two in step. A mixture-of-experts model is preferred to a dense one of the
+//! same size, as there: Qwen3.6 27B is hardly smaller than 35B-A3B and several times slower.
 
 use serde::Serialize;
 
@@ -47,7 +51,7 @@ impl Model {
 
 /// From the smallest to the largest. The thresholds sit a little under round sizes because cards
 /// report slightly less than their nominal memory (a 16 GB card says 16376 MiB).
-pub static MODELS: [Model; 4] = [
+pub static MODELS: [Model; 3] = [
     Model {
         id: "gpt-oss-20b",
         label: "gpt-oss 20B",
@@ -62,19 +66,6 @@ pub static MODELS: [Model; 4] = [
         license: "Apache-2.0",
     },
     Model {
-        id: "qwen3.6-27b",
-        label: "Qwen3.6 27B",
-        repo: "ggml-org/Qwen3.6-27B-GGUF",
-        commit: "fec6ff7c0c86cf07f6e5ae0a1391c3a042f2017f",
-        file: "Qwen3.6-27B-Q4_K_M.gguf",
-        size: 19_403_683_392,
-        sha256: "f3ab00cc923590947877bad882e09ada67789f747f5d3cb3c178fdf91b9aaab9",
-        min_budget_mb: 23_500,
-        max_tokens: 8192,
-        reasoning_levels: &[],
-        license: "Apache-2.0",
-    },
-    Model {
         id: "qwen3.6-35b-a3b",
         label: "Qwen3.6 35B-A3B",
         repo: "ggml-org/Qwen3.6-35B-A3B-GGUF",
@@ -82,7 +73,7 @@ pub static MODELS: [Model; 4] = [
         file: "Qwen3.6-35B-A3B-Q4_K_M.gguf",
         size: 20_542_732_576,
         sha256: "f4ffe03c9139e6a905a5d346f77d9fabdd179367c3280dfd005d1e75ca5ed8c8",
-        min_budget_mb: 31_500,
+        min_budget_mb: 23_500,
         max_tokens: 8192,
         reasoning_levels: &[],
         license: "Apache-2.0",
@@ -121,8 +112,11 @@ mod tests {
         assert_eq!(id(8_192), None);
         assert_eq!(id(12_288), None);
         assert_eq!(id(16_376), Some("gpt-oss-20b")); // a 16 GB card
-        assert_eq!(id(24_564), Some("qwen3.6-27b")); // a 24 GB card
+        assert_eq!(id(21_845), Some("gpt-oss-20b")); // a 32 GB Mac
+        assert_eq!(id(24_564), Some("qwen3.6-35b-a3b")); // a 24 GB card
+        assert_eq!(id(24_576), Some("qwen3.6-35b-a3b")); // a 36 GB Mac
         assert_eq!(id(32_607), Some("qwen3.6-35b-a3b")); // a 32 GB card
+        assert_eq!(id(65_536), Some("qwen3.6-35b-a3b")); // a 96 GB Mac
         assert_eq!(id(49_140), Some("qwen3.6-35b-a3b"));
         assert_eq!(id(87_381), Some("gpt-oss-120b")); // a 128 GB Mac
     }
