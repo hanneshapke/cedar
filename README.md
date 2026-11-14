@@ -96,7 +96,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked, plus `storage`, whether a key can be saved at all (`CEDAR_SECRET_KEY`). Never returns a key. |
 | `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes", "sandbox_runtime"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). `sandbox_runtime` is what runs new sandboxes: `docker` (default) or `openshell` (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)), refused on Windows and when the OpenShell gateway doesn't answer. A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, sandbox_runtime, openshell_supported, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
-| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. Returns the entry as `GET /v1/admin/models` shows it. |
+| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "detect_images"?, "images_hint"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. With `"detect_images": true` and no `multimodal`, cedar works out whether the model reads images, once: from `images_hint` if given, else by sending the model one small image (answered: yes; refused: no); an entry whose model and address are unchanged keeps its value. The reply then carries `images_checked` (`list`, `tested`, or `failed` when the model could not be asked and was saved as text only). Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key, a Best Buy key, a SerpApi key and a Slack bot token are set (`slack`, with the workspace a saved token belongs to), a Google OAuth client is set up (`google.client`, with its `client_id`) and a Google account connected, and where from (`bestbuy` also says whether `PRODUCTS` is on, `serpapi` whether `FLIGHTS` is, `slack` whether `SLACK` is). Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
@@ -1069,6 +1069,29 @@ or one already going; a run whose model was removed fails at its next call. A mo
 by an earlier version of cedar (through the old `/v1/admin/integrations/llm` route) is turned into
 the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_URL`, `LLM_API_KEY`,
 `LLM_MODEL` and `ALLOWED_MODELS` in the environment are ignored with a warning.
+
+#### llama.cpp on a machine with a GPU
+
+On a Linux machine with a GPU, `cedar-llama` (in the Linux tarball of a release, or
+`cargo build --release -p cedar-llama`) sets up [llama.cpp](https://github.com/ggml-org/llama.cpp)
+as the model server, with a model sized to the GPU's memory. The desktop app does the same from
+its setup page on macOS and Windows (see [desktop/README.md](desktop/README.md#setting-a-model-up-with-llamacpp),
+which also lists the models).
+
+```sh
+cedar-llama detect     # the GPU, and the llama.cpp build and model that suit it
+cedar-llama install    # downloads both into ~/.local/share/cedar (Ctrl-C stops; run it again to continue)
+cedar-llama serve      # runs llama-server on 127.0.0.1:18081
+```
+
+`install` ends by printing the `PUT /v1/admin/models/<id>` call that registers the server with
+cedar. An NVIDIA card with driver 570.26 or newer gets the CUDA 12 build, which needs nothing but
+the driver; an older driver and AMD cards get the Vulkan build, which needs the Vulkan loader and
+the card's Vulkan driver (`libvulkan1` and `mesa-vulkan-drivers` on Ubuntu). The memory is read
+with `nvidia-smi` for NVIDIA cards and from the `amdgpu` driver for AMD ones; with less than
+16 GB, or on a GPU it cannot read, name what to install yourself with `--build` and `--model`.
+Only x86_64 is covered so far. Every download is checked against a size and SHA-256 compiled into
+`cedar-llama`. `scripts/systemd/cedar-llama.service` runs `serve` under systemd.
 
 ### Integrations
 

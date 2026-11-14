@@ -923,21 +923,116 @@ const cedarSettings = (() => {
       ? note(tr('settings.models.intro'))
       : note(tr('settings.models.introEmpty'), 'cedar-set-error');
     wrap.append(intro);
-    const add = button(tr('settings.models.add'), () => {
+    const add = button(tr('settings.models.add'), async () => {
       add.hidden = true;
-      const form = modelForm(null, status, () => { add.hidden = false; form.remove(); });
-      intro.after(form);
-      form.querySelector('input').focus();
+      const chooser = await modelChooser(status, entries, () => { add.hidden = false; chooser.remove(); });
+      intro.after(chooser);
+      chooser.querySelector('.cedar-set-choice:not(:disabled)')?.focus();
     }, entries.length ? 'settings-ghost' : 'primary');
     add.setAttribute('aria-label', tr('settings.models.add'));
     for (const entry of entries) wrap.append(modelRow(entry, status));
     return { wrap, add };
   }
 
+  // -- adding a model: three ways, as on the desktop app's setup page ---------------------------------
+
+  /** Where the desktop app's window is sent for its setup page with the llama.cpp option open. */
+  const SETUP_MODEL_PATH = '/__cedar-app/setup/model';
+  /** The registry entry of the model the desktop app runs with llama.cpp. */
+  const LLAMA_ID = 'llama';
+
+  function inDesktopApp() {
+    return window.__CEDAR_DESKTOP_APP__ === true;
+  }
+
+  /**
+   * The hosted providers and the presets of model servers people run themselves
+   * (/model-servers.json, which the desktop app's setup page uses too). Without it the forms
+   * still take an address.
+   */
+  let modelServersLoad = null;
+  function modelServers() {
+    const json = (path) => fetch(path).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
+    // Each provider also gets the names to look for when suggesting one of its models
+    // (/suggested-models.json: its own, then the default ones).
+    modelServersLoad ??= Promise.all([json('/model-servers.json'), json('/suggested-models.json').catch(() => ({}))])
+      .then(([servers, suggested]) => ({
+        ...servers,
+        providers: servers.providers.map((p) => ({ ...p, suggested: [...((suggested.providers || {})[p.name] || []), ...(suggested.default || [])] })),
+        // The sets the reasoning-levels dropdown offers, and which of them a model takes.
+        reasoning: { presets: suggested.reasoning?.presets || [], models: suggested.reasoning?.models || [] },
+        // Which models read images, by name.
+        images: suggested.images || [],
+      }))
+      .catch(() => { modelServersLoad = null; return { providers: [], presets: [] }; });
+    return modelServersLoad;
+  }
+
+  /**
+   * Whether a model can be run here with llama.cpp, and if not, why. Only the desktop app does
+   * that, and it says what it can do in `window.__CEDAR_LLAMA__` (state: available, installed,
+   * no_gpu or remote). One model is all it runs: the GPU's memory holds one, so while there is
+   * one (the app says so, or its entry is in the registry) another cannot be added.
+   */
+  function llamaOption(entries) {
+    if (!inDesktopApp()) return { text: tr('settings.add.llamaNotApp') };
+    const app = window.__CEDAR_LLAMA__ || {};
+    const entry = entries.find((e) => e.id === LLAMA_ID);
+    if (entry || app.state === 'installed') {
+      return { text: tr('settings.add.llamaInstalled', { model: app.model || entry?.label || entry?.model || 'llama.cpp' }) };
+    }
+    if (app.state === 'remote') return { text: tr('settings.add.llamaRemote') };
+    if (app.state === 'no_gpu') return { text: tr('settings.add.llamaNoGpu') };
+    return {
+      available: true,
+      text: app.model ? tr('settings.add.llamaText', { model: app.model }) : tr('settings.add.llamaTextAny'),
+    };
+  }
+
+  /**
+   * What "Add a model" opens: run one here with llama.cpp (the desktop app does that, on its
+   * setup page), use a hosted provider, or use a model server that already runs. The last two
+   * open the form under the options. `onDone` closes it all.
+   */
+  async function modelChooser(status, entries, onDone) {
+    const servers = await modelServers();
+    const wrap = el('div', 'cedar-set-add');
+    const cards = el('div', 'cedar-set-choices');
+    const cancel = button(tr('settings.cancel'), onDone);
+    let form = null;
+    const card = (title, text, onClick) => {
+      const b = el('button', 'cedar-set-choice');
+      b.type = 'button';
+      b.append(el('strong', '', title), el('span', '', text));
+      b.addEventListener('click', () => onClick(b));
+      cards.append(b);
+      return b;
+    };
+    const open = (kind) => (b) => {
+      form?.remove();
+      cancel.remove();
+      for (const other of cards.children) other.classList.toggle('open', other === b);
+      form = modelForm(null, status, onDone, { kind, servers });
+      wrap.append(form);
+      form.querySelector('select, input:not([hidden])')?.focus();
+    };
+    const llama = llamaOption(entries);
+    const llamaCard = card(tr('settings.add.llama'), llama.text, () => { window.location.href = SETUP_MODEL_PATH; });
+    llamaCard.disabled = !llama.available;
+    card(tr('settings.add.hosted'), tr('settings.add.hostedText'), open('hosted'));
+    card(tr('settings.add.own'), tr('settings.add.ownText'), open('own'));
+    wrap.append(cards, cancel);
+    return wrap;
+  }
+
   function modelRow(entry, status) {
     const levels = entry.reasoning_levels || [];
     const { row, main, side } = integrationRow(entry.label || entry.id, tr('settings.models.at', { model: entry.model, url: entry.base_url }));
     main.append(el('small', '', tr('settings.models.id', { id: entry.id })));
+    // The model the desktop app runs with llama.cpp is the app's to change and remove: taken out
+    // of the registry alone, its server would keep running and the entry come back.
+    const runByApp = entry.id === LLAMA_ID && inDesktopApp();
+    if (runByApp) side.append(badge(tr('settings.models.runByCedar')));
     if (entry.is_default) side.append(badge(tr('settings.models.default'), 'ok'));
     if (entry.api_key_set) side.append(badge(tr('settings.models.keySet')));
     if (entry.multimodal) side.append(badge(tr('settings.models.images')));
@@ -954,12 +1049,19 @@ const cedarSettings = (() => {
       main.append(el('small', 'cedar-set-warn-text', tr('settings.models.notListed', { model: entry.model, listed })));
     }
     let form = null;
-    side.append(button(tr('settings.edit'), () => {
-      if (form) { form.remove(); form = null; return; }
-      form = modelForm(entry, status, () => { form?.remove(); form = null; });
-      row.append(form);
-      form.querySelector('input').focus();
-    }));
+    if (runByApp) {
+      side.append(button(tr('settings.models.manage'), () => { window.location.href = SETUP_MODEL_PATH; }));
+    } else {
+      side.append(button(tr('settings.edit'), async () => {
+        if (form) { form.remove(); form = null; return; }
+        // The lists hold the reasoning-level sets the form's dropdown offers.
+        const servers = await modelServers();
+        if (form) return;
+        form = modelForm(entry, status, () => { form?.remove(); form = null; }, { servers });
+        row.append(form);
+        form.querySelector('input').focus();
+      }));
+    }
     if (!entry.is_default) {
       side.append(button(tr('settings.models.makeDefault'), async () => {
         try {
@@ -970,7 +1072,7 @@ const cedarSettings = (() => {
         } catch (err) { deps.toast(err.message); }
       }));
     }
-    side.append(button(tr('settings.remove'), async () => {
+    if (!runByApp) side.append(button(tr('settings.remove'), async () => {
       if (!(await cedarConfirm(tr('settings.models.confirmRemove', { name: entry.label || entry.id }), { ok: tr('settings.remove') }))) return;
       try {
         await adminApi('DELETE', `/integrations/models/${encodeURIComponent(entry.id)}`);
@@ -981,8 +1083,13 @@ const cedarSettings = (() => {
     return row;
   }
 
-  /** A form to register a model (`entry` null) or change one. `onDone` closes it. */
-  function modelForm(entry, status, onDone) {
+  /**
+   * A form to register a model (`entry` null) or change one. `onDone` closes it. A new one comes
+   * with a top part for how it is added (`kind`): `hosted` picks the provider from `servers`,
+   * which gives the address, and can narrow its long model list; `own` has the presets of the
+   * servers people run, each of which fills in its address and lists its models.
+   */
+  function modelForm(entry, status, onDone, { kind = '', servers = { providers: [], presets: [] } } = {}) {
     const form = el('form', 'cedar-set-inline cedar-set-endpoint');
     const input = (placeholder, value, label, type = 'text') => {
       const i = el('input');
@@ -1022,6 +1129,17 @@ const cedarSettings = (() => {
     const listBtn = button(tr('settings.form.list'), () => listServerModels());
     const modelRow = el('div', 'cedar-set-server-models');
     modelRow.append(model, listBtn);
+    // The model suggested among those a hosted provider listed, marked in the list.
+    let suggestion = '';
+    const suggestedModel = (names) => {
+      const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const wanted = (servers.providers.find((p) => p.base_url === address.value.trim()) || {}).suggested || [];
+      for (const name of wanted) {
+        const hits = names.filter((m) => plain(m).includes(plain(name)));
+        if (hits.length) return hits.sort((a, b) => a.length - b.length)[0];
+      }
+      return '';
+    };
     const fillModels = (names, selected) => {
       model.textContent = '';
       if (!names) {
@@ -1033,14 +1151,33 @@ const cedarSettings = (() => {
       const options = [...names];
       if (selected && !options.includes(selected)) options.unshift(selected);
       model.append(new Option(options.length ? tr('settings.form.choose') : tr('settings.form.noModels'), ''));
-      for (const m of options) model.append(new Option(m === selected && !names.includes(m) ? tr('settings.form.unlisted', { model: m }) : m, m));
+      for (const m of options) model.append(new Option(m === selected && !names.includes(m) ? tr('settings.form.unlisted', { model: m }) : m === suggestion ? tr('settings.form.suggested', { model: m }) : m, m));
       model.value = selected && options.includes(selected) ? selected : options.length === 1 ? options[0] : '';
     };
     fillModels(entry ? entry.listed_models || [entry.model] : null, entry?.model || '');
+    // A provider lists hundreds of models: what the server listed, narrowed by the words typed.
+    let listed = null;
+    const filter = input(tr('settings.add.filter'), '', tr('settings.add.filter'));
+    filter.hidden = true;
+    filter.addEventListener('input', () => {
+      if (!listed) return;
+      const words = filter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const shown = listed.filter((name) => words.every((word) => name.toLowerCase().includes(word)));
+      fillModels(shown, shown.includes(model.value) ? model.value : '');
+      model.dispatchEvent(new Event('change'));
+    });
     // A new entry without a label or id yet takes its id from the chosen name.
     model.addEventListener('change', () => { if (!idTouched && !label.value.trim()) id.value = slug(model.value.split('/').pop()); });
+    // The reasoning levels follow the chosen model until they are set by hand (see below).
+    model.addEventListener('change', () => followModel());
     // A changed address or key may serve other models: list again before saving.
-    const stale = () => { if (!model.disabled) fillModels(null); };
+    const stale = () => {
+      listed = null;
+      suggestion = '';
+      filter.value = '';
+      filter.hidden = true;
+      if (!model.disabled) fillModels(null);
+    };
     address.addEventListener('input', stale);
     key.addEventListener('input', stale);
     clearBox.addEventListener('change', stale);
@@ -1058,7 +1195,12 @@ const cedarSettings = (() => {
       listBtn.textContent = tr('settings.form.listing');
       try {
         const found = await adminApi('POST', '/integrations/server-models', body);
-        fillModels(found.models || [], found.models?.includes(previous) ? previous : '');
+        suggestion = kind === 'hosted' ? suggestedModel(found.models || []) : '';
+        // Nothing chosen before that this server has: start on the suggested one.
+        fillModels(found.models || [], found.models?.includes(previous) ? previous : suggestion);
+        listed = found.models || [];
+        filter.value = '';
+        filter.hidden = kind !== 'hosted' || listed.length < 8;
         model.dispatchEvent(new Event('change'));
         if (!found.models?.length) deps.toast(tr('settings.form.noModels'));
         model.focus();
@@ -1070,36 +1212,130 @@ const cedarSettings = (() => {
         listBtn.textContent = tr('settings.form.list');
       }
     }
-    const levels = input(tr('settings.form.levelsPlaceholder'), (entry?.reasoning_levels || []).join(', '), tr('settings.form.levels'));
-    const defaultLevel = el('select');
+    // The reasoning levels the model takes: one of the usual sets (/suggested-models.json), or,
+    // under "Other…", whatever is typed. A set is an option whose value is its levels joined.
+    // Reasoning levels need no choosing: they follow the chosen model (/suggested-models.json)
+    // and show as one line. "Advanced" opens the controls: the usual sets of levels (or, under
+    // "Other…", a list typed by hand) and the level used when a message picks none.
+    const OTHER = '\u0000other';
+    const levelSet = el('select', 'settings-input');
+    levelSet.setAttribute('aria-label', tr('settings.form.levels'));
+    levelSet.append(new Option(tr('settings.form.levelsNone'), ''));
+    const presets = (servers.reasoning?.presets || []).map((set) => set.join(', '));
+    for (const set of presets) levelSet.append(new Option(tr('settings.models.levels', { levels: set }), set));
+    levelSet.append(new Option(tr('settings.add.other'), OTHER));
+    const levels = input(tr('settings.form.levelsPlaceholder'), '', tr('settings.form.levels'));
+    const defaultLevel = el('select', 'settings-input');
     defaultLevel.setAttribute('aria-label', tr('settings.form.defaultLevel'));
-    const parseLevels = () => [...new Set(levels.value.split(',').map((l) => l.trim()).filter(Boolean))];
-    const fillDefault = () => {
-      const current = defaultLevel.value || entry?.default_reasoning || '';
+    const typed = () => levelSet.value === OTHER;
+    const parseLevels = () => [...new Set((typed() ? levels.value : levelSet.value).split(',').map((l) => l.trim()).filter(Boolean))];
+    const reasonText = el('span', '');
+    const advancedBtn = el('button', 'settings-link', tr('settings.form.advanced'));
+    advancedBtn.type = 'button';
+    const reasonLine = el('p', 'cedar-set-note cedar-set-reasoning');
+    reasonLine.append(reasonText, advancedBtn);
+    const advanced = el('div', 'cedar-set-advanced');
+    advanced.append(levelSet, levels, defaultLevel);
+    const openAdvanced = (open) => {
+      advanced.hidden = !open;
+      advancedBtn.textContent = tr(open ? 'settings.form.advancedHide' : 'settings.form.advanced');
+      advancedBtn.setAttribute('aria-expanded', String(open));
+    };
+    advancedBtn.addEventListener('click', () => openAdvanced(advanced.hidden));
+    // The line, and the choices of default, as the controls stand.
+    const fillDefault = (wanted) => {
+      const current = wanted ?? defaultLevel.value;
+      const list = parseLevels();
       defaultLevel.textContent = '';
       defaultLevel.append(new Option(tr('settings.form.defaultLevelServer'), ''));
-      for (const l of parseLevels()) defaultLevel.append(new Option(tr('settings.form.defaultLevelIs', { level: l }), l));
-      defaultLevel.value = parseLevels().includes(current) ? current : '';
-      defaultLevel.hidden = !parseLevels().length;
+      for (const l of list) defaultLevel.append(new Option(tr('settings.form.defaultLevelIs', { level: l }), l));
+      defaultLevel.value = list.includes(current) ? current : '';
+      defaultLevel.hidden = !list.length;
+      reasonText.textContent = !list.length ? tr('settings.form.reasoningNone')
+        : defaultLevel.value ? tr('settings.models.levelsDefault', { levels: list.join(', '), level: defaultLevel.value })
+          : tr('settings.models.levels', { levels: list.join(', ') });
     };
-    levels.addEventListener('input', fillDefault);
-    fillDefault();
-    const maxTokens = input(tr('settings.form.maxTokens'), String(entry?.max_tokens ?? DEFAULT_MAX_TOKENS), tr('settings.form.maxTokens'), 'number');
-    maxTokens.min = '1';
-    maxTokens.max = String(MAX_MAX_TOKENS);
-    maxTokens.step = '1';
+    const showLevels = (list, preferred) => {
+      const joined = list.join(', ');
+      const known = !joined || presets.includes(joined);
+      levelSet.value = known ? joined : OTHER;
+      levels.value = known ? '' : joined;
+      levels.hidden = known;
+      fillDefault(preferred || '');
+    };
+    showLevels(entry?.reasoning_levels || [], entry?.default_reasoning || '');
+    // A list typed by hand is shown where it can be read and changed.
+    openAdvanced(typed());
+    // What the chosen model takes, by the file's loose matching; none when no entry names it.
+    let levelsTouched = false;
+    const startModel = entry?.model || '';
+    const followModel = () => {
+      // Set by hand, or a saved entry whose model is as it was: left alone.
+      if (levelsTouched || !model.value || model.value === startModel) return;
+      const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const hit = (servers.reasoning?.models || []).find((m) => plain(model.value).includes(plain(m.match)));
+      showLevels(hit ? hit.levels : [], '');
+    };
+    levelSet.addEventListener('change', () => {
+      levelsTouched = true;
+      levels.hidden = !typed();
+      if (typed()) levels.focus();
+      fillDefault();
+    });
+    levels.addEventListener('input', () => { levelsTouched = true; fillDefault(); });
+    defaultLevel.addEventListener('change', () => { levelsTouched = true; fillDefault(); });
+    // The reply limit is a slider over the usual sizes (a saved one that is none of them gets a
+    // stop of its own); `maxTokens` holds the number the form saves.
+    const maxTokens = el('input');
+    maxTokens.type = 'hidden';
+    const saved = entry?.max_tokens ?? DEFAULT_MAX_TOKENS;
+    const tokenStops = [...new Set([1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, saved])].sort((x, y) => x - y);
+    const tokenSlider = el('input', 'cedar-set-range');
+    tokenSlider.type = 'range';
+    tokenSlider.min = '0';
+    tokenSlider.max = String(tokenStops.length - 1);
+    tokenSlider.step = '1';
+    tokenSlider.value = String(tokenStops.indexOf(saved));
+    tokenSlider.setAttribute('aria-label', tr('settings.form.maxTokens'));
+    const tokenValue = el('span', 'cedar-set-range-value');
+    const showTokens = () => {
+      const count = tokenStops[Number(tokenSlider.value)];
+      maxTokens.value = String(count);
+      tokenValue.textContent = count.toLocaleString(document.documentElement.lang || undefined);
+      tokenSlider.setAttribute('aria-valuetext', tokenValue.textContent);
+    };
+    tokenSlider.addEventListener('input', showTokens);
+    showTokens();
     const maxTokensField = el('label', 'cedar-set-field');
     const maxTokensHead = el('span', 'cedar-set-field-head');
-    maxTokensHead.append(el('span', '', tr('settings.form.maxTokens')));
-    maxTokensField.append(maxTokensHead, maxTokens, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
-    const multimodalLabel = el('label', 'cedar-set-check plain');
-    const multimodalBox = el('input');
-    multimodalBox.type = 'checkbox';
-    multimodalBox.checked = Boolean(entry?.multimodal);
-    const multimodalText = el('span');
-    multimodalText.append(el('strong', '', tr('settings.form.images')));
-    multimodalText.append(el('small', '', tr('settings.form.imagesNote')));
-    multimodalLabel.append(multimodalBox, multimodalText);
+    maxTokensHead.append(el('span', '', tr('settings.form.maxTokens')), tokenValue);
+    maxTokensField.append(maxTokensHead, tokenSlider, maxTokens, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
+    // Whether the model reads images is not asked: the list of known models says
+    // (/suggested-models.json), and cedar tries a model the list doesn't name with a small image
+    // when it is saved. One line shows which; "Advanced" has a dropdown to say it outright.
+    const imagesSet = el('select', 'settings-input');
+    imagesSet.setAttribute('aria-label', tr('settings.form.imagesLabel'));
+    imagesSet.append(new Option(tr('settings.form.imagesAuto'), ''), new Option(tr('settings.form.imagesAccept'), 'yes'), new Option(tr('settings.form.imagesText'), 'no'));
+    // A saved model keeps what it has; a new one, or one whose model is changed, is worked out.
+    imagesSet.value = entry ? (entry.multimodal ? 'yes' : 'no') : '';
+    let imagesTouched = false;
+    const listedImages = () => {
+      const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (servers.images || []).find((m) => plain(model.value).includes(plain(m.match)))?.images;
+    };
+    const imagesLine = el('p', 'cedar-set-note');
+    const showImages = () => {
+      const says = imagesSet.value ? imagesSet.value === 'yes' : listedImages();
+      imagesLine.hidden = !model.value && !imagesSet.value;
+      imagesLine.textContent = tr(says === undefined ? 'settings.form.imagesOnSave' : says ? 'settings.form.imagesYes' : 'settings.form.imagesNo');
+    };
+    imagesSet.addEventListener('change', () => { imagesTouched = true; showImages(); });
+    model.addEventListener('change', () => {
+      if (!imagesTouched && entry && model.value && model.value !== entry.model) imagesSet.value = '';
+      showImages();
+    });
+    showImages();
+    advanced.append(imagesSet);
     const makeDefault = el('label', 'cedar-set-check small plain');
     const defaultBox = el('input');
     defaultBox.type = 'checkbox';
@@ -1107,10 +1343,67 @@ const cedarSettings = (() => {
     defaultBox.disabled = Boolean(entry?.is_default);
     makeDefault.append(defaultBox, el('span', '', tr('settings.form.makeDefault')));
     const saveBtn = button(entry ? tr('settings.checkSave') : tr('settings.form.checkAdd'), () => form.requestSubmit(), 'primary');
-    form.append(id, label, address, key);
-    if (entry?.api_key_set && canSaveKey) form.append(clearKey);
-    form.append(modelRow);
-    form.append(levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
+    if (kind === 'hosted') {
+      const provider = el('select');
+      provider.setAttribute('aria-label', tr('settings.add.provider'));
+      for (const p of servers.providers) provider.append(new Option(p.name, p.base_url));
+      provider.append(new Option(tr('settings.add.other'), ''));
+      const docs = el('small', 'cedar-set-field-note');
+      // The provider gives the address; one that is not on the list has its own typed in.
+      const pick = () => {
+        const chosen = servers.providers.find((p) => p.base_url === provider.value);
+        address.value = chosen ? chosen.base_url : '';
+        address.hidden = Boolean(chosen);
+        docs.textContent = '';
+        if (chosen) {
+          const a = el('a', '', tr('settings.add.docs', { provider: chosen.name }));
+          a.href = chosen.docs;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          docs.append(a);
+        }
+        // Another provider's key is not this one's.
+        key.value = '';
+        stale();
+      };
+      provider.addEventListener('change', pick);
+      pick();
+      form.append(el('small', 'cedar-set-field-note', tr('settings.add.hostedAbout')), provider, docs, address, key, filter, modelRow, label, id);
+    } else if (kind === 'own') {
+      const presets = el('div', 'cedar-set-presets');
+      presets.append(el('span', '', tr('settings.add.presets')));
+      const hint = el('small', 'cedar-set-field-note');
+      // The preset whose address is in the field is marked, with what that server needs.
+      const mark = () => {
+        const now = address.value.trim().replace(/\/+$/, '');
+        hint.textContent = '';
+        for (const b of presets.querySelectorAll('button')) {
+          const preset = servers.presets[Number(b.dataset.preset)];
+          const chosen = preset.base_url === now;
+          b.classList.toggle('chosen', chosen);
+          b.setAttribute('aria-pressed', String(chosen));
+          if (chosen) hint.textContent = tr(preset.hint);
+        }
+      };
+      servers.presets.forEach((preset, index) => {
+        const b = button(preset.name, () => {
+          address.value = preset.base_url;
+          stale();
+          mark();
+          listServerModels();
+        }, 'settings-ghost');
+        b.dataset.preset = String(index);
+        presets.append(b);
+      });
+      address.addEventListener('input', mark);
+      if (servers.presets.length) form.append(presets, hint);
+      form.append(address, key, modelRow, label, id);
+    } else {
+      form.append(id, label, address, key);
+      if (entry?.api_key_set && canSaveKey) form.append(clearKey);
+      form.append(modelRow);
+    }
+    form.append(reasonLine, imagesLine, advanced, maxTokensField, makeDefault);
     form.append(el('small', 'cedar-set-field-note', tr('settings.form.note')));
     form.append(saveBtn, button(tr('settings.cancel'), onDone));
     form.addEventListener('submit', async (e) => {
@@ -1122,7 +1415,7 @@ const cedarSettings = (() => {
       const limit = Number(maxTokens.value);
       if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MAX_TOKENS) {
         deps.toast(tr('settings.form.maxTokensRange', { max: MAX_MAX_TOKENS }));
-        maxTokens.focus();
+        tokenSlider.focus();
         return;
       }
       const body = {
@@ -1131,7 +1424,8 @@ const cedarSettings = (() => {
         label: label.value.trim() || model.value,
         reasoning_levels: parseLevels(),
         default_reasoning: defaultLevel.value,
-        multimodal: multimodalBox.checked,
+        // Said outright under Advanced, or left to cedar with what the list says as a hint.
+        ...(imagesSet.value ? { multimodal: imagesSet.value === 'yes' } : { detect_images: true, ...(listedImages() === undefined ? {} : { images_hint: listedImages() }) }),
         max_tokens: limit,
         is_default: defaultBox.checked,
       };
@@ -1141,6 +1435,7 @@ const cedarSettings = (() => {
       saveBtn.textContent = tr('settings.checking');
       try {
         const saved = await adminApi('PUT', `/integrations/models/${encodeURIComponent(id.value.trim())}`, body);
+        if (saved.images_checked === 'failed') deps.toast(tr('settings.form.imagesFailed', { model: saved.label || saved.model }));
         deps.toast(`${saved.label || saved.id}: ${tr('settings.models.at', { model: saved.model, url: saved.base_url })}`);
         await modelsChanged();
         refreshModels();

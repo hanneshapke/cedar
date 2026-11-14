@@ -73,6 +73,11 @@ const LOADER_HTML: &str = include_str!("../static/index.html");
 const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
 /// `cedarConfirm`, asking in the page because the macOS app's webview has no `confirm()`; every UI loads it.
 const CONFIRM_JS: &str = include_str!("../static/confirm.js");
+/// The hosted providers and the presets of model servers people run themselves, for Settings'
+/// "Add a model". The desktop app compiles the same file in for its setup page.
+const MODEL_SERVERS_JSON: &str = include_str!("../static/model-servers.json");
+/// Which model to suggest at each hosted provider, once it has listed its models.
+const SUGGESTED_MODELS_JSON: &str = include_str!("../static/suggested-models.json");
 /// Shows the images the agent produces in the response; both UIs load it, before the viewer.
 const IMAGE_VIEW_JS: &str = include_str!("../static/image-view.js");
 const IMAGE_VIEW_CSS: &str = include_str!("../static/image-view.css");
@@ -388,6 +393,8 @@ pub fn router(state: AppState) -> Router {
         .route("/language.js", get(|| async { asset(JS, LANGUAGE_JS) }))
         .route("/language.css", get(|| async { asset(CSS, LANGUAGE_CSS) }))
         .route("/confirm.js", get(|| async { asset(JS, CONFIRM_JS) }))
+        .route("/model-servers.json", get(|| async { asset(JSON, MODEL_SERVERS_JSON) }))
+        .route("/suggested-models.json", get(|| async { asset(JSON, SUGGESTED_MODELS_JSON) }))
         .route("/image-view.js", get(|| async { asset(JS, IMAGE_VIEW_JS) }))
         .route("/image-view.css", get(|| async { asset(CSS, IMAGE_VIEW_CSS) }))
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
@@ -466,6 +473,7 @@ pub fn router(state: AppState) -> Router {
 const HTML: &str = "text/html; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
+const JSON: &str = "application/json; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
 const WOFF2: &str = "font/woff2";
@@ -2651,5 +2659,60 @@ mod tests {
         let end = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await;
         assert!(matches!(end, Ok(None)), "the stream kept going after shutdown");
         drop(tx);
+    }
+}
+
+#[cfg(test)]
+mod model_servers_tests {
+    use super::{MODEL_SERVERS_JSON, SUGGESTED_MODELS_JSON};
+
+    #[test]
+    fn the_suggested_models_name_providers_on_the_list() {
+        let list: serde_json::Value = serde_json::from_str(MODEL_SERVERS_JSON).unwrap();
+        let suggested: serde_json::Value = serde_json::from_str(SUGGESTED_MODELS_JSON).unwrap();
+        assert!(!suggested["default"].as_array().unwrap().is_empty());
+        for (name, models) in suggested["providers"].as_object().unwrap() {
+            assert!(list["providers"].as_array().unwrap().iter().any(|p| p["name"] == name.as_str()), "{name}");
+            assert!(models.as_array().unwrap().iter().all(|m| m.is_string()), "{name}");
+        }
+        // The reasoning-level sets of Settings' dropdown, and the models that take them: levels
+        // are tokens cedar accepts (src/integrations.rs, clean_reasoning_levels).
+        let level = |l: &serde_json::Value| {
+            let l = l.as_str().unwrap();
+            !l.is_empty() && l.len() <= 32 && l.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        };
+        let presets = suggested["reasoning"]["presets"].as_array().unwrap();
+        assert!(!presets.is_empty());
+        for set in presets {
+            assert!(!set.as_array().unwrap().is_empty() && set.as_array().unwrap().iter().all(level));
+        }
+        // Which models read images: a name to look for and a yes or no.
+        let images = suggested["images"].as_array().unwrap();
+        assert!(!images.is_empty());
+        for model in images {
+            assert!(!model["match"].as_str().unwrap().trim().is_empty() && model["images"].is_boolean());
+        }
+        for model in suggested["reasoning"]["models"].as_array().unwrap() {
+            assert!(!model["match"].as_str().unwrap().trim().is_empty());
+            assert!(!model["levels"].as_array().unwrap().is_empty() && model["levels"].as_array().unwrap().iter().all(level));
+        }
+    }
+
+    /// Settings' "Add a model" reads this file as it is served; the desktop app's tests check the
+    /// addresses themselves (desktop/src/models.rs).
+    #[test]
+    fn the_served_list_has_providers_and_presets() {
+        let list: serde_json::Value = serde_json::from_str(MODEL_SERVERS_JSON).unwrap();
+        let providers = list["providers"].as_array().unwrap();
+        let presets = list["presets"].as_array().unwrap();
+        assert!(providers.len() >= 3 && presets.len() >= 4);
+        for p in providers {
+            assert!(p["name"].is_string() && p["docs"].as_str().unwrap().starts_with("https://"));
+            assert!(p["base_url"].as_str().unwrap().starts_with("https://"));
+        }
+        for p in presets {
+            assert!(p["name"].is_string() && p["base_url"].as_str().unwrap().starts_with("http://127.0.0.1:"));
+            assert!(p["hint"].as_str().unwrap().starts_with("preset."));
+        }
     }
 }

@@ -7,6 +7,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY contrib-schema ./contrib-schema
 COPY contrib ./contrib
 COPY pairing ./pairing
+COPY llama ./llama
 COPY chat ./chat
 COPY src ./src
 COPY migrations ./migrations

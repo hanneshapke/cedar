@@ -739,8 +739,7 @@ A paperclip button by the message box attaches files to a message; they can also
 the box or pasted (a screenshot, say). PDFs, CSV and JSON files go to any model: cedar saves them
 in the run's workspace under `attachments/` and tells the agent, which reads a PDF with its
 `read_document` tool; a CSV or JSON file is also imported into a [record set](#records) named
-after the file, unless the cedar server has that off, and the agent is told where its rows went. Images go only to a model registered with **Accepts images** (a checkbox on its entry under
-[Models](#models)), and only while the send button names it (the default model, until another is
+after the file, unless the cedar server has that off, and the agent is told where its rows went. Images go only to a model registered as accepting images (Cedar works that out when the model is added; see [Models](#models))), and only while the send button names it (the default model, until another is
 picked); such a model is also shown the first pages of each PDF as images. PNG, JPEG, GIF, WebP,
 PDF, CSV and JSON files are taken, at most 10 per message, 20 MB each and 32 MB together; the chosen files
 are shown as chips, with a thumbnail for images, until the message is sent, and a message still
@@ -789,14 +788,34 @@ confirm; see [Community tools](../README.md#community-tools).
 
 The **Models** list in that section shows every model cedar has registered: its label, the model
 name and the server it is on, whether an API key is saved, its reasoning levels, and which one is
-the default. **Add a model**, in the heading of the list, asks for an id (filled in from the label), a label, the server address
+the default. **Add a model**, in the heading of the list, offers three ways, the same as the
+desktop app's setup page:
+
+- **Run a model here with llama.cpp.** Only the desktop app does this: it sends the window to its
+  setup page, which downloads llama.cpp and a model for the GPU and adds it to the list as an
+  entry of its own. The option is greyed out, with the reason, in a browser or on a phone, with
+  no GPU that can run a model, when the app shows the chat of another computer, and while the
+  app already runs a model (the GPU's memory holds one). That entry has **Manage…** in place of
+  **Edit** and **Remove**, which leads to the same page.
+- **Use a hosted provider.** A list of providers (Baseten, Nebius, Doubleword and others; *Other…*
+  takes any address) fills in the address, with a link to the provider's documentation. *Find a
+  model* narrows a long model list.
+- **Use a model server you already run.** A preset (Ollama, LM Studio, vLLM, llama.cpp, SGLang)
+  fills in the address, says what that server needs for Cedar, and lists its models.
+
+The providers and presets come from `static/model-servers.json`, served at
+`/model-servers.json`, which the desktop app compiles in too. The form under the last two asks
+for the server address
 (`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), an API key if the server
-needs one, and the model: **List models** asks the server which models it serves (with the key
+needs one, an id (filled in from the label or the model), a label, and the model: **List models** asks the server which models it serves (with the key
 typed, else the entry's saved one) and the model is picked from that list, never typed. Changing
 the address or key empties the list until it is listed again. Then come the reasoning levels it takes as `reasoning_effort`
-(comma-separated, like `none, low, high, max`), the level to use when a message picks none,
-whether it accepts images (see [Attachments](#attachments)), and whether it is the
-default for new chats. cedar checks the address by listing the server's models
+(they follow the chosen model where `static/suggested-models.json` names it and show as one line; *Advanced* opens
+a dropdown of the usual sets, like `none, low, high, max`, with *Other…* for a list typed by hand, and the level to use when a message picks none),
+and whether it is the
+default for new chats. Whether the model reads images (see [Attachments](#attachments)) is not asked: a list of known
+models in `static/suggested-models.json` says, a model it does not name is tried with one small image when
+it is saved, and *Advanced* has a dropdown to say it outright. cedar checks the address by listing the server's models
 again before saving; the edit form starts with the names it listed last time, with a warning on the entry if
 the model name is not one of them. **Edit**, **Make default** and **Remove** change an entry; a removed model's
 conversations fail at their next message until another model is picked. The first model

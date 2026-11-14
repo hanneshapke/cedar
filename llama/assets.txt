@@ -1,0 +1,10 @@
+# Written by scripts/update-llama-manifest.sh; do not edit by hand.
+# The llama.cpp release Cedar installs, then a line per file: name, bytes, SHA-256.
+tag b12370
+llama-b12370-bin-macos-arm64.tar.gz 16914515 340369c8495e37342807198a4c6895b3253fea35c52a886ce313eb5b90d72edb
+llama-b12370-bin-win-cuda-12.4-x64.zip 319400957 9298da1bd47bfa37b680de67809caa3156ce34e396572a362e735e6ee5b916c4
+cudart-llama-bin-win-cuda-12.4-x64.zip 391443627 8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6
+llama-b12370-bin-win-vulkan-x64.zip 38113214 74e67e5832f4c1e1a0af6a699c1f87ce1079d27e10a49896a617a061b4fb62c1
+llama-b12370-bin-ubuntu-cuda-12.8-x64.tar.gz 199479058 221ce466441f7b696afbb031c6de3d0d38493de0c108883590c14283248db9ed
+cudart-llama-b12370-bin-ubuntu-cuda-12.8-x64.tar.gz 594371476 1724012fdbee20ae0a59b484f9c9782dfe5a8ca0331eea8140a3ebe7112fe980
+llama-b12370-bin-ubuntu-vulkan-x64.tar.gz 36185398 f30b2f53d7bf21a1ed9bdd92c085b1108223110981a5cc89f46f09e8ad94dea6

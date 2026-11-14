@@ -1,0 +1,26 @@
+# llama.cpp as Cedar's model server, on a machine with a GPU: runs the llama-server and the model
+# that `cedar-llama install` downloaded (README.md, "Models"). It listens on 127.0.0.1:18081 only.
+#
+# Install cedar-llama into /usr/local/bin, run `cedar-llama install` as the user below, copy this
+# file to /etc/systemd/system/, set User= (and the key, if you want one), then:
+#   sudo systemctl enable --now cedar-llama
+[Unit]
+Description=llama.cpp model server for Cedar
+After=network-online.target
+Before=cedar.service
+
+[Service]
+# The user who ran `cedar-llama install`: the files are in that user's ~/.local/share/cedar.
+User=cedar
+ExecStart=/usr/local/bin/cedar-llama serve
+# An API key llama-server then asks for; give cedar the same one as the model's api_key.
+#Environment=LLAMA_API_KEY=
+Restart=on-failure
+RestartSec=5
+# Loading the model can take minutes; stopping does not.
+TimeoutStartSec=infinity
+TimeoutStopSec=30
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

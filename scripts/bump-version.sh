@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Sets the release version everywhere scripts/check-version.sh looks, and in the lock files:
 #
-#   Cargo.toml                 [workspace.package] version (cedar, cedar-chat, pairing, contrib-schema, contrib)
-#   Cargo.lock                 the cedar, cedar-chat, cedar-pairing, cedar-contrib-schema and cedar-contrib entries
+#   Cargo.toml                 [workspace.package] version (cedar, cedar-chat, pairing, llama, contrib-schema, contrib)
+#   Cargo.lock                 the cedar, cedar-chat, cedar-pairing, cedar-llama, cedar-contrib-schema and cedar-contrib entries
 #   desktop/Cargo.toml         the desktop app's version
-#   desktop/Cargo.lock         the cedar-app and cedar-pairing entries
+#   desktop/Cargo.lock         the cedar-app, cedar-pairing and cedar-llama entries
 #   iOS/Cedar.xcodeproj        MARKETING_VERSION, in every build configuration
 #   docs/landing/version.js    the version the landing site and install guide show
 #
@@ -84,8 +84,8 @@ bump_lock() {
     mine && /^version = / { $0 = "version = \"" new "\""; mine = 0 }
     { print }'
 }
-bump_lock Cargo.lock "cedar cedar-chat cedar-pairing cedar-contrib-schema cedar-contrib"
-bump_lock desktop/Cargo.lock "cedar-app cedar-pairing"
+bump_lock Cargo.lock "cedar cedar-chat cedar-pairing cedar-llama cedar-contrib-schema cedar-contrib"
+bump_lock desktop/Cargo.lock "cedar-app cedar-pairing cedar-llama"
 
 # iOS: every MARKETING_VERSION in the project.
 rewrite iOS/Cedar.xcodeproj/project.pbxproj -v new="$new" '

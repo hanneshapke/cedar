@@ -1,0 +1,26 @@
+{
+  "providers": [
+    { "name": "Baseten", "base_url": "https://inference.baseten.co/v1", "docs": "https://docs.baseten.co/" },
+    { "name": "Nebius", "base_url": "https://api.tokenfactory.nebius.com/v1", "docs": "https://docs.tokenfactory.nebius.com/" },
+    { "name": "Doubleword", "base_url": "https://api.doubleword.ai/v1", "docs": "https://docs.doubleword.ai/" },
+    { "name": "Cerebras", "base_url": "https://api.cerebras.ai/v1", "docs": "https://inference-docs.cerebras.ai/" },
+    { "name": "DeepInfra", "base_url": "https://api.deepinfra.com/v1/openai", "docs": "https://docs.deepinfra.com/" },
+    { "name": "DeepSeek", "base_url": "https://api.deepseek.com/v1", "docs": "https://api-docs.deepseek.com/" },
+    { "name": "Fireworks AI", "base_url": "https://api.fireworks.ai/inference/v1", "docs": "https://docs.fireworks.ai/" },
+    { "name": "Groq", "base_url": "https://api.groq.com/openai/v1", "docs": "https://console.groq.com/docs" },
+    { "name": "Hugging Face", "base_url": "https://router.huggingface.co/v1", "docs": "https://huggingface.co/docs/inference-providers" },
+    { "name": "Hyperbolic", "base_url": "https://api.hyperbolic.xyz/v1", "docs": "https://docs.hyperbolic.ai/" },
+    { "name": "Mistral", "base_url": "https://api.mistral.ai/v1", "docs": "https://docs.mistral.ai/" },
+    { "name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "docs": "https://openrouter.ai/docs" },
+    { "name": "SambaNova", "base_url": "https://api.sambanova.ai/v1", "docs": "https://docs.sambanova.ai/" },
+    { "name": "Scaleway", "base_url": "https://api.scaleway.ai/v1", "docs": "https://www.scaleway.com/en/docs/generative-apis/" },
+    { "name": "Together AI", "base_url": "https://api.together.ai/v1", "docs": "https://docs.together.ai/" }
+  ],
+  "presets": [
+    { "name": "Ollama", "base_url": "http://127.0.0.1:11434/v1", "hint": "preset.ollama" },
+    { "name": "LM Studio", "base_url": "http://127.0.0.1:1234/v1", "hint": "preset.lmstudio" },
+    { "name": "vLLM", "base_url": "http://127.0.0.1:8000/v1", "hint": "preset.vllm" },
+    { "name": "llama.cpp", "base_url": "http://127.0.0.1:8080/v1", "hint": "preset.llamacpp" },
+    { "name": "SGLang", "base_url": "http://127.0.0.1:30000/v1", "hint": "preset.sglang" }
+  ]
+}

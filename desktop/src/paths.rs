@@ -47,4 +47,23 @@ impl Paths {
     pub fn chat_log(&self) -> PathBuf {
         self.logs.join("cedar-chat.log")
     }
+
+    /// The llama.cpp builds the app installed (see llamasetup.rs).
+    pub fn llama(&self) -> PathBuf {
+        self.data.join("llama")
+    }
+
+    /// The models downloaded for it.
+    pub fn models(&self) -> PathBuf {
+        self.data.join("models")
+    }
+
+    pub fn llama_log(&self) -> PathBuf {
+        self.logs.join("llama-server.log")
+    }
+
+    /// The process id of the llama-server the app started, to find one a crash left behind.
+    pub fn llama_pid(&self) -> PathBuf {
+        self.data.join("llama-server.pid")
+    }
 }
