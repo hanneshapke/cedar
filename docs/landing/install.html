@@ -161,9 +161,22 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const APP_SETUP_SINCE = '0.1.9';
   function appSetsUp(s) {
     if (s.os === 'mac' && s.arch === 'x64') return true;
-    const [a, b] = [release.ver, APP_SETUP_SINCE].map((v) => v.split('.').map(Number));
+    return releaseIsAtLeast(APP_SETUP_SINCE);
+  }
+  function releaseIsAtLeast(since) {
+    const [a, b] = [release.ver, since].map((v) => v.split('.').map(Number));
     for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
     return true;
+  }
+  // The first release whose setup window offers three ways to get a model (run one here with
+  // llama.cpp, a hosted provider, a server you already run), and whose Linux archive has
+  // cedar-llama. Until the latest release is at least this one, the steps describe the older
+  // single form and don't offer "Let Cedar do it".
+  const MODEL_OPTIONS_SINCE = '0.9.0';
+  const hasModelOptions = () => releaseIsAtLeast(MODEL_OPTIONS_SINCE);
+  // Where Cedar can set up llama.cpp itself: Apple silicon, Windows x64, Linux x64.
+  function cedarCanServe(s) {
+    return hasModelOptions() && (s.os === 'mac' ? s.arch === 'arm64' : s.arch === 'x64');
   }
 
   // Each question: its id in the address (?os=mac&arch=arm64&docker=no...), and the answers.
@@ -188,12 +201,13 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       ] },
     { id: 'serve', label: tr('install.q.serve'), hint: tr('install.q.serveHint'), when: (s) => s.host === 'yes',
       opts: [
+        { v: 'cedar', t: tr('install.opt.cedarServes'), s: tr('install.opt.cedarServesHint'), when: cedarCanServe },
         { v: 'ollama', t: 'Ollama', s: tr('install.opt.ollama') }, { v: 'lmstudio', t: 'LM Studio', s: tr('install.opt.lmstudio') },
         { v: 'vllm', t: 'vLLM', s: tr('install.opt.vllm') },
       ] },
     { id: 'provider', label: tr('install.q.provider'), hint: tr('install.q.providerHint'), when: (s) => s.host === 'no',
       opts: [
-        { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' },
+        { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' }, { v: 'nebius', t: 'Nebius' },
         { v: 'other', t: tr('install.opt.otherProvider'), s: tr('install.opt.otherProviderHint') },
       ] },
     { id: 'mobile', label: tr('install.q.mobile'), hint: tr('install.q.mobileHint'),
@@ -265,7 +279,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   function renderPicker() {
     const picker = document.getElementById('picker');
     picker.innerHTML = QUESTIONS.map((q) => {
-      const opts = q.opts.filter((o) => !o.os || o.os.includes(state.os));
+      const opts = q.opts.filter((o) => (!o.os || o.os.includes(state.os)) && (!o.when || o.when(state)));
       if ((q.id === 'arch' && !state.os) || !shown(q)) return '';
       return `<div class="q" role="group" aria-labelledby="q-${q.id}">
         <div class="q-label" id="q-${q.id}">${esc(q.label)}<small>${esc(q.hint)}</small></div>
@@ -359,27 +373,45 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1', pick: tr('install.pick.preset', { name: 'Ollama' }) },
     lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1', pick: tr('install.pick.preset', { name: 'LM Studio' }) },
     vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1', pick: tr('install.pick.vllm') },
+    // llama.cpp set up and run by Cedar (the setup window, or cedar-llama on Linux).
+    cedar: { name: 'llama.cpp', addr: 'http://127.0.0.1:18081/v1', pick: tr('install.pick.cedar') },
   };
   const PROVIDERS = {
     doubleword: { name: 'Doubleword', addr: 'https://api.doubleword.ai/v1', site: 'https://www.doubleword.ai', keys: 'https://app.doubleword.ai', docs: 'https://docs.doubleword.ai/inference-api/using-the-platform',
       keyHow: tr('install.provider.doublewordKey') },
     baseten: { name: 'Baseten', addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co', keys: 'https://app.baseten.co/settings/api_keys', docs: 'https://docs.baseten.co/development/model-apis/overview',
       keyHow: tr('install.provider.basetenKey') },
+    nebius: { name: 'Nebius', addr: 'https://api.tokenfactory.nebius.com/v1', site: 'https://tokenfactory.nebius.com', keys: 'https://tokenfactory.nebius.com', docs: 'https://docs.tokenfactory.nebius.com/quickstart',
+      keyHow: tr('install.provider.nebiusKey') },
     other: { name: tr('install.provider.yours'), addr: 'https://<provider>/v1', docs: '',
       keyHow: tr('install.provider.otherKey') },
   };
 
   // What to choose in the setup window's model step (Mac and Windows) for the answers given.
   function modelChoice(s) {
-    if (s.host === 'yes' && s.serve) return SERVERS[s.serve].pick;
-    if (s.host === 'no' && s.provider) return tr('install.pick.provider', { address: esc(PROVIDERS[s.provider].addr) });
-    return tr('install.pick.any');
+    // A release from before the setup window had its three options: one form with presets.
+    if (!hasModelOptions()) {
+      if (s.host === 'yes' && s.serve && s.serve !== 'cedar') return SERVERS[s.serve].pick;
+      if (s.host === 'no' && s.provider) return tr('install.pick.provider', { address: esc(PROVIDERS[s.provider].addr) });
+      return tr('install.pick.any');
+    }
+    if (cedarServes(s)) return SERVERS.cedar.pick;
+    if (s.host === 'yes' && s.serve === 'vllm') return tr('install.pick.vllmNew');
+    if (s.host === 'yes' && s.serve && s.serve !== 'cedar') return tr('install.pick.presetNew', { name: SERVERS[s.serve].name });
+    if (s.host === 'no' && s.provider === 'other') return tr('install.pick.providerOtherNew', { address: esc(PROVIDERS.other.addr) });
+    if (s.host === 'no' && s.provider) return tr('install.pick.providerNew', { name: PROVIDERS[s.provider].name });
+    return tr('install.pick.anyNew');
+  }
+
+  // "Let Cedar do it" was chosen, on a system where Cedar can.
+  function cedarServes(s) {
+    return s.host === 'yes' && s.serve === 'cedar' && cedarCanServe(s);
   }
 
   // The address the Linux chat's Settings → Server is given.
   function modelAddress(s) {
     if (s.host === 'no') return PROVIDERS[s.provider || 'other'].addr;
-    return SERVERS[s.serve || 'ollama'].addr;
+    return SERVERS[s.serve === 'cedar' && !cedarServes(s) ? 'ollama' : s.serve || 'ollama'].addr;
   }
 
   const WHAT_IS_A_PROVIDER = explain(tr('install.explain.provider'));
@@ -393,10 +425,11 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
     if (s.host === 'no') return providerStep(s, inSetup);
     if (s.host === 'yes') {
+      if (cedarServes(s)) return cedarStep(s);
       if (s.serve === 'ollama') return ollamaStep(s, shell, inSetup, toolsNote);
       if (s.serve === 'lmstudio') return lmStudioStep(s, inSetup, toolsNote);
       if (s.serve === 'vllm') return vllmStep(s, inSetup);
-      return step(tr('install.serve.title'), `<p>${tr('install.serve.body')}</p>`, 'optional');
+      return step(tr('install.serve.title'), `<p>${tr('install.serve.body')}</p>${cedarCanServe(s) ? `<p>${tr('install.serve.cedar', { option: esc(tr('install.opt.cedarServes')) })}</p>` : ''}`, 'optional');
     }
     // Not sure, or not answered yet.
     return step(tr('install.hw.title'), `${s.host ? '' : `<p class="note">${tr('install.hw.answer', { question: esc(tr('install.q.host')) })}</p>`}
@@ -410,8 +443,27 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       ${s.os === 'windows' ? code('# your graphics card and its memory\nGet-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM\n# total memory\n(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB', 'PowerShell')
         : s.os === 'linux' ? code('free -h                 # memory\nnvidia-smi              # NVIDIA GPU and its memory, if any\nrocm-smi --showmeminfo vram   # AMD GPU, if any', 'Terminal')
         : code("system_profiler SPHardwareDataType | grep -E 'Chip|Memory'", 'Terminal')}
+      ${cedarCanServe(s) && s.os !== 'linux' ? `<p class="note">${tr('install.hw.cedarChecks')}</p>` : ''}
       <p class="note">${tr('install.hw.guide')}</p>
       <p>${tr('install.hw.outro', { yes: esc(tr('install.opt.yes')), no: esc(tr('install.opt.no')) })}</p>`, 'optional');
+  }
+
+  // Cedar sets llama.cpp up itself: in the setup window on a Mac or Windows, with cedar-llama
+  // (from the archive the Linux steps unpack) on Linux.
+  function cedarStep(s) {
+    const tiers = `<ul><li>${tr('install.cedar.tier16')}</li><li>${tr('install.cedar.tier24')}</li><li>${tr('install.cedar.tier32')}</li><li>${tr('install.cedar.tier72')}</li></ul>`;
+    if (s.os === 'linux') {
+      const V = release.ver;
+      return step(tr('install.cedar.title'), `<p>${tr('install.cedar.linux')}</p>
+        ${code(`V=${V}\nF=Cedar-$V-linux-x64\nsudo install -m 0755 $F/cedar-llama /usr/local/bin/\n\ncedar-llama detect     # your GPU, and what would be installed\ncedar-llama install    # downloads llama.cpp and the model; Ctrl-C stops, run it again to continue\ncedar-llama serve      # runs it on 127.0.0.1:18081`, 'Terminal')}
+        <p>${tr('install.cedar.tiersIntro')}</p>${tiers}
+        <p class="note">${tr('install.cedar.linuxNote', { url: REPO + '#llamacpp-on-a-machine-with-a-gpu' })}</p>`);
+    }
+    return step(tr('install.cedar.title'), `<p>${tr('install.cedar.body')}</p>
+      <p>${tr('install.cedar.tiersIntro')}</p>${tiers}
+      <p>${tr(s.os === 'mac' ? 'install.cedar.mac' : 'install.cedar.windows')}</p>
+      <p class="note">${tr('install.cedar.greyed', { no: esc(tr('install.opt.no')) })}</p>
+      <p class="note">${tr('install.model.laterSetup', { choice: modelChoice(s) })}</p>`);
   }
 
   function providerStep(s, inSetup) {
@@ -424,7 +476,9 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       .replace('curl -s', s.os === 'windows' ? 'curl.exe -s' : 'curl -s');
     const where = s.os === 'linux'
       ? `<p>${tr('install.provider.whereLinux', { address: esc(p.addr) })}</p>`
-      : `<p>${tr('install.provider.whereSetup', { address: esc(p.addr) })}</p>`;
+      : !hasModelOptions() ? `<p>${tr('install.provider.whereSetup', { address: esc(p.addr) })}</p>`
+      : s.provider === 'other' ? `<p>${tr('install.provider.whereSetupOtherNew', { address: esc(p.addr) })}</p>`
+      : `<p>${tr('install.provider.whereSetupNew', { name: p.name })}</p>`;
     return step(tr('install.provider.title', { name: p.name }), `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
       <ol><li>${tr('install.provider.keepKey')}</li><li>${tr('install.provider.checkKey')}${check}</li></ol>
       ${where}
@@ -530,7 +584,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const UPDATES_NOTE = `<p class="note">${tr('install.updatesNote')}</p>`;
 
   // The setup window's three checks (Mac and Windows), as the app names them.
-  const checks = (s) => `<ul><li>${tr('install.check.docker')}</li><li>${tr('install.check.image')}</li><li>${tr('install.check.model', { choice: modelChoice(s) })}</li></ul>`;
+  const checks = (s) => `<ul><li>${tr('install.check.docker')}</li><li>${tr('install.check.image')}</li><li>${tr(cedarServes(s) ? 'install.check.modelCedar' : 'install.check.model', { choice: modelChoice(s) })}</li></ul>`;
 
   function macSteps(s) {
     const steps = [];
@@ -596,10 +650,11 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         ${code('curl -fsSL https://get.docker.com | sh\nsudo usermod -aG docker "$USER"   # then log out and back in\ndocker info --format \'{{.ServerVersion}}\'', 'Terminal')}
         <p class="note">${tr('install.linux.engineNote')}</p>`));
     }
-    steps.push(modelStep(s));
+    if (!cedarServes(s)) steps.push(modelStep(s));
     steps.push(step(tr('install.linux.installTitle', { arch }), `<p>${tr('install.linux.install')}</p>
       ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nU=https://github.com/hanneshapke/cedar/releases/download\ncurl -fLO $U/v$V/$F.tar.gz\ntar -xzf $F.tar.gz\nsudo install -m 0755 $F/cedar $F/cedar-chat /usr/local/bin/\n\n# the sealed box the agent's tools run in\ndocker pull ghcr.io/hanneshapke/cedar-sandbox:$V\ndocker tag ghcr.io/hanneshapke/cedar-sandbox:$V cedar-sandbox:latest`, 'Terminal')}
       <p class="note">${arch === 'arm64' ? tr('install.linux.spark') : ''}${tr('install.linux.fromSource')}</p>`));
+    if (cedarServes(s)) steps.push(modelStep(s));
     steps.push(step(tr('install.linux.configTitle'), `<p>${tr('install.linux.config')}</p>
       ${code(`sudo useradd --system --create-home --home-dir /var/lib/cedar \\\n  --shell /usr/sbin/nologin --groups docker cedar\n\nCEDAR_KEY=$(openssl rand -hex 24)\nCHAT_TOKEN=$(openssl rand -hex 24)\nADMIN_TOKEN=$(openssl rand -hex 24)\nSECRET_KEY=$(openssl rand -hex 32)\nsudo install -d -m 0755 /etc/cedar\n\nsudo tee /etc/cedar/cedar.env >/dev/null <<EOF\nCEDAR_API_KEYS=$CEDAR_KEY\nCEDAR_ADMIN_KEYS=$CEDAR_KEY\nCEDAR_SECRET_KEY=$SECRET_KEY\nBIND_ADDR=127.0.0.1:8080\nDATABASE_URL=sqlite:///var/lib/cedar/cedar.db\nEOF\n\nsudo tee /etc/cedar/chat.env >/dev/null <<EOF\nCEDAR_URL=http://127.0.0.1:8080\nCEDAR_API_KEY=$CEDAR_KEY\nCHAT_BIND_ADDR=127.0.0.1:3000\nCHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db\nCHAT_ACCESS_TOKEN=$CHAT_TOKEN\nCHAT_ADMIN_TOKEN=$ADMIN_TOKEN\nEOF\n\nsudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env\necho "Chat access token: $CHAT_TOKEN"\necho "Admin token:       $ADMIN_TOKEN"`, 'Terminal')}
       <p class="note">${tr('install.linux.configNote', { url: LINUX + '#4-configure' })}</p>`));

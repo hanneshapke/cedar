@@ -13,6 +13,20 @@
 window.__resources = window.__resources || {};
 </script>
 <script src="./version.js"></script>
+<script>
+// What describes the setup window's "Run a model here with llama.cpp" shows only once the release
+// this site offers has it (data-since, compared with version.js); install.html does the same.
+(() => {
+  const atLeast = (since) => {
+    const [a, b] = [window.CEDAR_VERSION || '0', since].map((v) => v.split('.').map(Number));
+    for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    return true;
+  };
+  const style = document.createElement('style');
+  style.textContent = [...new Set(['0.9.0'])].filter((v) => !atLeast(v)).map((v) => `[data-since="${v}"] { display: none !important; }`).join('\n');
+  document.head.appendChild(style);
+})();
+</script>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -215,6 +229,7 @@ html{scroll-padding-top:96px}
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.yours.eyebrow">Yours to shape</span>
     <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.yours.title">Pick the brain.<br>Add the hands.</h2>
     <p class="rich" style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n-html="index.yours.models">Cedar isn't tied to one AI company. Run a model on your Mac or PC with <strong>Ollama</strong> or <strong>LM Studio</strong>, serve one from a Linux GPU box with <strong>vLLM</strong>, or point it at a server you trust. Switch between them per conversation.</p>
+    <p class="rich" style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-since="0.9.0" data-i18n="index.yours.cedarRuns">No model server yet? On your Mac or PC with a capable GPU, Cedar downloads a model and runs it for you with llama.cpp.</p>
     <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.yours.tools">Need something specific? Add a tool from the community with one click, after seeing exactly what it asks for. The first one reads an insulin pump and compares your day with your week.</p>
     <a href="https://github.com/hanneshapke/cedar/tree/main/registry/tools" style="font-weight:600;font-size:16px;display:inline-flex;gap:8px;align-items:center"><span data-i18n="index.yours.browse">Browse community tools</span> <span style="transition:transform .2s">→</span></a>
   </div>
@@ -378,7 +393,7 @@ sudo install $F/cedar* /usr/local/bin/
     <div style="display:flex;flex-direction:column;gap:10px;flex:1 1 420px;min-width:0">
       <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#f2a21c" data-i18n="index.setup.card.eyebrow">Install guide</span>
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(26px,3.4vw,38px);line-height:1.05;letter-spacing:-.02em" data-i18n="index.setup.card.title">Five questions. Your exact steps.</span>
-      <span style="font-size:16px;line-height:1.5;color:#d9cfc2;max-width:620px" data-i18n="index.setup.card.body">Mac, Windows or Linux? Docker or not? Ollama, LM Studio, vLLM, or a provider like Doubleword or Baseten? Pick your answers and copy the commands. Share the link with whoever helps you set it up.</span>
+      <span style="font-size:16px;line-height:1.5;color:#d9cfc2;max-width:620px" data-i18n="index.setup.card.body">Mac, Windows or Linux? Docker or not? Ollama, LM Studio, vLLM, or a provider like Doubleword, Baseten or Nebius? Pick your answers and copy the commands. Share the link with whoever helps you set it up.</span>
     </div>
     <span style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;white-space:nowrap;justify-self:start" data-i18n="index.setup.card.cta">Find your install path →</span>
   </a>
@@ -386,7 +401,8 @@ sudo install $F/cedar* /usr/local/bin/
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#f2a21c">1</span>
       <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.model.title">Pick a model</h3>
-      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.model.body">Ollama or LM Studio put an AI model on your Mac or PC in minutes. On a Linux GPU box, run vLLM. No big computer? Use a provider like Doubleword or Baseten. The <a href="models.html">model guide</a> suggests one for your hardware.</p>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.model.body">Ollama or LM Studio put an AI model on your Mac or PC in minutes. On a Linux GPU box, run vLLM. No big computer? Use a provider like Doubleword, Baseten or Nebius. The <a href="models.html">model guide</a> suggests one for your hardware.</p>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-since="0.9.0" data-i18n="index.setup.model.cedar">Or let Cedar do it: with a capable GPU, its setup window downloads a model and runs it.</p>
     </div>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#e5553a">2</span>
