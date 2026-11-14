@@ -1212,25 +1212,47 @@ const cedarSettings = (() => {
     }
     // The reasoning levels the model takes: one of the usual sets (/suggested-models.json), or,
     // under "Other…", whatever is typed. A set is an option whose value is its levels joined.
+    // One dropdown holds the levels the model takes and the level used when a message picks none:
+    // each of the usual sets (/suggested-models.json) is a group, with an option per default
+    // ("the server's own" first). An option's value is its levels joined, '|', and the default.
+    // "Other…" shows a field for a list typed by hand, and a dropdown for its default.
     const OTHER = '\u0000other';
     const levelSet = el('select');
     levelSet.setAttribute('aria-label', tr('settings.form.levels'));
     levelSet.append(new Option(tr('settings.form.levelsNone'), ''));
     const presets = (servers.reasoning?.presets || []).map((set) => set.join(', '));
-    for (const set of presets) levelSet.append(new Option(tr('settings.models.levels', { levels: set }), set));
+    for (const set of presets) {
+      const group = el('optgroup');
+      group.label = tr('settings.models.levels', { levels: set });
+      group.append(new Option(`${set} · ${tr('settings.form.defaultLevelServer')}`, `${set}|`));
+      for (const l of set.split(', ')) group.append(new Option(`${set} · ${tr('settings.form.defaultLevelIs', { level: l })}`, `${set}|${l}`));
+      levelSet.append(group);
+    }
     levelSet.append(new Option(tr('settings.add.other'), OTHER));
     const levels = input(tr('settings.form.levelsPlaceholder'), '', tr('settings.form.levels'));
-    const showLevels = (list) => {
-      const joined = list.join(', ');
-      const known = !joined || presets.includes(joined);
-      levelSet.value = known ? joined : OTHER;
-      levels.value = known ? '' : joined;
-      levels.hidden = known;
-    };
-    showLevels(entry?.reasoning_levels || []);
     const defaultLevel = el('select');
     defaultLevel.setAttribute('aria-label', tr('settings.form.defaultLevel'));
-    const parseLevels = () => [...new Set((levelSet.value === OTHER ? levels.value : levelSet.value).split(',').map((l) => l.trim()).filter(Boolean))];
+    const typed = () => levelSet.value === OTHER;
+    const parseLevels = () => [...new Set((typed() ? levels.value : levelSet.value.split('|')[0]).split(',').map((l) => l.trim()).filter(Boolean))];
+    const defaultOf = () => (typed() ? defaultLevel.value : levelSet.value.split('|')[1] || '');
+    // The default of a typed list: its own dropdown, shown only under "Other…".
+    const fillDefault = (wanted) => {
+      const current = wanted ?? defaultLevel.value;
+      defaultLevel.textContent = '';
+      defaultLevel.append(new Option(tr('settings.form.defaultLevelServer'), ''));
+      for (const l of parseLevels()) defaultLevel.append(new Option(tr('settings.form.defaultLevelIs', { level: l }), l));
+      defaultLevel.value = parseLevels().includes(current) ? current : '';
+      defaultLevel.hidden = !typed() || !parseLevels().length;
+    };
+    const showLevels = (list, preferred) => {
+      const joined = list.join(', ');
+      const known = !joined || presets.includes(joined);
+      levelSet.value = !joined ? '' : known ? `${joined}|${list.includes(preferred) ? preferred : ''}` : OTHER;
+      levels.value = known ? '' : joined;
+      levels.hidden = known;
+      fillDefault(preferred || '');
+    };
+    showLevels(entry?.reasoning_levels || [], entry?.default_reasoning || '');
     // What the chosen model takes, by the file's loose matching; none when no entry names it.
     let levelsTouched = false;
     const startModel = entry?.model || '';
@@ -1239,26 +1261,15 @@ const cedarSettings = (() => {
       if (levelsTouched || !model.value || model.value === startModel) return;
       const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const hit = (servers.reasoning?.models || []).find((m) => plain(model.value).includes(plain(m.match)));
-      showLevels(hit ? hit.levels : []);
-      fillDefault();
+      showLevels(hit ? hit.levels : [], '');
     };
     levelSet.addEventListener('change', () => {
       levelsTouched = true;
-      levels.hidden = levelSet.value !== OTHER;
-      if (!levels.hidden) levels.focus();
+      levels.hidden = !typed();
+      if (typed()) levels.focus();
       fillDefault();
     });
-    levels.addEventListener('input', () => { levelsTouched = true; });
-    const fillDefault = () => {
-      const current = defaultLevel.value || entry?.default_reasoning || '';
-      defaultLevel.textContent = '';
-      defaultLevel.append(new Option(tr('settings.form.defaultLevelServer'), ''));
-      for (const l of parseLevels()) defaultLevel.append(new Option(tr('settings.form.defaultLevelIs', { level: l }), l));
-      defaultLevel.value = parseLevels().includes(current) ? current : '';
-      defaultLevel.hidden = !parseLevels().length;
-    };
-    levels.addEventListener('input', fillDefault);
-    fillDefault();
+    levels.addEventListener('input', () => { levelsTouched = true; fillDefault(); });
     const maxTokens = input(tr('settings.form.maxTokens'), String(entry?.max_tokens ?? DEFAULT_MAX_TOKENS), tr('settings.form.maxTokens'), 'number');
     maxTokens.min = '1';
     maxTokens.max = String(MAX_MAX_TOKENS);
@@ -1362,7 +1373,7 @@ const cedarSettings = (() => {
         model: model.value,
         label: label.value.trim() || model.value,
         reasoning_levels: parseLevels(),
-        default_reasoning: defaultLevel.value,
+        default_reasoning: defaultOf(),
         multimodal: multimodalBox.checked,
         max_tokens: limit,
         is_default: defaultBox.checked,
