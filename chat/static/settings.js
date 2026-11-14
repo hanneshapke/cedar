@@ -1212,47 +1212,58 @@ const cedarSettings = (() => {
     }
     // The reasoning levels the model takes: one of the usual sets (/suggested-models.json), or,
     // under "Other…", whatever is typed. A set is an option whose value is its levels joined.
-    // One dropdown holds the levels the model takes and the level used when a message picks none:
-    // each of the usual sets (/suggested-models.json) is a group, with an option per default
-    // ("the server's own" first). An option's value is its levels joined, '|', and the default.
-    // "Other…" shows a field for a list typed by hand, and a dropdown for its default.
+    // Reasoning levels need no choosing: they follow the chosen model (/suggested-models.json)
+    // and show as one line. "Advanced" opens the controls: the usual sets of levels (or, under
+    // "Other…", a list typed by hand) and the level used when a message picks none.
     const OTHER = '\u0000other';
-    const levelSet = el('select');
+    const levelSet = el('select', 'settings-input');
     levelSet.setAttribute('aria-label', tr('settings.form.levels'));
     levelSet.append(new Option(tr('settings.form.levelsNone'), ''));
     const presets = (servers.reasoning?.presets || []).map((set) => set.join(', '));
-    for (const set of presets) {
-      const group = el('optgroup');
-      group.label = tr('settings.models.levels', { levels: set });
-      group.append(new Option(`${set} · ${tr('settings.form.defaultLevelServer')}`, `${set}|`));
-      for (const l of set.split(', ')) group.append(new Option(`${set} · ${tr('settings.form.defaultLevelIs', { level: l })}`, `${set}|${l}`));
-      levelSet.append(group);
-    }
+    for (const set of presets) levelSet.append(new Option(tr('settings.models.levels', { levels: set }), set));
     levelSet.append(new Option(tr('settings.add.other'), OTHER));
     const levels = input(tr('settings.form.levelsPlaceholder'), '', tr('settings.form.levels'));
-    const defaultLevel = el('select');
+    const defaultLevel = el('select', 'settings-input');
     defaultLevel.setAttribute('aria-label', tr('settings.form.defaultLevel'));
     const typed = () => levelSet.value === OTHER;
-    const parseLevels = () => [...new Set((typed() ? levels.value : levelSet.value.split('|')[0]).split(',').map((l) => l.trim()).filter(Boolean))];
-    const defaultOf = () => (typed() ? defaultLevel.value : levelSet.value.split('|')[1] || '');
-    // The default of a typed list: its own dropdown, shown only under "Other…".
+    const parseLevels = () => [...new Set((typed() ? levels.value : levelSet.value).split(',').map((l) => l.trim()).filter(Boolean))];
+    const reasonText = el('span', '');
+    const advancedBtn = el('button', 'settings-link', tr('settings.form.advanced'));
+    advancedBtn.type = 'button';
+    const reasonLine = el('p', 'cedar-set-note cedar-set-reasoning');
+    reasonLine.append(reasonText, advancedBtn);
+    const advanced = el('div', 'cedar-set-advanced');
+    advanced.append(levelSet, levels, defaultLevel);
+    const openAdvanced = (open) => {
+      advanced.hidden = !open;
+      advancedBtn.textContent = tr(open ? 'settings.form.advancedHide' : 'settings.form.advanced');
+      advancedBtn.setAttribute('aria-expanded', String(open));
+    };
+    advancedBtn.addEventListener('click', () => openAdvanced(advanced.hidden));
+    // The line, and the choices of default, as the controls stand.
     const fillDefault = (wanted) => {
       const current = wanted ?? defaultLevel.value;
+      const list = parseLevels();
       defaultLevel.textContent = '';
       defaultLevel.append(new Option(tr('settings.form.defaultLevelServer'), ''));
-      for (const l of parseLevels()) defaultLevel.append(new Option(tr('settings.form.defaultLevelIs', { level: l }), l));
-      defaultLevel.value = parseLevels().includes(current) ? current : '';
-      defaultLevel.hidden = !typed() || !parseLevels().length;
+      for (const l of list) defaultLevel.append(new Option(tr('settings.form.defaultLevelIs', { level: l }), l));
+      defaultLevel.value = list.includes(current) ? current : '';
+      defaultLevel.hidden = !list.length;
+      reasonText.textContent = !list.length ? tr('settings.form.reasoningNone')
+        : defaultLevel.value ? tr('settings.models.levelsDefault', { levels: list.join(', '), level: defaultLevel.value })
+          : tr('settings.models.levels', { levels: list.join(', ') });
     };
     const showLevels = (list, preferred) => {
       const joined = list.join(', ');
       const known = !joined || presets.includes(joined);
-      levelSet.value = !joined ? '' : known ? `${joined}|${list.includes(preferred) ? preferred : ''}` : OTHER;
+      levelSet.value = known ? joined : OTHER;
       levels.value = known ? '' : joined;
       levels.hidden = known;
       fillDefault(preferred || '');
     };
     showLevels(entry?.reasoning_levels || [], entry?.default_reasoning || '');
+    // A list typed by hand is shown where it can be read and changed.
+    openAdvanced(typed());
     // What the chosen model takes, by the file's loose matching; none when no entry names it.
     let levelsTouched = false;
     const startModel = entry?.model || '';
@@ -1270,6 +1281,7 @@ const cedarSettings = (() => {
       fillDefault();
     });
     levels.addEventListener('input', () => { levelsTouched = true; fillDefault(); });
+    defaultLevel.addEventListener('change', () => { levelsTouched = true; fillDefault(); });
     // The reply limit is a slider over the usual sizes (a saved one that is none of them gets a
     // stop of its own); `maxTokens` holds the number the form saves.
     const maxTokens = el('input');
@@ -1371,7 +1383,7 @@ const cedarSettings = (() => {
       if (entry?.api_key_set && canSaveKey) form.append(clearKey);
       form.append(modelRow);
     }
-    form.append(levelSet, levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
+    form.append(reasonLine, advanced, maxTokensField, multimodalLabel, makeDefault);
     form.append(el('small', 'cedar-set-field-note', tr('settings.form.note')));
     form.append(saveBtn, button(tr('settings.cancel'), onDone));
     form.addEventListener('submit', async (e) => {
@@ -1391,7 +1403,7 @@ const cedarSettings = (() => {
         model: model.value,
         label: label.value.trim() || model.value,
         reasoning_levels: parseLevels(),
-        default_reasoning: defaultOf(),
+        default_reasoning: defaultLevel.value,
         multimodal: multimodalBox.checked,
         max_tokens: limit,
         is_default: defaultBox.checked,

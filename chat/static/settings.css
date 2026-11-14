@@ -296,3 +296,7 @@
 /* A slider with its value at the end of the field's heading (the reply limit of a model). */
 .cedar-set-range-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
 .cedar-set-field input.cedar-set-range { width: 100%; padding: 0; border: 0; background: none; height: 28px; accent-color: var(--accent); cursor: pointer; }
+/* The model form's reasoning line (levels follow the chosen model) and what "Advanced" opens. */
+.cedar-set-reasoning { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.cedar-set-advanced { display: flex; flex-direction: column; gap: 8px; }
+.cedar-set-advanced[hidden] { display: none; }
