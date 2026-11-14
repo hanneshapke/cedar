@@ -4,7 +4,7 @@
 //   node loop_cards.js <out-dir> '<json: {tagline, steps: [..4], free, url}>'
 //
 // Writes reel-0.png .. reel-3.png (1080x1920, transparent where the film shows), reel-start.png,
-// reel-end.png and wide-end.png (1920x1080). The fonts are the chat's own, read from chat/static/fonts.
+// reel-end.png, and wide-start.png and wide-end.png (1920x1080). The fonts are the chat's own, read from chat/static/fonts.
 const { chromium } = require('playwright');
 const path = require('path');
 const [out, json] = process.argv.slice(2);
@@ -30,8 +30,8 @@ const reel = (step) => `<style>${css} body{background:transparent}
   .url{position:absolute;left:0;right:0;top:1622px;font-size:30px}</style>
   <div class="lock">${MARK}<span>Cedar</span></div><h1>${step}</h1><div class="url">${T.url}</div>`;
 // The reel's opening card: the mark and the tagline, large, and nothing else.
-const start = () => `<style>${css} body{background:#f7f5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px}
-  .lock{font-size:92px}.lock svg{width:124px;height:124px}h1{font-size:64px;white-space:nowrap}</style>
+const start = (wide) => `<style>${css} body{background:#f7f5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px}
+  .lock{font-size:${wide ? 104 : 92}px}.lock svg{width:${wide ? 140 : 124}px;height:${wide ? 140 : 124}px}h1{font-size:${wide ? 96 : 64}px;white-space:nowrap}</style>
   <div class="lock">${MARK}<span>Cedar</span></div><h1>${T.tagline}</h1>`;
 const end = (w, h, k) => `<style>${css} body{background:#f7f5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:${36 * k}px}
   .lock{font-size:${60 * k}px}.lock svg{width:${84 * k}px;height:${84 * k}px}
@@ -49,7 +49,8 @@ const end = (w, h, k) => `<style>${css} body{background:#f7f5f0;display:flex;fle
     await page.close();
   };
   for (let i = 0; i < T.steps.length; i++) await shot(`reel-${i}.png`, 1080, 1920, reel(T.steps[i]), true);
-  await shot('reel-start.png', 1080, 1920, start(), false);
+  await shot('reel-start.png', 1080, 1920, start(false), false);
+  await shot('wide-start.png', 1920, 1080, start(true), false);
   await shot('reel-end.png', 1080, 1920, end(1080, 1920, 1.25), false);
   await shot('wide-end.png', 1920, 1080, end(1920, 1080, 1.25), false);
   await browser.close();
