@@ -9,6 +9,11 @@
 # Without lang it takes ../cedar-intro.mp4 and ../timeline.json and writes
 # ../cedar-intro-narrated.mp4; with de, fr or es it takes that language's take,
 # ../cedar-intro.<lang>.mp4 and ../timeline.<lang>.json, and writes ../cedar-intro-narrated.<lang>.mp4.
+#
+# Background music goes under the voice, about 12 dB below it when alone and lower still while
+# the voice speaks. MUSIC says which: unset or "on" for the piece music.py writes (made for the
+# film's length), a path for a file of your own (it is cut and faded to the film's length), or
+# "off" for none. MUSIC_DB is its level in dB (default -10).
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 AUDIO=${1:?audio dir}; shift
@@ -37,7 +42,29 @@ done < <(python3 -c "
 import json
 for i, s in enumerate(json.load(open('$TIMELINE'))['scenes'], 1): print(i, s['id'], s['start'], sep='\t')")
 (( n > 0 )) || { echo "no clips found in $AUDIO" >&2; exit 1; }
-ffmpeg -loglevel error -y -i "$FILM" "${inputs[@]}" \
-    -filter_complex "${filter}${mix}amix=inputs=$n:normalize=0[a]" \
-    -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -movflags +faststart "$OUT"
+MUSIC=${MUSIC:-on}; MUSIC_DB=${MUSIC_DB:--10}
+if [[ $MUSIC == off ]]; then
+    ffmpeg -loglevel error -y -i "$FILM" "${inputs[@]}" \
+        -filter_complex "${filter}${mix}amix=inputs=$n:normalize=0[a]" \
+        -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -movflags +faststart "$OUT"
+else
+    len=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$FILM")
+    tmp=""
+    # a file of your own is faded in and out here; the piece from music.py brings its own ending
+    fades="afade=t=in:d=2,afade=t=out:st=$(python3 -c "print(max(0, $len - 4))"):d=4"
+    if [[ $MUSIC == on ]]; then
+        tmp=$(mktemp --suffix=.wav); MUSIC=$tmp; fades=anull
+        python3 "$HERE/music.py" "$MUSIC" "$len"
+    fi
+    [[ -f $MUSIC ]] || { echo "no such music file: $MUSIC" >&2; exit 1; }
+    # The voice goes to the mix and, as a side chain, to a compressor that turns the music down
+    # while it speaks. The music is the last input.
+    ffmpeg -loglevel error -y -i "$FILM" "${inputs[@]}" -stream_loop -1 -i "$MUSIC" \
+        -filter_complex "${filter}${mix}amix=inputs=$n:normalize=0,aformat=channel_layouts=stereo,apad=whole_dur=$len,asplit[voice][key];\
+[$((n + 1)):a]atrim=0:$len,highpass=f=40,volume=${MUSIC_DB}dB,$fades[bed];\
+[bed][key]sidechaincompress=threshold=0.015:ratio=3:attack=250:release=1500[ducked];\
+[voice][ducked]amix=inputs=2:normalize=0,alimiter=limit=0.95[a]" \
+        -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -t "$len" -movflags +faststart "$OUT"
+    [[ -z $tmp ]] || rm -f "$tmp"
+fi
 echo "wrote $OUT"

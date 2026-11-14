@@ -6,11 +6,12 @@ work in the sandbox, an approval, memory, the tool switches, and an agent made f
 | File | What it is |
 | --- | --- |
 | `cedar-intro.mp4` | The film: 1920×1080, 30 fps, H.264, 3:54, no sound |
+| `cedar-intro-narrated.mp4` | The same film with the English voice and background music |
 | `script.md` | The script: each scene with its times, what is on screen, and the narration |
 | `narration-elevenlabs.txt` | The narration as one text for a text-to-speech voice |
 | `narration/NN-<scene>.txt` | The same, one file a scene, for one clip each |
 | `captions.srt` | Captions, timed by word count within each scene |
-| `cedar-intro-narrated.<lang>.mp4` | The film in German (`de`), French (`fr`) and Spanish (`es`), recorded in that language, with the voice |
+| `cedar-intro-narrated.<lang>.mp4` | The film in German (`de`), French (`fr`) and Spanish (`es`), recorded in that language, with the voice and background music |
 | `narration-elevenlabs.<lang>.txt`, `narration/<lang>/`, `captions.<lang>.srt`, `timeline.<lang>.json` | Their narration, captions and scene times |
 | `timeline.json` | When each scene of the take starts and ends, in seconds |
 | `tools/` | Everything that makes the above |
@@ -58,6 +59,22 @@ The texts spell three things the way they should be said: "V L L M", "llama C P 
 The wording as written is in `script.md`. If a clip runs longer than its scene (the times are in
 `script.md`), slow the film instead of the voice: lower `WPS` (words a second) in `tools/record.js` and
 record again.
+
+## The music
+
+`tools/mux.sh` puts background music under the voice unless told otherwise. The piece is made by
+`tools/music.py` from sine waves (it needs numpy), for the length of the film: a slow pad through
+eight chords in D major, a soft bass and a sparse bell-like figure, with a long reverb. It is the
+project's own, so there is nothing to license, and it is the same every time. Most of its energy
+is below 600 Hz, under the range a voice needs. In the mix it is about 12 dB below the voice when
+alone, and a compressor keyed by the voice turns it down further while the voice speaks.
+
+```sh
+docs/screencast/tools/mux.sh docs/screencast/audio                       # with the music
+MUSIC=off docs/screencast/tools/mux.sh docs/screencast/audio             # voice only
+MUSIC=my-track.mp3 docs/screencast/tools/mux.sh docs/screencast/audio    # your own track, cut and faded to length
+MUSIC_DB=-14 docs/screencast/tools/mux.sh docs/screencast/audio          # quieter (the default is -10)
+```
 
 ## German, French and Spanish
 
