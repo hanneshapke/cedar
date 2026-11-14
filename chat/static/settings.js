@@ -1270,14 +1270,32 @@ const cedarSettings = (() => {
       fillDefault();
     });
     levels.addEventListener('input', () => { levelsTouched = true; fillDefault(); });
-    const maxTokens = input(tr('settings.form.maxTokens'), String(entry?.max_tokens ?? DEFAULT_MAX_TOKENS), tr('settings.form.maxTokens'), 'number');
-    maxTokens.min = '1';
-    maxTokens.max = String(MAX_MAX_TOKENS);
-    maxTokens.step = '1';
+    // The reply limit is a slider over the usual sizes (a saved one that is none of them gets a
+    // stop of its own); `maxTokens` holds the number the form saves.
+    const maxTokens = el('input');
+    maxTokens.type = 'hidden';
+    const saved = entry?.max_tokens ?? DEFAULT_MAX_TOKENS;
+    const tokenStops = [...new Set([1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, saved])].sort((x, y) => x - y);
+    const tokenSlider = el('input', 'cedar-set-range');
+    tokenSlider.type = 'range';
+    tokenSlider.min = '0';
+    tokenSlider.max = String(tokenStops.length - 1);
+    tokenSlider.step = '1';
+    tokenSlider.value = String(tokenStops.indexOf(saved));
+    tokenSlider.setAttribute('aria-label', tr('settings.form.maxTokens'));
+    const tokenValue = el('span', 'cedar-set-range-value');
+    const showTokens = () => {
+      const count = tokenStops[Number(tokenSlider.value)];
+      maxTokens.value = String(count);
+      tokenValue.textContent = count.toLocaleString(document.documentElement.lang || undefined);
+      tokenSlider.setAttribute('aria-valuetext', tokenValue.textContent);
+    };
+    tokenSlider.addEventListener('input', showTokens);
+    showTokens();
     const maxTokensField = el('label', 'cedar-set-field');
     const maxTokensHead = el('span', 'cedar-set-field-head');
-    maxTokensHead.append(el('span', '', tr('settings.form.maxTokens')));
-    maxTokensField.append(maxTokensHead, maxTokens, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
+    maxTokensHead.append(el('span', '', tr('settings.form.maxTokens')), tokenValue);
+    maxTokensField.append(maxTokensHead, tokenSlider, maxTokens, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
     const multimodalLabel = el('label', 'cedar-set-check plain');
     const multimodalBox = el('input');
     multimodalBox.type = 'checkbox';
@@ -1365,7 +1383,7 @@ const cedarSettings = (() => {
       const limit = Number(maxTokens.value);
       if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MAX_TOKENS) {
         deps.toast(tr('settings.form.maxTokensRange', { max: MAX_MAX_TOKENS }));
-        maxTokens.focus();
+        tokenSlider.focus();
         return;
       }
       const body = {

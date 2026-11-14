@@ -293,3 +293,6 @@
 .cedar-rec-table th, .cedar-rec-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .cedar-rec-table th { position: sticky; top: 0; background: var(--sheet); color: var(--muted); font-weight: 500; }
 .cedar-rec-table tr:last-child td { border-bottom: 0; }
+/* A slider with its value at the end of the field's heading (the reply limit of a model). */
+.cedar-set-range-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+.cedar-set-field input.cedar-set-range { width: 100%; padding: 0; border: 0; background: none; height: 28px; accent-color: var(--accent); cursor: pointer; }
