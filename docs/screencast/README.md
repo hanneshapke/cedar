@@ -14,6 +14,7 @@ work in the sandbox, an approval, memory, the tool switches, and an agent made f
 | `cedar-intro-narrated.<lang>.mp4` | The film in German (`de`), French (`fr`) and Spanish (`es`), recorded in that language, with the voice, background music and a subtitle track |
 | `narration-elevenlabs.<lang>.txt`, `narration/<lang>/`, `captions.<lang>.srt`, `timeline.<lang>.json` | Their narration, captions and scene times |
 | `timeline.json` | When each scene of the take starts and ends, in seconds |
+| `loop/` | The 18-second cut: a silent loop for a web page, the same with upbeat music, and a vertical reel, each in four languages |
 | `youtube.md` | A title and a description, with chapters, for uploading each film to YouTube |
 | `tools/` | Everything that makes the above |
 
@@ -76,6 +77,30 @@ MUSIC=off docs/screencast/tools/mux.sh docs/screencast/audio             # voice
 MUSIC=my-track.mp3 docs/screencast/tools/mux.sh docs/screencast/audio    # your own track, cut and faded to length
 MUSIC_DB=-14 docs/screencast/tools/mux.sh docs/screencast/audio          # quieter (the default is -10)
 ```
+
+## The short loop
+
+`tools/loop.py` cuts 18 seconds from each take: the plan appears, Cedar works, the chart, the
+PDF. The four parts are sped up to fit and cross-faded. It writes three films per language into
+`loop/` (`.de`, `.fr`, `.es` before the extension for the other languages):
+
+| File | What it is for |
+| --- | --- |
+| `loop.mp4`, `loop.webm` | 1280×720, no sound, about 0.7 and 1 MB. Made to repeat: it fades from and to the page's background. For a web page, as `<video autoplay muted loop playsinline>` with the WebM first and the MP4 as the fallback |
+| `loop-music.mp4` | 1920×1080 with music and a closing card, 20 seconds |
+| `reel.mp4` | 1080×1920 for a reel or a short: each part is cropped to what matters (the plan, then the results), with a line of text over it, the same music and closing card. Text and film keep clear of the top and bottom strips the apps cover |
+
+The music is the "upbeat" piece of `tools/music.py`: nine bars to the film's length, eight of
+groove and one for the last chord to ring under the closing card. Like the calm piece it is
+generated here, so it is free to use.
+
+```sh
+docs/screencast/tools/loop.py            # every language whose silent take is in docs/screencast
+docs/screencast/tools/loop.py de         # one
+```
+
+It needs the silent takes (`cedar-intro.mp4`, and `cedar-intro.<lang>.mp4`, which are not kept in
+the repository: see below), numpy, and Node with Playwright for the text cards.
 
 ## Subtitles
 
