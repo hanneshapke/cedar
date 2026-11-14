@@ -16,6 +16,7 @@ window.__resources = window.__resources || {};
 <script>
 // What describes the setup window's "Run a model here with llama.cpp" shows only once the release
 // this site offers has it (data-since, compared with version.js); install.html does the same.
+// data-before is the opposite: what it replaces, shown until then.
 (() => {
   const atLeast = (since) => {
     const [a, b] = [window.CEDAR_VERSION || '0', since].map((v) => v.split('.').map(Number));
@@ -23,7 +24,7 @@ window.__resources = window.__resources || {};
     return true;
   };
   const style = document.createElement('style');
-  style.textContent = [...new Set(['0.9.0'])].filter((v) => !atLeast(v)).map((v) => `[data-since="${v}"] { display: none !important; }`).join('\n');
+  style.textContent = [...new Set(['0.9.0'])].map((v) => `[data-${atLeast(v) ? 'before' : 'since'}="${v}"] { display: none !important; }`).join('\n');
   document.head.appendChild(style);
 })();
 </script>
@@ -385,8 +386,10 @@ sudo install $F/cedar* /usr/local/bin/
 <section id="setup" data-screen-label="Setup" style="max-width:1160px;margin:0 auto;padding:90px 28px 60px;display:flex;flex-direction:column;gap:40px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.setup.eyebrow">Setup</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n="index.setup.title">Three steps, then you're talking.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" class="rich" data-i18n-html="index.setup.lead">Cedar needs a model to think with, itself, and a sealed box to work in. On a Mac or PC, it sets that box up for you. The <a href="install.html">install guide</a> puts the steps in order for your computer, whether Docker is already there, and whether you run the model at home or use a provider.</p>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-since="0.9.0" data-i18n="index.setup.new.title">Install Cedar. It sets up the rest.</h2>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-before="0.9.0" data-i18n="index.setup.title">Three steps, then you're talking.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" class="rich" data-since="0.9.0" data-i18n-html="index.setup.new.lead">Download Cedar and open it. Its setup window installs Docker for the sealed box Cedar works in, and gets you a model. Nothing to prepare first. On Linux it is a few commands, and the <a href="install.html">install guide</a> has them for your computer.</p>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" class="rich" data-before="0.9.0" data-i18n-html="index.setup.lead">Cedar needs a model to think with, itself, and a sealed box to work in. On a Mac or PC, it sets that box up for you. The <a href="install.html">install guide</a> puts the steps in order for your computer, whether Docker is already there, and whether you run the model at home or use a provider.</p>
     <p style="margin:0;font-size:16px;line-height:1.5;color:#4f4740;text-wrap:pretty" class="rich" data-i18n-html="index.setup.remote">Cedar already runs on another computer of yours? <a href="install.html?use=remote">Connect this one to it</a>: it needs no Docker and no model of its own.</p>
   </div>
   <a data-reveal href="install.html" style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:20px 32px;align-items:center;background:#231f1b;color:#fbf4ea;border-radius:28px;padding:clamp(26px,4vw,40px);position:relative;overflow:hidden;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-4px);box-shadow:0 24px 50px rgba(60,30,10,.25);color:#fbf4ea">
@@ -397,11 +400,28 @@ sudo install $F/cedar* /usr/local/bin/
     </div>
     <span style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;white-space:nowrap;justify-self:start" data-i18n="index.setup.card.cta">Find your install path →</span>
   </a>
-  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
+  <div data-reveal data-since="0.9.0" style="display:flex;flex-direction:column;gap:16px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#3a5f4b" data-i18n="index.setup.new.ways">Your model, three ways</span>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,box-shadow .25s;border:2px solid #231f1b" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.new.cedar.title">Cedar runs a model for you</h3>
+      <span style="align-self:flex-start;font-size:12px;font-weight:700;letter-spacing:.04em;padding:3px 10px;border-radius:999px;background:#231f1b;color:#fbf4ea" data-i18n="index.setup.new.easiest">Easiest</span>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.new.cedar.body">With a capable graphics card or an Apple silicon Mac, Cedar downloads llama.cpp and a model that fits, and runs them. Nothing to install first, and nothing leaves your computer.</p>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,box-shadow .25s;border:1px solid #f0dcc8" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.new.hosted.title">A hosted provider</h3>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.new.hosted.body">No big computer? Choose Baseten, Nebius, Doubleword or another provider in the setup window and paste an API key. They run the model, and you pay for what you use.</p>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,box-shadow .25s;border:1px solid #f0dcc8" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.new.own.title">You run the model server</h3>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.new.own.body">Already run Ollama, LM Studio, llama.cpp or vLLM? Click its preset in the setup window. The <a href="install.html#model-title">install guide</a> suggests a model for your hardware.</p>
+    </div>
+    </div>
+  </div>
+  <div data-reveal data-before="0.9.0" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#f2a21c">1</span>
       <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.model.title">Pick a model</h3>
-      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#231f1b;background:#fdf0d8;border-left:4px solid #f2a21c;border-radius:0 12px 12px 0;padding:12px 14px" data-since="0.9.0" data-i18n-html="index.setup.model.cedar"><strong>Let Cedar host it.</strong> With a capable graphics card or an Apple silicon Mac, Cedar downloads llama.cpp and a model that fits, and runs them for you. Nothing to install first, and nothing leaves your computer.</p>
       <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.model.body">Ollama or LM Studio put an AI model on your Mac or PC in minutes. On a Linux GPU box, run vLLM. No big computer? Use a provider like Doubleword, Baseten or Nebius. The <a href="install.html#model-title">install guide</a> suggests one for your hardware.</p>
     </div>
     <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
