@@ -2,9 +2,11 @@
 # Make the narration clips with ElevenLabs: one MP3 per scene text, named like the text, which
 # is what mux.sh takes.
 #
-#   ELEVENLABS_API_KEY=... voice.sh <voice-id> [lang] [out-dir]
+#   ELEVENLABS_API_KEY=... voice.sh [voice-id] [lang] [out-dir]
 #
 # lang is en (default), de, fr or es; the texts come from ../narration (en) or ../narration/<lang>.
+# English has a default voice, so `voice.sh` and `voice.sh en` work without a voice ID; the other
+# languages need one (`voice.sh <voice-id> de`).
 # out-dir defaults to ../audio (en) or ../audio-<lang>. A clip that already exists is kept, so a
 # run that failed half way can be repeated; delete a clip to make it again.
 #
@@ -14,14 +16,22 @@
 #   ELEVENLABS_URL     the API's address (default https://api.elevenlabs.io)
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-VOICE=${1:?usage: ELEVENLABS_API_KEY=... voice.sh <voice-id> [en|de|fr|es] [out-dir]}
-LANG_=${2:-en}
+DEFAULT_EN_VOICE=itMkRQx56fOF4CJe1D0C
+USAGE="usage: ELEVENLABS_API_KEY=... voice.sh [voice-id] [en|de|fr|es] [out-dir]"
+# A first argument that is a language means the voice ID was left out.
+case ${1:-} in ''|en|de|fr|es) VOICE='' ;; *) VOICE=$1; shift ;; esac
+LANG_=${1:-en}
+case $LANG_ in en|de|fr|es) ;; *) echo "unknown language '$LANG_'; $USAGE" >&2; exit 1 ;; esac
+if [[ -z $VOICE ]]; then
+    [[ $LANG_ == en ]] || { echo "'$LANG_' has no default voice: give a voice ID; $USAGE" >&2; exit 1; }
+    VOICE=$DEFAULT_EN_VOICE
+fi
 : "${ELEVENLABS_API_KEY:?set ELEVENLABS_API_KEY to your ElevenLabs API key}"
 MODEL=${ELEVENLABS_MODEL:-eleven_multilingual_v2}
 FORMAT=${ELEVENLABS_FORMAT:-mp3_44100_128}
 URL=${ELEVENLABS_URL:-https://api.elevenlabs.io}
-if [[ $LANG_ == en ]]; then TEXTS=$HERE/../narration; OUT=${3:-$HERE/../audio}
-else TEXTS=$HERE/../narration/$LANG_; OUT=${3:-$HERE/../audio-$LANG_}; fi
+if [[ $LANG_ == en ]]; then TEXTS=$HERE/../narration; OUT=${2:-$HERE/../audio}
+else TEXTS=$HERE/../narration/$LANG_; OUT=${2:-$HERE/../audio-$LANG_}; fi
 [[ -d $TEXTS ]] || { echo "no narration texts for '$LANG_' ($TEXTS)" >&2; exit 1; }
 mkdir -p "$OUT"
 failed=0

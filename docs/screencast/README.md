@@ -37,9 +37,13 @@ voice and picture together is one clip a scene:
    through the ElevenLabs API, with your API key and the ID of the voice:
 
    ```sh
-   ELEVENLABS_API_KEY=... docs/screencast/tools/voice.sh <voice-id>        # into audio/
+   ELEVENLABS_API_KEY=... docs/screencast/tools/voice.sh                   # English, default voice, into audio/
+   ELEVENLABS_API_KEY=... docs/screencast/tools/voice.sh <voice-id>        # English, another voice
    ELEVENLABS_API_KEY=... docs/screencast/tools/voice.sh <voice-id> de     # into audio-de/
    ```
+
+   English uses the voice `itMkRQx56fOF4CJe1D0C` when none is given; the other languages need
+   a voice ID.
 
    It keeps the clips that are already there, so it can be run again after a failure; delete a
    clip to have it made anew. By hand, paste each text into ElevenLabs' Text to Speech page and
