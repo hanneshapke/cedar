@@ -239,6 +239,8 @@ ol.setup strong{color:var(--ink);font-weight:600}
       gguf: 'ggml-org/gemma-4-31B-it-GGUF:Q4_0', lms: 'Gemma 4 31B' },
     'gemma4-e4b': { name: 'Gemma 4 E4B', org: 'Google', date: '2026-04', images: true, arch: 'models.arch.gemma4-e4b', gb: 8,
       gguf: 'ggml-org/gemma-4-E4B-it-GGUF:Q8_0', lms: 'Gemma 4 E4B' },
+    'gemma4-12b': { name: 'Gemma 4 12B', org: 'Google', date: '2026-05', images: true, total: 12, gb: 7,
+      gguf: 'ggml-org/gemma-4-12B-it-GGUF:Q4_0', lms: 'Gemma 4 12B' },
     'gpt-oss-20b': { name: 'gpt-oss 20B', org: 'OpenAI', date: '2025-08', images: false, total: 21, active: 3.6, gb: 12,
       gguf: 'ggml-org/gpt-oss-20b-GGUF:MXFP4', lms: 'gpt-oss 20B', hf: 'openai/gpt-oss-20b' },
     'gpt-oss-120b': { name: 'gpt-oss 120B', org: 'OpenAI', date: '2025-08', images: false, total: 117, active: 5.1, gb: 63,
@@ -285,8 +287,8 @@ ol.setup strong{color:var(--ink);font-weight:600}
     'spark:128': { text: ['nemotron-3.5-super-vl', 'nemotron-3.5-lightning', 'gpt-oss-120b', 'qwen3.5-122b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
     'spark:256': { text: ['deepseek-v4-flash', 'nemotron-3.5-super-vl', 'gpt-oss-120b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
     'jetson:8': { text: ['qwen3.5-4b'], images: ['qwen3.5-4b'] },
-    'gpu:12': { text: ['gemma4-e4b', 'qwen3.5-4b'], images: ['gemma4-e4b', 'qwen3.5-4b'] },
-    'gpu:16': { text: ['gpt-oss-20b', 'gemma4-e4b'], images: ['gemma4-e4b'] },
+    'gpu:12': { text: ['gemma4-12b', 'gemma4-e4b', 'qwen3.5-4b'], images: ['gemma4-12b', 'gemma4-e4b', 'qwen3.5-4b'] },
+    'gpu:16': { text: ['gpt-oss-20b', 'gemma4-12b'], images: ['gemma4-12b', 'gemma4-e4b'] },
     'gpu:24': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'qwen3.6-27b'], images: ['qwen3.6-35b', 'gemma4-26b', 'qwen3.6-27b'] },
   };
   const HOSTED_PICKS = { text: ['deepseek-v4.1-flash', 'glm-5.3', 'kimi-k2.6', 'deepseek-v4-pro'], images: ['deepseek-v4.1-flash', 'kimi-k2.6', 'qwen3.6-35b-hosted', 'gemma4-31b-hosted'] };

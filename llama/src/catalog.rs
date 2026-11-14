@@ -5,7 +5,7 @@
 //! llama-server loads beside the model, and cedar is told that the model takes images.
 //!
 //! They are the website's own suggestions for a model that sees (`PICKS` in
-//! docs/landing/models.html, the `images` lists): Gemma 4 E4B for a 12 or 16 GB graphics card,
+//! docs/landing/models.html, the `images` lists): Gemma 4 12B for a 12 or 16 GB graphics card,
 //! Gemma 4 26B-A4B from 20 GB, Qwen3.6 35B-A3B from 24 GB, Qwen3.5 122B-A10B where 128 GB allow
 //! it. Keep the two in step. Mixture-of-experts models are preferred to dense ones of the same
 //! size, as there: they answer several times faster.
@@ -87,20 +87,21 @@ impl Model {
 /// report slightly less than their nominal memory (a 24 GB card says 24564 MiB).
 pub static MODELS: [Model; 4] = [
     Model {
-        id: "gemma-4-e4b",
-        label: "Gemma 4 E4B",
-        repo: "ggml-org/gemma-4-E4B-it-GGUF",
-        commit: "8903cb408c7df39cde2ed15fac397e6d7be92951",
-        // 8-bit: on a 12 GB card it leaves over 3 GB for the context, and loses less than 4-bit.
+        id: "gemma-4-12b",
+        label: "Gemma 4 12B",
+        repo: "ggml-org/gemma-4-12B-it-GGUF",
+        commit: "501d13dba70e3c02b1b12c78fd9e6b08ad413960",
+        // 4-bit: its 8-bit file is nearly 13 GB, which with the context is too much for a 16 GB
+        // card and does not fit a 12 GB one at all.
         weights: &[File {
-            path: "gemma-4-E4B-it-Q8_0.gguf",
-            size: 8_031_237_344,
-            sha256: "49008e7cc7edadf154c8748904a89ee86eb6905d220aac568f6b7b92ca6aa0c6",
+            path: "gemma-4-12B-it-Q4_0.gguf",
+            size: 7_219_673_216,
+            sha256: "3712b9bd32cae83a22f67ee7a4466d8d7a4f21646ac8a07d19bf9418e8767a70",
         }],
         mmproj: File {
-            path: "mmproj-gemma-4-E4B-it-Q8_0.gguf",
-            size: 559_874_848,
-            sha256: "9257f21a0f5358204b4a612cff83fad2e56412f4f607f0049331ce60c0cf9d34",
+            path: "mmproj-gemma-4-12B-it-Q8_0.gguf",
+            size: 158_987_648,
+            sha256: "6b1088334bda27d7f293dcf426c0efaf1f1f20b65415ea354b695dbed9a0d65d",
         },
         min_budget_mb: 11_500,
         max_tokens: 8192,
@@ -204,9 +205,9 @@ mod tests {
         let id = |mb| choose_model(mb).map(|m| m.id);
         assert_eq!(id(8_192), None);
         assert_eq!(id(11_264), None); // an 11 GB card
-        assert_eq!(id(12_288), Some("gemma-4-e4b")); // a 12 GB card
-        assert_eq!(id(12_282), Some("gemma-4-e4b")); // what a 3080 Ti reports
-        assert_eq!(id(16_376), Some("gemma-4-e4b")); // a 16 GB card
+        assert_eq!(id(12_288), Some("gemma-4-12b")); // a 12 GB card
+        assert_eq!(id(12_282), Some("gemma-4-12b")); // what a 3080 Ti reports
+        assert_eq!(id(16_376), Some("gemma-4-12b")); // a 16 GB card
         assert_eq!(id(20_470), Some("gemma-4-26b-a4b")); // a 20 GB card
         assert_eq!(id(21_845), Some("gemma-4-26b-a4b")); // a 32 GB Mac
         assert_eq!(id(24_564), Some("qwen3.6-35b-a3b")); // a 24 GB card

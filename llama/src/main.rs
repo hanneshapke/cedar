@@ -340,7 +340,7 @@ mod tests {
             "--build",
             "ubuntu-vulkan-x64",
             "--model",
-            "gemma-4-e4b",
+            "gemma-4-12b",
             "--port",
             "9000",
         ]))
@@ -349,11 +349,11 @@ mod tests {
             (o.dir, o.build, o.port),
             (PathBuf::from("/data"), Some(Build::LinuxVulkan), 9000)
         );
-        assert_eq!(o.model.unwrap().id, "gemma-4-e4b");
+        assert_eq!(o.model.unwrap().id, "gemma-4-12b");
         assert!(parse(&args(&["--model", "gpt-5"]))
             .err()
             .unwrap()
-            .contains("gemma-4-e4b"));
+            .contains("gemma-4-12b"));
         assert!(parse(&args(&["--build", "x"]))
             .err()
             .unwrap()
@@ -365,11 +365,11 @@ mod tests {
 
     #[test]
     fn what_cedar_is_told() {
-        let model = catalog::by_id("gemma-4-e4b").unwrap();
+        let model = catalog::by_id("gemma-4-12b").unwrap();
         let body: serde_json::Value = serde_json::from_str(&registration(model, 18081)).unwrap();
         assert_eq!(body["base_url"], "http://127.0.0.1:18081/v1");
-        assert_eq!(body["model"], "gemma-4-e4b");
-        assert_eq!(body["label"], "Gemma 4 E4B");
+        assert_eq!(body["model"], "gemma-4-12b");
+        assert_eq!(body["label"], "Gemma 4 12B");
         assert_eq!(body["max_tokens"], 8192);
         assert_eq!(body["multimodal"], true);
         // A model without reasoning levels leaves the field out, which keeps cedar's own.

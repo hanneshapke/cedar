@@ -69,7 +69,7 @@ mod tests {
         let plan = super::plan(Os::Windows, Arch::X64, &[twelve]).unwrap();
         assert_eq!(
             (plan.model.id, plan.model.small, plan.build),
-            ("gemma-4-e4b", true, Build::WinCuda)
+            ("gemma-4-12b", true, Build::WinCuda)
         );
         // The integrated one alone is not enough for any model.
         assert_eq!(super::plan(Os::Windows, Arch::X64, &[small]), None);

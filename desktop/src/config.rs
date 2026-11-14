@@ -339,7 +339,7 @@ mod tests {
     fn a_model_server_or_llama_is_enough() {
         let mut cfg = Config::default();
         assert!(!cfg.has_server() && !cfg.configured());
-        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() });
+        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gemma-4-12b".into() });
         assert!(!cfg.has_server() && cfg.configured());
         cfg.llm_base_url = "https://api.groq.com/openai/v1".into();
         assert!(!cfg.has_server(), "an address without a model is not a server yet");
@@ -354,9 +354,9 @@ mod tests {
     #[test]
     fn llama_gets_out_of_the_model_server_fields() {
         let mut cfg = Config {
-            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() }),
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-12b".into() }),
             llm_base_url: "http://127.0.0.1:18081/v1".into(),
-            llm_model: "gemma-4-e4b".into(),
+            llm_model: "gemma-4-12b".into(),
             llm_api_key: "k".into(),
             model_source: "llama".into(),
             ..Config::default()

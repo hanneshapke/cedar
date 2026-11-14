@@ -312,7 +312,7 @@ greyed out and the other two remain.
 | GPU memory | Model | Download |
 | --- | --- | --- |
 | under 12 GB | not offered | |
-| 12 or 16 GB | Gemma 4 E4B (8-bit) | 9 GB |
+| 12 or 16 GB | Gemma 4 12B | 7 GB |
 | 20 GB | Gemma 4 26B-A4B | 15 GB |
 | 24 GB and more | Qwen3.6 35B-A3B | 21 GB |
 | 80 GB and more | Qwen3.5 122B-A10B | 77 GB |
@@ -321,8 +321,8 @@ Every one of them reads images as well as text: the download includes the model'
 projector, `llama-server` loads it, and cedar is told the model takes images, so attachments
 work without ticking anything. They are the
 [model guide](https://hanneshapke.github.io/cedar/models.html)'s own suggestions for a model that
-sees; the list is `llama/src/catalog.rs`. Gemma 4 E4B is a small model, all that a 12 or 16 GB
-card holds beside its context: it answers, but can miss steps in longer tasks. The page says so
+sees; the list is `llama/src/catalog.rs`. Gemma 4 12B is a small model, the most that a 12 or
+16 GB card holds beside its context: it answers, but can miss steps in longer tasks. The page says so
 and keeps *Recommended* on the hosted provider there.
 
 On a Mac the GPU shares the computer's memory and macOS lets it have about two thirds, so the

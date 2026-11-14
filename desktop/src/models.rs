@@ -228,11 +228,11 @@ mod tests {
             "base_url": "http://127.0.0.1:11434/v1", "model": "qwen3:30b", "label": "qwen3:30b", "api_key": "key",
         }));
         // The one just chosen becomes the default; one the app installed brings what it knows.
-        let extras = Extras { label: "Gemma 4 E4B", max_tokens: 8192, reasoning_levels: &["low", "high"], multimodal: true };
-        let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-e4b", extras: Some(extras), make_default: true };
+        let extras = Extras { label: "Gemma 4 12B", max_tokens: 8192, reasoning_levels: &["low", "high"], multimodal: true };
+        let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), make_default: true };
         let json = serde_json::to_value(spec(&llama, "http://127.0.0.1:18081/v1")).unwrap();
         assert_eq!(json, serde_json::json!({
-            "base_url": "http://127.0.0.1:18081/v1", "model": "gemma-4-e4b", "label": "Gemma 4 E4B", "api_key": "k",
+            "base_url": "http://127.0.0.1:18081/v1", "model": "gemma-4-12b", "label": "Gemma 4 12B", "api_key": "k",
             "is_default": true, "max_tokens": 8192, "reasoning_levels": ["low", "high"], "default_reasoning": "",
             "multimodal": true,
         }));

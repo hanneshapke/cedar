@@ -262,7 +262,7 @@ mod tests {
         // A 12 GB card is offered the small model, and the page is told that it is one.
         let card = Gpu::dedicated(cedar_llama::gpu::Vendor::Amd, "AMD Radeon RX 6700 XT", 12288);
         let small = super::offer(&cedar_llama::plan(Os::Windows, Arch::X64, &[card]).unwrap());
-        assert_eq!((small.model.as_str(), small.small), ("Gemma 4 E4B", true));
+        assert_eq!((small.model.as_str(), small.small), ("Gemma 4 12B", true));
     }
 
     #[test]
@@ -272,10 +272,10 @@ mod tests {
             panic!("not a failure");
         };
         assert!(text.contains("21") && text.contains('5'), "{text}");
-        let Stop::Failed(text) = say(install::Error::Download("dns error".into()), "Gemma 4 E4B") else {
+        let Stop::Failed(text) = say(install::Error::Download("dns error".into()), "Gemma 4 12B") else {
             panic!("not a failure");
         };
-        assert!(text.contains("Gemma 4 E4B") && text.contains("dns error"), "{text}");
+        assert!(text.contains("Gemma 4 12B") && text.contains("dns error"), "{text}");
         for e in [install::Error::Stalled, install::Error::Cut, install::Error::Changed("f".into())] {
             assert!(matches!(say(e, "llama.cpp"), Stop::Failed(text) if text.contains("llama.cpp")));
         }
