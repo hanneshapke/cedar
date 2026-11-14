@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The desktop app no longer asks for the language twice.** On a first launch the setup window asks for the language, but the chat kept its own in the window's storage, so once setup was done it asked the same question again. The app now opens the chat with the language picked at setup (`?app-locale=` in the address, taken out again once read); a chat without a language of its own takes it, saves it on the server for scheduled runs and notifications, and doesn't ask. A language already picked in the chat is kept.
+
 ## 0.8.1
 
 - **The desktop app opens Google's sign-in in your browser.** *Connect Google* in Settings loaded Google's consent page inside the app's window, where passkeys and Sign in with Apple don't work. In the Mac and Windows app it now opens in the default browser; once you have signed in, the page there says to go back to Cedar, and Settings shows the connected account when the window comes forward. In a browser the sign-in stays in the page as before.
