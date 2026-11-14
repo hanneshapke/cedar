@@ -353,12 +353,14 @@ mod tests {
     /// llama-server's address. They are emptied; a real model server beside llama.cpp is kept.
     #[test]
     fn llama_gets_out_of_the_model_server_fields() {
-        let mut cfg = Config::default();
-        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() });
-        cfg.llm_base_url = "http://127.0.0.1:18081/v1".into();
-        cfg.llm_model = "gemma-4-e4b".into();
-        cfg.llm_api_key = "k".into();
-        cfg.model_source = "llama".into();
+        let mut cfg = Config {
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() }),
+            llm_base_url: "http://127.0.0.1:18081/v1".into(),
+            llm_model: "gemma-4-e4b".into(),
+            llm_api_key: "k".into(),
+            model_source: "llama".into(),
+            ..Config::default()
+        };
         assert!(cfg.split_llama());
         assert!(cfg.llm_base_url.is_empty() && cfg.llm_model.is_empty() && cfg.llm_api_key.is_empty());
         assert!(cfg.model_source.is_empty() && cfg.llama.is_some() && cfg.configured());

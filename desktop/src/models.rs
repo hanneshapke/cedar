@@ -244,9 +244,6 @@ mod tests {
 pub const REGISTRY_ID: &str = "default";
 pub const LLAMA_ID: &str = "llama";
 
-/// cedar's own default for the most tokens of one reply.
-pub const DEFAULT_MAX_TOKENS: u32 = 16384;
-
 /// What the app knows about a model beyond its name: the ones it installs for llama.cpp.
 pub struct Extras<'a> {
     pub label: &'a str,
