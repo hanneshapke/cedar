@@ -2,7 +2,13 @@
 // frames with their timestamps, and writes frames/, frames.txt (for ffmpeg's concat demuxer) and
 // timeline.json (when each scene of narration.json starts and ends).
 //
-//   node record.js <out-dir>      (the stack must be running fresh: see start.sh)
+//   node record.js <out-dir> [lang] [audio-dir]
+//
+// The stack must be running fresh, with the scripted model in the same language (see start.sh).
+// lang is en (default), de, fr or es: the chat is switched to it, and what is typed and shown
+// comes from content.py. With audio-dir (the clips voice.sh made), each scene lasts as long as
+// its clip; without, as long as its narration is estimated to take. Nothing here finds an element
+// by its English label, so the same steps work in every language.
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -11,8 +17,24 @@ const OUT = path.resolve(process.argv[2] || 'take');
 const URL = process.env.CHAT_URL || 'http://127.0.0.1:3000';
 const W = 1440, H = 810, SCALE = 4 / 3;         // 1920x1080 frames
 const WPS = 2.45, PAD = 1.2;                   // narration pace (words a second) and air after it
+const CPS = 13.5;                              // the same pace in characters, for the translations
+const LANG = process.argv[3] || 'en';
+const AUDIO = process.argv[4] ? path.resolve(process.argv[4]) : null;
+const { execFileSync } = require('child_process');
+const C = JSON.parse(execFileSync('python3', [path.join(__dirname, 'content.py'), LANG], { encoding: 'utf8' }));
 const NARRATION = JSON.parse(fs.readFileSync(path.join(__dirname, 'narration.json'), 'utf8'));
-const PROMPT = 'Here is our household spending for this year. Work out where the money goes each month, chart it, and write a one-page PDF summary with three ways to save.';
+if (LANG !== 'en') {
+  const texts = JSON.parse(fs.readFileSync(path.join(__dirname, `narration.${LANG}.json`), 'utf8'));
+  for (const s of NARRATION) s.text = texts[s.id];
+}
+// How long a scene must last: its clip if there is one, else the narration at the usual pace.
+function sceneSeconds(index, n) {
+  if (AUDIO) {
+    const clip = ['mp3', 'wav'].map(x => path.join(AUDIO, `${String(index + 1).padStart(2, '0')}-${n.id}.${x}`)).find(f => fs.existsSync(f));
+    if (clip) return parseFloat(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', clip], { encoding: 'utf8' })) + 0.4 + 0.8;
+  }
+  return (LANG === 'en' ? n.text.split(/\s+/).length / WPS : n.text.length / CPS) + PAD;
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const MARK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect x="6" y="6" width="36" height="6" rx="2" fill="#3a5f4b"/><rect x="6" y="16" width="12" height="6" rx="2" fill="#3a5f4b"/><rect x="6" y="26" width="12" height="6" rx="2" fill="#3a5f4b"/><rect x="6" y="36" width="36" height="6" rx="2" fill="#3a5f4b"/><rect x="33" y="21" width="9" height="6" rx="2" fill="#b5553a"/></svg>';
@@ -35,11 +57,11 @@ function card(body) {
   </style>${body}`;
 }
 const CARDS = {
-  title: card(`<div class="lock">${MARK}<span>Cedar</span></div><h1>Your own assistant.<br>Runs at home, answers to you.</h1>
-    <p>It plans the work, does it in a sealed box,<br>and shows you what it did.</p>`),
-  outro: card(`<div class="lock">${MARK}<span>Cedar</span></div><h1>Your own assistant.<br>Runs at home, answers to you.</h1>
+  title: card(`<div class="lock">${MARK}<span>Cedar</span></div><h1>${C.card_title}</h1>
+    <p>${C.card_sub}</p>`),
+  outro: card(`<div class="lock">${MARK}<span>Cedar</span></div><h1>${C.card_title}</h1>
     <div class="row"><span class="chip">Mac</span><span class="chip">Windows</span><span class="chip">Linux</span><span class="chip">iPhone</span><span class="chip">Android</span></div>
-    <div class="url">github.com/hanneshapke/cedar</div><p style="font-size:19px;margin-top:14px">Free · Open source · Apache 2.0</p>`),
+    <div class="url">github.com/hanneshapke/cedar</div><p style="font-size:19px;margin-top:14px">${C.card_free}</p>`),
 };
 
 // A cursor the capture can see: headless Chromium draws none. It sits in the top layer (a
@@ -69,7 +91,7 @@ const CURSOR = () => {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(path.join(OUT, 'frames'), { recursive: true });
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, locale: 'en-US', timezoneId: 'Europe/Berlin' });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, locale: C.locale, timezoneId: 'Europe/Berlin' });
   const page = await ctx.newPage();
   page.setDefaultTimeout(15000);
   page.on('console', m => m.type() === 'error' && console.log('  console error:', m.text().slice(0, 160)));
@@ -149,8 +171,8 @@ const CURSOR = () => {
       console.log(`${cur.id.padEnd(10)} ${cur.start.toFixed(1).padStart(6)} → ${cur.end.toFixed(1).padStart(6)}  (narration needs ${cur.min.toFixed(1)}s, action took ${(cur.action).toFixed(1)}s)`);
     }
     if (!id) return;
-    const n = NARRATION.find(s => s.id === id);
-    cur = { id, start: now(), min: n.text.split(/\s+/).length / WPS + PAD };
+    const index = NARRATION.findIndex(s => s.id === id);
+    cur = { id, start: now(), min: sceneSeconds(index, NARRATION[index]) };
     timeline.push(cur);
   }
   const acted = () => { cur.action = now() - cur.start; };
@@ -172,51 +194,56 @@ const CURSOR = () => {
   await page.evaluate(() => { for (const e of [document.querySelector('.lang-dialog'), ...document.querySelectorAll('.lang-dialog *')]) e.scrollTop = 0; });
   await page.mouse.move(mx, my);
   await sleep(1800);
-  await point('.lang-dialog button.ui-option:has-text("Deutsch (Deutschland)")'); await sleep(500);
-  await point('.lang-dialog button.ui-option:has-text("English (United States)")'); await sleep(400);
-  await wheel('.lang-dialog button.ui-option:has-text("Français (France)")', 400, 700);
+  const option = tag => `.lang-dialog button.ui-option[data-locale="${tag}"]`;
+  await point(option(C.hover_locale)); await sleep(500);
+  if (C.locale === 'en-US') { await point(option(C.locale)); await sleep(400); } else await click(option(C.locale));
+  await wheel(option('fr-FR'), 400, 700);
   await click('.lang-dialog-go');
+  await page.locator('.lang-dialog').waitFor({ state: 'detached' }).catch(() => {});
+  await page.locator('#input').waitFor();
   await sleep(700);
+  await page.mouse.move(mx, my);
   await point('#input'); acted();
 
   // 3. Settings → Models → Add a model
   await scene('models');
+  const nav = i => page.locator('.settings-nav-item').nth(i);   // Interface, Language, Tools, Models, Memory, ...
   await sleep(1500);
   await click('#more-btn');
   await click('#settings-btn');
   await sleep(700);
-  await click('.settings-nav-item:has-text("Models")');
+  await click(nav(3));
   await until(0.14);
-  await click('button.primary:has-text("Add a model"):visible');
+  await click('dialog[open] button.primary:not(#settings-save):visible');
   await sleep(600);
-  await point('button.cedar-set-choice:has-text("llama.cpp")', { at: [0.3, 0.5] });
+  const choice = i => page.locator('button.cedar-set-choice').nth(i);   // llama.cpp, hosted, a server you run
+  await point(choice(0), { at: [0.3, 0.5] });
   await until(0.36);
-  await point('button.cedar-set-choice:has-text("hosted provider")', { at: [0.3, 0.5] });
+  await point(choice(1), { at: [0.3, 0.5] });
   await until(0.46);
-  await click('button.cedar-set-choice:has-text("already run")', { at: [0.3, 0.5] });
+  await click(choice(2), { at: [0.3, 0.5] });
   await until(0.56);
   await click('.cedar-set-presets button:text-is("vLLM")');
   await sleep(900);
-  await click('.cedar-set-server-models button:has-text("List models")');
+  await click('.cedar-set-server-models button');
   await sleep(1200);
   const pick = page.locator('.cedar-set-server-models select');
   await point(pick); await sleep(300);
   await pick.selectOption({ index: 1 });
   await sleep(700);
-  await click('.cedar-set-endpoint input[aria-label="Label"]');
+  await click(page.locator('.cedar-set-endpoint input[type=text]').nth(1));   // address, label, id
   await type('DeepSeek V4 Flash', 45);
   await sleep(400);
   await page.locator('.cedar-set-reasoning').scrollIntoViewIfNeeded();
   await point('.cedar-set-reasoning span');
   await until(0.84);
-  const def = page.locator('.cedar-set-endpoint label.cedar-set-check input[type=checkbox]');
-  await click(def);
+  await click('.cedar-set-endpoint label.cedar-set-check input[type=checkbox]');
   await sleep(500);
   await click('.cedar-set-endpoint button.primary');
-  await page.locator('.settings-nav-item:has-text("Models")').filter({ hasNotText: 'No model' }).waitFor();
+  await page.locator('.cedar-set-endpoint').waitFor({ state: 'detached' });
   await sleep(500);
   await page.evaluate(() => { for (const e of document.querySelectorAll('dialog[open] *')) if (e.scrollTop > 0) e.scrollTo({ top: 0, behavior: 'smooth' }); });
-  await point('dialog[open] button:text-is("Edit"):visible', { dx: -150 });
+  await point(page.locator('dialog[open]').getByText('DeepSeek V4 Flash', { exact: true }).locator('visible=true').first(), { dx: 120 });
   await sleep(1600); acted();
   await until(1);
   await click('#settings-close');
@@ -226,10 +253,10 @@ const CURSOR = () => {
   await sleep(600);
   const chooser = page.waitForEvent('filechooser');
   await click('.cedar-attach-btn');
-  await (await chooser).setFiles(path.join(__dirname, 'household-spending-2026.csv'));
+  await (await chooser).setFiles(path.join(__dirname, C.csv));
   await sleep(900);
   await click('#input');
-  await type(PROMPT, 30);
+  await type(C.prompt, 30);
   await sleep(700); acted();
   await until(1);
   await click('#send');
@@ -249,15 +276,16 @@ const CURSOR = () => {
   // 6. The work, as it happens
   await scene('work');
   await glide(1010, 330);
-  await page.locator('.card-head:has-text("Ran")').first().waitFor({ timeout: 60000 });
+  await page.locator('article.card.trace').first().waitFor({ timeout: 60000 });
   await sleep(1500);
-  await page.getByText('spending-summary.pdf').first().waitFor({ timeout: 60000 });
-  await page.locator('.status, #status').filter({ hasText: 'Done' }).first().waitFor({ timeout: 60000 }).catch(() => {});
+  await page.locator('article.card.doc').first().waitFor({ timeout: 60000 });
+  await page.locator('.status.live').waitFor({ state: 'detached', timeout: 60000 }).catch(() => {});
+  await page.locator('#agent-btn').waitFor({ timeout: 60000 }).catch(() => {});
   await sleep(1200);
   // open the Python step: what ran, and what it printed
   await click(page.locator('.work-sum').first());
   await sleep(500);
-  await click(page.locator('.card-head:has-text("Ran")').first());
+  await click(page.locator('article.card.trace .card-head').first());
   await sleep(1200);
   acted();
   await until(1);
@@ -284,7 +312,7 @@ const CURSOR = () => {
   // 8. A follow-up that needs an OK
   await scene('approval');
   await click('#input');
-  await type('Thanks. Now delete the original CSV from the workspace.', 30);
+  await type(C.prompt_delete, 30);
   await sleep(400);
   await click('#send');
   await page.locator('.cedar-approval-btn.primary').waitFor({ timeout: 60000 });
@@ -292,62 +320,61 @@ const CURSOR = () => {
   await point('.cedar-approval-btn.primary');
   await until(0.72);
   await click('.cedar-approval-btn.primary');
-  await page.getByText('gone from the workspace').first().waitFor({ timeout: 60000 });
+  await page.getByText(C.done_delete.split('. ')[1].slice(0, 30)).first().waitFor({ timeout: 60000 });
   await sleep(800); acted();
   await until(1);
 
   // 9. Memory
   await scene('memory');
   await click('#input');
-  await type('Remember that we want to keep our spending under 2,800 euros a month.', 28);
+  await type(C.prompt_remember, 28);
   await sleep(300);
   await click('#send');
-  await page.getByText('Noted.').first().waitFor({ timeout: 60000 });
+  await page.getByText(C.noted.split('.')[0] + '.').first().waitFor({ timeout: 60000 });
   await sleep(1500);
   await click('#more-btn');
   await click('#settings-btn');
   await sleep(500);
-  await click('.settings-nav-item:has-text("Memory")');
+  await click(nav(4));
   await sleep(1200);
-  for (const b of ['Pin', 'Archive', 'Remove']) { await point(`dialog[open] button:text-is("${b}"):visible`); await sleep(650); }
+  const kept = page.locator('dialog[open] .cedar-set-integration-side:visible').first().locator('button');   // Pin, Archive, Remove
+  for (let i = 0; i < 3; i++) { await point(kept.nth(i)); await sleep(650); }
   acted();
   await until(1);
 
   // 10. Tools: a switch each
   await scene('tools');
-  await click('.settings-nav-item:has-text("Tools")');
+  await click(nav(2));
   await sleep(900);
-  for (const t of ['Read web pages', 'Weather', 'Maps', 'Directions & transit']) { await point(page.locator('dialog[open]').getByText(t, { exact: true })); await sleep(450); }
-  const stocks = page.locator('dialog[open]').getByText('Stocks & markets', { exact: true });
-  await point(stocks); await sleep(300);
-  const sb = await stocks.boundingBox();
-  await glide(sb.x - 29, sb.y + sb.height / 2);
-  await sleep(200); await page.mouse.down(); await sleep(60); await page.mouse.up();
+  const rows = page.locator('dialog[open] .cedar-set-row:visible');   // web search, web pages, weather, maps, recipes, transit, flights, stocks, ...
+  for (const i of [1, 2, 3, 5]) { await point(rows.nth(i).locator('.cedar-set-row-name')); await sleep(450); }
+  await point(rows.nth(7).locator('.cedar-set-row-name')); await sleep(300);
+  await click(rows.nth(7).locator('.cedar-set-switch'));
   await sleep(1400); acted();
   await until(1);
   await click('#settings-close');
-  if (await visible('dialog[open] button:has-text("Discard")')) await click('dialog[open] button:has-text("Discard")');
 
   // 11. An agent from the conversation
   await scene('agent');
   await sleep(500);
   await click('#agent-btn');
-  const name = page.locator('input[placeholder="Morning briefing"]');
+  const name = page.locator('.cedar-ag-form input[type=text]').first();
   await name.waitFor();
-  await page.waitForFunction(() => { const t = document.querySelector('textarea[placeholder^="What should the agent"]'); return t && t.value.length > 40; }, null, { timeout: 60000 });
+  await page.waitForFunction(() => { const t = document.querySelector('.cedar-ag-form textarea'); return t && t.value.length > 40; }, null, { timeout: 60000 });
   await sleep(900);
   await click(name);
   await page.keyboard.press('Control+A');
-  await type('Monthly spending check', 40);
-  await point('textarea[placeholder^="What should the agent"]', { at: [0.5, 0.3] });
+  await type(C.agent_name, 40);
+  await point('.cedar-ag-form textarea', { at: [0.5, 0.3] });
   await until(0.42);
-  for (const t of ['When something changes', 'When mail arrives', 'When a file arrives', 'On a schedule']) { await point(page.getByText(t, { exact: true })); await sleep(700); }
-  const often = page.locator('select:has(option:text-is("Every month"))').first();
+  const starts = v => `.cedar-ag-pick:has(input[value="${v}"]) b`;
+  for (const v of ['condition', 'email', 'drive', 'schedule']) { await point(starts(v)); await sleep(700); }
+  const often = page.locator('.cedar-ag-set select').first();
   await often.scrollIntoViewIfNeeded();
   await point(often); await sleep(300);
-  await often.selectOption({ label: 'Every month' });
+  await often.selectOption('monthly');
   await sleep(1200);
-  const create = page.locator('button.primary:has-text("Create agent")');
+  const create = page.locator('.cedar-ag-form button.primary').last();
   await create.scrollIntoViewIfNeeded();
   await until(0.85);
   await click(create);

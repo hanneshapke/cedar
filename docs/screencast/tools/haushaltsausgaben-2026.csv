@@ -1,0 +1,286 @@
+datum,kategorie,beschreibung,betrag_eur
+2026-01-01,Miete,Miete und Nebenkosten,1450.0
+2026-01-01,Verkehr,Monatskarte,58.0
+2026-01-02,Lebensmittel,Wochenmarkt,89.71
+2026-01-03,Auswärts essen,Restaurant,61.58
+2026-01-05,Energie,Strom und Gas,212.0
+2026-01-06,Auswärts essen,Restaurant,44.55
+2026-01-06,Lebensmittel,Wochenmarkt,76.64
+2026-01-07,Abos,Zweiter Streamingdienst,13.99
+2026-01-08,Sonstiges,Haushaltswaren,58.25
+2026-01-09,Auswärts essen,Mittagessen,20.28
+2026-01-09,Lebensmittel,Supermarkt,84.14
+2026-01-11,Verkehr,Tanken,61.34
+2026-01-12,Auswärts essen,Café,20.14
+2026-01-13,Lebensmittel,Supermarkt,64.09
+2026-01-15,Auswärts essen,Café,31.32
+2026-01-15,Sonstiges,Kleidung,59.82
+2026-01-16,Lebensmittel,Supermarkt,88.03
+2026-01-16,Abos,Cloud-Speicher,9.99
+2026-01-17,Abos,Fitnessstudio,39.0
+2026-01-18,Abos,Videostreaming,17.99
+2026-01-20,Lebensmittel,Supermarkt,49.65
+2026-01-20,Abos,Musik-Familienabo,16.99
+2026-01-20,Abos,Nachrichten-Abo,14.9
+2026-01-22,Sonstiges,Haushaltswaren,23.24
+2026-01-23,Lebensmittel,Wochenmarkt,66.4
+2026-01-24,Verkehr,Tanken,70.19
+2026-01-27,Lebensmittel,Supermarkt,51.99
+2026-02-01,Miete,Miete und Nebenkosten,1450.0
+2026-02-01,Verkehr,Monatskarte,58.0
+2026-02-02,Lebensmittel,Bioladen,76.11
+2026-02-03,Auswärts essen,Café,21.77
+2026-02-05,Energie,Strom und Gas,205.0
+2026-02-06,Auswärts essen,Lieferdienst,42.16
+2026-02-06,Lebensmittel,Wochenmarkt,52.29
+2026-02-07,Abos,Zweiter Streamingdienst,13.99
+2026-02-08,Sonstiges,Geschenk,28.2
+2026-02-09,Auswärts essen,Lieferdienst,51.55
+2026-02-09,Lebensmittel,Bioladen,50.76
+2026-02-11,Verkehr,Tanken,57.47
+2026-02-12,Auswärts essen,Lieferdienst,46.01
+2026-02-13,Lebensmittel,Supermarkt,75.24
+2026-02-15,Auswärts essen,Restaurant,23.43
+2026-02-15,Sonstiges,Kleidung,27.16
+2026-02-16,Lebensmittel,Wochenmarkt,77.94
+2026-02-16,Abos,Cloud-Speicher,9.99
+2026-02-17,Abos,Fitnessstudio,39.0
+2026-02-18,Abos,Videostreaming,17.99
+2026-02-20,Lebensmittel,Wochenmarkt,82.2
+2026-02-20,Abos,Musik-Familienabo,16.99
+2026-02-20,Abos,Nachrichten-Abo,14.9
+2026-02-22,Sonstiges,Geschenk,48.74
+2026-02-23,Lebensmittel,Wochenmarkt,73.76
+2026-02-24,Verkehr,Tanken,55.95
+2026-02-27,Lebensmittel,Wochenmarkt,63.91
+2026-03-01,Miete,Miete und Nebenkosten,1450.0
+2026-03-01,Verkehr,Monatskarte,58.0
+2026-03-02,Lebensmittel,Bioladen,51.42
+2026-03-03,Auswärts essen,Mittagessen,31.09
+2026-03-05,Energie,Strom und Gas,188.0
+2026-03-06,Auswärts essen,Mittagessen,58.8
+2026-03-06,Lebensmittel,Bioladen,73.21
+2026-03-07,Abos,Zweiter Streamingdienst,13.99
+2026-03-08,Sonstiges,Haushaltswaren,76.46
+2026-03-09,Auswärts essen,Lieferdienst,19.04
+2026-03-09,Lebensmittel,Wochenmarkt,62.97
+2026-03-11,Verkehr,Tanken,68.09
+2026-03-12,Auswärts essen,Mittagessen,34.35
+2026-03-13,Lebensmittel,Wochenmarkt,74.15
+2026-03-15,Auswärts essen,Restaurant,40.71
+2026-03-15,Sonstiges,Haushaltswaren,74.07
+2026-03-16,Lebensmittel,Bioladen,83.06
+2026-03-16,Abos,Cloud-Speicher,9.99
+2026-03-17,Abos,Fitnessstudio,39.0
+2026-03-18,Abos,Videostreaming,17.99
+2026-03-20,Lebensmittel,Supermarkt,84.96
+2026-03-20,Abos,Musik-Familienabo,16.99
+2026-03-20,Abos,Nachrichten-Abo,14.9
+2026-03-22,Sonstiges,Geschenk,46.28
+2026-03-23,Lebensmittel,Wochenmarkt,68.86
+2026-03-24,Verkehr,Tanken,58.81
+2026-03-27,Lebensmittel,Bioladen,50.86
+2026-04-01,Miete,Miete und Nebenkosten,1450.0
+2026-04-01,Verkehr,Monatskarte,58.0
+2026-04-02,Lebensmittel,Wochenmarkt,51.55
+2026-04-03,Auswärts essen,Restaurant,40.31
+2026-04-05,Energie,Strom und Gas,150.0
+2026-04-06,Auswärts essen,Café,30.09
+2026-04-06,Lebensmittel,Wochenmarkt,65.67
+2026-04-07,Abos,Zweiter Streamingdienst,13.99
+2026-04-08,Sonstiges,Apotheke,51.53
+2026-04-09,Auswärts essen,Restaurant,24.7
+2026-04-09,Lebensmittel,Wochenmarkt,86.87
+2026-04-11,Verkehr,Tanken,55.33
+2026-04-12,Auswärts essen,Lieferdienst,46.05
+2026-04-13,Lebensmittel,Wochenmarkt,86.02
+2026-04-15,Auswärts essen,Lieferdienst,61.84
+2026-04-15,Sonstiges,Geschenk,46.85
+2026-04-16,Lebensmittel,Wochenmarkt,79.08
+2026-04-16,Abos,Cloud-Speicher,9.99
+2026-04-17,Abos,Fitnessstudio,39.0
+2026-04-18,Abos,Videostreaming,17.99
+2026-04-20,Lebensmittel,Wochenmarkt,78.04
+2026-04-20,Abos,Musik-Familienabo,16.99
+2026-04-20,Abos,Nachrichten-Abo,14.9
+2026-04-22,Sonstiges,Geschenk,23.28
+2026-04-23,Lebensmittel,Wochenmarkt,90.14
+2026-04-24,Verkehr,Tanken,66.49
+2026-04-27,Lebensmittel,Supermarkt,51.65
+2026-05-01,Miete,Miete und Nebenkosten,1450.0
+2026-05-01,Verkehr,Monatskarte,58.0
+2026-05-02,Lebensmittel,Bioladen,65.62
+2026-05-03,Auswärts essen,Café,47.18
+2026-05-05,Energie,Strom und Gas,118.0
+2026-05-06,Auswärts essen,Lieferdienst,45.7
+2026-05-06,Lebensmittel,Supermarkt,50.96
+2026-05-07,Abos,Zweiter Streamingdienst,13.99
+2026-05-08,Sonstiges,Apotheke,74.97
+2026-05-09,Auswärts essen,Mittagessen,23.65
+2026-05-09,Lebensmittel,Supermarkt,67.39
+2026-05-11,Verkehr,Tanken,71.24
+2026-05-12,Auswärts essen,Mittagessen,63.68
+2026-05-13,Lebensmittel,Supermarkt,62.96
+2026-05-15,Auswärts essen,Mittagessen,40.1
+2026-05-15,Sonstiges,Kleidung,53.29
+2026-05-16,Lebensmittel,Supermarkt,52.5
+2026-05-16,Abos,Cloud-Speicher,9.99
+2026-05-17,Abos,Fitnessstudio,39.0
+2026-05-18,Auswärts essen,Lieferdienst,21.95
+2026-05-18,Abos,Videostreaming,17.99
+2026-05-20,Lebensmittel,Bioladen,54.66
+2026-05-20,Abos,Musik-Familienabo,16.99
+2026-05-20,Abos,Nachrichten-Abo,14.9
+2026-05-22,Sonstiges,Haushaltswaren,56.31
+2026-05-23,Lebensmittel,Supermarkt,89.75
+2026-05-24,Verkehr,Tanken,65.51
+2026-05-27,Lebensmittel,Bioladen,49.12
+2026-06-01,Miete,Miete und Nebenkosten,1450.0
+2026-06-01,Verkehr,Monatskarte,58.0
+2026-06-02,Lebensmittel,Supermarkt,89.84
+2026-06-03,Auswärts essen,Lieferdienst,47.28
+2026-06-05,Energie,Strom und Gas,96.0
+2026-06-06,Auswärts essen,Café,55.08
+2026-06-06,Lebensmittel,Bioladen,63.92
+2026-06-07,Abos,Zweiter Streamingdienst,13.99
+2026-06-08,Sonstiges,Kleidung,91.4
+2026-06-09,Auswärts essen,Mittagessen,52.03
+2026-06-09,Lebensmittel,Bioladen,71.9
+2026-06-11,Verkehr,Tanken,56.9
+2026-06-12,Auswärts essen,Café,27.2
+2026-06-13,Lebensmittel,Supermarkt,81.36
+2026-06-15,Auswärts essen,Mittagessen,34.36
+2026-06-15,Sonstiges,Kleidung,21.44
+2026-06-16,Lebensmittel,Wochenmarkt,91.05
+2026-06-16,Abos,Cloud-Speicher,9.99
+2026-06-17,Abos,Fitnessstudio,39.0
+2026-06-18,Auswärts essen,Restaurant,63.52
+2026-06-18,Abos,Videostreaming,17.99
+2026-06-20,Lebensmittel,Supermarkt,78.63
+2026-06-20,Abos,Musik-Familienabo,16.99
+2026-06-20,Abos,Nachrichten-Abo,14.9
+2026-06-21,Auswärts essen,Lieferdienst,39.72
+2026-06-22,Sonstiges,Apotheke,33.15
+2026-06-23,Lebensmittel,Wochenmarkt,70.81
+2026-06-24,Auswärts essen,Café,49.86
+2026-06-24,Verkehr,Tanken,63.91
+2026-06-27,Auswärts essen,Lieferdienst,38.57
+2026-06-27,Lebensmittel,Supermarkt,63.65
+2026-07-01,Miete,Miete und Nebenkosten,1450.0
+2026-07-01,Verkehr,Monatskarte,58.0
+2026-07-02,Lebensmittel,Supermarkt,67.89
+2026-07-03,Auswärts essen,Lieferdienst,21.99
+2026-07-05,Energie,Strom und Gas,92.0
+2026-07-06,Auswärts essen,Mittagessen,39.31
+2026-07-06,Lebensmittel,Wochenmarkt,81.5
+2026-07-07,Abos,Zweiter Streamingdienst,13.99
+2026-07-08,Sonstiges,Haushaltswaren,16.71
+2026-07-09,Auswärts essen,Restaurant,51.34
+2026-07-09,Lebensmittel,Bioladen,91.78
+2026-07-11,Verkehr,Tanken,62.52
+2026-07-12,Auswärts essen,Café,63.68
+2026-07-13,Lebensmittel,Wochenmarkt,95.05
+2026-07-15,Auswärts essen,Restaurant,24.95
+2026-07-15,Sonstiges,Apotheke,57.13
+2026-07-16,Lebensmittel,Wochenmarkt,89.84
+2026-07-16,Abos,Cloud-Speicher,9.99
+2026-07-17,Abos,Fitnessstudio,39.0
+2026-07-18,Auswärts essen,Mittagessen,55.1
+2026-07-18,Abos,Videostreaming,17.99
+2026-07-20,Lebensmittel,Supermarkt,91.5
+2026-07-20,Abos,Musik-Familienabo,16.99
+2026-07-20,Abos,Nachrichten-Abo,14.9
+2026-07-21,Auswärts essen,Café,46.13
+2026-07-22,Sonstiges,Haushaltswaren,49.7
+2026-07-23,Lebensmittel,Supermarkt,95.07
+2026-07-24,Auswärts essen,Mittagessen,48.23
+2026-07-24,Verkehr,Tanken,55.93
+2026-07-27,Auswärts essen,Lieferdienst,25.17
+2026-07-27,Lebensmittel,Bioladen,87.49
+2026-08-01,Miete,Miete und Nebenkosten,1450.0
+2026-08-01,Verkehr,Monatskarte,58.0
+2026-08-02,Lebensmittel,Supermarkt,91.1
+2026-08-03,Auswärts essen,Mittagessen,56.05
+2026-08-05,Energie,Strom und Gas,95.0
+2026-08-06,Auswärts essen,Café,42.46
+2026-08-06,Lebensmittel,Supermarkt,53.17
+2026-08-07,Abos,Zweiter Streamingdienst,13.99
+2026-08-08,Sonstiges,Apotheke,85.66
+2026-08-09,Auswärts essen,Restaurant,58.15
+2026-08-09,Lebensmittel,Supermarkt,65.76
+2026-08-11,Verkehr,Tanken,66.57
+2026-08-12,Auswärts essen,Café,45.99
+2026-08-13,Lebensmittel,Supermarkt,88.13
+2026-08-15,Auswärts essen,Café,25.93
+2026-08-15,Sonstiges,Apotheke,34.88
+2026-08-16,Lebensmittel,Wochenmarkt,64.17
+2026-08-16,Abos,Cloud-Speicher,9.99
+2026-08-17,Abos,Fitnessstudio,39.0
+2026-08-18,Auswärts essen,Mittagessen,46.48
+2026-08-18,Abos,Videostreaming,17.99
+2026-08-20,Lebensmittel,Wochenmarkt,91.48
+2026-08-20,Abos,Musik-Familienabo,16.99
+2026-08-20,Abos,Nachrichten-Abo,14.9
+2026-08-21,Auswärts essen,Restaurant,43.6
+2026-08-22,Sonstiges,Kleidung,18.38
+2026-08-23,Lebensmittel,Supermarkt,95.08
+2026-08-24,Auswärts essen,Lieferdienst,49.39
+2026-08-24,Verkehr,Tanken,69.93
+2026-08-27,Auswärts essen,Mittagessen,54.08
+2026-08-27,Lebensmittel,Wochenmarkt,94.5
+2026-09-01,Miete,Miete und Nebenkosten,1450.0
+2026-09-01,Verkehr,Monatskarte,58.0
+2026-09-02,Lebensmittel,Supermarkt,75.97
+2026-09-03,Auswärts essen,Lieferdienst,60.45
+2026-09-05,Energie,Strom und Gas,121.0
+2026-09-06,Auswärts essen,Café,56.64
+2026-09-06,Lebensmittel,Bioladen,53.16
+2026-09-07,Abos,Zweiter Streamingdienst,13.99
+2026-09-08,Sonstiges,Kleidung,77.71
+2026-09-09,Auswärts essen,Café,37.17
+2026-09-09,Lebensmittel,Supermarkt,72.9
+2026-09-11,Verkehr,Tanken,57.45
+2026-09-12,Auswärts essen,Mittagessen,38.34
+2026-09-13,Lebensmittel,Bioladen,98.09
+2026-09-15,Auswärts essen,Restaurant,48.87
+2026-09-15,Sonstiges,Haushaltswaren,90.16
+2026-09-16,Lebensmittel,Bioladen,76.18
+2026-09-16,Abos,Cloud-Speicher,9.99
+2026-09-17,Abos,Fitnessstudio,39.0
+2026-09-18,Auswärts essen,Mittagessen,21.36
+2026-09-18,Abos,Videostreaming,17.99
+2026-09-20,Lebensmittel,Bioladen,65.01
+2026-09-20,Abos,Musik-Familienabo,16.99
+2026-09-20,Abos,Nachrichten-Abo,14.9
+2026-09-22,Sonstiges,Kleidung,26.44
+2026-09-23,Lebensmittel,Bioladen,77.18
+2026-09-24,Verkehr,Tanken,63.51
+2026-09-27,Lebensmittel,Wochenmarkt,75.97
+2026-10-01,Miete,Miete und Nebenkosten,1450.0
+2026-10-01,Verkehr,Monatskarte,58.0
+2026-10-02,Lebensmittel,Supermarkt,97.82
+2026-10-03,Auswärts essen,Restaurant,33.55
+2026-10-05,Energie,Strom und Gas,168.0
+2026-10-06,Auswärts essen,Mittagessen,38.26
+2026-10-06,Lebensmittel,Supermarkt,87.32
+2026-10-07,Abos,Zweiter Streamingdienst,13.99
+2026-10-08,Sonstiges,Apotheke,21.72
+2026-10-09,Auswärts essen,Restaurant,35.68
+2026-10-09,Lebensmittel,Supermarkt,70.77
+2026-10-11,Verkehr,Tanken,59.01
+2026-10-12,Auswärts essen,Lieferdienst,41.56
+2026-10-13,Lebensmittel,Wochenmarkt,59.58
+2026-10-15,Auswärts essen,Restaurant,23.19
+2026-10-15,Sonstiges,Kleidung,18.17
+2026-10-16,Lebensmittel,Bioladen,91.4
+2026-10-16,Abos,Cloud-Speicher,9.99
+2026-10-17,Abos,Fitnessstudio,39.0
+2026-10-18,Auswärts essen,Café,62.7
+2026-10-18,Abos,Videostreaming,17.99
+2026-10-20,Lebensmittel,Supermarkt,85.4
+2026-10-20,Abos,Musik-Familienabo,16.99
+2026-10-20,Abos,Nachrichten-Abo,14.9
+2026-10-22,Sonstiges,Haushaltswaren,36.64
+2026-10-23,Lebensmittel,Bioladen,71.03
+2026-10-24,Verkehr,Tanken,67.89
+2026-10-27,Lebensmittel,Wochenmarkt,61.14

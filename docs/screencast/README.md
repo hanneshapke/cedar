@@ -10,7 +10,8 @@ work in the sandbox, an approval, memory, the tool switches, and an agent made f
 | `narration-elevenlabs.txt` | The narration as one text for a text-to-speech voice |
 | `narration/NN-<scene>.txt` | The same, one file a scene, for one clip each |
 | `captions.srt` | Captions, timed by word count within each scene |
-| `narration-elevenlabs.<lang>.txt`, `narration/<lang>/`, `captions.<lang>.srt` | The narration and the captions in German (`de`), French (`fr`) and Spanish (`es`) |
+| `cedar-intro-narrated.<lang>.mp4` | The film in German (`de`), French (`fr`) and Spanish (`es`), recorded in that language, with the voice |
+| `narration-elevenlabs.<lang>.txt`, `narration/<lang>/`, `captions.<lang>.srt`, `timeline.<lang>.json` | Their narration, captions and scene times |
 | `timeline.json` | When each scene of the take starts and ends, in seconds |
 | `tools/` | Everything that makes the above |
 
@@ -24,7 +25,8 @@ The language model is not real. `tools/mock_llm.py` stands in for vLLM: it answe
 `/v1/models` and `/v1/chat/completions` and takes each reply from `tools/scenes.py`, so the take
 is the same every time and needs no GPU. The plan's steps, Cedar's sentences, the code it "writes"
 and the report's text are that script. The figures in them are the ones the Python step prints for
-`tools/household-spending-2026.csv`, which is invented data from `tools/make_csv.py`.
+`tools/household-spending-2026.csv` (and its translations), which is invented data from
+`tools/make_csv.py`.
 
 ## The voice
 
@@ -59,16 +61,32 @@ record again.
 
 ## German, French and Spanish
 
-The film itself is the English take: the chat on screen is in English. The narration and the
-captions are translated, with the terms and the form of address of `docs/i18n-glossary.md`
-(German *du*, French *vous*, Latin American Spanish *tú*), so a menu the voice names (Einstellungen,
-Réglages, Configuración) reads "Settings" on screen. The translations are in
-`tools/narration.<lang>.json`, one text a scene; `tools/make_script.py` writes the files from them
-and says which scenes may run longer than the film, at the pace the English has.
+Each of the three has its own film, with the voice already in it:
+`cedar-intro-narrated.de.mp4`, `cedar-intro-narrated.fr.mp4` and `cedar-intro-narrated.es.mp4`.
+They are separate takes, not the English one with another voice: the chat is switched to the
+language on the first screen (Deutsch (Deutschland), Français (France), Español (Latinoamérica)),
+the file, the requests, Cedar's answers, the chart and the PDF are in it, and each scene lasts as
+long as its voice clip. `timeline.<lang>.json` and `captions.<lang>.srt` belong to that take.
 
-For a narrated film in one of them, make the clips with `tools/voice.sh <voice-id> <lang>` and run
-`tools/mux.sh audio-<lang> cedar-intro-<lang>.mp4`. A clip that outlasts its scene
-pushes the next one back instead of talking over it, and `mux.sh` says where that happened.
+The translations follow `docs/i18n-glossary.md` (German *du*, French *vous*, Latin American
+Spanish *tú*). The narration is in `tools/narration.<lang>.json`, one text a scene, and everything
+on screen that is written in a language (the demo file, what is typed, what the scripted model
+answers, the title cards) is in `tools/content.py`.
+
+To make one again, say the German one:
+
+```sh
+ELEVENLABS_API_KEY=... docs/screencast/tools/voice.sh <voice-id> de           # the clips, into audio-de/
+docs/screencast/tools/take.sh /tmp/cedar-take-de de docs/screencast/audio-de  # the take, timed to the clips
+cp /tmp/cedar-take-de/cedar-intro.mp4 docs/screencast/cedar-intro.de.mp4
+cp /tmp/cedar-take-de/rec/timeline.json docs/screencast/timeline.de.json
+docs/screencast/tools/make_script.py                                          # captions.de.srt for that take
+docs/screencast/tools/mux.sh docs/screencast/audio-de de                      # cedar-intro-narrated.de.mp4
+```
+
+The silent takes `cedar-intro.<lang>.mp4` and the clips are not kept in the repository, only the
+narrated films. Without the clips, `take.sh <dir> <lang>` times the scenes by the length of the
+text, and `mux.sh` moves a clip that outlasts its scene behind the one before it.
 
 ## Recording it again
 
@@ -90,4 +108,4 @@ folder (`start.sh`), drives the chat in a headless Chromium (`record.js`), and e
 captures about 16 frames a second, each with its time, so the film runs in real time.
 
 To change what is said, edit `tools/narration.json`; to change what Cedar "answers", edit
-`tools/scenes.py`; what the pointer does is in `tools/record.js`, one block a scene.
+`tools/content.py` (the words) or `tools/scenes.py` (the steps); what the pointer does is in `tools/record.js`, one block a scene.

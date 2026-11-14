@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Write household-spending-2026.csv: ten months of invented household spending for the demo."""
-import csv, random
+"""Write the demo file, ten months of invented household spending, once per language of content.py
+(household-spending-2026.csv and its translations). The amounts and dates are the same in each."""
+import csv, os, random
+
+from content import C, LANGS
+
 random.seed(7)
 rows = []
 energy = [212, 205, 188, 150, 118, 96, 92, 95, 121, 168]
@@ -25,6 +29,13 @@ for m in range(1, 11):
         rows.append((d(8 + i * 7), "Other", random.choice(["Pharmacy", "Household goods", "Clothing", "Gift"]),
                      round(random.uniform(15, 95), 2)))
 rows.sort()
-with open("household-spending-2026.csv", "w", newline="") as f:
-    w = csv.writer(f); w.writerow(["date", "category", "description", "amount_eur"]); w.writerows(rows)
-print(len(rows), "rows")
+HERE = os.path.dirname(os.path.abspath(__file__))
+EN_CATS = C["en"]["cats"]
+for lang in LANGS:
+    c = C[lang]
+    cat = dict(zip(EN_CATS, c["cats"]))
+    with open(os.path.join(HERE, c["csv"]), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(c["cols"])
+        w.writerows((date, cat[category], c["descs"].get(desc, desc), amount) for date, category, desc, amount in rows)
+    print(c["csv"], len(rows), "rows")

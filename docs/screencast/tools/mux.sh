@@ -2,17 +2,24 @@
 # Put the narration under the film: each clip starts 0.4 s into its scene, or right after the
 # clip before it if that one runs long (a translation can take a second more than its scene).
 #
-#   mux.sh <audio-dir> [out.mp4]
+#   mux.sh <audio-dir> [lang] [out.mp4]
 #
 # <audio-dir> holds one clip per scene, named like the texts in ../narration (or ../narration/de,
 # /fr, /es): 01-title.mp3, 02-first-run.mp3, ... (mp3 or wav). Scenes without a clip stay silent.
+# Without lang it takes ../cedar-intro.mp4 and ../timeline.json and writes
+# ../cedar-intro-narrated.mp4; with de, fr or es it takes that language's take,
+# ../cedar-intro.<lang>.mp4 and ../timeline.<lang>.json, and writes ../cedar-intro-narrated.<lang>.mp4.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-AUDIO=${1:?audio dir}; OUT=${2:-$HERE/../cedar-intro-narrated.mp4}
-FILM=$HERE/../cedar-intro.mp4
+AUDIO=${1:?audio dir}; shift
+SUFFIX=""
+case ${1:-} in en) shift ;; de|fr|es) SUFFIX=.$1; shift ;; esac
+FILM=$HERE/../cedar-intro$SUFFIX.mp4; TIMELINE=$HERE/../timeline$SUFFIX.json
+OUT=${1:-$HERE/../cedar-intro-narrated$SUFFIX.mp4}
+[[ -f $FILM && -f $TIMELINE ]] || { echo "no take for this language: $FILM and $TIMELINE are needed (see take.sh)" >&2; exit 1; }
 # The output must not be the film itself: ffmpeg would overwrite it while reading it.
 if [[ -e $OUT && $OUT -ef $FILM ]]; then
-    echo "the output is the silent film mux.sh reads ($OUT); leave the second argument out or name another file" >&2
+    echo "the output is the silent film mux.sh reads ($OUT); leave the output out or name another file" >&2
     exit 1
 fi
 inputs=(); filter=""; mix=""; n=0; free=0
@@ -28,7 +35,7 @@ while IFS=$'\t' read -r idx id start; do
     filter+="[$n:a]adelay=$ms:all=1[a$n];"; mix+="[a$n]"
 done < <(python3 -c "
 import json
-for i, s in enumerate(json.load(open('$HERE/../timeline.json'))['scenes'], 1): print(i, s['id'], s['start'], sep='\t')")
+for i, s in enumerate(json.load(open('$TIMELINE'))['scenes'], 1): print(i, s['id'], s['start'], sep='\t')")
 (( n > 0 )) || { echo "no clips found in $AUDIO" >&2; exit 1; }
 ffmpeg -loglevel error -y -i "$FILM" "${inputs[@]}" \
     -filter_complex "${filter}${mix}amix=inputs=$n:normalize=0[a]" \

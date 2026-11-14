@@ -67,13 +67,18 @@ open(os.path.join(OUT, "captions.srt"), "w").write("\n".join(srt))
 print(f"en: {len(scenes)} scenes, {sum(len(s['text'].split()) for s in scenes)} words, {n_cap} captions")
 
 # The translations (narration.<lang>.json: scene id -> text; terms as in docs/i18n-glossary.md).
-# The film is the English take, so a translated scene has the English scene's time. Speech is
-# estimated at CPS characters a second, the pace the English text has at 150 words a minute.
+# Captions follow the language's own take (timeline.<lang>.json) when there is one, else the
+# English one. Speech is estimated at CPS characters a second, the pace the English text has at
+# 150 words a minute.
 CPS = 13.5
 SENTENCE = re.compile(r"[^.!?]+[.!?]+")
 for path in sorted(glob.glob(os.path.join(HERE, "narration.*.json"))):
     lang = os.path.basename(path).split(".")[1]
     texts = json.load(open(path))
+    # the language's own take, if there is one: its scenes are as long as its voice clips
+    own = os.path.join(OUT, f"timeline.{lang}.json")
+    has_own = os.path.exists(own)
+    times = {s["id"]: s for s in json.load(open(own if has_own else timeline_path))["scenes"]}
     os.makedirs(os.path.join(OUT, "narration", lang), exist_ok=True)
     voice, srt, n_cap, tight = [], [], 0, []
     for i, s in enumerate(scenes, 1):
@@ -82,7 +87,8 @@ for path in sorted(glob.glob(os.path.join(HERE, "narration.*.json"))):
         open(os.path.join(OUT, "narration", lang, f"{i:02d}-{s['id']}.txt"), "w").write(spoken(text) + "\n")
         at = t["start"] + LEAD
         room = t["end"] - at - 0.2
-        need = len(text) / CPS
+        # A scene of the language's own take is its voice clip plus 1.2 s, so the clip's length is known.
+        need = room - 0.8 if has_own else len(text) / CPS
         if need > room:
             tight.append(f"{i} {s['id']} (about {need:.0f} s of speech, {room:.0f} s of film)")
         span = min(room, need)

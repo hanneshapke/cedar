@@ -3,8 +3,7 @@
 
 Cedar itself, its chat UI and the sandbox are real; this stands in for the language model so the
 recording is the same every time. It answers /v1/models and /v1/chat/completions (not streamed,
-as Cedar calls it) and picks each reply from the latest user message and how many tool results
-have come back since. Every request is appended to requests.jsonl next to it.
+as Cedar calls it) and takes each reply from scenes.py, in the language CEDAR_DEMO_LANG names. Every request is appended to requests.jsonl next to it.
 """
 import json, os, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -55,10 +54,10 @@ class H(BaseHTTPRequestHandler):
         H.n += 1
         msgs = req.get("messages", [])
         system = text_of(msgs[0]["content"]) if msgs and msgs[0]["role"] == "system" else ""
+        reply = scenes.reply(system, [m for m in msgs if m["role"] != "system"], req)
         last_user = max((i for i, m in enumerate(msgs) if m["role"] == "user"), default=-1)
         prompt = text_of(msgs[last_user]["content"]) if last_user >= 0 else ""
         results = [text_of(m["content"]) for m in msgs[last_user + 1:] if m["role"] == "tool"]
-        reply = scenes.reply(system, prompt, results, req)
         with open(os.path.join(HERE, "requests.jsonl"), "a") as f:
             f.write(json.dumps({"n": H.n, "system": system[:300], "prompt": prompt[:400],
                                 "results": [r[:300] for r in results],

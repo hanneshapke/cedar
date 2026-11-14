@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Start the scripted model, cedar and cedar-chat with fresh databases. Usage: start.sh <run-dir>
+# CEDAR_DEMO_LANG (en, de, fr, es) is the language the scripted model answers in.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${CEDAR_ROOT:-$(cd "$HERE/../../.." && pwd)}

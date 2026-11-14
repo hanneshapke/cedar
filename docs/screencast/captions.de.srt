@@ -1,179 +1,179 @@
 1
-00:00:00,767 --> 00:00:08,693
+00:00:00,801 --> 00:00:07,655
 Das ist Cedar: ein Open-Source-Assistent, der auf deinem Computer läuft und echte Arbeit für dich erledigt.
 
 2
-00:00:09,723 --> 00:00:14,982
+00:00:09,055 --> 00:00:14,490
 Beim ersten Start fragt Cedar, in welcher Sprache du arbeiten möchtest.
 
 3
-00:00:14,982 --> 00:00:19,130
+00:00:14,490 --> 00:00:18,776
 Danach braucht es nur noch eines: ein Modell zum Denken.
 
 4
-00:00:21,943 --> 00:00:24,684
+00:00:20,253 --> 00:00:23,121
 Cedar ist an keine KI-Firma gebunden.
 
 5
-00:00:24,684 --> 00:00:29,424
+00:00:23,121 --> 00:00:28,083
 Unter Einstellungen, Modelle, wählst du, woher das Modell kommt.
 
 6
-00:00:29,424 --> 00:00:34,832
+00:00:28,083 --> 00:00:33,742
 Die Cedar-App für Mac und Windows kann eines herunterladen und mit llama.
 
 7
-00:00:34,832 --> 00:00:35,869
+00:00:33,742 --> 00:00:34,827
 cpp betreiben.
 
 8
-00:00:35,869 --> 00:00:40,832
+00:00:34,827 --> 00:00:40,021
 Du kannst einen gehosteten Anbieter mit einem API-Schlüssel nutzen.
 
 9
-00:00:40,832 --> 00:00:45,573
+00:00:40,021 --> 00:00:44,982
 Oder du nennst Cedar einen Modellserver, den du schon betreibst.
 
 10
-00:00:45,573 --> 00:00:48,313
+00:00:44,982 --> 00:00:47,851
 Hier ist das vLLM auf diesem Rechner.
 
 11
-00:00:48,313 --> 00:00:51,350
+00:00:47,851 --> 00:00:51,029
 Cedar listet die Modelle des Servers auf.
 
 12
-00:00:51,350 --> 00:00:58,684
+00:00:51,029 --> 00:00:58,704
 Wähle eines, und Cedar trägt ein, welchen Denkaufwand das Modell kennt und ob es Bilder lesen kann.
 
 13
-00:00:58,684 --> 00:01:02,832
+00:00:58,704 --> 00:01:03,045
 Dann prüft es die Adresse noch einmal und speichert sie.
 
 14
-00:01:04,659 --> 00:01:06,066
+00:01:05,065 --> 00:01:06,580
 Jetzt eine Aufgabe.
 
 15
-00:01:06,066 --> 00:01:20,215
+00:01:06,580 --> 00:01:21,808
 Ich hänge die Haushaltsausgaben eines Jahres an und bitte Cedar herauszufinden, wohin das Geld fließt, ein Diagramm zu zeichnen und eine Seite Zusammenfassung mit drei Spartipps zu schreiben.
 
 16
-00:01:21,026 --> 00:01:23,174
+00:01:23,289 --> 00:01:25,429
 Cedar legt nicht einfach los.
 
 17
-00:01:23,174 --> 00:01:27,545
+00:01:25,429 --> 00:01:29,782
 Bei einer größeren Aufgabe zeigt es dir zuerst seinen Plan.
 
 18
-00:01:27,545 --> 00:01:32,878
+00:01:29,782 --> 00:01:35,095
 Du kannst einen Schritt ändern, entfernen oder einen eigenen hinzufügen.
 
 19
-00:01:32,878 --> 00:01:35,989
+00:01:35,095 --> 00:01:38,194
 Wenn alles passt, gibst du den Start frei.
 
 20
-00:01:36,893 --> 00:01:46,967
+00:01:39,815 --> 00:01:49,904
 Die Arbeit geschieht in einer abgeschotteten Box: einem eigenen Container ohne Netzwerk, der den Rest deines Computers nicht sehen kann.
 
 21
-00:01:46,967 --> 00:01:52,004
+00:01:49,904 --> 00:01:54,948
 Cedar rechnet in Python, zeichnet das Diagramm und schreibt das PDF.
 
 22
-00:01:52,004 --> 00:01:59,708
+00:01:54,948 --> 00:02:02,663
 Jeder Schritt bleibt in der Unterhaltung, sodass du ihn öffnen und genau sehen kannst, was gelaufen ist.
 
 23
-00:02:01,764 --> 00:02:07,838
+00:02:04,212 --> 00:02:13,117
 Das Diagramm ist interaktiv: Zeig auf einen Monat, und du liest jede Kategorie ab.
 
 24
-00:02:07,838 --> 00:02:14,727
+00:02:13,117 --> 00:02:23,216
 Die fertige Zusammenfassung steht rechts, mit den drei Vorschlägen, bereit zum Herunterladen.
 
 25
-00:02:14,727 --> 00:02:18,134
+00:02:23,216 --> 00:02:28,211
 Und die Kurzfassung steht in der Unterhaltung.
 
 26
-00:02:26,879 --> 00:02:29,606
+00:02:29,829 --> 00:02:32,496
 Manches tut Cedar nicht von sich aus.
 
 27
-00:02:29,606 --> 00:02:33,954
+00:02:32,496 --> 00:02:36,749
 Soll es eine Datei löschen, hält es an und fragt erst nach.
 
 28
-00:02:33,954 --> 00:02:38,080
+00:02:36,749 --> 00:02:40,785
 Für Downloads, Installationen und E-Mails gilt dasselbe.
 
 29
-00:02:38,080 --> 00:02:41,544
+00:02:40,785 --> 00:02:44,173
 Nichts Riskantes geschieht ohne deine Freigabe.
 
 30
-00:02:42,366 --> 00:02:45,551
+00:02:45,790 --> 00:02:49,759
 Cedar merkt sich auch, worum du es bittest.
 
 31
-00:02:45,551 --> 00:02:51,477
+00:02:49,759 --> 00:02:57,143
 Unter Einstellungen, Gedächtnis, siehst du alles, was es über dich behalten hat.
 
 32
-00:02:51,477 --> 00:02:55,477
+00:02:57,143 --> 00:03:02,127
 Hefte es an, archiviere es oder entferne es endgültig.
 
 33
-00:02:55,477 --> 00:02:58,588
+00:03:02,127 --> 00:03:06,004
 Es bleibt auf deinem eigenen Cedar-Server.
 
 34
-00:03:05,243 --> 00:03:07,762
+00:03:07,683 --> 00:03:10,524
 Jede Fähigkeit hat einen Schalter.
 
 35
-00:03:07,762 --> 00:03:12,132
+00:03:10,524 --> 00:03:15,455
 Webseiten lesen, Wetter, Karten, Wegbeschreibungen, Aktien.
 
 36
-00:03:12,132 --> 00:03:14,947
+00:03:15,455 --> 00:03:18,631
 Schalte ein, was Cedar erreichen darf.
 
 37
-00:03:14,947 --> 00:03:16,724
+00:03:18,631 --> 00:03:20,636
 Alles andere bleibt aus.
 
 38
-00:03:18,572 --> 00:03:24,350
+00:03:22,287 --> 00:03:28,589
 Und wenn eine Unterhaltung ihren Zweck erfüllt hat, mach daraus einen Agenten.
 
 39
-00:03:24,350 --> 00:03:27,831
+00:03:28,589 --> 00:03:32,387
 Cedar schreibt den Prompt aus der Unterhaltung.
 
 40
-00:03:27,831 --> 00:03:35,905
+00:03:32,387 --> 00:03:41,194
 Du wählst den Auslöser: einen Zeitplan, eine Änderung, auf die er achtet, neue Post, eine eintreffende Datei.
 
 41
-00:03:35,905 --> 00:03:38,128
+00:03:41,194 --> 00:03:43,618
 Dieser hier läuft jeden Monat.
 
 42
-00:03:41,289 --> 00:03:43,956
+00:03:45,261 --> 00:03:47,605
 Cedar ist kostenlos und Open Source.
 
 43
-00:03:43,956 --> 00:03:49,067
+00:03:47,605 --> 00:03:52,098
 Es läuft auf Mac, Windows und Linux, mit Apps für iPhone und Android.
 
 44
-00:03:49,067 --> 00:03:50,770
+00:03:52,098 --> 00:03:53,595
 Dein eigener Assistent.
 
 45
-00:03:50,770 --> 00:03:52,993
+00:03:53,595 --> 00:03:55,549
 Läuft zu Hause, hört auf dich.
