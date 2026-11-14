@@ -15,10 +15,7 @@
   if (old.get('lang')) q.set('lang', old.get('lang'));
   const where = old.get('where'), hw = old.get('hw'), mem = old.get('mem');
   if (where === 'factory') q.set('model', 'hosted');
-  else if (where === 'here' || where === 'box') {
-    q.set('model', 'own');
-    if (where === 'box') q.set('where', 'box');
-  }
+  else if (where === 'here' || where === 'box') q.set('model', 'own');
   const machine = {
     mac: { os: 'mac', arch: 'arm64', mem: { 24: '16', 48: '48', 96: '96', 128: '128' } },
     gpu: { arch: 'x64', mem: { 12: '12', 16: '12', 24: '24' } },

@@ -236,7 +236,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
   // The answers that are not rows of the picker: they are chosen in "Your model".
   const CHOICES = {
     model: ['cedar', 'hosted', 'own'], provider: ['doubleword', 'baseten', 'nebius', 'other'],
-    serve: ['llamacpp', 'lmstudio', 'ollama', 'vllm'], where: ['here', 'box'],
+    serve: ['llamacpp', 'lmstudio', 'ollama', 'vllm'],
   };
 
   // Each question: its id in the address (?os=mac&arch=arm64&docker=no...), and the answers.
@@ -283,7 +283,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
       opts: [{ v: 'yes', t: tr('install.opt.yes') }, { v: 'no', t: tr('install.opt.no') }, { v: 'unknown', t: tr('install.opt.noIdeaTailscale') }] },
   ];
 
-  const DEFAULTS = { use: '', os: detectOs(), arch: '', mem: '', docker: '', model: '', provider: '', serve: '', where: '', mobile: '', phone: detectPhone(), ios: '', tailscale: '' };
+  const DEFAULTS = { use: '', os: detectOs(), arch: '', mem: '', docker: '', model: '', provider: '', serve: '', mobile: '', phone: detectPhone(), ios: '', tailscale: '' };
   const state = readState();
 
   function detectOs() {
@@ -339,7 +339,6 @@ ol.setup strong{color:var(--ink);font-weight:600}
       if (state.model) q.set('model', state.model);
       if (s.model === 'hosted' && state.provider) q.set('provider', state.provider);
       if (s.model === 'own' && state.serve) q.set('serve', state.serve);
-      if (s.model === 'own' && state.where) q.set('where', state.where);
     }
     const qs = q.toString();
     history.replaceState(null, '', (qs ? '?' + qs : location.pathname) + location.hash);
@@ -568,7 +567,6 @@ ol.setup strong{color:var(--ink);font-weight:600}
     if (!s.model || (s.model === 'cedar' && !cedarPlan(s).model)) s.model = recommended(s);
     if (s.model === 'own') {
       if (!s.serve) s.serve = s.mem === 'spark' ? 'vllm' : s.mem === 'jetson' ? 'ollama' : 'llamacpp';
-      if (!s.where) s.where = 'here';
     }
     return s;
   }
@@ -640,11 +638,9 @@ ol.setup strong{color:var(--ink);font-weight:600}
         <p>${tr('install.panel.own')}</p>
         <h3 class="sub">${tr('install.panel.ownServer')}</h3>
         ${opts('serve', servers, s.serve)}
-        <h3 class="sub">${tr('models.q.where.label')}</h3>
-        ${opts('where', [{ v: 'here', t: tr('models.opt.where.here') }, { v: 'box', t: tr('models.opt.where.box') }], s.where)}
+        <p class="note">${tr('install.panel.ownElsewhere')}</p>
         <h3 class="sub">${tr('models.result.suggested')}</h3>
         ${list.length ? `<div class="models">${list.map((m, i) => card(m, i === 0, how(m))).join('')}</div>` : `<p class="note">${tr('install.panel.ownNoPicks')}</p>`}
-        ${s.where === 'box' ? `<p class="note">${tr('install.panel.ownBox')}</p>` : ''}
       </div>`;
     }
     return '';
@@ -712,14 +708,13 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function modelChoice(s) {
     // A release from before the setup window had its three options: one form with presets.
     if (!hasModelOptions()) {
-      if (s.model === 'own' && s.where !== 'box' && SERVERS[s.serve] && SERVERS[s.serve].pick) return SERVERS[s.serve].pick;
+      if (s.model === 'own' && SERVERS[s.serve] && SERVERS[s.serve].pick) return SERVERS[s.serve].pick;
       if (s.model === 'own' && s.serve) return tr('install.pick.addressOld', { address: esc(modelAddress(s)) });
       if (s.model === 'hosted' && s.provider) return tr('install.pick.provider', { address: esc(PROVIDERS[s.provider].addr) });
       return tr('install.pick.any');
     }
     if (cedarServes(s)) return SERVERS.cedar.pick;
     if (s.model === 'own' && s.serve === 'vllm') return tr('install.pick.vllmNew');
-    if (s.model === 'own' && s.serve && s.where === 'box') return tr('install.pick.address', { address: esc(modelAddress(s)) });
     if (s.model === 'own' && s.serve) return tr('install.pick.presetNew', { name: SERVERS[s.serve].name });
     if (s.model === 'hosted' && s.provider === 'other') return tr('install.pick.providerOtherNew', { address: esc(PROVIDERS.other.addr) });
     if (s.model === 'hosted' && s.provider) return tr('install.pick.providerNew', { name: PROVIDERS[s.provider].name });
@@ -735,7 +730,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function modelAddress(s) {
     if (s.model === 'hosted') return PROVIDERS[s.provider || 'other'].addr;
     const addr = SERVERS[cedarServes(s) ? 'cedar' : s.serve || 'llamacpp'].addr;
-    return s.model === 'own' && s.where === 'box' ? addr.replace('127.0.0.1', `<${tr('models.setup.thatMachine')}>`) : addr;
+    return addr;
   }
 
   const WHAT_IS_A_PROVIDER = explain(tr('install.explain.provider'));
@@ -778,14 +773,13 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function llamacppStep(s, shell, inSetup, toolsNote) {
     const first = picks(s)[0];
     const gguf = first ? first.gguf : `<${tr('install.llamacpp.repo')}>`;
-    const install = s.where === 'box' ? `<p>${tr('install.llamacpp.installBox')}</p>`
-      : s.os === 'mac' ? code('brew install llama.cpp', 'Terminal')
+    const install = s.os === 'mac' ? code('brew install llama.cpp', 'Terminal')
       : s.os === 'windows' ? code('winget install llama.cpp', 'PowerShell')
       : `<p>${tr('install.llamacpp.installLinux')}</p>`;
-    const run = `llama-server -hf ${gguf} --jinja -c 32768${s.where === 'box' ? ' --host 0.0.0.0' : ''}\n# ${tr('models.get.llamaFirst')}`;
+    const run = `llama-server -hf ${gguf} --jinja -c 32768\n# ${tr('models.get.llamaFirst')}`;
     return step(tr('install.llamacpp.title'), `<p>${tr('install.llamacpp.intro')}</p>${install}
       <p>${tr(first ? 'install.llamacpp.run' : 'install.llamacpp.runAny', { model: first ? `<strong>${esc(first.name)}</strong>` : '' })}</p>
-      ${code(run, s.where === 'box' ? tr('models.shell.modelMachine') : shell)}
+      ${code(run, shell)}
       <p>${tr('install.reaches', { name: 'llama.cpp', address: esc(modelAddress(s)) })}</p>${inSetup}${toolsNote}`);
   }
 
