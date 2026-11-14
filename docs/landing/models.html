@@ -146,8 +146,16 @@ ol.setup strong{color:var(--ink);font-weight:600}
   <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="install.html" data-i18n="models.help.install">Install guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" data-i18n="models.help.desktop">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" data-i18n="models.help.linux">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" data-i18n="models.footer.developers">For developers</a></span>
 </footer>
 
+<script src="./version.js"></script>
 <script>
 (() => {
+  // Cedar's setup window runs llama.cpp itself from this release on (install.html has the same
+  // gate, MODEL_OPTIONS_SINCE); until the site offers it, the guide does not mention that.
+  const CEDAR_SETS_UP_LLAMA = (() => {
+    const [a, b] = [window.CEDAR_VERSION || '0', '0.9.0'].map((v) => v.split('.').map(Number));
+    for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    return true;
+  })();
   // Each question: its id in the address (?input=images&where=here&hw=mac...), and the answers.
   // A question's `when` hides it until it applies; an answer's `hw` limits it to that hardware.
   // The words are in i18n/models.js: models.q.<id>.label and .hint, and each answer's
@@ -213,38 +221,40 @@ ol.setup strong{color:var(--ink);font-weight:600}
   }
 
   // ---------- the models ----------
-  // Open-weight models that call tools well, as of October 2026. `gb`: a 4-bit download; `ollama`:
-  // its tag; `lms`: what to search for in LM Studio; `hf`: the Hugging Face repository vLLM serves,
+  // Open-weight models that call tools well, as of October 2026. `gguf`: what llama.cpp's
+  // `llama-server -hf` takes, a Hugging Face repository of GGUF files and the quantization (4-bit,
+  // but 8-bit for the small Gemma 4 E4B, as Cedar's own llama.cpp setup uses it); `gb`: the size of
+  // that download; `ollama`: its tag there, for the Jetson, which the guide sets up with Ollama; `lms`: what to search for in LM Studio; `hf`: the Hugging Face repository vLLM serves,
   // where we are sure of it; `recipe`: its page on the vLLM recipes site. `total`/`active`: billions
   // of parameters (`active` for mixture of experts); `date`: when it came out. Each model's "why"
   // is models.why.<id> in i18n/models.js.
   const MODELS = {
-    'qwen3.6-35b': { name: 'Qwen3.6 35B-A3B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 35, active: 3, gb: 23,
-      ollama: 'qwen3.6:35b-a3b', lms: 'Qwen3.6 35B A3B', hf: 'Qwen/Qwen3.6-35B-A3B' },
-    'qwen3.6-27b': { name: 'Qwen3.6 27B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 27, gb: 17,
-      ollama: 'qwen3.6:27b', lms: 'Qwen3.6 27B', hf: 'Qwen/Qwen3.6-27B' },
-    'gemma4-26b': { name: 'Gemma 4 26B-A4B', org: 'Google', date: '2026-04', images: true, total: 26, active: 4, gb: 18,
-      ollama: 'gemma4:26b', lms: 'Gemma 4 26B' },
-    'gemma4-31b': { name: 'Gemma 4 31B', org: 'Google', date: '2026-04', images: true, total: 31, gb: 20,
-      ollama: 'gemma4:31b', lms: 'Gemma 4 31B' },
-    'gemma4-e4b': { name: 'Gemma 4 E4B', org: 'Google', date: '2026-04', images: true, arch: 'models.arch.gemma4-e4b', gb: 10,
-      ollama: 'gemma4:e4b', lms: 'Gemma 4 E4B' },
-    'gpt-oss-20b': { name: 'gpt-oss 20B', org: 'OpenAI', date: '2025-08', images: false, total: 21, active: 3.6, gb: 14,
-      ollama: 'gpt-oss:20b', lms: 'gpt-oss 20B', hf: 'openai/gpt-oss-20b' },
-    'gpt-oss-120b': { name: 'gpt-oss 120B', org: 'OpenAI', date: '2025-08', images: false, total: 117, active: 5.1, gb: 65,
-      ollama: 'gpt-oss:120b', lms: 'gpt-oss 120B', hf: 'openai/gpt-oss-120b', vllmFlags: '--tool-call-parser openai --enable-auto-tool-choice' },
+    'qwen3.6-35b': { name: 'Qwen3.6 35B-A3B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 35, active: 3, gb: 21,
+      gguf: 'ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M', lms: 'Qwen3.6 35B A3B', hf: 'Qwen/Qwen3.6-35B-A3B' },
+    'qwen3.6-27b': { name: 'Qwen3.6 27B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 27, gb: 19,
+      gguf: 'ggml-org/Qwen3.6-27B-GGUF:Q4_K_M', lms: 'Qwen3.6 27B', hf: 'Qwen/Qwen3.6-27B' },
+    'gemma4-26b': { name: 'Gemma 4 26B-A4B', org: 'Google', date: '2026-04', images: true, total: 26, active: 4, gb: 15,
+      gguf: 'ggml-org/gemma-4-26B-A4B-it-GGUF:Q4_0', lms: 'Gemma 4 26B' },
+    'gemma4-31b': { name: 'Gemma 4 31B', org: 'Google', date: '2026-04', images: true, total: 31, gb: 18,
+      gguf: 'ggml-org/gemma-4-31B-it-GGUF:Q4_0', lms: 'Gemma 4 31B' },
+    'gemma4-e4b': { name: 'Gemma 4 E4B', org: 'Google', date: '2026-04', images: true, arch: 'models.arch.gemma4-e4b', gb: 8,
+      gguf: 'ggml-org/gemma-4-E4B-it-GGUF:Q8_0', lms: 'Gemma 4 E4B' },
+    'gpt-oss-20b': { name: 'gpt-oss 20B', org: 'OpenAI', date: '2025-08', images: false, total: 21, active: 3.6, gb: 12,
+      gguf: 'ggml-org/gpt-oss-20b-GGUF:MXFP4', lms: 'gpt-oss 20B', hf: 'openai/gpt-oss-20b' },
+    'gpt-oss-120b': { name: 'gpt-oss 120B', org: 'OpenAI', date: '2025-08', images: false, total: 117, active: 5.1, gb: 63,
+      gguf: 'ggml-org/gpt-oss-120b-GGUF:MXFP4', lms: 'gpt-oss 120B', hf: 'openai/gpt-oss-120b', vllmFlags: '--tool-call-parser openai --enable-auto-tool-choice' },
     'qwen3.5-122b': { name: 'Qwen3.5 122B-A10B', org: 'Alibaba Qwen', date: '2026-02', images: true, total: 122, active: 10, gb: 81,
-      ollama: 'qwen3.5:122b', lms: 'Qwen3.5 122B A10B', hf: 'Qwen/Qwen3.5-122B-A10B' },
+      gguf: 'unsloth/Qwen3.5-122B-A10B-GGUF:Q4_K_M', lms: 'Qwen3.5 122B A10B', hf: 'Qwen/Qwen3.5-122B-A10B' },
     'mistral-small-4': { name: 'Mistral Small 4', org: 'Mistral', date: '2026-03', images: true, total: 119, active: 6, gb: 70,
-      lms: 'Mistral Small 4' },
-    'nemotron-3.5-super-vl': { name: 'Nemotron 3.5 Super VL 120B-A12B', org: 'NVIDIA', date: '2026-10', images: true, total: 120, active: 12, gb: 75,
-      ollama: 'nemotron-3.5-super', hf: 'nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
-    'nemotron-3.5-lightning': { name: 'Nemotron 3.5 Lightning 30B-A3B', org: 'NVIDIA', date: '2026-08', images: false, total: 30, active: 3, gb: 25,
-      ollama: 'nemotron-3.5-lightning:30b-a3b', hf: 'nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
-    'qwen3.5-4b': { name: 'Qwen3.5 4B', org: 'Alibaba Qwen', date: '2026-03', images: true, total: 4, gb: 3.4,
-      ollama: 'qwen3.5:4b' },
-    'deepseek-v4-flash': { name: 'DeepSeek V4 Flash', org: 'DeepSeek', date: '2026-04', images: false, total: 284, active: 13, gb: 160,
-      hf: 'deepseek-ai/DeepSeek-V4-Flash', recipe: 'https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash' },
+      gguf: 'unsloth/Mistral-Small-4-119B-2603-GGUF:UD-Q4_K_M', lms: 'Mistral Small 4' },
+    'nemotron-3.5-super-vl': { name: 'Nemotron 3.5 Super VL 120B-A12B', org: 'NVIDIA', date: '2026-10', images: true, total: 120, active: 12, gb: 72,
+      gguf: 'ggml-org/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-GGUF:Q4_0', hf: 'nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
+    'nemotron-3.5-lightning': { name: 'Nemotron 3.5 Lightning 30B-A3B', org: 'NVIDIA', date: '2026-08', images: false, total: 30, active: 3, gb: 19,
+      gguf: 'ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF:Q4_0', hf: 'nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
+    'qwen3.5-4b': { name: 'Qwen3.5 4B', org: 'Alibaba Qwen', date: '2026-03', images: true, total: 4, gb: 3,
+      gguf: 'ggml-org/Qwen3.5-4B-GGUF:Q4_K_M', ollama: 'qwen3.5:4b' },
+    'deepseek-v4-flash': { name: 'DeepSeek V4 Flash', org: 'DeepSeek', date: '2026-04', images: false, total: 284, active: 13, gb: 155,
+      gguf: 'ggml-org/DeepSeek-V4-Flash-GGUF:MXFP4', hf: 'deepseek-ai/DeepSeek-V4-Flash', recipe: 'https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash' },
   };
   for (const [id, m] of Object.entries(MODELS)) m.why = `models.why.${id}`;
 
@@ -338,8 +348,10 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function getIt(m, s) {
     const shell = tr(s.hw === 'ryzen' || s.hw === 'gpu' ? 'models.shell.terminalPowerShell' : 'models.shell.terminal');
     const lines = [];
-    if (m.ollama) lines.push(`<p>${tr('models.get.ollama')}</p>${code(`ollama pull ${m.ollama}\nollama run ${m.ollama} "say hi"    # ${tr('models.get.quickTest')}`, shell)}`);
-    else if (s.hw !== 'spark') lines.push(`<p class="note">${tr('models.get.noOllama')}</p>`);
+    // llama.cpp fetches the model itself; `-c` is the longer context Cedar needs. The Jetson has
+    // no ready-made llama.cpp build for its CUDA, and its developer story uses Ollama.
+    if (s.hw === 'jetson' && m.ollama) lines.push(`<p>${tr('models.get.ollama')}</p>${code(`ollama pull ${m.ollama}\nollama run ${m.ollama} "say hi"    # ${tr('models.get.quickTest')}`, shell)}`);
+    else if (m.gguf) lines.push(`<p>${tr('models.get.llama')}</p>${code(`llama-server -hf ${m.gguf} --jinja -c 32768\n# ${tr('models.get.llamaFirst')}`, shell)}`);
     if (m.lms && s.hw !== 'jetson') lines.push(`<p>${tr(s.hw === 'mac' ? 'models.get.lmsMac' : 'models.get.lms', { name: esc(m.lms) })}</p>`);
     if (s.hw === 'spark') {
       lines.push(`<p>${tr('models.get.vllm', {
@@ -387,26 +399,33 @@ ol.setup strong{color:var(--ink);font-weight:600}
       </ol>`;
     }
     const remote = s.where === 'box';
-    const serve = s.hw === 'spark' ? 'vllm' : 'ollama';
-    const port = serve === 'vllm' ? 8000 : 11434;
-    const ollamaHost = s.hw === 'mac'
-      ? `launchctl setenv OLLAMA_HOST 0.0.0.0\n# ${tr('models.code.macRestart')}`
-      : s.hw === 'ryzen' || s.hw === 'gpu'
-        ? `setx OLLAMA_HOST 0.0.0.0\n# ${tr('models.code.winRestart')}\n# ${tr('models.code.linuxRestart')}`
-        : 'sudo systemctl edit ollama\n#   [Service]\n#   Environment="OLLAMA_HOST=0.0.0.0"\nsudo systemctl restart ollama';
+    // A Spark serves with vLLM, the Jetson with Ollama (see getIt), everything else with llama.cpp.
+    const serve = s.hw === 'spark' ? 'vllm' : s.hw === 'jetson' ? 'ollama' : 'llamacpp';
+    const port = { vllm: 8000, ollama: 11434, llamacpp: 8080 }[serve];
+    const addr = remote ? `http://&lt;${esc(tr('models.setup.thatMachine'))}&gt;:${port}/v1` : `http://127.0.0.1:${port}/v1`;
+    const model = list.length ? esc(list[0].name) : tr('models.setup.it');
+    const use = `<li>${tr(remote ? 'models.setup.addrRemote' : 'models.setup.addrHere', { addr, model })}</li>`;
+    if (serve === 'llamacpp') {
+      // Where Cedar's own setup can do all of this (install.html's "Let Cedar do it"): a Mac
+      // with 32 GB or more, or a graphics card, on the computer Cedar runs on.
+      const cedarCan = CEDAR_SETS_UP_LLAMA && !remote && ((s.hw === 'mac' && s.mem !== '24') || s.hw === 'gpu');
+      return `<ol class="setup">
+        <li>${tr(remote ? 'models.setup.llamaRemote' : 'models.setup.llamaHere')}</li>
+        ${use}
+        ${tick}
+      </ol>${cedarCan ? `<p class="note">${tr('models.setup.cedar', { install: 'install.html?host=yes&serve=cedar' })}</p>` : ''}`;
+    }
     const listen = remote
       ? (serve === 'vllm'
         ? `<li>${tr('models.setup.listenVllm')}</li>`
-        : `<li>${tr('models.setup.listenOllama')}${code(ollamaHost, tr('models.shell.modelMachine'))}</li>`)
+        : `<li>${tr('models.setup.listenOllama')}${code('sudo systemctl edit ollama\n#   [Service]\n#   Environment="OLLAMA_HOST=0.0.0.0"\nsudo systemctl restart ollama', tr('models.shell.modelMachine'))}</li>`)
       : '';
-    const addr = remote ? `http://&lt;${esc(tr('models.setup.thatMachine'))}&gt;:${port}/v1` : `http://127.0.0.1:${port}/v1`;
     const install = `install.html?host=yes&serve=${serve}`;
-    const what = serve === 'vllm' ? 'vLLM' : s.hw === 'jetson' ? 'Ollama' : tr('models.setup.ollamaOrLms');
-    const model = list.length ? esc(list[0].name) : tr('models.setup.it');
+    const what = serve === 'vllm' ? 'vLLM' : 'Ollama';
     return `<ol class="setup">
       <li>${tr(remote ? 'models.setup.installRemote' : 'models.setup.installHere', { what, install })}</li>
       ${listen}
-      <li>${tr(remote ? 'models.setup.addrRemote' : 'models.setup.addrHere', { addr, model })}</li>
+      ${use}
       ${tick}
     </ol>`;
   }
