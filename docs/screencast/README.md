@@ -32,10 +32,21 @@ The narration is 458 words, about three minutes of speech. Each scene of the fil
 as long as its narration at 150 words a minute plus a second of air, so the simple way to keep
 voice and picture together is one clip a scene:
 
-1. In ElevenLabs, generate a clip from each `narration/NN-<scene>.txt` with the same voice and
-   settings, and save it under the same name (`01-title.mp3`, `02-first-run.mp3`, ...).
+1. Make a clip from each `narration/NN-<scene>.txt` with the same voice and settings, saved
+   under the same name (`01-title.mp3`, `02-first-run.mp3`, ...). `tools/voice.sh` does that
+   through the ElevenLabs API, with your API key and the ID of the voice:
+
+   ```sh
+   ELEVENLABS_API_KEY=... docs/screencast/tools/voice.sh <voice-id>        # into audio/
+   ELEVENLABS_API_KEY=... docs/screencast/tools/voice.sh <voice-id> de     # into audio-de/
+   ```
+
+   It keeps the clips that are already there, so it can be run again after a failure; delete a
+   clip to have it made anew. By hand, paste each text into ElevenLabs' Text to Speech page and
+   download the MP3 under that name.
 2. `tools/mux.sh <folder with the clips>` starts each clip 0.4 s into its scene and writes
-   `cedar-intro-narrated.mp4`.
+   `cedar-intro-narrated.mp4`. The second argument names another output; never the silent
+   `cedar-intro.mp4` itself, which is what it reads.
 
 The texts spell three things the way they should be said: "V L L M", "llama C P P" and "okay".
 The wording as written is in `script.md`. If a clip runs longer than its scene (the times are in
@@ -51,8 +62,8 @@ Réglages, Configuración) reads "Settings" on screen. The translations are in
 `tools/narration.<lang>.json`, one text a scene; `tools/make_script.py` writes the files from them
 and says which scenes may run longer than the film, at the pace the English has.
 
-For a narrated film in one of them, generate the clips from `narration/<lang>/` and run
-`tools/mux.sh <folder with the clips> cedar-intro-<lang>.mp4`. A clip that outlasts its scene
+For a narrated film in one of them, make the clips with `tools/voice.sh <voice-id> <lang>` and run
+`tools/mux.sh audio-<lang> cedar-intro-<lang>.mp4`. A clip that outlasts its scene
 pushes the next one back instead of talking over it, and `mux.sh` says where that happened.
 
 ## Recording it again
