@@ -64,6 +64,30 @@ const cedarI18n = (() => {
     return 'en';
   }
 
+  const PENDING = 'cedar-locale-pending';
+  /** The query parameter the desktop app adds to the chat's address: the language picked on its
+   *  setup page (see desktop/src/window.rs). */
+  const APP_PARAM = 'app-locale';
+
+  /** Take the language the desktop app hands over, when this browser has none of its own yet, so
+   *  the first visit doesn't ask the question the app's setup already did. It is saved on the
+   *  server too (now if the page has its token, else on a later load). The parameter is taken out
+   *  of the address either way. */
+  function fromApp() {
+    try {
+      const url = new URL(location.href);
+      if (!url.searchParams.has(APP_PARAM)) return;
+      const n = normalize(url.searchParams.get(APP_PARAM));
+      url.searchParams.delete(APP_PARAM);
+      history.replaceState(history.state, '', url);
+      if (n && !stored()) {
+        localStorage.setItem(KEY, n);
+        localStorage.setItem(PENDING, '1');
+      }
+    } catch { /* storage unavailable: the first visit asks */ }
+  }
+  fromApp();
+
   const locale = stored() || fromBrowser();
   const lang = locale.split('-')[0];
   const swiss = locale === 'de-CH';
@@ -138,8 +162,6 @@ const cedarI18n = (() => {
       throw new Error(body?.error?.message || `${res.status}`);
     }
   }
-
-  const PENDING = 'cedar-locale-pending';
 
   /** Switch to `tag` (or back to the browser's language with ''): saved here and on the server,
    *  then the page reloads in it. If the server can't be told yet (no access token on a first
