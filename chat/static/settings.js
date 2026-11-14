@@ -959,6 +959,8 @@ const cedarSettings = (() => {
       .then(([servers, suggested]) => ({
         ...servers,
         providers: servers.providers.map((p) => ({ ...p, suggested: [...((suggested.providers || {})[p.name] || []), ...(suggested.default || [])] })),
+        // The sets the reasoning-levels dropdown offers, and which of them a model takes.
+        reasoning: { presets: suggested.reasoning?.presets || [], models: suggested.reasoning?.models || [] },
       }))
       .catch(() => { modelServersLoad = null; return { providers: [], presets: [] }; });
     return modelServersLoad;
@@ -1048,9 +1050,12 @@ const cedarSettings = (() => {
     if (runByApp) {
       side.append(button(tr('settings.models.manage'), () => { window.location.href = SETUP_MODEL_PATH; }));
     } else {
-      side.append(button(tr('settings.edit'), () => {
+      side.append(button(tr('settings.edit'), async () => {
         if (form) { form.remove(); form = null; return; }
-        form = modelForm(entry, status, () => { form?.remove(); form = null; });
+        // The lists hold the reasoning-level sets the form's dropdown offers.
+        const servers = await modelServers();
+        if (form) return;
+        form = modelForm(entry, status, () => { form?.remove(); form = null; }, { servers });
         row.append(form);
         form.querySelector('input').focus();
       }));
@@ -1161,6 +1166,8 @@ const cedarSettings = (() => {
     });
     // A new entry without a label or id yet takes its id from the chosen name.
     model.addEventListener('change', () => { if (!idTouched && !label.value.trim()) id.value = slug(model.value.split('/').pop()); });
+    // The reasoning levels follow the chosen model until they are set by hand (see below).
+    model.addEventListener('change', () => followModel());
     // A changed address or key may serve other models: list again before saving.
     const stale = () => {
       listed = null;
@@ -1203,10 +1210,45 @@ const cedarSettings = (() => {
         listBtn.textContent = tr('settings.form.list');
       }
     }
-    const levels = input(tr('settings.form.levelsPlaceholder'), (entry?.reasoning_levels || []).join(', '), tr('settings.form.levels'));
+    // The reasoning levels the model takes: one of the usual sets (/suggested-models.json), or,
+    // under "Other…", whatever is typed. A set is an option whose value is its levels joined.
+    const OTHER = '\u0000other';
+    const levelSet = el('select');
+    levelSet.setAttribute('aria-label', tr('settings.form.levels'));
+    levelSet.append(new Option(tr('settings.form.levelsNone'), ''));
+    const presets = (servers.reasoning?.presets || []).map((set) => set.join(', '));
+    for (const set of presets) levelSet.append(new Option(tr('settings.models.levels', { levels: set }), set));
+    levelSet.append(new Option(tr('settings.add.other'), OTHER));
+    const levels = input(tr('settings.form.levelsPlaceholder'), '', tr('settings.form.levels'));
+    const showLevels = (list) => {
+      const joined = list.join(', ');
+      const known = !joined || presets.includes(joined);
+      levelSet.value = known ? joined : OTHER;
+      levels.value = known ? '' : joined;
+      levels.hidden = known;
+    };
+    showLevels(entry?.reasoning_levels || []);
     const defaultLevel = el('select');
     defaultLevel.setAttribute('aria-label', tr('settings.form.defaultLevel'));
-    const parseLevels = () => [...new Set(levels.value.split(',').map((l) => l.trim()).filter(Boolean))];
+    const parseLevels = () => [...new Set((levelSet.value === OTHER ? levels.value : levelSet.value).split(',').map((l) => l.trim()).filter(Boolean))];
+    // What the chosen model takes, by the file's loose matching; none when no entry names it.
+    let levelsTouched = false;
+    const startModel = entry?.model || '';
+    const followModel = () => {
+      // Set by hand, or a saved entry whose model is as it was: left alone.
+      if (levelsTouched || !model.value || model.value === startModel) return;
+      const plain = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const hit = (servers.reasoning?.models || []).find((m) => plain(model.value).includes(plain(m.match)));
+      showLevels(hit ? hit.levels : []);
+      fillDefault();
+    };
+    levelSet.addEventListener('change', () => {
+      levelsTouched = true;
+      levels.hidden = levelSet.value !== OTHER;
+      if (!levels.hidden) levels.focus();
+      fillDefault();
+    });
+    levels.addEventListener('input', () => { levelsTouched = true; });
     const fillDefault = () => {
       const current = defaultLevel.value || entry?.default_reasoning || '';
       defaultLevel.textContent = '';
@@ -1300,7 +1342,7 @@ const cedarSettings = (() => {
       if (entry?.api_key_set && canSaveKey) form.append(clearKey);
       form.append(modelRow);
     }
-    form.append(levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
+    form.append(levelSet, levels, defaultLevel, maxTokensField, multimodalLabel, makeDefault);
     form.append(el('small', 'cedar-set-field-note', tr('settings.form.note')));
     form.append(saveBtn, button(tr('settings.cancel'), onDone));
     form.addEventListener('submit', async (e) => {

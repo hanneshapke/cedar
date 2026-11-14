@@ -6,7 +6,10 @@
     "actually lists is suggested; if several of its models match, the shortest name wins.",
     "'providers' is keyed by the provider's name in model-servers.json. A provider's own entries are",
     "tried first, then 'default'. A provider without entries uses 'default' alone.",
-    "Suggest only models that call tools well: Cedar acts through tool calls."
+    "Suggest only models that call tools well: Cedar acts through tool calls.",
+    "'reasoning' fills the reasoning-levels dropdown of the chat's Settings: 'presets' are the sets it",
+    "offers, and 'models' says which levels a model takes ('match' is loose in the same way; the first",
+    "entry that a model's name contains wins). A model no entry matches starts without reasoning levels."
   ],
   "default": [
     "deepseek v4.1 flash",
@@ -19,8 +22,26 @@
   ],
   "providers": {
     "Baseten": ["deepseek v4.1 flash", "glm 5.3", "deepseek v4 pro"],
-    "Doubleword": ["deepseek v4.1 flash", "glm 5.3", "kimi k2.6", "deepseek v4 pro", "qwen3.6 35b", "gemma 4 31b"],
+    "Doubleword": [
+      "deepseek v4.1 flash",
+      "glm 5.3",
+      "kimi k2.6",
+      "deepseek v4 pro",
+      "qwen3.6 35b",
+      "gemma 4 31b"
+    ],
     "DeepSeek": ["deepseek v4.1 flash", "deepseek v4 pro", "deepseek chat"],
     "Mistral": ["mistral small 4", "mistral large", "mistral small"]
+  },
+  "reasoning": {
+    "presets": [
+      ["low", "medium", "high"],
+      ["minimal", "low", "medium", "high"],
+      ["none", "low", "high", "max"]
+    ],
+    "models": [
+      { "match": "deepseek v4", "levels": ["none", "low", "high", "max"] },
+      { "match": "gpt oss", "levels": ["low", "medium", "high"] }
+    ]
   }
 }

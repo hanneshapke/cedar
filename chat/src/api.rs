@@ -2675,6 +2675,21 @@ mod model_servers_tests {
             assert!(list["providers"].as_array().unwrap().iter().any(|p| p["name"] == name.as_str()), "{name}");
             assert!(models.as_array().unwrap().iter().all(|m| m.is_string()), "{name}");
         }
+        // The reasoning-level sets of Settings' dropdown, and the models that take them: levels
+        // are tokens cedar accepts (src/integrations.rs, clean_reasoning_levels).
+        let level = |l: &serde_json::Value| {
+            let l = l.as_str().unwrap();
+            !l.is_empty() && l.len() <= 32 && l.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        };
+        let presets = suggested["reasoning"]["presets"].as_array().unwrap();
+        assert!(!presets.is_empty());
+        for set in presets {
+            assert!(!set.as_array().unwrap().is_empty() && set.as_array().unwrap().iter().all(level));
+        }
+        for model in suggested["reasoning"]["models"].as_array().unwrap() {
+            assert!(!model["match"].as_str().unwrap().trim().is_empty());
+            assert!(!model["levels"].as_array().unwrap().is_empty() && model["levels"].as_array().unwrap().iter().all(level));
+        }
     }
 
     /// Settings' "Add a model" reads this file as it is served; the desktop app's tests check the

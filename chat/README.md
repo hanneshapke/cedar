@@ -811,7 +811,8 @@ for the server address
 needs one, an id (filled in from the label or the model), a label, and the model: **List models** asks the server which models it serves (with the key
 typed, else the entry's saved one) and the model is picked from that list, never typed. Changing
 the address or key empties the list until it is listed again. Then come the reasoning levels it takes as `reasoning_effort`
-(comma-separated, like `none, low, high, max`), the level to use when a message picks none,
+(a dropdown of the usual sets, like `none, low, high, max`, with *Other…* for a list typed by hand; it
+follows the chosen model where `static/suggested-models.json` names it), the level to use when a message picks none,
 whether it accepts images (see [Attachments](#attachments)), and whether it is the
 default for new chats. cedar checks the address by listing the server's models
 again before saving; the edit form starts with the names it listed last time, with a warning on the entry if
