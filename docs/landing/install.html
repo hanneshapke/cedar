@@ -215,12 +215,6 @@ ol.setup strong{color:var(--ink);font-weight:600}
     for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
     return true;
   }
-  // The first release whose setup window offers three ways to get a model (run one here with
-  // llama.cpp, a hosted provider, a server you already run), and whose Linux archive has
-  // cedar-llama. Until the latest release is at least this one, the first of the three ways is
-  // shown as coming and cannot be chosen, and the steps describe the older single form.
-  const MODEL_OPTIONS_SINCE = '0.9.0';
-  const hasModelOptions = () => releaseIsAtLeast(MODEL_OPTIONS_SINCE);
   // Cedar on another computer was chosen: this one only gets the app, as a window onto it.
   const remote = (s) => s.use === 'remote';
 
@@ -533,9 +527,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const model = CEDAR_MODELS[memKind(s)][s.mem];
     if (!model) return { no: memKind(s) === 'mac' ? 'macMem' : 'gpuMem' };
     const small = CEDAR_SMALL.includes(model);
-    // The release on offer cannot do this yet: `would` is what the next one will run here, and
-    // `capable` says the machine can run a full-size model, by hand until then.
-    return hasModelOptions() ? { model, small } : { no: 'notYet', would: model, capable: !small };
+    return { model, small };
   }
 
   // The guide's suggestions for a server run by hand on this computer, best first.
@@ -556,7 +548,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function recommended(s) {
     const plan = cedarPlan(s);
     if (plan.model && !plan.small) return 'cedar';
-    if (s.mem === 'spark' || s.mem === 'jetson' || plan.capable) return 'own';
+    if (s.mem === 'spark' || s.mem === 'jetson') return 'own';
     return plan.no === 'os' || plan.no === 'pickMem' ? '' : 'hosted';
   }
 
@@ -589,8 +581,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const rec = recommended(s);
     const ways = [
       { id: 'cedar', title: tr('install.way.cedar'), what: tr('install.way.cedarWhat'), off: !plan.model,
-        coming: !hasModelOptions(),
-        verdict: plan.model || plan.would ? tr('install.way.cedarYes', { model: MODELS[plan.model || plan.would].name, gb: CEDAR_GB[plan.model || plan.would] }) : tr('install.cedar.no.' + plan.no) },
+        verdict: plan.model ? tr('install.way.cedarYes', { model: MODELS[plan.model].name, gb: CEDAR_GB[plan.model] }) : tr('install.cedar.no.' + plan.no) },
       { id: 'hosted', title: tr('install.way.hosted'), what: tr('install.way.hostedWhat'), verdict: tr('install.way.hostedYes') },
       { id: 'own', title: tr('install.way.own'), what: tr('install.way.ownWhat'),
         verdict: picks(s).length ? tr('install.way.ownYes', { model: picks(s)[0].name }) : tr('install.way.ownAny') },
@@ -598,9 +589,9 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const cards = ways.map((w, i) => `<button type="button" class="way" data-way="${w.id}" aria-pressed="${s.model === w.id}"${w.off ? ' disabled' : ''}>
         <span class="way-num">${i + 1}</span>
         <span class="way-title">${esc(w.title)}</span>
-        ${w.coming ? badge(tr('install.way.coming')) : rec === w.id ? badge(tr('install.recommended'), 'pick') : ''}
+        ${rec === w.id ? badge(tr('install.recommended'), 'pick') : ''}
         <span class="way-what">${esc(w.what)}</span>
-        <span class="way-verdict${w.off && !w.coming ? ' no' : ''}">${esc(w.verdict)}</span>
+        <span class="way-verdict${w.off ? ' no' : ''}">${esc(w.verdict)}</span>
       </button>`).join('');
     document.getElementById('model').innerHTML = `<div class="ways">${cards}</div>${panel(s, plan)}`;
   }
@@ -686,9 +677,9 @@ ol.setup strong{color:var(--ink);font-weight:600}
 
   // Where Cedar finds each kind of model server, and what the setup window calls it.
   const SERVERS = {
-    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1', pick: tr('install.pick.preset', { name: 'Ollama' }) },
-    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1', pick: tr('install.pick.preset', { name: 'LM Studio' }) },
-    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1', pick: tr('install.pick.vllm') },
+    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1' },
+    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1' },
+    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1' },
     llamacpp: { name: 'llama.cpp', addr: 'http://127.0.0.1:8080/v1' },
     // llama.cpp set up and run by Cedar (the setup window, or cedar-llama on Linux).
     cedar: { name: 'llama.cpp', addr: 'http://127.0.0.1:18081/v1', pick: tr('install.pick.cedar') },
@@ -706,13 +697,6 @@ ol.setup strong{color:var(--ink);font-weight:600}
 
   // What to choose in the setup window's model step (Mac and Windows) for the answers given.
   function modelChoice(s) {
-    // A release from before the setup window had its three options: one form with presets.
-    if (!hasModelOptions()) {
-      if (s.model === 'own' && SERVERS[s.serve] && SERVERS[s.serve].pick) return SERVERS[s.serve].pick;
-      if (s.model === 'own' && s.serve) return tr('install.pick.addressOld', { address: esc(modelAddress(s)) });
-      if (s.model === 'hosted' && s.provider) return tr('install.pick.provider', { address: esc(PROVIDERS[s.provider].addr) });
-      return tr('install.pick.any');
-    }
     if (cedarServes(s)) return SERVERS.cedar.pick;
     if (s.model === 'own' && s.serve === 'vllm') return tr('install.pick.vllmNew');
     if (s.model === 'own' && s.serve) return tr('install.pick.presetNew', { name: SERVERS[s.serve].name });
@@ -793,7 +777,6 @@ ol.setup strong{color:var(--ink);font-weight:600}
       .replace('curl -s', s.os === 'windows' ? 'curl.exe -s' : 'curl -s');
     const where = s.os === 'linux'
       ? `<p>${tr('install.provider.whereLinux', { address: esc(p.addr) })}</p>`
-      : !hasModelOptions() ? `<p>${tr('install.provider.whereSetup', { address: esc(p.addr) })}</p>`
       : s.provider === 'other' ? `<p>${tr('install.provider.whereSetupOtherNew', { address: esc(p.addr) })}</p>`
       : `<p>${tr('install.provider.whereSetupNew', { name: p.name })}</p>`;
     return step(tr('install.provider.title', { name: p.name }), `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
