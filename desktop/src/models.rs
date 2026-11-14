@@ -228,12 +228,13 @@ mod tests {
             "base_url": "http://127.0.0.1:11434/v1", "model": "qwen3:30b", "label": "qwen3:30b", "api_key": "key",
         }));
         // The one just chosen becomes the default; one the app installed brings what it knows.
-        let extras = Extras { label: "gpt-oss 20B", max_tokens: 8192, reasoning_levels: &["low", "high"] };
-        let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gpt-oss-20b", extras: Some(extras), make_default: true };
+        let extras = Extras { label: "Gemma 4 E4B", max_tokens: 8192, reasoning_levels: &["low", "high"], multimodal: true };
+        let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-e4b", extras: Some(extras), make_default: true };
         let json = serde_json::to_value(spec(&llama, "http://127.0.0.1:18081/v1")).unwrap();
         assert_eq!(json, serde_json::json!({
-            "base_url": "http://127.0.0.1:18081/v1", "model": "gpt-oss-20b", "label": "gpt-oss 20B", "api_key": "k",
+            "base_url": "http://127.0.0.1:18081/v1", "model": "gemma-4-e4b", "label": "Gemma 4 E4B", "api_key": "k",
             "is_default": true, "max_tokens": 8192, "reasoning_levels": ["low", "high"], "default_reasoning": "",
+            "multimodal": true,
         }));
     }
 }
@@ -251,6 +252,8 @@ pub struct Extras<'a> {
     pub label: &'a str,
     pub max_tokens: u32,
     pub reasoning_levels: &'a [&'a str],
+    /// It reads images (the app loads its vision projector), so cedar may send it some.
+    pub multimodal: bool,
 }
 
 #[derive(Serialize)]
@@ -272,6 +275,8 @@ struct ModelSpec<'a> {
     /// Empty: no default level, since one of another model's levels would be refused.
     #[serde(skip_serializing_if = "Option::is_none")]
     default_reasoning: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    multimodal: Option<bool>,
 }
 
 /// One entry for cedar's registry.
@@ -298,6 +303,7 @@ fn spec<'a>(entry: &'a Entry<'a>, base: &'a str) -> ModelSpec<'a> {
         max_tokens: extras.map(|e| e.max_tokens),
         reasoning_levels: extras.map(|e| e.reasoning_levels),
         default_reasoning: extras.map(|_| ""),
+        multimodal: extras.map(|e| e.multimodal),
     }
 }
 

@@ -312,20 +312,23 @@ greyed out and the other two remain.
 | GPU memory | Model | Download |
 | --- | --- | --- |
 | under 12 GB | not offered | |
-| 12 GB | Gemma 4 E4B (8-bit) | 8 GB |
-| 16 GB | gpt-oss 20B | 12 GB |
+| 12 or 16 GB | Gemma 4 E4B (8-bit) | 9 GB |
+| 20 GB | Gemma 4 26B-A4B | 15 GB |
 | 24 GB and more | Qwen3.6 35B-A3B | 21 GB |
-| 72 GB and more | gpt-oss 120B | 63 GB |
+| 80 GB and more | Qwen3.5 122B-A10B | 77 GB |
 
-These are the [model guide](https://hanneshapke.github.io/cedar/models.html)'s own first
-suggestions for text; the list is `llama/src/catalog.rs`. Gemma 4 E4B is a small model, all that
-a 12 GB card holds: it answers, but can miss steps in longer tasks. The page says so and keeps
-*Recommended* on the hosted provider there.
+Every one of them reads images as well as text: the download includes the model's vision
+projector, `llama-server` loads it, and cedar is told the model takes images, so attachments
+work without ticking anything. They are the
+[model guide](https://hanneshapke.github.io/cedar/models.html)'s own suggestions for a model that
+sees; the list is `llama/src/catalog.rs`. Gemma 4 E4B is a small model, all that a 12 or 16 GB
+card holds beside its context: it answers, but can miss steps in longer tasks. The page says so
+and keeps *Recommended* on the hosted provider there.
 
 On a Mac the GPU shares the computer's memory and macOS lets it have about two thirds, so the
-memory that counts is two thirds of the Mac's: a 32 GB Mac gets gpt-oss 20B, a Mac with 36 to
-96 GB Qwen3.6 35B-A3B, a 128 GB one gpt-oss 120B. A Mac with less than 32 GB is not offered a
-setup: the model would leave macOS and Docker too little. On Windows it is the memory of the graphics card
+memory that counts is two thirds of the Mac's: a 32 GB Mac gets Gemma 4 26B-A4B, a Mac with 36 to
+96 GB Qwen3.6 35B-A3B, a 128 GB one Qwen3.5 122B-A10B. A Mac with less than 32 GB is not offered
+a setup: the model would leave macOS and Docker too little. On Windows it is the memory of the graphics card
 with the most; several cards are not added up. Every model is under the Apache-2.0 license.
 
 The button does this, with each step on the page:
@@ -335,8 +338,8 @@ The button does this, with each step on the page:
    build with NVIDIA's runtime libraries for an NVIDIA card (about 700 MB), or the Vulkan build
    for an AMD or Intel card and for an NVIDIA driver older than 551.61. Intel Macs and Windows
    on Arm are not offered a setup.
-2. **Downloads the model.** One GGUF file from the `ggml-org` organization on Hugging Face,
-   pinned to a commit. *Stop the download* stops it; the button continues it later from where it
+2. **Downloads the model.** Its GGUF file and its vision projector, from the `ggml-org`
+   organization on Hugging Face (the largest, in three parts, from `unsloth`), pinned to a commit. *Stop the download* stops it; the button continues it later from where it
    stopped, as it does after a connection that dropped.
 3. **Checks both.** Every file has its size and SHA-256 compiled into the app (`llama/assets.txt`
    and `llama/src/catalog.rs`), and one that differs is deleted, not used.
@@ -344,8 +347,8 @@ The button does this, with each step on the page:
    setup stops there and says so: on the processor alone these models answer too slowly for
    cedar, which gives up on a reply after 300 seconds. Updating the graphics driver usually
    fixes it.
-5. **Starts `llama-server`** with the model, a context of 32,768 tokens and all layers on the
-   GPU, listening on `127.0.0.1:18081` with a key of its own, and registers it with cedar like
+5. **Starts `llama-server`** with the model, its vision projector, a context of 32,768 tokens
+   and all layers on the GPU, listening on `127.0.0.1:18081` with a key of its own, and registers it with cedar like
    any other model server. Loading the model takes from seconds to a few minutes.
 
 Nothing here needs an administrator's password: llama.cpp and the model go into the app's own
@@ -606,7 +609,7 @@ the app starts nothing meanwhile.
 
 `model_source` records how the model server in `llm_base_url` was named on the setup page: `own`
 or `hosted`; in a file from before the page had the options it is missing, and the address
-decides. `llama` (`{"build": "macos-arm64", "model": "gpt-oss-20b"}`, or `null`) names what the
+decides. `llama` (`{"build": "macos-arm64", "model": "gemma-4-26b-a4b"}`, or `null`) names what the
 app installed when it runs a model with llama.cpp, on `llama_port` (18081) with the key in
 `secrets.llama_api_key`. It is separate from the `llm_*` fields, which may be empty beside it.
 

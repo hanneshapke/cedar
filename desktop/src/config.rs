@@ -83,7 +83,7 @@ pub struct Remote {
 pub struct Llama {
     /// `cedar_llama::release::Build::id`, such as `macos-arm64`.
     pub build: String,
-    /// `cedar_llama::catalog::Model::id`, such as `gpt-oss-20b`.
+    /// `cedar_llama::catalog::Model::id`, such as `gemma-4-26b-a4b`.
     pub model: String,
 }
 
@@ -339,7 +339,7 @@ mod tests {
     fn a_model_server_or_llama_is_enough() {
         let mut cfg = Config::default();
         assert!(!cfg.has_server() && !cfg.configured());
-        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gpt-oss-20b".into() });
+        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() });
         assert!(!cfg.has_server() && cfg.configured());
         cfg.llm_base_url = "https://api.groq.com/openai/v1".into();
         assert!(!cfg.has_server(), "an address without a model is not a server yet");
@@ -354,9 +354,9 @@ mod tests {
     #[test]
     fn llama_gets_out_of_the_model_server_fields() {
         let mut cfg = Config::default();
-        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gpt-oss-20b".into() });
+        cfg.llama = Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() });
         cfg.llm_base_url = "http://127.0.0.1:18081/v1".into();
-        cfg.llm_model = "gpt-oss-20b".into();
+        cfg.llm_model = "gemma-4-e4b".into();
         cfg.llm_api_key = "k".into();
         cfg.model_source = "llama".into();
         assert!(cfg.split_llama());

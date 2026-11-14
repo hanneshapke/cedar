@@ -157,7 +157,7 @@ async fn detect() -> Result<(), String> {
                 "Model:  {} ({}, a download of {:.1} GB)",
                 plan.model.id,
                 plan.model.label,
-                plan.model.size as f64 / 1e9
+                plan.model.size() as f64 / 1e9
             );
             println!("\nRun `cedar-llama install` to download both.");
         }
@@ -238,7 +238,11 @@ async fn install(options: Options) -> Result<(), String> {
     eprintln!();
     let file = file.map_err(|e| e.to_string())?;
 
-    println!("Installed {} and {}.", exe.display(), file.display());
+    println!(
+        "Installed {} and {}.",
+        exe.display(),
+        file.weights.display()
+    );
     println!("\nStart the model server (it answers on this computer only):");
     println!("  cedar-llama serve");
     println!("\nThen register it with cedar, with one of its admin keys:");
@@ -257,6 +261,8 @@ fn registration(model: &Model, port: u16) -> String {
         "model": model.id,
         "label": model.label,
         "max_tokens": model.max_tokens,
+        // Every model here comes with its vision projector, so cedar may send it images.
+        "multimodal": true,
     });
     if !model.reasoning_levels.is_empty() {
         body["reasoning_levels"] = model.reasoning_levels.into();
@@ -298,7 +304,7 @@ async fn serve(options: Options) -> Result<(), String> {
     }
     .ok_or("that model is not downloaded; run `cedar-llama install` first")?;
 
-    let args = server::args(model, &file.to_string_lossy(), options.port);
+    let args = server::args(model, &file, options.port);
     eprintln!("Serving {} at {}", model.id, server::base_url(options.port));
     let mut command = std::process::Command::new(&exe);
     command.args(args);
@@ -334,7 +340,7 @@ mod tests {
             "--build",
             "ubuntu-vulkan-x64",
             "--model",
-            "gpt-oss-20b",
+            "gemma-4-e4b",
             "--port",
             "9000",
         ]))
@@ -343,11 +349,11 @@ mod tests {
             (o.dir, o.build, o.port),
             (PathBuf::from("/data"), Some(Build::LinuxVulkan), 9000)
         );
-        assert_eq!(o.model.unwrap().id, "gpt-oss-20b");
+        assert_eq!(o.model.unwrap().id, "gemma-4-e4b");
         assert!(parse(&args(&["--model", "gpt-5"]))
             .err()
             .unwrap()
-            .contains("gpt-oss-20b"));
+            .contains("gemma-4-e4b"));
         assert!(parse(&args(&["--build", "x"]))
             .err()
             .unwrap()
@@ -359,24 +365,14 @@ mod tests {
 
     #[test]
     fn what_cedar_is_told() {
-        let body: serde_json::Value = serde_json::from_str(&registration(
-            catalog::by_id("gpt-oss-20b").unwrap(),
-            18081,
-        ))
-        .unwrap();
+        let model = catalog::by_id("gemma-4-e4b").unwrap();
+        let body: serde_json::Value = serde_json::from_str(&registration(model, 18081)).unwrap();
         assert_eq!(body["base_url"], "http://127.0.0.1:18081/v1");
-        assert_eq!(body["model"], "gpt-oss-20b");
+        assert_eq!(body["model"], "gemma-4-e4b");
+        assert_eq!(body["label"], "Gemma 4 E4B");
         assert_eq!(body["max_tokens"], 8192);
-        assert_eq!(
-            body["reasoning_levels"],
-            serde_json::json!(["low", "medium", "high"])
-        );
+        assert_eq!(body["multimodal"], true);
         // A model without reasoning levels leaves the field out, which keeps cedar's own.
-        let body: serde_json::Value = serde_json::from_str(&registration(
-            catalog::by_id("qwen3.6-35b-a3b").unwrap(),
-            18081,
-        ))
-        .unwrap();
         assert!(body.get("reasoning_levels").is_none());
     }
 }

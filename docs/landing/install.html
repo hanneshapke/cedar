@@ -451,7 +451,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   // Cedar sets llama.cpp up itself: in the setup window on a Mac or Windows, with cedar-llama
   // (from the archive the Linux steps unpack) on Linux.
   function cedarStep(s) {
-    const tiers = `<ul><li>${tr('install.cedar.tier12')}</li><li>${tr('install.cedar.tier16')}</li><li>${tr('install.cedar.tier32')}</li><li>${tr('install.cedar.tier72')}</li></ul>`;
+    const tiers = `<ul><li>${tr('install.cedar.tier12')}</li><li>${tr('install.cedar.tier20')}</li><li>${tr('install.cedar.tier24')}</li><li>${tr('install.cedar.tier80')}</li></ul>`;
     if (s.os === 'linux') {
       const V = release.ver;
       return step(tr('install.cedar.title'), `<p>${tr('install.cedar.linux')}</p>

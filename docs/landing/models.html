@@ -180,8 +180,8 @@ ol.setup strong{color:var(--ink);font-weight:600}
         { v: '96', k: 'mac96', hw: ['mac'] }, { v: '128', k: 'mac128', hw: ['mac'] },
         { v: '64', k: 'ryzen64', hw: ['ryzen'] }, { v: '128', k: 'ryzen128', hw: ['ryzen'] },
         { v: '128', k: 'spark128', s: true, hw: ['spark'] }, { v: '256', k: 'spark256', s: true, hw: ['spark'] },
-        // A graphics card's own memory. Cedar's llama.cpp setup picks by the same sizes
-        // (llama/src/catalog.rs): keep the first text pick of each in step with it.
+        // A graphics card's own memory. Cedar's llama.cpp setup installs a model that reads images
+        // (llama/src/catalog.rs): keep the first `images` pick of each size in step with it.
         { v: '12', k: 'gpu12', hw: ['gpu'] }, { v: '16', k: 'gpu16', hw: ['gpu'] }, { v: '24', k: 'gpu24', hw: ['gpu'] },
       ] },
   ];

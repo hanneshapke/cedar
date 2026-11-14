@@ -82,12 +82,12 @@ mod tests {
         assert_eq!(mac(16), None);
         // Two thirds of 24 GB would hold a small model, but leave the system too little.
         assert_eq!(mac(24), None);
-        assert_eq!(mac(32).unwrap().model.id, "gpt-oss-20b");
+        assert_eq!(mac(32).unwrap().model.id, "gemma-4-26b-a4b");
         assert_eq!(mac(36).unwrap().model.id, "qwen3.6-35b-a3b");
         assert_eq!(mac(48).unwrap().model.id, "qwen3.6-35b-a3b");
         assert_eq!(mac(64).unwrap().model.id, "qwen3.6-35b-a3b");
         assert_eq!(mac(96).unwrap().model.id, "qwen3.6-35b-a3b");
-        assert_eq!(mac(128).unwrap().model.id, "gpt-oss-120b");
+        assert_eq!(mac(128).unwrap().model.id, "qwen3.5-122b-a10b");
         assert_eq!(mac(32).unwrap().build, Build::MacosMetal);
         // An Intel Mac has no build with Metal.
         assert_eq!(plan(Os::Macos, Arch::X64, &[Gpu::apple(64 << 30)]), None);

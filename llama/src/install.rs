@@ -419,47 +419,76 @@ pub async fn install_build(
     Ok(dir.join(build.server_exe()))
 }
 
-/// Where a model's file is kept under the folder for models.
-pub fn model_path(models: &Path, model: &Model) -> PathBuf {
-    models.join(model.file)
+/// A model on the disk: what llama-server is given.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelFiles {
+    /// The GGUF file, or the first part of a split one (the others are beside it).
+    pub weights: PathBuf,
+    /// The vision projector.
+    pub mmproj: PathBuf,
 }
 
-/// A model's file, if it is fully downloaded.
-pub fn installed_model(models: &Path, model: &Model) -> Option<PathBuf> {
-    let path = model_path(models, model);
-    let whole = std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() == model.size);
-    whole.then_some(path)
+/// The folder a model's files are kept in, under the folder for models. Each model has its own:
+/// a projector is called `mmproj-F16.gguf` in more than one repository.
+pub fn model_dir(models: &Path, model: &Model) -> PathBuf {
+    models.join(model.id)
 }
 
-/// Downloads `model` into `models` and returns its file. Other models are left alone: they are
-/// large, and the user may switch back.
+fn model_files(models: &Path, model: &Model) -> ModelFiles {
+    let dir = model_dir(models, model);
+    ModelFiles {
+        weights: dir.join(model.weights[0].name()),
+        mmproj: dir.join(model.mmproj.name()),
+    }
+}
+
+/// A model's files, if all of them are fully downloaded.
+pub fn installed_model(models: &Path, model: &Model) -> Option<ModelFiles> {
+    let dir = model_dir(models, model);
+    let whole = |file: &crate::catalog::File| {
+        std::fs::metadata(dir.join(file.name())).is_ok_and(|m| m.is_file() && m.len() == file.size)
+    };
+    model.files().all(whole).then(|| model_files(models, model))
+}
+
+/// Downloads `model` (its weights, in parts if it is split, and its vision projector) into its
+/// folder under `models`, and says where they are. Other models are left alone: they are large,
+/// and the user may switch back.
 pub async fn install_model(
     model: &Model,
     models: &Path,
     cancel: &CancellationToken,
     on_event: impl Fn(Event),
-) -> Result<PathBuf, Error> {
-    let dest = model_path(models, model);
-    let on_disk = have(&dest, model.size).await;
-    if on_disk < model.size {
-        need_space(models, model.size - on_disk)?;
+) -> Result<ModelFiles, Error> {
+    let dir = model_dir(models, model);
+    let total = model.size();
+    let mut on_disk = 0;
+    for file in model.files() {
+        on_disk += have(&dir.join(file.name()), file.size).await;
     }
-    fetch(
-        &model.url(),
-        &dest,
-        model.size,
-        model.sha256,
-        cancel,
-        |got| match got {
-            Some(got) => on_event(Event::Downloading {
-                got,
-                total: model.size,
-            }),
-            None => on_event(Event::Checking),
-        },
-    )
-    .await?;
-    Ok(dest)
+    if on_disk < total {
+        need_space(&dir, total - on_disk)?;
+    }
+    let mut before = 0;
+    for file in model.files() {
+        fetch(
+            &model.url(file),
+            &dir.join(file.name()),
+            file.size,
+            file.sha256,
+            cancel,
+            |got| match got {
+                Some(got) => on_event(Event::Downloading {
+                    got: before + got,
+                    total,
+                }),
+                None => on_event(Event::Checking),
+            },
+        )
+        .await?;
+        before += file.size;
+    }
+    Ok(model_files(models, model))
 }
 
 #[cfg(test)]
@@ -755,6 +784,43 @@ mod tests {
         unpack(&archive, &out).unwrap();
         assert_eq!(std::fs::read(out.join("llama-server.exe")).unwrap(), b"MZ");
         assert_eq!(std::fs::read(out.join("ggml-vulkan.dll")).unwrap(), b"dll");
+    }
+
+    #[test]
+    fn a_model_is_installed_when_all_its_files_are() {
+        let models = temp("modelfiles");
+        let model = crate::catalog::by_id("qwen3.5-122b-a10b").unwrap();
+        let dir = model_dir(&models, model);
+        assert_eq!(dir, models.join("qwen3.5-122b-a10b"));
+        assert_eq!(installed_model(&models, model), None);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Files of the right size (sparse, so they take no room): all but the projector.
+        let touch = |file: &crate::catalog::File| {
+            std::fs::File::create(dir.join(file.name()))
+                .unwrap()
+                .set_len(file.size)
+                .unwrap();
+        };
+        model.weights.iter().for_each(touch);
+        assert_eq!(
+            installed_model(&models, model),
+            None,
+            "the projector is missing"
+        );
+        touch(&model.mmproj);
+        let files = installed_model(&models, model).unwrap();
+        // The first part of the split weights, by its name without the repository's folder.
+        assert_eq!(
+            files.weights,
+            dir.join("Qwen3.5-122B-A10B-Q4_K_M-00001-of-00003.gguf")
+        );
+        assert_eq!(files.mmproj, dir.join("mmproj-F16.gguf"));
+        // A part that stopped halfway is not installed.
+        std::fs::File::create(dir.join(model.weights[2].name()))
+            .unwrap()
+            .set_len(1000)
+            .unwrap();
+        assert_eq!(installed_model(&models, model), None);
     }
 
     #[test]

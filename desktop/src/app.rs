@@ -487,6 +487,8 @@ impl AppState {
                     label: model.label,
                     max_tokens: model.max_tokens,
                     reasoning_levels: model.reasoning_levels,
+                    // Every model the app installs comes with its vision projector.
+                    multimodal: true,
                 }),
                 make_default: chosen == Chosen::Llama,
             };
@@ -826,7 +828,7 @@ mod tests {
         let none = state(Config::default());
         assert_eq!(say(&none), serde_json::json!({ "state": "no_gpu", "model": "" }));
         none.set_llama_plan(plan.clone());
-        assert_eq!(say(&none), serde_json::json!({ "state": "available", "model": "gpt-oss 20B" }));
+        assert_eq!(say(&none), serde_json::json!({ "state": "available", "model": "Gemma 4 26B-A4B" }));
 
         // One is installed: that is the one, whatever else the GPU could run.
         let llama = Some(Llama { build: "macos-arm64".into(), model: "qwen3.6-35b-a3b".into() });
@@ -845,7 +847,7 @@ mod tests {
     #[test]
     fn a_model_server_beside_llama() {
         let cfg = Config {
-            llama: Some(Llama { build: "macos-arm64".into(), model: "gpt-oss-20b".into() }),
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() }),
             llm_base_url: "https://api.groq.com/openai/v1".into(),
             llm_model: "openai/gpt-oss-120b".into(),
             ..Config::default()
@@ -853,12 +855,12 @@ mod tests {
         let both = state(cfg.clone()).status();
         assert!(both.configured);
         assert_eq!(both.model_source, "hosted");
-        assert_eq!(both.llama.model.as_deref(), Some("gpt-oss 20B"));
+        assert_eq!(both.llama.model.as_deref(), Some("Gemma 4 E4B"));
 
         let only_llama = state(Config { llm_base_url: String::new(), llm_model: String::new(), ..cfg }).status();
         assert!(only_llama.configured);
         assert_eq!(only_llama.model_source, "");
-        assert_eq!(only_llama.llama.model.as_deref(), Some("gpt-oss 20B"));
+        assert_eq!(only_llama.llama.model.as_deref(), Some("Gemma 4 E4B"));
         assert_eq!(only_llama.presets.len(), 5);
     }
 
@@ -910,7 +912,7 @@ mod tests {
         let (port, seen) = cedar("https://api.groq.com/openai/v1").await;
         let app = state(Config {
             cedar_port: port,
-            llama: Some(Llama { build: "macos-arm64".into(), model: "gpt-oss-20b".into() }),
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() }),
             llm_base_url: "https://api.groq.com/openai/v1".into(),
             llm_model: "openai/gpt-oss-120b".into(),
             llm_api_key: "gsk".into(),
@@ -925,12 +927,13 @@ mod tests {
         assert!(requests[0].starts_with("PUT /v1/admin/models/llama "), "{}", requests[0]);
         let llama: serde_json::Value = serde_json::from_str(requests[0].split_once(' ').unwrap().1.split_once(' ').unwrap().1).unwrap();
         assert_eq!(llama["base_url"], "http://127.0.0.1:18081/v1");
-        assert_eq!((&llama["model"], &llama["label"], &llama["api_key"]), (&"gpt-oss-20b".into(), &"gpt-oss 20B".into(), &"lk".into()));
+        assert_eq!((&llama["model"], &llama["label"], &llama["api_key"]), (&"gemma-4-e4b".into(), &"Gemma 4 E4B".into(), &"lk".into()));
         assert_eq!(llama["max_tokens"], 8192);
+        assert_eq!(llama["multimodal"], true);
         assert!(llama.get("is_default").is_none());
         assert!(requests[1].starts_with("PUT /v1/admin/models/default "), "{}", requests[1]);
         assert!(requests[1].contains(r#""base_url":"https://api.groq.com/openai/v1""#) && !requests[1].contains("is_default"));
-        assert!(matches!(&*app.model.lock().unwrap(), ModelStatus::Registered(d) if d == "gpt-oss 20B, openai/gpt-oss-120b at https://api.groq.com/openai/v1"));
+        assert!(matches!(&*app.model.lock().unwrap(), ModelStatus::Registered(d) if d == "Gemma 4 E4B, openai/gpt-oss-120b at https://api.groq.com/openai/v1"));
 
         // llama.cpp was just set up: it is made the default, the model server is not.
         app.choose(Chosen::Llama);
@@ -975,7 +978,7 @@ mod tests {
     /// the user's, that entry is taken out; one that points elsewhere is not touched.
     #[tokio::test]
     async fn the_doubled_default_entry_is_taken_out() {
-        let llama = Some(Llama { build: "macos-arm64".into(), model: "gpt-oss-20b".into() });
+        let llama = Some(Llama { build: "macos-arm64".into(), model: "gemma-4-e4b".into() });
         let (port, seen) = cedar("http://127.0.0.1:18081/v1").await;
         let app = state(Config { cedar_port: port, llama: llama.clone(), ..Config::default() });
         assert!(app.register_model().await);

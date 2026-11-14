@@ -51,7 +51,7 @@ pub fn offer(plan: &Plan) -> Offer {
         model: plan.model.label.to_string(),
         model_page: plan.model.page(),
         license: plan.model.license.to_string(),
-        download_bytes: build + plan.model.size,
+        download_bytes: build + plan.model.size(),
         small: plan.model.small,
     }
 }
@@ -108,11 +108,11 @@ async fn prepare(state: &AppState, build: Build, model: &'static Model, cancel: 
     let exe = install::install_build(&manifest, build, &state.paths.llama(), cancel, show(state, LLAMA))
         .await
         .map_err(|e| say(e, LLAMA))?;
-    let file = install::install_model(model, &state.paths.models(), cancel, show(state, model.label))
+    let files = install::install_model(model, &state.paths.models(), cancel, show(state, model.label))
         .await
         .map_err(|e| say(e, model.label))?;
     let cfg = state.config();
-    Ok(Spec { exe, model, file, port: cfg.llama_port, api_key: cfg.secrets.llama_api_key })
+    Ok(Spec { exe, model, files, port: cfg.llama_port, api_key: cfg.secrets.llama_api_key })
 }
 
 /// The devices `llama-server --list-devices` prints under "Available devices:": the GPUs it can
@@ -219,7 +219,7 @@ pub async fn remove(app: AppHandle) -> anyhow::Result<()> {
     state.update_config(|c| c.llama = None)?;
     let _ = tokio::fs::remove_dir_all(state.paths.llama()).await;
     if let Some(model) = catalog::by_id(&llama.model) {
-        let _ = tokio::fs::remove_file(install::model_path(&state.paths.models(), model)).await;
+        let _ = tokio::fs::remove_dir_all(install::model_dir(&state.paths.models(), model)).await;
     }
     // Registering again takes its entry out of cedar's registry; a model server beside it stays.
     app::apply_model_server(app.clone()).await;
@@ -250,10 +250,12 @@ mod tests {
         let plan = cedar_llama::plan(Os::Macos, Arch::Arm64, &[Gpu::apple(32 << 30)]).unwrap();
         let offer = offer(&plan);
         assert_eq!((offer.gpu.as_str(), offer.memory_mb, offer.unified), ("Apple Silicon", 32768, true));
-        assert_eq!(offer.model, "gpt-oss 20B");
-        assert_eq!(offer.model_page, "https://huggingface.co/ggml-org/gpt-oss-20b-GGUF");
+        assert_eq!(offer.model, "Gemma 4 26B-A4B");
+        assert_eq!(offer.model_page, "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF");
         // The model, and the few megabytes of llama.cpp for a Mac on top.
-        assert!(offer.download_bytes > plan.model.size && offer.download_bytes < plan.model.size + 100_000_000);
+        // The model with its vision projector, and the few megabytes of llama.cpp for a Mac on top.
+        assert!(offer.download_bytes > plan.model.size() && offer.download_bytes < plan.model.size() + 100_000_000);
+        assert!(plan.model.size() > plan.model.weights[0].size);
         let json = serde_json::to_value(&offer).unwrap();
         assert_eq!(json["license"], "Apache-2.0");
         assert_eq!(json["small"], false);
@@ -270,10 +272,10 @@ mod tests {
             panic!("not a failure");
         };
         assert!(text.contains("21") && text.contains('5'), "{text}");
-        let Stop::Failed(text) = say(install::Error::Download("dns error".into()), "gpt-oss 20B") else {
+        let Stop::Failed(text) = say(install::Error::Download("dns error".into()), "Gemma 4 E4B") else {
             panic!("not a failure");
         };
-        assert!(text.contains("gpt-oss 20B") && text.contains("dns error"), "{text}");
+        assert!(text.contains("Gemma 4 E4B") && text.contains("dns error"), "{text}");
         for e in [install::Error::Stalled, install::Error::Cut, install::Error::Changed("f".into())] {
             assert!(matches!(say(e, "llama.cpp"), Stop::Failed(text) if text.contains("llama.cpp")));
         }

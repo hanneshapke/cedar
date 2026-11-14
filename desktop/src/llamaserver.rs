@@ -30,7 +30,8 @@ const NAME: &str = "llama-server";
 pub struct Spec {
     pub exe: PathBuf,
     pub model: &'static Model,
-    pub file: PathBuf,
+    /// Its weights and its vision projector on the disk.
+    pub files: cedar_llama::install::ModelFiles,
     pub port: u16,
     pub api_key: String,
 }
@@ -173,7 +174,7 @@ impl Runner {
         let mut child = proc::command(&spec.exe)
             // Its libraries sit beside it.
             .current_dir(spec.exe.parent().unwrap_or(Path::new(".")))
-            .args(server::args(spec.model, &spec.file.to_string_lossy(), spec.port))
+            .args(server::args(spec.model, &spec.files, spec.port))
             .env(server::API_KEY_ENV, &spec.api_key)
             .stdin(Stdio::null())
             .stdout(Stdio::from(out))
@@ -318,7 +319,7 @@ mod tests {
         let spec = Spec {
             exe,
             model: &cedar_llama::catalog::MODELS[0],
-            file: dir.join("model.gguf"),
+            files: cedar_llama::install::ModelFiles { weights: dir.join("model.gguf"), mmproj: dir.join("mmproj.gguf") },
             port,
             api_key: "secret".into(),
         };
