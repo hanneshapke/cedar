@@ -566,15 +566,15 @@ jobs:
         with:
           key: linux-${{ matrix.arch }}
 
-      - name: Build cedar and cedar-chat
-        run: cargo build --release --locked -p cedar -p cedar-chat
+      - name: Build cedar, cedar-chat and cedar-llama
+        run: cargo build --release --locked -p cedar -p cedar-chat -p cedar-llama
 
       - name: Check that they need no OpenSSL from the system
         # cedar uses rustls and cedar-chat links a vendored OpenSSL, so a server without libssl3
         # (or with another version of it) runs them too.
         run: |
           set -eu
-          for exe in target/release/cedar target/release/cedar-chat; do
+          for exe in target/release/cedar target/release/cedar-chat target/release/cedar-llama; do
             ldd "$exe"
             if ldd "$exe" | grep -Eq 'lib(ssl|crypto)\.so'; then
               echo "::error::$exe loads OpenSSL from the system"; exit 1
@@ -589,11 +589,13 @@ jobs:
           set -eu
           name="Cedar-$VERSION-linux-$ARCH"
           mkdir -p "dist/$name"
-          install -m 0755 target/release/cedar target/release/cedar-chat "dist/$name/"
+          install -m 0755 target/release/cedar target/release/cedar-chat target/release/cedar-llama "dist/$name/"
           install -m 0644 LICENSE NOTICE README.md DEPLOYMENT.md "dist/$name/"
           # The one-click updater DEPLOYMENT.md's "Updates" sets up.
           install -m 0755 scripts/cedar-update.sh "dist/$name/cedar-update"
           install -m 0644 scripts/systemd/cedar-update.path scripts/systemd/cedar-update.service "dist/$name/"
+          # llama.cpp as the model server on a machine with a GPU (README.md, "Models").
+          install -m 0644 scripts/systemd/cedar-llama.service "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           tar -tzvf "dist/$name.tar.gz"
 

@@ -1,0 +1,1 @@
+Und wenn eine Unterhaltung ihren Zweck erfüllt hat, mach daraus einen Agenten. Cedar schreibt den Prompt aus der Unterhaltung. Du wählst den Auslöser: einen Zeitplan, eine Änderung, auf die er achtet, neue Post, eine eintreffende Datei. Dieser hier läuft jeden Monat.

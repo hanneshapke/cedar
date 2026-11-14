@@ -1,0 +1,1 @@
+Le travail se fait dans une boîte scellée : un conteneur à part, sans réseau, qui ne voit pas le reste de votre ordinateur. Cedar fait les calculs en Python, trace le graphique et écrit le PDF. Chaque étape reste dans la conversation : vous pouvez l’ouvrir et voir exactement ce qui a été exécuté.

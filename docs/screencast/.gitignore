@@ -1,0 +1,7 @@
+# the narration clips tools/voice.sh makes
+/audio/
+/audio-*/
+# the silent takes in the other languages (tools/take.sh makes them; their narrated films are kept)
+/cedar-intro.de.mp4
+/cedar-intro.fr.mp4
+/cedar-intro.es.mp4

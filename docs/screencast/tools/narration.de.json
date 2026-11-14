@@ -1,0 +1,14 @@
+{
+  "title": "Das ist Cedar: ein Open-Source-Assistent, der auf deinem Computer läuft und echte Arbeit für dich erledigt.",
+  "first-run": "Beim ersten Start fragt Cedar, in welcher Sprache du arbeiten möchtest. Danach braucht es nur noch eines: ein Modell zum Denken.",
+  "models": "Cedar ist an keine KI-Firma gebunden. Unter Einstellungen, Modelle, wählst du, woher das Modell kommt. Die Cedar-App für Mac und Windows kann eines herunterladen und mit llama.cpp betreiben. Du kannst einen gehosteten Anbieter mit einem API-Schlüssel nutzen. Oder du nennst Cedar einen Modellserver, den du schon betreibst. Hier ist das vLLM auf diesem Rechner. Cedar listet die Modelle des Servers auf. Wähle eines, und Cedar trägt ein, welchen Denkaufwand das Modell kennt und ob es Bilder lesen kann. Dann prüft es die Adresse noch einmal und speichert sie.",
+  "task": "Jetzt eine Aufgabe. Ich hänge die Haushaltsausgaben eines Jahres an und bitte Cedar herauszufinden, wohin das Geld fließt, ein Diagramm zu zeichnen und eine Seite Zusammenfassung mit drei Spartipps zu schreiben.",
+  "plan": "Cedar legt nicht einfach los. Bei einer größeren Aufgabe zeigt es dir zuerst seinen Plan. Du kannst einen Schritt ändern, entfernen oder einen eigenen hinzufügen. Wenn alles passt, gibst du den Start frei.",
+  "work": "Die Arbeit geschieht in einer abgeschotteten Box: einem eigenen Container ohne Netzwerk, der den Rest deines Computers nicht sehen kann. Cedar rechnet in Python, zeichnet das Diagramm und schreibt das PDF. Jeder Schritt bleibt in der Unterhaltung, sodass du ihn öffnen und genau sehen kannst, was gelaufen ist.",
+  "result": "Das Diagramm ist interaktiv: Zeig auf einen Monat, und du liest jede Kategorie ab. Die fertige Zusammenfassung steht rechts, mit den drei Vorschlägen, bereit zum Herunterladen. Und die Kurzfassung steht in der Unterhaltung.",
+  "approval": "Manches tut Cedar nicht von sich aus. Soll es eine Datei löschen, hält es an und fragt erst nach. Für Downloads, Installationen und E-Mails gilt dasselbe. Nichts Riskantes geschieht ohne deine Freigabe.",
+  "memory": "Cedar merkt sich auch, worum du es bittest. Unter Einstellungen, Gedächtnis, siehst du alles, was es über dich behalten hat. Hefte es an, archiviere es oder entferne es endgültig. Es bleibt auf deinem eigenen Cedar-Server.",
+  "tools": "Jede Fähigkeit hat einen Schalter. Webseiten lesen, Wetter, Karten, Wegbeschreibungen, Aktien. Schalte ein, was Cedar erreichen darf. Alles andere bleibt aus.",
+  "agent": "Und wenn eine Unterhaltung ihren Zweck erfüllt hat, mach daraus einen Agenten. Cedar schreibt den Prompt aus der Unterhaltung. Du wählst den Auslöser: einen Zeitplan, eine Änderung, auf die er achtet, neue Post, eine eintreffende Datei. Dieser hier läuft jeden Monat.",
+  "outro": "Cedar ist kostenlos und Open Source. Es läuft auf Mac, Windows und Linux, mit Apps für iPhone und Android. Dein eigener Assistent. Läuft zu Hause, hört auf dich."
+}

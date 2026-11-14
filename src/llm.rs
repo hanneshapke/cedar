@@ -435,13 +435,61 @@ pub async fn list_models(
         .json()
         .await
         .map_err(|_| anyhow!("{url} did not answer like an OpenAI-compatible server"))?;
-    let models = body["data"]
-        .as_array()
-        .ok_or_else(|| anyhow!("{url} did not answer like an OpenAI-compatible server"))?
-        .iter()
-        .filter_map(|m| m["id"].as_str().map(String::from))
-        .collect();
-    Ok(models)
+    model_ids(&body).ok_or_else(|| anyhow!("{url} did not answer like an OpenAI-compatible server"))
+}
+
+/// What a model server made of a prompt that carries an image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageProbe {
+    /// It answered: the model takes images.
+    Accepts,
+    /// It refused the request as it stands: the model takes text only.
+    Rejects,
+    /// It could not be asked (unreachable, an error of its own, a refused key).
+    Unknown,
+}
+
+/// A small white square, as a data URL: the image of [`accepts_images`]. 32 pixels a side,
+/// because some servers refuse an image that is only a few pixels wide.
+const PROBE_IMAGE: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAJklEQVR42u3NMQ0AAAwDoPo33arYsQQMkB6LQCAQCAQCgUAg+BIMi1X0ptsIcT0AAAAASUVORK5CYII=";
+
+/// Whether `model` at an OpenAI-compatible server takes images: one chat completion with a small
+/// image and room for a single token. A server that answers accepts them; one that refuses the
+/// request (400, 404, 415, 422) does not. A server that silently drops the image looks like one
+/// that accepts it, which no request can tell apart.
+pub async fn accepts_images(
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    timeout: Duration,
+) -> ImageProbe {
+    let Ok(http) = reqwest::Client::builder().connect_timeout(timeout).timeout(timeout).build() else {
+        return ImageProbe::Unknown;
+    };
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let mut req = http.post(&url).json(&json!({
+        "model": model,
+        "max_tokens": 1,
+        "messages": [{ "role": "user", "content": [
+            { "type": "text", "text": "." },
+            { "type": "image_url", "image_url": { "url": PROBE_IMAGE } },
+        ] }],
+    }));
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    match req.send().await.map(|resp| resp.status().as_u16()) {
+        Ok(200..=299) => ImageProbe::Accepts,
+        Ok(400 | 404 | 415 | 422) => ImageProbe::Rejects,
+        _ => ImageProbe::Unknown,
+    }
+}
+
+/// The ids in a model list: OpenAI's `{"data": [{"id": ...}]}`, or the bare array of the same
+/// objects that some hosted providers answer with.
+fn model_ids(body: &Value) -> Option<Vec<String>> {
+    let list = body.get("data").and_then(Value::as_array).or_else(|| body.as_array())?;
+    Some(list.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
 }
 
 /// The innermost error message ("Connection refused"), which says more than reqwest's own.
@@ -456,6 +504,18 @@ fn root_cause(e: &(dyn std::error::Error + 'static)) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_lists_with_and_without_a_data_field() {
+        let ids = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(model_ids(&json!({"object": "list", "data": [{"id": "a"}, {"id": "b"}]})), Some(ids.clone()));
+        assert_eq!(model_ids(&json!([{"id": "a", "type": "chat"}, {"id": "b"}])), Some(ids));
+        assert_eq!(model_ids(&json!({"data": []})), Some(vec![]));
+        // Not a list at all: an error page, or another API's answer.
+        assert_eq!(model_ids(&json!({"error": "no"})), None);
+        assert_eq!(model_ids(&json!({"data": "x"})), None);
+        assert_eq!(model_ids(&json!("ok")), None);
+    }
 
     fn request(messages: &[Value]) -> Value {
         build_request(&MessageRequest {

@@ -55,11 +55,21 @@
   label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
   input[type=text], input[type=password], select { width: 100%; padding: 8px 10px; border: 1px solid var(--line);
     border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  /* Dropdowns drop the platform's own look (shorter than the fields beside them, and grey) and
+     draw the same box as the text fields, with a chevron; as the chat's Settings do. */
+  select { appearance: none; -webkit-appearance: none; padding-right: 32px; cursor: pointer; text-overflow: ellipsis;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; background-size: 10px 6px; }
+  select:hover { border-color: var(--muted); }
+  select:focus-visible, input[type=text]:focus-visible, input[type=password]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  select:disabled { cursor: default; opacity: .6; }
   button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
     color: var(--text); font: inherit; cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
   button:disabled { opacity: 0.5; cursor: default; }
   .presets button { font-size: 12px; padding: 4px 10px; }
+  .presets button.chosen { border-color: var(--accent); }
+  .presets { flex-wrap: wrap; }
   .error { color: var(--bad); }
   .qr { margin-top: 12px; width: 220px; padding: 0; border-radius: 8px; overflow: hidden; line-height: 0; }
   .qr svg { width: 220px; height: 220px; }
@@ -107,7 +117,7 @@
   #remote details[open] summary { margin-bottom: 6px; }
   body.remote .local-only { display: none; }
   .lang-pick { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
-  .lang-pick select { width: auto; padding: 3px 6px; font-size: 12px; }
+  .lang-pick select { width: auto; padding: 3px 24px 3px 8px; font-size: 12px; background-position: right 8px center; }
   .onboarding { max-width: 440px; margin: 40px auto 0; }
   .onboarding h1 { margin-bottom: 4px; }
   .onboarding .locales { display: flex; flex-direction: column; gap: 4px; margin: 16px 0 8px; }
@@ -122,6 +132,15 @@
   .choice:hover, .choice:focus-visible { border-color: var(--accent); outline: none; }
   #choose { max-width: 520px; }
   .choices.hidden { display: none; }
+  /* The Model server step's three options: the open one is outlined, and its form sits under it. */
+  .sources { margin: 10px 0 0; }
+  .choice strong span { color: inherit; }
+  .choice strong .tag { margin-left: 8px; padding: 1px 8px; border-radius: 10px; background: var(--line);
+    color: var(--muted); font-size: 11px; font-weight: 600; vertical-align: 2px; white-space: nowrap; }
+  .choice strong .tag.hidden { display: none; }
+  .choice.open { border-color: var(--accent); }
+  .choice:disabled:hover { border-color: var(--line); }
+  .source-panel { margin: -2px 0 6px; padding: 0 14px; }
 </style>
 </head>
 <body>
@@ -279,29 +298,84 @@
   <h2><span class="dot" id="model-dot"></span><span data-i18n="model.title">Model server</span></h2>
   <p id="model-text" class="muted" data-i18n="model.notChosen">Not chosen yet.</p>
   <p class="detail" id="model-detail"></p>
-  <p class="muted" data-i18n-html="html.model.about">Any OpenAI-compatible server that supports tool calling. Ollama, LM Studio, and vLLM all work; the server can run on <span class="this-computer">this computer</span> or on another machine. More models can be added from the chat's Settings.</p>
-  <div class="row presets">
-    <span class="muted" data-i18n="model.presets">Presets:</span>
-    <button data-url="http://127.0.0.1:11434/v1">Ollama</button>
-    <button data-url="http://127.0.0.1:1234/v1">LM Studio</button>
-    <button data-url="http://127.0.0.1:8000/v1">vLLM</button>
-  </div>
-  <label for="base-url" data-i18n="model.address">Address</label>
-  <input type="text" id="base-url" placeholder="http://127.0.0.1:11434/v1" autocapitalize="off" autocorrect="off" spellcheck="false">
-  <label for="api-key" data-i18n="model.apiKey">API key (only if the server needs one)</label>
-  <input type="password" id="api-key" autocomplete="off">
-  <div class="row">
-    <button id="probe" data-i18n="model.list">List models</button>
-    <span id="probe-status" class="muted"></span>
-  </div>
-  <div id="model-pick" class="hidden">
-    <label for="model-select" data-i18n="model.model">Model</label>
-    <select id="model-select"></select>
-    <div class="row">
-      <button class="primary" id="save" data-i18n="model.save">Save</button>
+  <!-- Three ways to get a model. A card opens its form right under it; see renderModelChoice. -->
+  <div class="choices sources">
+    <button type="button" class="choice" id="pick-llama" data-source="llama" aria-expanded="false" aria-controls="llama">
+      <strong><span data-i18n="pick.llama">Run a model on this computer</span><span class="tag hidden" id="pick-llama-tag"></span></strong>
+      <span id="pick-llama-text"></span>
+    </button>
+    <div id="llama" class="source-panel hidden">
+      <p id="llama-intro" class="muted"></p>
+      <div class="row">
+        <button class="primary" id="llama-install" data-i18n="llama.install">Set up a model for me</button>
+        <button class="hidden" id="llama-cancel" data-i18n="llama.cancel">Stop the download</button>
+        <button class="hidden" id="llama-remove" data-i18n="llama.remove">Remove</button>
+      </div>
+      <progress id="llama-progress" class="hidden" max="1"></progress>
+      <p id="llama-text" class="muted"></p>
+      <p class="detail" id="llama-detail"></p>
+      <p class="muted fine" id="llama-license"></p>
+    </div>
+
+    <button type="button" class="choice" id="pick-hosted" data-source="hosted" aria-expanded="false" aria-controls="hosted">
+      <strong><span data-i18n="pick.hosted">Use a hosted provider</span><span class="tag hidden" id="pick-hosted-tag"></span></strong>
+      <span data-i18n="pick.hostedText">Baseten, Nebius, Doubleword and others run the model for you and charge for what you use. No GPU needed; you need an API key.</span>
+    </button>
+    <div id="hosted" class="source-panel hidden">
+      <p class="muted" data-i18n="hosted.about">Your conversations, and what the agent's tools return, are sent to the provider. Choose a model that supports tool calling.</p>
+      <label for="hosted-provider" data-i18n="hosted.provider">Provider</label>
+      <select id="hosted-provider"></select>
+      <p class="muted fine" id="hosted-docs"></p>
+      <div id="hosted-other" class="hidden">
+        <label for="hosted-url" data-i18n="hosted.address">Address of its OpenAI-compatible API</label>
+        <input type="text" id="hosted-url" placeholder="https://api.example.com/v1" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </div>
+      <label for="hosted-key" data-i18n="hosted.key">API key</label>
+      <input type="password" id="hosted-key" autocomplete="off">
+      <div class="row">
+        <button id="hosted-probe" data-i18n="model.list">List models</button>
+        <span id="hosted-status" class="muted"></span>
+      </div>
+      <div id="hosted-pick" class="hidden">
+        <label for="hosted-filter" data-i18n="hosted.filter">Find a model</label>
+        <input type="text" id="hosted-filter" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <label for="hosted-select" data-i18n="model.model">Model</label>
+        <select id="hosted-select"></select>
+        <div class="row">
+          <button class="primary" id="hosted-save" data-i18n="model.save">Save</button>
+        </div>
+      </div>
+      <p id="hosted-error" class="error"></p>
+    </div>
+
+    <button type="button" class="choice" id="pick-own" data-source="own" aria-expanded="false" aria-controls="own">
+      <strong><span data-i18n="pick.own">Use a model server you already run</span><span class="tag hidden" id="pick-own-tag"></span></strong>
+      <span data-i18n="pick.ownText">Ollama, LM Studio, vLLM, llama.cpp, SGLang or any other OpenAI-compatible server, on this computer or on another one.</span>
+    </button>
+    <div id="own" class="source-panel hidden">
+      <p class="muted" data-i18n-html="html.model.about">The server must support tool calling. It can run on <span class="this-computer">this computer</span> or on another machine. More models can be added from the chat's Settings.</p>
+      <div class="row presets" id="presets">
+        <span class="muted" data-i18n="model.presets">Presets:</span>
+      </div>
+      <p class="muted fine" id="preset-hint"></p>
+      <label for="base-url" data-i18n="model.address">Address</label>
+      <input type="text" id="base-url" placeholder="http://127.0.0.1:11434/v1" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <label for="api-key" data-i18n="model.apiKey">API key (only if the server needs one)</label>
+      <input type="password" id="api-key" autocomplete="off">
+      <div class="row">
+        <button id="probe" data-i18n="model.list">List models</button>
+        <span id="probe-status" class="muted"></span>
+      </div>
+      <div id="model-pick" class="hidden">
+        <label for="model-select" data-i18n="model.model">Model</label>
+        <select id="model-select"></select>
+        <div class="row">
+          <button class="primary" id="save" data-i18n="model.save">Save</button>
+        </div>
+      </div>
+      <p id="model-error" class="error"></p>
     </div>
   </div>
-  <p id="model-error" class="error"></p>
 </section>
 
 <section id="services" class="local-only">
@@ -361,7 +435,7 @@
   </div>
 </section>
 
-<footer class="local-only" data-i18n-html="html.footer">Each agent run gets its own Docker container; the model server is never run by Cedar itself. The sandbox image is <code id="sandbox-image"></code>.</footer>
+<footer class="local-only" data-i18n-html="html.footer">Each agent run gets its own Docker container. The sandbox image is <code id="sandbox-image"></code>.</footer>
 
 </div>
 

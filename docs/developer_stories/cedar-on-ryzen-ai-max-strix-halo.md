@@ -26,7 +26,7 @@ A 64GB machine works with the same steps. Use a smaller model, such as `qwen3.6:
 
 The Ryzen AI Max shares one pool of LPDDR5X memory between the CPU and GPU. That lets it hold large models, but its memory bandwidth (about 256 GB/s) is lower than a DGX Spark's or a Mac Max's. Generation speed depends mostly on how many parameters the model reads per token, so mixture-of-experts (MoE) models run several times faster here than dense models of the same size.
 
-`gpt-oss:120b` has 117B parameters but only about 5B active per token, so it fits comfortably and stays responsive. Cedar's [model guide](https://getcedar.io/models.html?where=box&hw=ryzen&mem=128) lists the alternatives.
+`gpt-oss:120b` has 117B parameters but only about 5B active per token, so it fits comfortably and stays responsive. Cedar's [install guide](https://getcedar.io/install.html?os=linux&arch=x64&mem=80&model=own#model-title) lists the alternatives.
 
 ## 1. Prepare the firmware
 
@@ -426,7 +426,7 @@ Restart remotely with `sudo reboot`. With **Restore on AC power loss** set in se
 ## Sources
 
 - [Cedar](https://getcedar.io)
-- [Cedar model guide](https://getcedar.io/models.html)
+- [Cedar install guide: your model](https://getcedar.io/install.html#model-title)
 - [Cedar Linux deployment guide](https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md)
 - [Running Cedar on a Jetson Orin Nano](cedar-on-jetson-orin-nano.md)
 - [Ollama on Linux](https://docs.ollama.com/linux)

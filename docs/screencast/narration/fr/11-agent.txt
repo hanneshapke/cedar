@@ -1,0 +1,1 @@
+Et quand une conversation a rempli son rôle, faites-en un agent. Cedar rédige le prompt à partir de la conversation. Vous choisissez le déclencheur : un horaire, un changement qu’il surveille, un nouvel e-mail, l’arrivée d’un fichier. Celui-ci s’exécutera chaque mois.

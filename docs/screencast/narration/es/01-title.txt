@@ -1,0 +1,1 @@
+Este es Cedar: un asistente de código abierto que funciona en tu computadora y hace trabajo de verdad por ti.

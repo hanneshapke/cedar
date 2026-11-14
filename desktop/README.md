@@ -2,8 +2,8 @@
 
 A menu bar app (a tray app on Windows) that runs cedar and cedar-chat from a single download: a
 DMG for the Mac, an MSI installer for Windows. It bundles both server binaries, starts them as
-child processes, pulls the sandbox image, and shows the chat UI in its window. Two things stay
-outside the app:
+child processes, pulls the sandbox image, and shows the chat UI in its window. Docker stays
+outside the app, and so does the model server unless the app sets one up:
 
 - **Docker.** Each agent run's tools execute in a container, so Docker must be installed and
   running: Docker Desktop, OrbStack, Colima, or Rancher Desktop on a Mac; Docker Desktop (with
@@ -15,10 +15,13 @@ outside the app:
 - **The model server.** vLLM doesn't run on macOS or Windows, so the app asks for the address of
   any OpenAI-compatible server with tool calling: Ollama or LM Studio on the same computer, or a
   vLLM on another machine (a DGX Spark over Tailscale, say). It lists the server's models and you
-  pick one.
+  pick one. A hosted provider such as Baseten, Nebius or Doubleword works the same way, with an
+  API key. On a computer whose GPU has the memory for it, the app can instead download
+  llama.cpp and a model and run them itself (see
+  [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)).
 
 ```
-Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080 ──▶ model server (yours)
+Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080 ──▶ model server (yours, or llama-server :18081)
                           │       ▲                      │
                           └── window (WKWebView / WebView2) ──▶ docker run … (one container per conversation)
 ```
@@ -173,9 +176,26 @@ Running everything here, the setup window shows three steps:
   bar counts layers). Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
   tool.
-- **Model server**: pick a preset or type the address, add an API key if the server needs one,
-  click *List models*, choose one, and *Save*. The app registers it in cedar's model registry (as
-  the entry `default`), which cedar keeps in its database.
+- **Model server**: three options, each opening its form under it. The one in use is marked.
+  - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
+    (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out
+    when no GPU here has the memory for it.
+  - *Use a hosted provider*: pick the provider, enter its API key, click *List models*, choose
+    one, and *Save* (see [Using a hosted provider](#using-a-hosted-provider)).
+  - *Use a model server you already run*: click a preset (Ollama, LM Studio, vLLM, llama.cpp,
+    SGLang), which fills in the server's usual address, says under the row what that server
+    needs to work with Cedar (a longer context, the tool-calling flags), and lists its models at
+    once. Or type the address, add an API key if the server needs one, and click *List models*.
+    Then choose a model and *Save*.
+
+  Until one is chosen, the page marks one as *Recommended*: running a model here where the GPU
+  can, a hosted provider where it cannot.
+
+  The app registers what is chosen in cedar's model registry, which cedar keeps in its database:
+  a hosted provider or a server of your own as the entry `default`, a model the app runs with
+  llama.cpp as the entry `llama`. The two are independent, so llama.cpp can run beside a provider
+  and each conversation picks its model. The one chosen last here is the model new chats use,
+  until another is made the default in the chat's Settings.
 
 The window switches to the chat once both servers answer and the model is registered.
 
@@ -185,7 +205,10 @@ listen on 127.0.0.1. To use the chat from the iOS or Android app, share it over 
 
 To change the model server later, choose *Model Server & Setup…* from the menu; the new choice
 is registered with the running cedar, so nothing restarts. The chat's own Settings → Models page
-adds further models to the registry, and Settings → Server manages the Brave Search key and the Google account: cedar
+adds further models to the registry: *Add a model* there offers the same three options. Its
+llama.cpp option, and *Manage…* on the model the app runs, bring the window back to this page,
+where the download and *Remove* are. That option is greyed out while the app already runs a
+model: the GPU's memory holds one at a time. Also, Settings → Server manages the Brave Search key and the Google account: cedar
 runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
 admin token, so Settings works without typing anything. A phone or a browser that connects with
 the access token can add models too (cedar-chat's default, `CHAT_MODELS_ACCESS=users`); the API
@@ -278,6 +301,93 @@ into a folder under `C:\Windows\Temp` that only administrators can write to befo
 signature and running it. Its progress and any error go to `docker-setup.log` in the logs folder.
 
 <a id="using-it-from-an-iphone-or-ipad"></a>
+
+### Setting a model up with llama.cpp
+
+When the app starts it looks at the computer's GPU. If one of the models below fits its memory,
+the Model server step's first option, *Run a model here with llama.cpp*, opens to *Set up a model
+for me*, which names the GPU, the model and the size of the download. Otherwise that option is
+greyed out and the other two remain.
+
+| GPU memory | Model | Download |
+| --- | --- | --- |
+| under 12 GB | not offered | |
+| 12 or 16 GB | Gemma 4 12B | 7 GB |
+| 20 GB | Gemma 4 26B-A4B | 15 GB |
+| 24 GB and more | Qwen3.6 35B-A3B | 21 GB |
+| 80 GB and more | Qwen3.5 122B-A10B | 77 GB |
+
+Every one of them reads images as well as text: the download includes the model's vision
+projector, `llama-server` loads it, and cedar is told the model takes images, so attachments
+work without ticking anything. They are the ones the
+[install guide](https://hanneshapke.github.io/cedar/install.html#model-title) names for each
+computer; the list is `llama/src/catalog.rs`. Gemma 4 12B is a small model, the most that a 12 or
+16 GB card holds beside its context: it answers, but can miss steps in longer tasks. The page says so
+and keeps *Recommended* on the hosted provider there.
+
+On a Mac the GPU shares the computer's memory and macOS lets it have about two thirds, so the
+memory that counts is two thirds of the Mac's: a 32 GB Mac gets Gemma 4 26B-A4B, a Mac with 36 to
+96 GB Qwen3.6 35B-A3B, a 128 GB one Qwen3.5 122B-A10B. A Mac with less than 32 GB is not offered
+a setup: the model would leave macOS and Docker too little. On Windows it is the memory of the graphics card
+with the most; several cards are not added up. Every model is under the Apache-2.0 license.
+
+The button does this, with each step on the page:
+
+1. **Downloads llama.cpp.** A build of the release this version of Cedar pins, from
+   `github.com/ggml-org/llama.cpp`: the Metal build on Apple Silicon; on Windows the CUDA 12
+   build with NVIDIA's runtime libraries for an NVIDIA card (about 700 MB), or the Vulkan build
+   for an AMD or Intel card and for an NVIDIA driver older than 551.61. Intel Macs and Windows
+   on Arm are not offered a setup.
+2. **Downloads the model.** Its GGUF file and its vision projector, from the `ggml-org`
+   organization on Hugging Face (the largest, in three parts, from `unsloth`), pinned to a commit. *Stop the download* stops it; the button continues it later from where it
+   stopped, as it does after a connection that dropped.
+3. **Checks both.** Every file has its size and SHA-256 compiled into the app (`llama/assets.txt`
+   and `llama/src/catalog.rs`), and one that differs is deleted, not used.
+4. **Checks that llama.cpp finds the GPU** (`llama-server --list-devices`). If it finds none, the
+   setup stops there and says so: on the processor alone these models answer too slowly for
+   cedar, which gives up on a reply after 300 seconds. Updating the graphics driver usually
+   fixes it.
+5. **Starts `llama-server`** with the model, its vision projector, a context of 32,768 tokens
+   and all layers on the GPU, listening on `127.0.0.1:18081` with a key of its own, and registers it with cedar like
+   any other model server. Loading the model takes from seconds to a few minutes.
+
+Nothing here needs an administrator's password: llama.cpp and the model go into the app's own
+data folder (see [Where things are](#where-things-are)). The app starts `llama-server` with the
+two servers and stops it when you quit; one that a crash of the app left running is ended the
+next time the app starts. `llama-server.log` in the logs folder is its output.
+
+*Remove* stops it, deletes llama.cpp and the model, and takes its entry out of cedar's registry.
+A provider or server chosen beside it is not touched, and choosing one does not stop llama.cpp.
+The app runs one model with llama.cpp at a time; to run another, remove this one first. An
+update of Cedar that pins a newer llama.cpp downloads that build on its first start; the model
+is kept.
+
+### Using a hosted provider
+
+The second option sends the agent's model calls to a provider that runs open models and charges
+for what you use, so it needs no GPU: only an account there and an API key. The list has
+Baseten, Nebius and Doubleword first, then Cerebras, DeepInfra, DeepSeek, Fireworks AI, Groq,
+Hugging Face, Hyperbolic, Mistral, OpenRouter, SambaNova, Scaleway and Together AI, each with the
+address its own documentation gives for an OpenAI-compatible client (`PROVIDERS` in
+`src/models.rs`). *Other…* takes the address of any provider that is not on it. The link under
+the list opens the provider's documentation, which says how to get a key.
+
+Two things differ from a server of your own:
+
+- **What leaves the computer.** Your conversations, the system prompt and what the agent's tools
+  return are sent to the provider with every model call. The tools themselves still run in
+  Docker on this computer.
+- **The model list is long.** A provider lists hundreds of models, and not all of them call
+  tools, which Cedar needs. *Find a model* narrows the list as you type; the provider's
+  documentation says which models support tool calling (or function calling).
+
+The key is saved like any model server's: in `config.json` (mode 0600 on a Mac, in your profile
+folder on Windows) and, encrypted, in cedar's database.
+
+Neither form asks whether the model reads images. The app looks the model up in the list of known
+models (`chat/static/suggested-models.json`); for one the list does not name, cedar tries it with one
+small image when it is registered, and keeps the answer while the model stays the same. The chat's
+Settings → Models → *Edit* → *Advanced* can overrule it.
 
 ## Updates
 
@@ -442,6 +552,7 @@ Tauri derives both folders from the bundle identifier, `io.github.hanneshapke.ce
 | cedar's database (runs, conversations) | `~/Library/Application Support/io.github.hanneshapke.cedar/cedar.db` |
 | cedar-chat's database (the sidebar, schedules) | `…/cedar-chat.db` |
 | Logs | `~/Library/Logs/io.github.hanneshapke.cedar/cedar.log` and `cedar-chat.log` (*Open Logs Folder* in the menu) |
+| llama.cpp and its model, if the app set them up | `…/llama/` and `…/models/` beside `config.json`; `llama-server.log` in the logs folder |
 | The app and the two servers | `/Applications/Cedar.app` (the servers are in `Contents/MacOS/`) |
 | Agent workspaces | Docker volumes named `cedar-ws-*`, removed after `WORKSPACE_TTL_SECS` |
 
@@ -454,6 +565,7 @@ Tauri derives both folders from the bundle identifier, `io.github.hanneshapke.ce
 | cedar-chat's database (the sidebar, schedules) | `%APPDATA%\io.github.hanneshapke.cedar\cedar-chat.db` |
 | Logs | `%LOCALAPPDATA%\io.github.hanneshapke.cedar\logs\cedar.log` and `cedar-chat.log` (*Open Logs Folder* in the menu) |
 | The Docker setup's script and log | `docker-setup.ps1` and `docker-setup.log` in the logs folder |
+| llama.cpp and its model, if the app set them up | `%APPDATA%\io.github.hanneshapke.cedar\llama\` and `…\models\`; `llama-server.log` in the logs folder |
 | The app and the two servers | `C:\Program Files\Cedar\` (`Cedar.exe`, `cedar.exe`, `cedar-chat.exe`) |
 | Agent workspaces | Docker volumes named `cedar-ws-*`, removed after `WORKSPACE_TTL_SECS` |
 
@@ -499,6 +611,12 @@ version; set them to use an image you built yourself (`docker build -t cedar-san
 `run_locally` records the answer *Run everything on this computer*; while it is `false` and no
 `remote` is set, the setup page asks the question again, and with no model server chosen either
 the app starts nothing meanwhile.
+
+`model_source` records how the model server in `llm_base_url` was named on the setup page: `own`
+or `hosted`; in a file from before the page had the options it is missing, and the address
+decides. `llama` (`{"build": "macos-arm64", "model": "gemma-4-26b-a4b"}`, or `null`) names what the
+app installed when it runs a model with llama.cpp, on `llama_port` (18081) with the key in
+`secrets.llama_api_key`. It is separate from the `llm_*` fields, which may be empty beside it.
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,
@@ -653,8 +771,12 @@ One-time setup:
 | The image download fails with "denied" | The GHCR package is private or this version's images haven't been published yet (see above). You can also build the image yourself and set `sandbox_image` in `config.json`. |
 | *List models* fails | The address needs the API path (usually `/v1`). Ollama: `http://127.0.0.1:11434/v1`, LM Studio: `http://127.0.0.1:1234/v1`. A remote server must be reachable from this computer. |
 | "Cedar could not register …" | cedar checks the model server itself before keeping the entry, so the server must be running when you save and when the app starts. Start it and click *Save* again; a model registered earlier keeps working meanwhile. |
+| *Run a model here with llama.cpp* is greyed out | No GPU here has 12 GB of memory (a Mac: 32 GB in all), or it is an Intel Mac or Windows on Arm. An NVIDIA card is read with `nvidia-smi`, which comes with its driver. Use one of the other two options. |
+| "llama.cpp did not find the GPU" | Update the graphics driver, then *Try again*; nothing is downloaded twice. `llama-server.log` and `llama-server --list-devices` in the `llama` folder say what it sees. |
+| "llama-server did not answer … within 900s" or it stops while loading | The model did not fit beside what else uses the GPU's memory. Close other programs that use it and *Check again*; `llama-server.log` has the reason. |
+| A hosted provider "rejected the API key" | The key is for another provider, was revoked, or has no credit. Create a new one in the provider's console (the link under the list) and click *List models* again. |
 | Runs finish instantly with tool calls printed as text | The model or server doesn't do tool calling. Pick a model that does; for vLLM see the [deployment guide](../DEPLOYMENT.md#2-make-sure-vllm-is-ready-for-cedar). |
-| "port … is already in use" | Something else listens on 18080 or 13000. Change `cedar_port` or `chat_port` in `config.json`, then *Restart Services*. |
+| "port … is already in use" | Something else listens on 18080 or 13000 (or 18081, llama.cpp's). Change `cedar_port`, `chat_port` or `llama_port` in `config.json`, then *Restart Services*. |
 | No notification when a response finishes | Settings → Notifications in the chat should list *Desktop notification* as set up and the default (the app sets that up on its first start, unless another method was already chosen). A response you looked at within a few seconds of it ending isn't announced. |
 | iPhone, iPad & Android: "HTTPS is not enabled" or "no tailnet name" | Turn on HTTPS Certificates and MagicDNS in the Tailscale admin console's DNS page, then click *Try again*. |
 | The iOS or Android app can't connect | Use the `https://…ts.net` address from the setup page, without a port; check that the phone is logged in to the same tailnet, that the computer is awake, and that `tailscale serve status` on it lists the chat port. The first connection can take a few seconds while Tailscale gets the certificate. |

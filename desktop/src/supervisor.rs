@@ -39,11 +39,11 @@ pub enum ServiceState {
 /// How long a server gets to answer `/healthz` after it was started.
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(45);
 /// cedar gives active runs 10 s to record their state on a stop; wait a little longer than that.
-const STOP_GRACE: Duration = Duration::from_secs(15);
+pub(crate) const STOP_GRACE: Duration = Duration::from_secs(15);
 const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
 /// An exit this soon after a start counts as a crash loop.
-const FAST_EXIT: Duration = Duration::from_secs(10);
-const MAX_FAST_CRASHES: u32 = 3;
+pub(crate) const FAST_EXIT: Duration = Duration::from_secs(10);
+pub(crate) const MAX_FAST_CRASHES: u32 = 3;
 
 pub struct Supervisor {
     exe_dir: PathBuf,
@@ -199,7 +199,7 @@ impl Runner {
         self.set(ServiceState::Starting(i18n::t("services.starting_cedar")));
         let cedar_log = self.paths.cedar_log();
         let mut cedar = self.spawn("cedar", self.cedar_env(), &cedar_log)?;
-        if let Err(e) = wait_healthy(&mut cedar.child, &self.cfg.cedar_url(), "cedar", &cedar_log).await {
+        if let Err(e) = wait_healthy(&mut cedar.child, &healthz(&self.cfg.cedar_url()), "cedar", &cedar_log, HEALTH_TIMEOUT).await {
             terminate(&mut cedar).await;
             return Err(e);
         }
@@ -213,7 +213,7 @@ impl Runner {
                 return Err(e);
             }
         };
-        if let Err(e) = wait_healthy(&mut chat.child, &self.cfg.local_chat_url(), "cedar-chat", &chat_log).await {
+        if let Err(e) = wait_healthy(&mut chat.child, &healthz(&self.cfg.local_chat_url()), "cedar-chat", &chat_log, HEALTH_TIMEOUT).await {
             terminate(&mut chat).await;
             terminate(&mut cedar).await;
             return Err(e);
@@ -328,12 +328,22 @@ impl Runner {
     }
 }
 
-/// Polls `/healthz` until it answers, the child exits, or the timeout passes.
-async fn wait_healthy(child: &mut Child, url: &str, name: &str, log: &Path) -> Result<()> {
+fn healthz(server: &str) -> String {
+    format!("{server}/healthz")
+}
+
+/// Polls `url` (a server's health route) until it answers, the child exits, or `timeout` passes.
+pub(crate) async fn wait_healthy(
+    child: &mut Child,
+    url: &str,
+    name: &str,
+    log: &Path,
+    timeout: Duration,
+) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()?;
-    let deadline = Instant::now() + HEALTH_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         if let Some(status) = child.try_wait()? {
             bail!(
@@ -343,7 +353,7 @@ async fn wait_healthy(child: &mut Child, url: &str, name: &str, log: &Path) -> R
             );
         }
         let ok = client
-            .get(format!("{url}/healthz"))
+            .get(url)
             .send()
             .await
             .map(|r| r.status().is_success())
@@ -354,7 +364,7 @@ async fn wait_healthy(child: &mut Child, url: &str, name: &str, log: &Path) -> R
         if Instant::now() > deadline {
             bail!(
                 "{name} did not answer on {url} within {}s; see {}",
-                HEALTH_TIMEOUT.as_secs(),
+                timeout.as_secs(),
                 log.display()
             );
         }
@@ -379,7 +389,7 @@ async fn terminate(server: &mut Server) {
     }
 }
 
-fn describe(status: std::io::Result<std::process::ExitStatus>) -> String {
+pub(crate) fn describe(status: std::io::Result<std::process::ExitStatus>) -> String {
     match status {
         Ok(s) => match s.code() {
             Some(code) => format!("exit code {code}"),
@@ -390,7 +400,7 @@ fn describe(status: std::io::Result<std::process::ExitStatus>) -> String {
 }
 
 /// Opens the log for appending, moving a large one aside first.
-fn open_log(path: &Path) -> Result<std::fs::File> {
+pub(crate) fn open_log(path: &Path) -> Result<std::fs::File> {
     if let Ok(meta) = std::fs::metadata(path) {
         if meta.len() > MAX_LOG_BYTES {
             let _ = std::fs::rename(path, path.with_extension("log.1"));

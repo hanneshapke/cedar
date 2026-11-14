@@ -12,6 +12,8 @@ mod config;
 mod docker;
 mod i18n;
 mod installer;
+mod llamaserver;
+mod llamasetup;
 mod macsetup;
 mod models;
 mod notify;
@@ -68,6 +70,7 @@ fn main() {
             }
             notify::start(handle.clone());
             update::start(handle.clone());
+            tauri::async_runtime::spawn(llamasetup::detect(handle.clone()));
             tauri::async_runtime::spawn(app::bootstrap(handle));
             Ok(())
         })
@@ -79,6 +82,9 @@ fn main() {
             commands::install_tailscale,
             commands::list_models,
             commands::save_model_server,
+            commands::install_llama,
+            commands::cancel_llama,
+            commands::remove_llama,
             commands::set_browser,
             commands::open_chat,
             commands::open_in_browser,
@@ -126,7 +132,8 @@ fn main() {
                 }
                 let state = app.state::<AppState>();
                 tauri::async_runtime::block_on(async {
-                    state.supervisor.stop().await;
+                    // Together, so a quit waits for one grace period at most.
+                    tokio::join!(state.supervisor.stop(), state.llama.stop());
                     state.stop_share().await;
                 });
             }

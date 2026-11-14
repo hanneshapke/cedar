@@ -13,6 +13,7 @@
 window.__resources = window.__resources || {};
 </script>
 <script src="./version.js"></script>
+<script src="./tour.js"></script>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -57,6 +58,10 @@ html{scroll-padding-top:96px}
 .lang-switch a{color:#231f1b}.lang-switch a:hover{color:#e5553a}
 .hdr-lang{display:none;font-size:13px;color:#8a7f73}
 @media (max-width:720px){.hdr-lang{display:inline}}
+/* The tour: the play button grows a little under the pointer */
+.tour-play:hover .tour-button,.tour-play:focus-visible .tour-button{transform:scale(1.08)}
+.tour-play:focus-visible{outline:3px solid #e5553a;outline-offset:-3px}
+@media (max-width:720px){.tour-button{width:68px!important;height:68px!important;margin:-34px 0 0 -34px!important}}
 @keyframes riseIn{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
 </style>
 </helmet>
@@ -74,7 +79,6 @@ html{scroll-padding-top:96px}
     <a href="#private" style="color:#231f1b" style-hover="color:#e5553a" data-i18n="index.nav.private">Private by design</a>
     <a href="#apps" style="color:#231f1b" style-hover="color:#e5553a" data-i18n="index.nav.apps">Mac, Windows, Linux &amp; phones</a>
     <a href="#compare" style="color:#231f1b" style-hover="color:#e5553a" data-i18n="index.nav.compare">Compared</a>
-    <a href="models.html" style="color:#231f1b" style-hover="color:#e5553a" data-i18n="index.nav.models">Models</a>
     <a href="install.html" style="border:2px solid #231f1b;color:#231f1b;padding:8px 16px;border-radius:999px;font-weight:600;transition:transform .2s,border-color .2s,color .2s" style-hover="border-color:#e5553a;color:#e5553a;transform:translateY(-2px)" data-i18n="index.nav.install">Install guide</a>
     <a href="{{ dl.href }}" style="background:#231f1b;color:#fbf4ea;padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s" style-hover="background:#e5553a;color:#fbf4ea;transform:translateY(-2px)">{{ dl.label }}</a>
   </nav>
@@ -91,6 +95,7 @@ html{scroll-padding-top:96px}
       <a href="install.html" style="display:inline-flex;align-items:center;gap:8px;padding:15px 22px;border-radius:999px;font-weight:600;font-size:16px;border:2px solid #231f1b;color:#231f1b;transition:transform .2s" style-hover="transform:translateY(-3px);border-color:#e5553a;color:#e5553a" data-i18n="index.hero.guide">Step-by-step install guide</a>
     </div>
     <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-size:15px">
+      <a href="#tour" data-tour-open style="font-weight:600;display:inline-flex;align-items:center;gap:8px"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M8 6.2v7.6l6-3.8z" fill="#fff"/></svg><span data-i18n="index.hero.tour">Watch the 4-minute tour</span></a>
       <sc-if value="{{ dl.invite }}" hint-placeholder-val="{{ true }}"><a href="#phone" style="font-weight:600" data-i18n="index.hero.phoneApps">iPhone &amp; Android apps →</a></sc-if>
       <a href="#apps" style="font-weight:600">{{ dl.other }}</a>
     </div>
@@ -100,28 +105,13 @@ html{scroll-padding-top:96px}
   <div style="position:relative;animation:riseIn 1s .15s cubic-bezier(.2,.8,.2,1) both">
     <div style="position:absolute;inset:auto -20px -24px auto;width:140px;height:140px;border-radius:32px;background:#f2a21c;transform:rotate(12deg);animation:floaty 7s ease-in-out infinite;opacity:.9"></div>
     <div style="position:absolute;top:-26px;left:-22px;width:84px;height:84px;border-radius:50%;background:#3a5f4b;animation:floaty2 6s ease-in-out infinite"></div>
-    <div style="position:relative;background:#fff;border-radius:22px;box-shadow:0 30px 70px rgba(60,30,10,.18);padding:22px;display:flex;flex-direction:column;gap:16px;min-height:380px">
-      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#8a7f73"><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt=""><span style="font-weight:600;color:#231f1b">Cedar</span><span>·</span><span>{{ statusLine }}</span></div>
-      <div style="background:#fbf4ea;border-radius:14px;padding:14px 16px;font-size:16px;line-height:1.45;min-height:72px;color:#231f1b">{{ typed }}<span style="display:inline-block;width:2px;height:18px;background:#e5553a;vertical-align:-3px;margin-left:2px;animation:blink 1s steps(1) infinite"></span></div>
-      <sc-if value="{{ showPlan }}" hint-placeholder-val="{{ true }}">
-        <div style="display:flex;flex-direction:column;gap:8px;animation:popin .4s ease both">
-          <span style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#3a5f4b" data-i18n="index.demo.planLabel">The plan · you can edit it</span>
-          <sc-for list="{{ steps }}" as="s" hint-placeholder-count="4">
-            <div style="display:flex;align-items:center;gap:12px;font-size:15px;opacity:{{ s.opacity }};transition:opacity .4s;animation:popin .4s ease both">
-              <span style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;background:{{ s.bg }};transition:background .3s;flex:none">{{ s.icon }}</span>
-              <span style="flex:1">{{ s.title }}</span>
-              <span style="font-size:12px;color:#8a7f73">{{ s.note }}</span>
-            </div>
-          </sc-for>
-        </div>
-      </sc-if>
-      <sc-if value="{{ showResult }}" hint-placeholder-val="{{ false }}">
-        <div style="margin-top:auto;display:flex;align-items:center;gap:14px;background:#3a5f4b;color:#fbf4ea;border-radius:14px;padding:14px 16px;animation:popin .5s ease both">
-          <span style="width:40px;height:40px;border-radius:10px;background:#f2a21c;color:#231f1b;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-family:'Bricolage Grotesque',sans-serif;font-size:12px">PDF</span>
-          <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:600;font-size:15px" data-i18n="index.demo.ready">ev-battery-makers.pdf is ready</span><span style="font-size:13px;opacity:.85" data-i18n="index.demo.meta">14 sources, every claim linked · 2 min 10 s</span></div>
-        </div>
-      </sc-if>
-    </div>
+    <!-- Cedar at work, 18 seconds from the tour film in the page's language (docs/screencast/loop/hero.*, made by docs/screencast/tools/loop.py), silent and repeating. tour.js starts it, and leaves it still for visitors who ask for less motion. A click leads to the whole film below. -->
+    <a href="#tour" data-tour-open data-i18n-attr="aria-label:index.hero.loopLabel" aria-label="Cedar at work: a plan, a chart and a finished PDF. Watch the 4-minute tour" style="position:relative;display:block;background:#fff;border-radius:22px;box-shadow:0 30px 70px rgba(60,30,10,.18);padding:10px">
+      <video data-hero-loop muted loop playsinline preload="metadata" width="1000" height="800" poster="shots/hero-en.jpg" data-i18n-attr="poster:index.hero.loop.poster" style="display:block;width:100%;height:auto;aspect-ratio:5/4;border-radius:14px;background:#f7f5f0">
+        <source src="shots/hero-en.mp4" type="video/mp4" data-i18n-attr="src:index.hero.loop.mp4">
+        <source src="shots/hero-en.webm" type="video/webm" data-i18n-attr="src:index.hero.loop.webm">
+      </video>
+    </a>
   </div>
 </section>
 
@@ -132,6 +122,22 @@ html{scroll-padding-top:96px}
     </sc-for>
   </div>
 </div>
+
+<section id="tour" data-screen-label="The tour" style="max-width:1160px;margin:0 auto;padding:60px 28px 0;display:flex;flex-direction:column;gap:32px;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.tour.eyebrow">See it work</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.tour.title">The whole tour,<br>in four minutes.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.tour.lead">From the first start to a finished report: adding a model, a task with its plan, the work in a sealed box, and an agent made from the conversation.</p>
+  </div>
+  <!-- The film in the page's language. Only the picture below is on the page: tour.js puts the YouTube player in its place when it is clicked, so nothing is fetched from YouTube before. Without scripts the link opens the film on YouTube. -->
+  <div data-reveal data-tour-frame data-i18n-attr="data-video:index.tour.video" data-video="K0RgSeHgLXc" style="position:relative;aspect-ratio:16/9;border-radius:28px;overflow:hidden;background:#231f1b;box-shadow:0 30px 70px rgba(60,30,10,.18)">
+    <a class="tour-play" data-tour href="https://youtu.be/K0RgSeHgLXc" target="_blank" rel="noopener" data-i18n-attr="href:index.tour.url; aria-label:index.tour.play" aria-label="Play the tour" style="position:absolute;inset:0;display:block">
+      <img src="shots/tour-en.jpg" data-i18n-attr="src:index.tour.poster; alt:index.tour.alt" alt="Cedar's chat with a spending chart and the finished PDF summary" width="1280" height="720" loading="lazy" style="display:block;width:100%;height:100%;object-fit:cover">
+      <span class="tour-button" style="position:absolute;left:50%;top:50%;width:96px;height:96px;margin:-48px 0 0 -48px;border-radius:50%;background:#e5553a;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 40px rgba(35,31,27,.35);transition:transform .2s"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#fff"/></svg></span>
+    </a>
+  </div>
+  <span data-reveal style="font-size:13px;color:#8a7f73" data-i18n="index.tour.note">The video plays from YouTube. Nothing is loaded from YouTube until you press play.</span>
+</section>
 
 <section id="does" data-screen-label="What it does" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:72px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
@@ -215,6 +221,7 @@ html{scroll-padding-top:96px}
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.yours.eyebrow">Yours to shape</span>
     <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.yours.title">Pick the brain.<br>Add the hands.</h2>
     <p class="rich" style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n-html="index.yours.models">Cedar isn't tied to one AI company. Run a model on your Mac or PC with <strong>Ollama</strong> or <strong>LM Studio</strong>, serve one from a Linux GPU box with <strong>vLLM</strong>, or point it at a server you trust. Switch between them per conversation.</p>
+    <p class="rich" style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.yours.cedarRuns">No model server yet? On your Mac or PC with a capable GPU, Cedar downloads a model and runs it for you with llama.cpp.</p>
     <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.yours.tools">Need something specific? Add a tool from the community with one click, after seeing exactly what it asks for. The first one reads an insulin pump and compares your day with your week.</p>
     <a href="https://github.com/hanneshapke/cedar/tree/main/registry/tools" style="font-weight:600;font-size:16px;display:inline-flex;gap:8px;align-items:center"><span data-i18n="index.yours.browse">Browse community tools</span> <span style="transition:transform .2s">→</span></a>
   </div>
@@ -335,15 +342,15 @@ sudo install $F/cedar* /usr/local/bin/
 </section>
 
 <section id="compare" data-screen-label="Compared" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:32px;position:relative">
-  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:760px">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.cmp.eyebrow">Compared</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.cmp.title">Cedar, OpenClaw, OpenBot,<br>Muse and Claude Duet.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n-html="index.cmp.lead">Five assistants that do tasks for you. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> lives in your chat apps and acts on your computer. <a href="https://openbot.run/">OpenBot</a> runs a team of agents such as Codex and Claude Code on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a> is Meta&#8217;s, run in Meta&#8217;s cloud. <a href="https://claude.com/product/claude-duet">Claude Duet</a> is Anthropic&#8217;s, a proactive agent on its own computer in Anthropic&#8217;s cloud. Cedar runs at home, on a Mac, a Windows PC or a Linux box, and keeps every task in its own sealed box.</p>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.cmp.title">Cedar, OpenClaw, OpenBot,<br>Meta Muse, OpenAI Dots and Claude Duet.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n-html="index.cmp.lead">Six assistants that do tasks for you. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> lives in your chat apps and acts on your computer. <a href="https://openbot.run/">OpenBot</a> runs a team of agents such as Codex and Claude Code on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Meta Muse</a> runs in Meta&#8217;s cloud. <a href="https://openai.com/index/introducing-dots/">OpenAI Dots</a> is an always-on agent on its own computer in OpenAI&#8217;s cloud. <a href="https://claude.com/product/claude-duet">Claude Duet</a> is Anthropic&#8217;s, a proactive agent on its own computer in Anthropic&#8217;s cloud. Cedar runs at home, on a Mac, a Windows PC or a Linux box, and keeps every task in its own sealed box.</p>
   </div>
   <div data-reveal style="display:flex;flex-direction:column;gap:20px">
     <div role="group" aria-label="Compare Cedar with" data-i18n-attr="aria-label:index.cmp.groupLabel" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <span style="font-size:15px;font-weight:600;color:#4f4740;margin-right:4px" data-i18n="index.cmp.vs">Cedar vs.</span>
-      <sc-for list="{{ cmpTabs }}" as="t" hint-placeholder-count="4">
+      <sc-for list="{{ cmpTabs }}" as="t" hint-placeholder-count="5">
         <button type="button" onclick="{{ t.pick }}" aria-pressed="{{ t.pressed }}" style="font:inherit;font-size:15px;font-weight:600;cursor:pointer;border-radius:999px;padding:9px 18px;border:1px solid {{ t.border }};background:{{ t.bg }};color:{{ t.fg }};transition:background .2s,color .2s,transform .2s" style-hover="transform:translateY(-2px)">{{ t.name }}</button>
       </sc-for>
     </div>
@@ -364,39 +371,41 @@ sudo install $F/cedar* /usr/local/bin/
   </div>
   <div data-reveal style="display:flex;flex-direction:column;gap:10px">
     <p class="rich" style="margin:0;font-size:16px;line-height:1.5;color:#4f4740;text-wrap:pretty"><span data-i18n-html="index.cmp.pickCedar"><strong>Pick Cedar</strong> when the assistant should never touch the rest of your computer and your data should stay home.</span> <strong>{{ cmpOther.pickLead }}</strong> {{ cmpOther.pick }}</p>
-    <span style="font-size:12.5px;color:#8a7f73" data-i18n="index.cmp.sources">OpenClaw details from its README, October 2026. OpenBot details from its website and README, November 2026. Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. Claude Duet details from Anthropic&#8217;s product page, October 2026. Corrections welcome.</span>
+    <span style="font-size:12.5px;color:#8a7f73" data-i18n="index.cmp.sources">OpenClaw details from its README, October 2026. OpenBot details from its website and README, November 2026. Meta Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. OpenAI Dots details from OpenAI&#8217;s announcement and press coverage, November 2026. Claude Duet details from Anthropic&#8217;s product page, October 2026. Corrections welcome.</span>
   </div>
 </section>
 
 <section id="setup" data-screen-label="Setup" style="max-width:1160px;margin:0 auto;padding:90px 28px 60px;display:flex;flex-direction:column;gap:40px;position:relative">
-  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.setup.eyebrow">Setup</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n="index.setup.title">Three steps, then you're talking.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" class="rich" data-i18n-html="index.setup.lead">Cedar needs a model to think with, itself, and a sealed box to work in. On a Mac or PC, it sets that box up for you. The <a href="install.html">install guide</a> puts the steps in order for your computer, whether Docker is already there, and whether you run the model at home or use a provider.</p>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n="index.setup.title">Install Cedar. It sets up the rest.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" class="rich" data-i18n-html="index.setup.lead">Download Cedar and open it. Its setup window installs Docker for the sealed box Cedar works in, and gets you a model. Nothing to prepare first. On Linux it is a few commands, and the <a href="install.html">install guide</a> has them for your computer.</p>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" class="rich" data-i18n-html="index.setup.remote">Cedar already runs on another computer of yours? <a href="install.html?use=remote">Connect this one to it</a>: it needs no Docker and no model of its own.</p>
   </div>
   <a data-reveal href="install.html" style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:20px 32px;align-items:center;background:#231f1b;color:#fbf4ea;border-radius:28px;padding:clamp(26px,4vw,40px);position:relative;overflow:hidden;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-4px);box-shadow:0 24px 50px rgba(60,30,10,.25);color:#fbf4ea">
     <div style="display:flex;flex-direction:column;gap:10px;flex:1 1 420px;min-width:0">
       <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#f2a21c" data-i18n="index.setup.card.eyebrow">Install guide</span>
-      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(26px,3.4vw,38px);line-height:1.05;letter-spacing:-.02em" data-i18n="index.setup.card.title">Five questions. Your exact steps.</span>
-      <span style="font-size:16px;line-height:1.5;color:#d9cfc2;max-width:620px" data-i18n="index.setup.card.body">Mac, Windows or Linux? Docker or not? Ollama, LM Studio, vLLM, or a provider like Doubleword or Baseten? Pick your answers and copy the commands. Share the link with whoever helps you set it up.</span>
+      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(26px,3.4vw,38px);line-height:1.05;letter-spacing:-.02em" data-i18n="index.setup.card.title">A few questions. Your exact steps.</span>
+      <span style="font-size:16px;line-height:1.5;color:#d9cfc2;max-width:620px" data-i18n="index.setup.card.body">Mac, Windows or Linux? How much memory? A model on your own computer, or a provider like Doubleword, Baseten or Nebius? Pick your answers and copy the commands. Share the link with whoever helps you set it up.</span>
     </div>
     <span style="display:inline-flex;align-items:center;gap:10px;background:#e5553a;color:#fff;padding:15px 24px;border-radius:999px;font-weight:600;font-size:16px;white-space:nowrap;justify-self:start" data-i18n="index.setup.card.cta">Find your install path →</span>
   </a>
-  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
-    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#f2a21c">1</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.model.title">Pick a model</h3>
-      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.model.body">Ollama or LM Studio put an AI model on your Mac or PC in minutes. On a Linux GPU box, run vLLM. No big computer? Use a provider like Doubleword or Baseten. The <a href="models.html">model guide</a> suggests one for your hardware.</p>
+  <div data-reveal style="display:flex;flex-direction:column;gap:16px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#3a5f4b" data-i18n="index.setup.ways">Your model, three ways</span>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:20px">
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,box-shadow .25s;border:2px solid #231f1b" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.cedar.title">Cedar runs a model for you</h3>
+      <span style="align-self:flex-start;font-size:12px;font-weight:700;letter-spacing:.04em;padding:3px 10px;border-radius:999px;background:#231f1b;color:#fbf4ea" data-i18n="index.setup.easiest">Easiest</span>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.cedar.body">With a capable graphics card or an Apple silicon Mac, Cedar downloads llama.cpp and a model that fits, and runs them. Nothing to install first, and nothing leaves your computer.</p>
     </div>
-    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#e5553a">2</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.install.title">Install Cedar</h3>
-      <p style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n="index.setup.install.body">Drag it to Applications on a Mac, run the installer on Windows. On Linux, install Docker Engine and Cedar's two programs; the guide has the commands.</p>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,box-shadow .25s;border:1px solid #f0dcc8" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.hosted.title">A hosted provider</h3>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.hosted.body">No big computer? Choose Baseten, Nebius, Doubleword or another provider in the setup window and paste an API key. They run the model, and you pay for what you use.</p>
     </div>
-    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;border:1px solid #f0dcc8;transition:transform .25s,box-shadow .25s" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
-      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:44px;line-height:1;color:#3a5f4b">3</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.rest.title">Let Cedar set up the rest</h3>
-      <p class="setup-code" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.rest.body">No Docker yet? Click <em>Set up Docker for me</em> and Cedar installs Docker Desktop, asking for permission once; one you already have works too. Pick your model and give it a task. For your phone, <em>Set up Tailscale for me</em>, then scan one code. On Linux, start <code>cedar</code> and <code>cedar-chat</code> and open the chat in your browser.</p>
+    <div style="background:#fff;border-radius:22px;padding:28px;display:flex;flex-direction:column;gap:12px;transition:transform .25s,box-shadow .25s;border:1px solid #f0dcc8" style-hover="transform:translateY(-6px);box-shadow:0 20px 40px rgba(60,30,10,.12)">
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em" data-i18n="index.setup.own.title">You run the model server</h3>
+      <p class="rich" style="margin:0;font-size:15.5px;line-height:1.5;color:#4f4740" data-i18n-html="index.setup.own.body">Already run Ollama, LM Studio, llama.cpp or vLLM? Click its preset in the setup window. The <a href="install.html#model-title">install guide</a> suggests a model for your hardware.</p>
+    </div>
     </div>
   </div>
   <div data-reveal style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
@@ -408,24 +417,22 @@ sudo install $F/cedar* /usr/local/bin/
 
 <footer style="max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:#8a7f73;border-top:1px solid #f0dcc8;position:relative">
   <span style="display:flex;align-items:center;gap:8px"><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt=""><span class="by" style="display:contents" data-i18n-html="index.footer.license">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke">@hanneshapke</a> and contributors</span></span>
-  <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar" style="color:#231f1b">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b" data-i18n="index.footer.invite">iPhone invite</a><a href="#iphone-private" style="color:#231f1b" data-i18n="index.footer.private">iPhone, privately</a><a href="{{ apkHref }}" style="color:#231f1b" data-i18n="index.footer.android">Android app</a><a href="install.html" style="color:#231f1b" data-i18n="index.footer.install">Install guide</a><a href="models.html" style="color:#231f1b" data-i18n="index.footer.models">Model guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" style="color:#231f1b" data-i18n="index.footer.desktop">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="color:#231f1b" data-i18n="index.footer.linux">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="color:#231f1b" data-i18n="index.footer.developers">For developers</a></span>
+  <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="https://github.com/hanneshapke/cedar" style="color:#231f1b">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" style="color:#231f1b" data-i18n="index.footer.invite">iPhone invite</a><a href="#iphone-private" style="color:#231f1b" data-i18n="index.footer.private">iPhone, privately</a><a href="{{ apkHref }}" style="color:#231f1b" data-i18n="index.footer.android">Android app</a><a href="install.html" style="color:#231f1b" data-i18n="index.footer.install">Install guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" style="color:#231f1b" data-i18n="index.footer.desktop">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" style="color:#231f1b" data-i18n="index.footer.linux">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" style="color:#231f1b" data-i18n="index.footer.developers">For developers</a></span>
   <span class="lang-switch" data-lang-switch></span>
 </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;demoSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero demo&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{}">
 class Component extends DCLogic {
-  state = { typed: '', phase: 0, done: 0, visible: 0, os: '', dmg: '', msi: '', apk: '', ipa: '', linuxX64: '', linuxArm: '', ver: '', linuxArch: 'x64', cmp: 'openclaw' };
-  // Text comes from i18n/index.js (loaded before support.js creates this component).
-  prompt = tr('index.demo.prompt');
-  plan = [1, 2, 3, 4].map((n) => ({ title: tr('index.demo.step' + n), note: tr('index.demo.step' + n + '.note') }));
+  state = { os: '', dmg: '', msi: '', apk: '', ipa: '', linuxX64: '', linuxArm: '', ver: '', linuxArch: 'x64', cmp: 'openclaw' };
   // The comparison's rows, in this order, for Cedar and for each other assistant. An assistant
   // with `extra` topics gets those rows after the common ones.
   cmpTopicIds = ['where', 'how', 'ai', 'guardrails', 'data'];
   cmpOthers = [
     { id: 'openclaw', name: 'OpenClaw', badge: 'free' },
     { id: 'openbot', name: 'OpenBot', badge: 'openbot', extra: ['memory'] },
-    { id: 'muse', name: 'Muse', badge: 'muse' },
+    { id: 'muse', name: 'Meta Muse', badge: 'muse' },
+    { id: 'dots', name: 'OpenAI Dots', badge: 'dots' },
     { id: 'duet', name: 'Claude Duet', badge: 'duet' },
   ].map((o) => ({
     ...o,
@@ -454,7 +461,6 @@ class Component extends DCLogic {
     this.setState({ os: this.detectOS() });
     this.detectLinuxArch();
     this.findInstallers();
-    this.startDemo();
     this.io = new IntersectionObserver((es) => es.forEach((e) => {
       if (e.isIntersecting) { e.target.style.opacity = '1'; e.target.style.transform = 'none'; this.io.unobserve(e.target); }
     }), { threshold: 0.12 });
@@ -547,35 +553,14 @@ class Component extends DCLogic {
       default: return { label: tr('index.dl.cedar'), href: '#apps', other: tr('index.dl.otherAll'), invite: true };
     }
   }
-  componentWillUnmount() { clearTimeout(this.t); this.io && this.io.disconnect(); }
-  wait(ms) { return new Promise((r) => { this.t = setTimeout(r, ms / (this.props.demoSpeed ?? 1)); }); }
-  async startDemo() {
-    while (true) {
-      this.setState({ typed: '', phase: 0, done: 0, visible: 0 });
-      await this.wait(900);
-      for (let i = 1; i <= this.prompt.length; i++) { this.setState({ typed: this.prompt.slice(0, i) }); await this.wait(28 + Math.random() * 30); }
-      await this.wait(600);
-      this.setState({ phase: 1 });
-      for (let i = 1; i <= this.plan.length; i++) { this.setState({ visible: i }); await this.wait(350); }
-      await this.wait(900);
-      this.setState({ phase: 2 });
-      for (let i = 1; i <= this.plan.length; i++) { await this.wait(1100); this.setState({ done: i }); }
-      await this.wait(500);
-      this.setState({ phase: 3 });
-      await this.wait(5000);
-    }
-  }
+  componentWillUnmount() { this.io && this.io.disconnect(); }
   renderVals() {
-    const { typed, phase, done, visible, os, cmp } = this.state;
-    const steps = this.plan.map((p, i) => {
-      const finished = i < done, running = phase === 2 && i === done;
-      return { title: p.title, note: finished ? p.note : (running ? tr('index.demo.working') : ''), icon: finished ? '\u2713' : String(i + 1), bg: finished ? '#3a5f4b' : (running ? '#e5553a' : '#c9bdae'), opacity: i < visible ? 1 : 0 };
-    });
+    const { os, cmp } = this.state;
     const palette = [['#231f1b', '#fbf4ea'], ['#e5553a', '#fff'], ['#f2a21c', '#231f1b'], ['#fff', '#231f1b'], ['#3a5f4b', '#fbf4ea']];
     const tasks = ['lisbon', 'receipts', 'summarize', 'airport', 'funds', 'weather', 'recipe', 'landlord', 'glucose', 'plumber'].map((t) => tr('index.task.' + t));
     const marquee = [...tasks, ...tasks].map((text, i) => ({ text, bg: palette[i % palette.length][0], fg: palette[i % palette.length][1] }));
     return {
-      typed, steps, marquee, dl: this.downloadFor(os),
+      marquee, dl: this.downloadFor(os),
       macHref: this.state.dmg || 'https://github.com/hanneshapke/cedar/releases/latest',
       winHref: this.state.msi || 'https://github.com/hanneshapke/cedar/releases/latest',
       apkHref: this.state.apk || 'https://github.com/hanneshapke/cedar/releases/latest',
@@ -586,8 +571,6 @@ class Component extends DCLogic {
       // The newest release with Linux builds, until GitHub says which is latest.
       ver: this.state.ver || window.CEDAR_VERSION,
       ...this.linux(this.state.linuxArch, this.state.ver || window.CEDAR_VERSION),
-      showPlan: phase >= 1, showResult: phase === 3,
-      statusLine: tr('index.demo.status.' + ['new', 'planning', 'working', 'done'][phase]),
       ...this.comparison(cmp),
       abilities: ['web', 'weather', 'maps', 'recipes', 'directions', 'stocks', 'shopping', 'gmail', 'calendar', 'files', 'charts'].map((a) => tr('index.ability.' + a)),
     };

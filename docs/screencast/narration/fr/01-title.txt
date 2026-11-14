@@ -1,0 +1,1 @@
+Voici Cedar : un assistant open source qui tourne sur votre propre ordinateur et fait un vrai travail pour vous.

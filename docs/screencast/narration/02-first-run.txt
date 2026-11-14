@@ -1,0 +1,1 @@
+The first time you open it, Cedar asks which language you'd like to work in. After that it needs just one thing: a model to think with.

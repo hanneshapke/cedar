@@ -5,6 +5,8 @@
 
 use crate::config::{Config, VERSION};
 use crate::docker::{self, DockerCli};
+use crate::llamaserver::LlamaServer;
+use crate::llamasetup;
 use crate::pull::PullProgress;
 use crate::models;
 use crate::paths::Paths;
@@ -18,6 +20,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
@@ -44,8 +47,8 @@ pub enum ImagesStatus {
     Failed(String),
 }
 
-/// Setting Docker up from the setup page (Windows and macOS, see winsetup.rs and macsetup.rs), or
-/// installing Tailscale (tssetup.rs).
+/// Setting Docker up from the setup page (Windows and macOS, see winsetup.rs and macsetup.rs),
+/// installing Tailscale (tssetup.rs), or installing llama.cpp and a model (llamasetup.rs).
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
 pub enum SetupStatus {
@@ -97,6 +100,19 @@ pub enum ShareStatus {
     Failed(String),
 }
 
+/// llama.cpp as the model server, set up and run by the app (llamasetup.rs, llamaserver.rs).
+#[derive(Serialize, Clone, Debug)]
+pub struct LlamaStatus {
+    /// What the page offers to install: this computer's GPU can run one of Cedar's models.
+    pub offer: Option<llamasetup::Offer>,
+    pub setup: SetupStatus,
+    /// How far the download is, from 0 to 1, while there is one.
+    pub progress: Option<f64>,
+    /// The model it runs, once installed; `None` while the model server is the user's own.
+    pub model: Option<String>,
+    pub server: ServiceState,
+}
+
 pub struct AppState {
     pub paths: Paths,
     config: Mutex<Config>,
@@ -115,6 +131,14 @@ pub struct AppState {
     /// Whether a newer release is out, and how far installing it got (see update.rs).
     update: Mutex<UpdateStatus>,
     pub supervisor: Supervisor,
+    /// What suits this computer's GPU, once it was looked at (see `llamasetup::detect`).
+    llama_plan: Mutex<Option<cedar_llama::Plan>>,
+    llama_setup: Mutex<(SetupStatus, Option<f64>)>,
+    /// Stops the download that is under way.
+    llama_cancel: Mutex<CancellationToken>,
+    pub llama: LlamaServer,
+    /// The entry to make cedar's default at the next registration (see [`Self::choose`]).
+    chosen: Mutex<Chosen>,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
 }
@@ -148,6 +172,12 @@ pub struct Status {
     pub llm_base_url: String,
     pub llm_model: String,
     pub has_api_key: bool,
+    /// How the model server was named on the page (`own` or `hosted`), or empty while none is.
+    /// llama.cpp run by the app is beside it, in `llama`.
+    pub model_source: &'static str,
+    /// The hosted providers and the presets of servers people run themselves, for the page's forms.
+    pub providers: &'static [models::Provider],
+    pub presets: &'static [models::Preset],
     pub browser: bool,
     pub chat_url: String,
     pub access_token: String,
@@ -155,6 +185,7 @@ pub struct Status {
     pub config_path: String,
     pub sandbox_image: String,
     pub update: UpdateStatus,
+    pub llama: LlamaStatus,
     pub check_updates: bool,
     /// The language picked on the page; empty until one is (the page then asks first).
     pub locale: String,
@@ -164,6 +195,11 @@ impl AppState {
     pub fn new(paths: Paths, config: Config, exe_dir: PathBuf) -> Self {
         Self {
             supervisor: Supervisor::new(exe_dir, paths.clone()),
+            llama_plan: Mutex::new(None),
+            llama_setup: Mutex::new((SetupStatus::Idle, None)),
+            llama_cancel: Mutex::new(CancellationToken::new()),
+            llama: LlamaServer::new(paths.clone()),
+            chosen: Mutex::new(Chosen::Neither),
             paths,
             config: Mutex::new(config),
             docker: Mutex::new(DockerStatus::Checking),
@@ -217,6 +253,71 @@ impl AppState {
     /// Marks installing Tailscale as started, unless it already runs.
     pub fn begin_tailscale_setup(&self) -> bool {
         begin(&self.tailscale_setup)
+    }
+
+    pub fn set_llama_plan(&self, plan: Option<cedar_llama::Plan>) {
+        *self.llama_plan.lock().unwrap() = plan;
+    }
+
+    pub fn llama_plan(&self) -> Option<cedar_llama::Plan> {
+        self.llama_plan.lock().unwrap().clone()
+    }
+
+    /// The step the llama.cpp setup is on and, during a download, how far it is.
+    pub fn set_llama_setup(&self, s: SetupStatus, progress: Option<f64>) {
+        *self.llama_setup.lock().unwrap() = (s, progress);
+    }
+
+    /// Marks the llama.cpp setup as started, unless it already runs.
+    pub fn begin_llama_setup(&self) -> bool {
+        let mut setup = self.llama_setup.lock().unwrap();
+        if matches!(setup.0, SetupStatus::Running(_)) {
+            return false;
+        }
+        *setup = (SetupStatus::Running(crate::i18n::t("setup.starting")), None);
+        true
+    }
+
+    /// A fresh token for a download that starts now; [`Self::cancel_llama`] stops that download.
+    pub fn new_llama_cancel(&self) -> CancellationToken {
+        let token = CancellationToken::new();
+        *self.llama_cancel.lock().unwrap() = token.clone();
+        token
+    }
+
+    /// Stops the llama.cpp download; what arrived stays for the next try.
+    pub fn cancel_llama(&self) {
+        self.llama_cancel.lock().unwrap().cancel();
+    }
+
+    /// What the chat's Settings needs to know to offer llama.cpp when a model is added: `remote`
+    /// (the chat is another computer's), `installed` (the app runs one already, and one is all
+    /// the GPU's memory holds), `available` (this GPU can run one), or `no_gpu`.
+    pub fn llama_for_chat(&self) -> serde_json::Value {
+        let cfg = self.config();
+        let label = |id: &str| cedar_llama::catalog::by_id(id).map_or_else(|| id.to_string(), |m| m.label.to_string());
+        let (state, model) = match (&cfg.llama, self.llama_plan()) {
+            _ if cfg.remote_server().is_some() => ("remote", String::new()),
+            (Some(llama), _) => ("installed", label(&llama.model)),
+            (None, Some(plan)) => ("available", plan.model.label.to_string()),
+            (None, None) => ("no_gpu", String::new()),
+        };
+        serde_json::json!({ "state": state, "model": model })
+    }
+
+    fn llama_status(&self, cfg: &Config) -> LlamaStatus {
+        let (setup, progress) = self.llama_setup.lock().unwrap().clone();
+        let installed = cfg.llama.as_ref().map(|l| {
+            let known = cedar_llama::catalog::by_id(&l.model);
+            known.map_or_else(|| l.model.clone(), |m| m.label.to_string())
+        });
+        LlamaStatus {
+            offer: self.llama_plan().as_ref().map(llamasetup::offer),
+            setup,
+            progress,
+            model: installed,
+            server: self.llama.state(),
+        }
     }
 
     pub fn update(&self) -> UpdateStatus {
@@ -332,6 +433,9 @@ impl AppState {
             llm_base_url: cfg.llm_base_url.clone(),
             llm_model: cfg.llm_model.clone(),
             has_api_key: !cfg.llm_api_key.trim().is_empty(),
+            model_source: if cfg.has_server() { models::source(&cfg.model_source, &cfg.llm_base_url) } else { "" },
+            providers: &models::model_servers().providers,
+            presets: &models::model_servers().presets,
             browser: cfg.browser,
             chat_url: cfg.chat_url(),
             access_token: cfg.chat_token().to_string(),
@@ -339,34 +443,81 @@ impl AppState {
             config_path: self.paths.config().to_string_lossy().into_owned(),
             sandbox_image: cfg.sandbox_image(),
             update: self.update(),
+            llama: self.llama_status(&cfg),
             check_updates: cfg.check_updates,
             locale: cfg.locale.clone(),
         }
     }
 
-    /// Puts the chosen model server into cedar's registry. cedar must be running.
+    /// Records which of the app's two entries the user just chose; the next registration makes it
+    /// the model new chats use.
+    pub fn choose(&self, chosen: Chosen) {
+        *self.chosen.lock().unwrap() = chosen;
+    }
+
+    /// Puts what the app manages into cedar's registry: the model it runs with llama.cpp (entry
+    /// `llama`) and the model server named on the setup page (entry `default`), whichever there
+    /// are. cedar must be running, and llama-server too if there is one. Neither is made the
+    /// default unless the user just chose it ([`Self::choose`]), so a default picked in the chat's
+    /// Settings stays.
     async fn register_model(&self) -> bool {
         let cfg = self.config();
+        let (cedar, key) = (cfg.cedar_url(), cfg.secrets.cedar_api_key.clone());
+        let llama_url = cfg.llama_url();
+        // An entry for llama.cpp that the app no longer runs (removed while cedar was down).
+        if cfg.llama.is_none() {
+            let _ = models::unregister(&cedar, &key, models::LLAMA_ID).await;
+        }
         if !cfg.configured() {
             self.set_model(ModelStatus::Unset);
             return false;
         }
         self.set_model(ModelStatus::Registering);
-        let result = models::register(
-            &cfg.cedar_url(),
-            &cfg.secrets.cedar_api_key,
-            &cfg.llm_base_url,
-            &cfg.llm_api_key,
-            &cfg.llm_model,
-        )
-        .await;
+        let chosen = *self.chosen.lock().unwrap();
+        let mut names = Vec::new();
+        let mut result = Ok(());
+        let installed = cfg.llama.as_ref().and_then(|l| cedar_llama::catalog::by_id(&l.model));
+        if let Some(model) = installed {
+            let entry = models::Entry {
+                id: models::LLAMA_ID,
+                base_url: &llama_url,
+                api_key: &cfg.secrets.llama_api_key,
+                model: model.id,
+                extras: Some(models::Extras {
+                    label: model.label,
+                    max_tokens: model.max_tokens,
+                    reasoning_levels: model.reasoning_levels,
+                    // Every model the app installs comes with its vision projector.
+                    multimodal: true,
+                }),
+                make_default: chosen == Chosen::Llama,
+            };
+            result = models::register(&cedar, &key, entry).await;
+            names.push(model.label.to_string());
+            // What an early build registered llama.cpp as: the `default` entry, at this address.
+            if result.is_ok() && !cfg.has_server() {
+                let stale = models::registered_address(&cedar, &key, models::REGISTRY_ID).await;
+                if stale.as_deref() == Some(llama_url.as_str()) {
+                    let _ = models::unregister(&cedar, &key, models::REGISTRY_ID).await;
+                }
+            }
+        }
+        if result.is_ok() && cfg.has_server() {
+            let entry = models::Entry {
+                id: models::REGISTRY_ID,
+                base_url: &cfg.llm_base_url,
+                api_key: &cfg.llm_api_key,
+                model: &cfg.llm_model,
+                extras: None,
+                make_default: chosen == Chosen::Server,
+            };
+            result = models::register(&cedar, &key, entry).await;
+            names.push(format!("{} at {}", cfg.llm_model.trim(), cfg.llm_base_url.trim()));
+        }
         match result {
             Ok(()) => {
-                self.set_model(ModelStatus::Registered(format!(
-                    "{} at {}",
-                    cfg.llm_model.trim(),
-                    cfg.llm_base_url.trim()
-                )));
+                self.choose(Chosen::Neither);
+                self.set_model(ModelStatus::Registered(names.join(", ")));
                 true
             }
             Err(e) => {
@@ -375,6 +526,16 @@ impl AppState {
             }
         }
     }
+}
+
+/// Which of the app's two registry entries the user chose last on the setup page.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Chosen {
+    Neither,
+    /// The model server they named (`default`).
+    Server,
+    /// The model the app runs with llama.cpp (`llama`).
+    Llama,
 }
 
 /// Marks a setup as started, unless it already runs.
@@ -481,12 +642,39 @@ pub async fn bootstrap(app: AppHandle) {
         state.serve_share(&cfg, url).await;
     }
 
-    // 4. The model, into cedar's registry. A failure here (the model server is down, say) leaves
+    // 4. llama.cpp, when the app runs it as the model server: the model is loaded before cedar
+    //    is told about it, since cedar asks a model server for its models when it registers one.
+    if !start_llama(&state).await {
+        return;
+    }
+
+    // 5. The models, into cedar's registry. A failure here (the model server is down, say) leaves
     //    the servers up: cedar keeps the last registered model, and the page says what's wrong.
     //    While the setup page asks how Cedar is used, the window stays on the question.
     if state.register_model().await && !state.config().asks_choice() {
         if let Err(e) = window::show_chat(&app) {
             eprintln!("showing the chat: {e:#}");
+        }
+    }
+}
+
+/// Starts the app's llama-server when the app runs a model with llama.cpp (downloading a build
+/// first if an update of the app pinned a newer one), and stops it when it does not. `false` with
+/// the reason on the page when the model could not be loaded.
+async fn start_llama(state: &AppState) -> bool {
+    let started = match llamasetup::ensure(state).await {
+        Ok(None) => {
+            state.llama.stop().await;
+            return true;
+        }
+        Ok(Some(spec)) => state.llama.start(spec).await.map_err(|e| format!("{e:#}")),
+        Err(why) => Err(why),
+    };
+    match started {
+        Ok(()) => true,
+        Err(why) => {
+            state.set_model(ModelStatus::Failed(why));
+            false
         }
     }
 }
@@ -532,16 +720,21 @@ async fn start_docker_desktop(state: &AppState, cli: &DockerCli) -> Option<Resul
     Some(cli.wait_until_answering(Duration::from_secs(240)).await)
 }
 
-/// After the model server was changed on the setup page: registers it with the running cedar,
-/// or runs the launch sequence if the servers aren't up yet. No restart, so a run in progress
-/// goes on.
+/// After a model was chosen or removed on the setup page: registers what there is with the
+/// running cedar, or runs the launch sequence if the servers aren't up yet. No restart, so a run
+/// in progress goes on.
 pub async fn apply_model_server(app: AppHandle) {
     let state = app.state::<AppState>();
     if state.supervisor.state() != ServiceState::Running {
         bootstrap(app.clone()).await;
         return;
     }
-    if state.register_model().await {
+    if !start_llama(&state).await {
+        return;
+    }
+    let registered = state.register_model().await;
+    window::push_llama(&app);
+    if registered {
         if let Err(e) = window::show_chat(&app) {
             eprintln!("showing the chat: {e:#}");
         }
@@ -611,4 +804,191 @@ pub async fn restart(app: AppHandle) {
         eprintln!("showing the setup page: {e:#}");
     }
     bootstrap(app.clone()).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Llama, Remote};
+    use cedar_llama::gpu::Gpu;
+    use cedar_llama::release::{Arch, Os};
+
+    fn state(cfg: Config) -> AppState {
+        let dir = PathBuf::from("/tmp/cedar-app-test");
+        let paths = Paths { data: dir.clone(), logs: dir.clone(), tools: dir.clone() };
+        AppState::new(paths, cfg, dir)
+    }
+
+    /// What the chat's Settings is told about llama.cpp, for its "Add a model".
+    #[test]
+    fn what_settings_learns_about_llama() {
+        let plan = cedar_llama::plan(Os::Macos, Arch::Arm64, &[Gpu::apple(32 << 30)]);
+        let say = |s: &AppState| s.llama_for_chat();
+
+        let none = state(Config::default());
+        assert_eq!(say(&none), serde_json::json!({ "state": "no_gpu", "model": "" }));
+        none.set_llama_plan(plan.clone());
+        assert_eq!(say(&none), serde_json::json!({ "state": "available", "model": "Gemma 4 26B-A4B" }));
+
+        // One is installed: that is the one, whatever else the GPU could run.
+        let llama = Some(Llama { build: "macos-arm64".into(), model: "qwen3.6-35b-a3b".into() });
+        let installed = state(Config { llama: llama.clone(), ..Config::default() });
+        installed.set_llama_plan(plan.clone());
+        assert_eq!(say(&installed), serde_json::json!({ "state": "installed", "model": "Qwen3.6 35B-A3B" }));
+
+        // The chat is another computer's: nothing runs here.
+        let remote = Some(Remote { server: "https://spark.t.ts.net".into(), token: "t".into() });
+        let away = state(Config { llama, remote, ..Config::default() });
+        away.set_llama_plan(plan);
+        assert_eq!(say(&away), serde_json::json!({ "state": "remote", "model": "" }));
+    }
+
+    /// The page's view of the two things the app manages: they are independent.
+    #[test]
+    fn a_model_server_beside_llama() {
+        let cfg = Config {
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-12b".into() }),
+            llm_base_url: "https://api.groq.com/openai/v1".into(),
+            llm_model: "openai/gpt-oss-120b".into(),
+            ..Config::default()
+        };
+        let both = state(cfg.clone()).status();
+        assert!(both.configured);
+        assert_eq!(both.model_source, "hosted");
+        assert_eq!(both.llama.model.as_deref(), Some("Gemma 4 12B"));
+
+        let only_llama = state(Config { llm_base_url: String::new(), llm_model: String::new(), ..cfg }).status();
+        assert!(only_llama.configured);
+        assert_eq!(only_llama.model_source, "");
+        assert_eq!(only_llama.llama.model.as_deref(), Some("Gemma 4 12B"));
+        assert_eq!(only_llama.presets.len(), 5);
+    }
+
+    /// A stand-in for cedar's admin API that records each request as "METHOD path body" and
+    /// lists `default` at `default_at`.
+    async fn cedar(default_at: &'static str) -> (u16, std::sync::Arc<Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0u8; 4096];
+                let (head, body) = loop {
+                    let n = socket.read(&mut buf).await.unwrap();
+                    request.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&request).into_owned();
+                    let Some((head, body)) = text.split_once("\r\n\r\n") else { continue };
+                    let length = head
+                        .lines()
+                        .find_map(|l| l.to_lowercase().strip_prefix("content-length: ").map(|v| v.trim().parse::<usize>().unwrap()))
+                        .unwrap_or(0);
+                    if body.len() >= length || n == 0 {
+                        break (head.to_string(), body.to_string());
+                    }
+                };
+                let line = head.lines().next().unwrap_or_default().trim_end_matches(" HTTP/1.1").to_string();
+                log.lock().unwrap().push(format!("{line} {body}").trim().to_string());
+                let answer = format!(r#"{{"models":[{{"id":"default","base_url":"{default_at}"}}]}}"#);
+                let reply = format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}", answer.len());
+                let _ = socket.write_all(reply.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        (port, seen)
+    }
+
+    fn sent(seen: &std::sync::Arc<Mutex<Vec<String>>>) -> Vec<String> {
+        std::mem::take(&mut *seen.lock().unwrap())
+    }
+
+    /// What goes into cedar's registry for a model server beside a model the app runs: two
+    /// entries, and only the one just chosen is made the default, once.
+    #[tokio::test]
+    async fn two_entries_and_the_chosen_one_is_the_default() {
+        let (port, seen) = cedar("https://api.groq.com/openai/v1").await;
+        let app = state(Config {
+            cedar_port: port,
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-12b".into() }),
+            llm_base_url: "https://api.groq.com/openai/v1".into(),
+            llm_model: "openai/gpt-oss-120b".into(),
+            llm_api_key: "gsk".into(),
+            ..Config::default()
+        });
+        app.update_config(|c| c.secrets.llama_api_key = "lk".into()).ok();
+
+        // A launch: both, neither made the default.
+        assert!(app.register_model().await);
+        let requests = sent(&seen);
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        assert!(requests[0].starts_with("PUT /v1/admin/models/llama "), "{}", requests[0]);
+        let llama: serde_json::Value = serde_json::from_str(requests[0].split_once(' ').unwrap().1.split_once(' ').unwrap().1).unwrap();
+        assert_eq!(llama["base_url"], "http://127.0.0.1:18081/v1");
+        assert_eq!((&llama["model"], &llama["label"], &llama["api_key"]), (&"gemma-4-12b".into(), &"Gemma 4 12B".into(), &"lk".into()));
+        assert_eq!(llama["max_tokens"], 8192);
+        assert_eq!(llama["multimodal"], true);
+        assert!(llama.get("is_default").is_none());
+        assert!(requests[1].starts_with("PUT /v1/admin/models/default "), "{}", requests[1]);
+        assert!(requests[1].contains(r#""base_url":"https://api.groq.com/openai/v1""#) && !requests[1].contains("is_default"));
+        assert!(matches!(&*app.model.lock().unwrap(), ModelStatus::Registered(d) if d == "Gemma 4 12B, openai/gpt-oss-120b at https://api.groq.com/openai/v1"));
+
+        // llama.cpp was just set up: it is made the default, the model server is not.
+        app.choose(Chosen::Llama);
+        assert!(app.register_model().await);
+        let requests = sent(&seen);
+        assert!(requests[0].contains(r#""is_default":true"#) && !requests[1].contains("is_default"), "{requests:?}");
+        // Only that once.
+        assert!(app.register_model().await);
+        assert!(sent(&seen).iter().all(|r| !r.contains("is_default")));
+        // A model server was just saved: the other way round.
+        app.choose(Chosen::Server);
+        assert!(app.register_model().await);
+        let requests = sent(&seen);
+        assert!(!requests[0].contains("is_default") && requests[1].contains(r#""is_default":true"#), "{requests:?}");
+    }
+
+    /// llama.cpp removed: its entry leaves the registry and the model server stays. With nothing
+    /// left there is nothing to register.
+    #[tokio::test]
+    async fn a_removed_llama_leaves_the_registry() {
+        let (port, seen) = cedar("https://api.groq.com/openai/v1").await;
+        let app = state(Config {
+            cedar_port: port,
+            llm_base_url: "https://api.groq.com/openai/v1".into(),
+            llm_model: "m".into(),
+            ..Config::default()
+        });
+        assert!(app.register_model().await);
+        let requests = sent(&seen);
+        assert_eq!(requests[0], "DELETE /v1/admin/models/llama");
+        assert!(requests[1].starts_with("PUT /v1/admin/models/default "));
+        assert_eq!(requests.len(), 2);
+
+        let (port, seen) = cedar("https://api.groq.com/openai/v1").await;
+        let empty = state(Config { cedar_port: port, ..Config::default() });
+        assert!(!empty.register_model().await);
+        assert_eq!(sent(&seen), ["DELETE /v1/admin/models/llama"]);
+        assert!(matches!(&*empty.model.lock().unwrap(), ModelStatus::Unset));
+    }
+
+    /// What an early build registered: llama.cpp as the `default` entry. With no model server of
+    /// the user's, that entry is taken out; one that points elsewhere is not touched.
+    #[tokio::test]
+    async fn the_doubled_default_entry_is_taken_out() {
+        let llama = Some(Llama { build: "macos-arm64".into(), model: "gemma-4-12b".into() });
+        let (port, seen) = cedar("http://127.0.0.1:18081/v1").await;
+        let app = state(Config { cedar_port: port, llama: llama.clone(), ..Config::default() });
+        assert!(app.register_model().await);
+        let requests = sent(&seen);
+        assert!(requests[0].starts_with("PUT /v1/admin/models/llama "));
+        assert_eq!(&requests[1..], ["GET /v1/admin/models", "DELETE /v1/admin/models/default"]);
+
+        let (port, seen) = cedar("http://10.0.0.5:8000/v1").await;
+        let app = state(Config { cedar_port: port, llama, ..Config::default() });
+        assert!(app.register_model().await);
+        assert_eq!(sent(&seen).len(), 2, "the PUT and the GET, no DELETE");
+    }
 }

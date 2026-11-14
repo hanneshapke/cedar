@@ -63,6 +63,7 @@ pub fn create(app: &AppHandle, cfg: &Config) -> Result<WebviewWindow> {
             if payload.event() == PageLoadEvent::Finished {
                 let status = webview.app_handle().state::<AppState>().update();
                 push_update(webview.app_handle(), &status);
+                push_llama(webview.app_handle());
             }
         })
         .build()
@@ -108,6 +109,9 @@ fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
 enum PageAction {
     /// The update banner's Update.
     Install,
+    /// Settings' "Run a model here with llama.cpp", and "Manage…" on the model the app runs: the
+    /// setup page, with that option open.
+    SetupModel,
     /// The update banner's Dismiss.
     Dismiss,
     /// The Phone page's "Turn on sharing".
@@ -130,6 +134,9 @@ fn page_action(url: &Url, chat: &str, remote: bool) -> Option<PageAction> {
     match url.path().strip_prefix(APP_PATH)? {
         "update/install" => Some(PageAction::Install),
         "update/dismiss" => Some(PageAction::Dismiss),
+        // With the chat on another computer there is no model to run here.
+        "setup/model" if remote => Some(PageAction::Ignore),
+        "setup/model" => Some(PageAction::SetupModel),
         "share/on" if remote => Some(PageAction::Ignore),
         "share/on" => Some(PageAction::ShareOn),
         "open" => url
@@ -153,6 +160,11 @@ fn run_page_action(app: &AppHandle, action: PageAction) {
                 eprintln!("dismissing the update: {e:#}");
             }
         }
+        PageAction::SetupModel => {
+            if let Err(e) = show_model_setup(app) {
+                eprintln!("showing the setup page: {e:#}");
+            }
+        }
         // The same as ticking the switch on the setup page; the page says what happened.
         PageAction::ShareOn => {
             tauri::async_runtime::spawn(crate::app::share_from_chat(app.clone()));
@@ -161,6 +173,34 @@ fn run_page_action(app: &AppHandle, action: PageAction) {
         PageAction::OpenInBrowser(_) => {}
         PageAction::Ignore => {}
     }
+}
+
+/// Tells the chat's Settings whether the app can run a model with llama.cpp, or already does (see
+/// `AppState::llama_for_chat`), when the window shows the chat and whenever that changes. The page
+/// reads `window.__CEDAR_LLAMA__` when it offers to add a model.
+pub fn push_llama(app: &AppHandle) {
+    let Ok(win) = main_window(app) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let chat = state.config().chat_url();
+    let on_chat = win.url().map(|u| u.origin().ascii_serialization() == chat).unwrap_or(false);
+    if !on_chat {
+        return;
+    }
+    let json = state.llama_for_chat();
+    let _ = win.eval(format!(
+        "window.__CEDAR_LLAMA__ = {json}; window.dispatchEvent(new Event('cedar-llama'));"
+    ));
+}
+
+/// The setup page with its llama.cpp option open (the page reads the `#llama` it is sent to).
+pub fn show_model_setup(app: &AppHandle) -> Result<()> {
+    let win = main_window(app)?;
+    let mut setup = setup_url();
+    setup.set_fragment(Some("llama"));
+    win.navigate(setup)?;
+    present(&win)
 }
 
 /// Tells the chat page's banner what the updater knows, when the window shows the chat. The
@@ -298,6 +338,8 @@ mod tests {
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), Some(PageAction::Install));
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/dismiss?x=1"), Some(PageAction::Dismiss));
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/share/on"), Some(PageAction::ShareOn));
+        assert_eq!(at("http://127.0.0.1:13000/__cedar-app/setup/model"), Some(PageAction::SetupModel));
+        assert_eq!(at("http://127.0.0.1:13001/__cedar-app/setup/model"), None);
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/share/off"), None);
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/other"), None);
         assert_eq!(at("http://127.0.0.1:13000/"), None);
@@ -315,6 +357,7 @@ mod tests {
         let at = |u: &str| page_action(&Url::parse(u).unwrap(), remote, true);
         assert_eq!(at("https://spark.t.ts.net/__cedar-app/update/install"), Some(PageAction::Install));
         assert_eq!(at("https://spark.t.ts.net/__cedar-app/share/on"), Some(PageAction::Ignore));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/setup/model"), Some(PageAction::Ignore));
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), None);
     }
 

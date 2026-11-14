@@ -83,14 +83,21 @@ pub async fn list_models(base_url: String, api_key: String) -> Result<Vec<String
 }
 
 /// Saves the model server and registers it with cedar (starting the servers first if needed).
+/// `source` is `own` or `hosted`, for the page to show which of its options is in use.
 #[tauri::command]
 pub fn save_model_server(
     app: AppHandle,
     base_url: String,
     api_key: String,
     model: String,
+    source: String,
 ) -> Result<(), String> {
     let base_url = models::normalize_base_url(&base_url).map_err(fail)?;
+    // Which of the page's forms it came from: a server of the user's own, or a hosted provider.
+    let source = match source.as_str() {
+        models::SOURCE_HOSTED => models::SOURCE_HOSTED,
+        _ => models::SOURCE_OWN,
+    };
     let state = app.state::<AppState>();
     app::refuse_when_remote(&state.config()).map_err(fail)?;
     let model = model.trim().to_string();
@@ -99,13 +106,39 @@ pub fn save_model_server(
     }
     state
         .update_config(|c| {
+            c.model_source = source.to_string();
             c.llm_base_url = base_url;
             c.llm_api_key = api_key.trim().to_string();
             c.llm_model = model;
         })
         .map_err(fail)?;
+    // The one just saved is the one new chats use; a model the app runs with llama.cpp stays.
+    state.choose(app::Chosen::Server);
     tauri::async_runtime::spawn(app::apply_model_server(app));
     Ok(())
+}
+
+/// Installs llama.cpp and the model that suits this computer's GPU, and makes it the model
+/// server. The page follows along in `llama.setup`.
+#[tauri::command]
+pub fn install_llama(app: AppHandle) -> Result<(), String> {
+    if !app.state::<AppState>().begin_llama_setup() {
+        return Err(t("cmd.llama_busy"));
+    }
+    tauri::async_runtime::spawn(crate::llamasetup::install(app));
+    Ok(())
+}
+
+/// Stops the download; "Set up for me" continues it later.
+#[tauri::command]
+pub fn cancel_llama(state: State<'_, AppState>) {
+    state.cancel_llama();
+}
+
+/// Stops llama.cpp and deletes it and its model.
+#[tauri::command]
+pub async fn remove_llama(app: AppHandle) -> Result<(), String> {
+    crate::llamasetup::remove(app).await.map_err(fail)
 }
 
 /// Turns the browser tool on or off; on pulls its image and restarts cedar with `BROWSER=on`.

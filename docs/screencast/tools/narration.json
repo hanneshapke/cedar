@@ -1,0 +1,74 @@
+[
+  {
+    "id": "title",
+    "title": "Title card",
+    "text": "This is Cedar: an open source assistant that runs on your own computer, and does real work for you.",
+    "screen": "Title card: the Cedar mark, \"Your own assistant. Runs at home, answers to you.\""
+  },
+  {
+    "id": "first-run",
+    "title": "First start",
+    "text": "The first time you open it, Cedar asks which language you'd like to work in. After that it needs just one thing: a model to think with.",
+    "screen": "The chat opens for the first time. The language dialog; the pointer passes over Deutsch, scrolls, and continues with English. The welcome page says no model is registered yet."
+  },
+  {
+    "id": "models",
+    "title": "Adding a model",
+    "text": "Cedar isn't tied to one AI company. Under Settings, Models, you choose where the model comes from. The Cedar app for Mac and Windows can download one and run it for you with llama.cpp. You can use a hosted provider with an API key. Or you can point Cedar at a model server you already run. Here, that's vLLM on this machine. Cedar lists the models the server offers. Pick one, and it fills in the reasoning levels the model takes, and whether it can read images. Then it checks the address once more, and saves it.",
+    "screen": "More → Settings → Models → Add a model. The three choices: run one here with llama.cpp, a hosted provider, a server you already run. The third opens; the vLLM preset fills in the address; List models; the model is chosen and named; the reasoning levels and \"Images: no\" appear; default for new chats; Check and add. The model is listed."
+  },
+  {
+    "id": "task",
+    "title": "Giving it a task",
+    "text": "Now for a task. I'll attach a year of household spending, and ask Cedar to work out where the money goes, chart it, and write a one-page summary with three ways to save.",
+    "screen": "Back on the welcome page. household-spending-2026.csv is attached and the request is typed."
+  },
+  {
+    "id": "plan",
+    "title": "The plan",
+    "text": "Cedar doesn't just start. For a bigger task, it shows you its plan first. You can reword a step, remove one, or add your own. When it looks right, tell it to start.",
+    "screen": "The request is sent. The plan card appears with five steps; the pointer passes over the steps, a remove button, Add a step, then clicks \"Looks good, start\"."
+  },
+  {
+    "id": "work",
+    "title": "Working in a sealed box",
+    "text": "The work happens in a sealed box: a container of its own, with the network off, that can't see the rest of your computer. Cedar runs the numbers in Python, draws the chart, and writes the PDF. Each step stays in the conversation, so you can open it and see exactly what ran.",
+    "screen": "The status line reads Working. On the right a Python step lands, then the chart card, then the PDF. The plan shows 5/5 done. The Python step is opened: the code and what it printed."
+  },
+  {
+    "id": "result",
+    "title": "The result",
+    "text": "The chart is interactive: point at a month to read every category. The finished summary sits on the right, with the three suggestions, ready to download. And the short version is in the conversation.",
+    "screen": "The chart card: the pointer moves across the months and the tooltip lists every category. Then the PDF summary scrolls by: the table and the three ways to save. The conversation scrolls to Cedar's answer."
+  },
+  {
+    "id": "approval",
+    "title": "Asking first",
+    "text": "Some things Cedar won't do on its own. Ask it to delete a file, and it stops and asks first. Downloads, installs and sending email work the same way. Nothing risky happens without your OK.",
+    "screen": "A follow-up is typed: delete the original CSV. A \"Needs your OK · delete files\" card shows the command. Allow once. Cedar reports the file is gone."
+  },
+  {
+    "id": "memory",
+    "title": "Memory",
+    "text": "Cedar also remembers what you ask it to. Under Settings, Memory, you see everything it has kept about you. Pin it, archive it, or remove it for good. It stays on your own Cedar server.",
+    "screen": "\"Remember that we want to keep our spending under 2,800 euros a month.\" Cedar notes it. Settings → Memory shows the remembered preference with Pin, Archive and Remove."
+  },
+  {
+    "id": "tools",
+    "title": "A switch for every ability",
+    "text": "Every ability has a switch. Reading web pages, weather, maps, directions, stocks. Turn on what Cedar may reach. Everything else stays off.",
+    "screen": "Settings → Tools. The pointer runs down the switches: web pages, weather, maps, directions; Stocks & markets is switched off."
+  },
+  {
+    "id": "agent",
+    "title": "From conversation to agent",
+    "text": "And when a conversation did its job, turn it into an agent. Cedar writes the prompt from the conversation. You choose what starts it: a schedule, a change it watches for, new mail, a file arriving. This one will run every month.",
+    "screen": "The \"Make an agent from this chat\" button. The New agent page with the prompt written from the conversation; it is named \"Monthly spending check\"; the pointer passes over what can start it; How often is set to Every month; Create agent. The agent's page shows its next run."
+  },
+  {
+    "id": "outro",
+    "title": "Closing card",
+    "text": "Cedar is free and open source. It runs on Mac, Windows and Linux, with apps for iPhone and Android. Your own assistant. Runs at home, answers to you.",
+    "screen": "Closing card: the Cedar mark, the tagline, Mac · Windows · Linux · iPhone · Android, github.com/hanneshapke/cedar."
+  }
+]

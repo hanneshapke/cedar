@@ -1,0 +1,1 @@
+Le graphique est interactif : pointez un mois pour lire chaque catégorie. Le résumé terminé se trouve à droite, avec les trois suggestions, prêt à être téléchargé. Et la version courte est dans la conversation.

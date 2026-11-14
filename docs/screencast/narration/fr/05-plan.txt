@@ -1,0 +1,1 @@
+Cedar ne se lance pas tout de suite. Pour une tâche importante, il vous montre d’abord son plan. Vous pouvez reformuler une étape, en supprimer une ou en ajouter. Quand tout vous convient, dites-lui de commencer.

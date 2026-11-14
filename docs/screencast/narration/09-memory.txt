@@ -1,0 +1,1 @@
+Cedar also remembers what you ask it to. Under Settings, Memory, you see everything it has kept about you. Pin it, archive it, or remove it for good. It stays on your own Cedar server.

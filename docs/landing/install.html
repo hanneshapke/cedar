@@ -7,7 +7,7 @@
 <script src="./i18n.js"></script>
 <script src="./i18n/common.js"></script>
 <script src="./i18n/install.js"></script>
-<meta name="description" data-i18n-attr="content:install.meta" content="Answer a few questions and get the install steps for Cedar on your Mac, Windows PC or Linux machine.">
+<meta name="description" data-i18n-attr="content:install.meta" content="Tell us about your computer, pick how Cedar gets its model, and get the install steps in order.">
 <link rel="icon" href="docs/assets/cedar-mark.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
@@ -92,6 +92,47 @@ ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;g
 .code .shell{position:absolute;top:-9px;left:14px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--amber);color:var(--ink);border-radius:6px;padding:1px 7px}
 details{margin:10px 0}
 summary{cursor:pointer;font-weight:600;color:var(--ink)}
+/* "Your model": three ways to get one, as the app's setup window offers them; the chosen one opens below. */
+h2.section{margin:40px 0 14px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:28px;letter-spacing:-.02em}
+.models{display:grid;gap:16px}
+.model{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px 26px;animation:popin .35s ease both}
+.model.top{border:2px solid var(--ink)}
+.model-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+.model h3{margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.01em}
+.model .by{font-size:14px;color:var(--faint)}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.badge{font-size:12px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:999px;background:#f6e9da;color:var(--muted)}
+.badge.pick{background:var(--ink);color:var(--bg)}
+.badge.img{background:#e2ede6;color:var(--green)}
+.badge.txt{background:#fdf0d8;color:#7a4c00}
+.model p{margin:8px 0;font-size:16px;line-height:1.55;color:var(--muted)}
+.model p strong{color:var(--ink);font-weight:600}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 18px;margin:12px 0 6px;font-size:14px}
+.facts div{display:flex;flex-direction:column;gap:2px}
+.facts span{color:var(--faint);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+ol.setup{margin:0;padding-left:22px;font-size:16px;line-height:1.55;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px 26px 22px 46px}
+ol.setup li{margin:8px 0}
+ol.setup strong{color:var(--ink);font-weight:600}
+.model-lede{margin:0 0 16px;font-size:16px;line-height:1.5;color:var(--muted);max-width:680px}
+.ways{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.way{font:inherit;text-align:left;display:flex;flex-direction:column;gap:8px;padding:18px 18px 20px;border-radius:18px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;transition:border-color .15s,transform .15s}
+.way:hover:not(:disabled){border-color:var(--accent);transform:translateY(-2px)}
+.way:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.way[aria-pressed="true"]{border:2px solid var(--ink);padding:17.5px 17.5px 19.5px}
+.way:disabled{cursor:default;background:#fdf8f2}
+.way:disabled .way-title,.way:disabled .way-what{opacity:.5}
+.way-num{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:13px;letter-spacing:.08em;color:var(--faint)}
+.way-title{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:20px;line-height:1.15;letter-spacing:-.01em}
+.way-what{font-size:14.5px;line-height:1.45;color:var(--muted)}
+.way-verdict{margin-top:auto;padding-top:8px;font-size:13.5px;line-height:1.4;color:var(--ink);font-weight:600}
+.way-verdict.no{color:var(--faint);font-weight:500}
+.way .badge{align-self:flex-start}
+.way-panel{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px 24px;animation:popin .3s ease both}
+.way-panel>p{margin:8px 0;font-size:16px;line-height:1.55;color:var(--muted)}
+.way-panel .model{border-radius:16px;padding:18px 20px;background:#fdf8f2;animation:none}
+.way-panel h3.sub{margin:18px 0 8px;font-family:'Instrument Sans',sans-serif;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.way-panel .q-opts{padding:0;margin:4px 0 6px}
+@media (max-width:820px){.ways{grid-template-columns:1fr}}
 .help{margin:56px 0 48px;display:flex;flex-wrap:wrap;gap:12px 24px;font-size:15px;color:var(--faint)}
 @keyframes popin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.step{animation:none}.opt,.btn{transition:none}}
@@ -106,7 +147,6 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     <a href="./#private" data-i18n="install.nav.private">Private by design</a>
     <a href="./#apps" data-i18n="install.nav.apps">Mac, Windows, Linux &amp; phones</a>
     <a href="./#compare" data-i18n="install.nav.compare">Compared</a>
-    <a href="models.html" data-i18n="install.nav.models">Models</a>
     <a href="install.html" aria-current="page" data-i18n="install.nav.install">Install</a>
     <span data-lang-switch></span>
     <a class="dl" id="header-dl" href="https://github.com/hanneshapke/cedar/releases/latest">Download Cedar</a>
@@ -117,13 +157,20 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   <main>
     <a class="back" href="./" data-i18n="install.back">← Back to the Cedar home page</a><br>
     <span class="eyebrow" data-i18n="install.eyebrow">Install guide</span>
-    <h1 data-i18n="install.h1">Your path to Cedar.</h1>
-    <p class="lede" data-i18n="install.lede">Tell us what you're working with, and we'll put the steps in order for you. Pick an answer in each row; the steps below change as you go, and the page address remembers your answers so you can share them.</p>
+    <h1 data-i18n="install.h1">Install Cedar, model included.</h1>
+    <p class="lede" id="lede" data-i18n="install.lede">Tell us about the computer, then pick how Cedar gets its model: it can run one for you, use a provider, or use a server you already have. The steps below follow your answers, and the page address remembers them.</p>
 
     <section class="picker" id="picker" data-i18n-attr="aria-label:install.pickerLabel" aria-label="Your setup"></section>
     <div class="share"><span id="share-hint" data-i18n="install.share.hint">This page's address now holds your answers.</span><button type="button" id="copy-link" data-i18n="install.share.copy">Copy link</button><button type="button" id="reset" data-i18n="install.share.reset">Start over</button></div>
 
-    <div class="summary" id="summary" aria-live="polite"></div>
+    <div id="model-section">
+    <h2 class="section" id="model-title" data-i18n="install.model.title">Your model</h2>
+    <p class="model-lede" id="model-lede" data-i18n="install.model.lede">Cedar needs an AI model to think with. There are three ways to give it one, the same three its setup window offers.</p>
+    <section id="model" aria-labelledby="model-title" aria-live="polite"></section>
+    </div>
+
+    <h2 class="section" data-i18n="install.steps.title">Your steps</h2>
+    <div class="summary" id="summary" aria-live="polite" style="margin-top:0"></div>
     <ol class="steps" id="steps"></ol>
   </main>
 
@@ -137,7 +184,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
 <footer class="site-footer">
   <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt=""><span data-i18n-html="install.footer.license">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span></span>
-  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="models.html" data-i18n="install.footer.models">Model guide</a><a href="https://github.com/hanneshapke/cedar/discussions/51" data-i18n="install.footer.iphoneInvite">iPhone invite</a><a href="./#iphone-private" data-i18n="install.footer.iphonePrivate">iPhone, privately</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest" data-i18n="install.footer.android">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" data-i18n="install.footer.desktop">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" data-i18n="install.footer.linux">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" data-i18n="install.footer.developers">For developers</a><span data-lang-switch></span></span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="https://github.com/hanneshapke/cedar/discussions/51" data-i18n="install.footer.iphoneInvite">iPhone invite</a><a href="./#iphone-private" data-i18n="install.footer.iphonePrivate">iPhone, privately</a><a id="footer-apk" href="https://github.com/hanneshapke/cedar/releases/latest" data-i18n="install.footer.android">Android app</a><a href="https://github.com/hanneshapke/cedar/blob/main/desktop/README.md" data-i18n="install.footer.desktop">Mac &amp; Windows guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/DEPLOYMENT.md" data-i18n="install.footer.linux">Linux guide</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" data-i18n="install.footer.developers">For developers</a><span data-lang-switch></span></span>
 </footer>
 
 <script src="./version.js"></script>
@@ -161,15 +208,38 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const APP_SETUP_SINCE = '0.1.9';
   function appSetsUp(s) {
     if (s.os === 'mac' && s.arch === 'x64') return true;
-    const [a, b] = [release.ver, APP_SETUP_SINCE].map((v) => v.split('.').map(Number));
+    return releaseIsAtLeast(APP_SETUP_SINCE);
+  }
+  function releaseIsAtLeast(since) {
+    const [a, b] = [release.ver, since].map((v) => v.split('.').map(Number));
     for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
     return true;
   }
+  // Cedar on another computer was chosen: this one only gets the app, as a window onto it.
+  const remote = (s) => s.use === 'remote';
+
+  const gb = (n) => tr('install.mem.gb', { n });
+  // Which memory question fits the computer, or '' where it would change nothing (an Intel Mac
+  // and Windows on Arm have no llama.cpp build Cedar installs, and no suggestions of their own).
+  function memKind(s) {
+    if (s.os === 'mac') return s.arch === 'arm64' ? 'mac' : '';
+    if (s.os === 'windows') return s.arch === 'x64' ? 'gpu' : '';
+    if (s.os === 'linux') return s.arch === 'x64' ? 'gpu' : 'arm';
+    return '';
+  }
+  // The answers that are not rows of the picker: they are chosen in "Your model".
+  const CHOICES = {
+    model: ['cedar', 'hosted', 'own'], provider: ['doubleword', 'baseten', 'nebius', 'other'],
+    serve: ['llamacpp', 'lmstudio', 'ollama', 'vllm'],
+  };
 
   // Each question: its id in the address (?os=mac&arch=arm64&docker=no...), and the answers.
   // An answer's `os` limits it to some systems; a question's `when` hides it for others.
   const QUESTIONS = [
-    { id: 'os', label: tr('install.q.os'), hint: tr('install.q.osHint'),
+    // The app's own first question (desktop/ui/strings.js, choose.*). No answer counts as "here".
+    { id: 'use', label: tr('install.q.use'), hint: tr('install.q.useHint'),
+      opts: [{ v: 'here', t: tr('install.use.here'), s: tr('install.use.hereSub') }, { v: 'remote', t: tr('install.use.remote'), s: tr('install.use.remoteSub') }] },
+    { id: 'os', label: (s) => tr(remote(s) ? 'install.q.osRemote' : 'install.q.os'), hint: (s) => tr(remote(s) ? 'install.q.osRemoteHint' : 'install.q.osHint'),
       opts: [{ v: 'mac', t: 'macOS' }, { v: 'windows', t: 'Windows' }, { v: 'linux', t: 'Linux' }] },
     { id: 'arch', label: tr('install.q.arch'), hint: tr('install.q.archHint'),
       opts: [
@@ -179,34 +249,35 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         { v: 'arm64', t: 'Arm', s: 'Snapdragon, Surface', os: ['windows'] },
         { v: 'arm64', t: 'arm64', s: 'DGX Spark, Ampere, Pi', os: ['linux'] },
       ] },
-    { id: 'docker', label: tr('install.q.docker'), hint: tr('install.q.dockerHint'),
+    // What the model would have to fit in: a Mac's memory (its GPU shares it), a graphics card's
+    // own, or, for Linux on Arm, which of the machines Cedar is known to run on.
+    { id: 'mem', when: (s) => !remote(s) && memKind(s) !== '',
+      label: (s) => tr('install.q.mem.' + memKind(s)), hint: (s) => tr('install.q.mem.' + memKind(s) + 'Hint'),
+      opts: [
+        { v: '16', t: gb('16–24'), when: (s) => memKind(s) === 'mac' }, { v: '32', t: gb('32'), when: (s) => memKind(s) === 'mac' },
+        { v: '48', t: gb('36–48'), when: (s) => memKind(s) === 'mac' }, { v: '96', t: gb('64–96'), when: (s) => memKind(s) === 'mac' },
+        { v: '128', t: tr('install.mem.orMore', { n: 128 }), when: (s) => memKind(s) === 'mac' },
+        { v: 'none', t: tr('install.mem.none'), s: tr('install.mem.noneSub'), when: (s) => memKind(s) === 'gpu' },
+        { v: '12', t: gb('12–16'), when: (s) => memKind(s) === 'gpu' }, { v: '20', t: gb('20'), when: (s) => memKind(s) === 'gpu' },
+        { v: '24', t: tr('install.mem.orMore', { n: 24 }), when: (s) => memKind(s) === 'gpu' },
+        { v: '80', t: tr('install.mem.orMore', { n: 80 }), when: (s) => memKind(s) === 'gpu' },
+        { v: 'spark', t: 'NVIDIA DGX Spark', s: gb('128'), when: (s) => memKind(s) === 'arm' },
+        { v: 'jetson', t: 'Jetson Orin Nano', s: gb('8'), when: (s) => memKind(s) === 'arm' },
+        { v: 'other', t: tr('install.mem.otherArm'), when: (s) => memKind(s) === 'arm' },
+      ] },
+    { id: 'docker', when: (s) => !remote(s), label: tr('install.q.docker'), hint: tr('install.q.dockerHint'),
       opts: [{ v: 'yes', t: tr('install.opt.yes') }, { v: 'no', t: tr('install.opt.no') }, { v: 'unknown', t: tr('install.opt.noIdeaDocker') }] },
-    { id: 'host', label: tr('install.q.host'), hint: tr('install.q.hostHint'),
-      opts: [
-        { v: 'yes', t: tr('install.opt.yes'), s: tr('install.opt.hostYes') }, { v: 'no', t: tr('install.opt.no'), s: tr('install.opt.hostNo') },
-        { v: 'unknown', t: tr('install.opt.notSure') },
-      ] },
-    { id: 'serve', label: tr('install.q.serve'), hint: tr('install.q.serveHint'), when: (s) => s.host === 'yes',
-      opts: [
-        { v: 'ollama', t: 'Ollama', s: tr('install.opt.ollama') }, { v: 'lmstudio', t: 'LM Studio', s: tr('install.opt.lmstudio') },
-        { v: 'vllm', t: 'vLLM', s: tr('install.opt.vllm') },
-      ] },
-    { id: 'provider', label: tr('install.q.provider'), hint: tr('install.q.providerHint'), when: (s) => s.host === 'no',
-      opts: [
-        { v: 'doubleword', t: 'Doubleword' }, { v: 'baseten', t: 'Baseten' },
-        { v: 'other', t: tr('install.opt.otherProvider'), s: tr('install.opt.otherProviderHint') },
-      ] },
     { id: 'mobile', label: tr('install.q.mobile'), hint: tr('install.q.mobileHint'),
       opts: [{ v: 'yes', t: tr('install.opt.yes') }, { v: 'no', t: tr('install.opt.no'), s: tr('install.opt.thisComputerOnly') }] },
     { id: 'phone', label: tr('install.q.phone'), hint: tr('install.q.phoneHint'), when: (s) => s.mobile === 'yes',
       opts: [{ v: 'iphone', t: 'iPhone', s: tr('install.opt.orIpad') }, { v: 'android', t: 'Android' }] },
     { id: 'ios', label: tr('install.q.ios'), hint: tr('install.q.iosHint'), when: (s) => s.mobile === 'yes' && s.phone === 'iphone',
       opts: [{ v: 'testflight', t: 'TestFlight', s: tr('install.opt.askInvite') }, { v: 'sidestore', t: tr('install.opt.privately'), s: tr('install.opt.sideStoreNoInvite') }] },
-    { id: 'tailscale', label: tr('install.q.tailscale'), hint: tr('install.q.tailscaleHint'), when: (s) => s.mobile === 'yes',
+    { id: 'tailscale', label: tr('install.q.tailscale'), hint: tr('install.q.tailscaleHint'), when: (s) => s.mobile === 'yes' && !remote(s),
       opts: [{ v: 'yes', t: tr('install.opt.yes') }, { v: 'no', t: tr('install.opt.no') }, { v: 'unknown', t: tr('install.opt.noIdeaTailscale') }] },
   ];
 
-  const DEFAULTS = { os: detectOs(), arch: '', docker: '', host: '', serve: '', provider: '', mobile: '', phone: detectPhone(), ios: '', tailscale: '' };
+  const DEFAULTS = { use: '', os: detectOs(), arch: '', mem: '', docker: '', model: '', provider: '', serve: '', mobile: '', phone: detectPhone(), ios: '', tailscale: '' };
   const state = readState();
 
   function detectOs() {
@@ -232,6 +303,14 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       const v = q.get(question.id);
       if (v && question.opts.some((o) => o.v === v)) s[question.id] = v;
     }
+    for (const [id, values] of Object.entries(CHOICES)) if (values.includes(q.get(id))) s[id] = q.get(id);
+    // Links from before this page had "Your model": host=yes|no (run it yourself, or a provider)
+    // with serve= or provider=.
+    if (!s.model) {
+      if (q.get('host') === 'no' || (!q.get('host') && s.provider)) s.model = 'hosted';
+      else if (q.get('serve') === 'cedar') s.model = 'cedar';
+      else if (q.get('host') === 'yes' || s.serve) s.model = 'own';
+    }
     if (!s.arch) s.arch = defaultArch(s.os);
     return s;
   }
@@ -247,8 +326,16 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   function writeState() {
     const q = new URLSearchParams();
     for (const question of QUESTIONS) if (state[question.id] && shown(question)) q.set(question.id, state[question.id]);
+    // `model` is only in the address once a way was clicked; without it, the page selects the
+    // one it recommends. The choices made inside a way go with whichever way is selected.
+    const s = view(state);
+    if (!remote(s)) {
+      if (state.model) q.set('model', state.model);
+      if (s.model === 'hosted' && state.provider) q.set('provider', state.provider);
+      if (s.model === 'own' && state.serve) q.set('serve', state.serve);
+    }
     const qs = q.toString();
-    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+    history.replaceState(null, '', (qs ? '?' + qs : location.pathname) + location.hash);
   }
 
   // ---------- rendering helpers ----------
@@ -265,27 +352,32 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   function renderPicker() {
     const picker = document.getElementById('picker');
     picker.innerHTML = QUESTIONS.map((q) => {
-      const opts = q.opts.filter((o) => !o.os || o.os.includes(state.os));
+      const opts = q.opts.filter((o) => (!o.os || o.os.includes(state.os)) && (!o.when || o.when(state)));
+      if (!opts.length) return '';
       if ((q.id === 'arch' && !state.os) || !shown(q)) return '';
       return `<div class="q" role="group" aria-labelledby="q-${q.id}">
-        <div class="q-label" id="q-${q.id}">${esc(q.label)}<small>${esc(q.hint)}</small></div>
-        <div class="q-opts">${opts.map((o) => `<button type="button" class="opt" data-q="${q.id}" data-v="${o.v}" aria-pressed="${state[q.id] === o.v}">${esc(o.t)}${o.s ? `<small>${esc(o.s)}</small>` : ''}</button>`).join('')}</div>
+        <div class="q-label" id="q-${q.id}">${esc(typeof q.label === 'function' ? q.label(state) : q.label)}<small>${esc(typeof q.hint === 'function' ? q.hint(state) : q.hint)}</small></div>
+        <div class="q-opts">${opts.map((o) => `<button type="button" class="opt" data-q="${q.id}" data-v="${o.v}" aria-pressed="${(state[q.id] || (q.id === 'use' ? 'here' : '')) === o.v}">${esc(o.t)}${o.s ? `<small>${esc(o.s)}</small>` : ''}</button>`).join('')}</div>
       </div>`;
     }).join('');
   }
 
   function renderSummary() {
-    const s = state;
+    const s = view(state);
     const chips = [];
     const name = { mac: 'macOS', windows: 'Windows', linux: 'Linux' }[s.os];
     if (name) chips.push(`<span class="chip">${name} · ${s.arch === 'arm64' ? (s.os === 'mac' ? 'Apple silicon' : s.os === 'windows' ? 'Arm' : 'arm64') : (s.os === 'mac' ? 'Intel' : 'x64')}</span>`);
-    if (s.docker) chips.push(s.docker === 'yes' ? `<span class="chip done">${tr('install.chip.dockerReady')}</span>` : `<span class="chip todo">${tr('install.chip.dockerToInstall')}</span>`);
-    if (s.host === 'yes' && s.serve) chips.push(`<span class="chip done">${tr('install.chip.ownModel', { server: SERVERS[s.serve].name })}</span>`);
-    if (s.host === 'no' && s.provider) chips.push(`<span class="chip done">${tr('install.chip.hostedModel', { provider: s.provider === 'other' ? tr('install.chip.anotherProvider') : PROVIDERS[s.provider].name })}</span>`);
-    if (s.host === 'unknown') chips.push(`<span class="chip todo">${tr('install.chip.checkHardware')}</span>`);
+    if (remote(s)) chips.push(`<span class="chip done">${tr('install.chip.remote')}</span>`);
+    else if (s.docker) chips.push(s.docker === 'yes' ? `<span class="chip done">${tr('install.chip.dockerReady')}</span>` : `<span class="chip todo">${tr('install.chip.dockerToInstall')}</span>`);
+    const plan = cedarPlan(s);
+    if (remote(s)) { /* its model is the other computer's */ }
+    else if (s.model === 'cedar' && plan.model) chips.push(`<span class="chip done">${tr('install.chip.cedar', { model: esc(MODELS[plan.model].name) })}</span>`);
+    else if (s.model === 'hosted') chips.push(`<span class="chip done">${tr('install.chip.hostedModel', { provider: !s.provider || s.provider === 'other' ? tr('install.chip.anotherProvider') : PROVIDERS[s.provider].name })}</span>`);
+    else if (s.model === 'own') chips.push(`<span class="chip done">${tr('install.chip.ownModel', { server: SERVERS[s.serve || 'llamacpp'].name })}</span>`);
+    else chips.push(`<span class="chip todo">${tr('install.chip.pickModel')}</span>`);
     if (s.mobile === 'no') chips.push(`<span class="chip skip">${tr('install.chip.noPhoneApp')}</span>`);
     if (s.mobile === 'yes' && s.phone) chips.push(`<span class="chip">${tr('install.chip.phoneApp', { phone: s.phone === 'iphone' ? 'iPhone' : 'Android' })}${s.phone === 'iphone' && s.ios ? (s.ios === 'sidestore' ? ' · SideStore' : ' · TestFlight') : ''}</span>`);
-    if (s.mobile === 'yes' && s.tailscale) chips.push(s.tailscale === 'yes' ? `<span class="chip done">${tr('install.chip.tailscaleReady')}</span>` : `<span class="chip todo">${tr('install.chip.tailscaleToInstall')}</span>`);
+    if (s.mobile === 'yes' && s.tailscale && !remote(s)) chips.push(s.tailscale === 'yes' ? `<span class="chip done">${tr('install.chip.tailscaleReady')}</span>` : `<span class="chip todo">${tr('install.chip.tailscaleToInstall')}</span>`);
     document.getElementById('summary').innerHTML = chips.join('');
   }
 
@@ -295,7 +387,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       list.innerHTML = `<li class="step optional"><h2>${tr('install.start.title')}</h2><div class="body"><p>${tr('install.start.body')}</p></div></li>`;
       return;
     }
-    const steps = buildSteps(state);
+    const steps = buildSteps(view(state));
     list.innerHTML = steps.map((st) => `<li class="step${st.kind ? ' ' + st.kind : ''}"><h2>${st.title}${st.tag ? `<span class="tag">${esc(st.tag)}</span>` : ''}</h2><div class="body">${st.body}</div></li>`).join('');
   }
 
@@ -310,15 +402,244 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     if (release.apk) document.getElementById('footer-apk').href = release.apk;
   }
 
+  // What depends on the release: the texts that speak of three ways, and "Your model" itself,
+  // which a computer that only connects to another Cedar has no use for.
+  function renderIntro() {
+    const s = view(state);
+    document.getElementById('model-section').hidden = remote(s);
+  }
+
   function render() {
     renderDownload();
     renderPicker();
+    renderIntro();
+    renderModel();
     renderSummary();
     renderSteps();
   }
 
+  // ---------- the models ----------
+  // Open-weight models that call tools well, as of October 2026. `gguf`: what llama.cpp's
+  // `llama-server -hf` takes, a Hugging Face repository of GGUF files and the quantization (4-bit,
+  // but 8-bit for the small Gemma 4 E4B, as Cedar's own llama.cpp setup uses it); `gb`: the size of
+  // that download; `ollama`: its tag there, for the Jetson, which the guide sets up with Ollama; `lms`: what to search for in LM Studio; `hf`: the Hugging Face repository vLLM serves,
+  // where we are sure of it; `recipe`: its page on the vLLM recipes site. `total`/`active`: billions
+  // of parameters (`active` for mixture of experts); `date`: when it came out. Each model's "why"
+  // is models.why.<id> in i18n/install.js.
+  const MODELS = {
+    'qwen3.6-35b': { name: 'Qwen3.6 35B-A3B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 35, active: 3, gb: 21,
+      gguf: 'ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M', lms: 'Qwen3.6 35B A3B', hf: 'Qwen/Qwen3.6-35B-A3B' },
+    'qwen3.6-27b': { name: 'Qwen3.6 27B', org: 'Alibaba Qwen', date: '2026-04', images: true, total: 27, gb: 19,
+      gguf: 'ggml-org/Qwen3.6-27B-GGUF:Q4_K_M', lms: 'Qwen3.6 27B', hf: 'Qwen/Qwen3.6-27B' },
+    'gemma4-26b': { name: 'Gemma 4 26B-A4B', org: 'Google', date: '2026-04', images: true, total: 26, active: 4, gb: 15,
+      gguf: 'ggml-org/gemma-4-26B-A4B-it-GGUF:Q4_0', lms: 'Gemma 4 26B' },
+    'gemma4-31b': { name: 'Gemma 4 31B', org: 'Google', date: '2026-04', images: true, total: 31, gb: 18,
+      gguf: 'ggml-org/gemma-4-31B-it-GGUF:Q4_0', lms: 'Gemma 4 31B' },
+    'gemma4-e4b': { name: 'Gemma 4 E4B', org: 'Google', date: '2026-04', images: true, arch: 'models.arch.gemma4-e4b', gb: 8,
+      gguf: 'ggml-org/gemma-4-E4B-it-GGUF:Q8_0', lms: 'Gemma 4 E4B' },
+    'gemma4-12b': { name: 'Gemma 4 12B', org: 'Google', date: '2026-05', images: true, total: 12, gb: 7,
+      gguf: 'ggml-org/gemma-4-12B-it-GGUF:Q4_0', lms: 'Gemma 4 12B' },
+    'gpt-oss-20b': { name: 'gpt-oss 20B', org: 'OpenAI', date: '2025-08', images: false, total: 21, active: 3.6, gb: 12,
+      gguf: 'ggml-org/gpt-oss-20b-GGUF:MXFP4', lms: 'gpt-oss 20B', hf: 'openai/gpt-oss-20b' },
+    'gpt-oss-120b': { name: 'gpt-oss 120B', org: 'OpenAI', date: '2025-08', images: false, total: 117, active: 5.1, gb: 63,
+      gguf: 'ggml-org/gpt-oss-120b-GGUF:MXFP4', lms: 'gpt-oss 120B', hf: 'openai/gpt-oss-120b', vllmFlags: '--tool-call-parser openai --enable-auto-tool-choice' },
+    'qwen3.5-122b': { name: 'Qwen3.5 122B-A10B', org: 'Alibaba Qwen', date: '2026-02', images: true, total: 122, active: 10, gb: 81,
+      gguf: 'unsloth/Qwen3.5-122B-A10B-GGUF:Q4_K_M', lms: 'Qwen3.5 122B A10B', hf: 'Qwen/Qwen3.5-122B-A10B' },
+    'mistral-small-4': { name: 'Mistral Small 4', org: 'Mistral', date: '2026-03', images: true, total: 119, active: 6, gb: 70,
+      gguf: 'unsloth/Mistral-Small-4-119B-2603-GGUF:UD-Q4_K_M', lms: 'Mistral Small 4' },
+    'nemotron-3.5-super-vl': { name: 'Nemotron 3.5 Super VL 120B-A12B', org: 'NVIDIA', date: '2026-10', images: true, total: 120, active: 12, gb: 72,
+      gguf: 'ggml-org/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-GGUF:Q4_0', hf: 'nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
+    'nemotron-3.5-lightning': { name: 'Nemotron 3.5 Lightning 30B-A3B', org: 'NVIDIA', date: '2026-08', images: false, total: 30, active: 3, gb: 19,
+      gguf: 'ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF:Q4_0', hf: 'nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4', vllmFlags: '--tool-call-parser qwen3_coder --enable-auto-tool-choice' },
+    'qwen3.5-4b': { name: 'Qwen3.5 4B', org: 'Alibaba Qwen', date: '2026-03', images: true, total: 4, gb: 3,
+      gguf: 'ggml-org/Qwen3.5-4B-GGUF:Q4_K_M', ollama: 'qwen3.5:4b' },
+    'deepseek-v4-flash': { name: 'DeepSeek V4 Flash', org: 'DeepSeek', date: '2026-04', images: false, total: 284, active: 13, gb: 155,
+      gguf: 'ggml-org/DeepSeek-V4-Flash-GGUF:MXFP4', hf: 'deepseek-ai/DeepSeek-V4-Flash', recipe: 'https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash' },
+  };
+  for (const [id, m] of Object.entries(MODELS)) m.why = `models.why.${id}`;
+
+  // At a token factory: names as they appear in the providers' catalogs; Cedar's List models shows
+  // the exact id. `at`: who serves it (October 2026). The "why" is models.hosted.<id>.
+  const HOSTED = {
+    'deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', org: 'DeepSeek', date: '2026-09', images: true, at: ['Doubleword', 'Baseten'] },
+    'glm-5.3': { name: 'GLM 5.3', org: 'Z.ai', images: false, at: ['Doubleword', 'Baseten'] },
+    'kimi-k2.6': { name: 'Kimi K2.6', org: 'Moonshot', date: '2026-04', images: true, at: ['Doubleword'] },
+    'deepseek-v4-pro': { name: 'DeepSeek V4 Pro', org: 'DeepSeek', images: false, at: ['Doubleword', 'Baseten'] },
+    'qwen3.6-35b-hosted': { name: 'Qwen3.6 35B-A3B', org: 'Alibaba Qwen', date: '2026-04', images: true, at: ['Doubleword'] },
+    'gemma4-31b-hosted': { name: 'Gemma 4 31B', org: 'Google', date: '2026-04', images: true, at: ['Doubleword'] },
+  };
+  for (const [id, m] of Object.entries(HOSTED)) m.why = `models.hosted.${id}`;
+  const MODEL_SITES = {
+    Doubleword: { addr: 'https://api.doubleword.ai/v1', site: 'https://docs.doubleword.ai/inference-api/models' },
+    Baseten: { addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co/library/' },
+  };
+
+  // [top pick, alternatives...] for each machine, memory and input.
+  const PICKS = {
+    'mac:24': { text: ['gpt-oss-20b', 'gemma4-e4b'], images: ['gemma4-e4b'] },
+    'mac:48': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'qwen3.6-27b'], images: ['qwen3.6-35b', 'gemma4-26b', 'qwen3.6-27b'] },
+    'mac:96': { text: ['qwen3.6-35b', 'qwen3.6-27b', 'gpt-oss-120b'], images: ['qwen3.6-35b', 'qwen3.6-27b', 'gemma4-31b'] },
+    'mac:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'mistral-small-4', 'qwen3.6-35b'] },
+    'ryzen:64': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'gemma4-26b'], images: ['qwen3.6-35b', 'gemma4-26b'] },
+    'ryzen:128': { text: ['gpt-oss-120b', 'qwen3.5-122b', 'qwen3.6-35b'], images: ['qwen3.5-122b', 'qwen3.6-35b', 'mistral-small-4'] },
+    'spark:128': { text: ['nemotron-3.5-super-vl', 'nemotron-3.5-lightning', 'gpt-oss-120b', 'qwen3.5-122b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
+    'spark:256': { text: ['deepseek-v4-flash', 'nemotron-3.5-super-vl', 'gpt-oss-120b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
+    'jetson:8': { text: ['qwen3.5-4b'], images: ['qwen3.5-4b'] },
+    'gpu:12': { text: ['gemma4-12b', 'gemma4-e4b', 'qwen3.5-4b'], images: ['gemma4-12b', 'gemma4-e4b', 'qwen3.5-4b'] },
+    'gpu:16': { text: ['gpt-oss-20b', 'gemma4-12b'], images: ['gemma4-12b', 'gemma4-e4b'] },
+    'gpu:24': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'qwen3.6-27b'], images: ['qwen3.6-35b', 'gemma4-26b', 'qwen3.6-27b'] },
+  };
+  const HOSTED_PICKS = { text: ['deepseek-v4.1-flash', 'glm-5.3', 'kimi-k2.6', 'deepseek-v4-pro'], images: ['deepseek-v4.1-flash', 'kimi-k2.6', 'qwen3.6-35b-hosted', 'gemma4-31b-hosted'] };
+
+  // Machines with a note on their memory (models.hwnote.<hw>.<mem>), shown above the suggestions.
+  // A 20 GB graphics card, which the guide has no row for.
+  PICKS['gpu:20'] = { text: ['gemma4-26b', 'gpt-oss-20b', 'gemma4-12b'], images: ['gemma4-26b', 'gemma4-12b'] };
+  const badge = (text, cls) => `<span class="badge${cls ? ' ' + cls : ''}">${esc(text)}</span>`;
+  const sees = (m) => (m.images ? badge(tr('models.badge.images'), 'img') : badge(tr('models.badge.text'), 'txt'));
+  const month = new Intl.DateTimeFormat(cedarSite.locale, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const by = (m) => {
+    if (!m.date) return m.org;
+    const [y, mo] = m.date.split('-').map(Number);
+    return `${m.org} · ${month.format(Date.UTC(y, mo - 1, 1))}`;
+  };
+  const arch = (m) => m.arch ? tr(m.arch)
+    : m.active ? tr('models.arch.moe', { total: m.total, active: m.active }) : tr('models.arch.dense', { total: m.total });
+  const and = new Intl.ListFormat(cedarSite.locale, { type: 'conjunction' });
+
+  // ---------- "Your model" ----------
+  // What Cedar's own llama.cpp setup installs for each answer (llama/src/catalog.rs: a Mac's GPU
+  // gets two thirds of its memory, and a Mac needs 32 GB), and the size of that download with
+  // the model's vision file.
+  const CEDAR_MODELS = {
+    mac: { 32: 'gemma4-26b', 48: 'qwen3.6-35b', 96: 'qwen3.6-35b', 128: 'qwen3.5-122b' },
+    gpu: { 12: 'gemma4-12b', 20: 'gemma4-26b', 24: 'qwen3.6-35b', 80: 'qwen3.5-122b' },
+  };
+  const CEDAR_GB = { 'gemma4-12b': 7, 'gemma4-26b': 15, 'qwen3.6-35b': 21, 'qwen3.5-122b': 77 };
+  const CEDAR_SMALL = ['gemma4-12b'];
+
+  // The model Cedar would run here, or why it cannot (a key under install.cedar.no).
+  function cedarPlan(s) {
+    if (!s.os) return { no: 'os' };
+    if (s.os === 'mac' && s.arch !== 'arm64') return { no: 'intel' };
+    if (s.os === 'windows' && s.arch !== 'x64') return { no: 'winArm' };
+    if (s.os === 'linux' && s.arch !== 'x64') return { no: 'linuxArm' };
+    if (!s.mem) return { no: 'pickMem' };
+    const model = CEDAR_MODELS[memKind(s)][s.mem];
+    if (!model) return { no: memKind(s) === 'mac' ? 'macMem' : 'gpuMem' };
+    const small = CEDAR_SMALL.includes(model);
+    return { model, small };
+  }
+
+  // The guide's suggestions for a server run by hand on this computer, best first.
+  function picks(s) {
+    const key = {
+      mac: { 16: 'mac:24', 32: 'mac:48', 48: 'mac:48', 96: 'mac:96', 128: 'mac:128' },
+      gpu: { 12: 'gpu:12', 20: 'gpu:20', 24: 'gpu:24', 80: 'ryzen:128' },
+      arm: { spark: 'spark:128', jetson: 'jetson:8' },
+    }[memKind(s)];
+    const list = PICKS[key && key[s.mem]];
+    return list ? list.text.map((id) => MODELS[id]) : [];
+  }
+
+  // Which of the three to suggest: Cedar's own where it can run a model that does the work well,
+  // a server of one's own on the two machines that come with their own way (vLLM on a Spark,
+  // Ollama on a Jetson), and a provider otherwise. '' while the page cannot tell yet. The page
+  // starts with this one selected.
+  function recommended(s) {
+    const plan = cedarPlan(s);
+    if (plan.model && !plan.small) return 'cedar';
+    if (s.mem === 'spark' || s.mem === 'jetson') return 'own';
+    return plan.no === 'os' || plan.no === 'pickMem' ? '' : 'hosted';
+  }
+
+  // The answers as the step builders read them: the recommended way where none was clicked (or
+  // the clicked one is not possible here), and the defaults of a way filled in.
+  function view(state) {
+    const s = { ...state };
+    if (!s.model || (s.model === 'cedar' && !cedarPlan(s).model)) s.model = recommended(s);
+    if (s.model === 'own') {
+      if (!s.serve) s.serve = s.mem === 'spark' ? 'vllm' : s.mem === 'jetson' ? 'ollama' : 'llamacpp';
+    }
+    return s;
+  }
+
+  const fact = (label, value) => `<div><span>${esc(label)}</span>${esc(value)}</div>`;
+  function card(m, top, extra, gbOverride) {
+    return `<article class="model${top ? ' top' : ''}">
+      <div class="model-head"><h3>${esc(m.name)}</h3><span class="by">${esc(by(m))}</span></div>
+      <div class="badges">${top ? badge(tr('models.badge.top'), 'pick') : ''}${sees(m)}</div>
+      <p>${tr(m.why)}</p>
+      ${m.gb ? `<div class="facts">${fact(tr('models.fact.size'), arch(m))}${fact(tr('models.fact.download'), tr('models.fact.about', { gb: gbOverride || m.gb }))}</div>` : ''}
+      ${extra || ''}
+    </article>`;
+  }
+  const opts = (id, list, chosen) => `<div class="q-opts">${list.map((o) => `<button type="button" class="opt" data-choice="${id}" data-v="${o.v}" aria-pressed="${chosen === o.v}">${esc(o.t)}${o.s ? `<small>${esc(o.s)}</small>` : ''}</button>`).join('')}</div>`;
+
+  function renderModel() {
+    const s = view(state);
+    const plan = cedarPlan(s);
+    const rec = recommended(s);
+    const ways = [
+      { id: 'cedar', title: tr('install.way.cedar'), what: tr('install.way.cedarWhat'), off: !plan.model,
+        verdict: plan.model ? tr('install.way.cedarYes', { model: MODELS[plan.model].name, gb: CEDAR_GB[plan.model] }) : tr('install.cedar.no.' + plan.no) },
+      { id: 'hosted', title: tr('install.way.hosted'), what: tr('install.way.hostedWhat'), verdict: tr('install.way.hostedYes') },
+      { id: 'own', title: tr('install.way.own'), what: tr('install.way.ownWhat'),
+        verdict: picks(s).length ? tr('install.way.ownYes', { model: picks(s)[0].name }) : tr('install.way.ownAny') },
+    ];
+    const cards = ways.map((w, i) => `<button type="button" class="way" data-way="${w.id}" aria-pressed="${s.model === w.id}"${w.off ? ' disabled' : ''}>
+        <span class="way-num">${i + 1}</span>
+        <span class="way-title">${esc(w.title)}</span>
+        ${rec === w.id ? badge(tr('install.recommended'), 'pick') : ''}
+        <span class="way-what">${esc(w.what)}</span>
+        <span class="way-verdict${w.off ? ' no' : ''}">${esc(w.verdict)}</span>
+      </button>`).join('');
+    document.getElementById('model').innerHTML = `<div class="ways">${cards}</div>${panel(s, plan)}`;
+  }
+
+  // What opens under the three ways for the chosen one.
+  function panel(s, plan) {
+    if (s.model === 'cedar' && plan.model) {
+      const m = MODELS[plan.model];
+      return `<div class="way-panel">
+        <p>${tr(s.os === 'linux' ? 'install.panel.cedarLinux' : 'install.panel.cedar')}</p>
+        ${card(m, true, plan.small ? `<p class="note">${tr('install.panel.small', { model: esc(m.name) })}</p>` : '', CEDAR_GB[plan.model])}
+        <p class="note">${tr('install.panel.cedarOther')}</p>
+      </div>`;
+    }
+    if (s.model === 'hosted') {
+      const list = HOSTED_PICKS.text.slice(0, 3).map((id) => HOSTED[id]);
+      const hostedCard = (m, top) => card(m, top, `<p class="note">${tr('models.servedBy', { at: and.format(m.at.map((p) => `<a href="${MODEL_SITES[p].site}">${p}</a>`)) })}</p>`);
+      return `<div class="way-panel">
+        <p>${tr('install.panel.hosted')}</p>
+        <h3 class="sub">${tr('install.q.provider')}</h3>
+        ${opts('provider', [{ v: 'baseten', t: 'Baseten' }, { v: 'nebius', t: 'Nebius' }, { v: 'doubleword', t: 'Doubleword' }, { v: 'other', t: tr('install.opt.otherProvider'), s: tr('install.opt.otherProviderHint') }], s.provider)}
+        <h3 class="sub">${tr('install.panel.hostedModels')}</h3>
+        <div class="models">${list.map((m, i) => hostedCard(m, i === 0)).join('')}</div>
+      </div>`;
+    }
+    if (s.model === 'own') {
+      const list = picks(s);
+      const servers = [{ v: 'llamacpp', t: 'llama.cpp', s: tr('install.serve.llamacpp') }, { v: 'lmstudio', t: 'LM Studio', s: tr('install.opt.lmstudio') },
+        { v: 'ollama', t: 'Ollama', s: tr('install.opt.ollama') }, { v: 'vllm', t: 'vLLM', s: tr('install.opt.vllm') }];
+      const how = (m) => s.serve === 'llamacpp' && m.gguf ? code(`llama-server -hf ${m.gguf} --jinja -c 32768`, '')
+        : s.serve === 'lmstudio' && m.lms ? `<p>${tr(s.os === 'mac' ? 'models.get.lmsMac' : 'models.get.lms', { name: esc(m.lms) })}</p>`
+        : s.serve === 'vllm' ? `<p>${tr('models.get.vllm', { what: m.hf ? `<code>${esc(m.hf)}</code>` : esc(m.name), flags: m.vllmFlags ? ` (<code>${esc(m.vllmFlags)}</code>)` : '', recipe: m.recipe || 'https://recipes.vllm.ai' })}</p>`
+        : s.serve === 'ollama' && m.ollama ? code(`ollama pull ${m.ollama}`, '') : '';
+      return `<div class="way-panel">
+        <p>${tr('install.panel.own')}</p>
+        <h3 class="sub">${tr('install.panel.ownServer')}</h3>
+        ${opts('serve', servers, s.serve)}
+        <p class="note">${tr('install.panel.ownElsewhere')}</p>
+        <h3 class="sub">${tr('models.result.suggested')}</h3>
+        ${list.length ? `<div class="models">${list.map((m, i) => card(m, i === 0, how(m))).join('')}</div>` : `<p class="note">${tr('install.panel.ownNoPicks')}</p>`}
+      </div>`;
+    }
+    return '';
+  }
+
   // ---------- the steps ----------
   function buildSteps(s) {
+    if (remote(s)) return remoteSteps(s);
     const steps = s.os === 'mac' ? macSteps(s) : s.os === 'windows' ? windowsSteps(s) : linuxSteps(s);
     if (sideloads(s)) steps.push(sideStoreStep(s));
     if (s.mobile !== 'no') steps.push(phoneStep(s));
@@ -340,7 +661,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         : `<p>${btn(release.dmg || RELEASES, tr('install.dl.macBuild'))}</p>`,
       windows: `<p>${btn(release.msi || RELEASES, tr('install.dl.windowsBuild', { arch: s.arch === 'arm64' ? tr('install.dl.x64OnArm') : 'x64' }))}</p>`,
       linux: `<p>${btn(linuxUrl(arch), tr('install.dl.linuxBuild', { version: esc(release.ver), arch }))}</p>`,
-    }[s.os];
+    }[remote(s) && s.os === 'linux' ? '' : s.os] || '';
     const phone = s.mobile !== 'yes' ? ''
       : sideloads(s) ? `<p>${btn(ADD_SOURCE, tr('install.dl.iphoneSideStore'))}${btn(release.ipa || RELEASES, tr('install.dl.orIpa'), true)}</p>`
       : s.phone === 'iphone' && s.ios === 'testflight' ? `<p>${btn(TESTFLIGHT, tr('install.dl.iphoneTestFlight'))}</p>`
@@ -356,67 +677,99 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
 
   // Where Cedar finds each kind of model server, and what the setup window calls it.
   const SERVERS = {
-    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1', pick: tr('install.pick.preset', { name: 'Ollama' }) },
-    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1', pick: tr('install.pick.preset', { name: 'LM Studio' }) },
-    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1', pick: tr('install.pick.vllm') },
+    ollama: { name: 'Ollama', addr: 'http://127.0.0.1:11434/v1' },
+    lmstudio: { name: 'LM Studio', addr: 'http://127.0.0.1:1234/v1' },
+    vllm: { name: 'vLLM', addr: 'http://127.0.0.1:8000/v1' },
+    llamacpp: { name: 'llama.cpp', addr: 'http://127.0.0.1:8080/v1' },
+    // llama.cpp set up and run by Cedar (the setup window, or cedar-llama on Linux).
+    cedar: { name: 'llama.cpp', addr: 'http://127.0.0.1:18081/v1', pick: tr('install.pick.cedar') },
   };
   const PROVIDERS = {
     doubleword: { name: 'Doubleword', addr: 'https://api.doubleword.ai/v1', site: 'https://www.doubleword.ai', keys: 'https://app.doubleword.ai', docs: 'https://docs.doubleword.ai/inference-api/using-the-platform',
       keyHow: tr('install.provider.doublewordKey') },
     baseten: { name: 'Baseten', addr: 'https://inference.baseten.co/v1', site: 'https://www.baseten.co', keys: 'https://app.baseten.co/settings/api_keys', docs: 'https://docs.baseten.co/development/model-apis/overview',
       keyHow: tr('install.provider.basetenKey') },
+    nebius: { name: 'Nebius', addr: 'https://api.tokenfactory.nebius.com/v1', site: 'https://tokenfactory.nebius.com', keys: 'https://tokenfactory.nebius.com', docs: 'https://docs.tokenfactory.nebius.com/quickstart',
+      keyHow: tr('install.provider.nebiusKey') },
     other: { name: tr('install.provider.yours'), addr: 'https://<provider>/v1', docs: '',
       keyHow: tr('install.provider.otherKey') },
   };
 
   // What to choose in the setup window's model step (Mac and Windows) for the answers given.
   function modelChoice(s) {
-    if (s.host === 'yes' && s.serve) return SERVERS[s.serve].pick;
-    if (s.host === 'no' && s.provider) return tr('install.pick.provider', { address: esc(PROVIDERS[s.provider].addr) });
-    return tr('install.pick.any');
+    if (cedarServes(s)) return SERVERS.cedar.pick;
+    if (s.model === 'own' && s.serve === 'vllm') return tr('install.pick.vllmNew');
+    if (s.model === 'own' && s.serve) return tr('install.pick.presetNew', { name: SERVERS[s.serve].name });
+    if (s.model === 'hosted' && s.provider === 'other') return tr('install.pick.providerOtherNew', { address: esc(PROVIDERS.other.addr) });
+    if (s.model === 'hosted' && s.provider) return tr('install.pick.providerNew', { name: PROVIDERS[s.provider].name });
+    return tr('install.pick.anyNew');
   }
 
-  // The address the Linux chat's Settings → Server is given.
+  // "Let Cedar do it" was chosen, on a system where Cedar can.
+  function cedarServes(s) {
+    return s.model === 'cedar' && Boolean(cedarPlan(s).model);
+  }
+
+  // The address Cedar is given for the model server. On another machine, that machine's.
   function modelAddress(s) {
-    if (s.host === 'no') return PROVIDERS[s.provider || 'other'].addr;
-    return SERVERS[s.serve || 'ollama'].addr;
+    if (s.model === 'hosted') return PROVIDERS[s.provider || 'other'].addr;
+    const addr = SERVERS[cedarServes(s) ? 'cedar' : s.serve || 'llamacpp'].addr;
+    return addr;
   }
 
   const WHAT_IS_A_PROVIDER = explain(tr('install.explain.provider'));
 
+  // The step that gets the model ready, for the way chosen in "Your model".
   function modelStep(s) {
     const shell = s.os === 'windows' ? 'PowerShell' : 'Terminal';
     const inSetup = s.os === 'linux'
       ? `<p class="note">${tr('install.model.laterLinux')}</p>`
       : `<p class="note">${tr('install.model.laterSetup', { choice: modelChoice(s) })}</p>`;
     const toolsNote = `<p class="note">${tr('install.model.toolsNote')}</p>`;
-
-    if (s.host === 'no') return providerStep(s, inSetup);
-    if (s.host === 'yes') {
+    if (cedarServes(s)) return cedarStep(s);
+    if (s.model === 'hosted') return providerStep(s, inSetup);
+    if (s.model === 'own') {
       if (s.serve === 'ollama') return ollamaStep(s, shell, inSetup, toolsNote);
       if (s.serve === 'lmstudio') return lmStudioStep(s, inSetup, toolsNote);
       if (s.serve === 'vllm') return vllmStep(s, inSetup);
-      return step(tr('install.serve.title'), `<p>${tr('install.serve.body')}</p>`, 'optional');
+      return llamacppStep(s, shell, inSetup, toolsNote);
     }
-    // Not sure, or not answered yet.
-    return step(tr('install.hw.title'), `${s.host ? '' : `<p class="note">${tr('install.hw.answer', { question: esc(tr('install.q.host')) })}</p>`}
-      <p>${tr('install.hw.intro')}</p>
-      <ul>
-        <li>${tr('install.hw.mac')}</li>
-        <li>${tr('install.hw.spark')}</li>
-        <li>${tr('install.hw.ryzen')}</li>
-        <li>${tr('install.hw.gpu')}</li>
-      </ul>
-      ${s.os === 'windows' ? code('# your graphics card and its memory\nGet-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM\n# total memory\n(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB', 'PowerShell')
-        : s.os === 'linux' ? code('free -h                 # memory\nnvidia-smi              # NVIDIA GPU and its memory, if any\nrocm-smi --showmeminfo vram   # AMD GPU, if any', 'Terminal')
-        : code("system_profiler SPHardwareDataType | grep -E 'Chip|Memory'", 'Terminal')}
-      <p class="note">${tr('install.hw.guide')}</p>
-      <p>${tr('install.hw.outro', { yes: esc(tr('install.opt.yes')), no: esc(tr('install.opt.no')) })}</p>`, 'optional');
+    return step(tr('install.choose.title'), `<p>${tr('install.choose.body')}</p>`, 'optional');
+  }
+
+  // Cedar sets llama.cpp up itself: in the setup window on a Mac or Windows, with cedar-llama
+  // (from the archive the Linux steps unpack) on Linux. Which model is known from the answers.
+  function cedarStep(s) {
+    const m = MODELS[cedarPlan(s).model];
+    const what = { model: `<strong>${esc(m.name)}</strong>`, gb: CEDAR_GB[cedarPlan(s).model] };
+    if (s.os === 'linux') {
+      const V = release.ver;
+      return step(tr('install.cedar.title'), `<p>${tr('install.cedar.linux')}</p>
+        ${code(`V=${V}\nF=Cedar-$V-linux-x64\nsudo install -m 0755 $F/cedar-llama /usr/local/bin/\n\ncedar-llama detect     # ${tr('install.cedar.detect')}\ncedar-llama install    # ${tr('install.cedar.install')}\ncedar-llama serve      # ${tr('install.cedar.serve')}`, 'Terminal')}
+        <p>${tr('install.cedar.linuxModel', what)}</p>
+        <p class="note">${tr('install.cedar.linuxNote', { url: REPO + '#llamacpp-on-a-machine-with-a-gpu' })}</p>`);
+    }
+    return step(tr('install.cedar.title'), `<p>${tr('install.cedar.body', what)}</p>
+      <p class="note">${tr('install.model.laterSetup', { choice: modelChoice(s) })}</p>`, 'ok');
+  }
+
+  // llama.cpp run by hand: install it, then one command fetches the model and serves it.
+  function llamacppStep(s, shell, inSetup, toolsNote) {
+    const first = picks(s)[0];
+    const gguf = first ? first.gguf : `<${tr('install.llamacpp.repo')}>`;
+    const install = s.os === 'mac' ? code('brew install llama.cpp', 'Terminal')
+      : s.os === 'windows' ? code('winget install llama.cpp', 'PowerShell')
+      : `<p>${tr('install.llamacpp.installLinux')}</p>`;
+    const run = `llama-server -hf ${gguf} --jinja -c 32768\n# ${tr('models.get.llamaFirst')}`;
+    return step(tr('install.llamacpp.title'), `<p>${tr('install.llamacpp.intro')}</p>${install}
+      <p>${tr(first ? 'install.llamacpp.run' : 'install.llamacpp.runAny', { model: first ? `<strong>${esc(first.name)}</strong>` : '' })}</p>
+      ${code(run, shell)}
+      <p>${tr('install.reaches', { name: 'llama.cpp', address: esc(modelAddress(s)) })}</p>${inSetup}${toolsNote}`);
   }
 
   function providerStep(s, inSetup) {
     if (!s.provider) {
-      return step(tr('install.provider.pickTitle'), `${WHAT_IS_A_PROVIDER}<p>${tr('install.provider.pickBody')}</p>`, 'optional');
+      return step(tr('install.provider.pickTitle'), `${WHAT_IS_A_PROVIDER}<p>${tr('install.provider.pick')}</p>`, 'optional');
     }
     const p = PROVIDERS[s.provider];
     const keyLink = p.keys ? `<p>${btn(p.keys, tr('install.provider.getKey', { name: p.name }))}</p>` : '';
@@ -424,7 +777,8 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       .replace('curl -s', s.os === 'windows' ? 'curl.exe -s' : 'curl -s');
     const where = s.os === 'linux'
       ? `<p>${tr('install.provider.whereLinux', { address: esc(p.addr) })}</p>`
-      : `<p>${tr('install.provider.whereSetup', { address: esc(p.addr) })}</p>`;
+      : s.provider === 'other' ? `<p>${tr('install.provider.whereSetupOtherNew', { address: esc(p.addr) })}</p>`
+      : `<p>${tr('install.provider.whereSetupNew', { name: p.name })}</p>`;
     return step(tr('install.provider.title', { name: p.name }), `${WHAT_IS_A_PROVIDER}<p>${p.keyHow}</p>${keyLink}
       <ol><li>${tr('install.provider.keepKey')}</li><li>${tr('install.provider.checkKey')}${check}</li></ol>
       ${where}
@@ -495,13 +849,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       linux: code('curl -fsSL https://tailscale.com/install.sh | sh\nsudo tailscale up', 'Terminal'),
     }[s.os];
     const dns = `<li>${tr('install.phone.dns')}</li>`;
-    const app = {
-      iphone: sideloads(s)
-        ? tr('install.phone.iphoneSideStore')
-        : tr(s.ios ? 'install.phone.iphone' : 'install.phone.iphoneEither', { testflight: TESTFLIGHT, privately: esc(tr('install.opt.privately')) }),
-      android: tr('install.phone.android', { apk: release.apk || RELEASES, adb: ADB }),
-    }[wanted && s.phone] || tr('install.phone.any', { testflight: TESTFLIGHT, ipa: release.ipa || RELEASES, apk: release.apk || RELEASES, adb: ADB });
-    const phone = `<li>${app}</li>`;
+    const phone = `<li>${phoneApp(s)}</li>`;
     const share = s.os === 'linux'
       ? `<li>${tr('install.phone.shareLinux')}${code('sudo tailscale serve --bg --https=443 http://127.0.0.1:3000\nURL=https://$(tailscale status --json | jq -r \'.Self.DNSName | rtrimstr(".")\')\necho "CHAT_PUBLIC_URL=$URL" | sudo tee -a /etc/cedar/chat.env\nsudo systemctl restart cedar-chat', 'Terminal')}</li>
          <li>${tr('install.phone.scanLinux')}</li>`
@@ -509,6 +857,52 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
          <li>${tr('install.phone.showQr')}</li>`;
     const title = tr({ iphone: 'install.phone.titleIphone', android: 'install.phone.titleAndroid' }[wanted && s.phone] || 'install.phone.title');
     return step(title, `${intro}${s.tailscale === 'yes' ? '' : install}<ol>${dns}${phone}${share}</ol><p class="note">${tr('install.phone.note', { url: s.os === 'linux' ? LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' : DESKTOP + '#using-it-from-an-iphone-or-ipad' })}</p>`, kind, wanted ? '' : tr('install.tag.optional'));
+  }
+
+  // Where to get the phone app, for the phone the answers name.
+  function phoneApp(s) {
+    return {
+      iphone: sideloads(s)
+        ? tr('install.phone.iphoneSideStore')
+        : tr(s.ios ? 'install.phone.iphone' : 'install.phone.iphoneEither', { testflight: TESTFLIGHT, privately: esc(tr('install.opt.privately')) }),
+      android: tr('install.phone.android', { apk: release.apk || RELEASES, adb: ADB }),
+    }[s.mobile === 'yes' && s.phone] || tr('install.phone.any', { testflight: TESTFLIGHT, ipa: release.ipa || RELEASES, apk: release.apk || RELEASES, adb: ADB });
+  }
+
+  // ---------- Cedar on another computer ----------
+  // This computer becomes a window onto a Cedar that already runs elsewhere, as the phone apps
+  // are (desktop/README.md, "Using Cedar that runs on another computer"): no Docker, no model.
+  function remoteSteps(s) {
+    const steps = [];
+    steps.push(step(tr('install.remote.linkTitle'), `<p>${tr('install.remote.linkBody')}</p>
+      <p>${tr('install.remote.linkWhat')}</p>
+      <p class="note">${tr('install.remote.https', { url: LINUX + '#over-https-with-tailscale-the-ios-and-android-apps' })}</p>`));
+    steps.push(step(tr('install.remote.reachTitle'), `<p>${tr('install.remote.reachBody')}</p>
+      <p>${btn('https://tailscale.com/download', tr('install.remote.getTailscale'), true)}</p>`));
+    if (s.os === 'linux') {
+      steps.push(step(tr('install.remote.linuxTitle'), `<p>${tr('install.remote.linuxBody')}</p>
+        <p class="note">${tr('install.remote.linuxNote', { url: DESKTOP + '#how-it-is-built' })}</p>`));
+    } else {
+      if (s.os === 'mac' && s.arch === 'x64') {
+        steps.push(step(tr('install.mac.intelTitle'), `<p>${tr('install.mac.intelBody', { url: DESKTOP + '#on-a-mac' })}</p>${btn(DESKTOP + '#on-a-mac', tr('install.mac.buildGuide'))}`));
+      } else if (s.os === 'mac') {
+        steps.push(step(tr('install.mac.downloadTitle'), `<p>${btn(release.dmg || RELEASES, tr('install.dl.mac'))}</p><p>${tr('install.mac.dmg')}</p>`));
+      } else {
+        steps.push(step(tr('install.win.installTitle'), `<p>${btn(release.msi || RELEASES, tr('install.dl.windows'))}</p><p>${tr('install.win.msi')}</p>${s.arch === 'arm64' ? `<p class="note">${tr('install.win.armNote')}</p>` : ''}`));
+      }
+      steps.push(step(tr('install.remote.connectTitle'), `<ol><li>${tr('install.remote.connect1')}</li><li>${tr('install.remote.connect2')}</li><li>${tr('install.remote.connect3')}</li></ol>
+        <p class="note">${tr('install.remote.already', { url: DESKTOP + '#using-cedar-that-runs-on-another-computer' })}</p>
+        ${explain(tr('install.remote.expect'))}`));
+    }
+    if (sideloads(s)) steps.push(sideStoreStep(s));
+    if (s.mobile !== 'no') {
+      const wanted = s.mobile === 'yes';
+      const ask = wanted ? '' : `<p class="note">${tr('install.phone.answerMobile', { question: esc(tr('install.q.mobile')) })}</p>`;
+      steps.push(step(tr('install.remote.phoneTitle'), `${ask}<ol><li>${phoneApp(s)}</li><li>${tr('install.remote.phoneScan')}</li></ol>`,
+        wanted ? '' : 'optional', wanted ? '' : tr('install.tag.optional')));
+    }
+    if (s.os !== 'linux' || s.mobile === 'yes') steps.push(downloadStep(s));
+    return steps;
   }
 
   // The iPhone app without TestFlight: SideStore signs it on the phone with the user's own Apple ID.
@@ -530,15 +924,13 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
   const UPDATES_NOTE = `<p class="note">${tr('install.updatesNote')}</p>`;
 
   // The setup window's three checks (Mac and Windows), as the app names them.
-  const checks = (s) => `<ul><li>${tr('install.check.docker')}</li><li>${tr('install.check.image')}</li><li>${tr('install.check.model', { choice: modelChoice(s) })}</li></ul>`;
+  const checks = (s) => `<ul><li>${tr('install.check.docker')}${s.docker === 'yes' && appSetsUp(s) ? ' ' + tr(s.os === 'mac' ? 'install.mac.dockerStarts' : 'install.win.dockerStarts') : ''}</li><li>${tr('install.check.image')}</li><li>${tr(cedarServes(s) ? 'install.check.modelCedar' : 'install.check.model', { choice: modelChoice(s) })}</li></ul>`;
 
   function macSteps(s) {
     const steps = [];
     const cedarSetsUpDocker = s.docker !== 'yes' && appSetsUp(s);
-    if (s.docker === 'yes') {
-      const starts = appSetsUp(s) ? `<p class="note">${tr('install.mac.dockerStarts')}</p>` : '';
-      steps.push(step(tr('install.docker.runningTitle'), `<p>${tr('install.mac.dockerRunning')}</p>${code("docker info --format '{{.ServerVersion}}'   # prints a version number", 'Terminal')}${starts}`, 'ok'));
-    } else if (!cedarSetsUpDocker) {
+    // Docker that is installed needs no step: the app starts it when it is not running.
+    if (s.docker !== 'yes' && !cedarSetsUpDocker) {
       steps.push(step(tr('install.mac.dockerTitle'), `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>${tr('install.mac.dockerIntro')}</p>
         <p>${btn('https://www.docker.com/products/docker-desktop/', tr('install.mac.getDocker'))}${btn('https://orbstack.dev', tr('install.mac.orOrbStack'), true)}</p>
         <p>${tr('install.mac.homebrew')}</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}
@@ -568,7 +960,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const installCedar = step(tr('install.win.installTitle'), `<p>${btn(release.msi || RELEASES, tr('install.dl.windows'))}</p><p>${tr('install.win.msi')}</p>${armNote}`);
 
     if (s.docker === 'yes') {
-      steps.push(step(tr('install.docker.runningTitle'), `<p>${tr('install.win.dockerRunning')}</p>${code("docker info --format '{{.ServerVersion}}'", 'PowerShell')}<p class="note">${tr('install.win.dockerStarts')}</p>`, 'ok'));
+      // Docker Desktop that is installed needs no step: the app starts it when it is not running.
       steps.push(modelStep(s));
       steps.push(installCedar);
     } else {
@@ -596,10 +988,11 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         ${code('curl -fsSL https://get.docker.com | sh\nsudo usermod -aG docker "$USER"   # then log out and back in\ndocker info --format \'{{.ServerVersion}}\'', 'Terminal')}
         <p class="note">${tr('install.linux.engineNote')}</p>`));
     }
-    steps.push(modelStep(s));
+    if (!cedarServes(s)) steps.push(modelStep(s));
     steps.push(step(tr('install.linux.installTitle', { arch }), `<p>${tr('install.linux.install')}</p>
       ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nU=https://github.com/hanneshapke/cedar/releases/download\ncurl -fLO $U/v$V/$F.tar.gz\ntar -xzf $F.tar.gz\nsudo install -m 0755 $F/cedar $F/cedar-chat /usr/local/bin/\n\n# the sealed box the agent's tools run in\ndocker pull ghcr.io/hanneshapke/cedar-sandbox:$V\ndocker tag ghcr.io/hanneshapke/cedar-sandbox:$V cedar-sandbox:latest`, 'Terminal')}
       <p class="note">${arch === 'arm64' ? tr('install.linux.spark') : ''}${tr('install.linux.fromSource')}</p>`));
+    if (cedarServes(s)) steps.push(modelStep(s));
     steps.push(step(tr('install.linux.configTitle'), `<p>${tr('install.linux.config')}</p>
       ${code(`sudo useradd --system --create-home --home-dir /var/lib/cedar \\\n  --shell /usr/sbin/nologin --groups docker cedar\n\nCEDAR_KEY=$(openssl rand -hex 24)\nCHAT_TOKEN=$(openssl rand -hex 24)\nADMIN_TOKEN=$(openssl rand -hex 24)\nSECRET_KEY=$(openssl rand -hex 32)\nsudo install -d -m 0755 /etc/cedar\n\nsudo tee /etc/cedar/cedar.env >/dev/null <<EOF\nCEDAR_API_KEYS=$CEDAR_KEY\nCEDAR_ADMIN_KEYS=$CEDAR_KEY\nCEDAR_SECRET_KEY=$SECRET_KEY\nBIND_ADDR=127.0.0.1:8080\nDATABASE_URL=sqlite:///var/lib/cedar/cedar.db\nEOF\n\nsudo tee /etc/cedar/chat.env >/dev/null <<EOF\nCEDAR_URL=http://127.0.0.1:8080\nCEDAR_API_KEY=$CEDAR_KEY\nCHAT_BIND_ADDR=127.0.0.1:3000\nCHAT_DATABASE_URL=sqlite:///var/lib/cedar/cedar-chat.db\nCHAT_ACCESS_TOKEN=$CHAT_TOKEN\nCHAT_ADMIN_TOKEN=$ADMIN_TOKEN\nEOF\n\nsudo chmod 600 /etc/cedar/cedar.env /etc/cedar/chat.env\necho "Chat access token: $CHAT_TOKEN"\necho "Admin token:       $ADMIN_TOKEN"`, 'Terminal')}
       <p class="note">${tr('install.linux.configNote', { url: LINUX + '#4-configure' })}</p>`));
@@ -610,7 +1003,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
       ${code('sudo systemctl daemon-reload\nsudo systemctl enable --now cedar cedar-chat\ncurl -s -o /dev/null -w \'%{http_code}\\n\' http://127.0.0.1:8080/readyz   # 200', 'Terminal')}`));
     steps.push(step(tr('install.linux.chatTitle'), `<p>${tr('install.linux.chatOpen')}</p>
       ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', tr('install.shell.laptop'))}
-      <p>${tr(s.host === 'no' ? 'install.linux.chatModelKey' : s.serve === 'vllm' ? 'install.linux.chatModelGpu' : 'install.linux.chatModel', { address: esc(modelAddress(s)) })}</p>`));
+      <p>${tr(s.model === 'hosted' ? 'install.linux.chatModelKey' : s.serve === 'vllm' ? 'install.linux.chatModelGpu' : 'install.linux.chatModel', { address: esc(modelAddress(s)) })}</p>`));
     steps.push(step(tr('install.linux.updatesTitle'), `<p>${tr('install.linux.updates')}</p>
       ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nsudo install -m 0755 $F/cedar-update /usr/local/sbin/cedar-update\nsudo install -m 0644 $F/cedar-update.path $F/cedar-update.service /etc/systemd/system/\nsudo install -d -o cedar -g cedar -m 0750 /var/lib/cedar/update\necho "CHAT_UPDATE_DIR=/var/lib/cedar/update" | sudo tee -a /etc/cedar/chat.env\n\n# also pull the matching sealed box with each update\necho "CEDAR_UPDATE_PULL_IMAGE=1" | sudo tee /etc/cedar/update.env\n\nsudo systemctl daemon-reload\nsudo systemctl enable --now cedar-update.path\nsudo systemctl restart cedar-chat`, 'Terminal')}
       <p class="note">${tr('install.linux.updatesNote', { url: LINUX + '#updates' })}</p>`, 'optional', tr('install.tag.optional')));
@@ -624,9 +1017,29 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
     const { q, v } = b.dataset;
     state[q] = v;
     if (q === 'os') state.arch = defaultArch(v);
+    if ((q === 'os' || q === 'arch') && !QUESTIONS.find((x) => x.id === 'mem').opts.some((o) => o.v === state.mem && o.when(state))) state.mem = '';
     writeState();
     render();
   });
+
+  document.getElementById('model').addEventListener('click', (e) => {
+    const way = e.target.closest('.way');
+    const choice = e.target.closest('[data-choice]');
+    if (way && !way.disabled) state.model = way.dataset.way;
+    else if (choice) state[choice.dataset.choice] = choice.dataset.v;
+    else return copyCode(e);
+    writeState();
+    render();
+  });
+
+  async function copyCode(e) {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const text = b.parentElement.querySelector('pre').innerText;
+    try { await navigator.clipboard.writeText(text); b.textContent = tr('install.copied'); }
+    catch { b.textContent = tr('install.copyFailed'); }
+    setTimeout(() => { b.textContent = tr('install.copy'); }, 1600);
+  }
 
   document.getElementById('steps').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-copy]');
@@ -666,8 +1079,7 @@ summary{cursor:pointer;font-weight:600;color:var(--ink)}
         else if (n.endsWith('-linux-arm64.tar.gz')) release['linux-arm64'] = u;
       }
       if (release['linux-x64'] && rel.tag_name) release.ver = rel.tag_name.replace(/^v/, '');
-      renderSteps();
-      renderDownload();
+      render();
     })
     .catch(() => { /* offline or rate limited: keep the releases page */ });
 })();

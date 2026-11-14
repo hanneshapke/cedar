@@ -1,0 +1,23 @@
+Este es Cedar: un asistente de código abierto que funciona en tu computadora y hace trabajo de verdad por ti.
+
+La primera vez que lo abres, Cedar te pregunta en qué idioma quieres trabajar. Después solo necesita una cosa: un modelo con el que pensar.
+
+Cedar no está atado a ninguna empresa de IA. En Configuración, Modelos, eliges de dónde viene el modelo. La app de Cedar para Mac y Windows puede descargar uno y ejecutarlo por ti con llama C P P. Puedes usar un proveedor alojado con una clave de API. O puedes indicarle a Cedar un servidor de modelos que ya tengas en marcha. Aquí es V L L M en esta misma máquina. Cedar muestra los modelos que ofrece el servidor. Elige uno, y completa los niveles de razonamiento que acepta el modelo y si puede leer imágenes. Luego comprueba la dirección una vez más y la guarda.
+
+Ahora, una tarea. Adjunto un año de gastos del hogar y le pido a Cedar que averigüe adónde se va el dinero, que haga un gráfico y que escriba un resumen de una página con tres formas de ahorrar.
+
+Cedar no empieza sin más. Para una tarea más grande, primero te muestra su plan. Puedes reformular un paso, quitar uno o agregar el tuyo. Cuando te parezca bien, dile que empiece.
+
+El trabajo ocurre dentro de una caja sellada: un contenedor propio, sin red, que no puede ver el resto de tu computadora. Cedar hace los cálculos en Python, dibuja el gráfico y escribe el PDF. Cada paso queda en la conversación, así que puedes abrirlo y ver exactamente qué se ejecutó.
+
+El gráfico es interactivo: apunta a un mes para leer cada categoría. El resumen terminado está a la derecha, con las tres sugerencias, listo para descargar. Y la versión corta está en la conversación.
+
+Hay cosas que Cedar no hace por su cuenta. Pídele que elimine un archivo: se detiene y pregunta primero. Con las descargas, las instalaciones y los correos pasa lo mismo. Nada arriesgado ocurre sin tu aprobación.
+
+Cedar también recuerda lo que le pides que recuerde. En Configuración, Memoria, ves todo lo que ha guardado sobre ti. Fíjalo, archívalo o elimínalo para siempre. Se queda en tu propio servidor de Cedar.
+
+Cada habilidad tiene su interruptor. Leer páginas web, el clima, mapas, indicaciones, la bolsa. Activa lo que Cedar puede alcanzar. Todo lo demás queda apagado.
+
+Y cuando una conversación cumplió su propósito, conviértela en un agente. Cedar escribe el prompt a partir de la conversación. Tú eliges el activador: un horario, un cambio que vigila, un correo nuevo, un archivo que llega. Este se ejecutará cada mes.
+
+Cedar es gratuito y de código abierto. Funciona en Mac, Windows y Linux, con apps para iPhone y Android. Tu propio asistente. Vive en tu casa, a tus órdenes.
