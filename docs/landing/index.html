@@ -123,6 +123,22 @@ html{scroll-padding-top:96px}
   </div>
 </div>
 
+<section id="tour" data-screen-label="The tour" style="max-width:1160px;margin:0 auto;padding:60px 28px 0;display:flex;flex-direction:column;gap:32px;position:relative">
+  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
+    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.tour.eyebrow">See it work</span>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.tour.title">The whole tour,<br>in four minutes.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.tour.lead">From the first start to a finished report: adding a model, a task with its plan, the work in a sealed box, and an agent made from the conversation.</p>
+  </div>
+  <!-- The film in the page's language. Only the picture below is on the page: tour.js puts the YouTube player in its place when it is clicked, so nothing is fetched from YouTube before. Without scripts the link opens the film on YouTube. -->
+  <div data-reveal data-tour-frame data-i18n-attr="data-video:index.tour.video" data-video="K0RgSeHgLXc" style="position:relative;aspect-ratio:16/9;border-radius:28px;overflow:hidden;background:#231f1b;box-shadow:0 30px 70px rgba(60,30,10,.18)">
+    <a class="tour-play" data-tour href="https://youtu.be/K0RgSeHgLXc" target="_blank" rel="noopener" data-i18n-attr="href:index.tour.url; aria-label:index.tour.play" aria-label="Play the tour" style="position:absolute;inset:0;display:block">
+      <img src="shots/tour-en.jpg" data-i18n-attr="src:index.tour.poster; alt:index.tour.alt" alt="Cedar's chat with a spending chart and the finished PDF summary" width="1280" height="720" loading="lazy" style="display:block;width:100%;height:100%;object-fit:cover">
+      <span class="tour-button" style="position:absolute;left:50%;top:50%;width:96px;height:96px;margin:-48px 0 0 -48px;border-radius:50%;background:#e5553a;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 40px rgba(35,31,27,.35);transition:transform .2s"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#fff"/></svg></span>
+    </a>
+  </div>
+  <span data-reveal style="font-size:13px;color:#8a7f73" data-i18n="index.tour.note">The video plays from YouTube. Nothing is loaded from YouTube until you press play.</span>
+</section>
+
 <section id="does" data-screen-label="What it does" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:72px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.does.eyebrow">What it does</span>
@@ -170,22 +186,6 @@ html{scroll-padding-top:96px}
       </div>
     </div>
   </div>
-</section>
-
-<section id="tour" data-screen-label="The tour" style="max-width:1160px;margin:0 auto;padding:60px 28px 0;display:flex;flex-direction:column;gap:32px;position:relative">
-  <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
-    <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.tour.eyebrow">See it work</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.tour.title">The whole tour,<br>in four minutes.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.tour.lead">From the first start to a finished report: adding a model, a task with its plan, the work in a sealed box, and an agent made from the conversation.</p>
-  </div>
-  <!-- The film in the page's language. Only the picture below is on the page: tour.js puts the YouTube player in its place when it is clicked, so nothing is fetched from YouTube before. Without scripts the link opens the film on YouTube. -->
-  <div data-reveal data-tour-frame data-i18n-attr="data-video:index.tour.video" data-video="K0RgSeHgLXc" style="position:relative;aspect-ratio:16/9;border-radius:28px;overflow:hidden;background:#231f1b;box-shadow:0 30px 70px rgba(60,30,10,.18)">
-    <a class="tour-play" data-tour href="https://youtu.be/K0RgSeHgLXc" target="_blank" rel="noopener" data-i18n-attr="href:index.tour.url; aria-label:index.tour.play" aria-label="Play the tour" style="position:absolute;inset:0;display:block">
-      <img src="shots/tour-en.jpg" data-i18n-attr="src:index.tour.poster; alt:index.tour.alt" alt="Cedar's chat with a spending chart and the finished PDF summary" width="1280" height="720" loading="lazy" style="display:block;width:100%;height:100%;object-fit:cover">
-      <span class="tour-button" style="position:absolute;left:50%;top:50%;width:96px;height:96px;margin:-48px 0 0 -48px;border-radius:50%;background:#e5553a;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 40px rgba(35,31,27,.35);transition:transform .2s"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#fff"/></svg></span>
-    </a>
-  </div>
-  <span data-reveal style="font-size:13px;color:#8a7f73" data-i18n="index.tour.note">The video plays from YouTube. Nothing is loaded from YouTube until you press play.</span>
 </section>
 
 <section id="private" data-screen-label="Private by design" style="max-width:1160px;margin:70px auto 0;padding:0 28px;position:relative">
