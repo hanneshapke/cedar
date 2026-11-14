@@ -38,7 +38,8 @@ function loadCatalogs(files) {
         }
         if (!LANGS.includes(lang)) problems.push(`${rel(file)}: unknown language ${lang}`);
         for (const [key, value] of Object.entries(catalog[lang] || {})) {
-          if (lang === 'en' && origin[key] && origin[key] !== file) {
+          // Each page's catalog names its page; a page that loads several takes the last one's.
+          if (lang === 'en' && key !== 'page.title' && origin[key] && origin[key] !== file) {
             problems.push(`${rel(file)}: ${key} is also defined in ${rel(origin[key])}`);
           }
           if (lang === 'en') origin[key] = file;
@@ -142,8 +143,13 @@ checkUses(walk(desktopUi, (p) => /\.(js|html)$/.test(p) && !['i18n.js', 'strings
 const landing = path.join(root, 'docs', 'landing');
 let siteKeys = 0;
 for (const page of fs.readdirSync(landing).filter((f) => f.endsWith('.html'))) {
+  // The catalogs a page uses are the ones it loads: i18n/common.js and its own, and for a page
+  // that reuses another page's texts (install-v2.html), those too.
+  const html = fs.readFileSync(path.join(landing, page), 'utf8');
+  const loaded = [...html.matchAll(/<script src="\.\/i18n\/([\w.-]+\.js)"/g)].map((m) => path.join(landing, 'i18n', m[1]));
   const own = path.join(landing, 'i18n', page.replace(/\.html$/, '.js'));
-  const site = loadCatalogs([path.join(landing, 'i18n', 'common.js'), ...(fs.existsSync(own) ? [own] : [])]);
+  const files = loaded.length ? loaded : [path.join(landing, 'i18n', 'common.js'), ...(fs.existsSync(own) ? [own] : [])];
+  const site = loadCatalogs(files);
   checkCatalogs(site);
   checkUses([path.join(landing, page)], site.merged.en);
   siteKeys += Object.keys(site.merged.en).length;
