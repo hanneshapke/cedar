@@ -319,9 +319,9 @@ greyed out and the other two remain.
 
 Every one of them reads images as well as text: the download includes the model's vision
 projector, `llama-server` loads it, and cedar is told the model takes images, so attachments
-work without ticking anything. They are the
-[model guide](https://hanneshapke.github.io/cedar/models.html)'s own suggestions for a model that
-sees; the list is `llama/src/catalog.rs`. Gemma 4 12B is a small model, the most that a 12 or
+work without ticking anything. They are the ones the
+[install guide](https://hanneshapke.github.io/cedar/install.html#model-title) names for each
+computer; the list is `llama/src/catalog.rs`. Gemma 4 12B is a small model, the most that a 12 or
 16 GB card holds beside its context: it answers, but can miss steps in longer tasks. The page says so
 and keeps *Recommended* on the hosted provider there.
 

@@ -4,8 +4,8 @@
 //! All of them read images as well as text: each comes with its vision projector (`mmproj`), which
 //! llama-server loads beside the model, and cedar is told that the model takes images.
 //!
-//! They are the website's own suggestions for a model that sees (`PICKS` in
-//! docs/landing/models.html, the `images` lists): Gemma 4 12B for a 12 or 16 GB graphics card,
+//! They are what the website's install guide says Cedar runs (`CEDAR_MODELS` in
+//! docs/landing/install.html): Gemma 4 12B for a 12 or 16 GB graphics card,
 //! Gemma 4 26B-A4B from 20 GB, Qwen3.6 35B-A3B from 24 GB, Qwen3.5 122B-A10B where 128 GB allow
 //! it. Keep the two in step. Mixture-of-experts models are preferred to dense ones of the same
 //! size, as there: they answer several times faster.

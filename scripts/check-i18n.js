@@ -143,8 +143,7 @@ checkUses(walk(desktopUi, (p) => /\.(js|html)$/.test(p) && !['i18n.js', 'strings
 const landing = path.join(root, 'docs', 'landing');
 let siteKeys = 0;
 for (const page of fs.readdirSync(landing).filter((f) => f.endsWith('.html'))) {
-  // The catalogs a page uses are the ones it loads: i18n/common.js and its own, and for a page
-  // that reuses another page's texts (install-v2.html), those too.
+  // The catalogs a page uses are the ones it loads: i18n/common.js and its own.
   const html = fs.readFileSync(path.join(landing, page), 'utf8');
   const loaded = [...html.matchAll(/<script src="\.\/i18n\/([\w.-]+\.js)"/g)].map((m) => path.join(landing, 'i18n', m[1]));
   const own = path.join(landing, 'i18n', page.replace(/\.html$/, '.js'));
