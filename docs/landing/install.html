@@ -941,15 +941,13 @@ ol.setup strong{color:var(--ink);font-weight:600}
   const UPDATES_NOTE = `<p class="note">${tr('install.updatesNote')}</p>`;
 
   // The setup window's three checks (Mac and Windows), as the app names them.
-  const checks = (s) => `<ul><li>${tr('install.check.docker')}</li><li>${tr('install.check.image')}</li><li>${tr(cedarServes(s) ? 'install.check.modelCedar' : 'install.check.model', { choice: modelChoice(s) })}</li></ul>`;
+  const checks = (s) => `<ul><li>${tr('install.check.docker')}${s.docker === 'yes' && appSetsUp(s) ? ' ' + tr(s.os === 'mac' ? 'install.mac.dockerStarts' : 'install.win.dockerStarts') : ''}</li><li>${tr('install.check.image')}</li><li>${tr(cedarServes(s) ? 'install.check.modelCedar' : 'install.check.model', { choice: modelChoice(s) })}</li></ul>`;
 
   function macSteps(s) {
     const steps = [];
     const cedarSetsUpDocker = s.docker !== 'yes' && appSetsUp(s);
-    if (s.docker === 'yes') {
-      const starts = appSetsUp(s) ? `<p class="note">${tr('install.mac.dockerStarts')}</p>` : '';
-      steps.push(step(tr('install.docker.runningTitle'), `<p>${tr('install.mac.dockerRunning')}</p>${code("docker info --format '{{.ServerVersion}}'   # prints a version number", 'Terminal')}${starts}`, 'ok'));
-    } else if (!cedarSetsUpDocker) {
+    // Docker that is installed needs no step: the app starts it when it is not running.
+    if (s.docker !== 'yes' && !cedarSetsUpDocker) {
       steps.push(step(tr('install.mac.dockerTitle'), `${s.docker === 'unknown' ? WHAT_IS_DOCKER : ''}<p>${tr('install.mac.dockerIntro')}</p>
         <p>${btn('https://www.docker.com/products/docker-desktop/', tr('install.mac.getDocker'))}${btn('https://orbstack.dev', tr('install.mac.orOrbStack'), true)}</p>
         <p>${tr('install.mac.homebrew')}</p>${code('brew install --cask docker     # Docker Desktop\n# or\nbrew install --cask orbstack', 'Terminal')}
@@ -979,7 +977,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const installCedar = step(tr('install.win.installTitle'), `<p>${btn(release.msi || RELEASES, tr('install.dl.windows'))}</p><p>${tr('install.win.msi')}</p>${armNote}`);
 
     if (s.docker === 'yes') {
-      steps.push(step(tr('install.docker.runningTitle'), `<p>${tr('install.win.dockerRunning')}</p>${code("docker info --format '{{.ServerVersion}}'", 'PowerShell')}<p class="note">${tr('install.win.dockerStarts')}</p>`, 'ok'));
+      // Docker Desktop that is installed needs no step: the app starts it when it is not running.
       steps.push(modelStep(s));
       steps.push(installCedar);
     } else {
