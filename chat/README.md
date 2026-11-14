@@ -789,9 +789,26 @@ confirm; see [Community tools](../README.md#community-tools).
 
 The **Models** list in that section shows every model cedar has registered: its label, the model
 name and the server it is on, whether an API key is saved, its reasoning levels, and which one is
-the default. **Add a model**, in the heading of the list, asks for an id (filled in from the label), a label, the server address
+the default. **Add a model**, in the heading of the list, offers three ways, the same as the
+desktop app's setup page:
+
+- **Run a model here with llama.cpp.** Only the desktop app does this: it sends the window to its
+  setup page, which downloads llama.cpp and a model for the GPU and adds it to the list as an
+  entry of its own. The option is greyed out, with the reason, in a browser or on a phone, with
+  no GPU that can run a model, when the app shows the chat of another computer, and while the
+  app already runs a model (the GPU's memory holds one). That entry has **Manage…** in place of
+  **Edit** and **Remove**, which leads to the same page.
+- **Use a hosted provider.** A list of providers (Baseten, Nebius, Doubleword and others; *Other…*
+  takes any address) fills in the address, with a link to the provider's documentation. *Find a
+  model* narrows a long model list.
+- **Use a model server you already run.** A preset (Ollama, LM Studio, vLLM, llama.cpp, SGLang)
+  fills in the address, says what that server needs for Cedar, and lists its models.
+
+The providers and presets come from `static/model-servers.json`, served at
+`/model-servers.json`, which the desktop app compiles in too. The form under the last two asks
+for the server address
 (`http://10.0.0.5:8000/v1`, say; `/v1` is added if the path is left off), an API key if the server
-needs one, and the model: **List models** asks the server which models it serves (with the key
+needs one, an id (filled in from the label or the model), a label, and the model: **List models** asks the server which models it serves (with the key
 typed, else the entry's saved one) and the model is picked from that list, never typed. Changing
 the address or key empties the list until it is listed again. Then come the reasoning levels it takes as `reasoning_effort`
 (comma-separated, like `none, low, high, max`), the level to use when a message picks none,

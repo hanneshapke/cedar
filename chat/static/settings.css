@@ -199,6 +199,19 @@
 .cedar-set-endpoint > .primary, .cedar-set-endpoint > .copy-btn { align-self: flex-start; }
 .cedar-set-endpoint > input:disabled { opacity: .6; }
 .cedar-set-endpoint > select[hidden] { display: none; }
+.cedar-set-endpoint > input[hidden] { display: none; }
+/* Adding a model: the three ways to, each a card; the form of the chosen one opens under them. */
+.cedar-set-add { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; }
+.cedar-set-add > .copy-btn { align-self: flex-start; }
+.cedar-set-choices { display: flex; flex-direction: column; gap: 8px; }
+.cedar-set-choice { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--sheet); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.cedar-set-choice strong { font-size: 13.5px; font-weight: 600; }
+.cedar-set-choice span { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.cedar-set-choice:hover:not(:disabled), .cedar-set-choice:focus-visible, .cedar-set-choice.open { border-color: var(--accent); outline: none; }
+.cedar-set-choice:disabled { cursor: default; }
+.cedar-set-choice:disabled strong { opacity: .5; }
+.cedar-set-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; }
+.cedar-set-presets .settings-ghost.chosen { border-color: var(--accent); }
 .cedar-set-server-models { display: flex; gap: 8px; align-items: center; }
 .cedar-set-server-models select { flex: 1 1 auto; min-width: 0; padding: 8px 30px 8px 10px; border: 1px solid var(--line); border-radius: 7px; background-color: var(--sheet); color: var(--ink); font: inherit; font-size: 13.5px; outline: none; }
 .cedar-set-server-models select:focus { border-color: var(--accent); }

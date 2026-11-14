@@ -191,8 +191,11 @@ Running everything here, the setup window shows three steps:
   Until one is chosen, the page marks one as *Recommended*: running a model here where the GPU
   can, a hosted provider where it cannot.
 
-  Whichever it is, the app registers it in cedar's model registry (as the entry `default`),
-  which cedar keeps in its database.
+  The app registers what is chosen in cedar's model registry, which cedar keeps in its database:
+  a hosted provider or a server of your own as the entry `default`, a model the app runs with
+  llama.cpp as the entry `llama`. The two are independent, so llama.cpp can run beside a provider
+  and each conversation picks its model. The one chosen last here is the model new chats use,
+  until another is made the default in the chat's Settings.
 
 The window switches to the chat once both servers answer and the model is registered.
 
@@ -202,7 +205,10 @@ listen on 127.0.0.1. To use the chat from the iOS or Android app, share it over 
 
 To change the model server later, choose *Model Server & Setup…* from the menu; the new choice
 is registered with the running cedar, so nothing restarts. The chat's own Settings → Models page
-adds further models to the registry, and Settings → Server manages the Brave Search key and the Google account: cedar
+adds further models to the registry: *Add a model* there offers the same three options. Its
+llama.cpp option, and *Manage…* on the model the app runs, bring the window back to this page,
+where the download and *Remove* are. That option is greyed out while the app already runs a
+model: the GPU's memory holds one at a time. Also, Settings → Server manages the Brave Search key and the Google account: cedar
 runs with `CEDAR_SECRET_KEY`, the chat's key is an admin key, and the app hands the chat page its
 admin token, so Settings works without typing anything. A phone or a browser that connects with
 the access token can add models too (cedar-chat's default, `CHAT_MODELS_ACCESS=users`); the API
@@ -341,8 +347,9 @@ data folder (see [Where things are](#where-things-are)). The app starts `llama-s
 two servers and stops it when you quit; one that a crash of the app left running is ended the
 next time the app starts. `llama-server.log` in the logs folder is its output.
 
-*Remove* stops it and deletes llama.cpp and the model. Saving one of the other two options
-stops it too and keeps the files, so the button brings it back without a download. An
+*Remove* stops it, deletes llama.cpp and the model, and takes its entry out of cedar's registry.
+A provider or server chosen beside it is not touched, and choosing one does not stop llama.cpp.
+The app runs one model with llama.cpp at a time; to run another, remove this one first. An
 update of Cedar that pins a newer llama.cpp downloads that build on its first start; the model
 is kept.
 
@@ -591,11 +598,11 @@ version; set them to use an image you built yourself (`docker build -t cedar-san
 `remote` is set, the setup page asks the question again, and with no model server chosen either
 the app starts nothing meanwhile.
 
-`model_source` records which of the setup page's three options the model server was chosen by:
-`llama`, `own` or `hosted`; in a file from before the page had them it is missing, and the
-address decides. `llama` (`{"build": "macos-arm64", "model": "gpt-oss-20b"}`, or `null`) names
-what the app installed when it runs llama.cpp itself, on `llama_port` (18081) with the key in
-`secrets.llama_api_key`; `llm_base_url` and `llm_model` then point at it.
+`model_source` records how the model server in `llm_base_url` was named on the setup page: `own`
+or `hosted`; in a file from before the page had the options it is missing, and the address
+decides. `llama` (`{"build": "macos-arm64", "model": "gpt-oss-20b"}`, or `null`) names what the
+app installed when it runs a model with llama.cpp, on `llama_port` (18081) with the key in
+`secrets.llama_api_key`. It is separate from the `llm_*` fields, which may be empty beside it.
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,

@@ -73,6 +73,9 @@ const LOADER_HTML: &str = include_str!("../static/index.html");
 const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
 /// `cedarConfirm`, asking in the page because the macOS app's webview has no `confirm()`; every UI loads it.
 const CONFIRM_JS: &str = include_str!("../static/confirm.js");
+/// The hosted providers and the presets of model servers people run themselves, for Settings'
+/// "Add a model". The desktop app compiles the same file in for its setup page.
+const MODEL_SERVERS_JSON: &str = include_str!("../static/model-servers.json");
 /// Shows the images the agent produces in the response; both UIs load it, before the viewer.
 const IMAGE_VIEW_JS: &str = include_str!("../static/image-view.js");
 const IMAGE_VIEW_CSS: &str = include_str!("../static/image-view.css");
@@ -388,6 +391,7 @@ pub fn router(state: AppState) -> Router {
         .route("/language.js", get(|| async { asset(JS, LANGUAGE_JS) }))
         .route("/language.css", get(|| async { asset(CSS, LANGUAGE_CSS) }))
         .route("/confirm.js", get(|| async { asset(JS, CONFIRM_JS) }))
+        .route("/model-servers.json", get(|| async { asset(JSON, MODEL_SERVERS_JSON) }))
         .route("/image-view.js", get(|| async { asset(JS, IMAGE_VIEW_JS) }))
         .route("/image-view.css", get(|| async { asset(CSS, IMAGE_VIEW_CSS) }))
         .route("/file-viewer.js", get(|| async { asset(JS, FILE_VIEWER_JS) }))
@@ -466,6 +470,7 @@ pub fn router(state: AppState) -> Router {
 const HTML: &str = "text/html; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
+const JSON: &str = "application/json; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
 const WOFF2: &str = "font/woff2";
@@ -2651,5 +2656,28 @@ mod tests {
         let end = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await;
         assert!(matches!(end, Ok(None)), "the stream kept going after shutdown");
         drop(tx);
+    }
+}
+
+#[cfg(test)]
+mod model_servers_tests {
+    use super::MODEL_SERVERS_JSON;
+
+    /// Settings' "Add a model" reads this file as it is served; the desktop app's tests check the
+    /// addresses themselves (desktop/src/models.rs).
+    #[test]
+    fn the_served_list_has_providers_and_presets() {
+        let list: serde_json::Value = serde_json::from_str(MODEL_SERVERS_JSON).unwrap();
+        let providers = list["providers"].as_array().unwrap();
+        let presets = list["presets"].as_array().unwrap();
+        assert!(providers.len() >= 3 && presets.len() >= 4);
+        for p in providers {
+            assert!(p["name"].is_string() && p["docs"].as_str().unwrap().starts_with("https://"));
+            assert!(p["base_url"].as_str().unwrap().starts_with("https://"));
+        }
+        for p in presets {
+            assert!(p["name"].is_string() && p["base_url"].as_str().unwrap().starts_with("http://127.0.0.1:"));
+            assert!(p["hint"].as_str().unwrap().starts_with("preset."));
+        }
     }
 }
