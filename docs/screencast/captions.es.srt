@@ -1,179 +1,254 @@
 1
-00:00:00,801 --> 00:00:08,489
-Este es Cedar: un asistente de código abierto que funciona en tu computadora y hace trabajo de verdad por ti.
+00:00:00,801 --> 00:00:04,347
+Este es Cedar: un asistente
+de código abierto que
 
 2
-00:00:09,889 --> 00:00:16,070
-La primera vez que lo abres, Cedar te pregunta en qué idioma quieres trabajar.
+00:00:04,347 --> 00:00:08,618
+funciona en tu computadora y
+hace trabajo de verdad por ti.
 
 3
-00:00:16,070 --> 00:00:20,825
-Después solo necesita una cosa: un modelo con el que pensar.
+00:00:09,889 --> 00:00:11,873
+La primera vez que lo abres,
 
 4
-00:00:22,304 --> 00:00:25,659
-Cedar no está atado a ninguna empresa de IA.
+00:00:11,873 --> 00:00:15,344
+Cedar te pregunta en qué
+idioma quieres trabajar.
 
 5
-00:00:25,659 --> 00:00:30,157
-En Configuración, Modelos, eliges de dónde viene el modelo.
+00:00:15,344 --> 00:00:19,595
+Después solo necesita una cosa:
+un modelo con el que pensar.
 
 6
-00:00:30,157 --> 00:00:36,638
-La app de Cedar para Mac y Windows puede descargar uno y ejecutarlo por ti con llama.
+00:00:22,304 --> 00:00:25,551
+Cedar no está atado a
+ninguna empresa de IA.
 
 7
-00:00:36,638 --> 00:00:36,943
-cpp.
+00:00:25,551 --> 00:00:29,906
+En Configuración, Modelos,
+eliges de dónde viene el modelo.
 
 8
-00:00:36,943 --> 00:00:41,060
-Puedes usar un proveedor alojado con una clave de API.
+00:00:29,906 --> 00:00:32,858
+La app de Cedar para Mac y Windows puede
 
 9
-00:00:41,060 --> 00:00:46,702
-O puedes indicarle a Cedar un servidor de modelos que ya tengas en marcha.
+00:00:32,858 --> 00:00:36,401
+descargar uno y ejecutarlo
+por ti con llama.cpp.
 
 10
-00:00:46,702 --> 00:00:49,370
-Aquí es vLLM en esta misma máquina.
+00:00:36,401 --> 00:00:40,386
+Puedes usar un proveedor
+alojado con una clave de API.
 
 11
-00:00:49,370 --> 00:00:53,106
-Cedar muestra los modelos que ofrece el servidor.
+00:00:40,386 --> 00:00:45,847
+O puedes indicarle a Cedar un servidor
+de modelos que ya tengas en marcha.
 
 12
-00:00:53,106 --> 00:01:00,425
-Elige uno, y completa los niveles de razonamiento que acepta el modelo y si puede leer imágenes.
+00:00:45,847 --> 00:00:48,431
+Aquí es vLLM en esta misma máquina.
 
 13
-00:01:00,425 --> 00:01:04,466
-Luego comprueba la dirección una vez más y la guarda.
+00:00:48,431 --> 00:00:52,047
+Cedar muestra los modelos
+que ofrece el servidor.
 
 14
-00:01:06,477 --> 00:01:07,869
-Ahora, una tarea.
+00:00:52,047 --> 00:00:55,663
+Elige uno, y completa los
+niveles de razonamiento
 
 15
-00:01:07,869 --> 00:01:22,280
-Adjunto un año de gastos del hogar y le pido a Cedar que averigüe adónde se va el dinero, que haga un gráfico y que escriba un resumen de una página con tres formas de ahorrar.
+00:00:55,663 --> 00:00:59,058
+que acepta el modelo y
+si puede leer imágenes.
 
 16
-00:01:23,762 --> 00:01:25,729
-Cedar no empieza sin más.
+00:00:59,058 --> 00:01:02,970
+Luego comprueba la dirección
+una vez más y la guarda.
 
 17
-00:01:25,729 --> 00:01:29,979
-Para una tarea más grande, primero te muestra su plan.
+00:01:06,477 --> 00:01:07,729
+Ahora, una tarea.
 
 18
-00:01:29,979 --> 00:01:34,386
-Puedes reformular un paso, quitar uno o agregar el tuyo.
+00:01:07,729 --> 00:01:10,970
+Adjunto un año de gastos
+del hogar y le pido
 
 19
-00:01:34,386 --> 00:01:37,613
-Cuando te parezca bien, dile que empiece.
+00:01:10,970 --> 00:01:14,211
+a Cedar que averigüe
+adónde se va el dinero,
 
 20
-00:01:39,250 --> 00:01:49,046
-El trabajo ocurre dentro de una caja sellada: un contenedor propio, sin red, que no puede ver el resto de tu computadora.
+00:01:14,211 --> 00:01:17,452
+que haga un gráfico y
+que escriba un resumen
 
 21
-00:01:49,046 --> 00:01:54,714
-Cedar hace los cálculos en Python, dibuja el gráfico y escribe el PDF.
+00:01:17,452 --> 00:01:20,471
+de una página con tres formas de ahorrar.
 
 22
-00:01:54,714 --> 00:02:02,162
-Cada paso queda en la conversación, así que puedes abrirlo y ver exactamente qué se ejecutó.
+00:01:23,762 --> 00:01:25,583
+Cedar no empieza sin más.
 
 23
-00:02:03,724 --> 00:02:11,989
-El gráfico es interactivo: apunta a un mes para leer cada categoría.
+00:01:25,583 --> 00:01:29,515
+Para una tarea más grande,
+primero te muestra su plan.
 
 24
-00:02:11,989 --> 00:02:22,564
-El resumen terminado está a la derecha, con las tres sugerencias, listo para descargar.
+00:01:29,515 --> 00:01:33,593
+Puedes reformular un paso,
+quitar uno o agregar el tuyo.
 
 25
-00:02:22,564 --> 00:02:27,791
-Y la versión corta está en la conversación.
+00:01:33,593 --> 00:01:36,579
+Cuando te parezca bien, dile que empiece.
 
 26
-00:02:29,434 --> 00:02:32,256
-Hay cosas que Cedar no hace por su cuenta.
+00:01:39,250 --> 00:01:44,095
+El trabajo ocurre dentro de una
+caja sellada: un contenedor propio,
 
 27
-00:02:32,256 --> 00:02:36,355
-Pídele que elimine un archivo: se detiene y pregunta primero.
+00:01:44,095 --> 00:01:47,928
+sin red, que no puede ver
+el resto de tu computadora.
 
 28
-00:02:36,355 --> 00:02:40,723
-Con las descargas, las instalaciones y los correos pasa lo mismo.
+00:01:47,928 --> 00:01:52,990
+Cedar hace los cálculos en Python,
+dibuja el gráfico y escribe el PDF.
 
 29
-00:02:40,723 --> 00:02:43,478
-Nada arriesgado ocurre sin tu aprobación.
+00:01:52,990 --> 00:01:55,522
+Cada paso queda en la conversación,
 
 30
-00:02:45,080 --> 00:02:50,422
-Cedar también recuerda lo que le pides que recuerde.
+00:01:55,522 --> 00:01:59,571
+así que puedes abrirlo y ver
+exactamente qué se ejecutó.
 
 31
-00:02:50,422 --> 00:02:56,997
-En Configuración, Memoria, ves todo lo que ha guardado sobre ti.
+00:02:03,724 --> 00:02:09,204
+El gráfico es interactivo: apunta
+a un mes para leer cada categoría.
 
 32
-00:02:56,997 --> 00:03:01,414
-Fíjalo, archívalo o elimínalo para siempre.
+00:02:09,204 --> 00:02:12,347
+El resumen terminado está a la derecha,
 
 33
-00:03:01,414 --> 00:03:05,524
-Se queda en tu propio servidor de Cedar.
+00:02:12,347 --> 00:02:16,135
+con las tres sugerencias,
+listo para descargar.
 
 34
-00:03:07,233 --> 00:03:10,576
-Cada habilidad tiene su interruptor.
+00:02:16,135 --> 00:02:19,600
+Y la versión corta está
+en la conversación.
 
 35
-00:03:10,576 --> 00:03:15,962
-Leer páginas web, el clima, mapas, indicaciones, la bolsa.
+00:02:29,434 --> 00:02:32,296
+Hay cosas que Cedar no hace por su cuenta.
 
 36
-00:03:15,962 --> 00:03:19,212
-Activa lo que Cedar puede alcanzar.
+00:02:32,296 --> 00:02:36,452
+Pídele que elimine un archivo:
+se detiene y pregunta primero.
 
 37
-00:03:19,212 --> 00:03:21,812
-Todo lo demás queda apagado.
+00:02:36,452 --> 00:02:40,882
+Con las descargas, las instalaciones
+y los correos pasa lo mismo.
 
 38
-00:03:23,491 --> 00:03:29,799
-Y cuando una conversación cumplió su propósito, conviértela en un agente.
+00:02:40,882 --> 00:02:43,675
+Nada arriesgado ocurre sin tu aprobación.
 
 39
-00:03:29,799 --> 00:03:34,292
-Cedar escribe el prompt a partir de la conversación.
+00:02:45,080 --> 00:02:48,799
+Cedar también recuerda lo
+que le pides que recuerde.
 
 40
-00:03:34,292 --> 00:03:42,588
-Tú eliges el activador: un horario, un cambio que vigila, un correo nuevo, un archivo que llega.
+00:02:48,799 --> 00:02:53,376
+En Configuración, Memoria, ves
+todo lo que ha guardado sobre ti.
 
 41
-00:03:42,588 --> 00:03:44,921
-Este se ejecutará cada mes.
+00:02:53,376 --> 00:02:56,451
+Fíjalo, archívalo o
+elimínalo para siempre.
 
 42
-00:03:46,580 --> 00:03:49,149
-Cedar es gratuito y de código abierto.
+00:02:56,451 --> 00:02:59,311
+Se queda en tu propio servidor de Cedar.
 
 43
-00:03:49,149 --> 00:03:53,543
-Funciona en Mac, Windows y Linux, con apps para iPhone y Android.
+00:03:07,233 --> 00:03:10,125
+Cada habilidad tiene su interruptor.
 
 44
-00:03:53,543 --> 00:03:54,895
-Tu propio asistente.
+00:03:10,125 --> 00:03:14,784
+Leer páginas web, el clima,
+mapas, indicaciones, la bolsa.
 
 45
-00:03:54,895 --> 00:03:56,991
+00:03:14,784 --> 00:03:17,595
+Activa lo que Cedar puede alcanzar.
+
+46
+00:03:17,595 --> 00:03:19,844
+Todo lo demás queda apagado.
+
+47
+00:03:23,491 --> 00:03:28,847
+Y cuando una conversación cumplió su
+propósito, conviértela en un agente.
+
+48
+00:03:28,847 --> 00:03:32,662
+Cedar escribe el prompt a
+partir de la conversación.
+
+49
+00:03:32,662 --> 00:03:36,845
+Tú eliges el activador: un
+horario, un cambio que vigila,
+
+50
+00:03:36,845 --> 00:03:39,633
+un correo nuevo, un archivo que llega.
+
+51
+00:03:39,633 --> 00:03:41,614
+Este se ejecutará cada mes.
+
+52
+00:03:46,580 --> 00:03:49,198
+Cedar es gratuito y de código abierto.
+
+53
+00:03:49,198 --> 00:03:53,675
+Funciona en Mac, Windows y Linux,
+con apps para iPhone y Android.
+
+54
+00:03:53,675 --> 00:03:55,053
+Tu propio asistente.
+
+55
+00:03:55,053 --> 00:03:57,188
 Vive en tu casa, a tus órdenes.

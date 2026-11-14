@@ -6,12 +6,12 @@ work in the sandbox, an approval, memory, the tool switches, and an agent made f
 | File | What it is |
 | --- | --- |
 | `cedar-intro.mp4` | The film: 1920×1080, 30 fps, H.264, 3:54, no sound |
-| `cedar-intro-narrated.mp4` | The same film with the English voice and background music |
+| `cedar-intro-narrated.mp4` | The same film with the English voice, background music and a subtitle track |
 | `script.md` | The script: each scene with its times, what is on screen, and the narration |
 | `narration-elevenlabs.txt` | The narration as one text for a text-to-speech voice |
 | `narration/NN-<scene>.txt` | The same, one file a scene, for one clip each |
-| `captions.srt` | Captions, timed by word count within each scene |
-| `cedar-intro-narrated.<lang>.mp4` | The film in German (`de`), French (`fr`) and Spanish (`es`), recorded in that language, with the voice and background music |
+| `captions.srt` | The captions, at most two lines of 42 characters each, timed to the voice clips |
+| `cedar-intro-narrated.<lang>.mp4` | The film in German (`de`), French (`fr`) and Spanish (`es`), recorded in that language, with the voice, background music and a subtitle track |
 | `narration-elevenlabs.<lang>.txt`, `narration/<lang>/`, `captions.<lang>.srt`, `timeline.<lang>.json` | Their narration, captions and scene times |
 | `timeline.json` | When each scene of the take starts and ends, in seconds |
 | `tools/` | Everything that makes the above |
@@ -74,6 +74,22 @@ docs/screencast/tools/mux.sh docs/screencast/audio                       # with 
 MUSIC=off docs/screencast/tools/mux.sh docs/screencast/audio             # voice only
 MUSIC=my-track.mp3 docs/screencast/tools/mux.sh docs/screencast/audio    # your own track, cut and faded to length
 MUSIC_DB=-14 docs/screencast/tools/mux.sh docs/screencast/audio          # quieter (the default is -10)
+```
+
+## Subtitles
+
+Each narrated film carries its captions as a subtitle track in the film's language, which the
+viewer switches on or off in the player (VLC, QuickTime, most apps and televisions). Nothing is
+drawn into the picture. Web players that ignore such tracks, GitHub's among them, show none;
+for those, and for YouTube or Vimeo, upload the matching `captions.srt` or `captions.<lang>.srt`.
+
+`tools/make_script.py` writes the captions from the narration: one per sentence, long sentences cut
+near their middle, each for its share of the time its scene's voice clip takes (or of the
+estimate, when the clips are not there). `tools/mux.sh` puts them in; `SUBS=off` leaves them out.
+To have them in the picture instead, burn them in from the silent film:
+
+```sh
+ffmpeg -i docs/screencast/cedar-intro-narrated.mp4 -vf subtitles=docs/screencast/captions.srt -c:a copy burned.mp4
 ```
 
 ## German, French and Spanish
