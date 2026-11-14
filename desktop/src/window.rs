@@ -252,7 +252,7 @@ pub fn show_chat(app: &AppHandle) -> Result<()> {
         .map(|u| u.origin().ascii_serialization() == chat)
         .unwrap_or(false);
     if !on_chat {
-        win.navigate(Url::parse(&chat)?)?;
+        win.navigate(chat_address(&chat, &app.state::<AppState>().config().locale, "")?)?;
     }
     present(&win)
 }
@@ -274,9 +274,24 @@ pub fn show_conversation(app: &AppHandle, conversation: Option<&str>) -> Result<
         let hash = serde_json::to_string(&hash)?;
         win.eval(format!("window.location.hash = {hash};"))?;
     } else {
-        win.navigate(Url::parse(&format!("{chat}/{hash}"))?)?;
+        win.navigate(chat_address(&chat, &app.state::<AppState>().config().locale, &hash)?)?;
     }
     present(&win)
+}
+
+/// The chat's address as the window loads it: with the language picked on the setup page
+/// (`?app-locale=de-CH`), which the chat takes when its page has none of its own yet (see
+/// chat/static/i18n.js), so it doesn't ask again what the setup already did. `hash` is the chat's
+/// route (`#/c/<id>`), or empty.
+fn chat_address(chat: &str, locale: &str, hash: &str) -> Result<Url> {
+    let mut url = Url::parse(chat)?;
+    if let Some(tag) = crate::i18n::normalize(locale) {
+        url.query_pairs_mut().append_pair("app-locale", tag);
+    }
+    if let Some(route) = hash.strip_prefix('#').filter(|r| !r.is_empty()) {
+        url.set_fragment(Some(route));
+    }
+    Ok(url)
 }
 
 /// Loads the setup page (unless it is already open) and brings the window forward.
@@ -363,6 +378,19 @@ mod tests {
 
     fn urlencoding(s: &str) -> String {
         url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+    }
+
+    #[test]
+    fn the_chat_address_carries_the_apps_language() {
+        let at = |chat, locale, hash| chat_address(chat, locale, hash).unwrap().to_string();
+        assert_eq!(at("http://127.0.0.1:13000", "de-CH", ""), "http://127.0.0.1:13000/?app-locale=de-CH");
+        assert_eq!(at("http://127.0.0.1:13000", "", ""), "http://127.0.0.1:13000/");
+        assert_eq!(at("http://127.0.0.1:13000", "xx", ""), "http://127.0.0.1:13000/");
+        assert_eq!(
+            at("https://spark.t.ts.net", "es-419", "#/c/abc"),
+            "https://spark.t.ts.net/?app-locale=es-419#/c/abc"
+        );
+        assert_eq!(at("https://spark.t.ts.net", "", "#/c/abc"), "https://spark.t.ts.net/#/c/abc");
     }
 
     #[test]
