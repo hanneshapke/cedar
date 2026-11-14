@@ -2,8 +2,8 @@
 //! file from llama.cpp's own organization on Hugging Face, pinned to a commit and a SHA-256.
 //!
 //! They are the website's own first suggestions for text (`PICKS` in docs/landing/models.html):
-//! gpt-oss 20B for the smallest machines, Qwen3.6 35B-A3B from there up, gpt-oss 120B where 128 GB
-//! allow it. Keep the two in step. A mixture-of-experts model is preferred to a dense one of the
+//! Gemma 4 E4B for a 12 GB graphics card, gpt-oss 20B for 16 GB, Qwen3.6 35B-A3B from there up,
+//! gpt-oss 120B where 128 GB allow it. Keep the two in step. A mixture-of-experts model is preferred to a dense one of the
 //! same size, as there: Qwen3.6 27B is hardly smaller than 35B-A3B and several times slower.
 
 use serde::Serialize;
@@ -29,6 +29,9 @@ pub struct Model {
     /// The `reasoning_effort` values the model takes; none when its template has no such switch.
     pub reasoning_levels: &'static [&'static str],
     pub license: &'static str,
+    /// A small model: it answers, but misses steps in longer tasks, so where it is all that fits
+    /// a hosted provider serves Cedar better and stays the recommended way.
+    pub small: bool,
 }
 
 /// The context every model is run with. Cedar resends the whole conversation each turn, and its
@@ -51,7 +54,22 @@ impl Model {
 
 /// From the smallest to the largest. The thresholds sit a little under round sizes because cards
 /// report slightly less than their nominal memory (a 16 GB card says 16376 MiB).
-pub static MODELS: [Model; 3] = [
+pub static MODELS: [Model; 4] = [
+    Model {
+        id: "gemma-4-e4b",
+        label: "Gemma 4 E4B",
+        repo: "ggml-org/gemma-4-E4B-it-GGUF",
+        commit: "8903cb408c7df39cde2ed15fac397e6d7be92951",
+        // 8-bit: on a 12 GB card it leaves about 4 GB for the context, and loses less than 4-bit.
+        file: "gemma-4-E4B-it-Q8_0.gguf",
+        size: 8_031_237_344,
+        sha256: "49008e7cc7edadf154c8748904a89ee86eb6905d220aac568f6b7b92ca6aa0c6",
+        min_budget_mb: 11_500,
+        max_tokens: 8192,
+        reasoning_levels: &[],
+        license: "Apache-2.0",
+        small: true,
+    },
     Model {
         id: "gpt-oss-20b",
         label: "gpt-oss 20B",
@@ -64,6 +82,7 @@ pub static MODELS: [Model; 3] = [
         max_tokens: 8192,
         reasoning_levels: &["low", "medium", "high"],
         license: "Apache-2.0",
+        small: false,
     },
     Model {
         id: "qwen3.6-35b-a3b",
@@ -77,6 +96,7 @@ pub static MODELS: [Model; 3] = [
         max_tokens: 8192,
         reasoning_levels: &[],
         license: "Apache-2.0",
+        small: false,
     },
     Model {
         id: "gpt-oss-120b",
@@ -90,6 +110,7 @@ pub static MODELS: [Model; 3] = [
         max_tokens: 8192,
         reasoning_levels: &["low", "medium", "high"],
         license: "Apache-2.0",
+        small: false,
     },
 ];
 
@@ -110,7 +131,9 @@ mod tests {
     fn models_by_memory() {
         let id = |mb| choose_model(mb).map(|m| m.id);
         assert_eq!(id(8_192), None);
-        assert_eq!(id(12_288), None);
+        assert_eq!(id(11_264), None); // an 11 GB card
+        assert_eq!(id(12_288), Some("gemma-4-e4b")); // a 12 GB card
+        assert_eq!(id(12_282), Some("gemma-4-e4b")); // what a 3080 Ti reports
         assert_eq!(id(16_376), Some("gpt-oss-20b")); // a 16 GB card
         assert_eq!(id(21_845), Some("gpt-oss-20b")); // a 32 GB Mac
         assert_eq!(id(24_564), Some("qwen3.6-35b-a3b")); // a 24 GB card

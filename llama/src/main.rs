@@ -162,9 +162,7 @@ async fn detect() -> Result<(), String> {
             println!("\nRun `cedar-llama install` to download both.");
         }
         None => {
-            println!(
-                "\nNo GPU here has the memory for a model Cedar works well with (16 GB at least)."
-            );
+            println!("\nNo GPU here has the memory for a model Cedar can use (12 GB at least).");
             println!("To install one anyway, name a build and a model:");
             println!("  builds: {}", Build::ALL.map(Build::id).join(", "));
             for model in &catalog::MODELS {
@@ -361,8 +359,11 @@ mod tests {
 
     #[test]
     fn what_cedar_is_told() {
-        let body: serde_json::Value =
-            serde_json::from_str(&registration(&catalog::MODELS[0], 18081)).unwrap();
+        let body: serde_json::Value = serde_json::from_str(&registration(
+            catalog::by_id("gpt-oss-20b").unwrap(),
+            18081,
+        ))
+        .unwrap();
         assert_eq!(body["base_url"], "http://127.0.0.1:18081/v1");
         assert_eq!(body["model"], "gpt-oss-20b");
         assert_eq!(body["max_tokens"], 8192);
@@ -371,8 +372,11 @@ mod tests {
             serde_json::json!(["low", "medium", "high"])
         );
         // A model without reasoning levels leaves the field out, which keeps cedar's own.
-        let body: serde_json::Value =
-            serde_json::from_str(&registration(&catalog::MODELS[1], 18081)).unwrap();
+        let body: serde_json::Value = serde_json::from_str(&registration(
+            catalog::by_id("qwen3.6-35b-a3b").unwrap(),
+            18081,
+        ))
+        .unwrap();
         assert!(body.get("reasoning_levels").is_none());
     }
 }

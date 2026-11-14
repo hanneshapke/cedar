@@ -311,13 +311,16 @@ greyed out and the other two remain.
 
 | GPU memory | Model | Download |
 | --- | --- | --- |
-| under 16 GB | not offered | |
+| under 12 GB | not offered | |
+| 12 GB | Gemma 4 E4B (8-bit) | 8 GB |
 | 16 GB | gpt-oss 20B | 12 GB |
 | 24 GB and more | Qwen3.6 35B-A3B | 21 GB |
 | 72 GB and more | gpt-oss 120B | 63 GB |
 
 These are the [model guide](https://hanneshapke.github.io/cedar/models.html)'s own first
-suggestions for text; the list is `llama/src/catalog.rs`.
+suggestions for text; the list is `llama/src/catalog.rs`. Gemma 4 E4B is a small model, all that
+a 12 GB card holds: it answers, but can miss steps in longer tasks. The page says so and keeps
+*Recommended* on the hosted provider there.
 
 On a Mac the GPU shares the computer's memory and macOS lets it have about two thirds, so the
 memory that counts is two thirds of the Mac's: a 32 GB Mac gets gpt-oss 20B, a Mac with 36 to
@@ -760,7 +763,7 @@ One-time setup:
 | The image download fails with "denied" | The GHCR package is private or this version's images haven't been published yet (see above). You can also build the image yourself and set `sandbox_image` in `config.json`. |
 | *List models* fails | The address needs the API path (usually `/v1`). Ollama: `http://127.0.0.1:11434/v1`, LM Studio: `http://127.0.0.1:1234/v1`. A remote server must be reachable from this computer. |
 | "Cedar could not register …" | cedar checks the model server itself before keeping the entry, so the server must be running when you save and when the app starts. Start it and click *Save* again; a model registered earlier keeps working meanwhile. |
-| *Run a model here with llama.cpp* is greyed out | No GPU here has 16 GB of memory (a Mac: 32 GB in all), or it is an Intel Mac or Windows on Arm. An NVIDIA card is read with `nvidia-smi`, which comes with its driver. Use one of the other two options. |
+| *Run a model here with llama.cpp* is greyed out | No GPU here has 12 GB of memory (a Mac: 32 GB in all), or it is an Intel Mac or Windows on Arm. An NVIDIA card is read with `nvidia-smi`, which comes with its driver. Use one of the other two options. |
 | "llama.cpp did not find the GPU" | Update the graphics driver, then *Try again*; nothing is downloaded twice. `llama-server.log` and `llama-server --list-devices` in the `llama` folder say what it sees. |
 | "llama-server did not answer … within 900s" or it stops while loading | The model did not fit beside what else uses the GPU's memory. Close other programs that use it and *Check again*; `llama-server.log` has the reason. |
 | A hosted provider "rejected the API key" | The key is for another provider, was revoked, or has no credit. Create a new one in the provider's console (the link under the list) and click *List models* again. |

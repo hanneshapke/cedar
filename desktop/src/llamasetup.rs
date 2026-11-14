@@ -34,6 +34,9 @@ pub struct Offer {
     pub license: String,
     /// llama.cpp and the model together, in bytes.
     pub download_bytes: u64,
+    /// The model is a small one (all a 12 GB card holds): it works, but a hosted provider serves
+    /// Cedar better, so the page does not recommend this over one.
+    pub small: bool,
 }
 
 pub fn offer(plan: &Plan) -> Offer {
@@ -49,6 +52,7 @@ pub fn offer(plan: &Plan) -> Offer {
         model_page: plan.model.page(),
         license: plan.model.license.to_string(),
         download_bytes: build + plan.model.size,
+        small: plan.model.small,
     }
 }
 
@@ -252,6 +256,11 @@ mod tests {
         assert!(offer.download_bytes > plan.model.size && offer.download_bytes < plan.model.size + 100_000_000);
         let json = serde_json::to_value(&offer).unwrap();
         assert_eq!(json["license"], "Apache-2.0");
+        assert_eq!(json["small"], false);
+        // A 12 GB card is offered the small model, and the page is told that it is one.
+        let card = Gpu::dedicated(cedar_llama::gpu::Vendor::Amd, "AMD Radeon RX 6700 XT", 12288);
+        let small = super::offer(&cedar_llama::plan(Os::Windows, Arch::X64, &[card]).unwrap());
+        assert_eq!((small.model.as_str(), small.small), ("Gemma 4 E4B", true));
     }
 
     #[test]

@@ -43,11 +43,14 @@ pub fn base_url(port: u16) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::MODELS;
 
     #[test]
     fn the_command_line() {
-        let args = args(&MODELS[0], "/data/models/gpt-oss-20b-MXFP4.gguf", 18081);
+        let args = args(
+            crate::catalog::by_id("gpt-oss-20b").unwrap(),
+            "/data/models/gpt-oss-20b-MXFP4.gguf",
+            18081,
+        );
         let line = args.join(" ");
         assert_eq!(
             line,

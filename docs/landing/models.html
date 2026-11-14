@@ -164,14 +164,17 @@ ol.setup strong{color:var(--ink);font-weight:600}
       opts: [
         { v: 'mac', k: 'mac', s: true }, { v: 'ryzen', k: 'ryzen', s: true },
         { v: 'spark', k: 'spark', s: true }, { v: 'jetson', k: 'jetson', s: true },
-        { v: 'other', k: 'other' },
+        { v: 'gpu', k: 'gpu', s: true }, { v: 'other', k: 'other' },
       ] },
-    { id: 'mem', when: (s) => s.where !== 'factory' && ['mac', 'ryzen', 'spark'].includes(s.hw),
+    { id: 'mem', when: (s) => s.where !== 'factory' && ['mac', 'ryzen', 'spark', 'gpu'].includes(s.hw),
       opts: [
         { v: '24', k: 'mac24', hw: ['mac'] }, { v: '48', k: 'mac48', hw: ['mac'] },
         { v: '96', k: 'mac96', hw: ['mac'] }, { v: '128', k: 'mac128', hw: ['mac'] },
         { v: '64', k: 'ryzen64', hw: ['ryzen'] }, { v: '128', k: 'ryzen128', hw: ['ryzen'] },
         { v: '128', k: 'spark128', s: true, hw: ['spark'] }, { v: '256', k: 'spark256', s: true, hw: ['spark'] },
+        // A graphics card's own memory. Cedar's llama.cpp setup picks by the same sizes
+        // (llama/src/catalog.rs): keep the first text pick of each in step with it.
+        { v: '12', k: 'gpu12', hw: ['gpu'] }, { v: '16', k: 'gpu16', hw: ['gpu'] }, { v: '24', k: 'gpu24', hw: ['gpu'] },
       ] },
   ];
   const optText = (q, o) => tr(`models.opt.${q.id}.${o.k}`);
@@ -272,11 +275,14 @@ ol.setup strong{color:var(--ink);font-weight:600}
     'spark:128': { text: ['nemotron-3.5-super-vl', 'nemotron-3.5-lightning', 'gpt-oss-120b', 'qwen3.5-122b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
     'spark:256': { text: ['deepseek-v4-flash', 'nemotron-3.5-super-vl', 'gpt-oss-120b'], images: ['nemotron-3.5-super-vl', 'qwen3.5-122b', 'mistral-small-4'] },
     'jetson:8': { text: ['qwen3.5-4b'], images: ['qwen3.5-4b'] },
+    'gpu:12': { text: ['gemma4-e4b', 'qwen3.5-4b'], images: ['gemma4-e4b', 'qwen3.5-4b'] },
+    'gpu:16': { text: ['gpt-oss-20b', 'gemma4-e4b'], images: ['gemma4-e4b'] },
+    'gpu:24': { text: ['qwen3.6-35b', 'gpt-oss-20b', 'qwen3.6-27b'], images: ['qwen3.6-35b', 'gemma4-26b', 'qwen3.6-27b'] },
   };
   const HOSTED_PICKS = { text: ['deepseek-v4.1-flash', 'glm-5.3', 'kimi-k2.6', 'deepseek-v4-pro'], images: ['deepseek-v4.1-flash', 'kimi-k2.6', 'qwen3.6-35b-hosted', 'gemma4-31b-hosted'] };
 
   // Machines with a note on their memory (models.hwnote.<hw>.<mem>), shown above the suggestions.
-  const HW_NOTES = ['mac:24', 'mac:96', 'ryzen:64', 'ryzen:128', 'spark:128', 'spark:256', 'jetson:8'];
+  const HW_NOTES = ['mac:24', 'mac:96', 'ryzen:64', 'ryzen:128', 'spark:128', 'spark:256', 'jetson:8', 'gpu:12'];
   // Developer stories linked from a machine's note ({story} in models.hwnote.<hw>.<mem>).
   const STORIES = {
     jetson: 'https://github.com/hanneshapke/cedar/blob/main/docs/developer_stories/cedar-on-jetson-orin-nano.md',
@@ -319,7 +325,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
     if (s.where === 'factory') chip(tr('models.chip.factory'));
     if (s.where === 'here') chip(tr('models.opt.where.here'));
     if (s.where === 'box') chip(tr('models.opt.where.box'));
-    const hw = { mac: 'M4/M5 Mac', ryzen: 'Ryzen AI Max', spark: 'DGX Spark', jetson: 'Jetson Orin Nano', other: tr('models.chip.other') }[s.hw];
+    const hw = { mac: 'M4/M5 Mac', ryzen: 'Ryzen AI Max', spark: 'DGX Spark', jetson: 'Jetson Orin Nano', gpu: tr('models.chip.gpu'), other: tr('models.chip.other') }[s.hw];
     if (s.hw === 'jetson' && s.where !== 'factory') chip(`${hw} · 8 GB`, 'done');
     else if (hw && s.where !== 'factory') {
       const opt = optsFor(QUESTIONS[3], s).find((o) => o.v === s.mem);
@@ -330,7 +336,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
 
   // How to get a model running, for the machine it runs on.
   function getIt(m, s) {
-    const shell = tr(s.hw === 'ryzen' ? 'models.shell.terminalPowerShell' : 'models.shell.terminal');
+    const shell = tr(s.hw === 'ryzen' || s.hw === 'gpu' ? 'models.shell.terminalPowerShell' : 'models.shell.terminal');
     const lines = [];
     if (m.ollama) lines.push(`<p>${tr('models.get.ollama')}</p>${code(`ollama pull ${m.ollama}\nollama run ${m.ollama} "say hi"    # ${tr('models.get.quickTest')}`, shell)}`);
     else if (s.hw !== 'spark') lines.push(`<p class="note">${tr('models.get.noOllama')}</p>`);
@@ -385,7 +391,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const port = serve === 'vllm' ? 8000 : 11434;
     const ollamaHost = s.hw === 'mac'
       ? `launchctl setenv OLLAMA_HOST 0.0.0.0\n# ${tr('models.code.macRestart')}`
-      : s.hw === 'ryzen'
+      : s.hw === 'ryzen' || s.hw === 'gpu'
         ? `setx OLLAMA_HOST 0.0.0.0\n# ${tr('models.code.winRestart')}\n# ${tr('models.code.linuxRestart')}`
         : 'sudo systemctl edit ollama\n#   [Service]\n#   Environment="OLLAMA_HOST=0.0.0.0"\nsudo systemctl restart ollama';
     const listen = remote

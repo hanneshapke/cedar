@@ -61,6 +61,16 @@ mod tests {
         assert_eq!(plan.gpu, big);
         assert_eq!(plan.build, Build::WinCuda);
         assert_eq!(plan.model.id, "qwen3.6-35b-a3b");
+        // A 12 GB card gets the small model, with CUDA all the same.
+        let twelve = Gpu {
+            driver: Some((560, 94)),
+            ..Gpu::dedicated(Vendor::Nvidia, "NVIDIA GeForce RTX 3060", 12288)
+        };
+        let plan = super::plan(Os::Windows, Arch::X64, &[twelve]).unwrap();
+        assert_eq!(
+            (plan.model.id, plan.model.small, plan.build),
+            ("gemma-4-e4b", true, Build::WinCuda)
+        );
         // The integrated one alone is not enough for any model.
         assert_eq!(super::plan(Os::Windows, Arch::X64, &[small]), None);
         assert_eq!(super::plan(Os::Windows, Arch::X64, &[]), None);
@@ -70,7 +80,7 @@ mod tests {
     fn macs_by_memory() {
         let mac = |gb: u64| plan(Os::Macos, Arch::Arm64, &[Gpu::apple(gb << 30)]);
         assert_eq!(mac(16), None);
-        // Two thirds of 24 GB would hold the smallest model, but leave the system too little.
+        // Two thirds of 24 GB would hold a small model, but leave the system too little.
         assert_eq!(mac(24), None);
         assert_eq!(mac(32).unwrap().model.id, "gpt-oss-20b");
         assert_eq!(mac(36).unwrap().model.id, "qwen3.6-35b-a3b");

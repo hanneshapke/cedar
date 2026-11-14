@@ -406,8 +406,9 @@ function renderModelChoice(s, p) {
     const tag = $(`pick-${source}-tag`);
     // A model the app runs and a model server can both be in use: cedar has an entry for each.
     const inUse = source === 'llama' ? !!l.model : s.model_source === source;
-    // Until something is chosen: running a model here where the GPU can, a provider where not.
-    const recommended = !s.configured && source === (l.offer ? 'llama' : 'hosted');
+    // Until something is chosen: running a model here where the GPU can run one that does
+    // Cedar's work well, a provider where it cannot or only a small model fits.
+    const recommended = !s.configured && source === (l.offer && !l.offer.small ? 'llama' : 'hosted');
     tag.textContent = inUse ? tr('pick.inUse') : recommended ? tr('pick.recommended') : '';
     tag.classList.toggle('hidden', !inUse && !recommended);
   }
@@ -482,6 +483,8 @@ function renderLlama(s, p) {
       model: offer.model,
       size: gb(offer.download_bytes),
     });
+    // All that fits is a small model: it is worth saying what to expect of it.
+    if (offer.small) intro.textContent += ' ' + tr('llama.offerSmall', { model: offer.model });
   } else {
     intro.textContent = '';
   }
