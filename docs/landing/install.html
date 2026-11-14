@@ -158,14 +158,14 @@ ol.setup strong{color:var(--ink);font-weight:600}
     <a class="back" href="./" data-i18n="install.back">← Back to the Cedar home page</a><br>
     <span class="eyebrow" data-i18n="install.eyebrow">Install guide</span>
     <h1 data-i18n="install.h1">Install Cedar, model included.</h1>
-    <p class="lede" id="lede">Tell us about the computer, then pick how Cedar gets its model: it can run one for you, use a provider, or use a server you already have. The steps below follow your answers, and the page address remembers them.</p>
+    <p class="lede" id="lede" data-i18n="install.lede">Tell us about the computer, then pick how Cedar gets its model: it can run one for you, use a provider, or use a server you already have. The steps below follow your answers, and the page address remembers them.</p>
 
     <section class="picker" id="picker" data-i18n-attr="aria-label:install.pickerLabel" aria-label="Your setup"></section>
     <div class="share"><span id="share-hint" data-i18n="install.share.hint">This page's address now holds your answers.</span><button type="button" id="copy-link" data-i18n="install.share.copy">Copy link</button><button type="button" id="reset" data-i18n="install.share.reset">Start over</button></div>
 
     <div id="model-section">
     <h2 class="section" id="model-title" data-i18n="install.model.title">Your model</h2>
-    <p class="model-lede" id="model-lede">Cedar needs an AI model to think with. There are three ways to give it one, the same three its setup window offers.</p>
+    <p class="model-lede" id="model-lede" data-i18n="install.model.lede">Cedar needs an AI model to think with. There are three ways to give it one, the same three its setup window offers.</p>
     <section id="model" aria-labelledby="model-title" aria-live="polite"></section>
     </div>
 
@@ -217,9 +217,8 @@ ol.setup strong{color:var(--ink);font-weight:600}
   }
   // The first release whose setup window offers three ways to get a model (run one here with
   // llama.cpp, a hosted provider, a server you already run), and whose Linux archive has
-  // cedar-llama. Until the latest release is at least this one, the page offers two ways (a
-  // provider, a server of one's own), describes the older single form, and says nothing of
-  // Cedar running a model itself.
+  // cedar-llama. Until the latest release is at least this one, the first of the three ways is
+  // shown as coming and cannot be chosen, and the steps describe the older single form.
   const MODEL_OPTIONS_SINCE = '0.9.0';
   const hasModelOptions = () => releaseIsAtLeast(MODEL_OPTIONS_SINCE);
   // Cedar on another computer was chosen: this one only gets the app, as a window onto it.
@@ -415,8 +414,6 @@ ol.setup strong{color:var(--ink);font-weight:600}
   function renderIntro() {
     const s = view(state);
     document.getElementById('model-section').hidden = remote(s);
-    document.getElementById('lede').textContent = tr(hasModelOptions() ? 'install.lede' : 'install.ledeOld');
-    document.getElementById('model-lede').textContent = tr(hasModelOptions() ? 'install.model.lede' : 'install.model.ledeOld');
   }
 
   function render() {
@@ -537,8 +534,9 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const model = CEDAR_MODELS[memKind(s)][s.mem];
     if (!model) return { no: memKind(s) === 'mac' ? 'macMem' : 'gpuMem' };
     const small = CEDAR_SMALL.includes(model);
-    // The release on offer cannot do this yet; `capable` still says the machine could run one.
-    return hasModelOptions() ? { model, small } : { no: 'notYet', capable: !small };
+    // The release on offer cannot do this yet: `would` is what the next one will run here, and
+    // `capable` says the machine can run a full-size model, by hand until then.
+    return hasModelOptions() ? { model, small } : { no: 'notYet', would: model, capable: !small };
   }
 
   // The guide's suggestions for a server run by hand on this computer, best first.
@@ -593,17 +591,18 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const rec = recommended(s);
     const ways = [
       { id: 'cedar', title: tr('install.way.cedar'), what: tr('install.way.cedarWhat'), off: !plan.model,
-        verdict: plan.model ? tr('install.way.cedarYes', { model: MODELS[plan.model].name, gb: CEDAR_GB[plan.model] }) : plan.no === 'notYet' ? '' : tr('install.cedar.no.' + plan.no) },
+        coming: !hasModelOptions(),
+        verdict: plan.model || plan.would ? tr('install.way.cedarYes', { model: MODELS[plan.model || plan.would].name, gb: CEDAR_GB[plan.model || plan.would] }) : tr('install.cedar.no.' + plan.no) },
       { id: 'hosted', title: tr('install.way.hosted'), what: tr('install.way.hostedWhat'), verdict: tr('install.way.hostedYes') },
       { id: 'own', title: tr('install.way.own'), what: tr('install.way.ownWhat'),
         verdict: picks(s).length ? tr('install.way.ownYes', { model: picks(s)[0].name }) : tr('install.way.ownAny') },
-    ].filter((w) => w.id !== 'cedar' || hasModelOptions());
+    ];
     const cards = ways.map((w, i) => `<button type="button" class="way" data-way="${w.id}" aria-pressed="${s.model === w.id}"${w.off ? ' disabled' : ''}>
         <span class="way-num">${i + 1}</span>
         <span class="way-title">${esc(w.title)}</span>
-        ${rec === w.id ? badge(tr('install.recommended'), 'pick') : ''}
+        ${w.coming ? badge(tr('install.way.coming')) : rec === w.id ? badge(tr('install.recommended'), 'pick') : ''}
         <span class="way-what">${esc(w.what)}</span>
-        <span class="way-verdict${w.off ? ' no' : ''}">${esc(w.verdict)}</span>
+        <span class="way-verdict${w.off && !w.coming ? ' no' : ''}">${esc(w.verdict)}</span>
       </button>`).join('');
     document.getElementById('model').innerHTML = `<div class="ways">${cards}</div>${panel(s, plan)}`;
   }
