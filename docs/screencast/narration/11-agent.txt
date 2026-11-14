@@ -1,0 +1,1 @@
+And when a conversation did its job, turn it into an agent. Cedar writes the prompt from the conversation. You choose what starts it: a schedule, a change it watches for, new mail, a file arriving. This one will run every month.

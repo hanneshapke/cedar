@@ -1,0 +1,179 @@
+1
+00:00:00,767 --> 00:00:08,522
+This is Cedar: an open source assistant that runs on your own computer, and does real work for you.
+
+2
+00:00:09,723 --> 00:00:15,845
+The first time you open it, Cedar asks which language you'd like to work in.
+
+3
+00:00:15,845 --> 00:00:20,743
+After that it needs just one thing: a model to think with.
+
+4
+00:00:21,943 --> 00:00:24,800
+Cedar isn't tied to one AI company.
+
+5
+00:00:24,800 --> 00:00:28,882
+Under Settings, Models, you choose where the model comes from.
+
+6
+00:00:28,882 --> 00:00:35,821
+The Cedar app for Mac and Windows can download one and run it for you with llama.
+
+7
+00:00:35,821 --> 00:00:36,229
+cpp.
+
+8
+00:00:36,229 --> 00:00:40,310
+You can use a hosted provider with an API key.
+
+9
+00:00:40,310 --> 00:00:45,208
+Or you can point Cedar at a model server you already run.
+
+10
+00:00:45,208 --> 00:00:47,657
+Here, that's vLLM on this machine.
+
+11
+00:00:47,657 --> 00:00:50,514
+Cedar lists the models the server offers.
+
+12
+00:00:50,514 --> 00:00:57,861
+Pick one, and it fills in the reasoning levels the model takes, and whether it can read images.
+
+13
+00:00:57,861 --> 00:01:01,943
+Then it checks the address once more, and saves it.
+
+14
+00:01:04,659 --> 00:01:06,292
+Now for a task.
+
+15
+00:01:06,292 --> 00:01:18,128
+I'll attach a year of household spending, and ask Cedar to work out where the money goes, chart it, and write a one-page summary with three ways to save.
+
+16
+00:01:21,026 --> 00:01:22,659
+Cedar doesn't just start.
+
+17
+00:01:22,659 --> 00:01:26,740
+For a bigger task, it shows you its plan first.
+
+18
+00:01:26,740 --> 00:01:31,230
+You can reword a step, remove one, or add your own.
+
+19
+00:01:31,230 --> 00:01:34,495
+When it looks right, tell it to start.
+
+20
+00:01:36,893 --> 00:01:46,689
+The work happens in a sealed box: a container of its own, with the network off, that can't see the rest of your computer.
+
+21
+00:01:46,689 --> 00:01:51,995
+Cedar runs the numbers in Python, draws the chart, and writes the PDF.
+
+22
+00:01:51,995 --> 00:01:58,526
+Each step stays in the conversation, so you can open it and see exactly what ran.
+
+23
+00:02:01,764 --> 00:02:06,662
+The chart is interactive: point at a month to read every category.
+
+24
+00:02:06,662 --> 00:02:12,376
+The finished summary sits on the right, with the three suggestions, ready to download.
+
+25
+00:02:12,376 --> 00:02:15,642
+And the short version is in the conversation.
+
+26
+00:02:26,879 --> 00:02:30,144
+Some things Cedar won't do on its own.
+
+27
+00:02:30,144 --> 00:02:35,042
+Ask it to delete a file, and it stops and asks first.
+
+28
+00:02:35,042 --> 00:02:38,716
+Downloads, installs and sending email work the same way.
+
+29
+00:02:38,716 --> 00:02:41,165
+Nothing risky happens without your OK.
+
+30
+00:02:42,366 --> 00:02:45,631
+Cedar also remembers what you ask it to.
+
+31
+00:02:45,631 --> 00:02:50,121
+Under Settings, Memory, you see everything it has kept about you.
+
+32
+00:02:50,121 --> 00:02:53,795
+Pin it, archive it, or remove it for good.
+
+33
+00:02:53,795 --> 00:02:56,652
+It stays on your own Cedar server.
+
+34
+00:03:05,243 --> 00:03:07,284
+Every ability has a switch.
+
+35
+00:03:07,284 --> 00:03:10,141
+Reading web pages, weather, maps, directions, stocks.
+
+36
+00:03:10,141 --> 00:03:12,590
+Turn on what Cedar may reach.
+
+37
+00:03:12,590 --> 00:03:14,223
+Everything else stays off.
+
+38
+00:03:18,572 --> 00:03:23,470
+And when a conversation did its job, turn it into an agent.
+
+39
+00:03:23,470 --> 00:03:26,327
+Cedar writes the prompt from the conversation.
+
+40
+00:03:26,327 --> 00:03:33,266
+You choose what starts it: a schedule, a change it watches for, new mail, a file arriving.
+
+41
+00:03:33,266 --> 00:03:35,715
+This one will run every month.
+
+42
+00:03:41,289 --> 00:03:43,738
+Cedar is free and open source.
+
+43
+00:03:43,738 --> 00:03:49,044
+It runs on Mac, Windows and Linux, with apps for iPhone and Android.
+
+44
+00:03:49,044 --> 00:03:50,269
+Your own assistant.
+
+45
+00:03:50,269 --> 00:03:52,718
+Runs at home, answers to you.

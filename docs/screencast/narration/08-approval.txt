@@ -1,0 +1,1 @@
+Some things Cedar won't do on its own. Ask it to delete a file, and it stops and asks first. Downloads, installs and sending email work the same way. Nothing risky happens without your okay.

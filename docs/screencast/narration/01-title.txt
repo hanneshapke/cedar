@@ -1,0 +1,1 @@
+This is Cedar: an open source assistant that runs on your own computer, and does real work for you.

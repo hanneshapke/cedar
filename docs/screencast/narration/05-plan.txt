@@ -1,0 +1,1 @@
+Cedar doesn't just start. For a bigger task, it shows you its plan first. You can reword a step, remove one, or add your own. When it looks right, tell it to start.
