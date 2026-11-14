@@ -9,6 +9,12 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 AUDIO=${1:?audio dir}; OUT=${2:-$HERE/../cedar-intro-narrated.mp4}
+FILM=$HERE/../cedar-intro.mp4
+# The output must not be the film itself: ffmpeg would overwrite it while reading it.
+if [[ -e $OUT && $OUT -ef $FILM ]]; then
+    echo "the output is the silent film mux.sh reads ($OUT); leave the second argument out or name another file" >&2
+    exit 1
+fi
 inputs=(); filter=""; mix=""; n=0; free=0
 while IFS=$'\t' read -r idx id start; do
     f=$(ls "$AUDIO"/"$(printf %02d "$idx")-$id".{mp3,wav} 2>/dev/null | head -1 || true)
@@ -24,7 +30,7 @@ done < <(python3 -c "
 import json
 for i, s in enumerate(json.load(open('$HERE/../timeline.json'))['scenes'], 1): print(i, s['id'], s['start'], sep='\t')")
 (( n > 0 )) || { echo "no clips found in $AUDIO" >&2; exit 1; }
-ffmpeg -loglevel error -y -i "$HERE/../cedar-intro.mp4" "${inputs[@]}" \
+ffmpeg -loglevel error -y -i "$FILM" "${inputs[@]}" \
     -filter_complex "${filter}${mix}amix=inputs=$n:normalize=0[a]" \
     -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -movflags +faststart "$OUT"
 echo "wrote $OUT"
