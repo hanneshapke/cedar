@@ -1,0 +1,240 @@
+1
+00:00:00,767 --> 00:00:03,935
+This is Cedar: an open
+source assistant that runs
+
+2
+00:00:03,935 --> 00:00:07,102
+on your own computer, and
+does real work for you.
+
+3
+00:00:09,723 --> 00:00:14,664
+The first time you open it, Cedar asks
+which language you'd like to work in.
+
+4
+00:00:14,664 --> 00:00:18,435
+After that it needs just one
+thing: a model to think with.
+
+5
+00:00:21,943 --> 00:00:24,424
+Cedar isn't tied to one AI company.
+
+6
+00:00:24,424 --> 00:00:28,820
+Under Settings, Models, you choose
+where the model comes from.
+
+7
+00:00:28,820 --> 00:00:31,443
+The Cedar app for Mac and Windows can
+
+8
+00:00:31,443 --> 00:00:34,775
+download one and run it
+for you with llama.cpp.
+
+9
+00:00:34,775 --> 00:00:38,037
+You can use a hosted
+provider with an API key.
+
+10
+00:00:38,037 --> 00:00:42,078
+Or you can point Cedar at a
+model server you already run.
+
+11
+00:00:42,078 --> 00:00:44,488
+Here, that's vLLM on this machine.
+
+12
+00:00:44,488 --> 00:00:47,395
+Cedar lists the models the server offers.
+
+13
+00:00:47,395 --> 00:00:51,861
+Pick one, and it fills in the
+reasoning levels the model takes,
+
+14
+00:00:51,861 --> 00:00:54,059
+and whether it can read images.
+
+15
+00:00:54,059 --> 00:00:57,675
+Then it checks the address
+once more, and saves it.
+
+16
+00:01:04,659 --> 00:01:05,589
+Now for a task.
+
+17
+00:01:05,589 --> 00:01:08,130
+I'll attach a year of household spending,
+
+18
+00:01:08,130 --> 00:01:11,043
+and ask Cedar to work out
+where the money goes,
+
+19
+00:01:11,043 --> 00:01:14,948
+chart it, and write a one-page
+summary with three ways to save.
+
+20
+00:01:21,026 --> 00:01:22,722
+Cedar doesn't just start.
+
+21
+00:01:22,722 --> 00:01:25,912
+For a bigger task, it
+shows you its plan first.
+
+22
+00:01:25,912 --> 00:01:29,372
+You can reword a step,
+remove one, or add your own.
+
+23
+00:01:29,372 --> 00:01:31,951
+When it looks right, tell it to start.
+
+24
+00:01:36,893 --> 00:01:40,719
+The work happens in a sealed
+box: a container of its own,
+
+25
+00:01:40,719 --> 00:01:44,947
+with the network off, that can't
+see the rest of your computer.
+
+26
+00:01:44,947 --> 00:01:49,645
+Cedar runs the numbers in Python,
+draws the chart, and writes the PDF.
+
+27
+00:01:49,645 --> 00:01:52,062
+Each step stays in the conversation,
+
+28
+00:01:52,062 --> 00:01:55,015
+so you can open it and
+see exactly what ran.
+
+29
+00:02:01,764 --> 00:02:06,399
+The chart is interactive: point at
+a month to read every category.
+
+30
+00:02:06,399 --> 00:02:09,138
+The finished summary sits on the right,
+
+31
+00:02:09,138 --> 00:02:12,369
+with the three suggestions,
+ready to download.
+
+32
+00:02:12,369 --> 00:02:15,529
+And the short version
+is in the conversation.
+
+33
+00:02:26,879 --> 00:02:29,487
+Some things Cedar won't do on its own.
+
+34
+00:02:29,487 --> 00:02:33,125
+Ask it to delete a file, and
+it stops and asks first.
+
+35
+00:02:33,125 --> 00:02:36,969
+Downloads, installs and sending
+email work the same way.
+
+36
+00:02:36,969 --> 00:02:39,578
+Nothing risky happens without your OK.
+
+37
+00:02:42,366 --> 00:02:45,239
+Cedar also remembers what you ask it to.
+
+38
+00:02:45,239 --> 00:02:49,909
+Under Settings, Memory, you see
+everything it has kept about you.
+
+39
+00:02:49,909 --> 00:02:52,926
+Pin it, archive it, or remove it for good.
+
+40
+00:02:52,926 --> 00:02:55,368
+It stays on your own Cedar server.
+
+41
+00:03:05,243 --> 00:03:07,267
+Every ability has a switch.
+
+42
+00:03:07,267 --> 00:03:11,240
+Reading web pages, weather,
+maps, directions, stocks.
+
+43
+00:03:11,240 --> 00:03:13,414
+Turn on what Cedar may reach.
+
+44
+00:03:13,414 --> 00:03:15,363
+Everything else stays off.
+
+45
+00:03:18,572 --> 00:03:22,655
+And when a conversation did its
+job, turn it into an agent.
+
+46
+00:03:22,655 --> 00:03:25,838
+Cedar writes the prompt
+from the conversation.
+
+47
+00:03:25,838 --> 00:03:28,468
+You choose what starts it: a schedule,
+
+48
+00:03:28,468 --> 00:03:31,997
+a change it watches for,
+new mail, a file arriving.
+
+49
+00:03:31,997 --> 00:03:34,073
+This one will run every month.
+
+50
+00:03:41,289 --> 00:03:43,466
+Cedar is free and open source.
+
+51
+00:03:43,466 --> 00:03:48,402
+It runs on Mac, Windows and Linux,
+with apps for iPhone and Android.
+
+52
+00:03:48,402 --> 00:03:49,781
+Your own assistant.
+
+53
+00:03:49,781 --> 00:03:51,886
+Runs at home, answers to you.

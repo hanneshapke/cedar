@@ -1,0 +1,23 @@
+This is Cedar: an open source assistant that runs on your own computer, and does real work for you.
+
+The first time you open it, Cedar asks which language you'd like to work in. After that it needs just one thing: a model to think with.
+
+Cedar isn't tied to one AI company. Under Settings, Models, you choose where the model comes from. The Cedar app for Mac and Windows can download one and run it for you with llama C P P. You can use a hosted provider with an API key. Or you can point Cedar at a model server you already run. Here, that's V L L M on this machine. Cedar lists the models the server offers. Pick one, and it fills in the reasoning levels the model takes, and whether it can read images. Then it checks the address once more, and saves it.
+
+Now for a task. I'll attach a year of household spending, and ask Cedar to work out where the money goes, chart it, and write a one-page summary with three ways to save.
+
+Cedar doesn't just start. For a bigger task, it shows you its plan first. You can reword a step, remove one, or add your own. When it looks right, tell it to start.
+
+The work happens in a sealed box: a container of its own, with the network off, that can't see the rest of your computer. Cedar runs the numbers in Python, draws the chart, and writes the PDF. Each step stays in the conversation, so you can open it and see exactly what ran.
+
+The chart is interactive: point at a month to read every category. The finished summary sits on the right, with the three suggestions, ready to download. And the short version is in the conversation.
+
+Some things Cedar won't do on its own. Ask it to delete a file, and it stops and asks first. Downloads, installs and sending email work the same way. Nothing risky happens without your okay.
+
+Cedar also remembers what you ask it to. Under Settings, Memory, you see everything it has kept about you. Pin it, archive it, or remove it for good. It stays on your own Cedar server.
+
+Every ability has a switch. Reading web pages, weather, maps, directions, stocks. Turn on what Cedar may reach. Everything else stays off.
+
+And when a conversation did its job, turn it into an agent. Cedar writes the prompt from the conversation. You choose what starts it: a schedule, a change it watches for, new mail, a file arriving. This one will run every month.
+
+Cedar is free and open source. It runs on Mac, Windows and Linux, with apps for iPhone and Android. Your own assistant. Runs at home, answers to you.

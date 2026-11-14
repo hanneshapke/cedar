@@ -1,0 +1,286 @@
+date,categorie,description,montant_eur
+2026-01-01,Loyer,Loyer et charges,1450.0
+2026-01-01,Transports,Pass mensuel transports,58.0
+2026-01-02,Courses,Marché,89.71
+2026-01-03,Restaurants,Restaurant,61.58
+2026-01-05,Énergie,Électricité et gaz,212.0
+2026-01-06,Restaurants,Restaurant,44.55
+2026-01-06,Courses,Marché,76.64
+2026-01-07,Abonnements,Second service de streaming,13.99
+2026-01-08,Divers,Articles ménagers,58.25
+2026-01-09,Restaurants,Déjeuner,20.28
+2026-01-09,Courses,Supermarché,84.14
+2026-01-11,Transports,Carburant,61.34
+2026-01-12,Restaurants,Café,20.14
+2026-01-13,Courses,Supermarché,64.09
+2026-01-15,Restaurants,Café,31.32
+2026-01-15,Divers,Vêtements,59.82
+2026-01-16,Courses,Supermarché,88.03
+2026-01-16,Abonnements,Stockage en ligne,9.99
+2026-01-17,Abonnements,Salle de sport,39.0
+2026-01-18,Abonnements,Streaming vidéo,17.99
+2026-01-20,Courses,Supermarché,49.65
+2026-01-20,Abonnements,"Musique, offre famille",16.99
+2026-01-20,Abonnements,Abonnement presse,14.9
+2026-01-22,Divers,Articles ménagers,23.24
+2026-01-23,Courses,Marché,66.4
+2026-01-24,Transports,Carburant,70.19
+2026-01-27,Courses,Supermarché,51.99
+2026-02-01,Loyer,Loyer et charges,1450.0
+2026-02-01,Transports,Pass mensuel transports,58.0
+2026-02-02,Courses,Magasin bio,76.11
+2026-02-03,Restaurants,Café,21.77
+2026-02-05,Énergie,Électricité et gaz,205.0
+2026-02-06,Restaurants,Plats à emporter,42.16
+2026-02-06,Courses,Marché,52.29
+2026-02-07,Abonnements,Second service de streaming,13.99
+2026-02-08,Divers,Cadeau,28.2
+2026-02-09,Restaurants,Plats à emporter,51.55
+2026-02-09,Courses,Magasin bio,50.76
+2026-02-11,Transports,Carburant,57.47
+2026-02-12,Restaurants,Plats à emporter,46.01
+2026-02-13,Courses,Supermarché,75.24
+2026-02-15,Restaurants,Restaurant,23.43
+2026-02-15,Divers,Vêtements,27.16
+2026-02-16,Courses,Marché,77.94
+2026-02-16,Abonnements,Stockage en ligne,9.99
+2026-02-17,Abonnements,Salle de sport,39.0
+2026-02-18,Abonnements,Streaming vidéo,17.99
+2026-02-20,Courses,Marché,82.2
+2026-02-20,Abonnements,"Musique, offre famille",16.99
+2026-02-20,Abonnements,Abonnement presse,14.9
+2026-02-22,Divers,Cadeau,48.74
+2026-02-23,Courses,Marché,73.76
+2026-02-24,Transports,Carburant,55.95
+2026-02-27,Courses,Marché,63.91
+2026-03-01,Loyer,Loyer et charges,1450.0
+2026-03-01,Transports,Pass mensuel transports,58.0
+2026-03-02,Courses,Magasin bio,51.42
+2026-03-03,Restaurants,Déjeuner,31.09
+2026-03-05,Énergie,Électricité et gaz,188.0
+2026-03-06,Restaurants,Déjeuner,58.8
+2026-03-06,Courses,Magasin bio,73.21
+2026-03-07,Abonnements,Second service de streaming,13.99
+2026-03-08,Divers,Articles ménagers,76.46
+2026-03-09,Restaurants,Plats à emporter,19.04
+2026-03-09,Courses,Marché,62.97
+2026-03-11,Transports,Carburant,68.09
+2026-03-12,Restaurants,Déjeuner,34.35
+2026-03-13,Courses,Marché,74.15
+2026-03-15,Restaurants,Restaurant,40.71
+2026-03-15,Divers,Articles ménagers,74.07
+2026-03-16,Courses,Magasin bio,83.06
+2026-03-16,Abonnements,Stockage en ligne,9.99
+2026-03-17,Abonnements,Salle de sport,39.0
+2026-03-18,Abonnements,Streaming vidéo,17.99
+2026-03-20,Courses,Supermarché,84.96
+2026-03-20,Abonnements,"Musique, offre famille",16.99
+2026-03-20,Abonnements,Abonnement presse,14.9
+2026-03-22,Divers,Cadeau,46.28
+2026-03-23,Courses,Marché,68.86
+2026-03-24,Transports,Carburant,58.81
+2026-03-27,Courses,Magasin bio,50.86
+2026-04-01,Loyer,Loyer et charges,1450.0
+2026-04-01,Transports,Pass mensuel transports,58.0
+2026-04-02,Courses,Marché,51.55
+2026-04-03,Restaurants,Restaurant,40.31
+2026-04-05,Énergie,Électricité et gaz,150.0
+2026-04-06,Restaurants,Café,30.09
+2026-04-06,Courses,Marché,65.67
+2026-04-07,Abonnements,Second service de streaming,13.99
+2026-04-08,Divers,Pharmacie,51.53
+2026-04-09,Restaurants,Restaurant,24.7
+2026-04-09,Courses,Marché,86.87
+2026-04-11,Transports,Carburant,55.33
+2026-04-12,Restaurants,Plats à emporter,46.05
+2026-04-13,Courses,Marché,86.02
+2026-04-15,Restaurants,Plats à emporter,61.84
+2026-04-15,Divers,Cadeau,46.85
+2026-04-16,Courses,Marché,79.08
+2026-04-16,Abonnements,Stockage en ligne,9.99
+2026-04-17,Abonnements,Salle de sport,39.0
+2026-04-18,Abonnements,Streaming vidéo,17.99
+2026-04-20,Courses,Marché,78.04
+2026-04-20,Abonnements,"Musique, offre famille",16.99
+2026-04-20,Abonnements,Abonnement presse,14.9
+2026-04-22,Divers,Cadeau,23.28
+2026-04-23,Courses,Marché,90.14
+2026-04-24,Transports,Carburant,66.49
+2026-04-27,Courses,Supermarché,51.65
+2026-05-01,Loyer,Loyer et charges,1450.0
+2026-05-01,Transports,Pass mensuel transports,58.0
+2026-05-02,Courses,Magasin bio,65.62
+2026-05-03,Restaurants,Café,47.18
+2026-05-05,Énergie,Électricité et gaz,118.0
+2026-05-06,Restaurants,Plats à emporter,45.7
+2026-05-06,Courses,Supermarché,50.96
+2026-05-07,Abonnements,Second service de streaming,13.99
+2026-05-08,Divers,Pharmacie,74.97
+2026-05-09,Restaurants,Déjeuner,23.65
+2026-05-09,Courses,Supermarché,67.39
+2026-05-11,Transports,Carburant,71.24
+2026-05-12,Restaurants,Déjeuner,63.68
+2026-05-13,Courses,Supermarché,62.96
+2026-05-15,Restaurants,Déjeuner,40.1
+2026-05-15,Divers,Vêtements,53.29
+2026-05-16,Courses,Supermarché,52.5
+2026-05-16,Abonnements,Stockage en ligne,9.99
+2026-05-17,Abonnements,Salle de sport,39.0
+2026-05-18,Restaurants,Plats à emporter,21.95
+2026-05-18,Abonnements,Streaming vidéo,17.99
+2026-05-20,Courses,Magasin bio,54.66
+2026-05-20,Abonnements,"Musique, offre famille",16.99
+2026-05-20,Abonnements,Abonnement presse,14.9
+2026-05-22,Divers,Articles ménagers,56.31
+2026-05-23,Courses,Supermarché,89.75
+2026-05-24,Transports,Carburant,65.51
+2026-05-27,Courses,Magasin bio,49.12
+2026-06-01,Loyer,Loyer et charges,1450.0
+2026-06-01,Transports,Pass mensuel transports,58.0
+2026-06-02,Courses,Supermarché,89.84
+2026-06-03,Restaurants,Plats à emporter,47.28
+2026-06-05,Énergie,Électricité et gaz,96.0
+2026-06-06,Restaurants,Café,55.08
+2026-06-06,Courses,Magasin bio,63.92
+2026-06-07,Abonnements,Second service de streaming,13.99
+2026-06-08,Divers,Vêtements,91.4
+2026-06-09,Restaurants,Déjeuner,52.03
+2026-06-09,Courses,Magasin bio,71.9
+2026-06-11,Transports,Carburant,56.9
+2026-06-12,Restaurants,Café,27.2
+2026-06-13,Courses,Supermarché,81.36
+2026-06-15,Restaurants,Déjeuner,34.36
+2026-06-15,Divers,Vêtements,21.44
+2026-06-16,Courses,Marché,91.05
+2026-06-16,Abonnements,Stockage en ligne,9.99
+2026-06-17,Abonnements,Salle de sport,39.0
+2026-06-18,Restaurants,Restaurant,63.52
+2026-06-18,Abonnements,Streaming vidéo,17.99
+2026-06-20,Courses,Supermarché,78.63
+2026-06-20,Abonnements,"Musique, offre famille",16.99
+2026-06-20,Abonnements,Abonnement presse,14.9
+2026-06-21,Restaurants,Plats à emporter,39.72
+2026-06-22,Divers,Pharmacie,33.15
+2026-06-23,Courses,Marché,70.81
+2026-06-24,Restaurants,Café,49.86
+2026-06-24,Transports,Carburant,63.91
+2026-06-27,Restaurants,Plats à emporter,38.57
+2026-06-27,Courses,Supermarché,63.65
+2026-07-01,Loyer,Loyer et charges,1450.0
+2026-07-01,Transports,Pass mensuel transports,58.0
+2026-07-02,Courses,Supermarché,67.89
+2026-07-03,Restaurants,Plats à emporter,21.99
+2026-07-05,Énergie,Électricité et gaz,92.0
+2026-07-06,Restaurants,Déjeuner,39.31
+2026-07-06,Courses,Marché,81.5
+2026-07-07,Abonnements,Second service de streaming,13.99
+2026-07-08,Divers,Articles ménagers,16.71
+2026-07-09,Restaurants,Restaurant,51.34
+2026-07-09,Courses,Magasin bio,91.78
+2026-07-11,Transports,Carburant,62.52
+2026-07-12,Restaurants,Café,63.68
+2026-07-13,Courses,Marché,95.05
+2026-07-15,Restaurants,Restaurant,24.95
+2026-07-15,Divers,Pharmacie,57.13
+2026-07-16,Courses,Marché,89.84
+2026-07-16,Abonnements,Stockage en ligne,9.99
+2026-07-17,Abonnements,Salle de sport,39.0
+2026-07-18,Restaurants,Déjeuner,55.1
+2026-07-18,Abonnements,Streaming vidéo,17.99
+2026-07-20,Courses,Supermarché,91.5
+2026-07-20,Abonnements,"Musique, offre famille",16.99
+2026-07-20,Abonnements,Abonnement presse,14.9
+2026-07-21,Restaurants,Café,46.13
+2026-07-22,Divers,Articles ménagers,49.7
+2026-07-23,Courses,Supermarché,95.07
+2026-07-24,Restaurants,Déjeuner,48.23
+2026-07-24,Transports,Carburant,55.93
+2026-07-27,Restaurants,Plats à emporter,25.17
+2026-07-27,Courses,Magasin bio,87.49
+2026-08-01,Loyer,Loyer et charges,1450.0
+2026-08-01,Transports,Pass mensuel transports,58.0
+2026-08-02,Courses,Supermarché,91.1
+2026-08-03,Restaurants,Déjeuner,56.05
+2026-08-05,Énergie,Électricité et gaz,95.0
+2026-08-06,Restaurants,Café,42.46
+2026-08-06,Courses,Supermarché,53.17
+2026-08-07,Abonnements,Second service de streaming,13.99
+2026-08-08,Divers,Pharmacie,85.66
+2026-08-09,Restaurants,Restaurant,58.15
+2026-08-09,Courses,Supermarché,65.76
+2026-08-11,Transports,Carburant,66.57
+2026-08-12,Restaurants,Café,45.99
+2026-08-13,Courses,Supermarché,88.13
+2026-08-15,Restaurants,Café,25.93
+2026-08-15,Divers,Pharmacie,34.88
+2026-08-16,Courses,Marché,64.17
+2026-08-16,Abonnements,Stockage en ligne,9.99
+2026-08-17,Abonnements,Salle de sport,39.0
+2026-08-18,Restaurants,Déjeuner,46.48
+2026-08-18,Abonnements,Streaming vidéo,17.99
+2026-08-20,Courses,Marché,91.48
+2026-08-20,Abonnements,"Musique, offre famille",16.99
+2026-08-20,Abonnements,Abonnement presse,14.9
+2026-08-21,Restaurants,Restaurant,43.6
+2026-08-22,Divers,Vêtements,18.38
+2026-08-23,Courses,Supermarché,95.08
+2026-08-24,Restaurants,Plats à emporter,49.39
+2026-08-24,Transports,Carburant,69.93
+2026-08-27,Restaurants,Déjeuner,54.08
+2026-08-27,Courses,Marché,94.5
+2026-09-01,Loyer,Loyer et charges,1450.0
+2026-09-01,Transports,Pass mensuel transports,58.0
+2026-09-02,Courses,Supermarché,75.97
+2026-09-03,Restaurants,Plats à emporter,60.45
+2026-09-05,Énergie,Électricité et gaz,121.0
+2026-09-06,Restaurants,Café,56.64
+2026-09-06,Courses,Magasin bio,53.16
+2026-09-07,Abonnements,Second service de streaming,13.99
+2026-09-08,Divers,Vêtements,77.71
+2026-09-09,Restaurants,Café,37.17
+2026-09-09,Courses,Supermarché,72.9
+2026-09-11,Transports,Carburant,57.45
+2026-09-12,Restaurants,Déjeuner,38.34
+2026-09-13,Courses,Magasin bio,98.09
+2026-09-15,Restaurants,Restaurant,48.87
+2026-09-15,Divers,Articles ménagers,90.16
+2026-09-16,Courses,Magasin bio,76.18
+2026-09-16,Abonnements,Stockage en ligne,9.99
+2026-09-17,Abonnements,Salle de sport,39.0
+2026-09-18,Restaurants,Déjeuner,21.36
+2026-09-18,Abonnements,Streaming vidéo,17.99
+2026-09-20,Courses,Magasin bio,65.01
+2026-09-20,Abonnements,"Musique, offre famille",16.99
+2026-09-20,Abonnements,Abonnement presse,14.9
+2026-09-22,Divers,Vêtements,26.44
+2026-09-23,Courses,Magasin bio,77.18
+2026-09-24,Transports,Carburant,63.51
+2026-09-27,Courses,Marché,75.97
+2026-10-01,Loyer,Loyer et charges,1450.0
+2026-10-01,Transports,Pass mensuel transports,58.0
+2026-10-02,Courses,Supermarché,97.82
+2026-10-03,Restaurants,Restaurant,33.55
+2026-10-05,Énergie,Électricité et gaz,168.0
+2026-10-06,Restaurants,Déjeuner,38.26
+2026-10-06,Courses,Supermarché,87.32
+2026-10-07,Abonnements,Second service de streaming,13.99
+2026-10-08,Divers,Pharmacie,21.72
+2026-10-09,Restaurants,Restaurant,35.68
+2026-10-09,Courses,Supermarché,70.77
+2026-10-11,Transports,Carburant,59.01
+2026-10-12,Restaurants,Plats à emporter,41.56
+2026-10-13,Courses,Marché,59.58
+2026-10-15,Restaurants,Restaurant,23.19
+2026-10-15,Divers,Vêtements,18.17
+2026-10-16,Courses,Magasin bio,91.4
+2026-10-16,Abonnements,Stockage en ligne,9.99
+2026-10-17,Abonnements,Salle de sport,39.0
+2026-10-18,Restaurants,Café,62.7
+2026-10-18,Abonnements,Streaming vidéo,17.99
+2026-10-20,Courses,Supermarché,85.4
+2026-10-20,Abonnements,"Musique, offre famille",16.99
+2026-10-20,Abonnements,Abonnement presse,14.9
+2026-10-22,Divers,Articles ménagers,36.64
+2026-10-23,Courses,Magasin bio,71.03
+2026-10-24,Transports,Carburant,67.89
+2026-10-27,Courses,Marché,61.14

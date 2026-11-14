@@ -1,0 +1,286 @@
+date,category,description,amount_eur
+2026-01-01,Rent,Rent and service charge,1450.0
+2026-01-01,Transport,Monthly transit pass,58.0
+2026-01-02,Groceries,Market stall,89.71
+2026-01-03,Dining out,Restaurant,61.58
+2026-01-05,Energy,Electricity and gas,212.0
+2026-01-06,Dining out,Restaurant,44.55
+2026-01-06,Groceries,Market stall,76.64
+2026-01-07,Subscriptions,Second streaming service,13.99
+2026-01-08,Other,Household goods,58.25
+2026-01-09,Dining out,Lunch,20.28
+2026-01-09,Groceries,Supermarket,84.14
+2026-01-11,Transport,Fuel,61.34
+2026-01-12,Dining out,Cafe,20.14
+2026-01-13,Groceries,Supermarket,64.09
+2026-01-15,Dining out,Cafe,31.32
+2026-01-15,Other,Clothing,59.82
+2026-01-16,Groceries,Supermarket,88.03
+2026-01-16,Subscriptions,Cloud storage,9.99
+2026-01-17,Subscriptions,Gym membership,39.0
+2026-01-18,Subscriptions,Streaming video,17.99
+2026-01-20,Groceries,Supermarket,49.65
+2026-01-20,Subscriptions,Music family plan,16.99
+2026-01-20,Subscriptions,News subscription,14.9
+2026-01-22,Other,Household goods,23.24
+2026-01-23,Groceries,Market stall,66.4
+2026-01-24,Transport,Fuel,70.19
+2026-01-27,Groceries,Supermarket,51.99
+2026-02-01,Rent,Rent and service charge,1450.0
+2026-02-01,Transport,Monthly transit pass,58.0
+2026-02-02,Groceries,Organic shop,76.11
+2026-02-03,Dining out,Cafe,21.77
+2026-02-05,Energy,Electricity and gas,205.0
+2026-02-06,Dining out,Takeaway,42.16
+2026-02-06,Groceries,Market stall,52.29
+2026-02-07,Subscriptions,Second streaming service,13.99
+2026-02-08,Other,Gift,28.2
+2026-02-09,Dining out,Takeaway,51.55
+2026-02-09,Groceries,Organic shop,50.76
+2026-02-11,Transport,Fuel,57.47
+2026-02-12,Dining out,Takeaway,46.01
+2026-02-13,Groceries,Supermarket,75.24
+2026-02-15,Dining out,Restaurant,23.43
+2026-02-15,Other,Clothing,27.16
+2026-02-16,Groceries,Market stall,77.94
+2026-02-16,Subscriptions,Cloud storage,9.99
+2026-02-17,Subscriptions,Gym membership,39.0
+2026-02-18,Subscriptions,Streaming video,17.99
+2026-02-20,Groceries,Market stall,82.2
+2026-02-20,Subscriptions,Music family plan,16.99
+2026-02-20,Subscriptions,News subscription,14.9
+2026-02-22,Other,Gift,48.74
+2026-02-23,Groceries,Market stall,73.76
+2026-02-24,Transport,Fuel,55.95
+2026-02-27,Groceries,Market stall,63.91
+2026-03-01,Rent,Rent and service charge,1450.0
+2026-03-01,Transport,Monthly transit pass,58.0
+2026-03-02,Groceries,Organic shop,51.42
+2026-03-03,Dining out,Lunch,31.09
+2026-03-05,Energy,Electricity and gas,188.0
+2026-03-06,Dining out,Lunch,58.8
+2026-03-06,Groceries,Organic shop,73.21
+2026-03-07,Subscriptions,Second streaming service,13.99
+2026-03-08,Other,Household goods,76.46
+2026-03-09,Dining out,Takeaway,19.04
+2026-03-09,Groceries,Market stall,62.97
+2026-03-11,Transport,Fuel,68.09
+2026-03-12,Dining out,Lunch,34.35
+2026-03-13,Groceries,Market stall,74.15
+2026-03-15,Dining out,Restaurant,40.71
+2026-03-15,Other,Household goods,74.07
+2026-03-16,Groceries,Organic shop,83.06
+2026-03-16,Subscriptions,Cloud storage,9.99
+2026-03-17,Subscriptions,Gym membership,39.0
+2026-03-18,Subscriptions,Streaming video,17.99
+2026-03-20,Groceries,Supermarket,84.96
+2026-03-20,Subscriptions,Music family plan,16.99
+2026-03-20,Subscriptions,News subscription,14.9
+2026-03-22,Other,Gift,46.28
+2026-03-23,Groceries,Market stall,68.86
+2026-03-24,Transport,Fuel,58.81
+2026-03-27,Groceries,Organic shop,50.86
+2026-04-01,Rent,Rent and service charge,1450.0
+2026-04-01,Transport,Monthly transit pass,58.0
+2026-04-02,Groceries,Market stall,51.55
+2026-04-03,Dining out,Restaurant,40.31
+2026-04-05,Energy,Electricity and gas,150.0
+2026-04-06,Dining out,Cafe,30.09
+2026-04-06,Groceries,Market stall,65.67
+2026-04-07,Subscriptions,Second streaming service,13.99
+2026-04-08,Other,Pharmacy,51.53
+2026-04-09,Dining out,Restaurant,24.7
+2026-04-09,Groceries,Market stall,86.87
+2026-04-11,Transport,Fuel,55.33
+2026-04-12,Dining out,Takeaway,46.05
+2026-04-13,Groceries,Market stall,86.02
+2026-04-15,Dining out,Takeaway,61.84
+2026-04-15,Other,Gift,46.85
+2026-04-16,Groceries,Market stall,79.08
+2026-04-16,Subscriptions,Cloud storage,9.99
+2026-04-17,Subscriptions,Gym membership,39.0
+2026-04-18,Subscriptions,Streaming video,17.99
+2026-04-20,Groceries,Market stall,78.04
+2026-04-20,Subscriptions,Music family plan,16.99
+2026-04-20,Subscriptions,News subscription,14.9
+2026-04-22,Other,Gift,23.28
+2026-04-23,Groceries,Market stall,90.14
+2026-04-24,Transport,Fuel,66.49
+2026-04-27,Groceries,Supermarket,51.65
+2026-05-01,Rent,Rent and service charge,1450.0
+2026-05-01,Transport,Monthly transit pass,58.0
+2026-05-02,Groceries,Organic shop,65.62
+2026-05-03,Dining out,Cafe,47.18
+2026-05-05,Energy,Electricity and gas,118.0
+2026-05-06,Dining out,Takeaway,45.7
+2026-05-06,Groceries,Supermarket,50.96
+2026-05-07,Subscriptions,Second streaming service,13.99
+2026-05-08,Other,Pharmacy,74.97
+2026-05-09,Dining out,Lunch,23.65
+2026-05-09,Groceries,Supermarket,67.39
+2026-05-11,Transport,Fuel,71.24
+2026-05-12,Dining out,Lunch,63.68
+2026-05-13,Groceries,Supermarket,62.96
+2026-05-15,Dining out,Lunch,40.1
+2026-05-15,Other,Clothing,53.29
+2026-05-16,Groceries,Supermarket,52.5
+2026-05-16,Subscriptions,Cloud storage,9.99
+2026-05-17,Subscriptions,Gym membership,39.0
+2026-05-18,Dining out,Takeaway,21.95
+2026-05-18,Subscriptions,Streaming video,17.99
+2026-05-20,Groceries,Organic shop,54.66
+2026-05-20,Subscriptions,Music family plan,16.99
+2026-05-20,Subscriptions,News subscription,14.9
+2026-05-22,Other,Household goods,56.31
+2026-05-23,Groceries,Supermarket,89.75
+2026-05-24,Transport,Fuel,65.51
+2026-05-27,Groceries,Organic shop,49.12
+2026-06-01,Rent,Rent and service charge,1450.0
+2026-06-01,Transport,Monthly transit pass,58.0
+2026-06-02,Groceries,Supermarket,89.84
+2026-06-03,Dining out,Takeaway,47.28
+2026-06-05,Energy,Electricity and gas,96.0
+2026-06-06,Dining out,Cafe,55.08
+2026-06-06,Groceries,Organic shop,63.92
+2026-06-07,Subscriptions,Second streaming service,13.99
+2026-06-08,Other,Clothing,91.4
+2026-06-09,Dining out,Lunch,52.03
+2026-06-09,Groceries,Organic shop,71.9
+2026-06-11,Transport,Fuel,56.9
+2026-06-12,Dining out,Cafe,27.2
+2026-06-13,Groceries,Supermarket,81.36
+2026-06-15,Dining out,Lunch,34.36
+2026-06-15,Other,Clothing,21.44
+2026-06-16,Groceries,Market stall,91.05
+2026-06-16,Subscriptions,Cloud storage,9.99
+2026-06-17,Subscriptions,Gym membership,39.0
+2026-06-18,Dining out,Restaurant,63.52
+2026-06-18,Subscriptions,Streaming video,17.99
+2026-06-20,Groceries,Supermarket,78.63
+2026-06-20,Subscriptions,Music family plan,16.99
+2026-06-20,Subscriptions,News subscription,14.9
+2026-06-21,Dining out,Takeaway,39.72
+2026-06-22,Other,Pharmacy,33.15
+2026-06-23,Groceries,Market stall,70.81
+2026-06-24,Dining out,Cafe,49.86
+2026-06-24,Transport,Fuel,63.91
+2026-06-27,Dining out,Takeaway,38.57
+2026-06-27,Groceries,Supermarket,63.65
+2026-07-01,Rent,Rent and service charge,1450.0
+2026-07-01,Transport,Monthly transit pass,58.0
+2026-07-02,Groceries,Supermarket,67.89
+2026-07-03,Dining out,Takeaway,21.99
+2026-07-05,Energy,Electricity and gas,92.0
+2026-07-06,Dining out,Lunch,39.31
+2026-07-06,Groceries,Market stall,81.5
+2026-07-07,Subscriptions,Second streaming service,13.99
+2026-07-08,Other,Household goods,16.71
+2026-07-09,Dining out,Restaurant,51.34
+2026-07-09,Groceries,Organic shop,91.78
+2026-07-11,Transport,Fuel,62.52
+2026-07-12,Dining out,Cafe,63.68
+2026-07-13,Groceries,Market stall,95.05
+2026-07-15,Dining out,Restaurant,24.95
+2026-07-15,Other,Pharmacy,57.13
+2026-07-16,Groceries,Market stall,89.84
+2026-07-16,Subscriptions,Cloud storage,9.99
+2026-07-17,Subscriptions,Gym membership,39.0
+2026-07-18,Dining out,Lunch,55.1
+2026-07-18,Subscriptions,Streaming video,17.99
+2026-07-20,Groceries,Supermarket,91.5
+2026-07-20,Subscriptions,Music family plan,16.99
+2026-07-20,Subscriptions,News subscription,14.9
+2026-07-21,Dining out,Cafe,46.13
+2026-07-22,Other,Household goods,49.7
+2026-07-23,Groceries,Supermarket,95.07
+2026-07-24,Dining out,Lunch,48.23
+2026-07-24,Transport,Fuel,55.93
+2026-07-27,Dining out,Takeaway,25.17
+2026-07-27,Groceries,Organic shop,87.49
+2026-08-01,Rent,Rent and service charge,1450.0
+2026-08-01,Transport,Monthly transit pass,58.0
+2026-08-02,Groceries,Supermarket,91.1
+2026-08-03,Dining out,Lunch,56.05
+2026-08-05,Energy,Electricity and gas,95.0
+2026-08-06,Dining out,Cafe,42.46
+2026-08-06,Groceries,Supermarket,53.17
+2026-08-07,Subscriptions,Second streaming service,13.99
+2026-08-08,Other,Pharmacy,85.66
+2026-08-09,Dining out,Restaurant,58.15
+2026-08-09,Groceries,Supermarket,65.76
+2026-08-11,Transport,Fuel,66.57
+2026-08-12,Dining out,Cafe,45.99
+2026-08-13,Groceries,Supermarket,88.13
+2026-08-15,Dining out,Cafe,25.93
+2026-08-15,Other,Pharmacy,34.88
+2026-08-16,Groceries,Market stall,64.17
+2026-08-16,Subscriptions,Cloud storage,9.99
+2026-08-17,Subscriptions,Gym membership,39.0
+2026-08-18,Dining out,Lunch,46.48
+2026-08-18,Subscriptions,Streaming video,17.99
+2026-08-20,Groceries,Market stall,91.48
+2026-08-20,Subscriptions,Music family plan,16.99
+2026-08-20,Subscriptions,News subscription,14.9
+2026-08-21,Dining out,Restaurant,43.6
+2026-08-22,Other,Clothing,18.38
+2026-08-23,Groceries,Supermarket,95.08
+2026-08-24,Dining out,Takeaway,49.39
+2026-08-24,Transport,Fuel,69.93
+2026-08-27,Dining out,Lunch,54.08
+2026-08-27,Groceries,Market stall,94.5
+2026-09-01,Rent,Rent and service charge,1450.0
+2026-09-01,Transport,Monthly transit pass,58.0
+2026-09-02,Groceries,Supermarket,75.97
+2026-09-03,Dining out,Takeaway,60.45
+2026-09-05,Energy,Electricity and gas,121.0
+2026-09-06,Dining out,Cafe,56.64
+2026-09-06,Groceries,Organic shop,53.16
+2026-09-07,Subscriptions,Second streaming service,13.99
+2026-09-08,Other,Clothing,77.71
+2026-09-09,Dining out,Cafe,37.17
+2026-09-09,Groceries,Supermarket,72.9
+2026-09-11,Transport,Fuel,57.45
+2026-09-12,Dining out,Lunch,38.34
+2026-09-13,Groceries,Organic shop,98.09
+2026-09-15,Dining out,Restaurant,48.87
+2026-09-15,Other,Household goods,90.16
+2026-09-16,Groceries,Organic shop,76.18
+2026-09-16,Subscriptions,Cloud storage,9.99
+2026-09-17,Subscriptions,Gym membership,39.0
+2026-09-18,Dining out,Lunch,21.36
+2026-09-18,Subscriptions,Streaming video,17.99
+2026-09-20,Groceries,Organic shop,65.01
+2026-09-20,Subscriptions,Music family plan,16.99
+2026-09-20,Subscriptions,News subscription,14.9
+2026-09-22,Other,Clothing,26.44
+2026-09-23,Groceries,Organic shop,77.18
+2026-09-24,Transport,Fuel,63.51
+2026-09-27,Groceries,Market stall,75.97
+2026-10-01,Rent,Rent and service charge,1450.0
+2026-10-01,Transport,Monthly transit pass,58.0
+2026-10-02,Groceries,Supermarket,97.82
+2026-10-03,Dining out,Restaurant,33.55
+2026-10-05,Energy,Electricity and gas,168.0
+2026-10-06,Dining out,Lunch,38.26
+2026-10-06,Groceries,Supermarket,87.32
+2026-10-07,Subscriptions,Second streaming service,13.99
+2026-10-08,Other,Pharmacy,21.72
+2026-10-09,Dining out,Restaurant,35.68
+2026-10-09,Groceries,Supermarket,70.77
+2026-10-11,Transport,Fuel,59.01
+2026-10-12,Dining out,Takeaway,41.56
+2026-10-13,Groceries,Market stall,59.58
+2026-10-15,Dining out,Restaurant,23.19
+2026-10-15,Other,Clothing,18.17
+2026-10-16,Groceries,Organic shop,91.4
+2026-10-16,Subscriptions,Cloud storage,9.99
+2026-10-17,Subscriptions,Gym membership,39.0
+2026-10-18,Dining out,Cafe,62.7
+2026-10-18,Subscriptions,Streaming video,17.99
+2026-10-20,Groceries,Supermarket,85.4
+2026-10-20,Subscriptions,Music family plan,16.99
+2026-10-20,Subscriptions,News subscription,14.9
+2026-10-22,Other,Household goods,36.64
+2026-10-23,Groceries,Organic shop,71.03
+2026-10-24,Transport,Fuel,67.89
+2026-10-27,Groceries,Market stall,61.14

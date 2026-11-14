@@ -1,0 +1,1 @@
+Certaines choses, Cedar ne les fait pas seul. Demandez-lui de supprimer un fichier : il s’arrête et demande d’abord. De même pour les téléchargements, les installations et les e-mails. Rien de risqué sans votre accord.

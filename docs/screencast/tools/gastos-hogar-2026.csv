@@ -1,0 +1,286 @@
+fecha,categoria,descripcion,monto_eur
+2026-01-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-01-01,Transporte,Abono mensual de transporte,58.0
+2026-01-02,Supermercado,Puesto del mercado,89.71
+2026-01-03,Comer fuera,Restaurante,61.58
+2026-01-05,Energía,Electricidad y gas,212.0
+2026-01-06,Comer fuera,Restaurante,44.55
+2026-01-06,Supermercado,Puesto del mercado,76.64
+2026-01-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-01-08,Otros,Artículos del hogar,58.25
+2026-01-09,Comer fuera,Almuerzo,20.28
+2026-01-09,Supermercado,Supermercado,84.14
+2026-01-11,Transporte,Combustible,61.34
+2026-01-12,Comer fuera,Café,20.14
+2026-01-13,Supermercado,Supermercado,64.09
+2026-01-15,Comer fuera,Café,31.32
+2026-01-15,Otros,Ropa,59.82
+2026-01-16,Supermercado,Supermercado,88.03
+2026-01-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-01-17,Suscripciones,Gimnasio,39.0
+2026-01-18,Suscripciones,Streaming de video,17.99
+2026-01-20,Supermercado,Supermercado,49.65
+2026-01-20,Suscripciones,"Música, plan familiar",16.99
+2026-01-20,Suscripciones,Suscripción de noticias,14.9
+2026-01-22,Otros,Artículos del hogar,23.24
+2026-01-23,Supermercado,Puesto del mercado,66.4
+2026-01-24,Transporte,Combustible,70.19
+2026-01-27,Supermercado,Supermercado,51.99
+2026-02-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-02-01,Transporte,Abono mensual de transporte,58.0
+2026-02-02,Supermercado,Tienda orgánica,76.11
+2026-02-03,Comer fuera,Café,21.77
+2026-02-05,Energía,Electricidad y gas,205.0
+2026-02-06,Comer fuera,Comida para llevar,42.16
+2026-02-06,Supermercado,Puesto del mercado,52.29
+2026-02-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-02-08,Otros,Regalo,28.2
+2026-02-09,Comer fuera,Comida para llevar,51.55
+2026-02-09,Supermercado,Tienda orgánica,50.76
+2026-02-11,Transporte,Combustible,57.47
+2026-02-12,Comer fuera,Comida para llevar,46.01
+2026-02-13,Supermercado,Supermercado,75.24
+2026-02-15,Comer fuera,Restaurante,23.43
+2026-02-15,Otros,Ropa,27.16
+2026-02-16,Supermercado,Puesto del mercado,77.94
+2026-02-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-02-17,Suscripciones,Gimnasio,39.0
+2026-02-18,Suscripciones,Streaming de video,17.99
+2026-02-20,Supermercado,Puesto del mercado,82.2
+2026-02-20,Suscripciones,"Música, plan familiar",16.99
+2026-02-20,Suscripciones,Suscripción de noticias,14.9
+2026-02-22,Otros,Regalo,48.74
+2026-02-23,Supermercado,Puesto del mercado,73.76
+2026-02-24,Transporte,Combustible,55.95
+2026-02-27,Supermercado,Puesto del mercado,63.91
+2026-03-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-03-01,Transporte,Abono mensual de transporte,58.0
+2026-03-02,Supermercado,Tienda orgánica,51.42
+2026-03-03,Comer fuera,Almuerzo,31.09
+2026-03-05,Energía,Electricidad y gas,188.0
+2026-03-06,Comer fuera,Almuerzo,58.8
+2026-03-06,Supermercado,Tienda orgánica,73.21
+2026-03-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-03-08,Otros,Artículos del hogar,76.46
+2026-03-09,Comer fuera,Comida para llevar,19.04
+2026-03-09,Supermercado,Puesto del mercado,62.97
+2026-03-11,Transporte,Combustible,68.09
+2026-03-12,Comer fuera,Almuerzo,34.35
+2026-03-13,Supermercado,Puesto del mercado,74.15
+2026-03-15,Comer fuera,Restaurante,40.71
+2026-03-15,Otros,Artículos del hogar,74.07
+2026-03-16,Supermercado,Tienda orgánica,83.06
+2026-03-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-03-17,Suscripciones,Gimnasio,39.0
+2026-03-18,Suscripciones,Streaming de video,17.99
+2026-03-20,Supermercado,Supermercado,84.96
+2026-03-20,Suscripciones,"Música, plan familiar",16.99
+2026-03-20,Suscripciones,Suscripción de noticias,14.9
+2026-03-22,Otros,Regalo,46.28
+2026-03-23,Supermercado,Puesto del mercado,68.86
+2026-03-24,Transporte,Combustible,58.81
+2026-03-27,Supermercado,Tienda orgánica,50.86
+2026-04-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-04-01,Transporte,Abono mensual de transporte,58.0
+2026-04-02,Supermercado,Puesto del mercado,51.55
+2026-04-03,Comer fuera,Restaurante,40.31
+2026-04-05,Energía,Electricidad y gas,150.0
+2026-04-06,Comer fuera,Café,30.09
+2026-04-06,Supermercado,Puesto del mercado,65.67
+2026-04-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-04-08,Otros,Farmacia,51.53
+2026-04-09,Comer fuera,Restaurante,24.7
+2026-04-09,Supermercado,Puesto del mercado,86.87
+2026-04-11,Transporte,Combustible,55.33
+2026-04-12,Comer fuera,Comida para llevar,46.05
+2026-04-13,Supermercado,Puesto del mercado,86.02
+2026-04-15,Comer fuera,Comida para llevar,61.84
+2026-04-15,Otros,Regalo,46.85
+2026-04-16,Supermercado,Puesto del mercado,79.08
+2026-04-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-04-17,Suscripciones,Gimnasio,39.0
+2026-04-18,Suscripciones,Streaming de video,17.99
+2026-04-20,Supermercado,Puesto del mercado,78.04
+2026-04-20,Suscripciones,"Música, plan familiar",16.99
+2026-04-20,Suscripciones,Suscripción de noticias,14.9
+2026-04-22,Otros,Regalo,23.28
+2026-04-23,Supermercado,Puesto del mercado,90.14
+2026-04-24,Transporte,Combustible,66.49
+2026-04-27,Supermercado,Supermercado,51.65
+2026-05-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-05-01,Transporte,Abono mensual de transporte,58.0
+2026-05-02,Supermercado,Tienda orgánica,65.62
+2026-05-03,Comer fuera,Café,47.18
+2026-05-05,Energía,Electricidad y gas,118.0
+2026-05-06,Comer fuera,Comida para llevar,45.7
+2026-05-06,Supermercado,Supermercado,50.96
+2026-05-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-05-08,Otros,Farmacia,74.97
+2026-05-09,Comer fuera,Almuerzo,23.65
+2026-05-09,Supermercado,Supermercado,67.39
+2026-05-11,Transporte,Combustible,71.24
+2026-05-12,Comer fuera,Almuerzo,63.68
+2026-05-13,Supermercado,Supermercado,62.96
+2026-05-15,Comer fuera,Almuerzo,40.1
+2026-05-15,Otros,Ropa,53.29
+2026-05-16,Supermercado,Supermercado,52.5
+2026-05-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-05-17,Suscripciones,Gimnasio,39.0
+2026-05-18,Comer fuera,Comida para llevar,21.95
+2026-05-18,Suscripciones,Streaming de video,17.99
+2026-05-20,Supermercado,Tienda orgánica,54.66
+2026-05-20,Suscripciones,"Música, plan familiar",16.99
+2026-05-20,Suscripciones,Suscripción de noticias,14.9
+2026-05-22,Otros,Artículos del hogar,56.31
+2026-05-23,Supermercado,Supermercado,89.75
+2026-05-24,Transporte,Combustible,65.51
+2026-05-27,Supermercado,Tienda orgánica,49.12
+2026-06-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-06-01,Transporte,Abono mensual de transporte,58.0
+2026-06-02,Supermercado,Supermercado,89.84
+2026-06-03,Comer fuera,Comida para llevar,47.28
+2026-06-05,Energía,Electricidad y gas,96.0
+2026-06-06,Comer fuera,Café,55.08
+2026-06-06,Supermercado,Tienda orgánica,63.92
+2026-06-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-06-08,Otros,Ropa,91.4
+2026-06-09,Comer fuera,Almuerzo,52.03
+2026-06-09,Supermercado,Tienda orgánica,71.9
+2026-06-11,Transporte,Combustible,56.9
+2026-06-12,Comer fuera,Café,27.2
+2026-06-13,Supermercado,Supermercado,81.36
+2026-06-15,Comer fuera,Almuerzo,34.36
+2026-06-15,Otros,Ropa,21.44
+2026-06-16,Supermercado,Puesto del mercado,91.05
+2026-06-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-06-17,Suscripciones,Gimnasio,39.0
+2026-06-18,Comer fuera,Restaurante,63.52
+2026-06-18,Suscripciones,Streaming de video,17.99
+2026-06-20,Supermercado,Supermercado,78.63
+2026-06-20,Suscripciones,"Música, plan familiar",16.99
+2026-06-20,Suscripciones,Suscripción de noticias,14.9
+2026-06-21,Comer fuera,Comida para llevar,39.72
+2026-06-22,Otros,Farmacia,33.15
+2026-06-23,Supermercado,Puesto del mercado,70.81
+2026-06-24,Comer fuera,Café,49.86
+2026-06-24,Transporte,Combustible,63.91
+2026-06-27,Comer fuera,Comida para llevar,38.57
+2026-06-27,Supermercado,Supermercado,63.65
+2026-07-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-07-01,Transporte,Abono mensual de transporte,58.0
+2026-07-02,Supermercado,Supermercado,67.89
+2026-07-03,Comer fuera,Comida para llevar,21.99
+2026-07-05,Energía,Electricidad y gas,92.0
+2026-07-06,Comer fuera,Almuerzo,39.31
+2026-07-06,Supermercado,Puesto del mercado,81.5
+2026-07-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-07-08,Otros,Artículos del hogar,16.71
+2026-07-09,Comer fuera,Restaurante,51.34
+2026-07-09,Supermercado,Tienda orgánica,91.78
+2026-07-11,Transporte,Combustible,62.52
+2026-07-12,Comer fuera,Café,63.68
+2026-07-13,Supermercado,Puesto del mercado,95.05
+2026-07-15,Comer fuera,Restaurante,24.95
+2026-07-15,Otros,Farmacia,57.13
+2026-07-16,Supermercado,Puesto del mercado,89.84
+2026-07-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-07-17,Suscripciones,Gimnasio,39.0
+2026-07-18,Comer fuera,Almuerzo,55.1
+2026-07-18,Suscripciones,Streaming de video,17.99
+2026-07-20,Supermercado,Supermercado,91.5
+2026-07-20,Suscripciones,"Música, plan familiar",16.99
+2026-07-20,Suscripciones,Suscripción de noticias,14.9
+2026-07-21,Comer fuera,Café,46.13
+2026-07-22,Otros,Artículos del hogar,49.7
+2026-07-23,Supermercado,Supermercado,95.07
+2026-07-24,Comer fuera,Almuerzo,48.23
+2026-07-24,Transporte,Combustible,55.93
+2026-07-27,Comer fuera,Comida para llevar,25.17
+2026-07-27,Supermercado,Tienda orgánica,87.49
+2026-08-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-08-01,Transporte,Abono mensual de transporte,58.0
+2026-08-02,Supermercado,Supermercado,91.1
+2026-08-03,Comer fuera,Almuerzo,56.05
+2026-08-05,Energía,Electricidad y gas,95.0
+2026-08-06,Comer fuera,Café,42.46
+2026-08-06,Supermercado,Supermercado,53.17
+2026-08-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-08-08,Otros,Farmacia,85.66
+2026-08-09,Comer fuera,Restaurante,58.15
+2026-08-09,Supermercado,Supermercado,65.76
+2026-08-11,Transporte,Combustible,66.57
+2026-08-12,Comer fuera,Café,45.99
+2026-08-13,Supermercado,Supermercado,88.13
+2026-08-15,Comer fuera,Café,25.93
+2026-08-15,Otros,Farmacia,34.88
+2026-08-16,Supermercado,Puesto del mercado,64.17
+2026-08-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-08-17,Suscripciones,Gimnasio,39.0
+2026-08-18,Comer fuera,Almuerzo,46.48
+2026-08-18,Suscripciones,Streaming de video,17.99
+2026-08-20,Supermercado,Puesto del mercado,91.48
+2026-08-20,Suscripciones,"Música, plan familiar",16.99
+2026-08-20,Suscripciones,Suscripción de noticias,14.9
+2026-08-21,Comer fuera,Restaurante,43.6
+2026-08-22,Otros,Ropa,18.38
+2026-08-23,Supermercado,Supermercado,95.08
+2026-08-24,Comer fuera,Comida para llevar,49.39
+2026-08-24,Transporte,Combustible,69.93
+2026-08-27,Comer fuera,Almuerzo,54.08
+2026-08-27,Supermercado,Puesto del mercado,94.5
+2026-09-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-09-01,Transporte,Abono mensual de transporte,58.0
+2026-09-02,Supermercado,Supermercado,75.97
+2026-09-03,Comer fuera,Comida para llevar,60.45
+2026-09-05,Energía,Electricidad y gas,121.0
+2026-09-06,Comer fuera,Café,56.64
+2026-09-06,Supermercado,Tienda orgánica,53.16
+2026-09-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-09-08,Otros,Ropa,77.71
+2026-09-09,Comer fuera,Café,37.17
+2026-09-09,Supermercado,Supermercado,72.9
+2026-09-11,Transporte,Combustible,57.45
+2026-09-12,Comer fuera,Almuerzo,38.34
+2026-09-13,Supermercado,Tienda orgánica,98.09
+2026-09-15,Comer fuera,Restaurante,48.87
+2026-09-15,Otros,Artículos del hogar,90.16
+2026-09-16,Supermercado,Tienda orgánica,76.18
+2026-09-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-09-17,Suscripciones,Gimnasio,39.0
+2026-09-18,Comer fuera,Almuerzo,21.36
+2026-09-18,Suscripciones,Streaming de video,17.99
+2026-09-20,Supermercado,Tienda orgánica,65.01
+2026-09-20,Suscripciones,"Música, plan familiar",16.99
+2026-09-20,Suscripciones,Suscripción de noticias,14.9
+2026-09-22,Otros,Ropa,26.44
+2026-09-23,Supermercado,Tienda orgánica,77.18
+2026-09-24,Transporte,Combustible,63.51
+2026-09-27,Supermercado,Puesto del mercado,75.97
+2026-10-01,Alquiler,Alquiler y gastos comunes,1450.0
+2026-10-01,Transporte,Abono mensual de transporte,58.0
+2026-10-02,Supermercado,Supermercado,97.82
+2026-10-03,Comer fuera,Restaurante,33.55
+2026-10-05,Energía,Electricidad y gas,168.0
+2026-10-06,Comer fuera,Almuerzo,38.26
+2026-10-06,Supermercado,Supermercado,87.32
+2026-10-07,Suscripciones,Segundo servicio de streaming,13.99
+2026-10-08,Otros,Farmacia,21.72
+2026-10-09,Comer fuera,Restaurante,35.68
+2026-10-09,Supermercado,Supermercado,70.77
+2026-10-11,Transporte,Combustible,59.01
+2026-10-12,Comer fuera,Comida para llevar,41.56
+2026-10-13,Supermercado,Puesto del mercado,59.58
+2026-10-15,Comer fuera,Restaurante,23.19
+2026-10-15,Otros,Ropa,18.17
+2026-10-16,Supermercado,Tienda orgánica,91.4
+2026-10-16,Suscripciones,Almacenamiento en la nube,9.99
+2026-10-17,Suscripciones,Gimnasio,39.0
+2026-10-18,Comer fuera,Café,62.7
+2026-10-18,Suscripciones,Streaming de video,17.99
+2026-10-20,Supermercado,Supermercado,85.4
+2026-10-20,Suscripciones,"Música, plan familiar",16.99
+2026-10-20,Suscripciones,Suscripción de noticias,14.9
+2026-10-22,Otros,Artículos del hogar,36.64
+2026-10-23,Supermercado,Tienda orgánica,71.03
+2026-10-24,Transporte,Combustible,67.89
+2026-10-27,Supermercado,Puesto del mercado,61.14

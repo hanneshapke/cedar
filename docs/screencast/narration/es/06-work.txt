@@ -1,0 +1,1 @@
+El trabajo ocurre dentro de una caja sellada: un contenedor propio, sin red, que no puede ver el resto de tu computadora. Cedar hace los cálculos en Python, dibuja el gráfico y escribe el PDF. Cada paso queda en la conversación, así que puedes abrirlo y ver exactamente qué se ejecutó.

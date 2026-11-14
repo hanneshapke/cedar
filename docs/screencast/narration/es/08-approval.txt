@@ -1,0 +1,1 @@
+Hay cosas que Cedar no hace por su cuenta. Pídele que elimine un archivo: se detiene y pregunta primero. Con las descargas, las instalaciones y los correos pasa lo mismo. Nada arriesgado ocurre sin tu aprobación.
