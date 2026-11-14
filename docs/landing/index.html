@@ -337,13 +337,13 @@ sudo install $F/cedar* /usr/local/bin/
 <section id="compare" data-screen-label="Compared" style="max-width:1160px;margin:0 auto;padding:90px 28px 40px;display:flex;flex-direction:column;gap:32px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:760px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.cmp.eyebrow">Compared</span>
-    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.cmp.title">Cedar, OpenClaw, OpenBot,<br>Muse and Claude Duet.</h2>
-    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n-html="index.cmp.lead">Five assistants that do tasks for you. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> lives in your chat apps and acts on your computer. <a href="https://openbot.run/">OpenBot</a> runs a team of agents such as Codex and Claude Code on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a> is Meta&#8217;s, run in Meta&#8217;s cloud. <a href="https://claude.com/product/claude-duet">Claude Duet</a> is Anthropic&#8217;s, a proactive agent on its own computer in Anthropic&#8217;s cloud. Cedar runs at home, on a Mac, a Windows PC or a Linux box, and keeps every task in its own sealed box.</p>
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(34px,4.6vw,56px);line-height:1;letter-spacing:-.03em" data-i18n-html="index.cmp.title">Cedar, OpenClaw, OpenBot,<br>Meta Muse, OpenAI Dots and Claude Duet.</h2>
+    <p style="margin:0;font-size:18px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n-html="index.cmp.lead">Six assistants that do tasks for you. <a href="https://github.com/openclaw/openclaw">OpenClaw</a> lives in your chat apps and acts on your computer. <a href="https://openbot.run/">OpenBot</a> runs a team of agents such as Codex and Claude Code on your computer. <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Meta Muse</a> runs in Meta&#8217;s cloud. <a href="https://openai.com/index/introducing-dots/">OpenAI Dots</a> is an always-on agent on its own computer in OpenAI&#8217;s cloud. <a href="https://claude.com/product/claude-duet">Claude Duet</a> is Anthropic&#8217;s, a proactive agent on its own computer in Anthropic&#8217;s cloud. Cedar runs at home, on a Mac, a Windows PC or a Linux box, and keeps every task in its own sealed box.</p>
   </div>
   <div data-reveal style="display:flex;flex-direction:column;gap:20px">
     <div role="group" aria-label="Compare Cedar with" data-i18n-attr="aria-label:index.cmp.groupLabel" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <span style="font-size:15px;font-weight:600;color:#4f4740;margin-right:4px" data-i18n="index.cmp.vs">Cedar vs.</span>
-      <sc-for list="{{ cmpTabs }}" as="t" hint-placeholder-count="4">
+      <sc-for list="{{ cmpTabs }}" as="t" hint-placeholder-count="5">
         <button type="button" onclick="{{ t.pick }}" aria-pressed="{{ t.pressed }}" style="font:inherit;font-size:15px;font-weight:600;cursor:pointer;border-radius:999px;padding:9px 18px;border:1px solid {{ t.border }};background:{{ t.bg }};color:{{ t.fg }};transition:background .2s,color .2s,transform .2s" style-hover="transform:translateY(-2px)">{{ t.name }}</button>
       </sc-for>
     </div>
@@ -364,7 +364,7 @@ sudo install $F/cedar* /usr/local/bin/
   </div>
   <div data-reveal style="display:flex;flex-direction:column;gap:10px">
     <p class="rich" style="margin:0;font-size:16px;line-height:1.5;color:#4f4740;text-wrap:pretty"><span data-i18n-html="index.cmp.pickCedar"><strong>Pick Cedar</strong> when the assistant should never touch the rest of your computer and your data should stay home.</span> <strong>{{ cmpOther.pickLead }}</strong> {{ cmpOther.pick }}</p>
-    <span style="font-size:12.5px;color:#8a7f73" data-i18n="index.cmp.sources">OpenClaw details from its README, October 2026. OpenBot details from its website and README, November 2026. Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. Claude Duet details from Anthropic&#8217;s product page, October 2026. Corrections welcome.</span>
+    <span style="font-size:12.5px;color:#8a7f73" data-i18n="index.cmp.sources">OpenClaw details from its README, October 2026. OpenBot details from its website and README, November 2026. Meta Muse details from Meta&#8217;s launch announcement and press coverage, September 2026. OpenAI Dots details from OpenAI&#8217;s announcement and press coverage, November 2026. Claude Duet details from Anthropic&#8217;s product page, October 2026. Corrections welcome.</span>
   </div>
 </section>
 
@@ -427,7 +427,8 @@ class Component extends DCLogic {
   cmpOthers = [
     { id: 'openclaw', name: 'OpenClaw', badge: 'free' },
     { id: 'openbot', name: 'OpenBot', badge: 'openbot', extra: ['memory'] },
-    { id: 'muse', name: 'Muse', badge: 'muse' },
+    { id: 'muse', name: 'Meta Muse', badge: 'muse' },
+    { id: 'dots', name: 'OpenAI Dots', badge: 'dots' },
     { id: 'duet', name: 'Claude Duet', badge: 'duet' },
   ].map((o) => ({
     ...o,
