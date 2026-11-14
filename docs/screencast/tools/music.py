@@ -2,14 +2,14 @@
 """Write the background music for the screencast: a quiet ambient piece, made here from sine
 waves so it is free to use and the same every time.
 
-    music.py <out.wav> [seconds] [calm|upbeat]      (default 240 seconds, calm; needs numpy)
+    music.py <out.wav> [seconds] [calm|upbeat] [bars]      (default 240 seconds, calm; needs numpy)
 
 A slow pad moves through eight chords in D major, two bars each at 66 beats a minute, over a soft
 bass, with a sparse bell-like figure on top and a long reverb. It is written to sit under a
 voice: little happens between 1 and 4 kHz, nothing has a hard attack, and it ends on the home
 chord when the time is up. mux.sh mixes it in, well below the narration.
 
-"upbeat" is a second piece, for the short loop (loop.py): nine bars to the given length, eight of
+"upbeat" is a second piece, for the short loop (loop.py): nine bars (or [bars]) to the given length, all but one of
 a driving groove (kick, clap, hats, a bass and a sixteenth-note figure over I vi IV V in D) and a
 last bar for the final chord to ring. It is meant to be heard on its own, not under a voice.
 """
@@ -206,18 +206,20 @@ def stab(notes, seconds):
     return out * (np.minimum(1, t / 0.02) * (0.35 + 0.65 * np.exp(-t * 2.5)) * np.minimum(1, (seconds - t) / 0.08))[:, None]
 
 
-def compose_upbeat(seconds):
-    """Nine bars in `seconds`: eight of groove (I vi IV V in D, two bars each) and one for the last
-    chord to ring. The first two bars have no drum but the hat, so it starts light and lifts."""
+def compose_upbeat(seconds, bars=9):
+    """`bars` bars in `seconds` (nine unless said): all but the last are groove (I vi IV V in D, two
+    bars each) and the last is for the final chord to ring. The first two bars have no drum but the
+    hat, so it starts light and lifts."""
     rng = np.random.default_rng(5)
-    bar = seconds / 9
+    groove = bars - 1
+    bar = seconds / bars
     beat, six = bar / 4, bar / 16
     total = int((seconds + 0.5) * SR)
     drums, bass, arp, pads = (np.zeros((total, 2)) for _ in range(4))
     chords = [(38, [62, 66, 69, 74]), (35, [62, 66, 71, 74]), (31, [59, 62, 67, 71]), (33, [61, 64, 69, 73])]
     the_kick, hat, clap, crash = kick(), noise_hit(rng, 0.05, 90, True), noise_hit(rng, 0.16, 28, False), noise_hit(rng, 2.2, 2.2, True)
     pump = np.ones(total)                                    # the kick pushes everything else down for a moment
-    for b in range(8):
+    for b in range(groove):
         at = b * bar
         root, voices = chords[(b // 2) % 4]
         if b % 2 == 0:
@@ -236,7 +238,7 @@ def compose_upbeat(seconds):
                 add(drums, 0.08 * hat, at + q * beat + 3 * six)
         if b >= 2:
             for e in range(8):                                           # the bass, in eighths, off the kick
-                if e % 2 == 1 or b >= 6:
+                if e % 2 == 1 or b >= groove - 2:
                     add(bass, (0.9 if e % 2 else 0.55) * synth_bass(root + (12 if e == 7 else 0), beat / 2), at + e * beat / 2)
         up = voices + [voices[0] + 12, voices[1] + 12]
         pattern = [0, 2, 1, 3, 2, 4, 3, 5, 4, 2, 3, 1, 2, 4, 3, 5] if b % 2 == 0 else [5, 3, 4, 2, 3, 1, 2, 0, 1, 3, 2, 4, 3, 5, 4, 2]
@@ -246,8 +248,8 @@ def compose_upbeat(seconds):
             add(arp, np.stack([tone * (1 - pan), tone * pan], axis=1), at + k * six)
             echo = pluck(up[step] + 12) * 0.18                           # one echo, three sixteenths on, on the other side
             add(arp, np.stack([echo * pan, echo * (1 - pan)], axis=1), at + (k + 3) * six)
-    # bar nine: the home chord and a crash, left to ring
-    end = 8 * bar
+    # the last bar: the home chord and a crash, left to ring
+    end = groove * bar
     add(pads, 1.3 * stab([50, 57, 62, 66, 69, 74], bar + 0.4), end)
     add(bass, synth_bass(38, bar), end)
     add(drums, 0.95 * the_kick, end)
@@ -265,7 +267,8 @@ def main():
     out = sys.argv[1]
     seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 240.0
     style = sys.argv[3] if len(sys.argv) > 3 else "calm"
-    pcm = ((compose_upbeat(seconds) if style == "upbeat" else compose(seconds)) * 32767).astype("<i2")
+    bars = int(sys.argv[4]) if len(sys.argv) > 4 else 9
+    pcm = ((compose_upbeat(seconds, bars) if style == "upbeat" else compose(seconds)) * 32767).astype("<i2")
     with wave.open(out, "wb") as f:
         f.setnchannels(2)
         f.setsampwidth(2)

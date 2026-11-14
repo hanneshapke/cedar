@@ -89,7 +89,7 @@ PDF. The four parts are sped up to fit and cross-faded. It writes three films pe
 | `loop.mp4`, `loop.webm` | 1280×720, no sound, about 0.7 and 1 MB. Made to repeat: it fades from and to the page's background. For a web page, as `<video autoplay muted loop playsinline>` with the WebM first and the MP4 as the fallback |
 | `hero.mp4`, `hero.webm` | 1000×800, no sound, repeating, zoomed in on the plan and then the results so it reads in a small spot. `loop.py` copies it, with a still picture, to `docs/landing/shots/hero-<lang>.*`, where the landing page's hero plays it in the page's language |
 | `loop-music.mp4` | 1920×1080 with music and a closing card, 20 seconds |
-| `reel.mp4` | 1080×1920 for a reel or a short: each part is cropped to what matters (the plan, then the results), with a line of text over it, the same music and closing card. Text and film keep clear of the top and bottom strips the apps cover |
+| `reel.mp4` | 1080×1920 for a reel or a short, 22 seconds: an opening card with the mark and the tagline for two seconds, then each part cropped to what matters (the plan, then the results) with a line of text over it, the music (a bar longer, for the opening) and the closing card. Text and film keep clear of the top and bottom strips the apps cover |
 
 The music is the "upbeat" piece of `tools/music.py`: nine bars to the film's length, eight of
 groove and one for the last chord to ring under the closing card. Like the calm piece it is
@@ -98,6 +98,7 @@ generated here, so it is free to use.
 ```sh
 docs/screencast/tools/loop.py            # every language whose silent take is in docs/screencast
 docs/screencast/tools/loop.py de         # one
+docs/screencast/tools/loop.py --reel     # only the reels
 ```
 
 It needs the silent takes (`cedar-intro.mp4`, and `cedar-intro.<lang>.mp4`, which are not kept in
