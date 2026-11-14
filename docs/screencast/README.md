@@ -14,6 +14,7 @@ work in the sandbox, an approval, memory, the tool switches, and an agent made f
 | `cedar-intro-narrated.<lang>.mp4` | The film in German (`de`), French (`fr`) and Spanish (`es`), recorded in that language, with the voice, background music and a subtitle track |
 | `narration-elevenlabs.<lang>.txt`, `narration/<lang>/`, `captions.<lang>.srt`, `timeline.<lang>.json` | Their narration, captions and scene times |
 | `timeline.json` | When each scene of the take starts and ends, in seconds |
+| `youtube.md` | A title and a description, with chapters, for uploading each film to YouTube |
 | `tools/` | Everything that makes the above |
 
 ## What is real and what is scripted
