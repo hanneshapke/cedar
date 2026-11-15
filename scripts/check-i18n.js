@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Check the translations of the web chat (chat/static/i18n/*.js), the desktop app
-// (desktop/ui/strings.js) and the website (docs/landing/i18n/*.js): every key is in English,
-// German and French, the {placeholders} and plural forms match, and every key the pages use exists.
+// (desktop/ui/strings.js), the website (docs/landing/i18n/*.js) and the privacy policy
+// (docs/privacy/PRIVACY.<lang>.md, matching PRIVACY.md): every key is in English,
+// German, French and Spanish, the {placeholders} and plural forms match, and every key the pages use exists.
 //
 //   node scripts/check-i18n.js
 //
@@ -154,9 +155,64 @@ for (const page of fs.readdirSync(landing).filter((f) => f.endsWith('.html'))) {
   siteKeys += Object.keys(site.merged.en).length;
 }
 
+// The privacy policy: PRIVACY.md is the English original, docs/privacy/PRIVACY.<lang>.md its
+// translations. Each translation's first line names the PRIVACY.md it was made from by the start of
+// its SHA-256, and must name today's, so a change to the policy waits for its translations (the
+// website shows English until they match, but CI fails). The headings and code must match too.
+const privacyMd = path.join(root, 'PRIVACY.md');
+const privacyDir = path.join(root, 'docs', 'privacy');
+const privacyHash = (text) =>
+  require('crypto').createHash('sha256').update(text.replace(/\r\n?/g, '\n'), 'utf8').digest('hex').slice(0, 12);
+const english = fs.readFileSync(privacyMd, 'utf8');
+const want = privacyHash(english);
+const outline = (text) => ({
+  headings: (text.match(/^#{1,6} /gm) || []).length,
+  code: [...text.matchAll(/`([^`]+)`/g)].map((m) => m[1]).sort().join('\n'),
+});
+// The commit where PRIVACY.md last had `hash`, to point at what changed since (needs git history).
+function commitWith(hash) {
+  try {
+    const { execFileSync } = require('child_process');
+    const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    for (const sha of git('log', '--format=%H', '--', 'PRIVACY.md').split('\n').filter(Boolean)) {
+      if (privacyHash(git('show', `${sha}:PRIVACY.md`)) === hash) return sha.slice(0, 10);
+    }
+  } catch { /* no git, or a shallow clone */ }
+  return '';
+}
+const englishOutline = outline(english);
+const translations = fs.existsSync(privacyDir) ? fs.readdirSync(privacyDir).filter((f) => /^PRIVACY\..*\.md$/.test(f)) : [];
+for (const lang of LANGS.filter((l) => l !== 'en')) {
+  if (!translations.includes(`PRIVACY.${lang}.md`)) problems.push(`docs/privacy/PRIVACY.${lang}.md: missing (translate PRIVACY.md)`);
+}
+for (const file of translations) {
+  const where = `docs/privacy/${file}`;
+  const lang = file.match(/^PRIVACY\.([\w-]+)\.md$/)?.[1];
+  if (!lang || lang === 'en' || !LANGS.includes(lang)) {
+    problems.push(`${where}: not PRIVACY.<lang>.md for one of ${LANGS.filter((l) => l !== 'en').join(', ')}`);
+    continue;
+  }
+  const text = fs.readFileSync(path.join(privacyDir, file), 'utf8');
+  const from = text.match(/^<!-- translated-from: PRIVACY\.md ([0-9a-f]{12}) -->/)?.[1];
+  if (!from) {
+    problems.push(`${where}: the first line must be <!-- translated-from: PRIVACY.md ${want} --> once it matches PRIVACY.md`);
+  } else if (from !== want) {
+    const sha = commitWith(from);
+    const diff = sha ? ` (see git diff ${sha} -- PRIVACY.md)` : '';
+    problems.push(`${where}: translates an older PRIVACY.md (${from})${diff}; bring it up to date, then set its first line to <!-- translated-from: PRIVACY.md ${want} -->`);
+  }
+  const theirs = outline(text);
+  if (theirs.headings !== englishOutline.headings) {
+    problems.push(`${where}: ${theirs.headings} headings, PRIVACY.md has ${englishOutline.headings}`);
+  }
+  if (theirs.code !== englishOutline.code) {
+    problems.push(`${where}: its \`code\` differs from PRIVACY.md's (code, settings and paths are never translated)`);
+  }
+}
+
 if (problems.length) {
   console.error(problems.join('\n'));
   console.error(`\n${problems.length} problem(s) in the translations`);
   process.exit(1);
 }
-console.log(`translations ok: ${Object.keys(chat.merged.en).length} web chat keys in ${chatCatalogs.length} catalogs, ${Object.keys(desktop.merged.en).length} desktop keys, ${siteKeys} website keys`);
+console.log(`translations ok: ${Object.keys(chat.merged.en).length} web chat keys in ${chatCatalogs.length} catalogs, ${Object.keys(desktop.merged.en).length} desktop keys, ${siteKeys} website keys, ${translations.length} privacy policy translations`);

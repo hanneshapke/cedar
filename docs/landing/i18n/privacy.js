@@ -1,7 +1,7 @@
 'use strict';
 
-// The privacy page (privacy.html). The policy itself is PRIVACY.md and is published in English;
-// only the page around it is translated. See ../i18n.js.
+// The privacy page (privacy.html). The policy itself is PRIVACY.md, translated in
+// docs/privacy/PRIVACY.<lang>.md; this is only the page around it. See ../i18n.js.
 
 cedarSite.add({
   en: {
@@ -14,7 +14,7 @@ cedarSite.add({
     'privacy.nav.download': 'Download Cedar',
     'privacy.back': '← Back to the Cedar home page',
     'privacy.eyebrow': 'Privacy',
-    'privacy.englishOnly': 'The privacy policy is published in English.',
+    'privacy.outdated': 'The translation of the privacy policy is being updated to match the latest version, so it is shown in English for now.',
     'privacy.loading': 'Loading the privacy policy…',
     'privacy.failed': 'The privacy policy could not be loaded here. Read it in {link} on GitHub.',
     'privacy.footer.license': 'Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors',
@@ -31,7 +31,7 @@ cedarSite.add({
     'privacy.nav.download': 'Cedar herunterladen',
     'privacy.back': '← Zurück zur Cedar-Startseite',
     'privacy.eyebrow': 'Datenschutz',
-    'privacy.englishOnly': 'Die Datenschutzerklärung wird auf Englisch veröffentlicht.',
+    'privacy.outdated': 'Die Übersetzung der Datenschutzerklärung wird gerade an die neueste Fassung angepasst, deshalb steht sie vorerst auf Englisch hier.',
     'privacy.loading': 'Datenschutzerklärung wird geladen…',
     'privacy.failed': 'Die Datenschutzerklärung konnte hier nicht geladen werden. Du findest sie in {link} auf GitHub.',
     'privacy.footer.license': 'Kostenlos und Open Source · Apache 2.0 · von <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> und Mitwirkenden',
@@ -48,7 +48,7 @@ cedarSite.add({
     'privacy.nav.download': 'Télécharger Cedar',
     'privacy.back': '← Retour à l’accueil de Cedar',
     'privacy.eyebrow': 'Confidentialité',
-    'privacy.englishOnly': 'La politique de confidentialité est publiée en anglais.',
+    'privacy.outdated': 'La traduction de la politique de confidentialité est en cours de mise à jour pour suivre la dernière version ; elle est donc affichée en anglais pour le moment.',
     'privacy.loading': 'Chargement de la politique de confidentialité…',
     'privacy.failed': 'La politique de confidentialité n’a pas pu être chargée ici. Vous pouvez la lire dans {link} sur GitHub.',
     'privacy.footer.license': 'Gratuit et open source · Apache 2.0 · par <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> et ses contributeurs',
@@ -65,7 +65,7 @@ cedarSite.add({
     'privacy.nav.download': 'Descargar Cedar',
     'privacy.back': '← Volver a la página de inicio de Cedar',
     'privacy.eyebrow': 'Privacidad',
-    'privacy.englishOnly': 'La política de privacidad se publica en inglés.',
+    'privacy.outdated': 'La traducción de la política de privacidad se está actualizando a la versión más reciente, así que por ahora se muestra en inglés.',
     'privacy.loading': 'Cargando la política de privacidad…',
     'privacy.failed': 'No se pudo cargar aquí la política de privacidad. Puedes leerla en {link} en GitHub.',
     'privacy.footer.license': 'Gratis y de código abierto · Apache 2.0 · por <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> y colaboradores',

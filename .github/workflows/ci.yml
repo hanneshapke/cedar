@@ -131,8 +131,9 @@ jobs:
       - uses: actions/checkout@v7
       - run: python3 registry/build_index.py --check
 
-  # The translations of the web chat and the desktop app: every key in English, German and French,
-  # with the same placeholders, and every key the pages use defined.
+  # The translations of the web chat, the desktop app, the website and the privacy policy: every key
+  # in English, German, French and Spanish, with the same placeholders, every key the pages use
+  # defined, and each translation of PRIVACY.md made from its current version.
   i18n:
     runs-on: ubuntu-latest
     timeout-minutes: 5
