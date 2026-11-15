@@ -5,14 +5,18 @@
 cedarSite.add({
   en: {
     'site.language': 'Language',
+    'site.footer.privacy': 'Privacy',
   },
   de: {
     'site.language': 'Sprache',
+    'site.footer.privacy': 'Datenschutz',
   },
   fr: {
     'site.language': 'Langue',
+    'site.footer.privacy': 'Confidentialité',
   },
   es: {
     'site.language': 'Idioma',
+    'site.footer.privacy': 'Privacidad',
   },
 });

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cedar privacy policy</title>
+<script src="./i18n.js"></script>
+<script src="./i18n/common.js"></script>
+<script src="./i18n/privacy.js"></script>
+<meta name="description" data-i18n-attr="content:privacy.meta" content="Cedar does not collect any data. The full privacy policy for the Cedar server and apps.">
+<link rel="icon" href="docs/assets/cedar-mark.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fbf4ea;--ink:#231f1b;--muted:#4f4740;--faint:#8a7f73;--line:#f0dcc8;--accent:#e5553a;--accent-dark:#c23f26;--amber:#f2a21c;--green:#3a5f4b;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-dark)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#f6e9da;padding:1px 6px;border-radius:6px;overflow-wrap:anywhere}
+.wrap{max-width:820px;margin:0 auto;padding:0 28px}
+/* Header and footer: the same as the install guide's (install.html) */
+html{scroll-padding-top:96px}
+.site-header-bar{position:sticky;top:0;z-index:50;background:rgba(251,244,234,.86);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid rgba(240,220,200,.7)}
+.site-header{max-width:1160px;margin:0 auto;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink)}
+.brand span{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em}
+.site-header nav{display:flex;gap:26px;font-size:15px;font-weight:500;align-items:center;flex-wrap:wrap}
+.site-header nav a{color:var(--ink)}.site-header nav a:hover,.site-header nav a[aria-current]{color:var(--accent)}
+.site-header nav a.dl{background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;transition:transform .2s,background .2s}
+.site-header nav a.dl:hover{background:var(--accent);color:var(--bg);transform:translateY(-2px)}
+@media (max-width:720px){html{scroll-padding-top:120px}.site-header-bar header{padding:12px 16px;gap:8px}.site-header-bar nav{flex-wrap:nowrap;gap:18px;width:100%;overflow-x:auto;white-space:nowrap;scrollbar-width:none;padding:4px 0}.site-header-bar nav::-webkit-scrollbar{display:none}}
+.site-footer{max-width:1160px;margin:0 auto;padding:30px 28px 40px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--faint);border-top:1px solid var(--line)}
+.site-footer span{display:flex;align-items:center;gap:8px}
+.site-footer .links{gap:20px;flex-wrap:wrap}
+.site-footer .links a{color:var(--ink)}.site-footer .links a:hover,.site-footer .links a[aria-current]{color:var(--accent)}
+.back{display:inline-block;margin:28px 0 18px;font-weight:600;font-size:15px}
+.eyebrow{display:block;font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--green)}
+.note{margin:10px 0 0;font-size:14px;color:var(--faint)}
+
+/* The policy, rendered from PRIVACY.md */
+.policy{margin:8px 0 64px;font-size:17px;line-height:1.65;color:var(--muted)}
+.policy h1{margin:10px 0 12px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(36px,5.4vw,60px);line-height:1;letter-spacing:-.03em;color:var(--ink)}
+.policy h2{margin:44px 0 10px;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:27px;letter-spacing:-.02em;line-height:1.2;color:var(--ink)}
+.policy h3{margin:28px 0 8px;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:21px;color:var(--ink)}
+.policy h1+p em:only-child{font-style:normal;font-size:14px;color:var(--faint)}
+.policy p{margin:12px 0}
+.policy strong{color:var(--ink);font-weight:600}
+.policy ul,.policy ol{margin:12px 0;padding-left:22px}
+.policy li{margin:8px 0}
+.policy li::marker{color:var(--accent)}
+.policy a{overflow-wrap:anywhere}
+.policy hr{border:0;border-top:1px solid var(--line);margin:32px 0}
+.policy blockquote{margin:14px 0;background:#fdf8f2;border-left:4px solid var(--amber);border-radius:0 12px 12px 0;padding:12px 16px}
+/* The policy's opening line ("cedar does not collect any data. Period.") */
+.policy .lead{margin:18px 0 8px;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px 26px;font-size:21px;line-height:1.35}
+.policy .lead strong{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;letter-spacing:-.01em}
+.policy .h-anchor{margin-left:8px;color:var(--line);font-weight:400}
+.policy h2:hover .h-anchor,.policy h3:hover .h-anchor{color:var(--faint)}
+.status{padding:28px 0;color:var(--faint)}
+@media (max-width:560px){.policy{font-size:16px}.policy .lead{padding:18px 20px;font-size:19px}}
+</style>
+</head>
+<body>
+<div class="site-header-bar">
+<header class="site-header">
+  <a class="brand" href="./"><img src="docs/assets/cedar-mark.svg" width="30" height="30" alt="Cedar"><span>Cedar</span></a>
+  <nav>
+    <a href="./#does" data-i18n="privacy.nav.does">What it does</a>
+    <a href="./#private" data-i18n="privacy.nav.private">Private by design</a>
+    <a href="./#apps" data-i18n="privacy.nav.apps">Mac, Windows, Linux &amp; phones</a>
+    <a href="./#compare" data-i18n="privacy.nav.compare">Compared</a>
+    <a href="install.html" data-i18n="privacy.nav.install">Install</a>
+    <span data-lang-switch></span>
+    <a class="dl" href="https://github.com/hanneshapke/cedar/releases/latest" data-i18n="privacy.nav.download">Download Cedar</a>
+  </nav>
+</header>
+</div>
+<div class="wrap">
+  <main>
+    <a class="back" href="./" data-i18n="privacy.back">← Back to the Cedar home page</a>
+    <span class="eyebrow" data-i18n="privacy.eyebrow">Privacy</span>
+    <p class="note" id="lang-note" hidden data-i18n="privacy.englishOnly">The privacy policy is published in English.</p>
+    <!-- Filled from PRIVACY.md at the repository root, so this page never drifts from it. -->
+    <article class="policy" id="policy" aria-live="polite">
+      <p class="status" id="status" data-i18n="privacy.loading">Loading the privacy policy…</p>
+      <noscript><p><strong>Cedar does not collect any data. Period.</strong> Read the full policy in <a href="https://github.com/hanneshapke/cedar/blob/main/PRIVACY.md">PRIVACY.md</a>.</p></noscript>
+    </article>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <span><img src="docs/assets/cedar-mark.svg" width="18" height="18" alt=""><span data-i18n-html="privacy.footer.license">Free and open source · Apache 2.0 · by <a href="https://github.com/hanneshapke" style="color:var(--ink)">@hanneshapke</a> and contributors</span></span>
+  <span class="links"><a href="https://github.com/hanneshapke/cedar">GitHub</a><a href="install.html" data-i18n="privacy.footer.install">Install guide</a><a href="privacy.html" aria-current="page" data-i18n="site.footer.privacy">Privacy</a><a href="https://github.com/hanneshapke/cedar/blob/main/README.md" data-i18n="privacy.footer.developers">For developers</a><span data-lang-switch></span></span>
+</footer>
+
+<script>
+(() => {
+  const SOURCE = 'https://github.com/hanneshapke/cedar/blob/main/PRIVACY.md';
+  // The published site carries PRIVACY.md next to this page (pages.yml copies it there); a
+  // checkout served from the repository root has it two folders up.
+  const CANDIDATES = ['PRIVACY.md', '../../PRIVACY.md'];
+
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const slug = (s) => s.toLowerCase().replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/g, '').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '');
+  const safeUrl = (u) => (/^(https?:|mailto:|#|\.{0,2}\/|[\w.-]+(\.html|\.md)?(#.*)?$)/i.test(u) ? u : '#');
+  // A repository path in the policy (docs/design/contributions.md) opens on GitHub.
+  const href = (u) => (/^(https?:|mailto:|#)/i.test(u) ? u : 'https://github.com/hanneshapke/cedar/blob/main/' + u.replace(/^\.?\//, ''));
+
+  /** Inline Markdown: code, links, bare URLs, bold, italics. Text is escaped first. */
+  function inline(src) {
+    const codes = [];
+    let s = src.replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
+    s = esc(s);
+    const links = [];
+    const keep = (html) => { links.push(html); return `\u0001${links.length - 1}\u0001`; };
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, url) => keep(`<a href="${esc(href(safeUrl(url.replace(/&amp;/g, '&'))))}">${text}</a>`));
+    s = s.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (m, url) => keep(`<a href="${url}">${url}</a>`));
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:!?])/g, (m, pre, url) => pre + keep(`<a href="${url}">${url}</a>`));
+    s = s.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, '<strong>$2</strong>');
+    s = s.replace(/(^|[^\w*])\*(?=\S)([^*]*?\S)\*(?!\w)/g, '$1<em>$2</em>');
+    s = s.replace(/(^|[^\w])_(?=\S)([^_]*?\S)_(?!\w)/g, '$1<em>$2</em>');
+    s = s.replace(/\u0001(\d+)\u0001/g, (m, i) => links[i]);
+    return s.replace(/\u0000(\d+)\u0000/g, (m, i) => `<code>${esc(codes[i])}</code>`);
+  }
+
+  /** Block Markdown: headings, paragraphs, lists, quotes, rules and fenced code. */
+  function render(md) {
+    const lines = md.replace(/\r\n?/g, '\n').split('\n');
+    const out = [];
+    let para = [], list = null, quote = [];
+    const flushPara = () => { if (para.length) out.push(`<p>${inline(para.join(' '))}</p>`); para = []; };
+    const flushList = () => { if (list) out.push(`<${list.tag}>${list.items.map((i) => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`); list = null; };
+    const flushQuote = () => { if (quote.length) out.push(`<blockquote>${render(quote.join('\n'))}</blockquote>`); quote = []; };
+    const flush = () => { flushPara(); flushList(); flushQuote(); };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let m;
+      if (/^\s*```/.test(line)) {
+        flush();
+        const code = [];
+        while (++i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i]);
+        out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+      } else if (!line.trim()) {
+        flush();
+      } else if ((m = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/))) {
+        flush();
+        const n = m[1].length, html = inline(m[2]), id = slug(html);
+        const anchor = n > 1 ? `<a class="h-anchor" href="#${id}" aria-hidden="true" tabindex="-1">#</a>` : '';
+        out.push(`<h${n} id="${id}">${html}${anchor}</h${n}>`);
+      } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+        flush();
+        out.push('<hr>');
+      } else if ((m = line.match(/^>\s?(.*)$/))) {
+        flushPara(); flushList();
+        quote.push(m[1]);
+      } else if ((m = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) {
+        flushPara(); flushQuote();
+        const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
+        if (list && list.tag !== tag) flushList();
+        (list ||= { tag, items: [] }).items.push(m[2]);
+      } else if (list && /^\s+\S/.test(line)) {
+        list.items[list.items.length - 1] += ' ' + line.trim();
+      } else {
+        flushList(); flushQuote();
+        para.push(line.trim());
+      }
+    }
+    flush();
+    return out.join('\n');
+  }
+
+  async function load() {
+    for (const url of CANDIDATES) {
+      try {
+        const res = await fetch(url, { cache: 'no-cache' });
+        if (res.ok) return await res.text();
+      } catch { /* try the next place */ }
+    }
+    throw new Error('PRIVACY.md not found');
+  }
+
+  const policy = document.getElementById('policy');
+  load().then((md) => {
+    policy.innerHTML = render(md);
+    // A paragraph that is nothing but bold text is the policy's headline statement.
+    for (const p of policy.querySelectorAll('p')) {
+      if (p.childNodes.length === 1 && p.firstChild.nodeName === 'STRONG') { p.classList.add('lead'); break; }
+    }
+    const h1 = policy.querySelector('h1');
+    if (h1) document.title = 'Cedar · ' + h1.textContent;
+    if (cedarSite.lang !== 'en') document.getElementById('lang-note').hidden = false;
+    if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
+  }).catch(() => {
+    policy.innerHTML = '';
+    const p = document.createElement('p');
+    p.className = 'status';
+    p.innerHTML = tr('privacy.failed', { link: `<a href="${SOURCE}">PRIVACY.md</a>` });
+    policy.append(p);
+  });
+})();
+</script>
+</body>
+</html>
