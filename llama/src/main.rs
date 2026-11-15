@@ -261,6 +261,8 @@ fn registration(model: &Model, port: u16) -> String {
         "model": model.id,
         "label": model.label,
         "max_tokens": model.max_tokens,
+        // The server is started with this window (`--ctx-size`); cedar keeps runs within it.
+        "context_window": catalog::CONTEXT,
         // Every model here comes with its vision projector, so cedar may send it images.
         "multimodal": true,
     });
@@ -371,6 +373,7 @@ mod tests {
         assert_eq!(body["model"], "gemma-4-12b");
         assert_eq!(body["label"], "Gemma 4 12B");
         assert_eq!(body["max_tokens"], 8192);
+        assert_eq!(body["context_window"], 32768);
         assert_eq!(body["multimodal"], true);
         // A model without reasoning levels leaves the field out, which keeps cedar's own.
         assert!(body.get("reasoning_levels").is_none());

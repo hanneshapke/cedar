@@ -75,7 +75,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes, pollable}]}], sources}`. `pollable` marks the tools that can be [called outside a run](#calling-a-tool-outside-a-run), and `sources` lists what else can (`url`, unless `WEB_FETCH` is off). |
 | `POST /v1/tools/{name}/call` | Call one pollable tool, or the `url` source, without starting a run: `{"input": {...}}` → `{output, is_error, json?, truncated}`. `400` for a tool that isn't pollable, `404` for one that isn't offered. See [Calling a tool outside a run](#calling-a-tool-outside-a-run). |
-| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, is_default, price}]}` (see [Models](#models)). |
+| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, context_window, is_default, price}]}` (see [Models](#models)). |
 | `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
 | `POST /v1/runs/{id}/feedback` | Your verdict on a finished run: `{"rating": "up" \| "down" \| null}`. Promotes or archives what the run learned (see [Memory](#memory)); returns `{rating, archived}`. `409` while the run is still going. |
 | `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [...], profile, limits}`. Each item is `{id, short_id, kind, text, subject, relation, topics, source, support, hedged, sensitive, pinned, mentions, meta, run_id, valid_from, valid_until, created_at, updated_at, superseded_by, archived_at, recall_count, last_recalled_at}`; `?kind=fact,episode` narrows it, `?archived=true` lists the archive (superseded, expired and forgotten rows) instead, `?q=` searches. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
@@ -97,7 +97,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes", "sandbox_runtime"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). `sandbox_runtime` is what runs new sandboxes: `docker` (default) or `openshell` (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)), refused on Windows and when the OpenShell gateway doesn't answer. A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, sandbox_runtime, openshell_supported, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
 | `GET /v1/admin/models/{id}/stats` | Admin: what the model's server reports about itself, read now from `/metrics` beside its API with the model's key. A llama.cpp server started with `--metrics` (the one `cedar-llama` and the desktop app run always is) gives `{"available": true, "server": "llama.cpp", "generated_tokens", "generation_tokens_per_second", "prompt_tokens", "prompt_tokens_per_second", "requests_processing", "requests_deferred", "max_context_tokens"}`, the speeds being averages since it started; any other server gives `{"available": false}`. `404` for a model that isn't registered. |
-| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "detect_images"?, "images_hint"?, "max_tokens"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. With `"detect_images": true` and no `multimodal`, cedar works out whether the model reads images, once: from `images_hint` if given, else by sending the model one small image (answered: yes; refused: no); an entry whose model and address are unchanged keeps its value. The reply then carries `images_checked` (`list`, `tested`, or `failed` when the model could not be asked and was saved as text only). Returns the entry as `GET /v1/admin/models` shows it. |
+| `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "detect_images"?, "images_hint"?, "max_tokens"?, "context_window"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. An absent `context_window` keeps the saved one, or for a new entry (or a changed model or address) asks the server; `null` asks it again. With `"detect_images": true` and no `multimodal`, cedar works out whether the model reads images, once: from `images_hint` if given, else by sending the model one small image (answered: yes; refused: no); an entry whose model and address are unchanged keeps its value. The reply then carries `images_checked` (`list`, `tested`, or `failed` when the model could not be asked and was saved as text only). Returns the entry as `GET /v1/admin/models` shows it. |
 | `DELETE /v1/admin/models/{id}` | Admin: forget the model and its key. If it was the default, the first remaining entry becomes the default. Runs on it fail at their next model call. |
 | `GET /v1/admin/integrations` | Admin keys only (see [Integrations](#integrations)): whether a Brave Search key, a Best Buy key, a SerpApi key and a Slack bot token are set (`slack`, with the workspace a saved token belongs to), a Google OAuth client is set up (`google.client`, with its `client_id`) and a Google account connected, and where from (`bestbuy` also says whether `PRODUCTS` is on, `serpapi` whether `FLIGHTS` is, `slack` whether `SLACK` is). Never returns a secret. |
 | `PUT` / `DELETE /v1/admin/integrations/brave` | Admin: save a Brave Search key (`{"api_key"}`; checked with one search first) or remove it. |
@@ -267,6 +267,7 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 | `tool.call` | `id`, `name`, `input` |
 | `tool.result` | `id`, `output`, `is_error`, `duration_ms`, and `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite |
 | `sandbox.denied` | `call_id`, `program` (the path OpenShell named, `null` for a refused HTTP request), `host`, `port`, `what` (`connect`, or the method and path of a refused request), `reason`: an OpenShell sandbox's policy refused something while a `bash` or `run_python` call ran (see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)) |
+| `context.trimmed` | What a model call was sent was cut down to fit the model's context window: `turn`, `window`, `estimated_tokens_before`, `estimated_tokens_after`, `trimmed_results` (tool results cut down) and `dropped_messages` (see [Context windows](#context-windows)). Before that turn's call |
 | `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call, and with `purpose: "memory"` the call at the end of the run that notes what it learned; one with `purpose: "tool"` and the `tool`'s name is a call a tool made to the model during that turn (`search_products` picking products, `plan_trip` choosing a trip option) |
 | `memory.recalled` | What the run was shown from memory at its start: `profile` (whether there is one), `cues` (`recall`, `time`), `left_out` (how many matched but didn't fit), `items: [{id, short_id, kind, why, score}]` with `why` `pinned`, `core`, `match` or `cue` (see [Memory](#memory)). Only when something was shown |
 | `memory.updated` | What the run noted once it was done: `saved: [{status, memory}]` (`status` `added`, `superseded` or `replaced`; facts the user stated, and a procedure the run learned), `skipped: [{text, reason}]` (what the model proposed and the checks refused, rows for records included), `episode` (the row for this conversation, or `null`), `records: [{set, added, updated}]` (data the user handed over, saved as records). After the last `assistant.text` |
@@ -477,7 +478,9 @@ the research on agent memory says works (see [docs/design/memory.md](docs/design
   calls for: facts, preferences and temporary rows whose words overlap the prompt and the newest
   user turns, and episodes and procedures only on a recall cue ("last time", "the script we
   wrote", a date) or a strong overlap, within `MEMORY_RECALL_TOKENS`. A store of at most 25 rows
-  about the user is shown whole. Superseded, archived and expired rows are never shown, and a row
+  about the user is shown whole beside the profile, except in unattended runs and with a small
+  context window (see [Context windows](#context-windows)), which show only what the request calls
+  for. Superseded, archived and expired rows are never shown, and a row
   whose key has a newer value yields to it. The note is built for each request and never stored,
   so a change in Settings applies to the very next run; it sits last in the system prompt, framed
   as the user's facts and the agent's notes rather than instructions, with short ids (`[m12]`).
@@ -492,7 +495,10 @@ the research on agent memory says works (see [docs/design/memory.md](docs/design
   summary for the conversation; and, when the run did work with tools that went well, one
   procedure. Facts are saved from interactive runs with `MEMORY_EXTRACT` on, episodes and
   procedures from any run with `MEMORY_EXPERIENCE` on (a run without tools writes its episode
-  without a call). Nothing the model proposes is trusted: a fact is saved only if its quote occurs
+  without a call). The call is told how the run ended, and an episode's `outcome` says so too
+  (`completed`, `no answer` when the last reply was empty, `cut off` when the answer was cut short);
+  a procedure is learned only from a run that completed. It is made at the model's lowest
+  reasoning level (`none`, `minimal` or `low`, when offered) with at most 4,096 tokens for the reply. Nothing the model proposes is trusted: a fact is saved only if its quote occurs
   in the user's own words of that conversation, so nothing read in a tool result, an email or a
   web page can become a fact about the user; text that looks like a password, a key or a card,
   account or government number is refused; the same thing said again is one row said once more
@@ -730,7 +736,7 @@ Settings come from environment variables. The important ones:
 | `generate_pdf` | Renders Markdown (default) or HTML to a PDF file in the workspace. Takes `path` (must end in `.pdf`), `content`, optional `format` (`markdown` or `html`) and optional `title`. Returns the page count and size, plus the renderer's warnings (a missing image, say). |
 | `generate_chart` | Draws a chart with matplotlib and saves it as PNG, SVG, or PDF, in the same palette and style as the chat's chart card. Takes `path`, `kind` (`line`, `bar`, `barh`, `area`, `scatter`, `pie`, `histogram`), `labels` (x categories or values), `series` (`[{name?, values}]`, `null` for gaps), and optional `title`, `x_label`, `y_label`, `stacked`, `bins`, `log_scale`, and `band` (`{from, to, label?}`: a shaded range on the value axis, such as a target range). The chat interfaces and the phone apps draw the call's data as an interactive chart card instead of showing the picture ([chat/README.md](chat/README.md)). |
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
-| `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
+| `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, tables without borders, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. The list of links leaves out navigation (relative actions such as `hide?id=1`, bare words such as `login`, anchors and scripts), lists each address once and makes relative ones absolute. Hacker News's front page is read from its search API (hn.algolia.com) as a compact list of stories with points, comments, age and links, falling back to the page when that fails. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
 | `remember` | Saves something durable about the user for later conversations. Takes `text` (one fact, at most 500 characters; whitespace is collapsed to one line), optional `kind` (`fact`, `preference`, `instruction`, `temporary`), `supersedes` (the id of the memory it makes untrue, kept as history), `valid_until` (an ISO date, for a temporary fact), `subject` and `relation` (the key of a fact with one current value). Returns `{status: "added" \| "superseded" \| "replaced" \| "unchanged", memory: {id, kind, text, pinned, since, until}}`. Refused in non-interactive runs and for text that looks like a secret or an identifier. See [Memory](#memory). Unless `MEMORY=off`. |
 | `forget` | Archives one memory by `id`: it leaves every prompt and stays in the user's Settings, where they can delete or restore it. Refused in non-interactive runs. Unless `MEMORY=off`. |
@@ -1053,6 +1059,12 @@ setting for the model server: a fresh cedar has no model, says so at startup and
 - `max_tokens`: the most tokens one reply may take, a reasoning model's thinking included (1 to
   1000000, 16384 unless set). A reply that reaches it ends with `stop_reason` `max_tokens`. It
   replaces the old server-wide `MAX_TOKENS` setting, which is now ignored with a warning;
+- `context_window`: the model's context window in tokens, prompt and reply together, as its
+  server is set up (llama.cpp's `--ctx-size`, vLLM's `--max-model-len`; 2048 to 10000000). When it
+  isn't given, cedar asks the server when the entry is saved: vLLM, LM Studio and OpenRouter list
+  it with the model (`max_model_len`, `context_length`), llama.cpp's server in `/props` (`n_ctx`).
+  `cedar-llama` registers its models with the 32,768 tokens it starts them with. See
+  [Context windows](#context-windows);
 - `reasoning_levels`: the values the model accepts as `reasoning_effort`, in the order to offer
   them, and an optional `default_reasoning` among them. A run's `reasoning` must be one of the
   levels; without one the default level is sent, and without that nothing is. DeepSeek V4 on vLLM
@@ -1070,6 +1082,39 @@ or one already going; a run whose model was removed fails at its next call. A mo
 by an earlier version of cedar (through the old `/v1/admin/integrations/llm` route) is turned into
 the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_URL`, `LLM_API_KEY`,
 `LLM_MODEL` and `ALLOWED_MODELS` in the environment are ignored with a warning.
+
+#### Context windows
+
+A model server takes the prompt and the reply in one window of tokens. With a model's
+`context_window` known, every request of a run is kept within it:
+
+- **The reply gets what is left.** A call asks for `max_tokens`, or for what the window leaves
+  beside the prompt when that is less, so a long conversation doesn't ask for a reply that can't
+  fit. The prompt's size is estimated from its bytes and corrected by each reply's `usage`.
+- **Tool results share the room.** The calls of one turn share what is left of the window, so a
+  page or a search result is cut to its share (with a note on how to read on) instead of filling
+  the window before the model reads it. `TOOL_OUTPUT_MAX_BYTES` stays the most any result gets.
+- **Older results are cut down first.** When the conversation no longer fits beside a quarter of
+  the window kept for the reply, what is sent is cut down: earlier tool results to a short head
+  each, then the newest ones (the largest first), then the oldest messages after the prompt, never
+  the newest calls and their results. The stored conversation is never changed. A
+  `context.trimmed` event says what was cut.
+- **A reply cut off by the window is tried again.** A reply that stops at its limit before it says
+  or asks anything is not taken as the answer: when the window cut it short, the turn is tried once
+  more with less of the conversation, and if that is cut off too the run fails with an error that
+  says so. A reply that spent its own `max_tokens` thinking fails at once, with an error that says
+  to raise the limit or lower the reasoning level. When no window is known, such a reply tells
+  cedar how large it is (the prompt and reply filled it), and the retry uses that.
+- **A small window works differently.** With a window of 65,536 tokens or less, a run that may use
+  every tool is offered only the sandbox tools, web search and pages, memory, records, questions
+  and follow-ups, and the groups and tools its request names (by group words such as "email" or
+  "forecast", a tool's name, or a distinctive part of it such as `arxiv`); the system prompt says
+  so, and asks the model to work through a task one source at a time and to write down what it
+  needs from a long result before going on. Its memory note shows the profile and what the request
+  calls for, not the whole store.
+
+Every run's system prompt also carries the current date and time (UTC), so the model needs no
+call to learn it.
 
 #### llama.cpp on a machine with a GPU
 

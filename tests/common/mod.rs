@@ -642,6 +642,7 @@ pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]
             default_reasoning: None,
             multimodal: id == TEST_MODEL,
             max_tokens: cedar::models::DEFAULT_MAX_TOKENS,
+            context_window: None,
             is_default: false,
             price: None,
             position: 0,

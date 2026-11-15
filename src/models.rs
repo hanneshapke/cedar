@@ -184,6 +184,10 @@ pub struct ModelEntry {
     /// The most tokens one reply may take, a reasoning model's thinking included. A reply that
     /// reaches it ends with `stop_reason` `max_tokens`.
     pub max_tokens: u32,
+    /// The model's context window in tokens, prompt and reply together, as its server is set up
+    /// (llama.cpp's `--ctx-size`, vLLM's `--max-model-len`). Runs keep their requests within it
+    /// (see [`crate::context`]). `None` when nobody said and the server didn't tell.
+    pub context_window: Option<u32>,
     /// The entry a run gets when it names no model. Exactly one entry has it while any exist.
     pub is_default: bool,
     /// What its tokens cost; `None` when no one said.
@@ -207,6 +211,7 @@ impl ModelEntry {
             "default_reasoning": self.default_reasoning,
             "multimodal": self.multimodal,
             "max_tokens": self.max_tokens,
+            "context_window": self.context_window,
             "is_default": self.is_default,
             "price": self.price,
         })
@@ -217,6 +222,9 @@ impl ModelEntry {
 pub const DEFAULT_MAX_TOKENS: u32 = 16384;
 /// The highest reply limit a model may be given.
 pub const MAX_MAX_TOKENS: u32 = 1_000_000;
+/// The smallest and largest context window a model may be given.
+pub const MIN_CONTEXT_WINDOW: u32 = 2_048;
+pub const MAX_CONTEXT_WINDOW: u32 = 10_000_000;
 
 /// A model's price in US dollars per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -299,6 +307,8 @@ pub mod event {
     /// The sandbox's policy refused a connection or request while a call ran.
     pub const SANDBOX_DENIED: &str = "sandbox.denied";
     pub const USAGE: &str = "usage";
+    /// What a model call was sent was cut down to fit the model's context window.
+    pub const CONTEXT_TRIMMED: &str = "context.trimmed";
     /// What the run was shown from memory at its start: `{profile, cues, items: [{id, kind, why}]}`.
     pub const MEMORY_RECALLED: &str = "memory.recalled";
     /// What the run noted once it was done: `{saved: [{status, memory}], skipped, episode, records}`.

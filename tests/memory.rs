@@ -770,6 +770,35 @@ async fn the_memory_call_is_skipped_when_there_is_nothing_to_note() {
 }
 
 #[tokio::test]
+async fn a_run_that_ends_without_an_answer_is_noted_as_such() {
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("c1", "bash", json!({ "command": "ls" }))),
+            // The model stops without a word, as a cut-off reply with some text would not.
+            Step::Reply(reply(vec![], "end_turn")),
+            Step::Reply(text(
+                "{\"episode\": {\"title\": \"Report\", \"summary\": \"Started the report.\", \"pitfall\": \"It never wrote the file.\"}, \
+                 \"procedure\": {\"title\": \"Reports\", \"summary\": \"List first.\", \"rationale\": \"x\", \"pitfall\": null}, \
+                 \"topics\": [\"reports\"]}",
+            )),
+        ],
+        &[("MEMORY_EXPERIENCE", "on")],
+    )
+    .await;
+    let done = run(&app, KEY_A, json!({ "prompt": "Write the report" })).await;
+    let memory_call = &app.llm.requests()[2];
+    let body = memory_call["messages"][0]["content"].as_str().unwrap();
+    assert!(body.contains("The run ended: without an answer"), "{body}");
+    assert!(memory_call["max_tokens"].as_u64().unwrap() <= 4_096);
+    // The test model offers "none": the notes are written without reasoning.
+    assert_eq!(memory_call["reasoning_effort"], "none");
+    let updated = events_of(&app, KEY_A, done["id"].as_str().unwrap(), "memory.updated").await;
+    assert_eq!(updated[0]["episode"]["meta"]["outcome"], "no answer");
+    // No procedure is learned from a run that produced nothing.
+    assert!(updated[0]["saved"].as_array().unwrap().is_empty(), "{}", updated[0]);
+}
+
+#[tokio::test]
 async fn a_run_with_tools_notes_an_episode_and_a_procedure_and_a_cue_recalls_them() {
     let app = TestApp::with_env(
         vec![

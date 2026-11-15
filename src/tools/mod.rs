@@ -86,6 +86,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Everything a tool needs to do its work for one run.
+#[derive(Clone)]
 pub struct ToolContext {
     pub sandbox: Arc<dyn Sandbox>,
     /// The run's browser, started on first use. `None` when the browser is turned off.
@@ -505,12 +506,93 @@ impl ToolSet {
         self.select(None).get(name)
     }
 
+    /// For a model with a small context window, whose prompt the definitions of every tool
+    /// would fill: the selection a request seems to need. That is the sandbox tools, the groups
+    /// in [`ALWAYS_OFFERED`], groups whose words (see [`GROUP_WORDS`]) `text` uses, and tools
+    /// `text` names, by their full name or a distinctive part of it (`arxiv` for `arxiv_search`).
+    /// `text` is the request with whatever else shows what it needs, such as the names of
+    /// tools called earlier in the conversation.
+    pub fn narrow_selection(&self, text: &str) -> Vec<String> {
+        let words = words(text);
+        let lower = text.to_lowercase();
+        let mut allow: Vec<String> = ALWAYS_OFFERED.iter().map(|g| g.to_string()).collect();
+        for (group, keys) in GROUP_WORDS {
+            if keys.iter().any(|k| mentions(&words, k)) {
+                allow.push(group.to_string());
+            }
+        }
+        for tool in self.all() {
+            let name = tool.name();
+            if self.group(name) == "core" || allow.iter().any(|a| a == self.group(name)) {
+                continue;
+            }
+            let named = lower.contains(&name.to_lowercase())
+                || name
+                    .to_lowercase()
+                    .split('_')
+                    .filter(|p| p.len() >= 4 && !GENERIC_NAME_PARTS.contains(p))
+                    .any(|p| mentions(&words, p));
+            if named {
+                allow.push(name.to_string());
+            }
+        }
+        // A remote server's tools are only listed once it is connected; its prefix stands for them.
+        for server in &self.remote {
+            let prefix = server.prefix();
+            if mentions(&words, prefix) && !allow.iter().any(|a| a == prefix) {
+                allow.push(prefix.to_string());
+            }
+        }
+        allow
+    }
+
     /// The personal tools, in name order.
     pub fn personal(&self) -> Vec<&PythonTool> {
         let mut tools: Vec<&PythonTool> = self.tools.iter().filter_map(|t| t.personal()).collect();
         tools.sort_by(|a, b| a.name().cmp(b.name()));
         tools
     }
+}
+
+/// Tool groups a run with a small context window always keeps when its selection is narrowed
+/// (see [`ToolSet::narrow_selection`]): looking things up and the run's own bookkeeping.
+const ALWAYS_OFFERED: &[&str] = &["web_search", "web_fetch", "ask_user", "follow_up", "memory", "records"];
+
+/// Words that show a request may need a tool group, matched as whole words (or with a plural
+/// `s`) in the request.
+const GROUP_WORDS: &[(&str, &[&str])] = &[
+    ("weather", &["weather", "forecast", "rain", "snow", "temperature", "sunny", "wind"]),
+    ("maps", &["map", "where's", "located", "location"]),
+    ("recipes", &["recipe", "cook", "cooking", "bake", "baking", "dish", "ingredient", "dinner", "lunch"]),
+    ("transit", &["transit", "direction", "commute", "bus", "train", "subway", "tram", "ferry", "rideshare", "uber", "lyft", "drive", "driving", "walk", "route"]),
+    ("flights", &["flight", "fly", "airfare", "airline", "airport", "plane"]),
+    ("stocks", &["stock", "ticker", "etf", "nasdaq", "dow", "portfolio", "invest", "investing", "share", "market"]),
+    ("products", &["buy", "purchase", "shop", "shopping", "product", "gift", "cheapest", "deal", "price"]),
+    ("browser", &["browser", "click", "javascript", "button", "form", "login", "website"]),
+    ("gmail", &["email", "mail", "gmail", "inbox", "newsletter", "draft"]),
+    ("calendar", &["calendar", "meeting", "schedule", "appointment", "agenda", "availability", "event", "busy", "free"]),
+    ("drive", &["drive", "doc", "docs", "gdoc", "folder", "google"]),
+    ("sheets", &["sheet", "spreadsheet", "google"]),
+    (slack::PREFIX, &["slack", "channel", "dm"]),
+];
+
+/// Parts of tool names too common to show that a request wants that tool.
+const GENERIC_NAME_PARTS: &[&str] = &[
+    "search", "find", "list", "show", "get", "read", "write", "data", "tool", "info", "query",
+    "lookup", "check", "make", "create", "update", "file", "files", "page", "web", "news", "the",
+];
+
+/// The words of `text`, lowercased, split at anything but letters, digits, `_` and `'`.
+fn words(text: &str) -> std::collections::HashSet<String> {
+    text.to_lowercase()
+        .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '\''))
+        .filter(|w| !w.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+fn mentions(words: &std::collections::HashSet<String>, word: &str) -> bool {
+    words.contains(word) || words.contains(&format!("{word}s")) || words.contains(&format!("{word}es"))
 }
 
 /// Credentials saved through the admin API, used where the environment sets none.
@@ -1021,6 +1103,31 @@ mod tests {
                 .map(|(_, v)| v.clone())
         })
         .unwrap()
+    }
+
+    #[test]
+    fn a_small_window_gets_the_tools_the_request_names() {
+        let set =
+            ToolSet::from_config(&cfg(&[("CEDAR_API_KEYS", "a"), ("BRAVE_API_KEY", "k")])).unwrap();
+        let digest = "Review Hacker News and arXiv for AI news and produce a PDF. Use the tools \
+                      web_search, fetch_url, write_file, generate_pdf. Output only the files.";
+        let allow = set.narrow_selection(digest);
+        for g in ALWAYS_OFFERED {
+            assert!(allow.iter().any(|a| a == g), "{allow:?}");
+        }
+        for g in ["weather", "maps", "recipes", "transit", "stocks", "gmail", "calendar"] {
+            assert!(!allow.iter().any(|a| a == g), "{g} in {allow:?}");
+        }
+        let view = set.select(Some(&allow));
+        assert!(view.get("generate_pdf").is_some() && view.get("fetch_url").is_some());
+        assert!(view.get("weather_forecast").is_none() && view.get("plan_trip").is_none());
+
+        let trip = set.narrow_selection("Will it rain in Austin on Monday, and is there a bus from the airport?");
+        assert!(trip.iter().any(|a| a == "weather") && trip.iter().any(|a| a == "transit"), "{trip:?}");
+        // A tool called by name, or by a distinctive part of its name, is kept.
+        let named = set.narrow_selection("Show me the recipes; use compare_stocks for AAPL");
+        assert!(named.iter().any(|a| a == "recipes"), "{named:?}");
+        assert!(named.iter().any(|a| a == "compare_stocks" || a == "stocks"), "{named:?}");
     }
 
     #[test]

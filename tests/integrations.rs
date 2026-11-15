@@ -1441,6 +1441,10 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
             "gpu",
             json!({ "base_url": server_url, "model": "m-1", "max_tokens": 2_000_000 }),
         ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "context_window": 100 }),
+        ),
     ] {
         let (code, resp) = put_model(&app, id, body.clone()).await;
         assert_eq!(code, StatusCode::BAD_REQUEST, "{body} -> {resp}");
@@ -1477,7 +1481,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         app.get("/v1/models", KEY_A).await.1["models"][0],
         json!({ "id": "gpu", "label": "GPU box", "model": "m-1", "is_default": true,
                 "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true,
-                "max_tokens": 16384, "price": null })
+                "max_tokens": 16384, "context_window": null, "price": null })
     );
 
     // The next run talks to the server, with its key and the level asked for.
@@ -1532,6 +1536,17 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         .await;
     let (_, body) = server.completions.lock().unwrap().last().unwrap().clone();
     assert_eq!(body["max_tokens"], 2048);
+    // A context window an admin gives is kept, and absent keeps it.
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "context_window": 32768 }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["context_window"], 32768);
+    let (_, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1" })).await;
+    assert_eq!(body["context_window"], 32768, "absent keeps the saved window");
     // An empty api_key removes it (and the server then refuses the check).
     let (code, body) = put_model(
         &app,

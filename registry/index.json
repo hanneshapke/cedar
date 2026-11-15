@@ -38,7 +38,7 @@
     },
     {
       "name": "arxiv_search",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "summary": "Search arXiv papers by topic, author, category and date, or fetch them by id, with abstracts and PDFs",
       "category": "productivity",
       "author": "Hannes Hapke",
@@ -55,8 +55,8 @@
       },
       "base_url": "tools/arxiv_search/",
       "files": {
-        "tool.json": "766430393604252d57a923bcb0acb75c423bd853fce730cae9bfed748da3e03e",
-        "tool.py": "b3a80d28575245fc0ecca9f60974b60317a83f2f83e6d6d44a79c203c7e20827"
+        "tool.json": "1978de488904b6f6f4b0177307742f09fb1f6f1ed6857c09c3ad2259ee16e480",
+        "tool.py": "d45d2f9c2831644a6763c77ccb5c61cf17a6f89c7f9da3cff3863d6ef9b4ed41"
       },
       "reviewed": false,
       "translations": {
