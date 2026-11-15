@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.1
 
 - **The run time limit can be changed in Settings.** Settings → *Advanced settings* → *Run time limit* sets how long a reply may take, tools included, before cedar stops it (60 seconds to a day), from the next message; empty goes back to `RUN_TIMEOUT_SECS`, which is now only the default. Over the API it is `run_timeout_secs` on `PUT /v1/admin/settings`.
 - **A tool that keeps failing is left out.** A tool that fails twice in a row for a temporary reason (rate limited, unavailable, timing out) is not run again in that run; further calls answer at once that it was left out. In a daily-digest run on a 32k model, twelve calls to a rate-limited arXiv took 337 of the run's 600 seconds. The community `arxiv_search` tool (1.2.0) also says plainly that a 429 or 503 is not the query's fault, names arXiv's listing pages to read instead, and gives up after 20 seconds instead of 60.
