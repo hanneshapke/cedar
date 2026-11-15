@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 - **Runs fit the model's context window.** A model entry now has a `context_window` (prompt and reply together), which cedar asks the server for when the entry is saved (vLLM's `max_model_len`, llama.cpp's `/props`) and `cedar-llama` sets to the 32,768 tokens it starts its models with. A run then asks each reply for what the window leaves instead of the full `max_tokens`, shares what is left among a turn's tool results, and cuts older tool results down (then the newest, then old messages) before a request would overflow; a `context.trimmed` event says what was cut. Before, a run on a 32k model could send 31,500 tokens of prompt with `max_tokens: 32768`, get a reply cut off mid-thought, and be marked completed with no answer.
 - **A reply cut off before it answered is no longer an answer.** When the window cut it short, the turn is tried once more with less of the conversation; if that fails too, or the reply spent its own limit thinking, the run fails with an error that says which. The memory call is told how a run really ended: an episode's outcome is `no answer` or `cut off` where it was, and no procedure is learned from such a run. The memory call also runs at the model's lowest reasoning level with at most 4,096 tokens.
