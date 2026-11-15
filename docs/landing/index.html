@@ -424,7 +424,7 @@ sudo install $F/cedar* /usr/local/bin/
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{}">
 class Component extends DCLogic {
-  state = { os: '', dmg: '', msi: '', apk: '', ipa: '', linuxX64: '', linuxArm: '', ver: '', linuxArch: 'x64', cmp: 'openclaw' };
+  state = { os: '', dmg: '', msi: '', apk: (window.CEDAR_DOWNLOADS || {}).apk || '', ipa: (window.CEDAR_DOWNLOADS || {}).ipa || '', linuxX64: '', linuxArm: '', ver: '', linuxArch: 'x64', cmp: 'openclaw' };
   // The comparison's rows, in this order, for Cedar and for each other assistant. An assistant
   // with `extra` topics gets those rows after the common ones.
   cmpTopicIds = ['where', 'how', 'ai', 'guardrails', 'data'];
@@ -527,9 +527,11 @@ class Component extends DCLogic {
       const release = await res.json();
       const assets = release.assets || [];
       const find = (ext) => (assets.find((a) => a.name.endsWith(ext)) || {}).browser_download_url || '';
+      const phone = window.CEDAR_DOWNLOADS || {};
       const linuxX64 = find('-linux-x64.tar.gz');
       this.setState({
-        dmg: find('.dmg'), msi: find('.msi'), apk: find('-android.apk'), ipa: find('-ios.ipa'),
+        // The phone apps have releases of their own; version.js names their newest files.
+        dmg: find('.dmg'), msi: find('.msi'), apk: phone.apk || find('-android.apk'), ipa: phone.ipa || find('-ios.ipa'),
         linuxX64, linuxArm: find('-linux-arm64.tar.gz'),
         // The install commands name this version, so only one that has the Linux files.
         ver: linuxX64 ? (release.tag_name || '').replace(/^v/, '') : '',

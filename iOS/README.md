@@ -329,9 +329,11 @@ processed. It needs these repository secrets:
 
 The app record for `dev.cedar.Cedar` must exist in App Store Connect before the first upload.
 
-- **Releases.** `release.yml` calls this workflow for every release, so each version reaches
-  TestFlight. `MARKETING_VERSION` in the project is the release version (the release checks it);
-  bump it with the Cargo.toml versions on the `release/<version>` branch.
+- **Releases.** `release.yml` calls this workflow when a release bumps the iOS version, so an
+  unchanged app is not uploaded again. `MARKETING_VERSION` in the project is the app's version:
+  it shares `major.minor` with the `Cargo.toml` version and counts its own patches, and is
+  released under the tag `ios-v<version>`. `scripts/bump-version.sh ios` bumps it (see
+  [Releasing](../desktop/README.md#releasing)).
 - **Build number.** The workflow sets `CURRENT_PROJECT_VERSION` to the UTC time of the build
   (`YYYYMMDD.HHMMSS`), so every upload is higher than the last, from a release or a manual run.
 - **Export compliance.** The app declares `ITSAppUsesNonExemptEncryption = NO` (it only uses
@@ -343,7 +345,7 @@ The app record for `dev.cedar.Cedar` must exist in App Store Connect before the 
 
 `.github/workflows/ipa.yml` (Actions → IPA → Run workflow) builds the app as an unsigned IPA,
 `Cedar-<version>-ios.ipa`, kept as the run's `ipa-ios` artifact; `release.yml` calls it for every
-release and attaches the IPA to the GitHub Release. It needs no secrets. Install it with
+release that bumps the iOS version and attaches the IPA to the GitHub Release `ios-v<version>`. It needs no secrets. Install it with
 [SideStore](https://sidestore.io) or AltStore, which sign it on the phone with your own Apple ID.
 The simplest way is to add the project's source, `https://hanneshapke.github.io/cedar/sidestore.json`,
 under **Sources → +**: it lists every release's IPA, so SideStore offers updates too (see

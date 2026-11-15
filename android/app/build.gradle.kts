@@ -11,12 +11,10 @@ plugins {
 val hasGoogleServices = file("google-services.json").exists()
 if (hasGoogleServices) apply(plugin = libs.plugins.google.services.get().pluginId)
 
-// The version is the release's: `-Pcedar.version=1.2.3` in CI, else the workspace version in the
-// repository's Cargo.toml, so the APK and the desktop app always carry the same number.
-val cedarVersion: String = (findProperty("cedar.version") as String?)
-    ?: Regex("""\[workspace\.package\][^\[]*?version\s*=\s*"([^"]+)"""")
-        .find(rootDir.resolve("../Cargo.toml").readText())?.groupValues?.get(1)
-    ?: "0.0.0"
+// The app's own version: `cedar.version` in android/gradle.properties (or `-Pcedar.version=1.2.3`).
+// It shares major.minor with the desktop app and counts its own patches, so a release that changes
+// nothing here doesn't ship a new APK (scripts/lib-versions.sh).
+val cedarVersion: String = (findProperty("cedar.version") as String?) ?: "0.0.0"
 
 /** major·1 000 000 + minor·1 000 + patch: higher for every release, so installed apps update. */
 fun versionCodeOf(version: String): Int {

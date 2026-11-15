@@ -1,47 +1,69 @@
 #!/usr/bin/env bash
-# Checks that every place carrying the release version agrees with the one given:
+# Checks the versions in the repository (scripts/lib-versions.sh lists where they live):
 #
-#   Cargo.toml                       [workspace.package] version (cedar, cedar-chat, pairing, llama, contrib-schema, contrib)
-#   desktop/Cargo.toml               the desktop app's version
-#   iOS/Cedar.xcodeproj              MARKETING_VERSION, in every build configuration
-#   docs/landing/version.js          the version the landing site and install guide show
+#   - cedar's three places agree: Cargo.toml, desktop/Cargo.toml and docs/landing/version.js
+#   - the iOS project has one MARKETING_VERSION for all its build configurations
+#   - each is a plain major.minor.patch within what the Windows installer and the Android
+#     versionCode can hold
+#   - cedar, Android and iOS share major.minor; only the patch differs between them
 #
-# Usage: scripts/check-version.sh <version>     e.g. scripts/check-version.sh 0.2.0
+# Usage: scripts/check-version.sh
 #
-# release-check.yml runs it on every pull request from a release/<version> branch, and
-# release.yml runs it again before building. Prints a GitHub Actions ::error:: line for each
-# mismatch and exits non-zero if there is any.
+# release-check.yml runs it on every pull request from a release/* branch, and release.yml runs
+# it again before building. Prints a GitHub Actions ::error:: line for each problem and exits
+# non-zero if there is any.
 set -euo pipefail
 
-VERSION=${1:?usage: $0 <version>}
 cd "$(dirname "$0")/.."
+. scripts/lib-versions.sh
 
 fail=0
-mismatch() { echo "::error file=$1::$2 is '$3', the release is '$VERSION'"; fail=1; }
+error() { echo "::error file=$1::$2"; fail=1; }
 
-ws=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cedar") | .version')
-app=$(cargo metadata --no-deps --format-version 1 --manifest-path desktop/Cargo.toml | jq -r '.packages[] | select(.name == "cedar-app") | .version')
-ios=$(grep -o 'MARKETING_VERSION = [^;]*' iOS/Cedar.xcodeproj/project.pbxproj | sed 's/.* = //' | sort -u | tr '\n' ' ' | sed 's/ $//')
-site=$(sed -nE "s/^window\.CEDAR_VERSION = '([^']*)';.*/\1/p" docs/landing/version.js)
+ws=$(workspace_version)
+app=$(desktop_version)
+site=$(site_version)
+android=$(android_version)
+ios=$(ios_version)
 
-echo "release:              $VERSION"
-echo "Cargo.toml workspace: $ws"
-echo "desktop/Cargo.toml:   $app"
-echo "iOS MARKETING_VERSION: $ios"
-echo "landing version.js:   $site"
+echo "cedar    Cargo.toml workspace:      $ws"
+echo "         desktop/Cargo.toml:        $app"
+echo "         landing version.js:        $site"
+echo "android  gradle.properties:         $android"
+echo "ios      MARKETING_VERSION:         $ios"
 
-[ "$ws" = "$VERSION" ]   || mismatch Cargo.toml "[workspace.package] version" "$ws"
-[ "$app" = "$VERSION" ]  || mismatch desktop/Cargo.toml "the desktop app's version" "$app"
-[ "$ios" = "$VERSION" ]  || mismatch iOS/Cedar.xcodeproj/project.pbxproj "MARKETING_VERSION" "$ios"
-[ "$site" = "$VERSION" ] || mismatch docs/landing/version.js "window.CEDAR_VERSION" "$site"
+[ "$app" = "$ws" ]  || error desktop/Cargo.toml "the desktop app's version is '$app', Cargo.toml's [workspace.package] version is '$ws'"
+[ "$site" = "$ws" ] || error docs/landing/version.js "window.CEDAR_VERSION is '$site', Cargo.toml's [workspace.package] version is '$ws'"
+
+# Plain major.minor.patch: Windows Installer takes nothing else (major and minor up to 255), and
+# the Android versionCode is major*1000000 + minor*1000 + patch (minor and patch under 1000).
+plain() {
+  local file=$1 what=$2 v=$3
+  if ! printf '%s' "$v" | grep -Eq "$SEMVER"; then
+    error "$file" "$what is '$v', not a plain major.minor.patch (no -beta suffix)"; return
+  fi
+  local major minor patch
+  IFS=. read -r major minor patch <<< "$v"
+  if [ "$major" -gt 255 ] || [ "$minor" -gt 255 ] || [ "$patch" -gt 999 ]; then
+    error "$file" "$what '$v' is too large: major and minor go up to 255 (MSI), patch to 999 (Android versionCode)"
+  fi
+}
+plain Cargo.toml "[workspace.package] version" "$ws"
+plain android/gradle.properties "cedar.version" "$android"
+plain iOS/Cedar.xcodeproj/project.pbxproj "MARKETING_VERSION" "$ios"
+
+# One Cedar: the phones may be patches behind or ahead of the desktop, never on another minor.
+line=${ws%.*}
+[ "${android%.*}" = "$line" ] || error android/gradle.properties "cedar.version '$android' is not a $line.x version like Cargo.toml's '$ws'"
+[ "${ios%.*}" = "$line" ]     || error iOS/Cedar.xcodeproj/project.pbxproj "MARKETING_VERSION '$ios' is not a $line.x version like Cargo.toml's '$ws'"
 
 # The pages must take the version from version.js rather than spell it out again.
 for page in docs/landing/index.html docs/landing/install.html; do
   if ! grep -q 'src="./version.js"' "$page"; then
-    echo "::error file=$page::does not load ./version.js, so its version can drift from the release"; fail=1
+    error "$page" "does not load ./version.js, so its version can drift from the release"
   fi
   if grep -nE "ver: *'[0-9]+\.[0-9]+\.[0-9]+'" "$page"; then
-    echo "::error file=$page::hard-codes a version; use window.CEDAR_VERSION from version.js"; fail=1
+    error "$page" "hard-codes a version; use window.CEDAR_VERSION from version.js"
   fi
 done
 

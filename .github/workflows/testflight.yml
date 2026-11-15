@@ -1,7 +1,8 @@
 # Archives the iOS app signed for distribution and uploads it to App Store Connect (TestFlight).
 # Run it by hand (Actions -> TestFlight -> Run workflow) for a build from the current commit;
-# release.yml calls it with the release's merge commit, so every release reaches TestFlight too.
-# The version is MARKETING_VERSION in the project, which release.yml checks against the release.
+# release.yml calls it with the merge commit of a release that bumps the iOS version, so every iOS
+# release reaches TestFlight and an unchanged app is not uploaded again.
+# The version is MARKETING_VERSION in the project (scripts/bump-version.sh ios).
 name: TestFlight
 on:
   workflow_dispatch:

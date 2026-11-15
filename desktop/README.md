@@ -716,29 +716,57 @@ app a menu bar app and allows the loopback HTTP the window uses.
 ## Releasing
 
 Releases are built by [`.github/workflows/release.yml`](../.github/workflows/release.yml) when a
-pull request from a branch named `release/<version>` is merged into `main`:
+pull request from a branch named `release/…` is merged into `main`.
 
-1. Set the version in four places: `[workspace.package] version` in the root `Cargo.toml` (cedar
-   and cedar-chat), `version` in `desktop/Cargo.toml` (the app, and the image tag it pulls),
-   `MARKETING_VERSION` in `iOS/Cedar.xcodeproj` and `window.CEDAR_VERSION` in
-   `docs/landing/version.js` (the version the landing page and install guide show).
-   `scripts/bump-version.sh` sets all four (and the lock files): the next patch version by
-   default, or `minor`, `major` or an exact version. `scripts/check-version.sh <version>` checks them.
-   It must be a plain `major.minor.patch` with major and minor up to 255 and patch up to 65535,
-   with no pre-release suffix like `-beta`: Windows Installer takes nothing else, and the workflow
-   refuses other versions up front.
-2. Open a pull request from `release/<version>` to `main` and merge it. The pull request fails
-   (`release-check.yml`) until all four versions match the branch.
-3. The workflow checks the versions match the branch and the tag is free, runs the tests, builds
-   and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>` and `cedar-browser:<version>` for
-   amd64 and arm64 (and `:latest`), builds the Apple Silicon DMG and the x64 MSI, and creates
-   the GitHub Release `v<version>` with them, a `checksums.txt`, the signed update bundles
-   (`Cedar-<version>-apple-silicon.app.tar.gz` and the MSI, each with a `.sig`) and
-   `latest.json`, which installed apps read to find the update (see [Updates](#updates)).
+Cedar is released as three platforms. They share `major.minor` and count patches on their own,
+so a release only ships the platforms it changes: a desktop fix doesn't put an unchanged phone
+app through TestFlight and review again, and `0.11.2` on the desktop next to `0.11.0` on a phone
+is still the same Cedar 0.11.
 
-*Run workflow* in the Actions tab builds everything for a version from the current commit as
-artifacts, without a tag or release, to try the pipeline. The images are pushed under that
-version too.
+| Platform | What it is | Version | Tag |
+| --- | --- | --- | --- |
+| `cedar` | the servers, the desktop app, the images, the landing site | `Cargo.toml`, `desktop/Cargo.toml`, `docs/landing/version.js` | `v<version>` |
+| `android` | the Android app | `cedar.version` in `android/gradle.properties` | `android-v<version>` |
+| `ios` | the iOS app | `MARKETING_VERSION` in `iOS/Cedar.xcodeproj` | `ios-v<version>` |
+
+1. Bump the versions with `scripts/bump-version.sh` (it also updates the lock files):
+
+   ```sh
+   scripts/bump-version.sh               # the next patch of every platform that changed since its last release
+   scripts/bump-version.sh patch cedar   # the desktop app and servers only
+   scripts/bump-version.sh android ios   # both phone apps ("mobile" is short for that)
+   scripts/bump-version.sh minor         # 0.10.x -> 0.11.0, always on every platform (so is major)
+   ```
+
+   Without a platform it looks at what changed since each platform's last release tag: `iOS/` for
+   ios, `android/` for android, and the rest of the code for cedar (not `docs/`, `bench/`,
+   `examples/`, `.github/` or Markdown files). `scripts/check-version.sh` checks the result: cedar's
+   three places agree, all platforms are on the same `major.minor`, and each version is a plain
+   `major.minor.patch` with major and minor up to 255 and patch up to 999, with no pre-release
+   suffix like `-beta` (Windows Installer and the Android `versionCode` take nothing else).
+2. Commit on the branch the script names (`release/0.10.1`, or `release/android-0.10.1` for a
+   phone app alone), open a pull request to `main` and merge it. The pull request fails
+   (`release-check.yml`) until the versions fit together, and its *Release check* run lists in its
+   summary which platforms merging it releases.
+3. The workflow releases every platform whose version has no tag yet
+   (`scripts/release-plan.sh`), each as a GitHub Release of its own:
+   - **cedar**: runs the tests, builds and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>`
+     and `cedar-browser:<version>` for amd64 and arm64 (and `:latest`), builds the Apple Silicon
+     DMG, the x64 MSI and the Linux tarballs, and creates `v<version>` with them, a
+     `checksums.txt`, the signed update bundles (`Cedar-<version>-apple-silicon.app.tar.gz` and
+     the MSI, each with a `.sig`) and `latest.json`, which installed apps read to find the update
+     (see [Updates](#updates)).
+   - **android**: builds the signed APK and creates `android-v<version>` with it.
+   - **ios**: uploads the app to TestFlight, builds the unsigned IPA and creates `ios-v<version>`
+     with it.
+
+   Only `v<version>` is ever GitHub's *latest* release: the desktop and Linux updaters, the chat's
+   update banner and the landing site read it. The landing site links the newest APK and IPA,
+   whichever release they are in.
+
+*Run workflow* in the Actions tab builds the platforms you choose from the current commit as
+artifacts, without a tag or release, to try the pipeline. The images are pushed under the
+version in `Cargo.toml` too.
 
 The dmg and msi jobs start from Rust caches that
 [`release-cache.yml`](../.github/workflows/release-cache.yml) fills on `main`: a cache saved by

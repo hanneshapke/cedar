@@ -7,7 +7,7 @@ name: Android
 #
 # A build without the ANDROID_GOOGLE_SERVICES_JSON secret (a fork's pull request, say) leaves FCM
 # out and still passes; the app then offers ntfy (UnifiedPush) only. The signed release APK is built
-# by release.yml; the release-apk job below builds it with the same secrets on every push to main, to test them.
+# by release.yml when a release bumps the Android version; the release-apk job below builds it with the same secrets on every push to main, to test them.
 on:
   push:
     branches: [main]

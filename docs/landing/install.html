@@ -201,7 +201,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
   const SOURCE = new URL('sidestore.json', location.href).href;
   const ADD_SOURCE = 'sidestore://source?url=' + encodeURIComponent(SOURCE);
   // Filled in from GitHub once the latest release answers; until then the buttons go to the releases page.
-  const release = { ver: window.CEDAR_VERSION, dmg: '', msi: '', apk: '', ipa: '', 'linux-x64': '', 'linux-arm64': '' };
+  const release = { ver: window.CEDAR_VERSION, dmg: '', msi: '', apk: (window.CEDAR_DOWNLOADS || {}).apk || '', ipa: (window.CEDAR_DOWNLOADS || {}).ipa || '', 'linux-x64': '', 'linux-arm64': '' };
   // The first release whose setup window installs Docker on a Mac, and Tailscale on a Mac and
   // Windows (CHANGELOG.md). Until the latest release is at least this one, the steps say to
   // install them by hand. An Intel Mac builds from main, so it has them already.
@@ -1079,6 +1079,10 @@ ol.setup strong{color:var(--ink);font-weight:600}
         else if (n.endsWith('-linux-arm64.tar.gz')) release['linux-arm64'] = u;
       }
       if (release['linux-x64'] && rel.tag_name) release.ver = rel.tag_name.replace(/^v/, '');
+      // The phone apps have releases of their own; version.js names their newest files.
+      const phone = window.CEDAR_DOWNLOADS || {};
+      if (phone.apk) release.apk = phone.apk;
+      if (phone.ipa) release.ipa = phone.ipa;
       render();
     })
     .catch(() => { /* offline or rate limited: keep the releases page */ });

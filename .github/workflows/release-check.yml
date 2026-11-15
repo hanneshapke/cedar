@@ -1,8 +1,10 @@
 name: Release check
 
-# Fails a pull request from a release/<version> branch until every version in the repository
-# matches <version>: both Cargo.toml versions, the iOS app's MARKETING_VERSION and the version
-# the landing site shows (docs/landing/version.js). See scripts/check-version.sh.
+# Fails a pull request from a release/* branch until the versions in the repository fit together
+# (scripts/check-version.sh: Cargo.toml, desktop/Cargo.toml and docs/landing/version.js agree, and
+# the Android and iOS apps are on the same major.minor) and at least one platform has a version
+# that is not released yet. The run's summary lists what merging the pull request will release
+# (scripts/release-plan.sh), so a phone app that was not meant to ship shows up before it does.
 # Make "Release check / versions" a required status check on main so a mismatch can't be merged.
 on:
   pull_request:
@@ -24,9 +26,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: The versions fit together
+        run: scripts/check-version.sh
 
-      - name: Versions match the release branch
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: scripts/check-version.sh "${HEAD_REF#release/}"
+      - name: What merging this releases
+        run: |
+          set -eu
+          scripts/release-plan.sh > plan.txt
+          {
+            echo "### Merging this pull request releases"
+            echo
+            echo "| Platform | Version | Released |"
+            echo "| --- | --- | --- |"
+            for p in cedar android ios; do
+              echo "| $p | $(sed -n "s/^${p}_version=//p" plan.txt) | $(sed -n "s/^$p=//p" plan.txt | sed 's/true/**yes**/; s/false/no, unchanged/') |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -qx 'any=false' plan.txt; then
+            echo "::error::every version here is released already: bump the platforms to release with scripts/bump-version.sh"; exit 1
+          fi
