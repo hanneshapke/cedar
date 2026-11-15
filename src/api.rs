@@ -133,6 +133,7 @@ impl AppState {
             store: store.clone(),
             tool_timeout: cfg.tool_timeout,
             tool_output_max_bytes: cfg.tool_output_max_bytes,
+            run_timeout: cfg.run_timeout,
             integrations: integrations.clone(),
             pdf_preview_pages: cfg.pdf_preview_pages,
             memories: cfg.memory.then(|| memories.clone()),

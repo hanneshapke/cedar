@@ -49,7 +49,9 @@ async fn a_small_window_shapes_the_request() {
     assert!(max < 16_384, "{max}");
     let system = first["system"].as_str().unwrap();
     assert!(system.contains("context window is small"), "{system}");
-    assert!(system.contains("The current date and time is"), "{system}");
+    // The date heads cedar's note, right after the client's own prompt.
+    let date = system.find("Today is ").expect("the date is given");
+    assert!(date < system.find("The sandbox").unwrap(), "{system}");
     // Only the tools the request seems to need are offered.
     let names: Vec<&str> = first["tools"]
         .as_array()
@@ -143,4 +145,40 @@ async fn a_growing_conversation_is_cut_down_to_fit() {
     }
     let events = app.events(KEY_A, &id, None).await;
     assert!(events.iter().any(|e| e.event == "context.trimmed"), "older results were cut down");
+}
+
+#[tokio::test]
+async fn a_tool_that_keeps_failing_is_not_called_a_third_time() {
+    // Port 1 refuses connections: a temporary failure, as a rate-limited server is.
+    let down = json!({ "url": "http://127.0.0.1:1/" });
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(reply(
+                vec![
+                    json!({ "type": "tool_use", "id": "a", "name": "fetch_url", "input": down }),
+                    json!({ "type": "tool_use", "id": "b", "name": "bash", "input": { "command": "echo hi" } }),
+                ],
+                "tool_use",
+            )),
+            Step::Reply(tool_use("c", "fetch_url", down.clone())),
+            Step::Reply(tool_use("d", "fetch_url", down.clone())),
+            Step::Reply(text("done")),
+        ],
+        &[("WEB_FETCH_ALLOW_PRIVATE", "on")],
+    )
+    .await;
+    let id = id_of(&app.create_run(KEY_A, "read the page").await);
+    app.wait_status(KEY_A, &id, "completed").await;
+    let requests = app.llm.requests();
+    // Results come back in the order of the calls.
+    let first: Vec<&str> = requests[1]["messages"][2]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|b| b["tool_use_id"].as_str())
+        .collect();
+    assert_eq!(first, ["a", "b"]);
+    let third = requests[3]["messages"].as_array().unwrap().last().unwrap()["content"][0].clone();
+    let text = third["content"].as_str().unwrap();
+    assert!(text.starts_with("not called: fetch_url failed 2 times"), "{text}");
 }

@@ -29,6 +29,9 @@ pub const MIN_REPLY_TOKENS: u32 = 1_024;
 const MIN_TOOL_OUTPUT_BYTES: usize = 4 * 1024;
 /// What an earlier tool result is cut to once the conversation no longer fits, in characters.
 const OLD_RESULT_CHARS: usize = 1_500;
+/// When a request has to be cut, it is cut to this share of the limit (in percent), so the next
+/// few turns fit beside it without cutting anything new.
+pub const REFIT_PERCENT: usize = 70;
 /// What the newest tool results may be cut to at the most, in characters.
 const NEW_RESULT_MIN_CHARS: usize = 2_000;
 
@@ -180,24 +183,60 @@ pub fn size(messages: &[Value]) -> usize {
     messages.iter().map(|m| m.to_string().len()).sum()
 }
 
+/// The tool results a run has cut, by `tool_use_id`, with how many characters each kept. A cut
+/// is made again the same way on every later request, from the stored result, so what was sent
+/// before stays the same text and the model server can reuse what it computed for it.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Cuts(std::collections::HashMap<String, usize>);
+
+impl Cuts {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn keep(&mut self, id: &str, chars: usize) {
+        let kept = self.0.entry(id.to_string()).or_insert(chars);
+        *kept = (*kept).min(chars);
+    }
+
+    /// `messages` with these cuts made.
+    pub fn apply(&self, messages: &[Value]) -> Vec<Value> {
+        let mut out = messages.to_vec();
+        for message in &mut out {
+            if let Some(blocks) = message["content"].as_array_mut() {
+                for block in blocks.iter_mut().filter(|b| b["type"] == "tool_result") {
+                    if let Some(&keep) = block["tool_use_id"].as_str().and_then(|id| self.0.get(id)) {
+                        block["content"] = Value::String(cut(&result_text(block), keep));
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 /// What [`fit`] did.
 #[derive(Debug, Default, PartialEq)]
 pub struct Fitted {
     pub messages: Vec<Value>,
-    /// Tool results that were cut down.
+    /// Tool results that were cut down by this call.
     pub trimmed: usize,
     /// Messages left out from the start of the conversation.
     pub dropped: usize,
+    /// Every cut, the earlier ones included: what the next request starts from.
+    pub cuts: Cuts,
 }
 
-/// `messages` cut down to fit in `max_bytes`: earlier tool results to a short head each, then the
-/// newest ones (the largest first, never below a floor), then the oldest messages after the
-/// first, which carries the task. Unchanged when they fit.
-pub fn fit(messages: &[Value], max_bytes: usize) -> Fitted {
-    let mut out: Vec<Value> = messages.to_vec();
+/// `messages` (as stored) cut down to fit in `max_bytes`, starting from the `earlier` cuts: then
+/// earlier tool results to a short head each, then the newest ones (the largest first, never
+/// below a floor), then the oldest messages after the first, which carries the task. Every cut is
+/// made from the stored text, so the same cut always gives the same text.
+pub fn fit(messages: &[Value], max_bytes: usize, earlier: &Cuts) -> Fitted {
+    let mut cuts = earlier.clone();
+    let mut out = cuts.apply(messages);
     let mut used = size(&out);
     if used <= max_bytes {
-        return Fitted { messages: out, ..Fitted::default() };
+        return Fitted { messages: out, cuts, ..Fitted::default() };
     }
     let mut trimmed = 0;
     // The newest message's tool results are what the model is about to read; they are cut last.
@@ -205,18 +244,18 @@ pub fn fit(messages: &[Value], max_bytes: usize) -> Fitted {
         .iter()
         .rposition(has_tool_results)
         .filter(|i| *i + 1 == out.len());
-    for (i, message) in out.iter_mut().enumerate() {
+    for i in 0..out.len() {
         if used <= max_bytes {
             break;
         }
         if Some(i) == newest {
             continue;
         }
-        let before = message.to_string().len();
-        let n = cut_results(message, OLD_RESULT_CHARS);
+        let before = out[i].to_string().len();
+        let n = cut_results(&mut out[i], &messages[i], OLD_RESULT_CHARS, &mut cuts);
         if n > 0 {
             trimmed += n;
-            used = used - before + message.to_string().len();
+            used = used - before + out[i].to_string().len();
         }
     }
     if let Some(i) = newest {
@@ -228,9 +267,11 @@ pub fn fit(messages: &[Value], max_bytes: usize) -> Fitted {
             let excess = used - max_bytes;
             let keep = len.saturating_sub(excess + 200).max(NEW_RESULT_MIN_CHARS);
             let before = out[i].to_string().len();
-            let block = &mut out[i]["content"][b];
-            let text = result_text(block);
-            block["content"] = Value::String(cut(&text, keep));
+            let original = &messages[i]["content"][b];
+            out[i]["content"][b]["content"] = Value::String(cut(&result_text(original), keep));
+            if let Some(id) = original["tool_use_id"].as_str() {
+                cuts.keep(id, keep);
+            }
             trimmed += 1;
             let after = out[i].to_string().len();
             if after >= before {
@@ -262,9 +303,10 @@ pub fn fit(messages: &[Value], max_bytes: usize) -> Fitted {
         let last = out.len() - 1;
         let n = out[last]["content"].as_array().map_or(0, |b| b.len()).max(1);
         let each = (max_bytes.saturating_sub(used - out[last].to_string().len()) / n).max(LAST_RESORT_CHARS);
-        trimmed += cut_results(&mut out[last], each);
+        let original = messages.last().expect("not empty");
+        trimmed += cut_results(&mut out[last], original, each, &mut cuts);
     }
-    Fitted { messages: out, trimmed, dropped }
+    Fitted { messages: out, trimmed, dropped, cuts }
 }
 
 /// What the newest tool results are cut to when nothing else is left to cut, in characters.
@@ -276,16 +318,23 @@ fn has_tool_results(message: &Value) -> bool {
         .is_some_and(|blocks| blocks.iter().any(|b| b["type"] == "tool_result"))
 }
 
-/// Cut every tool result of `message` longer than `max_chars`; returns how many were cut.
-fn cut_results(message: &mut Value, max_chars: usize) -> usize {
-    let Some(blocks) = message["content"].as_array_mut() else {
+/// Cut every tool result of `message` that is longer than `max_chars`, from the stored text in
+/// `original` (the same message as stored); returns how many were cut.
+fn cut_results(message: &mut Value, original: &Value, max_chars: usize, cuts: &mut Cuts) -> usize {
+    let (Some(blocks), Some(stored)) = (message["content"].as_array_mut(), original["content"].as_array()) else {
         return 0;
     };
     let mut n = 0;
-    for block in blocks.iter_mut().filter(|b| b["type"] == "tool_result") {
-        let text = result_text(block);
-        if text.chars().count() > max_chars || !block["content"].is_string() {
-            block["content"] = Value::String(cut(&text, max_chars));
+    for (block, stored) in blocks.iter_mut().zip(stored).filter(|(b, _)| b["type"] == "tool_result") {
+        let shown = result_text(block);
+        // A result already cut shows its note too, so it is measured by what it kept.
+        let kept = block["tool_use_id"].as_str().and_then(|id| cuts.0.get(id)).copied();
+        let long = kept.unwrap_or_else(|| shown.chars().count()) > max_chars;
+        if long || !block["content"].is_string() {
+            block["content"] = Value::String(cut(&result_text(stored), max_chars));
+            if let Some(id) = stored["tool_use_id"].as_str() {
+                cuts.keep(id, max_chars);
+            }
             n += 1;
         }
     }
@@ -369,7 +418,7 @@ mod tests {
     #[test]
     fn what_fits_is_left_alone() {
         let m = convo("old", &["x", "y"]);
-        let f = fit(&m, 1_000_000);
+        let f = fit(&m, 1_000_000, &Cuts::default());
         assert_eq!(f.messages, m);
         assert_eq!((f.trimmed, f.dropped), (0, 0));
     }
@@ -377,7 +426,7 @@ mod tests {
     #[test]
     fn earlier_results_go_first() {
         let m = convo(&"o".repeat(20_000), &[&"n".repeat(5_000), "short"]);
-        let f = fit(&m, 10_000);
+        let f = fit(&m, 10_000, &Cuts::default());
         assert!(size(&f.messages) <= 10_000, "{}", size(&f.messages));
         assert_eq!(f.dropped, 0);
         let old = f.messages[2]["content"][0]["content"].as_str().unwrap();
@@ -389,7 +438,7 @@ mod tests {
     #[test]
     fn the_largest_new_result_is_cut_next() {
         let m = convo("old", &[&"n".repeat(30_000), &"s".repeat(3_000)]);
-        let f = fit(&m, 12_000);
+        let f = fit(&m, 12_000, &Cuts::default());
         assert!(size(&f.messages) <= 12_000, "{}", size(&f.messages));
         let big = f.messages[4]["content"][0]["content"].as_str().unwrap();
         assert!(big.contains("cut to fit"));
@@ -399,7 +448,7 @@ mod tests {
     #[test]
     fn old_messages_are_dropped_last_but_never_the_newest_exchange() {
         let m = convo(&"o".repeat(2_000), &[&"n".repeat(50_000), &"s".repeat(50_000)]);
-        let f = fit(&m, 3_000);
+        let f = fit(&m, 3_000, &Cuts::default());
         assert_eq!(f.dropped, 2);
         assert_eq!(f.messages[0], m[0]);
         assert!(f.messages[1]["content"].as_str().unwrap().contains("left out"));
@@ -408,6 +457,28 @@ mod tests {
         let results = f.messages[3]["content"].as_array().unwrap();
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r["content"].as_str().unwrap().contains("cut to fit")));
+    }
+
+    #[test]
+    fn a_cut_is_made_the_same_way_on_later_requests() {
+        let m = convo(&"o".repeat(20_000), &[&"n".repeat(5_000), "short"]);
+        let first = fit(&m, 10_000, &Cuts::default());
+        assert!(!first.cuts.is_empty());
+        // The next request has one more exchange; what was cut before is sent as before.
+        let mut longer = m.clone();
+        longer.push(json!({ "role": "assistant", "content": [{ "type": "tool_use", "id": "d", "name": "t", "input": {} }] }));
+        longer.push(json!({ "role": "user", "content": [result("d", "more")] }));
+        let applied = first.cuts.apply(&longer);
+        assert_eq!(applied[..5], first.messages[..5]);
+        let second = fit(&longer, 1_000_000, &first.cuts);
+        assert_eq!(second.messages[..5], first.messages[..5]);
+        assert_eq!(second.trimmed, 0);
+        // Cutting further starts from the stored text, not from the cut one.
+        let tighter = fit(&longer, 3_000, &first.cuts);
+        let text = tighter.messages.iter().flat_map(|m| m["content"].as_array().cloned().unwrap_or_default())
+            .filter_map(|b| b["content"].as_str().map(String::from)).collect::<Vec<_>>().join("");
+        assert_eq!(text.matches("cut to fit").count(), text.matches("more characters").count());
+        assert!(!text.contains("cut to fit the model's context window; call the tool again (for fetch_url, with start) if you need them]\n[…"));
     }
 
     #[test]

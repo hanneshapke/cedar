@@ -65,6 +65,9 @@ pub struct AgentEnv {
     pub memory_consolidate_after: u32,
     /// What owners keep as records across conversations; `None` when records are turned off.
     pub records: Option<Records>,
+    /// How long a run may take (time spent waiting for the user not counted); the model is told
+    /// when little of it is left (see [`time_note`]).
+    pub run_timeout: Duration,
 }
 
 #[derive(Debug)]
@@ -193,11 +196,6 @@ pub async fn run_agent(
         note.push(' ');
         note.push_str(&directive);
     }
-    // So the model needs no call to learn it, and doesn't search for last year's news.
-    note.push_str(&format!(
-        " The current date and time is {} UTC.",
-        Utc::now().format("%Y-%m-%d %H:%M")
-    ));
     if let Some(window) = budget.window().filter(|_| budget.is_small()) {
         note.push(' ');
         note.push_str(&context::small_window_note(window));
@@ -237,7 +235,17 @@ pub async fn run_agent(
         note.push_str("\n\n");
         note.push_str(&memory::note(&recall, run.interactive, records_on));
     }
-    let mut system = with_note(&run.system, &note);
+    // At the head of cedar's note, where the model can't miss it: so it needs no call to learn
+    // the date, and searches for this year's news rather than the year its training ended. The
+    // client's own prompt stays first, so the start of every request stays the same.
+    let now = Utc::now();
+    let date = format!(
+        "Today is {} and the time is {} UTC. Use this date, and this year, for anything \
+         recent: searches, date filters, \"the last 24 hours\".",
+        now.format("%A, %Y-%m-%d"),
+        now.format("%H:%M")
+    );
+    let mut system = with_note(&run.system, &with_note(&date, &note));
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
     let attachments = env.store.list_attachments(run.id).await?;
@@ -307,6 +315,9 @@ pub async fn run_agent(
 
     // The system prompt and tools are the same in every request; only the messages grow.
     let fixed_bytes = system.len() + serde_json::to_string(&tool_defs).map_or(0, |t| t.len());
+    let mut breaker = Breaker::default();
+    let mut cuts = context::Cuts::default();
+    let run_started = Instant::now();
     for turn in 1..=run.max_turns {
         // Looked up each turn, so an admin's change applies to the next call.
         budget.set_max_reply(max_tokens(env, run));
@@ -317,10 +328,15 @@ pub async fn run_agent(
         // less of the conversation; a second one ends the run as failed.
         let mut tight = false;
         let resp = loop {
+            // What was cut before is cut the same way again, so the start of the request stays
+            // the same text and the server can reuse its cache for it.
+            let applied = (!cuts.is_empty()).then(|| cuts.apply(&messages));
+            let current: &[Value] = applied.as_deref().unwrap_or(&messages);
             let fitted = match budget.message_bytes(fixed_bytes, tight) {
-                Some(max) if context::size(&messages) > max => {
-                    let fitted = context::fit(&messages, max);
-                    let before = budget.estimate(fixed_bytes + context::size(&messages));
+                Some(max) if context::size(current) > max => {
+                    // Down to well below the limit, so the next turns fit without new cuts.
+                    let fitted = context::fit(&messages, max * context::REFIT_PERCENT / 100, &cuts);
+                    let before = budget.estimate(fixed_bytes + context::size(current));
                     let after = budget.estimate(fixed_bytes + context::size(&fitted.messages));
                     let window = budget.window().unwrap_or_default();
                     events
@@ -329,11 +345,12 @@ pub async fn run_agent(
                             context::trimmed_event(turn, before, after, &fitted, window),
                         )
                         .await?;
+                    cuts = fitted.cuts.clone();
                     Some(fitted)
                 }
                 _ => None,
             };
-            let sent: &[Value] = fitted.as_ref().map_or(&messages, |f| &f.messages);
+            let sent: &[Value] = fitted.as_ref().map_or(current, |f| &f.messages);
             let sent_bytes = fixed_bytes + context::size(sent);
             let req = MessageRequest {
                 model: &run.model,
@@ -414,31 +431,44 @@ pub async fn run_agent(
                 let ctx = &turn_ctx;
                 let mut results = Vec::with_capacity(tool_calls.len());
                 let mut asked = Vec::new();
-                for block in tool_calls {
-                    if offers_plan && block["name"] == plan::TOOL {
-                        let result =
-                            propose_plan(env, run, &mut planned, events, cancel, block).await?;
-                        results.push(result);
-                        continue;
+                // Plan proposals are answered where they stand; the calls between them run in
+                // groups (see [`execute_tool_calls`]).
+                let mut pending: Vec<&Value> = Vec::new();
+                let mut calls = tool_calls.into_iter().peekable();
+                while let Some(block) = calls.next() {
+                    let proposal = offers_plan && block["name"] == plan::TOOL;
+                    if !proposal {
+                        pending.push(block);
                     }
-                    let result =
-                        execute_tool_call(env, run, &tools, ctx, &mut sources, events, cancel, block)
-                            .await?;
-                    // A tool that asked the model something (search_products, plan_trip) counts toward the turn.
-                    if let Some(model) = &ctx.model {
-                        let used = model.take_usage();
-                        if used != Usage::default() {
-                            env.store.record_turn(run.id, turn, used).await?;
-                            let mut data = usage_event(env, run, turn, used);
-                            data["purpose"] = json!("tool");
-                            data["tool"] = block["name"].clone();
-                            events.emit(event::USAGE, data).await?;
+                    if proposal || calls.peek().is_none() {
+                        let done = execute_tool_calls(env, run, &tools, ctx, &mut sources, &mut breaker, events, cancel, &pending).await?;
+                        // A tool that asked the model something (search_products, plan_trip)
+                        // counts toward the turn.
+                        if let Some(model) = &ctx.model {
+                            let used = model.take_usage();
+                            if used != Usage::default() {
+                                env.store.record_turn(run.id, turn, used).await?;
+                                let mut data = usage_event(env, run, turn, used);
+                                data["purpose"] = json!("tool");
+                                let names: Vec<&str> = pending.iter().filter_map(|b| b["name"].as_str()).collect();
+                                data["tool"] = json!(names.join(", "));
+                                events.emit(event::USAGE, data).await?;
+                            }
+                        }
+                        for (block, result) in pending.drain(..).zip(done) {
+                            if block["name"] == ASK_USER && result["is_error"] != true {
+                                asked.extend(result["content"].as_str().and_then(question_text));
+                            }
+                            results.push(result);
                         }
                     }
-                    if block["name"] == ASK_USER && result["is_error"] != true {
-                        asked.extend(result["content"].as_str().and_then(question_text));
+                    if proposal {
+                        results.push(propose_plan(env, run, &mut planned, events, cancel, block).await?);
                     }
-                    results.push(result);
+                }
+                let elapsed = run_started.elapsed().saturating_sub(env.waits.paused(run.id));
+                if let Some(note) = time_note(elapsed, env.run_timeout, run.max_turns - turn) {
+                    results.push(json!({ "type": "text", "text": note }));
                 }
                 push_message(env, run, &mut messages, "user", Value::Array(results)).await?;
                 // The model asked the user something: stop here, and the answer starts the next run.
@@ -1174,53 +1204,173 @@ async fn blocked_connections(
     Ok(Some(note))
 }
 
-/// Execute one `tool_use` block and return the matching `tool_result` block.
+/// From this share of the run's time on, or with this few turns left, each turn's results end
+/// with a note on what is left (see [`time_note`]).
+const TIME_NOTE_SHARE: f64 = 0.6;
+const TIME_NOTE_TURNS: u32 = 3;
+
+/// The note that ends a turn's results once little of the run's time or turns is left, so the
+/// model writes its result from what it has rather than being stopped with nothing.
+pub fn time_note(elapsed: Duration, limit: Duration, turns_left: u32) -> Option<String> {
+    let late = !limit.is_zero() && elapsed.as_secs_f64() >= limit.as_secs_f64() * TIME_NOTE_SHARE;
+    if !late && turns_left > TIME_NOTE_TURNS {
+        return None;
+    }
+    let left = limit.saturating_sub(elapsed);
+    let minutes = left.as_secs().div_ceil(60).max(1);
+    Some(format!(
+        "[Time check: about {minutes} minute{} and {turns_left} turn{} are left before this run is \
+         stopped, and a stopped run delivers nothing. Stop gathering: produce the result now \
+         (write the files, give the answer) from what you have, and say what is missing.]",
+        if minutes == 1 { "" } else { "s" },
+        if turns_left == 1 { "" } else { "s" },
+    ))
+}
+
+/// How many temporary failures in a row (a rate limit, a server that is unavailable, a
+/// timeout) take a tool out of a run: calling it again only spends time.
+const BREAKER_FAILURES: u32 = 2;
+
+/// Which tools of a run keep failing for reasons a retry in the same run won't fix (see
+/// [`BREAKER_FAILURES`]). A tool that answered resets its count.
+#[derive(Default)]
+pub struct Breaker {
+    failures: std::collections::HashMap<String, u32>,
+}
+
+impl Breaker {
+    /// Why a call to `name` is not made, when it has failed too often.
+    pub fn refusal(&self, name: &str) -> Option<String> {
+        let n = *self.failures.get(name)?;
+        (n >= BREAKER_FAILURES).then(|| {
+            format!(
+                "not called: {name} failed {n} times in a row with temporary errors (rate \
+                 limited, unavailable or timing out), so it is left out for the rest of this run. \
+                 Don't call it again: use another source, or carry on without it and say in your \
+                 answer what is missing."
+            )
+        })
+    }
+
+    /// Count a call's outcome.
+    pub fn record(&mut self, name: &str, is_error: bool, output: &str) {
+        if is_error && is_temporary(output) {
+            *self.failures.entry(name.to_string()).or_default() += 1;
+        } else {
+            self.failures.remove(name);
+        }
+    }
+}
+
+/// Whether a tool's error looks temporary: rate limits, servers that are down, timeouts.
+pub fn is_temporary(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    [
+        "429", "502", "503", "504", "too many requests", "rate limit", "rate-limit",
+        "service unavailable", "bad gateway", "gateway timeout", "timed out", "timeout",
+        "couldn't reach", "could not reach", "connection refused", "connection reset",
+    ]
+    .iter()
+    .any(|m| lower.contains(m))
+}
+
+/// Whether a call must run on its own, in order: anything that works in the sandbox (files,
+/// code), the browser (one page), questions and plans, memory and records, downloads, and
+/// account tools that change something. Other calls of a turn (searches, pages, lookups) run at
+/// the same time.
+fn runs_alone(tools: &ToolView<'_>, name: &str) -> bool {
+    let group = tools.group(name);
+    matches!(group, "core" | "browser" | "ask_user" | "memory" | "records")
+        || name == "download_file"
+        || name == plan::TOOL
+        || crate::tools::writes(name)
+}
+
+/// A tool call that was approved (or refused) and announced, ready to run.
+struct Prepared<'b> {
+    block: &'b Value,
+    id: String,
+    name: String,
+    /// Why it isn't run: refused by the user or a rule, or taken out by the [`Breaker`].
+    refused: Option<String>,
+    since: SystemTime,
+}
+
+/// Approve (in an interactive run) and announce a call.
 #[allow(clippy::too_many_arguments)]
-async fn execute_tool_call(
+async fn prepare_call<'b>(
     env: &AgentEnv,
     run: &Run,
     tools: &ToolView<'_>,
     ctx: &ToolContext,
-    sources: &mut Sources,
+    breaker: &Breaker,
     events: &Emitter,
     cancel: &CancellationToken,
-    block: &Value,
-) -> Result<Value, AgentError> {
-    let id = block["id"].as_str().unwrap_or_default();
-    let name = block["name"].as_str().unwrap_or_default();
+    block: &'b Value,
+) -> Result<Prepared<'b>, AgentError> {
+    let id = block["id"].as_str().unwrap_or_default().to_string();
+    let name = block["name"].as_str().unwrap_or_default().to_string();
     let input = &block["input"];
-    // A call to a tool the run doesn't have fails below without running, so it needs no OK.
-    let refused = if tools.get(name).is_some() {
+    let mut refused = breaker.refusal(&name);
+    // A call to a tool the run doesn't have fails without running, so it needs no OK.
+    if refused.is_none() && tools.get(&name).is_some() {
         let reach = Reach::of(ctx.sandbox.runtime(), &env.sandbox);
-        approve(env, tools, &reach, run, events, cancel, id, name, input).await?
-    } else {
-        None
-    };
+        refused = approve(env, tools, &reach, run, events, cancel, &id, &name, input)
+            .await?
+            .map(String::from);
+    }
     events
         .emit(
             event::TOOL_CALL,
             json!({ "id": id, "name": name, "input": input }),
         )
         .await?;
+    Ok(Prepared { block, id, name, refused, since: SystemTime::now() })
+}
 
+/// Run a prepared call; the result and how long it took.
+async fn run_call(
+    tools: &ToolView<'_>,
+    ctx: &ToolContext,
+    cancel: &CancellationToken,
+    call: &Prepared<'_>,
+) -> Result<(Result<String>, Duration), AgentError> {
     let started = Instant::now();
-    let since = SystemTime::now();
-    let call = async {
-        if let Some(message) = refused {
-            return Err(anyhow!(message));
+    let work = async {
+        if let Some(message) = &call.refused {
+            return Err(anyhow!(message.clone()));
         }
         // A tool left out of the run's selection is as unknown as a made-up one.
-        match tools.get(name) {
-            Some(tool) => tool.call(ctx, input).await,
-            None => Err(anyhow!("unknown tool: {name}")),
+        match tools.get(&call.name) {
+            Some(tool) => tool.call(ctx, &call.block["input"]).await,
+            None => Err(anyhow!("unknown tool: {}", call.name)),
         }
     };
     let result = tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-        r = call => r,
+        r = work => r,
     };
+    Ok((result, started.elapsed()))
+}
 
+/// Turn a call's result into the `tool_result` block the model sees: refused connections noted,
+/// sources numbered, the `tool.result` event sent, the [`Breaker`] told.
+#[allow(clippy::too_many_arguments)]
+async fn finish_call(
+    env: &AgentEnv,
+    run: &Run,
+    tools: &ToolView<'_>,
+    ctx: &ToolContext,
+    sources: &mut Sources,
+    breaker: &mut Breaker,
+    events: &Emitter,
+    cancel: &CancellationToken,
+    call: &Prepared<'_>,
+    result: Result<String>,
+    took: Duration,
+) -> Result<Value, AgentError> {
+    let (id, name, input) = (call.id.as_str(), call.name.as_str(), &call.block["input"]);
     let (mut output, is_error) = match result {
         Ok(out) => (out, false),
         Err(e) if e.downcast_ref::<SandboxFatal>().is_some() => {
@@ -1229,15 +1379,18 @@ async fn execute_tool_call(
         // Errors go back to the model so it can recover.
         Err(e) => (format!("{e:#}"), true),
     };
-    if refused.is_none() && RUNS_CODE.contains(&name) && tools.get(name).is_some() {
+    if call.refused.is_none() {
+        breaker.record(name, is_error, &output);
+    }
+    if call.refused.is_none() && RUNS_CODE.contains(&name) && tools.get(name).is_some() {
         if let Some(note) =
-            blocked_connections(env, run, ctx, events, cancel, id, name, since).await?
+            blocked_connections(env, run, ctx, events, cancel, id, name, call.since).await?
         {
             output.push_str("\n\n");
             output.push_str(&note);
         }
     }
-    let mut data = json!({ "id": id, "output": output, "is_error": is_error, "duration_ms": started.elapsed().as_millis() as u64 });
+    let mut data = json!({ "id": id, "output": output, "is_error": is_error, "duration_ms": took.as_millis() as u64 });
     // The model sees the numbers it cites by; the event keeps the output as the tool wrote it
     // and lists the numbered sources beside it.
     let mut for_model = output;
@@ -1256,6 +1409,48 @@ async fn execute_tool_call(
     Ok(block)
 }
 
+/// Run a turn's calls (except plan proposals, which the caller handles): those that may run at
+/// the same time (see [`runs_alone`]) are run together, each of the others on its own, in the
+/// order the model gave. Results come back in that order.
+#[allow(clippy::too_many_arguments)]
+async fn execute_tool_calls(
+    env: &AgentEnv,
+    run: &Run,
+    tools: &ToolView<'_>,
+    ctx: &ToolContext,
+    sources: &mut Sources,
+    breaker: &mut Breaker,
+    events: &Emitter,
+    cancel: &CancellationToken,
+    blocks: &[&Value],
+) -> Result<Vec<Value>, AgentError> {
+    let mut results = Vec::with_capacity(blocks.len());
+    let mut i = 0;
+    while i < blocks.len() {
+        let alone = |b: &Value| runs_alone(tools, b["name"].as_str().unwrap_or_default());
+        let mut j = i + 1;
+        if !alone(blocks[i]) {
+            while j < blocks.len() && !alone(blocks[j]) {
+                j += 1;
+            }
+        }
+        let mut batch = Vec::with_capacity(j - i);
+        for block in &blocks[i..j] {
+            batch.push(prepare_call(env, run, tools, ctx, breaker, events, cancel, block).await?);
+        }
+        let ran = futures_util::future::join_all(batch.iter().map(|c| run_call(tools, ctx, cancel, c))).await;
+        for (call, outcome) in batch.iter().zip(ran) {
+            let (result, took) = outcome?;
+            results.push(
+                finish_call(env, run, tools, ctx, sources, breaker, events, cancel, call, result, took)
+                    .await?,
+            );
+        }
+        i = j;
+    }
+    Ok(results)
+}
+
 /// Append to the in-memory history sent to the API and to the stored copy.
 async fn push_message(
     env: &AgentEnv,
@@ -1272,6 +1467,39 @@ async fn push_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tool_that_keeps_failing_for_temporary_reasons_is_left_out() {
+        let mut b = Breaker::default();
+        let limited = "arxiv_search failed (exit status 1): arXiv's API is rate limiting or unavailable (HTTP 429)";
+        b.record("arxiv_search", true, limited);
+        assert!(b.refusal("arxiv_search").is_none(), "one failure is not enough");
+        b.record("arxiv_search", true, "couldn't reach arXiv's API (The read operation timed out)");
+        let refusal = b.refusal("arxiv_search").unwrap();
+        assert!(refusal.contains("Don't call it again"), "{refusal}");
+        // Other tools are not affected, and an answer resets the count.
+        assert!(b.refusal("fetch_url").is_none());
+        b.record("arxiv_search", false, "3 papers");
+        assert!(b.refusal("arxiv_search").is_none());
+        // A mistake in the call is not temporary: the model can fix it.
+        b.record("fetch_url", true, "missing url");
+        b.record("fetch_url", true, "missing url");
+        assert!(b.refusal("fetch_url").is_none());
+        assert!(is_temporary("arXiv answered 503 (Service Unavailable)"));
+        assert!(!is_temporary("unknown tool: frobnicate"));
+    }
+
+    #[test]
+    fn little_time_left_is_said() {
+        let limit = Duration::from_secs(600);
+        assert_eq!(time_note(Duration::from_secs(100), limit, 20), None);
+        let late = time_note(Duration::from_secs(400), limit, 20).unwrap();
+        assert!(late.contains("about 4 minutes and 20 turns"), "{late}");
+        let few = time_note(Duration::from_secs(10), limit, 1).unwrap();
+        assert!(few.contains("1 turn are") || few.contains("1 turn "), "{few}");
+        let over = time_note(Duration::from_secs(700), limit, 5).unwrap();
+        assert!(over.contains("about 1 minute and"), "{over}");
+    }
 
     #[test]
     fn the_environment_note_follows_the_system_prompt() {

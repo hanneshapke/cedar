@@ -38,6 +38,9 @@ MAX_AUTHORS, MAX_ABSTRACT, MAX_PDFS, PDF_PAUSE = 8, 1800, 5, 3
 SHORT_ABSTRACT = 400
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 MAX_PDF_BYTES = 50 << 20
+# arXiv holds a refused request open for half a minute or more; a search that takes longer than
+# this won't be answered in time to help.
+SEARCH_TIMEOUT = 20
 
 
 def whole(value, default, low, high):
@@ -147,14 +150,26 @@ def paper(entry):
     }
 
 
+def listing_hint(params):
+    """Where to read the newest papers when the API won't answer: arXiv's listing pages."""
+    cats = re.findall(r"cat:([\w.-]+)", params.get("search_query", "")) or ["cs.AI"]
+    pages = ", ".join(f"https://arxiv.org/list/{c}/new" for c in dict.fromkeys(cats))
+    return f"For the newest papers, read {pages} with fetch_url instead."
+
+
 def search(params):
     url = f"{API}?{urllib.parse.urlencode(params)}"
     try:
-        body = fetch(url)
+        body = fetch(url, timeout=SEARCH_TIMEOUT)
     except urllib.error.HTTPError as e:
+        if e.code == 429 or e.code >= 500:
+            # Not the query's fault, and asking again soon only makes it worse.
+            sys.exit(f"arXiv's API is rate limiting or unavailable (HTTP {e.code}); this is not "
+                     f"a problem with the query, so don't retry with another one in this run. "
+                     + listing_hint(params))
         sys.exit(f"arXiv answered {e.code} ({e.reason}); check the query and try again")
     except (urllib.error.URLError, TimeoutError) as e:
-        sys.exit(f"couldn't reach arXiv ({e}); try again in a little while")
+        sys.exit(f"couldn't reach arXiv's API ({e}); don't retry in this run. " + listing_hint(params))
     try:
         root = ET.fromstring(body)
     except ET.ParseError as e:

@@ -329,6 +329,25 @@ impl Tool for FetchUrl {
                 }
             }
         }
+        // A repository's releases page is mostly menus and download links; the API gives the
+        // tags, times and notes.
+        if let Some((owner, repo)) = github_releases(url) {
+            match github_releases_text(&self.0, &owner, &repo, ctx.timeout).await {
+                Ok(text) => {
+                    let page = Fetched {
+                        final_url: url.to_string(),
+                        content_type: "text/plain".into(),
+                        body: Vec::new(),
+                        truncated: false,
+                    };
+                    let title = format!("Releases · {owner}/{repo}");
+                    return Ok(format_page(&page, Some(&title), &text, start, ctx.max_output));
+                }
+                Err(e) => {
+                    tracing::info!(error = %format!("{e:#}"), "the GitHub API failed; reading the page instead");
+                }
+            }
+        }
         let page = self.0.get(url, MAX_PAGE_BYTES, true, ctx.timeout).await?;
         let kind = TextKind::of(&page.content_type, &page.body).ok_or_else(|| {
             anyhow!(
@@ -426,10 +445,13 @@ pub(crate) fn html_to_text(html: &[u8]) -> Result<String> {
 /// borders (box-drawing characters take three bytes and a token each) and the list of links
 /// cleaned up by [`clean_links`].
 fn page_text(html: &[u8], base: Option<&Url>) -> Result<String> {
-    let text = html2text::config::plain()
+    let config = html2text::config::plain()
         .no_link_wrapping()
         .no_table_borders()
-        .allow_width_overflow()
+        .allow_width_overflow();
+    // Menus, sidebars and the page's own header and footer, not an article's.
+    let config = config.add_css(PAGE_CHROME).context("hiding the page's menus")?;
+    let text = config
         .string_from_read(html, TEXT_WIDTH)
         .context("converting the page to text")?;
     let mut out = String::with_capacity(text.len());
@@ -443,6 +465,12 @@ fn page_text(html: &[u8], base: Option<&Url>) -> Result<String> {
     }
     Ok(clean_links(out.trim(), base))
 }
+
+/// What `fetch_url` leaves out of a page: navigation, sidebars, and the header and footer of the
+/// page itself (those of an article stay).
+const PAGE_CHROME: &str = "nav, aside, [role=navigation], [role=banner], [role=contentinfo], \
+    [role=complementary], body > header, body > footer, body > div > header, \
+    body > div > footer { display: none; }";
 
 /// A link target worth listing, made absolute against `base`: web links, and relative ones
 /// that look like a path or a file. Relative actions and bare words (`hide?id=1`, `login`,
@@ -546,6 +574,90 @@ fn renumber_line(line: &str, renumber: &std::collections::HashMap<String, Option
     }
     out.push_str(rest);
     out
+}
+
+/// The owner and repository when `url` is a GitHub repository's list of releases.
+fn github_releases(url: &str) -> Option<(String, String)> {
+    let u = Url::parse(url).ok()?;
+    if !matches!(u.host_str(), Some("github.com" | "www.github.com")) || u.query().is_some_and(|q| !q.is_empty()) {
+        return None;
+    }
+    let parts: Vec<&str> = u.path().trim_matches('/').split('/').collect();
+    match parts.as_slice() {
+        [owner, repo, "releases"] if !owner.is_empty() && !repo.is_empty() => {
+            Some((owner.to_string(), repo.to_string()))
+        }
+        _ => None,
+    }
+}
+
+/// How many releases the API is asked for, and how much of each one's notes is kept.
+const GITHUB_RELEASES: usize = 10;
+const RELEASE_NOTES_CHARS: usize = 700;
+
+async fn github_releases_text(client: &WebClient, owner: &str, repo: &str, timeout: Duration) -> Result<String> {
+    let api = format!("https://api.github.com/repos/{owner}/{repo}/releases?per_page={GITHUB_RELEASES}");
+    let page = client.get(&api, 4 * 1024 * 1024, false, timeout).await?;
+    let body: Value = serde_json::from_slice(&page.body).context("reading the GitHub API's answer")?;
+    format_releases(&body, owner, repo)
+}
+
+fn format_releases(body: &Value, owner: &str, repo: &str) -> Result<String> {
+    let releases = body.as_array().ok_or_else(|| anyhow!("the answer is not a list of releases"))?;
+    if releases.is_empty() {
+        return Ok(format!("{owner}/{repo} has no releases on GitHub."));
+    }
+    let mut out = format!(
+        "The {} newest releases of {owner}/{repo}, from the GitHub API (times in UTC):\n",
+        releases.len()
+    );
+    for r in releases {
+        let tag = r["tag_name"].as_str().unwrap_or("?");
+        let name = r["name"].as_str().map(str::trim).filter(|n| !n.is_empty() && *n != tag);
+        let mut flags = Vec::new();
+        if r["prerelease"] == true {
+            flags.push("pre-release");
+        }
+        if r["draft"] == true {
+            flags.push("draft");
+        }
+        out.push_str(&format!(
+            "\n## {tag}{}\npublished {}{}\n{}\n",
+            name.map(|n| format!(" — {n}")).unwrap_or_default(),
+            r["published_at"].as_str().unwrap_or("?").replace('T', " ").trim_end_matches('Z'),
+            if flags.is_empty() { String::new() } else { format!(" ({})", flags.join(", ")) },
+            r["html_url"].as_str().unwrap_or_default(),
+        ));
+        let notes = release_notes(r["body"].as_str().unwrap_or_default());
+        if !notes.is_empty() {
+            out.push('\n');
+            out.push_str(&notes);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+/// A release's notes without the lists of downloads (list items that are only a link, and the
+/// bold headings over them), cut to [`RELEASE_NOTES_CHARS`].
+fn release_notes(body: &str) -> String {
+    let mut lines: Vec<&str> = Vec::new();
+    for line in body.lines().map(str::trim_end) {
+        let t = line.trim_start();
+        let item = t.strip_prefix("* ").or_else(|| t.strip_prefix("- "));
+        let link_only = item.is_some_and(|i| i.starts_with('[') && i.contains("](") && i.trim_end().ends_with(')'));
+        let heading_only = t.starts_with("**") && t.ends_with(":**") && t.len() < 60;
+        if link_only || heading_only || (t.is_empty() && lines.last().is_none_or(|l| l.trim().is_empty())) {
+            continue;
+        }
+        lines.push(line);
+    }
+    let text = lines.join("\n").trim().to_string();
+    if text.chars().count() <= RELEASE_NOTES_CHARS {
+        return text;
+    }
+    let cut: String = text.chars().take(RELEASE_NOTES_CHARS).collect();
+    format!("{} […]", cut.trim_end())
 }
 
 /// Whether `url` is Hacker News's front page.
@@ -863,6 +975,41 @@ mod tests {
         // The same address is listed once, under its first number.
         assert_eq!(text.matches("https://ex.test/story").count(), 1, "{text}");
         assert!(text.contains("[again][1]"), "{text}");
+    }
+
+    #[test]
+    fn menus_sidebars_and_page_headers_are_left_out() {
+        let html = br#"<html><body><header><a href="/">Home</a> Products Pricing</header>
+            <nav><a href="/a">Docs</a></nav><main><article><header><h1>The story</h1></header>
+            <p>What happened.</p><footer>By Ann</footer></article></main>
+            <aside>Related links</aside><footer>Terms Privacy</footer></body></html>"#;
+        let text = page_text(html, None).unwrap();
+        assert!(text.contains("The story") && text.contains("What happened.") && text.contains("By Ann"), "{text}");
+        for chrome in ["Products", "Docs", "Related links", "Terms"] {
+            assert!(!text.contains(chrome), "{chrome} in {text}");
+        }
+    }
+
+    #[test]
+    fn github_releases_come_from_the_api() {
+        assert_eq!(
+            github_releases("https://github.com/ggml-org/llama.cpp/releases"),
+            Some(("ggml-org".into(), "llama.cpp".into()))
+        );
+        assert_eq!(github_releases("https://github.com/ggml-org/llama.cpp/releases/"), Some(("ggml-org".into(), "llama.cpp".into())));
+        assert_eq!(github_releases("https://github.com/ggml-org/llama.cpp/releases/tag/b1"), None);
+        assert_eq!(github_releases("https://github.com/ggml-org/llama.cpp"), None);
+        assert_eq!(github_releases("https://gitlab.com/a/b/releases"), None);
+        let body = json!([{
+            "tag_name": "b12391", "name": "b12391", "prerelease": true, "draft": false,
+            "published_at": "2026-11-15T04:09:00Z", "html_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b12391",
+            "body": "chat : allow tool calls inside reasoning blocks (#32271)\n\n**macOS/iOS:**\n* [macOS Apple Silicon (arm64)](https://x.test/a.zip)\n* [iOS XCFramework](https://x.test/b.zip)\n\n**Linux:**\n- [Ubuntu x64 (CPU)](https://x.test/c.zip)"
+        }]);
+        let text = format_releases(&body, "ggml-org", "llama.cpp").unwrap();
+        assert!(text.contains("## b12391\npublished 2026-11-15 04:09:00 (pre-release)\n"), "{text}");
+        assert!(text.contains("chat : allow tool calls inside reasoning blocks"), "{text}");
+        assert!(!text.contains("macOS") && !text.contains("Ubuntu") && !text.contains("x.test"), "{text}");
+        assert!(release_notes(&"word ".repeat(500)).ends_with("[…]"));
     }
 
     #[test]
