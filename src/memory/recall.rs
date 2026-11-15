@@ -431,6 +431,20 @@ pub fn select(
     budget_tokens: usize,
     now: DateTime<Utc>,
 ) -> Recall {
+    select_with(query, profile, items, budget_tokens, now, true)
+}
+
+/// Like [`select`]; with `whole` false a small store is not shown whole when there is a profile
+/// (which sums it up already): beyond the pinned rows only what matches the request is shown.
+pub fn select_with(
+    query: &str,
+    profile: Option<String>,
+    items: &[Memory],
+    budget_tokens: usize,
+    now: DateTime<Utc>,
+    whole: bool,
+) -> Recall {
+    let has_profile = profile.as_deref().is_some_and(|p| !p.trim().is_empty());
     let valid: Vec<&Memory> = items
         .iter()
         .filter(|m| m.is_active() && m.is_valid_at(now))
@@ -453,7 +467,7 @@ pub fn select(
             taken.insert(m.id);
         }
     }
-    let whole = about_user.len() <= CORE_ITEMS;
+    let whole = about_user.len() <= CORE_ITEMS && (whole || !has_profile);
     if whole {
         for m in &about_user {
             if taken.insert(m.id) {
@@ -525,16 +539,18 @@ pub fn select(
 }
 
 impl Memories {
-    /// What a run of `owner` is shown for `query`.
-    pub async fn recall(&self, owner: &str, query: &str) -> Result<Recall> {
+    /// What a run of `owner` is shown for `query`; `whole` lets a small store be shown whole
+    /// beside the profile (see [`select_with`]).
+    pub async fn recall(&self, owner: &str, query: &str, whole: bool) -> Result<Recall> {
         let items = self.active(owner).await?;
         let profile = self.profile(owner).await?.map(|p| p.text);
-        Ok(select(
+        Ok(select_with(
             query,
             profile,
             &items,
             self.limits.recall_tokens,
             Utc::now(),
+            whole,
         ))
     }
 

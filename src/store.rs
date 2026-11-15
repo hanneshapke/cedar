@@ -29,7 +29,7 @@ const NOTIFICATION_COLS: &str = "n.id, n.run_id, n.seq, r.status, r.stop_reason,
 
 const MODEL_COLS: &str =
     "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, max_tokens, \
-    is_default, price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, \
+    context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, \
     updated_at";
 
 pub(crate) fn now_ms() -> i64 {
@@ -98,6 +98,9 @@ fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
         multimodal: r.try_get("multimodal")?,
         max_tokens: u32::try_from(r.try_get::<i64, _>("max_tokens")?)
             .unwrap_or(crate::models::DEFAULT_MAX_TOKENS),
+        context_window: r
+            .try_get::<Option<i64>, _>("context_window")?
+            .and_then(|w| u32::try_from(w).ok()),
         is_default: r.try_get("is_default")?,
         price: match (
             r.try_get::<Option<f64>, _>("price_input_usd_per_m")?,
@@ -1030,13 +1033,13 @@ impl Store {
         }
         sqlx::query(
             "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
-             multimodal, max_tokens, is_default, price_input_usd_per_m, price_output_usd_per_m, \
+             multimodal, max_tokens, context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, \
              position, listed_models, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
              base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
              default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, \
-             max_tokens = excluded.max_tokens, is_default = excluded.is_default, price_input_usd_per_m = excluded.price_input_usd_per_m, \
+             max_tokens = excluded.max_tokens, context_window = excluded.context_window, is_default = excluded.is_default, price_input_usd_per_m = excluded.price_input_usd_per_m, \
              price_output_usd_per_m = excluded.price_output_usd_per_m, listed_models = excluded.listed_models, \
              updated_at = excluded.updated_at",
         )
@@ -1048,6 +1051,7 @@ impl Store {
         .bind(&entry.default_reasoning)
         .bind(entry.multimodal)
         .bind(i64::from(entry.max_tokens))
+        .bind(entry.context_window.map(i64::from))
         .bind(is_default)
         .bind(entry.price.map(|p| p.input_usd_per_m))
         .bind(entry.price.map(|p| p.output_usd_per_m))

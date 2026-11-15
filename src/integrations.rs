@@ -17,7 +17,7 @@ use crate::config::{
     Config, GoogleClientConfig, LEGACY_DEFAULT_LLM_BASE_URL, LEGACY_DEFAULT_MODEL,
 };
 use crate::error::AppError;
-use crate::llm::{accepts_images, list_models, ChatCompletionsClient, ImageProbe, LlmClient, LlmRouter};
+use crate::llm::{accepts_images, detect_context_window, list_models, ChatCompletionsClient, ImageProbe, LlmClient, LlmRouter};
 use crate::mcp::http_client;
 use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
@@ -101,6 +101,12 @@ pub struct ModelSpec {
     /// The most tokens one reply may take, a reasoning model's thinking included (1 to
     /// 1000000). Absent keeps the saved value (16384 for a new entry).
     pub max_tokens: Option<u32>,
+    /// The model's context window in tokens, prompt and reply together (2048 to 10000000), as
+    /// its server is set up. Absent keeps the saved value, or for a new entry or a changed model
+    /// or address asks the server; `null` asks the server again (and leaves it unknown if the
+    /// server doesn't say).
+    #[serde(default, deserialize_with = "present")]
+    pub context_window: Option<Option<u32>>,
     /// Make this the model runs get when they name none. Absent keeps it as it is.
     pub is_default: Option<bool>,
     /// What its tokens cost, for the cost shown with a run's usage. Absent keeps the saved price;
@@ -469,6 +475,7 @@ impl Integrations {
                 default_reasoning: None,
                 multimodal: false,
                 max_tokens: crate::models::DEFAULT_MAX_TOKENS,
+                context_window: None,
                 is_default: true,
                 price: None,
                 position: 0,
@@ -596,6 +603,20 @@ impl Integrations {
             }
             (None, _, _) => existing.as_ref().is_some_and(|e| e.multimodal),
         };
+        let context_window = match (spec.context_window, unchanged) {
+            (Some(Some(w)), _) => {
+                if !(crate::models::MIN_CONTEXT_WINDOW..=crate::models::MAX_CONTEXT_WINDOW).contains(&w) {
+                    return Err(AppError::BadRequest(format!(
+                        "context_window must be between {} and {}",
+                        crate::models::MIN_CONTEXT_WINDOW,
+                        crate::models::MAX_CONTEXT_WINDOW
+                    )));
+                }
+                Some(w)
+            }
+            (None, Some(saved)) if saved.context_window.is_some() => saved.context_window,
+            _ => detect_context_window(&url, key.as_deref(), &model, REQUEST_TIMEOUT).await,
+        };
 
         let _guard = self.changing.lock().await;
         let now = Utc::now();
@@ -608,6 +629,7 @@ impl Integrations {
             default_reasoning,
             multimodal,
             max_tokens,
+            context_window,
             is_default,
             price,
             position: existing.as_ref().map_or(0, |e| e.position),

@@ -486,6 +486,65 @@ pub async fn list_models(
     model_ids(&body).ok_or_else(|| anyhow!("{url} did not answer like an OpenAI-compatible server"))
 }
 
+/// How large `model`'s context window is, as its server tells: vLLM, LM Studio and OpenRouter
+/// put it in the model list (`max_model_len`, `context_length`), llama.cpp's server in `/props`
+/// (`n_ctx`, per slot). `None` when it doesn't say or can't be asked. llama.cpp's `n_ctx_train`
+/// is left alone: it is what the model was trained with, not what the server was started with.
+pub async fn detect_context_window(
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    timeout: Duration,
+) -> Option<u32> {
+    let http = reqwest::Client::builder()
+        .connect_timeout(timeout)
+        .timeout(timeout)
+        .build()
+        .ok()?;
+    let get = |url: String| {
+        let mut req = http.get(url);
+        if let Some(key) = api_key {
+            req = req.bearer_auth(key);
+        }
+        async move {
+            let resp = req.send().await.ok()?;
+            if !resp.status().is_success() {
+                return None;
+            }
+            resp.json::<Value>().await.ok()
+        }
+    };
+    let base = base_url.trim_end_matches('/');
+    if let Some(body) = get(format!("{base}/models")).await {
+        if let Some(window) = window_in_model_list(&body, model) {
+            return Some(window);
+        }
+    }
+    let root = base.strip_suffix("/v1").unwrap_or(base);
+    let props = get(format!("{root}/props")).await?;
+    window_in_props(&props)
+}
+
+fn as_window(v: &Value) -> Option<u32> {
+    v.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .filter(|n| *n >= crate::models::MIN_CONTEXT_WINDOW)
+}
+
+/// The window a model list gives for `model`.
+fn window_in_model_list(body: &Value, model: &str) -> Option<u32> {
+    let list = body.get("data").and_then(Value::as_array).or_else(|| body.as_array())?;
+    let entry = list.iter().find(|m| m["id"] == model)?;
+    ["max_model_len", "context_length", "context_window", "max_context_length"]
+        .iter()
+        .find_map(|k| as_window(&entry[*k]))
+}
+
+/// The window llama.cpp's `/props` gives.
+fn window_in_props(props: &Value) -> Option<u32> {
+    as_window(&props["default_generation_settings"]["n_ctx"]).or_else(|| as_window(&props["n_ctx"]))
+}
+
 /// What a model server made of a prompt that carries an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageProbe {
@@ -552,6 +611,18 @@ fn root_cause(e: &(dyn std::error::Error + 'static)) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn context_windows_are_read_where_servers_put_them() {
+        let vllm = json!({ "data": [{ "id": "other", "max_model_len": 4096 }, { "id": "m", "max_model_len": 32768 }] });
+        assert_eq!(window_in_model_list(&vllm, "m"), Some(32768));
+        let llama = json!({ "data": [{ "id": "m", "meta": { "n_ctx_train": 262144 } }] });
+        assert_eq!(window_in_model_list(&llama, "m"), None);
+        let props = json!({ "default_generation_settings": { "n_ctx": 32768 } });
+        assert_eq!(window_in_props(&props), Some(32768));
+        assert_eq!(window_in_props(&json!({ "n_ctx": 8192 })), Some(8192));
+        assert_eq!(window_in_props(&json!({ "n_ctx": 0 })), None);
+    }
 
     #[test]
     fn llama_servers_metrics_become_stats() {

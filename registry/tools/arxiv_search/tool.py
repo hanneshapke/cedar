@@ -33,6 +33,10 @@ FIELDS = re.compile(r"\b(ti|au|abs|co|jr|cat|rn|id|all|submittedDate):", re.I)
 # New ids (2301.01234, with an optional version) and old ones (hep-th/9901001).
 ARXIV_ID = re.compile(r"^(\d{4}\.\d{4,5}|[a-z-]+(\.[A-Z]{2})?/\d{7})(v\d+)?$")
 MAX_AUTHORS, MAX_ABSTRACT, MAX_PDFS, PDF_PAUSE = 8, 1800, 5, 3
+# Without full_abstracts: the first sentences of each abstract, up to this many characters. Ten
+# whole abstracts take about 4,000 tokens, too many for a model with a small context window.
+SHORT_ABSTRACT = 400
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 MAX_PDF_BYTES = 50 << 20
 
 
@@ -186,7 +190,15 @@ def download(papers):
     return saved
 
 
-def report(papers, total, query, ids, sort, start):
+def shorten(abstract):
+    """The first two sentences of `abstract`, cut at a word within SHORT_ABSTRACT characters."""
+    short = " ".join(SENTENCE_END.split(abstract)[:2])
+    if len(short) > SHORT_ABSTRACT:
+        short = short[:SHORT_ABSTRACT].rsplit(" ", 1)[0]
+    return short if short == abstract else short + " [...]"
+
+
+def report(papers, total, query, ids, sort, start, full=False):
     out = []
     if ids and not query:
         out.append(f"{len(papers)} of {len(ids)} requested arXiv paper{'s' * (len(ids) != 1)}:")
@@ -208,7 +220,9 @@ def report(papers, total, query, ids, sort, start):
             f", updated {p['updated']}" if p["updated"] and p["updated"] != p["published"] else "")
         cats = ", ".join(dict.fromkeys(c for c in [p["primary_category"], *p["categories"]] if c))
         abstract = p["abstract"]
-        if len(abstract) > MAX_ABSTRACT:
+        if not full:
+            abstract = shorten(abstract)
+        elif len(abstract) > MAX_ABSTRACT:
             abstract = abstract[:MAX_ABSTRACT].rsplit(" ", 1)[0] + " [...]"
         out.append("")
         out.append(f"[{n}] {p['title']}")
@@ -227,6 +241,9 @@ def report(papers, total, query, ids, sort, start):
     elif total and start + len(papers) < total and not ids:
         out.append("")
         out.append(f"More results: call again with start={start + len(papers)}.")
+    if papers and not full and any(p["abstract"] != shorten(p["abstract"]) for p in papers):
+        out.append("Abstracts are shortened: call again with ids and full_abstracts=true for "
+                   "the whole abstract of the papers you need.")
     return "\n".join(out)
 
 
@@ -250,7 +267,8 @@ def main():
         params["id_list"] = ",".join(ids)
         params.setdefault("max_results", len(ids))
     papers, total = search(params)
-    print(report(papers, total, query, ids, sort, start if query else 0))
+    full = bool(args.get("full_abstracts"))
+    print(report(papers, total, query, ids, sort, start if query else 0, full))
 
     if args.get("download_pdfs") and papers:
         print()

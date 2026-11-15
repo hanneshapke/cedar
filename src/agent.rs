@@ -5,6 +5,7 @@ use crate::approvals::{self, Gate, Rules};
 use crate::attachments;
 use crate::browser::BrowserSession;
 use crate::config::SandboxConfig;
+use crate::context::{self, Budget};
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
@@ -148,7 +149,29 @@ pub async fn run_agent(
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
         _ = tool_set.connect_remote(env.tool_timeout) => {}
     }
-    let tools = tool_set.select(run.tools.as_deref());
+    // A continuation starts with a copy of its parent's conversation (made when it was created).
+    let mut messages: Vec<Value> = env
+        .store
+        .list_messages(run.id)
+        .await?
+        .into_iter()
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect();
+    // How much of the model's window the run's requests may take (see [`context`]).
+    let mut budget = Budget::new(
+        model_entry(env, run).and_then(|m| m.context_window),
+        max_tokens(env, run),
+    );
+    // With a small window the definitions of every tool would fill much of it: a run that may
+    // use all of them gets the ones its request seems to need.
+    let selects_all = run.tools.as_ref().is_none_or(|t| t.iter().any(|g| g == "*"));
+    let narrowed: Option<Vec<String>> = (budget.is_small() && selects_all).then(|| {
+        tool_set.narrow_selection(&format!("{}\n{}", run.prompt, history_text(&messages)))
+    });
+    if let Some(allow) = &narrowed {
+        tracing::info!(run_id = %run.id, window = ?budget.window(), tools = ?allow, "small context window: offering only the tools the request seems to need");
+    }
+    let tools = tool_set.select(narrowed.as_deref().or(run.tools.as_deref()));
     let mut tool_defs = tools.definitions();
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // In `tool` mode the model decides whether a request needs a plan.
@@ -170,6 +193,21 @@ pub async fn run_agent(
         note.push(' ');
         note.push_str(&directive);
     }
+    // So the model needs no call to learn it, and doesn't search for last year's news.
+    note.push_str(&format!(
+        " The current date and time is {} UTC.",
+        Utc::now().format("%Y-%m-%d %H:%M")
+    ));
+    if let Some(window) = budget.window().filter(|_| budget.is_small()) {
+        note.push(' ');
+        note.push_str(&context::small_window_note(window));
+        if narrowed.is_some() {
+            note.push_str(
+                " To fit the window, only the tools this request seems to need are offered; if \
+                 the task needs another kind of tool, say so in your answer.",
+            );
+        }
+    }
     // Which record sets the run keeps for the user, read per request like memory. It goes
     // before the memory note, which must stay the last thing in the prompt (see
     // [`memory::note_span`]).
@@ -181,21 +219,17 @@ pub async fn run_agent(
         note.push_str("\n\n");
         note.push_str(&records::note(&sets, &columns, run.interactive, memory_on));
     }
-    // A continuation starts with a copy of its parent's conversation (made when it was created).
-    let mut messages: Vec<Value> = env
-        .store
-        .list_messages(run.id)
-        .await?
-        .into_iter()
-        .map(|m| json!({ "role": m.role, "content": m.content }))
-        .collect();
     // Read per request, so a memory deleted in Settings is gone from the very next run. The
     // `memory` group switches reading and writing together. The profile and pinned
     // instructions are always shown; the rest is what the request calls for (see
     // [`memory::recall`]), and what was shown goes out as a `memory.recalled` event.
     if let (Some(memories), true) = (&env.memories, memory_on) {
         let query = memory::recall_query(&messages, &run.prompt);
-        let recall = memories.recall(&run.owner, &query).await?;
+        // Beside the profile, which sums the owner up, a whole listing of what is remembered
+        // about them only costs tokens in an unattended run or a small window: there only what
+        // the request calls for is shown.
+        let whole = run.interactive && !budget.is_small();
+        let recall = memories.recall(&run.owner, &query, whole).await?;
         memories.recalled(&run.owner, &recall.ids()).await?;
         if recall.profile.is_some() || !recall.shown.is_empty() {
             events.emit(event::MEMORY_RECALLED, recall.summary()).await?;
@@ -271,35 +305,76 @@ pub async fn run_agent(
         .await?;
     let mut sources = Sources::default();
 
+    // The system prompt and tools are the same in every request; only the messages grow.
+    let fixed_bytes = system.len() + serde_json::to_string(&tool_defs).map_or(0, |t| t.len());
     for turn in 1..=run.max_turns {
-        let req = MessageRequest {
-            model: &run.model,
-            // Looked up each turn, so an admin's change applies to the next call.
-            max_tokens: max_tokens(env, run),
-            reasoning_effort: run.reasoning.as_deref(),
-            system: &system,
-            tools: &tool_defs,
-            messages: &messages,
-        };
-        // Looked up each turn, so a changed address applies to the next call.
+        // Looked up each turn, so an admin's change applies to the next call.
+        budget.set_max_reply(max_tokens(env, run));
         let llm = env.llm.client_for(&run.model_id).ok_or_else(|| {
             AgentError::Failed(format!("model {:?} is no longer registered", run.model_id))
         })?;
-        let started = Instant::now();
-        let resp = call_model(env, run, llm.as_ref(), &req, trace::AGENT, turn, cancel).await??;
-        if let Some(text) = &resp.reasoning {
+        // A reply cut off at its limit before it said or asked anything gets one more try with
+        // less of the conversation; a second one ends the run as failed.
+        let mut tight = false;
+        let resp = loop {
+            let fitted = match budget.message_bytes(fixed_bytes, tight) {
+                Some(max) if context::size(&messages) > max => {
+                    let fitted = context::fit(&messages, max);
+                    let before = budget.estimate(fixed_bytes + context::size(&messages));
+                    let after = budget.estimate(fixed_bytes + context::size(&fitted.messages));
+                    let window = budget.window().unwrap_or_default();
+                    events
+                        .emit(
+                            event::CONTEXT_TRIMMED,
+                            context::trimmed_event(turn, before, after, &fitted, window),
+                        )
+                        .await?;
+                    Some(fitted)
+                }
+                _ => None,
+            };
+            let sent: &[Value] = fitted.as_ref().map_or(&messages, |f| &f.messages);
+            let sent_bytes = fixed_bytes + context::size(sent);
+            let req = MessageRequest {
+                model: &run.model,
+                max_tokens: budget.reply_tokens(budget.estimate(sent_bytes)),
+                reasoning_effort: run.reasoning.as_deref(),
+                system: &system,
+                tools: &tool_defs,
+                messages: sent,
+            };
+            let started = Instant::now();
+            let resp = call_model(env, run, llm.as_ref(), &req, trace::AGENT, turn, cancel).await??;
+            if let Some(text) = &resp.reasoning {
+                events
+                    .emit(
+                        event::ASSISTANT_REASONING,
+                        json!({ "turn": turn, "text": text, "duration_ms": started.elapsed().as_millis() as u64, "done": true }),
+                    )
+                    .await?;
+            }
+            env.store.record_turn(run.id, turn, resp.usage).await?;
             events
-                .emit(
-                    event::ASSISTANT_REASONING,
-                    json!({ "turn": turn, "text": text, "duration_ms": started.elapsed().as_millis() as u64, "done": true }),
-                )
+                .emit(event::USAGE, usage_event(env, run, turn, resp.usage))
                 .await?;
-        }
-
-        env.store.record_turn(run.id, turn, resp.usage).await?;
-        events
-            .emit(event::USAGE, usage_event(env, run, turn, resp.usage))
-            .await?;
+            budget.calibrate(sent_bytes, resp.usage);
+            let learned = budget.learn_window(req.max_tokens, resp.stop_reason.as_deref(), resp.usage);
+            if !cut_off_empty(&resp) {
+                break resp;
+            }
+            // Less conversation only helps when the window, not the reply limit, cut it short:
+            // the reply stopped before the tokens it asked for, or asked for less than its limit
+            // because the window had no more room.
+            let window_bound = learned
+                || resp.usage.output_tokens < u64::from(req.max_tokens)
+                || req.max_tokens < budget.max_reply();
+            if !tight && window_bound {
+                tracing::warn!(run_id = %run.id, turn, input_tokens = resp.usage.input_tokens, window = ?budget.window(), "the reply was cut off by the context window before it answered; trying again with less of the conversation");
+                tight = true;
+                continue;
+            }
+            return Err(AgentError::Failed(cut_off_reason(&budget, req.max_tokens, resp.usage, window_bound)));
+        };
         push_message(
             env,
             run,
@@ -329,6 +404,14 @@ pub async fn run_agent(
 
         match resp.stop_reason.as_deref() {
             Some("tool_use") if !tool_calls.is_empty() => {
+                // The calls share what is left of the window, so their results fit beside the
+                // conversation instead of being cut down before the model reads them.
+                let used = budget.estimate(fixed_bytes + context::size(&messages));
+                let turn_ctx = ToolContext {
+                    max_output: budget.tool_output_bytes(used, tool_calls.len(), env.tool_output_max_bytes),
+                    ..ctx.clone()
+                };
+                let ctx = &turn_ctx;
                 let mut results = Vec::with_capacity(tool_calls.len());
                 let mut asked = Vec::new();
                 for block in tool_calls {
@@ -339,7 +422,7 @@ pub async fn run_agent(
                         continue;
                     }
                     let result =
-                        execute_tool_call(env, run, &tools, &ctx, &mut sources, events, cancel, block)
+                        execute_tool_call(env, run, &tools, ctx, &mut sources, events, cancel, block)
                             .await?;
                     // A tool that asked the model something (search_products, plan_trip) counts toward the turn.
                     if let Some(model) = &ctx.model {
@@ -423,7 +506,22 @@ async fn note_memory(
     };
     let transcript = memory::extract::transcript(messages, &run.prompt);
     let asked = done.stop_reason.as_deref() == Some(ASK_USER);
-    let outcome = if asked { "waiting for the user's answer" } else { "completed" };
+    // A short label for the episode, and what the model writing the notes is told.
+    let (outcome, told) = if asked {
+        ("waiting for the user's answer", "waiting for the user's answer")
+    } else if done.final_text.trim().is_empty() {
+        (
+            "no answer",
+            "without an answer: the assistant's last reply was empty, so what it set out to \
+             produce may not exist; don't describe the work as done",
+        )
+    } else if done.stop_reason.as_deref() == Some("max_tokens") {
+        ("cut off", "cut off: the assistant's final answer was cut short at its token limit")
+    } else {
+        ("completed", "completed")
+    };
+    // A procedure is only learned from a run that did what it set out to do.
+    let succeeded = outcome == "completed";
     let facts = env.memory_extract && run.interactive;
     let experience = env.memory_experience;
     let worked = !transcript.tools.is_empty();
@@ -446,11 +544,12 @@ async fn note_memory(
     if call && !transcript.text.trim().is_empty() {
         if let Some(llm) = env.llm.client_for(&run.model_id) {
             let (system, call_messages) =
-                memory::extract::call(&remembered, sets.as_deref(), &transcript, facts, experience, outcome);
+                memory::extract::call(&remembered, sets.as_deref(), &transcript, facts, experience, told);
+            let reasoning = quiet_reasoning(env, run);
             let req = MessageRequest {
                 model: &run.model,
-                max_tokens: max_tokens(env, run),
-                reasoning_effort: run.reasoning.as_deref(),
+                max_tokens: max_tokens(env, run).min(QUIET_MAX_TOKENS),
+                reasoning_effort: reasoning.as_deref(),
                 system: &system,
                 tools: &[],
                 messages: &call_messages,
@@ -526,7 +625,7 @@ async fn note_memory(
         if let Ok((m, _)) = memories.remember(&run.owner, row, actor).await? {
             episode = Some(m);
         }
-        if let Some(p) = noted.procedure.as_ref().filter(|_| worked && !asked) {
+        if let Some(p) = noted.procedure.as_ref().filter(|_| worked && succeeded) {
             if let Ok((m, status @ (memory::Saved::Added | memory::Saved::Superseded))) =
                 memories.remember(&run.owner, memory::extract::procedure(run.id, p, &noted.topics), actor).await?
             {
@@ -649,6 +748,83 @@ fn max_tokens(env: &AgentEnv, run: &Run) -> u32 {
         .iter()
         .find(|m| m.id == run.model_id)
         .map_or(DEFAULT_MAX_TOKENS, |m| m.max_tokens)
+}
+
+/// The run's registered model, `None` when the entry is gone.
+fn model_entry(env: &AgentEnv, run: &Run) -> Option<crate::models::ModelEntry> {
+    env.integrations
+        .models()
+        .iter()
+        .find(|m| m.id == run.model_id)
+        .cloned()
+}
+
+/// The reasoning level for the run's bookkeeping calls (noting what it learned), which need no
+/// deliberation: the lowest the model offers, else the run's own.
+fn quiet_reasoning(env: &AgentEnv, run: &Run) -> Option<String> {
+    let levels = model_entry(env, run).map(|m| m.reasoning_levels).unwrap_or_default();
+    ["none", "minimal", "low"]
+        .iter()
+        .find(|l| levels.iter().any(|v| v == *l))
+        .map(|l| l.to_string())
+        .or_else(|| run.reasoning.clone())
+}
+
+/// The most tokens a bookkeeping call's reply gets: its answer is a short JSON object.
+const QUIET_MAX_TOKENS: u32 = 4_096;
+
+/// Whether a reply stopped at its token limit before it said or asked anything: what a
+/// conversation that fills the model's window gets.
+fn cut_off_empty(resp: &LlmResponse) -> bool {
+    resp.stop_reason.as_deref() == Some("max_tokens")
+        && resp.content.iter().all(|b| match b["type"].as_str() {
+            Some("text") => b["text"].as_str().unwrap_or_default().trim().is_empty(),
+            Some("tool_use") => false,
+            _ => true,
+        })
+}
+
+/// Why a run ended after replies that were cut off before they answered.
+fn cut_off_reason(budget: &Budget, requested: u32, usage: Usage, window_bound: bool) -> String {
+    match (window_bound, budget.window()) {
+        (true, Some(window)) => format!(
+            "the model's reply was cut off before it answered: the conversation ({} tokens) left \
+             too little of the model's context window ({window} tokens) for a reply, even after \
+             older tool results were cut down",
+            usage.input_tokens
+        ),
+        _ => format!(
+            "the model used up its reply limit of {requested} tokens (its reasoning included) \
+             without answering; raise the model's max_tokens or choose a lower reasoning level"
+        ),
+    }
+}
+
+/// The text of earlier user messages and the names of the tools called before, which show what
+/// a continuation may need.
+fn history_text(messages: &[Value]) -> String {
+    let mut out = String::new();
+    for m in messages {
+        match &m["content"] {
+            Value::String(text) if m["role"] == "user" => {
+                out.push_str(text);
+                out.push('\n');
+            }
+            Value::Array(blocks) => {
+                for b in blocks {
+                    if b["type"] == "tool_use" {
+                        out.push_str(b["name"].as_str().unwrap_or_default());
+                        out.push('\n');
+                    } else if b["type"] == "text" && m["role"] == "user" {
+                        out.push_str(b["text"].as_str().unwrap_or_default());
+                        out.push('\n');
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The `usage` event for one model call, with what it cost when the model has a price.

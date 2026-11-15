@@ -311,6 +311,24 @@ impl Tool for FetchUrl {
                 .ok_or_else(|| anyhow!("start must be a non-negative integer"))?
                 as usize,
         };
+        // Hacker News's front page as HTML is mostly table layout and links to vote, hide and
+        // flag; its search API gives the same stories in a fraction of the tokens.
+        if is_hn_front_page(url) {
+            match hn_front_page(&self.0, ctx.timeout).await {
+                Ok(text) => {
+                    let page = Fetched {
+                        final_url: url.to_string(),
+                        content_type: "text/plain".into(),
+                        body: Vec::new(),
+                        truncated: false,
+                    };
+                    return Ok(format_page(&page, Some("Hacker News"), &text, start, ctx.max_output));
+                }
+                Err(e) => {
+                    tracing::info!(error = %format!("{e:#}"), "the Hacker News API failed; reading the page instead");
+                }
+            }
+        }
         let page = self.0.get(url, MAX_PAGE_BYTES, true, ctx.timeout).await?;
         let kind = TextKind::of(&page.content_type, &page.body).ok_or_else(|| {
             anyhow!(
@@ -321,8 +339,9 @@ impl Tool for FetchUrl {
             )
         })?;
         let raw = String::from_utf8_lossy(&page.body);
+        let base = Url::parse(&page.final_url).ok();
         let (title, text) = match kind {
-            TextKind::Html => (html_title(&raw), html_to_text(&page.body)?),
+            TextKind::Html => (html_title(&raw), page_text(&page.body, base.as_ref())?),
             TextKind::Plain => (None, raw.into_owned()),
         };
         Ok(format_page(
@@ -401,6 +420,201 @@ pub(crate) fn html_to_text(html: &[u8]) -> Result<String> {
         }
     }
     Ok(out.trim().to_string())
+}
+
+/// A fetched page's text for the model: like [`html_to_text`], with tables laid out without
+/// borders (box-drawing characters take three bytes and a token each) and the list of links
+/// cleaned up by [`clean_links`].
+fn page_text(html: &[u8], base: Option<&Url>) -> Result<String> {
+    let text = html2text::config::plain()
+        .no_link_wrapping()
+        .no_table_borders()
+        .allow_width_overflow()
+        .string_from_read(html, TEXT_WIDTH)
+        .context("converting the page to text")?;
+    let mut out = String::with_capacity(text.len());
+    let mut blank = 0;
+    for line in text.lines().map(str::trim_end) {
+        blank = if line.is_empty() { blank + 1 } else { 0 };
+        if blank < 2 {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    Ok(clean_links(out.trim(), base))
+}
+
+/// A link target worth listing, made absolute against `base`: web links, and relative ones
+/// that look like a path or a file. Relative actions and bare words (`hide?id=1`, `login`,
+/// `newest`), anchors and scripts are navigation and are dropped.
+fn link_target(target: &str, base: Option<&Url>) -> Option<String> {
+    let target = target.trim();
+    let lower = target.to_ascii_lowercase();
+    if target.is_empty() || target.starts_with('#') || lower.starts_with("javascript:") {
+        return None;
+    }
+    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:") {
+        return Some(target.to_string());
+    }
+    let (path, _) = target.split_once(['?', '#']).unwrap_or((target, ""));
+    if !path.contains('/') && !path.contains('.') {
+        return None;
+    }
+    match base {
+        Some(base) => base.join(target).ok().map(|u| u.to_string()),
+        None => Some(target.to_string()),
+    }
+}
+
+/// html2text lists a page's links as numbered references (`[text][3]` in the text, `[3]: url`
+/// at the end). Drop the ones that are navigation (see [`link_target`]) along with their
+/// numbers in the text, list each remaining address once (later references to it take the
+/// first one's number), and make relative addresses absolute so the model can fetch them.
+fn clean_links(text: &str, base: Option<&Url>) -> String {
+    use std::collections::HashMap;
+    let mut body: Vec<&str> = Vec::new();
+    let mut refs: Vec<(String, String)> = Vec::new();
+    for line in text.lines() {
+        let parsed = line.strip_prefix('[').and_then(|rest| {
+            let (n, target) = rest.split_once("]:")?;
+            n.chars().all(|c| c.is_ascii_digit()).then(|| (n.to_string(), target.to_string()))
+        });
+        match parsed {
+            Some(r) if !r.0.is_empty() => refs.push(r),
+            _ => body.push(line),
+        }
+    }
+    if refs.is_empty() {
+        return text.to_string();
+    }
+    // Number -> the number it is listed under now, or `None` when dropped.
+    let mut renumber: HashMap<String, Option<String>> = HashMap::new();
+    let mut first: HashMap<String, String> = HashMap::new();
+    let mut listed: Vec<(String, String)> = Vec::new();
+    for (n, target) in refs {
+        let kept = link_target(&target, base).map(|url| {
+            first
+                .entry(url.clone())
+                .or_insert_with(|| {
+                    listed.push((n.clone(), url));
+                    n.clone()
+                })
+                .clone()
+        });
+        renumber.insert(n, kept);
+    }
+    let mut out = String::with_capacity(text.len());
+    for line in &body {
+        out.push_str(&renumber_line(line, &renumber));
+        out.push('\n');
+    }
+    let mut out = out.trim_end().to_string();
+    if !listed.is_empty() {
+        out.push_str("\n\nLinks:\n");
+        for (n, url) in listed {
+            out.push_str(&format!("[{n}]: {url}\n"));
+        }
+    }
+    out.trim_end().to_string()
+}
+
+/// `line` with each `[text][n]` reference renumbered, or reduced to `text` when its link was
+/// dropped.
+fn renumber_line(line: &str, renumber: &std::collections::HashMap<String, Option<String>>) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(at) = rest.find("][") {
+        let after = &rest[at + 2..];
+        let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let closes = !digits.is_empty() && after[digits.len()..].starts_with(']');
+        let open = rest[..at].rfind('[');
+        match (closes, open, renumber.get(&digits)) {
+            (true, Some(open), Some(new)) => {
+                let label = &rest[open + 1..at];
+                out.push_str(&rest[..open]);
+                match new {
+                    Some(m) => out.push_str(&format!("[{label}][{m}]")),
+                    None => out.push_str(label),
+                }
+                rest = &after[digits.len() + 1..];
+            }
+            _ => {
+                out.push_str(&rest[..at + 2]);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Whether `url` is Hacker News's front page.
+fn is_hn_front_page(url: &str) -> bool {
+    let Ok(u) = Url::parse(url) else { return false };
+    matches!(u.host_str(), Some("news.ycombinator.com"))
+        && matches!(u.path(), "" | "/" | "/news" | "/front")
+        && u.query().is_none_or(|q| q.is_empty() || q == "p=1")
+}
+
+const HN_FRONT_PAGE_API: &str = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=40";
+
+/// Hacker News's front page from its search API, as a compact list: title, points, comments,
+/// age, author, link and discussion link, ordered roughly as the site ranks them.
+async fn hn_front_page(client: &WebClient, timeout: Duration) -> Result<String> {
+    let page = client.get(HN_FRONT_PAGE_API, 2 * 1024 * 1024, false, timeout).await?;
+    let body: Value = serde_json::from_slice(&page.body).context("reading the Hacker News API's answer")?;
+    format_hn(&body, chrono::Utc::now().timestamp())
+}
+
+fn format_hn(body: &Value, now: i64) -> Result<String> {
+    let hits = body["hits"].as_array().filter(|h| !h.is_empty()).ok_or_else(|| anyhow!("no stories in the answer"))?;
+    struct Story<'a> {
+        hit: &'a Value,
+        points: i64,
+        age_secs: i64,
+    }
+    let mut stories: Vec<Story> = hits
+        .iter()
+        .filter(|h| h["title"].is_string())
+        .map(|hit| Story {
+            hit,
+            points: hit["points"].as_i64().unwrap_or(0),
+            age_secs: (now - hit["created_at_i"].as_i64().unwrap_or(now)).max(0),
+        })
+        .collect();
+    // The site's ranking: points against age, with gravity 1.8.
+    let rank = |s: &Story| (s.points.max(1) - 1) as f64 / ((s.age_secs as f64 / 3600.0) + 2.0).powf(1.8);
+    stories.sort_by(|a, b| rank(b).partial_cmp(&rank(a)).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = format!(
+        "Hacker News front page, {} stories, from the Hacker News search API (hn.algolia.com), \
+         ordered roughly as the site ranks them:\n",
+        stories.len()
+    );
+    for (i, s) in stories.iter().enumerate() {
+        let h = s.hit;
+        let id = h["objectID"].as_str().unwrap_or_default();
+        let discussion = format!("https://news.ycombinator.com/item?id={id}");
+        let link = h["url"].as_str().filter(|u| !u.is_empty()).unwrap_or(&discussion);
+        out.push_str(&format!(
+            "\n{}. {}\n   {} points, {} comments, {} ago, by {}\n   {}\n",
+            i + 1,
+            h["title"].as_str().unwrap_or_default(),
+            s.points,
+            h["num_comments"].as_i64().unwrap_or(0),
+            age(s.age_secs),
+            h["author"].as_str().unwrap_or("?"),
+            if link == discussion { discussion.clone() } else { format!("{link} (discussion: {discussion})") },
+        ));
+    }
+    Ok(out)
+}
+
+fn age(secs: i64) -> String {
+    match secs {
+        s if s < 3600 => format!("{} minutes", (s / 60).max(1)),
+        s if s < 2 * 86_400 => format!("{} hours", s / 3600),
+        s => format!("{} days", s / 86_400),
+    }
 }
 
 /// The text of the first `<title>` element, with whitespace collapsed and common entities decoded.
@@ -630,6 +844,43 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("\n\n\n"), "{text}");
+    }
+
+    #[test]
+    fn navigation_links_are_dropped_and_tables_lose_their_borders() {
+        let html = br#"<html><body><table><tr><td>1.</td><td><a href="https://ex.test/story">A story</a>
+            (<a href="from?site=ex.test">ex.test</a>)</td></tr>
+            <tr><td></td><td>5 points by <a href="user?id=bob">bob</a> | <a href="hide?id=7">hide</a>
+            | <a href="item?id=7">3 comments</a> | <a href="/docs/guide.html">guide</a>
+            | <a href="https://ex.test/story">again</a></td></tr></table></body></html>"#;
+        let base = Url::parse("https://news.example/").unwrap();
+        let text = page_text(html, Some(&base)).unwrap();
+        assert!(!text.contains('─') && !text.contains('│'), "{text}");
+        assert!(text.contains("[A story][1]"), "{text}");
+        assert!(text.contains("bob") && !text.contains("user?id"), "{text}");
+        assert!(!text.contains("hide?id") && !text.contains("from?site"), "{text}");
+        assert!(text.contains("https://news.example/docs/guide.html"), "{text}");
+        // The same address is listed once, under its first number.
+        assert_eq!(text.matches("https://ex.test/story").count(), 1, "{text}");
+        assert!(text.contains("[again][1]"), "{text}");
+    }
+
+    #[test]
+    fn hacker_news_comes_as_a_compact_list() {
+        assert!(is_hn_front_page("https://news.ycombinator.com/"));
+        assert!(is_hn_front_page("https://news.ycombinator.com/news"));
+        assert!(!is_hn_front_page("https://news.ycombinator.com/item?id=1"));
+        assert!(!is_hn_front_page("https://news.ycombinator.com/news?p=2"));
+        let now = 1_800_000_000;
+        let body = json!({ "hits": [
+            { "objectID": "1", "title": "Old but big", "url": "https://a.test/", "points": 500, "num_comments": 10, "author": "a", "created_at_i": now - 20 * 3600 },
+            { "objectID": "2", "title": "Ask HN: fresh", "url": null, "points": 100, "num_comments": 3, "author": "b", "created_at_i": now - 3600 },
+        ] });
+        let text = format_hn(&body, now).unwrap();
+        assert!(text.contains("1. Ask HN: fresh\n   100 points, 3 comments, 1 hours ago, by b\n   https://news.ycombinator.com/item?id=2\n"), "{text}");
+        assert!(text.contains("2. Old but big"), "{text}");
+        assert!(text.contains("https://a.test/ (discussion: https://news.ycombinator.com/item?id=1)"), "{text}");
+        assert!(format_hn(&json!({ "hits": [] }), now).is_err());
     }
 
     #[test]

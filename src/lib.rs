@@ -11,6 +11,7 @@ pub mod auth;
 pub mod browser;
 pub mod compact;
 pub mod config;
+pub mod context;
 pub mod error;
 pub mod events;
 pub mod images;
