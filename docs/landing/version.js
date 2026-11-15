@@ -4,4 +4,4 @@
 // (release-check.yml, scripts/check-version.sh) until they match. The phone apps count their own
 // patch versions and are released on their own, so the published site also gets
 // window.CEDAR_DOWNLOADS = { apk, ipa } here, the newest of each (pages.yml).
-window.CEDAR_VERSION = '0.10.0';
+window.CEDAR_VERSION = '0.10.1';

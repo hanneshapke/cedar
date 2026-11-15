@@ -3,6 +3,9 @@
 ## Unreleased
 
 - **The phone apps are released only when they change.** Cedar, the Android app and the iOS app share `major.minor` and now count patch versions on their own: a release ships the platforms whose version it bumps (`scripts/bump-version.sh` picks the ones that changed), each under its own tag (`v…`, `android-v…`, `ios-v…`). So 0.11.2 on the desktop next to 0.11.0 on a phone is the same Cedar 0.11, and a desktop fix no longer sends an unchanged app to TestFlight.
+
+## 0.10.1
+
 - **The run time limit can be changed in Settings.** Settings → *Advanced settings* → *Run time limit* sets how long a reply may take, tools included, before cedar stops it (60 seconds to a day), from the next message; empty goes back to `RUN_TIMEOUT_SECS`, which is now only the default. Over the API it is `run_timeout_secs` on `PUT /v1/admin/settings`.
 - **A tool that keeps failing is left out.** A tool that fails twice in a row for a temporary reason (rate limited, unavailable, timing out) is not run again in that run; further calls answer at once that it was left out. In a daily-digest run on a 32k model, twelve calls to a rate-limited arXiv took 337 of the run's 600 seconds. The community `arxiv_search` tool (1.2.0) also says plainly that a 429 or 503 is not the query's fault, names arXiv's listing pages to read instead, and gives up after 20 seconds instead of 60.
 - **The model is told when time runs short.** From 60 % of the run's time limit on, or with three turns or fewer left, each turn's results end with a note on what is left and to produce the result from what the run has, since a stopped run delivers nothing.

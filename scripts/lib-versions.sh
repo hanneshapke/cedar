@@ -20,7 +20,7 @@ SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 
 # Up to this version every platform was released together under the one tag v<version>; the
 # android-v and ios-v tags start after it.
-SHARED_TAGS_UNTIL=0.10.0
+SHARED_TAGS_UNTIL=0.10.1
 
 # toml_version <file> <section>: the version line inside that [section].
 toml_version() {
