@@ -48,6 +48,8 @@ html{scroll-padding-top:96px}
 .policy li{margin:8px 0}
 .policy li::marker{color:var(--accent)}
 .policy a{overflow-wrap:anywhere}
+/* Long words in a translation (Datenschutzerklärung) hyphenate rather than widen the page on a phone */
+.policy h1,.policy h2,.policy h3{-webkit-hyphens:auto;hyphens:auto;overflow-wrap:break-word}
 .policy hr{border:0;border-top:1px solid var(--line);margin:32px 0}
 .policy blockquote{margin:14px 0;background:#fdf8f2;border-left:4px solid var(--amber);border-radius:0 12px 12px 0;padding:12px 16px}
 /* The policy's opening line ("cedar does not collect any data. Period.") */
@@ -78,8 +80,9 @@ html{scroll-padding-top:96px}
   <main>
     <a class="back" href="./" data-i18n="privacy.back">← Back to the Cedar home page</a>
     <span class="eyebrow" data-i18n="privacy.eyebrow">Privacy</span>
-    <p class="note" id="lang-note" hidden data-i18n="privacy.englishOnly">The privacy policy is published in English.</p>
-    <!-- Filled from PRIVACY.md at the repository root, so this page never drifts from it. -->
+    <p class="note" id="lang-note" hidden data-i18n="privacy.outdated">The translation of the privacy policy is being updated to match the latest version, so it is shown in English for now.</p>
+    <!-- Filled from PRIVACY.md at the repository root, or its translation in docs/privacy/, so this
+         page never drifts from them. -->
     <article class="policy" id="policy" aria-live="polite">
       <p class="status" id="status" data-i18n="privacy.loading">Loading the privacy policy…</p>
       <noscript><p><strong>Cedar does not collect any data. Period.</strong> Read the full policy in <a href="https://github.com/hanneshapke/cedar/blob/main/PRIVACY.md">PRIVACY.md</a>.</p></noscript>
@@ -95,9 +98,19 @@ html{scroll-padding-top:96px}
 <script>
 (() => {
   const SOURCE = 'https://github.com/hanneshapke/cedar/blob/main/PRIVACY.md';
-  // The published site carries PRIVACY.md next to this page (pages.yml copies it there); a
-  // checkout served from the repository root has it two folders up.
-  const CANDIDATES = ['PRIVACY.md', '../../PRIVACY.md'];
+  // The published site carries PRIVACY.md and its translations next to this page (pages.yml
+  // copies them there); a checkout served from the repository root has PRIVACY.md two folders up
+  // and the translations in docs/privacy/.
+  const ENGLISH = ['PRIVACY.md', '../../PRIVACY.md'];
+  const translation = (lang) => [`PRIVACY.${lang}.md`, `../privacy/PRIVACY.${lang}.md`];
+  // A translation's first line names the PRIVACY.md it was made from by the start of its SHA-256.
+  // scripts/check-i18n.js computes the same hash and fails CI when they differ.
+  const MARKER = /^<!-- translated-from: PRIVACY\.md ([0-9a-f]{12}) -->/;
+  async function hash(text) {
+    const bytes = new TextEncoder().encode(text.replace(/\r\n?/g, '\n'));
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+  }
 
   const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const slug = (s) => s.toLowerCase().replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/g, '').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '');
@@ -124,7 +137,7 @@ html{scroll-padding-top:96px}
 
   /** Block Markdown: headings, paragraphs, lists, quotes, rules and fenced code. */
   function render(md) {
-    const lines = md.replace(/\r\n?/g, '\n').split('\n');
+    const lines = md.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').split('\n');
     const out = [];
     let para = [], list = null, quote = [];
     const flushPara = () => { if (para.length) out.push(`<p>${inline(para.join(' '))}</p>`); para = []; };
@@ -168,18 +181,32 @@ html{scroll-padding-top:96px}
     return out.join('\n');
   }
 
-  async function load() {
-    for (const url of CANDIDATES) {
+  async function load(candidates) {
+    for (const url of candidates) {
       try {
         const res = await fetch(url, { cache: 'no-cache' });
         if (res.ok) return await res.text();
       } catch { /* try the next place */ }
     }
-    throw new Error('PRIVACY.md not found');
+    throw new Error(candidates[0] + ' not found');
+  }
+
+  /** The policy in the visitor's language when its translation matches today's English, else English. */
+  async function choose() {
+    const english = await load(ENGLISH);
+    const lang = cedarSite.lang;
+    if (lang === 'en') return { md: english, lang, outdated: false };
+    try {
+      const text = await load(translation(lang));
+      const from = text.match(MARKER)?.[1];
+      if (from && from === (await hash(english))) return { md: text, lang, outdated: false };
+    } catch { /* no translation, or no crypto.subtle to check it with: English */ }
+    return { md: english, lang: 'en', outdated: true };
   }
 
   const policy = document.getElementById('policy');
-  load().then((md) => {
+  choose().then(({ md, lang, outdated }) => {
+    policy.lang = lang;
     policy.innerHTML = render(md);
     // A paragraph that is nothing but bold text is the policy's headline statement.
     for (const p of policy.querySelectorAll('p')) {
@@ -187,7 +214,7 @@ html{scroll-padding-top:96px}
     }
     const h1 = policy.querySelector('h1');
     if (h1) document.title = 'Cedar · ' + h1.textContent;
-    if (cedarSite.lang !== 'en') document.getElementById('lang-note').hidden = false;
+    document.getElementById('lang-note').hidden = !outdated;
     if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
   }).catch(() => {
     policy.innerHTML = '';

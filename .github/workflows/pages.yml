@@ -18,6 +18,7 @@ on:
     paths:
       - docs/landing/**
       - PRIVACY.md
+      - docs/privacy/**
       - docs/assets/**
       - docs/screenshots/**
       - docs/sidestore/**
@@ -77,8 +78,10 @@ jobs:
           cp -R docs/landing/. _site/
           cp -R docs/assets _site/assets
           cp -R docs/screenshots _site/screenshots
-          # privacy.html renders the policy from PRIVACY.md, so the site always shows the repository's.
+          # privacy.html renders the policy from PRIVACY.md and its translations, so the site always
+          # shows the repository's. It shows a translation only while it matches PRIVACY.md.
           cp PRIVACY.md _site/PRIVACY.md
+          cp docs/privacy/PRIVACY.*.md _site/
           # The page sits in docs/landing and reaches the images with ../; in the site they are next to it.
           sed -E 's#(src|href)="\.\./#\1="#g' docs/landing/index.html > _site/index.html
           if grep -n '\.\./' _site/index.html; then
