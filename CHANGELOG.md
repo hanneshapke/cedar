@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A reply limit raised for the app's llama.cpp model stays raised.** The desktop app registered the model it runs with llama.cpp at 8,192 tokens per reply on every launch, so a higher *Max tokens per reply* set in the chat's Settings was put back the next time the app started. The app now sends its limit only when it first registers a model (or after another model is installed) and leaves the entry's own alone otherwise.
+
 ## 0.9.0
 
 - **The desktop app can run a model on this computer's GPU with llama.cpp.** When the graphics card has 12 GB or more (or the Mac 32 GB or more), the setup page offers to download a pinned llama.cpp build and a model that fits, checks that `llama-server` finds the GPU, and runs it as a model server of its own beside cedar and cedar-chat, restarted like them. The download shows its progress, can be stopped and continues where it left off; every file's size and SHA-256 are checked before it is used, and *Remove* takes it all away again. All four models read images and come with their vision projector: Gemma 4 12B for 12 and 16 GB, Gemma 4 26B-A4B for 20 GB (and a 32 GB Mac), Qwen3.6 35B-A3B from 24 GB, Qwen3.5 122B-A10B from 80 GB (a 128 GB Mac). The model the app runs is a registry entry of its own (`llama`), so setting it up doesn't replace a model server named on the setup page, and a default chosen later in the chat's Settings stays.

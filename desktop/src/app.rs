@@ -478,6 +478,11 @@ impl AppState {
         let mut result = Ok(());
         let installed = cfg.llama.as_ref().and_then(|l| cedar_llama::catalog::by_id(&l.model));
         if let Some(model) = installed {
+            // The catalog's reply limit is where the entry starts. Once cedar has the entry for
+            // this model, the limit is the user's to change in the chat's Settings, and a launch
+            // must not put it back.
+            let known = models::registered_model(&cedar, &key, models::LLAMA_ID).await;
+            let max_tokens = (known.as_deref() != Some(model.id)).then_some(model.max_tokens);
             let entry = models::Entry {
                 id: models::LLAMA_ID,
                 base_url: &llama_url,
@@ -485,7 +490,7 @@ impl AppState {
                 model: model.id,
                 extras: Some(models::Extras {
                     label: model.label,
-                    max_tokens: model.max_tokens,
+                    max_tokens,
                     reasoning_levels: model.reasoning_levels,
                     // Every model the app installs comes with its vision projector.
                     multimodal: true,
@@ -867,6 +872,11 @@ mod tests {
     /// A stand-in for cedar's admin API that records each request as "METHOD path body" and
     /// lists `default` at `default_at`.
     async fn cedar(default_at: &'static str) -> (u16, std::sync::Arc<Mutex<Vec<String>>>) {
+        cedar_listing(format!(r#"{{"models":[{{"id":"default","base_url":"{default_at}"}}]}}"#)).await
+    }
+
+    /// The same, with `answer` as what it lists.
+    async fn cedar_listing(answer: String) -> (u16, std::sync::Arc<Mutex<Vec<String>>>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -892,7 +902,6 @@ mod tests {
                 };
                 let line = head.lines().next().unwrap_or_default().trim_end_matches(" HTTP/1.1").to_string();
                 log.lock().unwrap().push(format!("{line} {body}").trim().to_string());
-                let answer = format!(r#"{{"models":[{{"id":"default","base_url":"{default_at}"}}]}}"#);
                 let reply = format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}", answer.len());
                 let _ = socket.write_all(reply.as_bytes()).await;
                 let _ = socket.shutdown().await;
@@ -903,6 +912,33 @@ mod tests {
 
     fn sent(seen: &std::sync::Arc<Mutex<Vec<String>>>) -> Vec<String> {
         std::mem::take(&mut *seen.lock().unwrap())
+    }
+
+    /// The registrations among them.
+    fn puts(seen: &std::sync::Arc<Mutex<Vec<String>>>) -> Vec<String> {
+        sent(seen).into_iter().filter(|r| r.starts_with("PUT ")).collect()
+    }
+
+    /// A reply limit raised in the chat's Settings stays: the catalog's is sent only for an entry
+    /// cedar doesn't have yet, or one that holds another model.
+    #[tokio::test]
+    async fn a_launch_keeps_the_reply_limit() {
+        let config = |port| Config {
+            cedar_port: port,
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-12b".into() }),
+            ..Config::default()
+        };
+        let listing = |model: &str| format!(r#"{{"models":[{{"id":"llama","base_url":"http://127.0.0.1:18081/v1","model":"{model}","max_tokens":16384}}]}}"#);
+
+        let (port, seen) = cedar_listing(listing("gemma-4-12b")).await;
+        assert!(state(config(port)).register_model().await);
+        let requests = puts(&seen);
+        assert!(requests[0].contains(r#""model":"gemma-4-12b""#) && !requests[0].contains("max_tokens"), "{requests:?}");
+
+        // Another model was installed since: its own limit.
+        let (port, seen) = cedar_listing(listing("qwen3.6-35b-a3b")).await;
+        assert!(state(config(port)).register_model().await);
+        assert!(puts(&seen)[0].contains(r#""max_tokens":8192"#));
     }
 
     /// What goes into cedar's registry for a model server beside a model the app runs: two
@@ -922,7 +958,7 @@ mod tests {
 
         // A launch: both, neither made the default.
         assert!(app.register_model().await);
-        let requests = sent(&seen);
+        let requests = puts(&seen);
         assert_eq!(requests.len(), 2, "{requests:?}");
         assert!(requests[0].starts_with("PUT /v1/admin/models/llama "), "{}", requests[0]);
         let llama: serde_json::Value = serde_json::from_str(requests[0].split_once(' ').unwrap().1.split_once(' ').unwrap().1).unwrap();
@@ -938,7 +974,7 @@ mod tests {
         // llama.cpp was just set up: it is made the default, the model server is not.
         app.choose(Chosen::Llama);
         assert!(app.register_model().await);
-        let requests = sent(&seen);
+        let requests = puts(&seen);
         assert!(requests[0].contains(r#""is_default":true"#) && !requests[1].contains("is_default"), "{requests:?}");
         // Only that once.
         assert!(app.register_model().await);
@@ -946,7 +982,7 @@ mod tests {
         // A model server was just saved: the other way round.
         app.choose(Chosen::Server);
         assert!(app.register_model().await);
-        let requests = sent(&seen);
+        let requests = puts(&seen);
         assert!(!requests[0].contains("is_default") && requests[1].contains(r#""is_default":true"#), "{requests:?}");
     }
 
@@ -983,12 +1019,13 @@ mod tests {
         let app = state(Config { cedar_port: port, llama: llama.clone(), ..Config::default() });
         assert!(app.register_model().await);
         let requests = sent(&seen);
-        assert!(requests[0].starts_with("PUT /v1/admin/models/llama "));
-        assert_eq!(&requests[1..], ["GET /v1/admin/models", "DELETE /v1/admin/models/default"]);
+        assert_eq!(requests[0], "GET /v1/admin/models");
+        assert!(requests[1].starts_with("PUT /v1/admin/models/llama "));
+        assert_eq!(&requests[2..], ["GET /v1/admin/models", "DELETE /v1/admin/models/default"]);
 
         let (port, seen) = cedar("http://10.0.0.5:8000/v1").await;
         let app = state(Config { cedar_port: port, llama, ..Config::default() });
         assert!(app.register_model().await);
-        assert_eq!(sent(&seen).len(), 2, "the PUT and the GET, no DELETE");
+        assert_eq!(sent(&seen).len(), 3, "a GET, the PUT and a GET, no DELETE");
     }
 }

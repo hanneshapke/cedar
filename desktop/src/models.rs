@@ -299,7 +299,7 @@ mod tests {
         assert_eq!(listed_images("deepseek-ai/DeepSeek-V4-Pro-0813"), Some(false));
         assert_eq!(listed_images("some/unknown-model"), None);
         // The one just chosen becomes the default; one the app installed brings what it knows.
-        let extras = Extras { label: "Gemma 4 12B", max_tokens: 8192, reasoning_levels: &["low", "high"], multimodal: true };
+        let extras = Extras { label: "Gemma 4 12B", max_tokens: Some(8192), reasoning_levels: &["low", "high"], multimodal: true };
         let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), make_default: true };
         let json = serde_json::to_value(spec(&llama, "http://127.0.0.1:18081/v1")).unwrap();
         assert_eq!(json, serde_json::json!({
@@ -307,6 +307,10 @@ mod tests {
             "is_default": true, "max_tokens": 8192, "reasoning_levels": ["low", "high"], "default_reasoning": "",
             "multimodal": true,
         }));
+        // An entry cedar already has keeps its reply limit: none is sent.
+        let extras = Extras { label: "Gemma 4 12B", max_tokens: None, reasoning_levels: &[], multimodal: true };
+        let kept = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), make_default: false };
+        assert!(serde_json::to_value(spec(&kept, "x")).unwrap().get("max_tokens").is_none());
     }
 }
 
@@ -318,7 +322,9 @@ pub const LLAMA_ID: &str = "llama";
 /// What the app knows about a model beyond its name: the ones it installs for llama.cpp.
 pub struct Extras<'a> {
     pub label: &'a str,
-    pub max_tokens: u32,
+    /// The reply limit a new entry starts with. `None` leaves the entry's own, which the chat's
+    /// Settings may have raised.
+    pub max_tokens: Option<u32>,
     pub reasoning_levels: &'a [&'a str],
     /// It reads images (the app loads its vision projector), so cedar may send it some.
     pub multimodal: bool,
@@ -375,7 +381,7 @@ fn spec<'a>(entry: &'a Entry<'a>, base: &'a str) -> ModelSpec<'a> {
         label: extras.map_or(model, |e| e.label),
         api_key: entry.api_key.trim(),
         is_default: entry.make_default.then_some(true),
-        max_tokens: extras.map(|e| e.max_tokens),
+        max_tokens: extras.and_then(|e| e.max_tokens),
         reasoning_levels: extras.map(|e| e.reasoning_levels),
         default_reasoning: extras.map(|_| ""),
         multimodal: extras.map(|e| e.multimodal),
@@ -406,10 +412,19 @@ pub async fn unregister(cedar_url: &str, cedar_api_key: &str, id: &str) -> Resul
 
 /// The address of an entry in cedar's registry, if it has that entry.
 pub async fn registered_address(cedar_url: &str, cedar_api_key: &str, id: &str) -> Option<String> {
+    registered_field(cedar_url, cedar_api_key, id, "base_url").await
+}
+
+/// The model an entry in cedar's registry serves, if it has that entry.
+pub async fn registered_model(cedar_url: &str, cedar_api_key: &str, id: &str) -> Option<String> {
+    registered_field(cedar_url, cedar_api_key, id, "model").await
+}
+
+async fn registered_field(cedar_url: &str, cedar_api_key: &str, id: &str, field: &str) -> Option<String> {
     let resp = admin_client().ok()?.get(format!("{cedar_url}/v1/admin/models")).bearer_auth(cedar_api_key).send().await.ok()?;
     let body: serde_json::Value = resp.json().await.ok()?;
     let entry = body["models"].as_array()?.iter().find(|m| m["id"] == id)?;
-    entry["base_url"].as_str().map(str::to_string)
+    entry[field].as_str().map(str::to_string)
 }
 
 /// Registers (or updates) an entry in cedar's registry: `PUT /v1/admin/models/<id>`. cedar
