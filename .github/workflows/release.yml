@@ -322,8 +322,23 @@ jobs:
       - name: Build, sign, and notarize Cedar.app, then pack the DMG and the update bundle
         # tauri.release.conf.json turns on the update bundle: Cedar.app.tar.gz, signed (.sig) with
         # the updater key, made from the signed, notarized and stapled app.
+        #
+        # Tried up to three times: on GitHub's macOS runners `hdiutil create` now and then fails
+        # with "Resource busy" while the DMG is packed, and the same command passes when run
+        # again. A further try compiles nothing; it signs and notarizes the app once more.
         working-directory: desktop
-        run: cargo tauri build --ci --target ${{ matrix.target }} --bundles app,dmg --config tauri.release.conf.json --config "$UPDATER_PUBKEY_CONF"
+        run: |
+          set -u
+          for try in 1 2 3; do
+            if cargo tauri build --ci --target ${{ matrix.target }} --bundles app,dmg --config tauri.release.conf.json --config "$UPDATER_PUBKEY_CONF"; then
+              exit 0
+            fi
+            echo "::warning::cargo tauri build failed (try $try of 3)"
+            # What a failed try left of the disk image, so the next step finds one DMG only.
+            rm -f target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            sleep 20
+          done
+          echo "::error::cargo tauri build failed three times"; exit 1
 
       - name: Notarize and staple the DMG itself
         # tauri-bundler notarizes and staples the .app inside; the DMG gets its own ticket so
