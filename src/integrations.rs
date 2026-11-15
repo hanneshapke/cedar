@@ -41,6 +41,8 @@ const OAUTH_STATE_TTL: Duration = Duration::from_secs(600);
 /// At most this many "Connect Google" attempts are pending at once.
 const MAX_PENDING_STATES: usize = 20;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// A server's `/metrics` is read while Settings is open, so it gets little time.
+const STATS_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_SECRET_LEN: usize = 500;
 const MAX_MODEL_ID_LEN: usize = 64;
 const MAX_LABEL_LEN: usize = 100;
@@ -699,6 +701,30 @@ impl Integrations {
         status["created_at"] = json!(entry.created_at);
         status["updated_at"] = json!(entry.updated_at);
         Ok(status)
+    }
+
+    /// What a registered model's server reports about itself, read now: `{available: true,
+    /// server, generated_tokens, generation_tokens_per_second, prompt_tokens,
+    /// prompt_tokens_per_second, requests_processing, requests_deferred, max_context_tokens}`
+    /// from a llama.cpp server started with `--metrics`, `{available: false}` from any other.
+    pub async fn model_stats(&self, id: &str) -> Result<Value, AppError> {
+        let entry = self
+            .models
+            .load()
+            .iter()
+            .find(|m| m.id == id)
+            .cloned()
+            .ok_or(AppError::NotFound("no such model is registered"))?;
+        let key = self.model_api_key(id).await;
+        Ok(
+            match crate::llm::server_stats(&entry.base_url, key.as_deref(), STATS_TIMEOUT).await {
+                Some(mut stats) => {
+                    stats["available"] = json!(true);
+                    stats
+                }
+                None => json!({ "available": false }),
+            },
+        )
     }
 
     /// Why a tool group has no tools on this server, for the clients' settings pages.

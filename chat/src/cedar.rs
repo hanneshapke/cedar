@@ -269,6 +269,12 @@ impl CedarClient {
         admin(self.json(req).await)
     }
 
+    /// What a registered model's server reports about itself (`{available, ...}`; llama.cpp's
+    /// speed and token counts).
+    pub async fn model_stats(&self, id: &str) -> Result<Value, AppError> {
+        admin(self.json(self.http.get(self.url(&format!("/admin/models/{id}/stats")))).await)
+    }
+
     /// cedar's server-wide settings: `{max_image_side, sandbox_idle_minutes, defaults}`.
     pub async fn server_settings(&self) -> Result<Value, AppError> {
         admin(self.json(self.http.get(self.url("/admin/settings"))).await)

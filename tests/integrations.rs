@@ -319,6 +319,7 @@ async fn admin_routes_need_an_admin_key() {
             Some(json!({ "base_url": "http://x", "model": "m" })),
         ),
         (Method::DELETE, "/v1/admin/models/m", None),
+        (Method::GET, "/v1/admin/models/m/stats", None),
         (
             Method::POST,
             "/v1/admin/server-models",
@@ -1290,8 +1291,28 @@ async fn start_model_server(
                      "usage": { "prompt_tokens": 3, "completion_tokens": 2 } }),
         )
     }
+    // What llama-server answers at /metrics with --metrics, to the key it was started with.
+    async fn metrics(
+        State((key, _, _)): State<(Option<&'static str>, &'static str, Arc<ModelServer>)>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
+        let presented = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+        if key.is_some_and(|k| presented != Some(format!("Bearer {k}"))) {
+            return (StatusCode::UNAUTHORIZED, String::new());
+        }
+        (
+            StatusCode::OK,
+            "llamacpp:tokens_predicted_total 2048\nllamacpp:predicted_tokens_seconds 41.25\n\
+             llamacpp:requests_processing 1\n"
+                .to_string(),
+        )
+    }
     let server = Arc::new(ModelServer::default());
     let app = Router::new()
+        .route("/metrics", get(metrics))
         .route("/v1/models", get(models))
         .route("/v1/chat/completions", post(completions))
         .with_state((key, answer, server.clone()));
@@ -1548,6 +1569,39 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         )
         .await;
     assert_eq!(code, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_models_server_says_how_fast_it_writes() {
+    let app = app_with_real_llm(&admin_env(&[])).await;
+    let (llama_url, _llama) = start_model_server(Some("llm-key"), "hi").await;
+    let (status, _) = put_model(
+        &app,
+        "llama",
+        json!({ "base_url": llama_url, "model": "m-1", "api_key": "llm-key" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    // Read from /metrics beside the API, with the model's key.
+    let (status, stats) = app.get("/v1/admin/models/llama/stats", KEY_B).await;
+    assert_eq!(status, StatusCode::OK, "{stats}");
+    assert_eq!(stats["available"], true);
+    assert_eq!(stats["server"], "llama.cpp");
+    assert_eq!(stats["generated_tokens"], 2048);
+    assert_eq!(stats["generation_tokens_per_second"], 41.25);
+    assert_eq!(stats["requests_processing"], 1);
+    assert_eq!(stats["prompt_tokens"], Value::Null);
+
+    // A server with no such page: nothing to show, and no error.
+    let (plain_url, _plain) = start_model_server_answering(StatusCode::OK).await;
+    let (status, _) = put_model(&app, "plain", json!({ "base_url": plain_url, "model": "m-1" })).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, stats) = app.get("/v1/admin/models/plain/stats", KEY_B).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stats, json!({ "available": false }));
+
+    let (status, _) = app.get("/v1/admin/models/nope/stats", KEY_B).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **The reply limit of the app's llama.cpp model can be raised.** In the desktop app, the model's row under Settings → Models had no form, so its 8,192 tokens per reply could not be changed there, and the app registered that limit again on every launch. The row now has **Reply limit…**, a slider up to the model's context of 32,768 tokens, and the app sends its own limit only when it first registers a model (or after another model is installed).
+- **Settings shows how fast a llama.cpp model writes.** `llama-server` is now started with `--metrics` (by the desktop app and `cedar-llama serve`), and a model's row under Settings → Models says whether it is writing a reply, its average tokens per second and how many tokens that makes in the 300 seconds a reply may take, how fast it reads, how much it has written since it started and the fullest its context has been. cedar reads it at `GET /v1/admin/models/{id}/stats` (`/api/integrations/models/{id}/stats` on the chat server); a server without such a page shows nothing. A llama.cpp server of your own needs `--metrics` to show up.
+
 ## 0.9.0
 
 - **The desktop app can run a model on this computer's GPU with llama.cpp.** When the graphics card has 12 GB or more (or the Mac 32 GB or more), the setup page offers to download a pinned llama.cpp build and a model that fits, checks that `llama-server` finds the GPU, and runs it as a model server of its own beside cedar and cedar-chat, restarted like them. The download shows its progress, can be stopped and continues where it left off; every file's size and SHA-256 are checked before it is used, and *Remove* takes it all away again. All four models read images and come with their vision projector: Gemma 4 12B for 12 and 16 GB, Gemma 4 26B-A4B for 20 GB (and a 32 GB Mac), Qwen3.6 35B-A3B from 24 GB, Qwen3.5 122B-A10B from 80 GB (a 128 GB Mac). The model the app runs is a registry entry of its own (`llama`), so setting it up doesn't replace a model server named on the setup page, and a default chosen later in the chat's Settings stays.

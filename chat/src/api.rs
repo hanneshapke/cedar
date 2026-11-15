@@ -366,6 +366,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/models", get(get_models))
         .route("/integrations/server-models", post(list_server_models))
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
+        .route("/integrations/models/{id}/stats", get(get_model_stats))
         .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/client", put(put_google_client).delete(delete_google_client))
@@ -1886,6 +1887,13 @@ async fn put_model(
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
     }
     Ok(Json(state.cedar.set_model(&id, &body).await?))
+}
+
+/// What a model's server reports about itself, for its row in Settings: cedar's `{available,
+/// ...}`, with llama.cpp's speed and token counts when the server offers them.
+async fn get_model_stats(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    require_models_access(&state, &headers)?;
+    Ok(Json(state.cedar.model_stats(&id).await?))
 }
 
 /// cedar's server-wide settings (`{max_image_side, sandbox_idle_minutes, defaults}`): the longer

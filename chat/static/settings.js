@@ -30,6 +30,13 @@ const cedarSettings = (() => {
   // A model's reply limit when it is registered without one, and the highest cedar takes.
   const DEFAULT_MAX_TOKENS = 16384;
   const MAX_MAX_TOKENS = 1000000;
+  // How long cedar waits for one reply (src/llm.rs), in seconds.
+  const REPLY_SECONDS = 300;
+  // The context Cedar runs its llama.cpp models with (CONTEXT in llama/src/catalog.rs): the
+  // conversation and the reply share it, so a reply limit above it gains nothing.
+  const LLAMA_CONTEXT = 32768;
+  // How often an open Settings page reads a model server's numbers again, in milliseconds.
+  const STATS_EVERY_MS = 10000;
   const ALL = '*';
 
   let deps = null;
@@ -1025,6 +1032,103 @@ const cedarSettings = (() => {
     return wrap;
   }
 
+  /**
+   * The reply limit as a slider over the usual sizes, up to `most` (a saved limit that is none
+   * of them gets a stop of its own). `value()` is the number it stands at.
+   */
+  function tokenLimitField(saved, most = Infinity) {
+    const stops = [...new Set([1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072].filter((n) => n <= most).concat(saved))].sort((x, y) => x - y);
+    const slider = el('input', 'cedar-set-range');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = String(stops.length - 1);
+    slider.step = '1';
+    slider.value = String(stops.indexOf(saved));
+    slider.setAttribute('aria-label', tr('settings.form.maxTokens'));
+    const shown = el('span', 'cedar-set-range-value');
+    const value = () => stops[Number(slider.value)];
+    const show = () => {
+      shown.textContent = value().toLocaleString(document.documentElement.lang || undefined);
+      slider.setAttribute('aria-valuetext', shown.textContent);
+    };
+    slider.addEventListener('input', show);
+    show();
+    const field = el('label', 'cedar-set-field');
+    const head = el('span', 'cedar-set-field-head');
+    head.append(el('span', '', tr('settings.form.maxTokens')), shown);
+    field.append(head, slider, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
+    return { field, slider, value };
+  }
+
+  /**
+   * The reply limit of the model the desktop app runs with llama.cpp. The app owns the rest of
+   * that entry, so this is all of it that Settings changes; the app keeps what is saved here.
+   */
+  function replyLimitForm(entry, onDone) {
+    const form = el('form', 'cedar-set-inline cedar-set-endpoint');
+    const number = (n) => n.toLocaleString(document.documentElement.lang || undefined);
+    const { field, value } = tokenLimitField(entry.max_tokens ?? DEFAULT_MAX_TOKENS, LLAMA_CONTEXT);
+    field.append(el('small', 'cedar-set-field-note', tr('settings.form.maxTokensLlama', { tokens: number(LLAMA_CONTEXT), seconds: REPLY_SECONDS })));
+    const saveBtn = button(tr('settings.save'), () => form.requestSubmit(), 'primary');
+    form.append(field, saveBtn, button(tr('settings.cancel'), onDone));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      saveBtn.disabled = true;
+      try {
+        // Only the limit: what the body leaves out, cedar keeps.
+        const saved = await adminApi('PUT', `/integrations/models/${encodeURIComponent(entry.id)}`, { base_url: entry.base_url, model: entry.model, max_tokens: value() });
+        deps.toast(tr('settings.models.replyLimitSaved', { name: saved.label || saved.id, tokens: number(saved.max_tokens) }));
+        await modelsChanged();
+        refreshModels();
+      } catch (err) {
+        saveBtn.disabled = false;
+        deps.toast(err.message);
+      }
+    });
+    return form;
+  }
+
+  /**
+   * What the model's server says about itself, as a line in its row: whether it is writing, how
+   * fast it writes and how much that makes in the time a reply may take, and what it has done
+   * since it started. Only llama.cpp started with `--metrics` says (Cedar's own always is); the
+   * line stays away for any other server. It is read again while the page is open.
+   */
+  function modelStats(entry, main) {
+    const line = el('small', 'cedar-set-stats');
+    line.hidden = true;
+    main.append(line);
+    const lang = document.documentElement.lang || undefined;
+    const whole = (n) => Math.round(n).toLocaleString(lang);
+    const show = (stats) => {
+      line.hidden = !stats?.available;
+      if (line.hidden) return;
+      const parts = [tr(stats.requests_processing ? 'settings.stats.busy' : 'settings.stats.idle')];
+      const speed = stats.generation_tokens_per_second;
+      if (speed > 0) {
+        const perSecond = (n) => n.toLocaleString(lang, { maximumFractionDigits: n < 100 ? 1 : 0 });
+        parts.push(tr('settings.stats.speed', { speed: perSecond(speed), tokens: whole(speed * REPLY_SECONDS), seconds: REPLY_SECONDS }));
+        if (stats.prompt_tokens_per_second > 0) parts.push(tr('settings.stats.reads', { speed: perSecond(stats.prompt_tokens_per_second) }));
+        if (stats.generated_tokens > 0) parts.push(tr('settings.stats.written', { tokens: whole(stats.generated_tokens) }));
+        if (stats.max_context_tokens > 0) parts.push(tr('settings.stats.context', { tokens: whole(stats.max_context_tokens) }));
+      } else {
+        parts.push(tr('settings.stats.none'));
+      }
+      line.textContent = parts.join(' · ');
+    };
+    const load = async () => {
+      try { show(await adminApi('GET', `/integrations/models/${encodeURIComponent(entry.id)}/stats`)); } catch { line.hidden = true; }
+    };
+    load().then(() => {
+      // A server that has no numbers is not asked again.
+      if (line.hidden) return;
+      const timer = setInterval(() => {
+        if (!line.isConnected) clearInterval(timer);
+        else if (!document.hidden) load();
+      }, STATS_EVERY_MS);
+    });
+  }
+
   function modelRow(entry, status) {
     const levels = entry.reasoning_levels || [];
     const { row, main, side } = integrationRow(entry.label || entry.id, tr('settings.models.at', { model: entry.model, url: entry.base_url }));
@@ -1048,8 +1152,15 @@ const cedarSettings = (() => {
       const listed = entry.listed_models.length ? entry.listed_models.join(', ') : tr('settings.models.listedNone');
       main.append(el('small', 'cedar-set-warn-text', tr('settings.models.notListed', { model: entry.model, listed })));
     }
+    modelStats(entry, main);
     let form = null;
     if (runByApp) {
+      side.append(button(tr('settings.models.replyLimit'), () => {
+        if (form) { form.remove(); form = null; return; }
+        form = replyLimitForm(entry, () => { form?.remove(); form = null; });
+        row.append(form);
+        form.querySelector('input').focus();
+      }));
       side.append(button(tr('settings.models.manage'), () => { window.location.href = SETUP_MODEL_PATH; }));
     } else {
       side.append(button(tr('settings.edit'), async () => {
@@ -1284,32 +1395,7 @@ const cedarSettings = (() => {
     });
     levels.addEventListener('input', () => { levelsTouched = true; fillDefault(); });
     defaultLevel.addEventListener('change', () => { levelsTouched = true; fillDefault(); });
-    // The reply limit is a slider over the usual sizes (a saved one that is none of them gets a
-    // stop of its own); `maxTokens` holds the number the form saves.
-    const maxTokens = el('input');
-    maxTokens.type = 'hidden';
-    const saved = entry?.max_tokens ?? DEFAULT_MAX_TOKENS;
-    const tokenStops = [...new Set([1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, saved])].sort((x, y) => x - y);
-    const tokenSlider = el('input', 'cedar-set-range');
-    tokenSlider.type = 'range';
-    tokenSlider.min = '0';
-    tokenSlider.max = String(tokenStops.length - 1);
-    tokenSlider.step = '1';
-    tokenSlider.value = String(tokenStops.indexOf(saved));
-    tokenSlider.setAttribute('aria-label', tr('settings.form.maxTokens'));
-    const tokenValue = el('span', 'cedar-set-range-value');
-    const showTokens = () => {
-      const count = tokenStops[Number(tokenSlider.value)];
-      maxTokens.value = String(count);
-      tokenValue.textContent = count.toLocaleString(document.documentElement.lang || undefined);
-      tokenSlider.setAttribute('aria-valuetext', tokenValue.textContent);
-    };
-    tokenSlider.addEventListener('input', showTokens);
-    showTokens();
-    const maxTokensField = el('label', 'cedar-set-field');
-    const maxTokensHead = el('span', 'cedar-set-field-head');
-    maxTokensHead.append(el('span', '', tr('settings.form.maxTokens')), tokenValue);
-    maxTokensField.append(maxTokensHead, tokenSlider, maxTokens, el('small', 'cedar-set-field-note', tr('settings.form.maxTokensNote')));
+    const { field: maxTokensField, slider: tokenSlider, value: tokenLimit } = tokenLimitField(entry?.max_tokens ?? DEFAULT_MAX_TOKENS);
     // Whether the model reads images is not asked: the list of known models says
     // (/suggested-models.json), and cedar tries a model the list doesn't name with a small image
     // when it is saved. One line shows which; "Advanced" has a dropdown to say it outright.
@@ -1412,7 +1498,7 @@ const cedarSettings = (() => {
       if (!address.value.trim()) { deps.toast(tr('settings.form.needAddress')); address.focus(); return; }
       if (model.disabled) { deps.toast(tr('settings.form.needList')); listBtn.focus(); return; }
       if (!model.value) { deps.toast(tr('settings.form.choose')); model.focus(); return; }
-      const limit = Number(maxTokens.value);
+      const limit = tokenLimit();
       if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MAX_TOKENS) {
         deps.toast(tr('settings.form.maxTokensRange', { max: MAX_MAX_TOKENS }));
         tokenSlider.focus();

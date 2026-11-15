@@ -684,6 +684,15 @@ impl Harness {
                 .delete(|State(s): State<Shared>, Path(id): Path<String>| async move { delete_integration(s, &format!("model:{id}")).await }),
             )
             .route(
+                "/v1/admin/models/{id}/stats",
+                get(|State(s): State<Shared>, Path(id): Path<String>| async move {
+                    if let Some(refused) = admin(&s, &format!("model_stats:{id}"), Value::Null).await {
+                        return refused;
+                    }
+                    Json(json!({ "available": true, "server": "llama.cpp", "generation_tokens_per_second": 41.25 })).into_response()
+                }),
+            )
+            .route(
                 "/v1/admin/settings",
                 get(|State(s): State<Shared>| async move {
                     if let Some(refused) = admin(&s, "get_settings", Value::Null).await {
@@ -2190,6 +2199,12 @@ async fn integrations_need_the_admin_token() {
     let (status, saved) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", Some("admin"), Some(spec.clone())).await;
     assert_eq!(status, StatusCode::OK, "{saved}");
     assert_eq!(saved["listed_models"], json!(["m-1"]));
+    // What the model's server reports about itself goes through as cedar gives it.
+    let (status, stats) = admin_call(&h, Method::GET, "/api/integrations/models/gpu/stats", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK, "{stats}");
+    assert_eq!(stats["generation_tokens_per_second"], 41.25);
+    let (status, _) = admin_call(&h, Method::GET, "/api/integrations/models/gpu/stats", None, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     // cedar's verdict on the server is relayed; a body that isn't an object is refused here.
     let (status, err) = admin_call(&h, Method::PUT, "/api/integrations/models/gpu", Some("admin"), Some(json!({ "base_url": "http://127.0.0.1:1", "model": "m-1" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -2222,8 +2237,8 @@ async fn integrations_need_the_admin_token() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let calls = h.cedar.admin_calls.lock().unwrap().clone();
     let routes: Vec<&str> = calls.iter().map(|(r, _)| r.as_str()).collect();
-    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "put_google_client", "put_google_client", "delete_google_client", "get_models", "server_models", "server_models", "put_model:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings", "put_slack", "delete_slack"]);
-    assert_eq!(calls[19].1, json!({ "api_key": "xoxb-4321" }), "the token goes through");
+    assert_eq!(routes, ["get", "put_brave", "put_brave", "delete_brave", "put_serpapi", "delete_serpapi", "delete_google", "put_google_client", "put_google_client", "delete_google_client", "get_models", "server_models", "server_models", "put_model:gpu", "model_stats:gpu", "put_model:gpu", "delete_model:gpu", "get_settings", "put_settings", "put_settings", "put_slack", "delete_slack"]);
+    assert_eq!(calls[20].1, json!({ "api_key": "xoxb-4321" }), "the token goes through");
     assert_eq!(calls[4].1, json!({ "api_key": "serp-5678" }), "the key goes through");
     assert_eq!(calls[8].1, json!({ "client_id": "c-1.apps", "client_secret": "s-1" }), "the client goes through");
     assert_eq!(calls[11].1, query, "the body goes through as it is");

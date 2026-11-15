@@ -348,8 +348,21 @@ The button does this, with each step on the page:
    cedar, which gives up on a reply after 300 seconds. Updating the graphics driver usually
    fixes it.
 5. **Starts `llama-server`** with the model, its vision projector, a context of 32,768 tokens
-   and all layers on the GPU, listening on `127.0.0.1:18081` with a key of its own, and registers it with cedar like
+   and all layers on the GPU, with its `/metrics` page turned on, listening on `127.0.0.1:18081` with a key of its own, and registers it with cedar like
    any other model server. Loading the model takes from seconds to a few minutes.
+
+The model starts with a reply limit of 8,192 tokens, a reasoning model's thinking included: cedar
+gives up on a reply after 300 seconds, and that is what these models write in the time on most
+GPUs. On a fast one you can raise it: in the chat, **Settings → Models**, press **Reply limit…**
+on the model's row and move the slider, which goes up to 32,768 (a reply shares the context of
+32,768 tokens with the conversation, so more would gain nothing). The app keeps what you set
+there from one launch to the next; installing another model starts again from 8,192.
+
+The same row says what `llama-server` reports about itself, read again every ten seconds while
+the page is open: whether it is writing a reply, how many tokens per second it writes on average
+since it started and how many that makes in the 300 seconds a reply may take (the number to go
+by when you raise the limit), how fast it reads a prompt, how many tokens it has written, and
+the fullest its context has been.
 
 Nothing here needs an administrator's password: llama.cpp and the model go into the app's own
 data folder (see [Where things are](#where-things-are)). The app starts `llama-server` with the
