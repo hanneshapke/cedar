@@ -71,6 +71,40 @@ pub async fn set_idle_minutes(store: &Store, minutes: Option<u32>) -> Result<()>
         .await
 }
 
+/// The least `run_timeout_secs` accepts: a minute.
+pub const MIN_RUN_TIMEOUT_SECS: u64 = 60;
+/// The most `run_timeout_secs` accepts: a day.
+pub const MAX_RUN_TIMEOUT_SECS: u64 = 24 * 60 * 60;
+/// Where the run time limit is saved in the settings table. Unset: `RUN_TIMEOUT_SECS`.
+const RUN_TIMEOUT_SETTING: &str = "run_timeout_secs";
+
+/// The saved `run_timeout_secs`, or `None` when it is the default (`RUN_TIMEOUT_SECS`).
+pub async fn saved_run_timeout_secs(store: &Store) -> Result<Option<u64>> {
+    Ok(store
+        .setting(RUN_TIMEOUT_SETTING)
+        .await?
+        .and_then(|v| v.as_u64()))
+}
+
+/// Whether `secs` is in the range `run_timeout_secs` accepts; the error says what is.
+pub fn check_run_timeout_secs(secs: u64) -> Result<(), String> {
+    if (MIN_RUN_TIMEOUT_SECS..=MAX_RUN_TIMEOUT_SECS).contains(&secs) {
+        Ok(())
+    } else {
+        Err(format!(
+            "run_timeout_secs must be between {MIN_RUN_TIMEOUT_SECS} and {MAX_RUN_TIMEOUT_SECS}"
+        ))
+    }
+}
+
+/// Save `run_timeout_secs` (see [`check_run_timeout_secs`]), or go back to `RUN_TIMEOUT_SECS`
+/// with `None`. It applies from the next run that starts.
+pub async fn set_run_timeout_secs(store: &Store, secs: Option<u64>) -> Result<()> {
+    store
+        .set_setting(RUN_TIMEOUT_SETTING, secs.map(|n| json!(n)).as_ref())
+        .await
+}
+
 /// A completed run's sandbox, kept for the next run in its workspace.
 struct Parked {
     sandbox: Arc<dyn Sandbox>,
@@ -101,6 +135,7 @@ struct Inner {
     browsers: Option<Arc<dyn BrowserFactory>>,
     /// Bounds how many runs execute at once; the rest stay `queued`.
     slots: Arc<Semaphore>,
+    /// `RUN_TIMEOUT_SECS`: the time limit when no admin has saved `run_timeout_secs`.
     run_timeout: Duration,
     /// Cancellation handles for runs that are queued or running in this process.
     active: Mutex<HashMap<Uuid, CancellationToken>>,
@@ -411,19 +446,27 @@ impl Inner {
 
         // The time limit doesn't count time spent waiting for the client (the plan, approvals):
         // each time it is reached, it moves out by however long the run has waited so far.
+        // The `run_timeout_secs` setting as the run starts; a change applies from the next run.
+        let limit = match saved_run_timeout_secs(&self.store).await {
+            Ok(secs) => secs.map_or(self.run_timeout, Duration::from_secs),
+            Err(e) => {
+                tracing::warn!(error = %format!("{e:#}"), "could not read run_timeout_secs; using RUN_TIMEOUT_SECS");
+                self.run_timeout
+            }
+        };
         let started = tokio::time::Instant::now();
         let agent = run_agent(&self.env, run, sandbox, browser, &events, token);
         tokio::pin!(agent);
         loop {
-            let deadline = started + self.run_timeout + self.env.waits.paused(run.id);
+            let deadline = started + limit + self.env.waits.paused(run.id);
             tokio::select! {
                 result = &mut agent => return result,
                 _ = tokio::time::sleep_until(deadline) => {
-                    let moved = started + self.run_timeout + self.env.waits.paused(run.id);
+                    let moved = started + limit + self.env.waits.paused(run.id);
                     if moved <= tokio::time::Instant::now() {
                         return Err(AgentError::Failed(format!(
                             "run exceeded the {}s time limit",
-                            self.run_timeout.as_secs()
+                            limit.as_secs()
                         )));
                     }
                 }

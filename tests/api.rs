@@ -394,6 +394,18 @@ async fn runs_that_exceed_the_time_limit_fail() {
     assert!(app.factory.all_destroyed());
 }
 
+#[tokio::test]
+async fn the_saved_run_time_limit_replaces_run_timeout_secs() {
+    let app = TestApp::with_env(vec![Step::Block], &[("RUN_TIMEOUT_SECS", "600")]).await;
+    // Saved straight to the store: the API takes a minute at least, too long for a test.
+    cedar::manager::set_run_timeout_secs(&app.state.store, Some(1))
+        .await
+        .unwrap();
+    let id = id_of(&app.create_run(KEY_A, "x").await);
+    let run = app.wait_status(KEY_A, &id, "failed").await;
+    assert_eq!(run["error"], "run exceeded the 1s time limit");
+}
+
 // -- cancellation -----------------------------------------------------------------------------
 
 #[tokio::test]
