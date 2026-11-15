@@ -1269,6 +1269,9 @@ pub fn is_temporary(error: &str) -> bool {
         "429", "502", "503", "504", "too many requests", "rate limit", "rate-limit",
         "service unavailable", "bad gateway", "gateway timeout", "timed out", "timeout",
         "couldn't reach", "could not reach", "connection refused", "connection reset",
+        // Windows words a refused or dropped connection differently (os errors 10060, 10061).
+        "actively refused", "forcibly closed", "did not properly respond", "os error 10061",
+        "os error 10060", "os error 10054",
     ]
     .iter()
     .any(|m| lower.contains(m))
@@ -1486,6 +1489,11 @@ mod tests {
         b.record("fetch_url", true, "missing url");
         assert!(b.refusal("fetch_url").is_none());
         assert!(is_temporary("arXiv answered 503 (Service Unavailable)"));
+        assert!(is_temporary(
+            "tcp connect error: No connection could be made because the target machine actively \
+             refused it. (os error 10061)"
+        ));
+        assert!(is_temporary("tcp connect error: Connection refused (os error 111)"));
         assert!(!is_temporary("unknown tool: frobnicate"));
     }
 

@@ -147,21 +147,30 @@ async fn a_growing_conversation_is_cut_down_to_fit() {
     assert!(events.iter().any(|e| e.event == "context.trimmed"), "older results were cut down");
 }
 
+/// A server that answers every request with 429, as a rate-limited API does; its address.
+async fn rate_limited() -> String {
+    use axum::{http::StatusCode, routing::get, Router};
+    let app = Router::new().route("/", get(|| async { (StatusCode::TOO_MANY_REQUESTS, "slow down") }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}/")
+}
+
 #[tokio::test]
 async fn a_tool_that_keeps_failing_is_not_called_a_third_time() {
-    // Port 1 refuses connections: a temporary failure, as a rate-limited server is.
-    let down = json!({ "url": "http://127.0.0.1:1/" });
+    let limited = json!({ "url": rate_limited().await });
     let app = TestApp::with_env(
         vec![
             Step::Reply(reply(
                 vec![
-                    json!({ "type": "tool_use", "id": "a", "name": "fetch_url", "input": down }),
+                    json!({ "type": "tool_use", "id": "a", "name": "fetch_url", "input": limited }),
                     json!({ "type": "tool_use", "id": "b", "name": "bash", "input": { "command": "echo hi" } }),
                 ],
                 "tool_use",
             )),
-            Step::Reply(tool_use("c", "fetch_url", down.clone())),
-            Step::Reply(tool_use("d", "fetch_url", down.clone())),
+            Step::Reply(tool_use("c", "fetch_url", limited.clone())),
+            Step::Reply(tool_use("d", "fetch_url", limited.clone())),
             Step::Reply(text("done")),
         ],
         &[("WEB_FETCH_ALLOW_PRIVATE", "on")],
