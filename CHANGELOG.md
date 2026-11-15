@@ -3,6 +3,12 @@
 ## Unreleased
 
 - **The run time limit can be changed in Settings.** Settings → *Advanced settings* → *Run time limit* sets how long a reply may take, tools included, before cedar stops it (60 seconds to a day), from the next message; empty goes back to `RUN_TIMEOUT_SECS`, which is now only the default. Over the API it is `run_timeout_secs` on `PUT /v1/admin/settings`.
+- **A tool that keeps failing is left out.** A tool that fails twice in a row for a temporary reason (rate limited, unavailable, timing out) is not run again in that run; further calls answer at once that it was left out. In a daily-digest run on a 32k model, twelve calls to a rate-limited arXiv took 337 of the run's 600 seconds. The community `arxiv_search` tool (1.2.0) also says plainly that a 429 or 503 is not the query's fault, names arXiv's listing pages to read instead, and gives up after 20 seconds instead of 60.
+- **The model is told when time runs short.** From 60 % of the run's time limit on, or with three turns or fewer left, each turn's results end with a note on what is left and to produce the result from what the run has, since a stopped run delivers nothing.
+- **A turn's independent tool calls run at the same time.** Searches, pages and other calls without side effects run together; sandbox, browser, memory, records, download and account-changing calls still run one at a time, in order.
+- **Cutting a conversation down keeps the server's prompt cache.** A cut is made the same way in every later request, and a conversation is cut to 70 % of what fits, so llama.cpp and vLLM can reuse what they computed for the start of the prompt instead of reading most of it again every turn.
+- **Fewer tokens per page.** `fetch_url` drops menus, sidebars and the page's own header and footer, and reads a GitHub repository's releases page from the GitHub API (tags, times and notes, without the lists of downloads).
+- **The date is harder to miss.** It now heads cedar's part of the system prompt, with a request to use it and its year for anything recent.
 
 ## 0.10.0
 

@@ -49,7 +49,9 @@ async fn a_small_window_shapes_the_request() {
     assert!(max < 16_384, "{max}");
     let system = first["system"].as_str().unwrap();
     assert!(system.contains("context window is small"), "{system}");
-    assert!(system.contains("The current date and time is"), "{system}");
+    // The date heads cedar's note, right after the client's own prompt.
+    let date = system.find("Today is ").expect("the date is given");
+    assert!(date < system.find("The sandbox").unwrap(), "{system}");
     // Only the tools the request seems to need are offered.
     let names: Vec<&str> = first["tools"]
         .as_array()
@@ -143,4 +145,65 @@ async fn a_growing_conversation_is_cut_down_to_fit() {
     }
     let events = app.events(KEY_A, &id, None).await;
     assert!(events.iter().any(|e| e.event == "context.trimmed"), "older results were cut down");
+}
+
+/// A server that answers every request with 429, as a rate-limited API does; its address.
+async fn rate_limited() -> String {
+    use axum::{http::StatusCode, routing::get, Router};
+    let app = Router::new().route("/", get(|| async { (StatusCode::TOO_MANY_REQUESTS, "slow down") }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}/")
+}
+
+#[tokio::test]
+async fn a_tool_that_keeps_failing_is_not_called_a_third_time() {
+    let limited = json!({ "url": rate_limited().await });
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(reply(
+                vec![
+                    json!({ "type": "tool_use", "id": "a", "name": "fetch_url", "input": limited }),
+                    json!({ "type": "tool_use", "id": "b", "name": "bash", "input": { "command": "echo hi" } }),
+                ],
+                "tool_use",
+            )),
+            Step::Reply(tool_use("c", "fetch_url", limited.clone())),
+            Step::Reply(tool_use("d", "fetch_url", limited.clone())),
+            Step::Reply(text("done")),
+        ],
+        &[("WEB_FETCH_ALLOW_PRIVATE", "on")],
+    )
+    .await;
+    let id = id_of(&app.create_run(KEY_A, "read the page").await);
+    app.wait_status(KEY_A, &id, "completed").await;
+    let requests = app.llm.requests();
+    // Results come back in the order of the calls.
+    let first: Vec<&str> = requests[1]["messages"][2]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|b| b["tool_use_id"].as_str())
+        .collect();
+    assert_eq!(first, ["a", "b"]);
+    let third = requests[3]["messages"].as_array().unwrap().last().unwrap()["content"][0].clone();
+    let text = third["content"].as_str().unwrap();
+    assert!(text.starts_with("not called: fetch_url failed 2 times"), "{text}");
+}
+
+#[tokio::test]
+async fn the_time_check_counts_down_the_limit_set_in_settings() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("t1", "bash", json!({ "command": "echo hi" }))),
+        Step::Reply(text("done")),
+    ])
+    .await;
+    // A minute, where RUN_TIMEOUT_SECS would give ten.
+    cedar::manager::set_run_timeout_secs(&app.state.store, Some(60)).await.unwrap();
+    let id = id_of(&app.create_run_with(KEY_A, json!({ "prompt": "go", "max_turns": 2 })).await);
+    app.wait_status(KEY_A, &id, "completed").await;
+    let last = app.llm.requests()[1]["messages"].as_array().unwrap().last().unwrap().clone();
+    let note = last["content"].as_array().unwrap().last().unwrap()["text"].as_str().unwrap().to_string();
+    assert!(note.contains("about 1 minute and 1 turn are left"), "{note}");
 }

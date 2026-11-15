@@ -97,6 +97,19 @@ pub fn check_run_timeout_secs(secs: u64) -> Result<(), String> {
     }
 }
 
+/// A run's time limit: the saved `run_timeout_secs`, else `default` (`RUN_TIMEOUT_SECS`). Read as
+/// the run starts, by the manager that enforces it and by the agent that tells the model how much
+/// is left (see [`crate::agent::time_note`]).
+pub async fn run_time_limit(store: &Store, default: Duration) -> Duration {
+    match saved_run_timeout_secs(store).await {
+        Ok(secs) => secs.map_or(default, Duration::from_secs),
+        Err(e) => {
+            tracing::warn!(error = %format!("{e:#}"), "could not read run_timeout_secs; using RUN_TIMEOUT_SECS");
+            default
+        }
+    }
+}
+
 /// Save `run_timeout_secs` (see [`check_run_timeout_secs`]), or go back to `RUN_TIMEOUT_SECS`
 /// with `None`. It applies from the next run that starts.
 pub async fn set_run_timeout_secs(store: &Store, secs: Option<u64>) -> Result<()> {
@@ -447,13 +460,7 @@ impl Inner {
         // The time limit doesn't count time spent waiting for the client (the plan, approvals):
         // each time it is reached, it moves out by however long the run has waited so far.
         // The `run_timeout_secs` setting as the run starts; a change applies from the next run.
-        let limit = match saved_run_timeout_secs(&self.store).await {
-            Ok(secs) => secs.map_or(self.run_timeout, Duration::from_secs),
-            Err(e) => {
-                tracing::warn!(error = %format!("{e:#}"), "could not read run_timeout_secs; using RUN_TIMEOUT_SECS");
-                self.run_timeout
-            }
-        };
+        let limit = run_time_limit(&self.store, self.run_timeout).await;
         let started = tokio::time::Instant::now();
         let agent = run_agent(&self.env, run, sandbox, browser, &events, token);
         tokio::pin!(agent);

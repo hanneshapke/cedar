@@ -712,6 +712,11 @@ impl<'a> ToolView<'a> {
         self.all().find(|t| t.name() == name)
     }
 
+    /// The group a tool belongs to (see [`ToolSet::group`]).
+    pub fn group(&self, name: &str) -> &'static str {
+        self.set.group(name)
+    }
+
     /// A note for the system prompt saying what the sandbox can reach and how to use the web, so
     /// the model doesn't try to fetch search engines or pages with `curl`.
     pub fn environment_note(&self, reach: &crate::sandbox::Reach) -> String {

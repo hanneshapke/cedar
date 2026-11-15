@@ -726,6 +726,17 @@ Settings come from environment variables. The important ones:
 
 ## Tools
 
+The calls the model makes in one turn run in the order it gave, except that calls with no side
+effects (searches, pages, lookups, community tools) run at the same time; a call that works in the
+sandbox, drives the browser, asks the user, saves memory or records, downloads a file or changes
+something in an account runs on its own, after the ones before it. Results go back in the order of
+the calls. A tool that fails twice in a row for a temporary reason (a rate limit, a server that is
+unavailable, a timeout) is not run again in that run: further calls answer at once that it was left
+out and that the model should use another source or carry on without it. Once 60 % of
+the run's time limit (`run_timeout_secs` in Settings, else `RUN_TIMEOUT_SECS`) has passed (time waiting for the user not counted), or three turns or fewer are
+left, each turn's results end with a note on the minutes and turns left, telling the model to
+produce its result from what it has, since a run that is stopped delivers nothing.
+
 | Tool | What it does |
 | --- | --- |
 | `bash` | Runs a command with `sh -c` in the run's container and returns stdout, stderr, the exit status if it was non-zero, and the workspace files the command created or modified. Killed after `TOOL_TIMEOUT_SECS`. |
@@ -736,7 +747,7 @@ Settings come from environment variables. The important ones:
 | `generate_pdf` | Renders Markdown (default) or HTML to a PDF file in the workspace. Takes `path` (must end in `.pdf`), `content`, optional `format` (`markdown` or `html`) and optional `title`. Returns the page count and size, plus the renderer's warnings (a missing image, say). |
 | `generate_chart` | Draws a chart with matplotlib and saves it as PNG, SVG, or PDF, in the same palette and style as the chat's chart card. Takes `path`, `kind` (`line`, `bar`, `barh`, `area`, `scatter`, `pie`, `histogram`), `labels` (x categories or values), `series` (`[{name?, values}]`, `null` for gaps), and optional `title`, `x_label`, `y_label`, `stacked`, `bins`, `log_scale`, and `band` (`{from, to, label?}`: a shaded range on the value axis, such as a target range). The chat interfaces and the phone apps draw the call's data as an interactive chart card instead of showing the picture ([chat/README.md](chat/README.md)). |
 | `web_search` | Searches the web with [Brave Search](https://brave.com/search/api/) and returns numbered results (title, URL, age, snippet). Takes `query`, optional `count` (1–20, default 5) and optional `freshness` (`pd`, `pw`, `pm`, `py`). Only offered when `BRAVE_API_KEY` is set. |
-| `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, tables without borders, links as numbered references; scripts and styles dropped), text, JSON, XML, and CSV as-is. The list of links leaves out navigation (relative actions such as `hide?id=1`, bare words such as `login`, anchors and scripts), lists each address once and makes relative ones absolute. Hacker News's front page is read from its search API (hn.algolia.com) as a compact list of stories with points, comments, age and links, falling back to the page when that fails. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
+| `fetch_url` | Fetches an http(s) URL and returns its text: HTML converted to plain text (title, headings, lists, tables without borders, links as numbered references; scripts, styles, menus (`nav`, `aside`, navigation roles) and the page's own header and footer dropped, an article's kept), text, JSON, XML, and CSV as-is. The list of links leaves out navigation (relative actions such as `hide?id=1`, bare words such as `login`, anchors and scripts), lists each address once and makes relative ones absolute. Hacker News's front page is read from its search API (hn.algolia.com) as a compact list of stories with points, comments, age and links, falling back to the page when that fails, and a GitHub repository's releases page (`github.com/<owner>/<repo>/releases`) from the GitHub API as the ten newest releases with tag, time and notes (lists of downloads left out). Long pages are cut at `TOOL_OUTPUT_MAX_BYTES` with a note giving the `start` offset to continue from. Binary content is refused with a pointer to `download_file`. |
 | `download_file` | Downloads an http(s) URL (up to 25 MB) to `path` in the workspace, so the agent can work with PDFs, spreadsheets, or datasets from the web while the container stays offline. |
 | `remember` | Saves something durable about the user for later conversations. Takes `text` (one fact, at most 500 characters; whitespace is collapsed to one line), optional `kind` (`fact`, `preference`, `instruction`, `temporary`), `supersedes` (the id of the memory it makes untrue, kept as history), `valid_until` (an ISO date, for a temporary fact), `subject` and `relation` (the key of a fact with one current value). Returns `{status: "added" \| "superseded" \| "replaced" \| "unchanged", memory: {id, kind, text, pinned, since, until}}`. Refused in non-interactive runs and for text that looks like a secret or an identifier. See [Memory](#memory). Unless `MEMORY=off`. |
 | `forget` | Archives one memory by `id`: it leaves every prompt and stays in the user's Settings, where they can delete or restore it. Refused in non-interactive runs. Unless `MEMORY=off`. |
@@ -1097,8 +1108,11 @@ A model server takes the prompt and the reply in one window of tokens. With a mo
 - **Older results are cut down first.** When the conversation no longer fits beside a quarter of
   the window kept for the reply, what is sent is cut down: earlier tool results to a short head
   each, then the newest ones (the largest first), then the oldest messages after the prompt, never
-  the newest calls and their results. The stored conversation is never changed. A
-  `context.trimmed` event says what was cut.
+  the newest calls and their results. It is cut to 70 % of what would fit, so the next turns fit
+  without new cuts, and a result once cut is cut the same way in every later request: the start of
+  the prompt stays the same text, and a server that caches prompts (llama.cpp, vLLM) needn't read
+  it again. The stored conversation is never changed. A `context.trimmed` event says what was
+  cut.
 - **A reply cut off by the window is tried again.** A reply that stops at its limit before it says
   or asks anything is not taken as the answer: when the window cut it short, the turn is tried once
   more with less of the conversation, and if that is cut off too the run fails with an error that
@@ -1113,8 +1127,9 @@ A model server takes the prompt and the reply in one window of tokens. With a mo
   needs from a long result before going on. Its memory note shows the profile and what the request
   calls for, not the whole store.
 
-Every run's system prompt also carries the current date and time (UTC), so the model needs no
-call to learn it.
+Every run's system prompt also carries the current date and time (UTC), at the head of cedar's
+note right after the client's own prompt, and asks the model to use that date and year for
+anything recent, so it needs no call to learn it and doesn't search for last year's news.
 
 #### llama.cpp on a machine with a GPU
 
