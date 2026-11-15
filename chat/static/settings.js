@@ -633,7 +633,8 @@ const cedarSettings = (() => {
   let advancedSettings = null;
 
   /** Expert mode (trace-view.js), for this browser and so open to everyone, then the server-wide
-   *  options most setups leave alone: for now, what runs the sandboxes, which need the admin token. */
+   *  options most setups leave alone, which need the admin token: how long a run may take, and
+   *  what runs the sandboxes. */
   async function renderAdvanced(section = advancedSection) {
     if (!section) return;
     advancedSection = section;
@@ -662,17 +663,47 @@ const cedarSettings = (() => {
       shell()?.refresh('advanced');
       return;
     }
-    section.replaceChildren(...expert, sandboxBlock(openShellRow(advancedSettings)));
+    const runs = advancedBlock(tr('settings.advanced.runs'), await runTimeoutRow(advancedSettings));
+    section.replaceChildren(...expert, runs, sandboxBlock(openShellRow(advancedSettings)));
     shell()?.refresh('advanced');
+  }
+
+  /** A block of the Advanced page: an eyebrow `title` over `content`. */
+  function advancedBlock(title, content) {
+    const b = el('div', 'cedar-set-block');
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', title));
+    b.append(head, content);
+    return b;
   }
 
   /** The Advanced page's Sandbox block around `content`. */
   function sandboxBlock(content) {
-    const b = el('div', 'cedar-set-block');
-    const head = el('div', 'cedar-set-block-head');
-    head.append(el('span', 'settings-eyebrow', tr('settings.server.sandbox')));
-    b.append(head, content);
-    return b;
+    return advancedBlock(tr('settings.server.sandbox'), content);
+  }
+
+  /** `secs` as people say it: whole hours or minutes when it is that, else seconds. */
+  function duration(secs) {
+    if (secs % 3600 === 0) return tr('settings.runTimeout.hours', { count: secs / 3600 });
+    if (secs % 60 === 0) return tr('settings.idle.minutes', { count: secs / 60 });
+    return tr('settings.runTimeout.seconds', { count: secs });
+  }
+
+  /** How long a run may take before cedar stops it (`run_timeout_secs`; empty is RUN_TIMEOUT_SECS). */
+  function runTimeoutRow(settings) {
+    return serverSettingRow({
+      title: tr('settings.runTimeout.title'),
+      desc: tr('settings.runTimeout.desc'),
+      key: 'run_timeout_secs',
+      unit: 's',
+      label: tr('settings.runTimeout.label'),
+      range: (d) => [d.min_run_timeout_secs ?? 60, d.max_run_timeout_secs ?? 86400],
+      fallback: 600,
+      shown: duration,
+      saved: (n) => tr('settings.runTimeout.saved', { duration: duration(n) }),
+      settings,
+      after: () => renderAdvanced(),
+    });
   }
 
   /** The switch between Docker (off, the default) and OpenShell (on) for conversations' sandboxes. */
@@ -1855,12 +1886,13 @@ const cedarSettings = (() => {
   }
 
   /** A number in cedar's server-wide settings (`/integrations/settings`), saved on its own: the
-   * other settings are left out of the request, so they keep their values. Empty is the default. */
+   * other settings are left out of the request, so they keep their values. Empty is the default.
+   * `o.settings` is the settings when already loaded; `o.after` redraws the page once saved. */
   async function serverSettingRow(o) {
     const { row, main, side } = integrationRow(o.title, o.desc);
-    let settings;
+    let settings = o.settings;
     try {
-      settings = await adminApi('GET', '/integrations/settings');
+      settings ??= await adminApi('GET', '/integrations/settings');
     } catch (err) {
       side.append(badge(tr('settings.unavailable')));
       main.append(el('small', '', err.message));
@@ -1887,7 +1919,7 @@ const cedarSettings = (() => {
       try {
         const saved = await adminApi('PUT', '/integrations/settings', { [o.key]: input.value ? Number(input.value) : null });
         deps.toast(o.saved(saved[o.key] ?? fallback));
-        renderIntegrations();
+        (o.after || renderIntegrations)();
       } catch (err) {
         saveBtn.disabled = false;
         deps.toast(err.message);
