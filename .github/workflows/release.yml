@@ -1,29 +1,46 @@
-# Builds a release when a pull request from a `release/<version>` branch is merged into main:
+# Builds a release when a pull request from a `release/*` branch is merged into main.
 #
-#   1. verify   the branch's version matches both Cargo.toml versions, the iOS app's
-#               MARKETING_VERSION and docs/landing/version.js, the tag is free, tests pass
+# Cedar is released as three platforms that share major.minor and count patches on their own
+# (scripts/lib-versions.sh): cedar (the servers, the desktop app and the images; tag v<version>),
+# android (tag android-v<version>) and ios (tag ios-v<version>). A release publishes the
+# platforms whose version has no tag yet, which are the ones the pull request bumped
+# (scripts/bump-version.sh, scripts/release-plan.sh). So a desktop fix doesn't put an unchanged
+# app through TestFlight and app review again, and a phone fix doesn't make every desktop update.
+#
+#   1. verify   the versions fit together (scripts/check-version.sh), which platforms to release,
+#               and, for cedar, that the tests pass
+#
+# cedar:
 #   2. images   the sandbox and browser images, built natively for amd64 and arm64 and pushed to
 #               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
 #   3. dmg      cedar and cedar-chat for Apple Silicon, wrapped in Cedar.app, signed, notarized,
 #               and packed into a DMG (no Intel build: openssl-sys can't cross-compile to x86_64)
 #   4. msi      cedar.exe and cedar-chat.exe for x64 Windows, wrapped in Cedar.exe and packed into
 #               an MSI (unsigned for now: SmartScreen warns on first run, see desktop/README.md)
-#   5. apk      the Android app as a signed release APK (android/), versionName <version> and
-#               versionCode major*1000000 + minor*1000 + patch, so every release updates in place
-#   6. linux    cedar and cedar-chat for x64 and arm64 Linux, in a tarball each (built on Ubuntu
+#   5. linux    cedar and cedar-chat for x64 and arm64 Linux, in a tarball each (built on Ubuntu
 #               22.04, so they run on glibc 2.35 and newer; OpenSSL is linked in)
+#
+# android:
+#   6. apk      the Android app as a signed release APK (android/), versionName <version> and
+#               versionCode major*1000000 + minor*1000 + patch, so every release updates in place
+#
+# ios:
 #   7. ios      the iOS app archived, signed and uploaded to TestFlight (testflight.yml); App Store
 #               apps can't be attached to a GitHub Release, so TestFlight is where it is published
 #   8. ipa      the iOS app as an unsigned IPA (ipa.yml), for sideloading with SideStore or AltStore
-#   9. release  tag v<version> at the merge commit and publish a GitHub Release with the DMG, MSI,
-#               APK, IPA and Linux tarballs, the desktop app's update bundles and their signatures, and
-#               latest.json, which installed desktop apps check for updates (desktop/src/update.rs);
-#               then run pages.yml, which adds the IPA to the SideStore source (docs/sidestore)
-#               and puts the release on the landing site; merging the pull request alone doesn't
 #
-# Run it by hand (Actions -> Release -> Run workflow) with a version to build everything from the
+#   9. release  one tag and GitHub Release per platform released, at the merge commit:
+#               v<version> with the DMG, MSI and Linux tarballs, the desktop app's update bundles
+#               and their signatures, and latest.json, which installed desktop apps check for
+#               updates (desktop/src/update.rs); android-v<version> with the APK; ios-v<version>
+#               with the IPA. Only v<version> is ever GitHub's "latest" release, which the desktop
+#               and Linux updaters and the chat's update banner read. Then run pages.yml, which
+#               puts the release on the landing site and the IPA in the SideStore source
+#               (docs/sidestore); merging the pull request alone doesn't
+#
+# Run it by hand (Actions -> Release -> Run workflow) to build the chosen platforms from the
 # current commit as artifacts, without tagging or publishing. Images are still pushed, under the
-# version given. The iOS upload is skipped: TestFlight -> Run workflow does that on its own.
+# version in Cargo.toml. The iOS upload is skipped: TestFlight -> Run workflow does that on its own.
 #
 # Secrets (Settings -> Secrets and variables -> Actions), all required by the dmg job:
 #   APPLE_CERTIFICATE           the Developer ID Application certificate as a base64 .p12
@@ -61,17 +78,19 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version to build, as it would appear in a release/<version> branch (no tag or release is created)"
+      platforms:
+        description: "What to build from this commit, at the versions it carries (no tag or release is created)"
         required: true
-        type: string
+        default: all
+        type: choice
+        options: [all, cedar, mobile, android, ios]
 
 permissions:
   contents: write
   packages: write
 
 concurrency:
-  group: release-${{ github.event.pull_request.head.ref || inputs.version }}
+  group: release-${{ github.event.pull_request.head.ref || 'manual' }}
   cancel-in-progress: false
 
 env:
@@ -87,75 +106,92 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     outputs:
-      version: ${{ steps.meta.outputs.version }}
+      # Which platforms this run releases ('true' or 'false'), and their versions.
+      cedar: ${{ steps.plan.outputs.cedar }}
+      android: ${{ steps.plan.outputs.android }}
+      ios: ${{ steps.plan.outputs.ios }}
+      version: ${{ steps.plan.outputs.cedar_version }}
+      android_version: ${{ steps.plan.outputs.android_version }}
+      ios_version: ${{ steps.plan.outputs.ios_version }}
+      # The tag of each platform's last release, where its release notes start.
+      cedar_previous: ${{ steps.plan.outputs.cedar_previous }}
+      android_previous: ${{ steps.plan.outputs.android_previous }}
+      ios_previous: ${{ steps.plan.outputs.ios_previous }}
       sha: ${{ steps.meta.outputs.sha }}
       publish: ${{ steps.meta.outputs.publish }}
       image_owner: ${{ steps.meta.outputs.image_owner }}
     steps:
-      - name: Work out the version and the commit to build
+      - name: Work out the commit to build
         id: meta
         env:
           EVENT: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           PUSH_SHA: ${{ github.sha }}
           OWNER: ${{ github.repository_owner }}
         run: |
           set -eu
           if [ "$EVENT" = workflow_dispatch ]; then
-            version=$INPUT_VERSION; sha=$PUSH_SHA; publish=false
+            sha=$PUSH_SHA; publish=false
           else
-            version=${HEAD_REF#release/}; sha=$MERGE_SHA; publish=true
-          fi
-          case "$version" in
-            ''|*[!0-9A-Za-z.+-]*) echo "::error::'$version' is not a usable version"; exit 1 ;;
-          esac
-          # Windows Installer takes major.minor.patch only, with major and minor up to 255 and
-          # patch up to 65535; a pre-release suffix like -beta is refused when the MSI is built.
-          if ! printf '%s' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
-            echo "::error::'$version' is not major.minor.patch, which the Windows installer (MSI) needs"; exit 1
-          fi
-          IFS=. read -r major minor patch <<< "$version"
-          if [ "$major" -gt 255 ] || [ "$minor" -gt 255 ] || [ "$patch" -gt 65535 ]; then
-            echo "::error::'$version' is too large for the Windows installer (MSI): major and minor go up to 255, patch to 65535"; exit 1
+            sha=$MERGE_SHA; publish=true
           fi
           {
-            echo "version=$version"
             echo "sha=$sha"
             echo "publish=$publish"
             echo "image_owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
           } >> "$GITHUB_OUTPUT"
-          echo "building $version from $sha (publish: $publish)"
+          echo "building $sha (publish: $publish)"
 
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.meta.outputs.sha }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: The versions fit together
+        # Cedar's three places agree, and the phone apps are on the same major.minor;
+        # release-check.yml runs the same check on the open pull request.
+        run: scripts/check-version.sh
 
-      - name: Versions match the branch
-        # Cargo.toml, desktop/Cargo.toml, the iOS MARKETING_VERSION and the landing site's
-        # docs/landing/version.js; release-check.yml runs the same check on the open pull request.
+      - name: What this release publishes
+        # A merged pull request releases every platform whose version has no tag yet; a manual
+        # run builds the platforms it was asked for.
+        id: plan
         env:
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: scripts/check-version.sh "$VERSION"
-
-      - name: The tag does not exist yet
-        if: steps.meta.outputs.publish == 'true'
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
+          EVENT: ${{ github.event_name }}
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
-            echo "::error::tag v$VERSION already exists"; exit 1
+          set -eu
+          if [ "$EVENT" = workflow_dispatch ]; then
+            scripts/release-plan.sh --only "$PLATFORMS" > plan.txt
+          else
+            scripts/release-plan.sh > plan.txt
+          fi
+          cat plan.txt >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release plan"
+            echo
+            echo "| Platform | Version | Released by this run |"
+            echo "| --- | --- | --- |"
+            for p in cedar android ios; do
+              echo "| $p | $(sed -n "s/^${p}_version=//p" plan.txt) | $(sed -n "s/^$p=//p" plan.txt | sed 's/true/yes/; s/false/no/') |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -qx 'any=false' plan.txt; then
+            echo "::error::every version here is released already: bump the platforms to release with scripts/bump-version.sh"; exit 1
           fi
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.plan.outputs.cedar == 'true'
 
-      - run: cargo test --workspace --locked
+      - uses: Swatinem/rust-cache@v2
+        if: steps.plan.outputs.cedar == 'true'
+
+      # The phone apps have their own tests: the apk job runs the Android ones, ios.yml the iOS ones.
+      - if: steps.plan.outputs.cedar == 'true'
+        run: cargo test --workspace --locked
 
   images:
     needs: verify
+    if: needs.verify.outputs.cedar == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -236,6 +272,7 @@ jobs:
 
   dmg:
     needs: verify
+    if: needs.verify.outputs.cedar == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -389,6 +426,7 @@ jobs:
 
   msi:
     needs: verify
+    if: needs.verify.outputs.cedar == 'true'
     # WiX, which Tauri builds the MSI with, only runs on Windows. Steps run in PowerShell, so the
     # Perl that builds cedar-chat's static OpenSSL is Strawberry Perl, not Git's.
     runs-on: windows-latest
@@ -494,6 +532,7 @@ jobs:
 
   apk:
     needs: verify
+    if: needs.verify.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     defaults:
@@ -534,7 +573,7 @@ jobs:
 
       - name: Build the release APK
         env:
-          VERSION: ${{ needs.verify.outputs.version }}
+          VERSION: ${{ needs.verify.outputs.android_version }}
           CEDAR_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           CEDAR_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           CEDAR_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -561,6 +600,7 @@ jobs:
 
   linux:
     needs: verify
+    if: needs.verify.outputs.cedar == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -623,7 +663,7 @@ jobs:
   ios:
     needs: verify
     # An upload to App Store Connect is a publication, so a manual run of this workflow skips it.
-    if: needs.verify.outputs.publish == 'true'
+    if: needs.verify.outputs.ios == 'true' && needs.verify.outputs.publish == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/testflight.yml
@@ -633,6 +673,7 @@ jobs:
 
   ipa:
     needs: verify
+    if: needs.verify.outputs.ios == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/ipa.yml
@@ -641,50 +682,65 @@ jobs:
 
   release:
     needs: [verify, manifests, dmg, msi, apk, linux, ios, ipa]
-    if: needs.verify.outputs.publish == 'true'
+    # The jobs of a platform that isn't released are skipped, which must not skip this one; a
+    # failed or cancelled job must.
+    if: >-
+      always() && needs.verify.result == 'success' && needs.verify.outputs.publish == 'true' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: write   # to start pages.yml
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SHA: ${{ needs.verify.outputs.sha }}
+      SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.verify.outputs.sha }}
 
+      # Each platform's files in a directory of their own: each gets its own GitHub Release.
       - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.cedar == 'true'
         with:
           pattern: dmg-*
-          path: dist
+          path: dist/cedar
           merge-multiple: true
 
       - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.cedar == 'true'
         with:
           pattern: msi-*
-          path: dist
+          path: dist/cedar
           merge-multiple: true
 
       - uses: actions/download-artifact@v4
-        with:
-          pattern: apk-*
-          path: dist
-          merge-multiple: true
-
-      - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.cedar == 'true'
         with:
           pattern: linux-*
-          path: dist
+          path: dist/cedar
           merge-multiple: true
 
       - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.android == 'true'
+        with:
+          pattern: apk-*
+          path: dist/android
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.ios == 'true'
         with:
           pattern: ipa-*
-          path: dist
+          path: dist/ios
           merge-multiple: true
 
       - name: The desktop app's update manifest
         # What installed desktop apps read (releases/latest/download/latest.json, in
         # tauri.conf.json): the version, and per platform the update bundle and its signature.
-        working-directory: dist
+        if: needs.verify.outputs.cedar == 'true'
+        working-directory: dist/cedar
         env:
           VERSION: ${{ needs.verify.outputs.version }}
           REPO: ${{ github.repository }}
@@ -706,17 +762,30 @@ jobs:
           cat latest.json
 
       - name: Checksums
-        working-directory: dist
-        run: sha256sum *.dmg *.msi *.apk *.ipa *.tar.gz | tee checksums.txt
-
-      - name: Tag and publish the release
+        # One checksums.txt per release; cedar's is what cedar-update checks a tarball against.
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CEDAR: ${{ needs.verify.outputs.cedar }}
+          ANDROID: ${{ needs.verify.outputs.android }}
+          IOS: ${{ needs.verify.outputs.ios }}
+        run: |
+          set -eu
+          [ "$CEDAR" != true ]   || (cd dist/cedar && sha256sum *.dmg *.msi *.tar.gz | tee checksums.txt)
+          [ "$ANDROID" != true ] || (cd dist/android && sha256sum *.apk | tee checksums.txt)
+          [ "$IOS" != true ]     || (cd dist/ios && sha256sum *.ipa | tee checksums.txt)
+
+      # Each of the three steps below skips a release that is already out, so the job can be run
+      # again after one of them failed.
+      - name: Tag and publish Cedar
+        if: needs.verify.outputs.cedar == 'true'
+        env:
           VERSION: ${{ needs.verify.outputs.version }}
-          SHA: ${{ needs.verify.outputs.sha }}
+          PREVIOUS: ${{ needs.verify.outputs.cedar_previous }}
           REPO: ghcr.io/${{ needs.verify.outputs.image_owner }}
         run: |
           set -eu
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::notice::v$VERSION is published already"; exit 0
+          fi
           cat > notes.md <<EOF
           ## Cedar $VERSION for macOS
 
@@ -730,25 +799,6 @@ jobs:
           Desktop). It runs on 64-bit Windows 10 and 11 with Docker Desktop's WSL 2 backend. The
           installer is not signed yet, so Windows SmartScreen warns the first time: choose *More info*,
           then *Run anyway*.
-
-          ## Cedar $VERSION for Android
-
-          Download \`Cedar-$VERSION-android.apk\` on the phone and open it (allow installs from
-          your browser or file manager when Android asks). It runs on Android 8 and newer and talks to
-          your cedar-chat over HTTPS: scan the QR code under Settings → Phone in the chat. Later
-          releases install over it. See android/README.md.
-
-          ## Cedar $VERSION for iPhone and iPad
-
-          This version is on TestFlight: open the TestFlight invitation on the device and install
-          or update Cedar. It needs iOS 17 or newer and pairs with your cedar-chat the same way: scan
-          the QR code under Settings → Phone. See iOS/README.md.
-
-          To sideload it instead, install \`Cedar-$VERSION-ios.ipa\` with SideStore or AltStore, which
-          sign it with your own Apple ID, or add the source
-          https://hanneshapke.github.io/cedar/sidestore.json in SideStore to install it and get
-          updates. Sideloaded, the app has no iPhone push; everything else is the same. See
-          iOS/README.md, "Sideloading".
 
           ## Cedar $VERSION for Linux
 
@@ -766,6 +816,14 @@ jobs:
 
           Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
 
+          ## Android, iPhone and iPad
+
+          The phone apps are released on their own, when something in them changes, so their last
+          number can differ from the desktop's: every ${VERSION%.*}.x app works with every
+          ${VERSION%.*}.x server. The newest ones are linked from $SITE and listed under
+          [Releases](https://github.com/$GITHUB_REPOSITORY/releases) as *Cedar for Android* and
+          *Cedar for iOS*.
+
           ## Updating
 
           The Mac and Windows apps check for new releases themselves and offer them in a banner;
@@ -775,14 +833,81 @@ jobs:
             --target "$SHA" \
             --title "Cedar $VERSION" \
             --notes "$(cat notes.md)" \
-            --generate-notes \
-            dist/*.dmg dist/*.msi dist/*.apk dist/*.ipa dist/*.tar.gz dist/checksums.txt \
-            dist/*.sig dist/latest.json dist/*.source.json
+            --generate-notes ${PREVIOUS:+--notes-start-tag "$PREVIOUS"} \
+            --latest \
+            dist/cedar/*.dmg dist/cedar/*.msi dist/cedar/*.tar.gz dist/cedar/checksums.txt \
+            dist/cedar/*.sig dist/cedar/latest.json
 
-      - name: Update the SideStore source
-        # pages.yml rebuilds sidestore.json from the releases, this one now included. What the
-        # job's token does starts no other workflow, except a workflow_dispatch like this one.
+      # --latest=false on the phone apps' releases: GitHub's "latest" release has to stay a
+      # v<version> one, since the desktop app reads latest.json from it and cedar-update, the
+      # chat's update banner and the landing site read its tag as Cedar's version.
+      - name: Tag and publish Cedar for Android
+        if: needs.verify.outputs.android == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.verify.outputs.android_version }}
+          PREVIOUS: ${{ needs.verify.outputs.android_previous }}
+        run: |
+          set -eu
+          if gh release view "android-v$VERSION" >/dev/null 2>&1; then
+            echo "::notice::android-v$VERSION is published already"; exit 0
+          fi
+          cat > notes.md <<EOF
+          ## Cedar $VERSION for Android
+
+          Download \`Cedar-$VERSION-android.apk\` on the phone and open it (allow installs from
+          your browser or file manager when Android asks). It runs on Android 8 and newer and talks to
+          your cedar-chat over HTTPS: scan the QR code under Settings → Phone in the chat. Later
+          releases install over it. See android/README.md.
+
+          It works with every Cedar ${VERSION%.*}.x on the desktop or server; the last number counts
+          the Android app's own fixes.
+          EOF
+          gh release create "android-v$VERSION" \
+            --target "$SHA" \
+            --title "Cedar for Android $VERSION" \
+            --notes "$(cat notes.md)" \
+            --generate-notes ${PREVIOUS:+--notes-start-tag "$PREVIOUS"} \
+            --latest=false \
+            dist/android/*.apk dist/android/checksums.txt
+
+      - name: Tag and publish Cedar for iOS
+        if: needs.verify.outputs.ios == 'true'
+        env:
+          VERSION: ${{ needs.verify.outputs.ios_version }}
+          PREVIOUS: ${{ needs.verify.outputs.ios_previous }}
+        run: |
+          set -eu
+          if gh release view "ios-v$VERSION" >/dev/null 2>&1; then
+            echo "::notice::ios-v$VERSION is published already"; exit 0
+          fi
+          cat > notes.md <<EOF
+          ## Cedar $VERSION for iPhone and iPad
+
+          This version is on TestFlight: open the TestFlight invitation on the device and install
+          or update Cedar. It needs iOS 17 or newer and pairs with your cedar-chat by scanning the
+          QR code under Settings → Phone in the chat. See iOS/README.md.
+
+          To sideload it instead, install \`Cedar-$VERSION-ios.ipa\` with SideStore or AltStore, which
+          sign it with your own Apple ID, or add the source
+          ${SITE}sidestore.json in SideStore to install it and get
+          updates. Sideloaded, the app has no iPhone push; everything else is the same. See
+          iOS/README.md, "Sideloading".
+
+          It works with every Cedar ${VERSION%.*}.x on the desktop or server; the last number counts
+          the iOS app's own fixes.
+          EOF
+          gh release create "ios-v$VERSION" \
+            --target "$SHA" \
+            --title "Cedar for iOS $VERSION" \
+            --notes "$(cat notes.md)" \
+            --generate-notes ${PREVIOUS:+--notes-start-tag "$PREVIOUS"} \
+            --latest=false \
+            dist/ios/*.ipa dist/ios/*.source.json dist/ios/checksums.txt
+
+      - name: Update the landing site and the SideStore source
+        # pages.yml sets the site's version and download links and rebuilds sidestore.json from
+        # the releases, these now included. What the job's token does starts no other workflow,
+        # except a workflow_dispatch like this one.
+        env:
           REPO: ${{ github.repository }}
         run: gh workflow run pages.yml --repo "$REPO" --ref main

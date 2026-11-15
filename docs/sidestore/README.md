@@ -11,7 +11,7 @@
 | Piece | What it does |
 | --- | --- |
 | `.github/workflows/ipa.yml` | Builds `Cedar-<version>-ios.ipa` and next to it `Cedar-<version>-ios.source.json`: the bundle id, version, build number, minimum iOS, size, SHA-256 and privacy strings, read from the built app's `Info.plist` |
-| `.github/workflows/release.yml` | Attaches both files to the GitHub Release, then starts `pages.yml` |
+| `.github/workflows/release.yml` | Attaches both files to the GitHub Release `ios-v<version>` when a release bumps the iOS version, then starts `pages.yml` |
 | `.github/workflows/pages.yml` | Fetches the `.source.json` of every published release that has an IPA, adds its download URL, date and a link to its notes, and runs `build.sh` |
 | `source.json` | Everything else: the source's and the app's name, description, icon, tint color, category and screenshots. URLs without `https://` are relative to the site |
 | `build.sh` | Puts the two together: the versions newest first, the newest one's privacy strings as the app's permissions, and the app-level `version`/`downloadURL`/`size` older clients read |

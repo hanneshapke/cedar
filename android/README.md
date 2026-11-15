@@ -105,8 +105,11 @@ The same as the iOS app:
 Cedar is not on Google Play yet (it is planned for the coming months). Until then, install the APK
 from a computer over USB with `adb`.
 
-1. On a computer, open the latest [GitHub Release](https://github.com/hanneshapke/cedar/releases)
-   and download `Cedar-<version>-android.apk`.
+1. On a computer, open the newest *Cedar for Android* release under
+   [GitHub Releases](https://github.com/hanneshapke/cedar/releases) (the
+   [landing page](https://hanneshapke.github.io/cedar/) links it) and download
+   `Cedar-<version>-android.apk`. The app's last version number counts its own fixes, so it can
+   differ from the desktop's: every 0.10.x app works with every 0.10.x server.
 2. Install it with `adb install Cedar-<version>-android.apk`.
    [Installing Cedar on Android with ADB](../docs/developer_stories/cedar-on-android-with-adb.md)
    walks through it, from getting `adb` to allowing the computer on the phone. Later releases
@@ -221,8 +224,10 @@ export CEDAR_KEYSTORE_PASSWORD=… CEDAR_KEY_PASSWORD=…
 ```
 
 or write `storeFile`, `storePassword`, `keyAlias` and `keyPassword` into `android/keystore.properties`
-(ignored by git). The version is the workspace version in the repository's `Cargo.toml` (or
-`-Pcedar.version=…`); `versionCode` is `major·1 000 000 + minor·1 000 + patch`.
+(ignored by git). The version is `cedar.version` in `android/gradle.properties` (or
+`-Pcedar.version=…`); `versionCode` is `major·1 000 000 + minor·1 000 + patch`. It shares
+`major.minor` with the desktop app and counts its own patches; `scripts/bump-version.sh android`
+bumps it (see [Releasing](../desktop/README.md#releasing)).
 
 You can also open `android/` in Android Studio and run the `app` configuration.
 
@@ -290,8 +295,9 @@ The push token or endpoint goes to `POST /api/notifications/android/devices`.
 
 `.github/workflows/android.yml` runs the core tests, Android lint and a debug build for every push
 and pull request that touches `android/`, and keeps the debug APK as an artifact for a week
-(Actions → Android → the run → Artifacts). The release workflow builds the signed APK and attaches
-it to the GitHub Release with its checksum. It needs these repository secrets:
+(Actions → Android → the run → Artifacts). When a release bumps the Android version, the release
+workflow builds the signed APK and publishes it with its checksum as the GitHub Release
+`android-v<version>`. It needs these repository secrets:
 
 | Secret | What it is |
 | --- | --- |

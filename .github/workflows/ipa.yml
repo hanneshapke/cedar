@@ -4,10 +4,10 @@
 # runs without iPhone push and everything else works. See iOS/README.md, "Sideloading".
 #
 # Run it by hand (Actions -> IPA -> Run workflow) for an IPA of the current commit, kept as the
-# run's `ipa-ios` artifact; release.yml calls it with the release's merge commit and attaches the
-# IPA and its source metadata (Cedar-<version>-ios.source.json) to the GitHub Release, from which
-# pages.yml builds the SideStore source. The version is MARKETING_VERSION in the project, which
-# release.yml checks against the release. No secrets are needed.
+# run's `ipa-ios` artifact; release.yml calls it with the merge commit of a release that bumps the
+# iOS version and attaches the IPA and its source metadata (Cedar-<version>-ios.source.json) to
+# the GitHub Release ios-v<version>, from which pages.yml builds the SideStore source. The version
+# is MARKETING_VERSION in the project (scripts/bump-version.sh ios). No secrets are needed.
 name: IPA
 on:
   workflow_dispatch:

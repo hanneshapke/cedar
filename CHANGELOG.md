@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The phone apps are released only when they change.** Cedar, the Android app and the iOS app share `major.minor` and now count patch versions on their own: a release ships the platforms whose version it bumps (`scripts/bump-version.sh` picks the ones that changed), each under its own tag (`v…`, `android-v…`, `ios-v…`). So 0.11.2 on the desktop next to 0.11.0 on a phone is the same Cedar 0.11, and a desktop fix no longer sends an unchanged app to TestFlight.
+
 ## 0.10.1
 
 - **The run time limit can be changed in Settings.** Settings → *Advanced settings* → *Run time limit* sets how long a reply may take, tools included, before cedar stops it (60 seconds to a day), from the next message; empty goes back to `RUN_TIMEOUT_SECS`, which is now only the default. Over the API it is `run_timeout_secs` on `PUT /v1/admin/settings`.

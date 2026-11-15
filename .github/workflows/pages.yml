@@ -5,11 +5,13 @@ name: Landing page
 # docs/sidestore and the IPA of every release (ipa.yml); release.yml runs this workflow after it
 # publishes, so a new version shows up in SideStore. See docs/sidestore/README.md.
 #
-# A release only reaches the site once it is published: merging a release/<version> pull request
+# A release only reaches the site once it is published: merging a release/* pull request
 # deploys nothing here (the gate job), and release.yml starts this workflow only after every one
 # of its build jobs has succeeded and the GitHub Release is out. If the release fails, the site
 # stays as it was. The site's version (docs/landing/version.js) is always set to the latest
 # published release, so an unrelated deploy while a release is still building can't show it early.
+# The phone apps have releases of their own (release.yml); the build writes the addresses of the
+# newest APK and IPA into version.js too.
 on:
   push:
     branches: [main]
@@ -98,6 +100,26 @@ jobs:
           grep -q "^window.CEDAR_VERSION = '$ver';" _site/version.js || {
             echo "::error file=docs/landing/version.js::no window.CEDAR_VERSION line to set"; exit 1; }
           echo "site version: $ver (main has $(sed -nE "s/^window\.CEDAR_VERSION = '([^']*)';.*/\1/p" docs/landing/version.js))"
+
+      - name: The phone apps' downloads
+        # The Android and iOS apps are released on their own (android-v<version>, ios-v<version>),
+        # so their newest APK and IPA are usually not in the latest release, where the pages look
+        # for the desktop downloads. Their addresses are written into version.js instead.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[]
+            | select(.draft or .prerelease | not)
+            | .published_at as $at | .assets[] | {name, url: .browser_download_url, at: $at} | @json' > "$RUNNER_TEMP/assets"
+          newest() {
+            jq -rs --arg end "$1" '[.[] | select(.name | endswith($end))] | sort_by(.at) | last | .url // ""' "$RUNNER_TEMP/assets"
+          }
+          apk=$(newest -android.apk)
+          ipa=$(newest -ios.ipa)
+          printf "window.CEDAR_DOWNLOADS = { apk: '%s', ipa: '%s' };\n" "$apk" "$ipa" >> _site/version.js
+          cat _site/version.js
 
       - id: pages
         uses: actions/configure-pages@v5

@@ -1,7 +1,7 @@
 name: Release cache
 
 # Fills the Rust caches the release's dmg and msi jobs start from (rust-cache's shared-key
-# release-<target>), by building the same things on main. The release runs on a release/<version>
+# release-<target>), by building the same things on main. The release runs on a release/*
 # pull request, and a cache saved there belongs to that pull request's merge ref: the next release
 # can't read it, so every release used to compile everything from scratch. Caches main saves are
 # readable from every pull request.

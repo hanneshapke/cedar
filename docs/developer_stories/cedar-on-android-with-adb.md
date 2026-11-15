@@ -14,7 +14,7 @@ Computer with adb -> USB cable -> Android phone -> Cedar app
 
 - An Android phone (Android 8 or newer) and a USB cable that carries data, not a charge-only one
 - A Mac, Windows or Linux computer
-- The Cedar APK, `Cedar-<version>-android.apk`, from the latest [GitHub Release](https://github.com/hanneshapke/cedar/releases/latest)
+- The Cedar APK, `Cedar-<version>-android.apk`, from the newest *Cedar for Android* release under [GitHub Releases](https://github.com/hanneshapke/cedar/releases)
 
 The commands below use `Cedar-0.7.0-android.apk` as the example. Use the name of the file you downloaded.
 
