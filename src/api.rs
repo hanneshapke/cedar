@@ -228,6 +228,7 @@ pub fn router(state: AppState) -> Router {
             "/admin/models/{id}",
             axum::routing::put(put_model).delete(delete_model),
         )
+        .route("/admin/models/{id}/stats", get(get_model_stats))
         .route(
             "/admin/integrations/brave",
             axum::routing::put(put_brave_key).delete(delete_brave_key),
@@ -1346,6 +1347,15 @@ async fn put_model(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
     Ok(Json(state.integrations.set_model(&id, spec).await?))
+}
+
+async fn get_model_stats(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(admin)?;
+    Ok(Json(state.integrations.model_stats(&id).await?))
 }
 
 async fn delete_model(

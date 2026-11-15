@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **A reply limit raised for the app's llama.cpp model stays raised.** The desktop app registered the model it runs with llama.cpp at 8,192 tokens per reply on every launch, so a higher *Max tokens per reply* set in the chat's Settings was put back the next time the app started. The app now sends its limit only when it first registers a model (or after another model is installed) and leaves the entry's own alone otherwise.
+- **The reply limit of the app's llama.cpp model can be raised.** In the desktop app, the model's row under Settings → Models had no form, so its 8,192 tokens per reply could not be changed there, and the app registered that limit again on every launch. The row now has **Reply limit…**, a slider up to the model's context of 32,768 tokens, and the app sends its own limit only when it first registers a model (or after another model is installed).
+- **Settings shows how fast a llama.cpp model writes.** `llama-server` is now started with `--metrics` (by the desktop app and `cedar-llama serve`), and a model's row under Settings → Models says whether it is writing a reply, its average tokens per second and how many tokens that makes in the 300 seconds a reply may take, how fast it reads, how much it has written since it started and the fullest its context has been. cedar reads it at `GET /v1/admin/models/{id}/stats` (`/api/integrations/models/{id}/stats` on the chat server); a server without such a page shows nothing. A llama.cpp server of your own needs `--metrics` to show up.
 
 ## 0.9.0
 

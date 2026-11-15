@@ -13,6 +13,8 @@ pub const HEALTH_PATH: &str = "/health";
 /// The arguments for serving `model` from its files on this computer only. All layers go to the
 /// GPU, the vision projector is loaded so the model reads images, the chat template runs through
 /// Jinja (which tool calling needs), and there is one slot so that it has the whole context.
+/// `--metrics` turns on `/metrics`, which cedar reads for the chat's Settings (how fast the model
+/// writes, how much it has written).
 pub fn args(model: &Model, files: &ModelFiles, port: u16) -> Vec<String> {
     [
         "--model",
@@ -32,6 +34,7 @@ pub fn args(model: &Model, files: &ModelFiles, port: u16) -> Vec<String> {
         "--parallel",
         "1",
         "--jinja",
+        "--metrics",
         "--no-webui",
     ]
     .map(str::to_string)
@@ -60,7 +63,7 @@ mod tests {
             "--model /data/models/qwen3.6-35b-a3b/Qwen3.6-35B-A3B-Q4_K_M.gguf \
              --mmproj /data/models/qwen3.6-35b-a3b/mmproj-Qwen3.6-35B-A3B-Q8_0.gguf \
              --alias qwen3.6-35b-a3b --host 127.0.0.1 --port 18081 \
-             --ctx-size 32768 --gpu-layers all --parallel 1 --jinja --no-webui"
+             --ctx-size 32768 --gpu-layers all --parallel 1 --jinja --metrics --no-webui"
         );
         // The key is never an argument.
         assert!(!line.contains("api-key"));

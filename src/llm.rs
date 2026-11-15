@@ -408,6 +408,54 @@ impl LlmRouter {
 
 /// The models an OpenAI-compatible server lists at `{base_url}/models`, to check an address
 /// before using it. Errors say whether the server couldn't be reached or refused.
+/// What a model server says about itself at `/metrics`, beside its API (so without the `/v1` of
+/// `base_url`): llama.cpp's `llama-server` started with `--metrics`. `None` when the server has
+/// no such page, can't be reached, or it is another server's.
+pub async fn server_stats(base_url: &str, api_key: Option<&str>, timeout: Duration) -> Option<Value> {
+    let http = reqwest::Client::builder()
+        .connect_timeout(timeout)
+        .timeout(timeout)
+        .build()
+        .ok()?;
+    let base = base_url.trim_end_matches('/');
+    let url = format!("{}/metrics", base.strip_suffix("/v1").unwrap_or(base));
+    let mut req = http.get(&url);
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    let resp = req.send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    llama_stats(&resp.text().await.ok()?)
+}
+
+/// llama-server's metrics (Prometheus text, every name prefixed `llamacpp:`) as the numbers
+/// Settings shows. The speeds are averages since the server started, 0 before its first reply.
+fn llama_stats(text: &str) -> Option<Value> {
+    let metric = |name: &str| {
+        text.lines().find_map(|line| {
+            let (key, value) = line.trim().split_once(char::is_whitespace)?;
+            let value: f64 = (key.strip_prefix("llamacpp:")? == name)
+                .then(|| value.trim().parse().ok())??;
+            value.is_finite().then_some(value)
+        })
+    };
+    let count = |name: &str| metric(name).map(|v| v.max(0.0).round() as u64);
+    // Without the tokens it has written, this is not llama-server's page.
+    let generated = count("tokens_predicted_total")?;
+    Some(json!({
+        "server": "llama.cpp",
+        "generated_tokens": generated,
+        "generation_tokens_per_second": metric("predicted_tokens_seconds"),
+        "prompt_tokens": count("prompt_tokens_total"),
+        "prompt_tokens_per_second": metric("prompt_tokens_seconds"),
+        "requests_processing": count("requests_processing"),
+        "requests_deferred": count("requests_deferred"),
+        "max_context_tokens": count("n_tokens_max"),
+    }))
+}
+
 pub async fn list_models(
     base_url: &str,
     api_key: Option<&str>,
@@ -504,6 +552,34 @@ fn root_cause(e: &(dyn std::error::Error + 'static)) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn llama_servers_metrics_become_stats() {
+        let page = "# HELP llamacpp:prompt_tokens_total Number of prompt tokens processed.\n\
+                    # TYPE llamacpp:prompt_tokens_total counter\n\
+                    llamacpp:prompt_tokens_total 5120\n\
+                    llamacpp:prompt_tokens_seconds 812.5\n\
+                    llamacpp:tokens_predicted_total 2048\n\
+                    llamacpp:predicted_tokens_seconds 41.25\n\
+                    llamacpp:n_tokens_max 9000\n\
+                    llamacpp:requests_processing 1\n\
+                    llamacpp:requests_deferred 0\n";
+        assert_eq!(
+            llama_stats(page),
+            Some(json!({
+                "server": "llama.cpp",
+                "generated_tokens": 2048, "generation_tokens_per_second": 41.25,
+                "prompt_tokens": 5120, "prompt_tokens_per_second": 812.5,
+                "requests_processing": 1, "requests_deferred": 0, "max_context_tokens": 9000,
+            }))
+        );
+        // A number it leaves out, or that is no number, is null; the rest stands.
+        let some = llama_stats("llamacpp:tokens_predicted_total 0\nllamacpp:predicted_tokens_seconds nan\n").unwrap();
+        assert_eq!((&some["generated_tokens"], &some["generation_tokens_per_second"]), (&json!(0), &Value::Null));
+        // Another server's metrics, or a page that is none.
+        assert_eq!(llama_stats("vllm:generation_tokens_total 12\n"), None);
+        assert_eq!(llama_stats("<html>not found</html>"), None);
+    }
 
     #[test]
     fn model_lists_with_and_without_a_data_field() {
