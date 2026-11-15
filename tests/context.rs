@@ -191,3 +191,19 @@ async fn a_tool_that_keeps_failing_is_not_called_a_third_time() {
     let text = third["content"].as_str().unwrap();
     assert!(text.starts_with("not called: fetch_url failed 2 times"), "{text}");
 }
+
+#[tokio::test]
+async fn the_time_check_counts_down_the_limit_set_in_settings() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("t1", "bash", json!({ "command": "echo hi" }))),
+        Step::Reply(text("done")),
+    ])
+    .await;
+    // A minute, where RUN_TIMEOUT_SECS would give ten.
+    cedar::manager::set_run_timeout_secs(&app.state.store, Some(60)).await.unwrap();
+    let id = id_of(&app.create_run_with(KEY_A, json!({ "prompt": "go", "max_turns": 2 })).await);
+    app.wait_status(KEY_A, &id, "completed").await;
+    let last = app.llm.requests()[1]["messages"].as_array().unwrap().last().unwrap().clone();
+    let note = last["content"].as_array().unwrap().last().unwrap()["text"].as_str().unwrap().to_string();
+    assert!(note.contains("about 1 minute and 1 turn are left"), "{note}");
+}

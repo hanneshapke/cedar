@@ -1050,6 +1050,10 @@ struct SettingsBody {
     /// What runs conversations' sandboxes: `docker` (the default) or `openshell`.
     #[serde(default, deserialize_with = "crate::integrations::present")]
     sandbox_runtime: Option<Option<String>>,
+    /// The longest a run may take, in seconds (waits for the client not counted). Unset:
+    /// `RUN_TIMEOUT_SECS`.
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    run_timeout_secs: Option<Option<u64>>,
 }
 
 async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> {
@@ -1057,6 +1061,7 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
         "max_image_side": images::saved_max_side(&state.store).await?,
         "sandbox_idle_minutes": manager::saved_idle_minutes(&state.store).await?,
         "sandbox_runtime": sandbox::saved_runtime(&state.store).await?.map(sandbox::Runtime::as_str),
+        "run_timeout_secs": manager::saved_run_timeout_secs(&state.store).await?,
         // Where OpenShell can't run (Windows), sandboxes always run on Docker.
         "openshell_supported": sandbox::OPENSHELL_SUPPORTED,
         // The OS cedar runs on (`linux`, `macos`, `windows`), for the steps that set OpenShell up.
@@ -1068,6 +1073,10 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
             "max_max_image_side": images::MAX_MAX_SIDE,
             "sandbox_idle_minutes": manager::DEFAULT_IDLE_MINUTES,
             "max_sandbox_idle_minutes": manager::MAX_IDLE_MINUTES,
+            // `RUN_TIMEOUT_SECS`, which applies while no admin has saved `run_timeout_secs`.
+            "run_timeout_secs": state.cfg.run_timeout.as_secs(),
+            "min_run_timeout_secs": manager::MIN_RUN_TIMEOUT_SECS,
+            "max_run_timeout_secs": manager::MAX_RUN_TIMEOUT_SECS,
         },
     }))
 }
@@ -1092,6 +1101,9 @@ async fn put_settings(
     }
     if let Some(Some(minutes)) = body.sandbox_idle_minutes {
         manager::check_idle_minutes(minutes).map_err(AppError::BadRequest)?;
+    }
+    if let Some(Some(secs)) = body.run_timeout_secs {
+        manager::check_run_timeout_secs(secs).map_err(AppError::BadRequest)?;
     }
     let runtime = match &body.sandbox_runtime {
         None => None,
@@ -1121,6 +1133,9 @@ async fn put_settings(
     }
     if let Some(minutes) = body.sandbox_idle_minutes {
         manager::set_idle_minutes(&state.store, minutes).await?;
+    }
+    if let Some(secs) = body.run_timeout_secs {
+        manager::set_run_timeout_secs(&state.store, secs).await?;
     }
     if let Some(runtime) = runtime {
         // Docker is the default, so it is saved as no setting at all.

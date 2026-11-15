@@ -1040,12 +1040,14 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
             "max_image_side": null,
             "sandbox_idle_minutes": null,
             "sandbox_runtime": null,
+            "run_timeout_secs": null,
             "openshell_supported": cfg!(not(windows)),
             "server_os": std::env::consts::OS,
             "defaults": {
                 "sandbox_runtime": "docker",
                 "max_image_side": 1568, "min_max_image_side": 256, "max_max_image_side": 8192,
                 "sandbox_idle_minutes": 10, "max_sandbox_idle_minutes": 1440,
+                "run_timeout_secs": 600, "min_run_timeout_secs": 60, "max_run_timeout_secs": 86400,
             },
         })
     );
@@ -1104,6 +1106,37 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
     assert_eq!(body["max_image_side"], Value::Null);
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
     assert_eq!(defaults["attachments"]["max_image_side"], 1568);
+}
+
+#[tokio::test]
+async fn an_admin_sets_the_run_time_limit() {
+    let app = TestApp::with_env(vec![], &admin_env(&[("RUN_TIMEOUT_SECS", "900")])).await;
+    let put = |body: Value| app.json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(body));
+    let (_, body) = app.get("/v1/admin/settings", KEY_B).await;
+    assert_eq!(body["run_timeout_secs"], Value::Null);
+    assert_eq!(body["defaults"]["run_timeout_secs"], 900, "the default is RUN_TIMEOUT_SECS");
+    for out_of_range in [json!(59), json!(86_401), json!(0)] {
+        let (status, body) = put(json!({ "run_timeout_secs": out_of_range })).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("run_timeout_secs"));
+    }
+    let (status, body) = put(json!({ "run_timeout_secs": 3600 })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["run_timeout_secs"], 3600);
+    // Other settings leave it alone; `null` goes back to RUN_TIMEOUT_SECS.
+    let (_, body) = put(json!({ "sandbox_idle_minutes": 5 })).await;
+    assert_eq!(body["run_timeout_secs"], 3600);
+    let (_, body) = put(json!({ "run_timeout_secs": null })).await;
+    assert_eq!(body["run_timeout_secs"], Value::Null);
+    assert_eq!(
+        cedar::manager::saved_run_timeout_secs(&app.state.store)
+            .await
+            .unwrap(),
+        None
+    );
 }
 
 #[tokio::test]

@@ -65,8 +65,9 @@ pub struct AgentEnv {
     pub memory_consolidate_after: u32,
     /// What owners keep as records across conversations; `None` when records are turned off.
     pub records: Option<Records>,
-    /// How long a run may take (time spent waiting for the user not counted); the model is told
-    /// when little of it is left (see [`time_note`]).
+    /// `RUN_TIMEOUT_SECS`: how long a run may take (time spent waiting for the user not counted)
+    /// while no admin has saved `run_timeout_secs`; the model is told when little of the limit is
+    /// left (see [`time_note`]).
     pub run_timeout: Duration,
 }
 
@@ -318,6 +319,8 @@ pub async fn run_agent(
     let mut breaker = Breaker::default();
     let mut cuts = context::Cuts::default();
     let run_started = Instant::now();
+    // The limit the manager enforces for this run (see [`crate::manager::run_time_limit`]).
+    let time_limit = crate::manager::run_time_limit(&env.store, env.run_timeout).await;
     for turn in 1..=run.max_turns {
         // Looked up each turn, so an admin's change applies to the next call.
         budget.set_max_reply(max_tokens(env, run));
@@ -467,7 +470,7 @@ pub async fn run_agent(
                     }
                 }
                 let elapsed = run_started.elapsed().saturating_sub(env.waits.paused(run.id));
-                if let Some(note) = time_note(elapsed, env.run_timeout, run.max_turns - turn) {
+                if let Some(note) = time_note(elapsed, time_limit, run.max_turns - turn) {
                     results.push(json!({ "type": "text", "text": note }));
                 }
                 push_message(env, run, &mut messages, "user", Value::Array(results)).await?;
