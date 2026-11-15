@@ -102,14 +102,23 @@ const cedarSite = (() => {
     });
   }
 
+  /** Whether any catalog has `key`. */
+  const has = (key) => key in regionalCatalog() || key in catalogs[lang] || key in catalogs.en;
+
+  // A key no catalog has leaves the page's own (English) text in place rather than showing the
+  // key. That happens when a browser pairs a new page with an older catalog it still has cached.
   function apply(root) {
     const scope = root || document;
-    for (const node of scope.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n);
-    for (const node of scope.querySelectorAll('[data-i18n-html]')) node.innerHTML = t(node.dataset.i18nHtml);
+    for (const node of scope.querySelectorAll('[data-i18n]')) {
+      if (has(node.dataset.i18n)) node.textContent = t(node.dataset.i18n);
+    }
+    for (const node of scope.querySelectorAll('[data-i18n-html]')) {
+      if (has(node.dataset.i18nHtml)) node.innerHTML = t(node.dataset.i18nHtml);
+    }
     for (const node of scope.querySelectorAll('[data-i18n-attr]')) {
       for (const pair of node.dataset.i18nAttr.split(';')) {
         const [attr, key] = pair.split(':').map((s) => s.trim());
-        if (attr && key) node.setAttribute(attr, t(key));
+        if (attr && key && has(key)) node.setAttribute(attr, t(key));
       }
     }
     for (const node of scope.querySelectorAll('[data-lang-switch]')) switcher(node);
