@@ -916,7 +916,7 @@ Some work only exists behind windows: a spreadsheet's chart wizard, a document's
 
 In `GET /v1/runs/{id}/messages` a `computer` call's `tool_result` has a list as its `content`: a `text` block and an `image` block with the screenshot as a base64 PNG. The `tool.result` event carries `image: true` and not the image, and the trace gives its size. The chat does not show the screenshots yet.
 
-`computer/Dockerfile` builds the image: Debian with Xvfb, Xfce and the applications, plus the driver (`computer/driver.py`, installed as `cedar-computer`) that starts the screen and carries out one call at a time with `xdotool`. It is large (well over a GB). Build it with `docker build -t cedar-computer computer/`; `/readyz` reports whether it is present when the computer is on. You can work it by hand to see what the model sees:
+`computer/Dockerfile` builds the image: Debian with Xvfb, Xfce and the applications, plus the driver (`computer/driver.py`, installed as `cedar-computer`) that starts the screen and carries out one call at a time with `xdotool`. It is large (about 1.4 GB). Build it with `docker build -t cedar-computer computer/`; `/readyz` reports whether it is present when the computer is on. You can work it by hand to see what the model sees:
 
 ```sh
 docker run -d --name cc --shm-size 512m cedar-computer

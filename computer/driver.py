@@ -33,7 +33,9 @@ the pointer is on the screen, and `window` the title of the window that has the 
 if none has). A failure prints its reason to stderr and exits 1.
 
 The screen is an Xvfb display of CEDAR_SCREEN (1280x800 unless set); the desktop on it is
-CEDAR_COMPUTER_SESSION (Xfce unless set). Nothing is kept between containers.
+CEDAR_COMPUTER_SESSION (Xfce unless set). `serve` starts the session's D-Bus and leaves its
+address in a file, so that what a `call` starts (the application `open` picks) belongs to the
+same desktop session as everything else. Nothing is kept between containers.
 """
 
 import base64
@@ -48,7 +50,9 @@ import tempfile
 import time
 
 DISPLAY = os.environ.setdefault("DISPLAY", ":1")
-SESSION = os.environ.get("CEDAR_COMPUTER_SESSION", "dbus-run-session -- startxfce4")
+SESSION = os.environ.get("CEDAR_COMPUTER_SESSION", "startxfce4")
+# Where `serve` leaves the session's environment for `call`, as JSON.
+SESSION_ENV = os.environ.get("CEDAR_COMPUTER_ENV", "/tmp/cedar-computer.env")
 WORKSPACE = os.environ.get("CEDAR_WORKSPACE", "/workspace")
 STARTUP_WAIT_SECS = 15
 # How long the screen gets to react before it is photographed.
@@ -206,9 +210,19 @@ def screenshot(width, height):
     return out.getvalue()
 
 
+def join_session():
+    """Take on the desktop session's environment, so an application started here is part of it."""
+    try:
+        with open(SESSION_ENV) as f:
+            os.environ.update(json.load(f))
+    except (OSError, ValueError):
+        pass
+
+
 def call(request):
     if not isinstance(request, dict):
         raise Refused("the request must be a JSON object")
+    join_session()
     screen = screen_size()
     width = integer(request, "width", 16, screen[0], screen[0])
     height = integer(request, "height", 16, screen[1], screen[1])
@@ -242,6 +256,17 @@ def serve():
         if xvfb.poll() is not None or time.monotonic() > deadline:
             sys.exit("the screen did not start")
         time.sleep(0.1)
+    # The session's own bus, so xdg-open finds the desktop's file associations and single-instance
+    # applications find each other.
+    session = {"XDG_CURRENT_DESKTOP": "XFCE"}
+    bus = subprocess.run(
+        ["dbus-daemon", "--session", "--fork", "--print-address"], capture_output=True, text=True
+    )
+    if bus.returncode == 0 and bus.stdout.strip():
+        session["DBUS_SESSION_BUS_ADDRESS"] = bus.stdout.strip()
+    os.environ.update(session)
+    with open(SESSION_ENV, "w") as f:
+        json.dump(session, f)
     subprocess.Popen(shlex.split(SESSION), stdin=subprocess.DEVNULL, cwd=os.path.expanduser("~"))
     # The container lives as long as its screen does.
     sys.exit(xvfb.wait())

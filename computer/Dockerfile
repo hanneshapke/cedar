@@ -35,14 +35,15 @@ COPY config/ /usr/local/share/cedar-computer/
 COPY --chmod=0755 driver.py /usr/local/bin/cedar-computer
 
 # The same user id as the sandbox's, so both can work on the workspace's files. The user starts
-# with a desktop that is quiet to look at (see config/): a plain background, one panel, and
-# LibreOffice past its first-start dialogs.
+# with a desktop that is quiet to look at (see config/): a plain background, one panel,
+# LibreOffice past its first-start dialogs, and an application for each kind of file.
 RUN groupadd --gid 1000 user \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash user \
     && xfconf=/home/user/.config/xfce4/xfconf/xfce-perchannel-xml \
     && office=/home/user/.config/libreoffice/4/user \
     && mkdir -p /workspace "$xfconf" "$office" \
     && cp /usr/local/share/cedar-computer/xf*.xml "$xfconf/" \
+    && cp /usr/local/share/cedar-computer/mimeapps.list /home/user/.config/ \
     && version=$(dpkg-query -W -f='${Version}' libreoffice-core | sed -E 's/^([0-9]+:)?([0-9]+\.[0-9]+).*/\2/') \
     && sed "s/@LIBREOFFICE_VERSION@/$version/" /usr/local/share/cedar-computer/registrymodifications.xcu \
         > "$office/registrymodifications.xcu" \

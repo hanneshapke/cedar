@@ -11,7 +11,7 @@
 #               and, for cedar, that the tests pass
 #
 # cedar:
-#   2. images   the sandbox and browser images, built natively for amd64 and arm64 and pushed to
+#   2. images   the sandbox, browser and computer images, built natively for amd64 and arm64 and pushed to
 #               GHCR as ghcr.io/<owner>/cedar-sandbox:<version> (and :latest); the app pulls these
 #   3. dmg      cedar and cedar-chat for Apple Silicon, wrapped in Cedar.app, signed, notarized,
 #               and packed into a DMG (no Intel build: openssl-sys can't cross-compile to x86_64)
@@ -244,6 +244,20 @@ jobs:
           cache-from: type=gha,scope=browser-${{ matrix.arch }}
           cache-to: type=gha,scope=browser-${{ matrix.arch }},mode=max,ignore-error=true
 
+      - name: Build and push the computer image (${{ matrix.arch }})
+        uses: docker/build-push-action@v6
+        with:
+          context: computer
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/${{ needs.verify.outputs.image_owner }}/cedar-computer:${{ needs.verify.outputs.version }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=The desktop behind cedar's computer tool
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+          cache-from: type=gha,scope=computer-${{ matrix.arch }}
+          cache-to: type=gha,scope=computer-${{ matrix.arch }},mode=max,ignore-error=true
+
   manifests:
     # One multi-arch tag per image, pointing at the two builds above.
     needs: [verify, images]
@@ -262,7 +276,7 @@ jobs:
           PUBLISH: ${{ needs.verify.outputs.publish }}
         run: |
           set -eu
-          for image in cedar-sandbox cedar-browser; do
+          for image in cedar-sandbox cedar-browser cedar-computer; do
             tags="-t $REPO/$image:$VERSION"
             # A manual run must not move :latest.
             [ "$PUBLISH" = true ] && tags="$tags -t $REPO/$image:latest"
@@ -814,7 +828,7 @@ jobs:
           unit from the tarball set up (DEPLOYMENT.md, "Updates"), its *Update* button installs it;
           \`sudo ./cedar-update\` does the same from a shell.
 
-          Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
+          Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\`, \`$REPO/cedar-computer:$VERSION\` (linux/amd64, linux/arm64).
 
           ## Android, iPhone and iPad
 
