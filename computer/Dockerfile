@@ -22,7 +22,7 @@ FROM debian:bookworm-slim
 # update checks and telemetry out of the way.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates python3 python3-pil xvfb xdotool scrot dbus-x11 xdg-utils x11-xserver-utils \
+        ca-certificates python3 python3-pil xvfb xdotool scrot dbus-x11 xdg-utils \
         xfwm4 xfce4-panel xfce4-session xfce4-settings xfdesktop4 thunar xfce4-terminal \
         mousepad ristretto firefox-esr \
         libreoffice-calc libreoffice-writer libreoffice-impress libreoffice-gtk3 \
