@@ -664,7 +664,11 @@ const cedarSettings = (() => {
       return;
     }
     const runs = advancedBlock(tr('settings.advanced.runs'), await runTimeoutRow(advancedSettings));
-    section.replaceChildren(...expert, runs, sandboxBlock(openShellRow(advancedSettings)));
+    // Only where the server offers the `computer` tool at all (COMPUTER=on).
+    const computer = advancedSettings.computer_enabled
+      ? [advancedBlock(tr('settings.advanced.computer'), computerRow(advancedSettings))]
+      : [];
+    section.replaceChildren(...expert, runs, sandboxBlock(openShellRow(advancedSettings)), ...computer);
     shell()?.refresh('advanced');
   }
 
@@ -747,6 +751,62 @@ const cedarSettings = (() => {
         problem.hidden = false;
       } finally {
         sw.disabled = !supported;
+        shell()?.refresh('advanced');
+      }
+    });
+    side.append(state, sw);
+    return row;
+  }
+
+  /**
+   * What the `computer` tool works (`computer_runtime`): a desktop in a container (off), or the
+   * computer cedar's server runs on (on). Unset is the server's COMPUTER_RUNTIME.
+   */
+  function computerRow(settings) {
+    const native = (s) => (s.computer_runtime ?? s.defaults?.computer_runtime) === 'native';
+    const supported = settings.native_computer_supported !== false;
+    const on = native(settings);
+    const { row, main, side } = integrationRow(tr('settings.advanced.computer.title'), tr('settings.advanced.computer.desc'));
+    const sw = el('button', 'cedar-set-switch');
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-checked', String(on));
+    sw.setAttribute('aria-label', tr('settings.advanced.computer.title'));
+    // A server that can't drive its own computer has nothing to switch to; one already set to it
+    // can still be switched back.
+    const usable = supported || on;
+    sw.disabled = !usable;
+    const label = (now) => tr(now ? 'settings.advanced.computer.stateNative' : 'settings.advanced.computer.stateDocker');
+    const state = badge(label(on), 'ok');
+    const problem = el('small', 'cedar-set-error');
+    problem.hidden = true;
+    if (!usable) {
+      row.classList.add('unavailable');
+      sw.title = tr('settings.advanced.computer.unsupported');
+    }
+    main.append(problem);
+    const show = (now) => {
+      sw.setAttribute('aria-checked', String(now));
+      state.textContent = label(now);
+    };
+    sw.addEventListener('click', async () => {
+      const was = sw.getAttribute('aria-checked') === 'true';
+      // Handing over the real computer is worth a second look; going back to the sandbox is not.
+      if (!was && !(await cedarConfirm(tr('settings.advanced.computer.confirm'), { ok: tr('settings.allow') }))) return;
+      sw.disabled = true;
+      problem.hidden = true;
+      state.textContent = tr('settings.advanced.openshell.checking');
+      try {
+        advancedSettings = await adminApi('PUT', '/integrations/settings', { computer_runtime: was ? 'docker' : 'native' });
+        const now = native(advancedSettings);
+        show(now);
+        deps.toast(tr(now ? 'settings.advanced.computer.savedOn' : 'settings.advanced.computer.savedOff'));
+      } catch (err) {
+        show(was);
+        problem.textContent = err.message;
+        problem.hidden = false;
+      } finally {
+        sw.disabled = !(supported || sw.getAttribute('aria-checked') === 'true');
         shell()?.refresh('advanced');
       }
     });

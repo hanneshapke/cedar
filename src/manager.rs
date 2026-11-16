@@ -11,7 +11,7 @@
 
 use crate::agent::{run_agent, AgentEnv, AgentError, Completion};
 use crate::browser::{BrowserFactory, BrowserSession};
-use crate::computer::{ComputerFactory, ComputerSession};
+use crate::computer::{ComputerSession, Computers};
 use crate::events::{Emitter, EventHub};
 use crate::models::{event, Run, RunStatus};
 use crate::sandbox::{self, Runtime, Sandbox, SandboxFactory};
@@ -148,7 +148,7 @@ struct Inner {
     /// `None` when the browser is turned off.
     browsers: Option<Arc<dyn BrowserFactory>>,
     /// `None` when the computer is turned off.
-    computers: Option<Arc<dyn ComputerFactory>>,
+    computers: Option<Arc<Computers>>,
     /// Bounds how many runs execute at once; the rest stay `queued`.
     slots: Arc<Semaphore>,
     /// `RUN_TIMEOUT_SECS`: the time limit when no admin has saved `run_timeout_secs`.
@@ -193,7 +193,7 @@ impl RunManager {
         env: AgentEnv,
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Option<Arc<dyn BrowserFactory>>,
-        computers: Option<Arc<dyn ComputerFactory>>,
+        computers: Option<Arc<Computers>>,
         max_concurrent_runs: usize,
         run_timeout: Duration,
     ) -> Self {
@@ -390,10 +390,12 @@ impl Inner {
             .browsers
             .as_ref()
             .map(|factory| Arc::new(BrowserSession::new(factory.clone(), run.id)));
-        // Nor until it first uses the computer, which works on the conversation's files.
-        let computer = self.computers.as_ref().map(|factory| {
-            Arc::new(ComputerSession::new(factory.clone(), run.id, run.workspace_id))
-        });
+        // Nor until it first uses the computer: a desktop in a container on the conversation's
+        // files, or the user's own, whichever is in force as the run starts.
+        let computer: Option<Arc<ComputerSession>> = match &self.computers {
+            Some(computers) => Some(Arc::new(computers.session(run.id, run.workspace_id).await)),
+            None => None,
+        };
         let child = {
             let (inner, run, token, slot, browser, computer) = (
                 self.clone(),

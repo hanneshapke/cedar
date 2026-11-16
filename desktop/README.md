@@ -180,7 +180,9 @@ Running everything here, the setup window shows three steps:
   asks before every step (see
   [The user's own computer](../README.md#the-users-own-computer) and its safety notes). macOS
   asks for the Screen Recording and Accessibility permissions the first time it is used. The
-  desktop in a container (`cedar-computer`) is not offered by the app.
+  app starts cedar with this computer as the default; the desktop in a container
+  (`cedar-computer`) can be chosen under Settings → Advanced in the chat once you have that
+  image, which the app does not download.
 - **Model server**: three options, each opening its form under it. The one in use is marked.
   - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
     (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out

@@ -662,8 +662,6 @@ pub struct FakeComputerFactory {
     pub destroyed: Mutex<Vec<Uuid>>,
     pub cleanups: AtomicUsize,
     pub unhealthy: AtomicBool,
-    /// Stand in for the user's own computer (`COMPUTER_RUNTIME=native`).
-    pub native: AtomicBool,
 }
 
 impl FakeComputerFactory {
@@ -674,10 +672,6 @@ impl FakeComputerFactory {
 
 #[async_trait]
 impl ComputerFactory for FakeComputerFactory {
-    fn native(&self) -> bool {
-        self.native.load(Ordering::SeqCst)
-    }
-
     async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Computer>> {
         let computer = Arc::new(FakeComputer::default());
         self.created
@@ -806,7 +800,10 @@ impl TestApp {
             clients,
             factory.clone(),
             browsers.clone(),
+            // The one fake stands in for both: desktops in containers and the user's own
+            // computer (`computer_runtime` says which a run gets).
             computers.clone(),
+            Some(computers.clone()),
         )
         .unwrap();
         state.integrations.reload().await.unwrap();

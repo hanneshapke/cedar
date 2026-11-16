@@ -10,8 +10,12 @@
 //! With `COMPUTER_RUNTIME=native` there is no container: the "desktop" is the screen, mouse and
 //! keyboard of the computer cedar runs on (see [`NativeComputerFactory`] and [`crate::native`]),
 //! which one run at a time may use, and only with the user's OK (see [`ComputerSession::native`]).
+//! Which of the two a run gets is `COMPUTER_RUNTIME`, unless an admin chose otherwise with the
+//! `computer_runtime` setting (Settings → Advanced in the chat): [`Computers`] reads it as each
+//! run starts.
 
-use crate::config::ComputerConfig;
+use crate::config::{ComputerConfig, ComputerRuntime};
+use crate::store::Store;
 use crate::sandbox::{
     docker_checked, docker_output, volume_name, DOCKER_CALL_TIMEOUT, DOCKER_CREATE_TIMEOUT,
 };
@@ -43,11 +47,6 @@ pub struct ComputerUnavailable(pub String);
 
 #[async_trait]
 pub trait ComputerFactory: Send + Sync {
-    /// Whether its computers are the user's own rather than a sandbox: then a run must be
-    /// attended to use one, and its calls wait for the user's OK.
-    fn native(&self) -> bool {
-        false
-    }
     /// Start a desktop for `run_id` that works on the files of `workspace_id`.
     async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Computer>>;
     /// Remove `run_id`'s desktop, including one whose `create` was interrupted. Best effort and
@@ -74,6 +73,9 @@ pub struct ComputerSession {
     computer: tokio::sync::Mutex<Option<Arc<dyn Computer>>>,
     /// A desktop was (or may have been) created, so `destroy` has something to remove.
     started: AtomicBool,
+    /// The user's own computer rather than a sandbox: then a run must be attended to use it,
+    /// and its calls wait for the user's OK.
+    native: bool,
     /// The user allowed this run's calls on their own computer for the rest of the run.
     allowed: AtomicBool,
 }
@@ -86,13 +88,20 @@ impl ComputerSession {
             workspace_id,
             computer: tokio::sync::Mutex::new(None),
             started: AtomicBool::new(false),
+            native: false,
             allowed: AtomicBool::new(false),
         }
     }
 
-    /// Whether this is the user's own computer (see [`ComputerFactory::native`]).
+    /// The session when `factory` hands out the user's own computer.
+    pub fn on_the_users_computer(mut self) -> Self {
+        self.native = true;
+        self
+    }
+
+    /// Whether this is the user's own computer rather than a sandbox.
     pub fn native(&self) -> bool {
-        self.factory.native()
+        self.native
     }
 
     /// Whether the user allowed the rest of this run's calls on their own computer.
@@ -158,6 +167,116 @@ impl ComputerSession {
             self.computer.lock().await.take();
             self.factory.destroy(self.run_id).await;
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Which computer a run gets
+// ---------------------------------------------------------------------------------------------
+
+/// Where the chosen runtime is saved in the settings table.
+const RUNTIME_SETTING: &str = "computer_runtime";
+
+/// The saved `computer_runtime`, or `None` when none was chosen (then `COMPUTER_RUNTIME` holds).
+pub async fn saved_runtime(store: &Store) -> Result<Option<ComputerRuntime>> {
+    Ok(store
+        .setting(RUNTIME_SETTING)
+        .await?
+        .and_then(|v| v.as_str().and_then(ComputerRuntime::parse)))
+}
+
+/// Save `computer_runtime`, or go back to `COMPUTER_RUNTIME` with `None`. It applies from the
+/// next run; a run that is going keeps the computer it has.
+pub async fn set_runtime(store: &Store, runtime: Option<ComputerRuntime>) -> Result<()> {
+    store
+        .set_setting(RUNTIME_SETTING, runtime.map(|r| serde_json::json!(r.as_str())).as_ref())
+        .await
+}
+
+/// The computers of both runtimes, and the choice between them for each new run.
+pub struct Computers {
+    docker: Arc<dyn ComputerFactory>,
+    /// `None` when this cedar can't drive the computer it runs on (built without the
+    /// `native-computer` feature).
+    native: Option<Arc<dyn ComputerFactory>>,
+    store: Store,
+    /// `COMPUTER_RUNTIME`.
+    default: ComputerRuntime,
+}
+
+impl Computers {
+    pub fn new(
+        docker: Arc<dyn ComputerFactory>,
+        native: Option<Arc<dyn ComputerFactory>>,
+        store: Store,
+        default: ComputerRuntime,
+    ) -> Self {
+        Self { docker, native, store, default }
+    }
+
+    /// `COMPUTER_RUNTIME`: what runs get while no admin has chosen.
+    pub fn default_runtime(&self) -> ComputerRuntime {
+        self.default
+    }
+
+    /// Whether this cedar can drive the computer it runs on.
+    pub fn native_supported(&self) -> bool {
+        self.native.is_some()
+    }
+
+    fn factory(&self, runtime: ComputerRuntime) -> Option<&Arc<dyn ComputerFactory>> {
+        match runtime {
+            ComputerRuntime::Docker => Some(&self.docker),
+            ComputerRuntime::Native => self.native.as_ref(),
+        }
+    }
+
+    /// The runtime new runs get: the saved one, else `COMPUTER_RUNTIME`. A saved `native` that
+    /// this cedar can't drive falls back to the container, the one that is a sandbox.
+    pub async fn runtime(&self) -> ComputerRuntime {
+        let chosen = match saved_runtime(&self.store).await {
+            Ok(saved) => saved.unwrap_or(self.default),
+            Err(e) => {
+                tracing::warn!(error = %format!("{e:#}"), "could not read computer_runtime; using COMPUTER_RUNTIME");
+                self.default
+            }
+        };
+        if self.factory(chosen).is_some() {
+            chosen
+        } else {
+            ComputerRuntime::Docker
+        }
+    }
+
+    /// A run's computer on the runtime in force now; nothing starts before its first call.
+    pub async fn session(&self, run_id: Uuid, workspace_id: Uuid) -> ComputerSession {
+        match (self.runtime().await, &self.native) {
+            (ComputerRuntime::Native, Some(native)) => {
+                ComputerSession::new(native.clone(), run_id, workspace_id).on_the_users_computer()
+            }
+            _ => ComputerSession::new(self.docker.clone(), run_id, workspace_id),
+        }
+    }
+
+    /// Whether runs could use `runtime` right now; the error says why not.
+    pub async fn check(&self, runtime: ComputerRuntime) -> Result<()> {
+        match self.factory(runtime) {
+            Some(factory) => factory.health().await,
+            None => bail!(
+                "this cedar was built without the driver for its own computer (the \
+                 `native-computer` feature); the desktop app's has it"
+            ),
+        }
+    }
+
+    /// Is the runtime in force usable? (for `/readyz`)
+    pub async fn health(&self) -> Result<()> {
+        self.check(self.runtime().await).await
+    }
+
+    /// Remove desktops left behind by a previous process. Returns how many were removed.
+    pub async fn cleanup_orphans(&self) -> Result<usize> {
+        self.docker.cleanup_orphans().await
     }
 }
 
@@ -422,10 +541,6 @@ impl Computer for NativeComputer {
 
 #[async_trait]
 impl ComputerFactory for NativeComputerFactory {
-    fn native(&self) -> bool {
-        true
-    }
-
     async fn create(&self, run_id: Uuid, _workspace_id: Uuid) -> Result<Arc<dyn Computer>> {
         {
             let mut holder = self.holder.lock().unwrap();
@@ -668,10 +783,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cedar-native-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let factory = Arc::new(NativeComputerFactory::with_driver(fake_driver(&dir, true)));
-        assert!(factory.native());
         factory.health().await.unwrap();
         let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
-        let session = ComputerSession::new(factory.clone(), first, Uuid::new_v4());
+        let session =
+            ComputerSession::new(factory.clone(), first, Uuid::new_v4()).on_the_users_computer();
         assert!(session.native() && !session.allowed());
         session.allow();
         assert!(session.allowed());

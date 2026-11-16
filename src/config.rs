@@ -151,10 +151,28 @@ pub enum ComputerRuntime {
     Native,
 }
 
+impl ComputerRuntime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ComputerRuntime::Docker => "docker",
+            ComputerRuntime::Native => "native",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "docker" => Some(ComputerRuntime::Docker),
+            "native" => Some(ComputerRuntime::Native),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ComputerConfig {
     /// Offer the `computer` tool (off by default).
     pub enabled: bool,
+    /// What the tool works unless an admin chose otherwise (the `computer_runtime` setting).
     pub runtime: ComputerRuntime,
     /// The `docker` command, as in [`SandboxConfig`].
     pub docker_bin: String,
@@ -170,9 +188,9 @@ pub struct ComputerConfig {
 }
 
 impl ComputerConfig {
-    /// Whether the desktop can reach a network at all.
+    /// Whether the desktop in a container can reach a network at all.
     pub fn online(&self) -> bool {
-        self.runtime == ComputerRuntime::Native || self.network != "none"
+        self.network != "none"
     }
 
     pub fn native(&self) -> bool {
@@ -818,10 +836,11 @@ impl Config {
             },
             computer: ComputerConfig {
                 enabled: flag("COMPUTER", false)?,
-                runtime: match get("COMPUTER_RUNTIME").as_deref().map(str::trim) {
-                    None | Some("docker") => ComputerRuntime::Docker,
-                    Some("native") => ComputerRuntime::Native,
-                    Some(other) => bail!("COMPUTER_RUNTIME must be docker or native, not {other:?}"),
+                runtime: match get("COMPUTER_RUNTIME") {
+                    None => ComputerRuntime::Docker,
+                    Some(name) => ComputerRuntime::parse(name.trim()).ok_or_else(|| {
+                        anyhow!("COMPUTER_RUNTIME must be docker or native, not {name:?}")
+                    })?,
                 },
                 docker_bin,
                 image: get("COMPUTER_IMAGE").unwrap_or_else(|| "cedar-computer:latest".into()),

@@ -198,6 +198,12 @@ pub async fn run_agent(
         tools.without_computer()
     };
     let mut tool_defs = tools.definitions();
+    // On the user's own computer the tool is described as what it is there.
+    if own_computer {
+        for def in tool_defs.iter_mut().filter(|d| d["name"] == "computer") {
+            *def = crate::tools::ComputerTool::native_definition();
+        }
+    }
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // In `tool` mode the model decides whether a request needs a plan.
     let offers_plan = run.plan == PlanMode::Tool;

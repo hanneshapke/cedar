@@ -331,10 +331,11 @@ async fn decide(app: &TestApp, id: &str, approval: &Value, decision: &str) {
     assert_eq!(status, StatusCode::ACCEPTED);
 }
 
-/// An app whose computer stands in for the user's own.
+/// An app whose runs get the user's own computer: the `computer_runtime` setting says so.
 async fn native_app(calls: Vec<Value>, env: &[(&str, &str)]) -> TestApp {
     let app = TestApp::with_env(script(calls), env).await;
-    app.computers.native.store(true, Ordering::SeqCst);
+    let native = Some(cedar::config::ComputerRuntime::Native);
+    cedar::computer::set_runtime(&app.state.store, native).await.unwrap();
     app
 }
 
@@ -434,4 +435,99 @@ async fn with_the_rule_off_the_users_own_computer_is_not_asked_about() {
     let events = app.events(KEY_A, &id, None).await;
     assert!(events.iter().all(|e| e.event != "approval.required"));
     assert_eq!(app.computers.computer(0).requests.lock().unwrap().len(), 1);
+}
+
+// -- choosing the runtime in the settings (`computer_runtime`) -------------------------------
+
+const ADMIN: &[(&str, &str)] = &[("COMPUTER", "on"), ("CEDAR_ADMIN_KEYS", "key-a")];
+
+async fn settings(app: &TestApp, body: Value) -> (StatusCode, Value) {
+    app.json(Method::PUT, "/v1/admin/settings", Some(KEY_A), Some(body)).await
+}
+
+#[tokio::test]
+async fn an_admin_chooses_what_the_computer_tool_works() {
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("t0", "computer", json!({ "action": "screenshot" }))),
+            Step::Reply(text("done")),
+            Step::Reply(text("done")),
+        ],
+        ADMIN,
+    )
+    .await;
+    let (status, shown) = app.get("/v1/admin/settings", KEY_A).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(shown["computer_runtime"], Value::Null, "{shown}");
+    assert_eq!(shown["defaults"]["computer_runtime"], "docker");
+    assert_eq!(shown["computer_enabled"], true);
+    assert_eq!(shown["native_computer_supported"], true);
+
+    let (status, saved) = settings(&app, json!({ "computer_runtime": "native" })).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["computer_runtime"], "native");
+
+    // From the next run: the tool is described as the user's own computer, has no `open`, and
+    // its calls wait for an OK.
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "look", "interactive": true }))
+        .await;
+    let id = run["id"].as_str().unwrap().to_string();
+    let asked = approval(&app, &id, 1).await;
+    assert_eq!(asked["rule"], "computer");
+    decide(&app, &id, &asked, "allow").await;
+    app.wait_status(KEY_A, &id, "completed").await;
+    let request = &app.llm.requests()[0];
+    let tool = request["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "computer")
+        .unwrap();
+    assert!(tool["description"].as_str().unwrap().contains("their real computer"), "{tool}");
+    assert!(!tool.to_string().contains("\"open\""), "{tool}");
+
+    // The default is saved as no setting; `null` goes back to it too.
+    let (_, back) = settings(&app, json!({ "computer_runtime": "docker" })).await;
+    assert_eq!(back["computer_runtime"], Value::Null, "{back}");
+    settings(&app, json!({ "computer_runtime": "native" })).await;
+    let (_, reset) = settings(&app, json!({ "computer_runtime": null })).await;
+    assert_eq!(reset["computer_runtime"], Value::Null);
+    let run = app.create_run(KEY_A, "nothing to do").await;
+    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let sandboxed = app.llm.requests()[2]["tools"].to_string();
+    assert!(sandboxed.contains("Work a desktop computer"), "back in the container");
+
+    // Other settings are left alone by a change of this one, and it by theirs.
+    settings(&app, json!({ "computer_runtime": "native" })).await;
+    let (_, other) = settings(&app, json!({ "max_image_side": 1024 })).await;
+    assert_eq!((&other["computer_runtime"], &other["max_image_side"]), (&json!("native"), &json!(1024)));
+}
+
+#[tokio::test]
+async fn a_runtime_that_cannot_work_is_refused() {
+    let app = TestApp::with_env(vec![], ADMIN).await;
+    let (status, body) = settings(&app, json!({ "computer_runtime": "vm" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"].as_str().unwrap().contains("\"docker\" or \"native\""), "{body}");
+
+    // The image is missing: switching to the container would fail every call after it.
+    app.computers.unhealthy.store(true, Ordering::SeqCst);
+    let (status, body) = settings(&app, json!({ "computer_runtime": "docker" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["error"]["message"].as_str().unwrap().contains("can't run here yet"), "{body}");
+    let (_, shown) = app.get("/v1/admin/settings", KEY_A).await;
+    assert_eq!(shown["computer_runtime"], Value::Null, "nothing was saved");
+
+    // With the tool off there is nothing to choose; only an admin may choose at all.
+    let off = TestApp::with_env(vec![], &[("CEDAR_ADMIN_KEYS", "key-a")]).await;
+    let (status, body) = settings(&off, json!({ "computer_runtime": "native" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"].as_str().unwrap().contains("COMPUTER=off"), "{body}");
+    let (_, shown) = off.get("/v1/admin/settings", KEY_A).await;
+    assert_eq!(shown["computer_enabled"], false);
+    let (status, _) = app
+        .json(Method::PUT, "/v1/admin/settings", Some(KEY_B), Some(json!({ "computer_runtime": "native" })))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }

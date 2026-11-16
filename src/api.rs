@@ -3,7 +3,8 @@
 use crate::agent::AgentEnv;
 use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
-use crate::computer::{ComputerFactory, DockerComputerFactory, NativeComputerFactory};
+use crate::computer::{self, ComputerFactory, Computers, DockerComputerFactory, NativeComputerFactory};
+use crate::config::ComputerRuntime;
 use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
@@ -70,7 +71,7 @@ pub struct AppState {
     /// `None` when the browser is turned off.
     pub browsers: Option<Arc<dyn BrowserFactory>>,
     /// `None` when the computer is turned off.
-    pub computers: Option<Arc<dyn ComputerFactory>>,
+    pub computers: Option<Arc<Computers>>,
     pub auth: AuthKeys,
     /// The registered models' clients, for model calls outside a run (compaction).
     pub llm: Arc<LlmRouter>,
@@ -114,17 +115,20 @@ impl AppState {
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Arc<dyn BrowserFactory>,
     ) -> Result<Self> {
-        // A container per run, or with `COMPUTER_RUNTIME=native` the computer cedar runs on.
-        let computers: Arc<dyn ComputerFactory> = if cfg.computer.native() {
-            Arc::new(NativeComputerFactory::new()?)
+        // A desktop in a container per run, and, where this cedar can drive it, the computer it
+        // runs on; `COMPUTER_RUNTIME` and the `computer_runtime` setting pick between them.
+        let computers = Arc::new(DockerComputerFactory::new(cfg.computer.clone()));
+        let own: Option<Arc<dyn ComputerFactory>> = if cfg!(feature = "native-computer") {
+            Some(Arc::new(NativeComputerFactory::new()?))
         } else {
-            Arc::new(DockerComputerFactory::new(cfg.computer.clone()))
+            None
         };
-        Self::with_containers(cfg, store, llm, sandboxes, browsers, computers)
+        Self::with_containers(cfg, store, llm, sandboxes, browsers, computers, own)
     }
 
-    /// Like [`Self::with_browsers`], with the computer factory injected as well. Each is only
-    /// used if the configuration turns its tool on.
+    /// Like [`Self::with_browsers`], with the computer factories injected as well: the one for
+    /// desktops in containers, and the one for the computer cedar runs on (`None` where it can't
+    /// be driven). Each is only used if the configuration turns its tool on.
     pub fn with_containers(
         cfg: Config,
         store: Store,
@@ -132,9 +136,12 @@ impl AppState {
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Arc<dyn BrowserFactory>,
         computers: Arc<dyn ComputerFactory>,
+        own_computer: Option<Arc<dyn ComputerFactory>>,
     ) -> Result<Self> {
         let browsers = cfg.browser.enabled.then_some(browsers);
-        let computers = cfg.computer.enabled.then_some(computers);
+        let computers = cfg.computer.enabled.then(|| {
+            Arc::new(Computers::new(computers, own_computer, store.clone(), cfg.computer.runtime))
+        });
         let hub = Arc::new(EventHub::new());
         let cfg = Arc::new(cfg);
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
@@ -1080,6 +1087,10 @@ struct SettingsBody {
     /// `RUN_TIMEOUT_SECS`.
     #[serde(default, deserialize_with = "crate::integrations::present")]
     run_timeout_secs: Option<Option<u64>>,
+    /// What the `computer` tool works: `docker` (a desktop in a container) or `native` (the
+    /// computer cedar runs on). Unset: `COMPUTER_RUNTIME`.
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    computer_runtime: Option<Option<String>>,
 }
 
 async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> {
@@ -1088,12 +1099,19 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
         "sandbox_idle_minutes": manager::saved_idle_minutes(&state.store).await?,
         "sandbox_runtime": sandbox::saved_runtime(&state.store).await?.map(sandbox::Runtime::as_str),
         "run_timeout_secs": manager::saved_run_timeout_secs(&state.store).await?,
+        "computer_runtime": computer::saved_runtime(&state.store).await?.map(ComputerRuntime::as_str),
+        // Whether the `computer` tool is on at all (`COMPUTER`), and whether this cedar can
+        // drive the computer it runs on (built with the `native-computer` feature).
+        "computer_enabled": state.computers.is_some(),
+        "native_computer_supported": state.computers.as_ref().is_some_and(|c| c.native_supported()),
         // Where OpenShell can't run (Windows), sandboxes always run on Docker.
         "openshell_supported": sandbox::OPENSHELL_SUPPORTED,
         // The OS cedar runs on (`linux`, `macos`, `windows`), for the steps that set OpenShell up.
         "server_os": std::env::consts::OS,
         "defaults": {
             "sandbox_runtime": sandbox::Runtime::Docker.as_str(),
+            // `COMPUTER_RUNTIME`, which applies while no admin has saved `computer_runtime`.
+            "computer_runtime": state.cfg.computer.runtime.as_str(),
             "max_image_side": images::DEFAULT_MAX_SIDE,
             "min_max_image_side": images::MIN_MAX_SIDE,
             "max_max_image_side": images::MAX_MAX_SIDE,
@@ -1154,8 +1172,36 @@ async fn put_settings(
             Some(Some(runtime))
         }
     };
+    let computer_runtime = match &body.computer_runtime {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(name)) => {
+            let runtime = ComputerRuntime::parse(name).ok_or_else(|| {
+                AppError::BadRequest("computer_runtime must be \"docker\" or \"native\"".into())
+            })?;
+            let Some(computers) = &state.computers else {
+                return Err(AppError::BadRequest(
+                    "the computer tool is turned off on the server (COMPUTER=off)".into(),
+                ));
+            };
+            // Switching to a runtime that can't start would fail every computer call after it.
+            if let Err(e) = computers.check(runtime).await {
+                tracing::warn!(error = %format!("{e:#}"), runtime = runtime.as_str(), "refused to switch the computer runtime");
+                return Err(AppError::BadRequest(match runtime {
+                    ComputerRuntime::Docker => format!("the desktop in a container can't run here yet: {e:#}"),
+                    ComputerRuntime::Native => format!("this computer can't be used: {e:#}"),
+                }));
+            }
+            Some(Some(runtime))
+        }
+    };
     if let Some(side) = body.max_image_side {
         images::set_max_side(&state.store, side).await?;
+    }
+    if let Some(runtime) = computer_runtime {
+        // `COMPUTER_RUNTIME` is the default, so it is saved as no setting at all.
+        let runtime = runtime.filter(|r| *r != state.cfg.computer.runtime);
+        computer::set_runtime(&state.store, runtime).await?;
     }
     if let Some(minutes) = body.sandbox_idle_minutes {
         manager::set_idle_minutes(&state.store, minutes).await?;

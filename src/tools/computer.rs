@@ -6,7 +6,8 @@
 //! is smaller than the screen, the screenshot is scaled down and positions are scaled back up
 //! here, so the model never has to know.
 //!
-//! With `COMPUTER_RUNTIME=native` the desktop is the user's own computer. The tool then says so,
+//! When the run's computer is the user's own (see [`crate::computer::Computers`]), the tool says
+//! so ([`ComputerTool::native_definition`], which the agent offers in place of this tool's own),
 //! has no `open` (the workspace is not on that computer), and takes the size of the screen from
 //! the computer itself.
 
@@ -24,10 +25,9 @@ const ACTIONS: &str = "screenshot, click, move, drag, type, key, scroll, wait, o
 const NATIVE_ACTIONS: &str = "screenshot, click, move, drag, type, key, scroll, or wait";
 
 pub struct ComputerTool {
-    /// The user's own computer rather than a desktop in a container.
-    native: bool,
     /// The size of a container's screen in pixels; the user's own says its size when asked.
-    screen: Option<(u32, u32)>,
+    screen: (u32, u32),
+    /// Of the desktop in a container.
     description: String,
 }
 
@@ -47,17 +47,13 @@ const NATIVE_DESCRIPTION: &str = "Work the user's own computer, the one they are
 
 impl ComputerTool {
     pub fn new(cfg: &ComputerConfig) -> Self {
-        if cfg.native() {
-            return Self { native: true, screen: None, description: NATIVE_DESCRIPTION.to_string() };
-        }
         let net = if cfg.online() {
             "The desktop has internet access through its web browser."
         } else {
             "The desktop has no internet access."
         };
         Self {
-            native: false,
-            screen: Some((cfg.width, cfg.height)),
+            screen: (cfg.width, cfg.height),
             description: format!(
                 "Work a desktop computer by looking at its screen and using its mouse and \
                  keyboard: for applications with windows (a spreadsheet or document in an \
@@ -85,24 +81,7 @@ impl Tool for ComputerTool {
     }
 
     fn schema(&self) -> Value {
-        let mut schema = self.full_schema();
-        if self.native {
-            // No workspace on the user's computer to open a file from.
-            if let Some(properties) = schema["properties"].as_object_mut() {
-                properties.remove("path");
-            }
-            let action = &mut schema["properties"]["action"];
-            if let Some(actions) = action["enum"].as_array_mut() {
-                actions.retain(|a| a != "open");
-            }
-            let described = action["description"].as_str().unwrap_or_default();
-            let cut = described.find(" open:").unwrap_or(described.len());
-            action["description"] = json!(format!(
-                "{} key: also cmd+c and the like on a Mac.",
-                &described[..cut]
-            ));
-        }
-        schema
+        full_schema()
     }
 
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
@@ -114,22 +93,42 @@ impl Tool for ComputerTool {
             .computer
             .as_ref()
             .ok_or_else(|| anyhow!("the computer is not available"))?;
-        if self.native && input["action"] == "open" {
+        let native = session.native();
+        if native && input["action"] == "open" {
             bail!("unknown action \"open\"; use {NATIVE_ACTIONS}");
         }
-        let screen = match self.screen {
-            Some(screen) => screen,
-            None => session.screen().await?,
-        };
+        let screen = if native { session.screen().await? } else { self.screen };
         let shown = shown_size(screen, ctx.max_image_side);
         let request = request(input, screen, shown)?;
         let reply = session.call(&request, CALL_TIMEOUT).await?;
-        output(&reply, screen, shown, self.native)
+        output(&reply, screen, shown, native)
     }
 }
 
 impl ComputerTool {
-    fn full_schema(&self) -> Value {
+    /// The tool as a run is offered it when its computer is the user's own: said to be that, and
+    /// without `open`, since there is no workspace on that computer to open a file from.
+    pub fn native_definition() -> Value {
+        let mut schema = full_schema();
+        if let Some(properties) = schema["properties"].as_object_mut() {
+            properties.remove("path");
+        }
+        let action = &mut schema["properties"]["action"];
+        if let Some(actions) = action["enum"].as_array_mut() {
+            actions.retain(|a| a != "open");
+        }
+        let described = action["description"].as_str().unwrap_or_default();
+        let cut = described.find(" open:").unwrap_or(described.len());
+        action["description"] = json!(format!(
+            "{} key: also cmd+c and the like on a Mac.",
+            &described[..cut]
+        ));
+        json!({ "name": "computer", "description": NATIVE_DESCRIPTION, "input_schema": schema })
+    }
+}
+
+fn full_schema() -> Value {
+    {
         json!({ "type": "object",
                 "properties": {
                     "action": { "type": "string",
@@ -453,10 +452,11 @@ mod tests {
         // The user's own computer is described as what it is, and has no workspace to open from.
         let docker = ComputerTool::new(&cfg).schema();
         assert!(docker["properties"]["action"]["enum"].as_array().unwrap().contains(&json!("open")));
-        cfg.runtime = crate::config::ComputerRuntime::Native;
-        let native = ComputerTool::new(&cfg);
-        assert!(native.description().contains("their real computer"), "{}", native.description());
-        let schema = native.schema();
+        let native = ComputerTool::native_definition();
+        assert_eq!(native["name"], "computer");
+        let description = native["description"].as_str().unwrap();
+        assert!(description.contains("their real computer"), "{description}");
+        let schema = &native["input_schema"];
         let action = &schema["properties"]["action"];
         assert!(!action["enum"].as_array().unwrap().contains(&json!("open")));
         assert!(!action["description"].as_str().unwrap().contains("open:"), "{action}");
