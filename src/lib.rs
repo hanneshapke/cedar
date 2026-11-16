@@ -10,6 +10,7 @@ pub mod attachments;
 pub mod auth;
 pub mod browser;
 pub mod compact;
+pub mod computer;
 pub mod config;
 pub mod context;
 pub mod error;

@@ -217,6 +217,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "memory",
             "records",
             "browser",
+            "computer",
             "gmail",
             "calendar",
             "drive",
@@ -224,6 +225,10 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "slack",
             "custom"
         ]
+    );
+    assert_eq!(
+        group(&catalog, "computer")["reason"],
+        "Turned off on the server (COMPUTER=off)"
     );
     assert_eq!(
         group(&catalog, "slack")["reason"],
@@ -1377,6 +1382,7 @@ async fn app_with_real_llm_on(store: Store, env: &[(&str, &str)]) -> TestApp {
         llm: ScriptedLlm::new(vec![]),
         factory,
         browsers,
+        computers: Arc::default(),
     }
 }
 

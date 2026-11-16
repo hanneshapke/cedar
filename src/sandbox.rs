@@ -257,7 +257,7 @@ const VOLUME_PREFIX: &str = "cedar-ws-";
 pub(crate) const DOCKER_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const DOCKER_CREATE_TIMEOUT: Duration = Duration::from_secs(120);
 
-fn volume_name(workspace_id: Uuid) -> String {
+pub(crate) fn volume_name(workspace_id: Uuid) -> String {
     format!("{VOLUME_PREFIX}{workspace_id}")
 }
 

@@ -3,6 +3,7 @@
 use crate::agent::AgentEnv;
 use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
+use crate::computer::{ComputerFactory, DockerComputerFactory};
 use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
@@ -68,6 +69,8 @@ pub struct AppState {
     pub sandboxes: Arc<dyn SandboxFactory>,
     /// `None` when the browser is turned off.
     pub browsers: Option<Arc<dyn BrowserFactory>>,
+    /// `None` when the computer is turned off.
+    pub computers: Option<Arc<dyn ComputerFactory>>,
     pub auth: AuthKeys,
     /// The registered models' clients, for model calls outside a run (compaction).
     pub llm: Arc<LlmRouter>,
@@ -89,7 +92,8 @@ pub struct AppState {
 
 impl AppState {
     /// Wire the services together. The LLM client and sandbox factory are injected so tests can
-    /// substitute fakes; browsers run in Docker when the browser is on (see [`Self::with_browsers`]).
+    /// substitute fakes; browsers and computers run in Docker when they are on (see
+    /// [`Self::with_browsers`] and [`Self::with_containers`]).
     /// Fails only if a tool can't be set up (e.g. the HTTP client for web search).
     pub fn new(
         cfg: Config,
@@ -110,7 +114,22 @@ impl AppState {
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Arc<dyn BrowserFactory>,
     ) -> Result<Self> {
+        let computers = Arc::new(DockerComputerFactory::new(cfg.computer.clone()));
+        Self::with_containers(cfg, store, llm, sandboxes, browsers, computers)
+    }
+
+    /// Like [`Self::with_browsers`], with the computer factory injected as well. Each is only
+    /// used if the configuration turns its tool on.
+    pub fn with_containers(
+        cfg: Config,
+        store: Store,
+        llm: Arc<LlmRouter>,
+        sandboxes: Arc<dyn SandboxFactory>,
+        browsers: Arc<dyn BrowserFactory>,
+        computers: Arc<dyn ComputerFactory>,
+    ) -> Result<Self> {
         let browsers = cfg.browser.enabled.then_some(browsers);
+        let computers = cfg.computer.enabled.then_some(computers);
         let hub = Arc::new(EventHub::new());
         let cfg = Arc::new(cfg);
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
@@ -148,6 +167,7 @@ impl AppState {
             env,
             sandboxes.clone(),
             browsers.clone(),
+            computers.clone(),
             cfg.max_concurrent_runs,
             cfg.run_timeout,
         );
@@ -170,6 +190,7 @@ impl AppState {
             manager,
             sandboxes,
             browsers,
+            computers,
             auth,
             llm,
             integrations,
@@ -1864,8 +1885,8 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Ready when the database answers and the sandbox runtime (and, if it is on, the browser image)
-/// is usable. Details go to the log, not to this unauthenticated endpoint.
+/// Ready when the database answers and the sandbox runtime (and, if they are on, the browser and
+/// computer images) are usable. Details go to the log, not to this unauthenticated endpoint.
 async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let mut checks = vec![
         ("database", state.store.ping().await),
@@ -1873,6 +1894,9 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
     ];
     if let Some(browsers) = &state.browsers {
         checks.push(("browser", browsers.health().await));
+    }
+    if let Some(computers) = &state.computers {
+        checks.push(("computer", computers.health().await));
     }
     for (name, result) in &checks {
         if let Err(e) = result {

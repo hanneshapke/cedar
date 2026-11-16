@@ -11,6 +11,7 @@
 
 use crate::agent::{run_agent, AgentEnv, AgentError, Completion};
 use crate::browser::{BrowserFactory, BrowserSession};
+use crate::computer::{ComputerFactory, ComputerSession};
 use crate::events::{Emitter, EventHub};
 use crate::models::{event, Run, RunStatus};
 use crate::sandbox::{self, Runtime, Sandbox, SandboxFactory};
@@ -146,6 +147,8 @@ struct Inner {
     sandboxes: Arc<dyn SandboxFactory>,
     /// `None` when the browser is turned off.
     browsers: Option<Arc<dyn BrowserFactory>>,
+    /// `None` when the computer is turned off.
+    computers: Option<Arc<dyn ComputerFactory>>,
     /// Bounds how many runs execute at once; the rest stay `queued`.
     slots: Arc<Semaphore>,
     /// `RUN_TIMEOUT_SECS`: the time limit when no admin has saved `run_timeout_secs`.
@@ -183,12 +186,14 @@ impl RunManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: Store,
         hub: Arc<EventHub>,
         env: AgentEnv,
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Option<Arc<dyn BrowserFactory>>,
+        computers: Option<Arc<dyn ComputerFactory>>,
         max_concurrent_runs: usize,
         run_timeout: Duration,
     ) -> Self {
@@ -198,6 +203,7 @@ impl RunManager {
             env,
             sandboxes,
             browsers,
+            computers,
             slots: Arc::new(Semaphore::new(max_concurrent_runs)),
             run_timeout,
             active: Mutex::new(HashMap::new()),
@@ -239,6 +245,18 @@ impl RunManager {
                 ),
                 Err(e) => {
                     tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover browsers")
+                }
+            }
+        }
+        if let Some(computers) = &self.0.computers {
+            match computers.cleanup_orphans().await {
+                Ok(0) => {}
+                Ok(n) => tracing::warn!(
+                    count = n,
+                    "removed computer containers left over from a previous process"
+                ),
+                Err(e) => {
+                    tracing::warn!(error = %format!("{e:#}"), "could not clean up leftover computers")
                 }
             }
         }
@@ -372,15 +390,20 @@ impl Inner {
             .browsers
             .as_ref()
             .map(|factory| Arc::new(BrowserSession::new(factory.clone(), run.id)));
+        // Nor until it first uses the computer, which works on the conversation's files.
+        let computer = self.computers.as_ref().map(|factory| {
+            Arc::new(ComputerSession::new(factory.clone(), run.id, run.workspace_id))
+        });
         let child = {
-            let (inner, run, token, slot, browser) = (
+            let (inner, run, token, slot, browser, computer) = (
                 self.clone(),
                 run.clone(),
                 token.clone(),
                 sandbox.clone(),
                 browser.clone(),
+                computer.clone(),
             );
-            tokio::spawn(async move { inner.drive(&run, &token, &slot, browser).await })
+            tokio::spawn(async move { inner.drive(&run, &token, &slot, browser, computer).await })
         };
         let outcome = match child.await {
             Ok(outcome) => outcome,
@@ -402,6 +425,9 @@ impl Inner {
         if let Some(browser) = browser {
             browser.destroy().await;
         }
+        if let Some(computer) = computer {
+            computer.destroy().await;
+        }
         self.finalize(&run, outcome).await;
     }
 
@@ -411,6 +437,7 @@ impl Inner {
         token: &CancellationToken,
         slot: &SandboxSlot,
         browser: Option<Arc<BrowserSession>>,
+        computer: Option<Arc<ComputerSession>>,
     ) -> Result<Completion, AgentError> {
         let _slot = tokio::select! {
             biased;
@@ -462,7 +489,7 @@ impl Inner {
         // The `run_timeout_secs` setting as the run starts; a change applies from the next run.
         let limit = run_time_limit(&self.store, self.run_timeout).await;
         let started = tokio::time::Instant::now();
-        let agent = run_agent(&self.env, run, sandbox, browser, &events, token);
+        let agent = run_agent(&self.env, run, sandbox, browser, computer, &events, token);
         tokio::pin!(agent);
         loop {
             let deadline = started + limit + self.env.waits.paused(run.id);

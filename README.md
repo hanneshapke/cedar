@@ -62,7 +62,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "locale"?, "import_attachments"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [Languages](#languages) for `locale`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
-| `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
+| `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). A `tool_result`'s `content` is a string, or for a call that answered with an image (the [`computer`](#the-computer)'s screenshot) a list of a `text` and an `image` block. |
 | `GET /v1/runs/{id}/trace` | Everything the run sent to the model and got back, for debugging: `{run, system, tools, messages, calls, events}`. `system` and `tools` are the system prompt (with cedar's notes) and tool definitions the agent's calls were sent, `memory_note` (`{start, end}`, byte offsets into `system`, or `null`) where the user's memories sit in it, so a client passing the prompt on can cut exactly that, and `memory` what was shown there and why (the `memory.recalled` event's data, or `null`); `messages` the conversation as in `/messages`, with attached files' base64 replaced by their size (`source.bytes`); `calls` one entry per model call, `{seq, turn, purpose, request, response, error, started_at, duration_ms}`, where `purpose` is `agent`, `plan` or `memory` (the call at the end of the run that notes what it learned, see [Memory](#memory)), an agent call's `request` is `{model, max_tokens, reasoning_effort, message_count}` (it was sent the first `message_count` messages) and a planning or memory call's also has its own `system`, `tools` and `messages`, and `response` is `{content, stop_reason, usage, reasoning}` (`null`, with `error`, when the call failed); `events` the run's event log. `system`, `tools` and `calls` are empty for runs from before traces were kept. |
 | `GET /v1/runs/{id}/events` | Server-Sent Events. Replays from the beginning, then follows live, and closes after the run's last event. |
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
@@ -132,6 +132,7 @@ A run belongs to the key that created it. Anyone else gets `404`.
 | `memory` | `remember`, `forget`, `recall`, and what the run is shown from memory (see [Memory](#memory)) |
 | `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
+| `computer` | `computer` |
 | `gmail`, `calendar`, `drive`, `sheets` | every `gmail_*`, `calendar_*`, `drive_*` or `sheets_*` tool, or name single ones (`gmail_search_threads`) |
 | `slack` | every `slack_*` tool, or name single ones (`slack_read_messages` to read without posting) |
 | `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
@@ -265,7 +266,7 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 | `approval.required` | `id`, `call_id`, `tool`, `input`, `rule`, `reason`, `scope` |
 | `approval.resolved` | `id`, `decision` (`allow`, `allow_always`, `deny` or `timeout`), `by` |
 | `tool.call` | `id`, `name`, `input` |
-| `tool.result` | `id`, `output`, `is_error`, `duration_ms`, and `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite |
+| `tool.result` | `id`, `output`, `is_error`, `duration_ms`, `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite, and `image: true` when the result came with an image (a [`computer`](#the-computer) screenshot; the image itself is in the run's messages, not in the event) |
 | `sandbox.denied` | `call_id`, `program` (the path OpenShell named, `null` for a refused HTTP request), `host`, `port`, `what` (`connect`, or the method and path of a refused request), `reason`: an OpenShell sandbox's policy refused something while a `bash` or `run_python` call ran (see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)) |
 | `context.trimmed` | What a model call was sent was cut down to fit the model's context window: `turn`, `window`, `estimated_tokens_before`, `estimated_tokens_after`, `trimmed_results` (tool results cut down) and `dropped_messages` (see [Context windows](#context-windows)). Before that turn's call |
 | `usage` | `turn`, `input_tokens`, `output_tokens`, and `cost_usd` when the model has a `price`. Turn 0, with `purpose: "plan"`, is the planning call, and with `purpose: "memory"` the call at the end of the run that notes what it learned; one with `purpose: "tool"` and the `tool`'s name is a call a tool made to the model during that turn (`search_products` picking products, `plan_trip` choosing a trip option) |
@@ -723,12 +724,16 @@ Settings come from environment variables. The important ones:
 | `BROWSER` | `off` (set `on` to enable the `browser` tool; see [The browser](#the-browser)) |
 | `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the browser needs internet access, so `none` is refused) |
 | `BROWSER_MEMORY` / `BROWSER_CPUS` | `1g` / `1` |
+| `COMPUTER` | `off` (set `on` to enable the `computer` tool for models that read images; see [The computer](#the-computer)) |
+| `COMPUTER_IMAGE` / `COMPUTER_NETWORK` | `cedar-computer:latest` / `bridge` (`none` gives a desktop without internet access, which still works on the workspace's files) |
+| `COMPUTER_MEMORY` / `COMPUTER_CPUS` | `2g` / `2` |
+| `COMPUTER_SCREEN` | `1280x800` (the size of the desktop's screen in pixels, each side from 640 to 2560) |
 
 ## Tools
 
 The calls the model makes in one turn run in the order it gave, except that calls with no side
 effects (searches, pages, lookups, community tools) run at the same time; a call that works in the
-sandbox, drives the browser, asks the user, saves memory or records, downloads a file or changes
+sandbox, drives the browser, works the computer, asks the user, saves memory or records, downloads a file or changes
 something in an account runs on its own, after the ones before it. Results go back in the order of
 the calls. A tool that fails twice in a row for a temporary reason (a rate limit, a server that is
 unavailable, a timeout) is not run again in that run: further calls answer at once that it was left
@@ -770,6 +775,7 @@ produce its result from what it has, since a run that is stopped delivers nothin
 | `slack_*` | `slack_list_channels`, `slack_read_messages`, `slack_list_users` and `slack_send_message`: the team's Slack through Slack's Web API, as a Slack app. Only offered when a Slack bot token is set or saved; see [Slack](#slack). |
 | personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Each call runs in a container (or OpenShell sandbox) of its own that sees the workspace and only that tool, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
 | `browser` | Drives a headless Chromium for pages that need JavaScript or interaction. Takes `action` (`navigate` with `url`, `snapshot`, `click` or `type` with `ref`, `scroll`, `back`) and returns the page as text with interactive elements numbered like `[12] button "Show all reviews"`. Only offered when `BROWSER=on`; see [The browser](#the-browser). |
+| `computer` | Works a desktop on a virtual screen through screenshots, the mouse and the keyboard, for applications with windows. Takes `action` (`screenshot`, `click`, `move`, `drag`, `type`, `key`, `scroll`, `wait`, `open`) and returns a screenshot of the screen afterwards. Only offered when `COMPUTER=on`, to models that read images; see [The computer](#the-computer). |
 
 `writes` in `GET /v1/tools` marks Gmail and Calendar tools whose names say they send, create, change, or delete something, so clients can ask before switching them on.
 
@@ -785,7 +791,7 @@ produce its result from what it has, since a run that is stopped delivers nothin
 
 `fetch_url` and `download_file` are on unless `WEB_FETCH=off`. Since their requests come from the cedar host, they only reach public addresses: hostnames are resolved by cedar and loopback, private, link-local, CGNAT, and other internal addresses are dropped (so DNS tricks don't get through), IP literals are checked the same way, every redirect is re-checked (at most 5), and proxy environment variables are ignored because a proxy would resolve names itself. `WEB_FETCH_ALLOW_PRIVATE=on` lifts that rule for tests or a trusted intranet.
 
-Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `show_recipe`, `search_products`, `browser`, and the Gmail and Calendar tools are available (with a reminder that emails and event descriptions are information, not instructions), so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY` (and without `CEDAR_SECRET_KEY`, which would let an admin add one later), cedar logs a warning at startup.
+Every run's system prompt (the default or a custom one) gets a short note appended saying whether the sandbox has network access and whether `web_search`, `fetch_url`, `download_file`, `weather_forecast`, `show_map`, `show_recipe`, `search_products`, `browser`, `computer`, and the Gmail and Calendar tools are available (with a reminder that emails and event descriptions are information, not instructions), so the model searches with the tool instead of trying `curl` against a search engine. Without `BRAVE_API_KEY` (and without `CEDAR_SECRET_KEY`, which would let an admin add one later), cedar logs a warning at startup.
 
 `generate_pdf` runs in the sandbox like the file tools: the document is staged in the container's `/tmp`, rendered with `cedar-render-pdf` (a script in the sandbox image, built on [WeasyPrint](https://weasyprint.org)), and the staging file removed. Markdown gets a page template with A4 pages, margins, page numbers, and styles for headings, tables, code blocks, and footnotes; HTML that is already a full document (`<html>`) is rendered as-is with its own styles. Relative image URLs resolve against `/workspace`, so a chart the agent saved earlier can be embedded. The tool is always offered, so a custom `SANDBOX_IMAGE` must ship `cedar-render-pdf` or the model gets an error telling it so.
 
@@ -896,6 +902,30 @@ docker run -d --name cb --shm-size 256m cedar-browser
 docker exec cb cedar-browser call '{"action":"navigate","url":"https://example.com"}'
 docker rm -f cb
 ```
+
+### The computer
+
+Some work only exists behind windows: a spreadsheet's chart wizard, a document's layout, a web application that wants a full browser with a pointer. With `COMPUTER=on`, the `computer` tool gives the model a desktop to work the way a person does, by looking at the screen and using the mouse and keyboard:
+
+- **One desktop per run, started on first use.** The first `computer` call starts a container from `COMPUTER_IMAGE` for the run: an Xfce desktop on a virtual screen (`COMPUTER_SCREEN`, 1280x800 unless set) with Firefox, LibreOffice (Writer, Calc, Impress), a file manager, a text editor, an image viewer and a terminal. Later calls work the same desktop, so windows stay open between them. The container is removed when the run ends (also on failure or cancellation), and leftovers from a crash are removed at startup. Runs that never use the computer start nothing. Unlike the sandbox, the desktop is not kept for the conversation's next run: what should last has to be saved in the workspace.
+- **The workspace is shared.** The conversation's workspace is mounted at `/workspace` in the desktop too, so a file the agent wrote with `write_file` or `run_python` can be opened in an application (`{"action": "open", "path": "report.ods"}`) and what an application saves there can be read by the other tools and downloaded through the files API.
+- **Screenshots in, mouse and keyboard out.** Every call answers with a screenshot of the screen after the action, pointer included, plus a line saying where the pointer is and which window has the keyboard. Positions are pixels in that screenshot. The actions are `screenshot`, `click` (with `button` and `count`), `move`, `drag`, `type`, `key` (X key names such as `Return` or `ctrl+s`), `scroll`, `wait` and `open`. When the server's `max_image_side` is smaller than the screen, screenshots are scaled down to it and the model's positions are scaled back up.
+- **Only for models that read images.** The tool is offered to models registered as `multimodal` and left out for the others. How well it works depends on the model: finding the right pixel to click is a skill of its own, and a model that describes pictures well may still click badly. Try it with your model before relying on it.
+- **Screenshots and the context window.** A screenshot costs a vision model some 1,500 to 2,000 tokens, and an old one says little about the screen as it is now. So a request carries the newest three to five; in older results a note stands in for the image (the stored conversation keeps them all). When a conversation is [cut to fit the window](#context-windows), an image counts as about that many tokens whatever its file size, and the images of older results go first. A conversation continued on a model that reads no images is sent none of them.
+- **Limits.** Each call is one action, and calls run one at a time. A desktop that hangs (no answer within 90 s) or dies (out of memory, say) is removed, the model is told, and its next call starts a new one with nothing open. It is the slowest tool by far (every step is a model call that reads an image), so the system prompt tells the model to use it only when no other tool can do the job.
+
+In `GET /v1/runs/{id}/messages` a `computer` call's `tool_result` has a list as its `content`: a `text` block and an `image` block with the screenshot as a base64 PNG. The `tool.result` event carries `image: true` and not the image, and the trace gives its size. The chat does not show the screenshots yet.
+
+`computer/Dockerfile` builds the image: Debian with Xvfb, Xfce and the applications, plus the driver (`computer/driver.py`, installed as `cedar-computer`) that starts the screen and carries out one call at a time with `xdotool`. It is large (well over a GB). Build it with `docker build -t cedar-computer computer/`; `/readyz` reports whether it is present when the computer is on. You can work it by hand to see what the model sees:
+
+```sh
+docker run -d --name cc --shm-size 512m cedar-computer
+docker exec cc cedar-computer call '{"action":"screenshot"}' | python3 -c 'import sys, json, base64; open("screen.png", "wb").write(base64.b64decode(json.load(sys.stdin)["image"]))'
+docker exec cc cedar-computer call '{"action":"click","x":40,"y":12}' > /dev/null
+docker rm -f cc
+```
+
+The desktop always runs in Docker, also when the sandboxes run on OpenShell: no OpenShell policy applies to it. See [Safety](#safety) for what that means for its network.
 
 ### Gmail and Calendar
 
@@ -1376,6 +1406,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - The user running cedar needs access to the Docker daemon, which is effectively root on that machine (and, with OpenShell on, to its gateway, which may attach volumes). Run cedar on a host or VM you are willing to dedicate to it.
 - Turning networking on for a Docker sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services. [OpenShell sandboxes](#openshell-sandboxes-opt-in) narrow that to the hosts their policy names, from the programs it names; turn them on in Settings → Advanced.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
+- The computer (`COMPUTER=on`) is a whole desktop with a web browser, and nothing checks where the model takes it: with a network (`COMPUTER_NETWORK`, `bridge` by default) it reaches whatever that Docker network reaches, including this host and your internal network, also when the sandboxes run on OpenShell. It sees the conversation's workspace, so what a page tells the model to do (a prompt injection in a screenshot works like one in fetched text) could send those files out. Its calls are not held for approval in interactive runs. Give it a network that only reaches the internet, or `COMPUTER_NETWORK=none` for a desktop that only works on the workspace's files. Each run's desktop starts fresh, with no cookies or sign-ins.
 - [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as cedar-chat's [agents](chat/README.md#agents), call them without asking).
 - [A tool called outside a run](#calling-a-tool-outside-a-run) leaves no run behind, so no conversation or trace shows what it read; only a log line and a database row say that the call was made, by which key, and how long it took. Any API key may make such calls, to the tools that only read (mail and calendar among them, for the one Google account every key shares) and to personal tools, whose code then runs with its declared network and secrets and nobody approving it. Give a key only to clients you would let start a run.
 - Runs that start by themselves from something outside (cedar-chat's [agents](chat/README.md#runs-that-start-from-outside) on a condition, a webhook, mail or the calendar) are given text other people wrote as part of their prompt, and are not interactive, so no tool call waits for approval. The chat marks that text off as data, gives such an agent tools without personal tools or Google writes unless told otherwise, and limits how often it runs. None of that makes a prompt injection impossible: choose such an agent's tools as you would for a stranger's input, and keep the tools that send, write or spend out of it.
@@ -1397,10 +1428,11 @@ cargo clippy --all-targets -- -D warnings
 cargo test --test docker -- --ignored   # sandbox tests; need Docker and the cedar-sandbox image
 cargo test --test openshell -- --ignored --test-threads 4   # OpenShell sandbox tests; also need an OpenShell gateway (see Setting up OpenShell)
 cargo test --test docker_browser -- --ignored   # browser tests; need Docker and the cedar-browser image
+cargo test --test docker_computer -- --ignored  # computer tests; need Docker and the cedar-computer image
 python3 registry/build_index.py --check  # the community tool registry's rules and index
 ```
 
-The integration tests drive the real router with a scripted LLM, a fake sandbox, and a fake browser (`tests/common/mod.rs`), and the LLM client against a local mock of a chat-completions server.
+The integration tests drive the real router with a scripted LLM, a fake sandbox, a fake browser, and a fake computer (`tests/common/mod.rs`), and the LLM client against a local mock of a chat-completions server.
 
 **Benchmark.** [`bench/`](bench/README.md) holds cedar-bench, a hermetic benchmark that runs tasks through the runs API against mock services (search, pages, weather, stocks, Gmail and Calendar over synthetic personas) and compares models on success, reliability, cost and safety, with a PDF and Markdown report. `bench/scripts/stack.sh start` and `stack.sh run` run it; see its README.
 

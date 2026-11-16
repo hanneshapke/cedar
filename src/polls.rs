@@ -193,6 +193,8 @@ async fn call_tool(
     let context = |sandbox: Arc<dyn Sandbox>| ToolContext {
         sandbox,
         browser: None,
+        computer: None,
+        max_image_side: crate::images::DEFAULT_MAX_SIDE,
         timeout: cfg.tool_timeout,
         max_output: MAX_OUTPUT_BYTES,
         model: None,

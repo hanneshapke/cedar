@@ -4,6 +4,7 @@
 use crate::approvals::{self, Gate, Rules};
 use crate::attachments;
 use crate::browser::BrowserSession;
+use crate::computer::ComputerSession;
 use crate::config::SandboxConfig;
 use crate::context::{self, Budget};
 use crate::events::Emitter;
@@ -18,7 +19,8 @@ use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{
-    question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER, RECORDS_SAVE, REMEMBER,
+    question_text, ToolContext, ToolModel, ToolOutput, ToolSet, ToolView, ASK_USER, RECORDS_SAVE,
+    REMEMBER,
 };
 use crate::trace;
 use crate::waits::{Answer, Waits};
@@ -99,12 +101,15 @@ pub async fn run_agent(
     run: &Run,
     sandbox: Arc<dyn Sandbox>,
     browser: Option<Arc<BrowserSession>>,
+    computer: Option<Arc<ComputerSession>>,
     events: &Emitter,
     cancel: &CancellationToken,
 ) -> Result<Completion, AgentError> {
     let ctx = ToolContext {
         sandbox: sandbox.clone(),
         browser,
+        computer,
+        max_image_side: crate::images::max_side(&env.store).await?,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
         model: env.llm.client_for(&run.model_id).map(|client| {
@@ -176,6 +181,15 @@ pub async fn run_agent(
         tracing::info!(run_id = %run.id, window = ?budget.window(), tools = ?allow, "small context window: offering only the tools the request seems to need");
     }
     let tools = tool_set.select(narrowed.as_deref().or(run.tools.as_deref()));
+    // Looked up now, so an admin's change since the run was created applies. A model that reads
+    // no images gets no tool that answers with one, and none of the screenshots an earlier run
+    // of the conversation took on another model.
+    let reads_images = env
+        .integrations
+        .models()
+        .iter()
+        .any(|m| m.id == run.model_id && m.multimodal);
+    let tools = if reads_images { tools } else { tools.text_only() };
     let mut tool_defs = tools.definitions();
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // In `tool` mode the model decides whether a request needs a plan.
@@ -280,16 +294,10 @@ pub async fn run_agent(
     let blocks = if attachments.is_empty() {
         vec![]
     } else {
-        // Looked up now, so an admin's change since the run was created applies.
-        let images = env
-            .integrations
-            .models()
-            .iter()
-            .any(|m| m.id == run.model_id && m.multimodal);
         let prepare = attachments::prepare(
             sandbox.as_ref(),
             &attachments,
-            images,
+            reads_images,
             env.pdf_preview_pages,
             env.tool_timeout,
             &imported,
@@ -330,15 +338,19 @@ pub async fn run_agent(
         // A reply cut off at its limit before it said or asked anything gets one more try with
         // less of the conversation; a second one ends the run as failed.
         let mut tight = false;
+        // Old screenshots tell the model little about the screen as it is now: only the newest
+        // few are sent.
+        let viewed = context::with_recent_views(&messages, reads_images);
+        let stored: &[Value] = viewed.as_deref().unwrap_or(&messages);
         let resp = loop {
             // What was cut before is cut the same way again, so the start of the request stays
             // the same text and the server can reuse its cache for it.
-            let applied = (!cuts.is_empty()).then(|| cuts.apply(&messages));
-            let current: &[Value] = applied.as_deref().unwrap_or(&messages);
+            let applied = (!cuts.is_empty()).then(|| cuts.apply(stored));
+            let current: &[Value] = applied.as_deref().unwrap_or(stored);
             let fitted = match budget.message_bytes(fixed_bytes, tight) {
                 Some(max) if context::size(current) > max => {
                     // Down to well below the limit, so the next turns fit without new cuts.
-                    let fitted = context::fit(&messages, max * context::REFIT_PERCENT / 100, &cuts);
+                    let fitted = context::fit(stored, max * context::REFIT_PERCENT / 100, &cuts);
                     let before = budget.estimate(fixed_bytes + context::size(current));
                     let after = budget.estimate(fixed_bytes + context::size(&fitted.messages));
                     let window = budget.window().unwrap_or_default();
@@ -1281,12 +1293,13 @@ pub fn is_temporary(error: &str) -> bool {
 }
 
 /// Whether a call must run on its own, in order: anything that works in the sandbox (files,
-/// code), the browser (one page), questions and plans, memory and records, downloads, and
+/// code), the browser (one page), the computer (one screen), questions and plans, memory and
+/// records, downloads, and
 /// account tools that change something. Other calls of a turn (searches, pages, lookups) run at
 /// the same time.
 fn runs_alone(tools: &ToolView<'_>, name: &str) -> bool {
     let group = tools.group(name);
-    matches!(group, "core" | "browser" | "ask_user" | "memory" | "records")
+    matches!(group, "core" | "browser" | "computer" | "ask_user" | "memory" | "records")
         || name == "download_file"
         || name == plan::TOOL
         || crate::tools::writes(name)
@@ -1340,7 +1353,7 @@ async fn run_call(
     ctx: &ToolContext,
     cancel: &CancellationToken,
     call: &Prepared<'_>,
-) -> Result<(Result<String>, Duration), AgentError> {
+) -> Result<(Result<ToolOutput>, Duration), AgentError> {
     let started = Instant::now();
     let work = async {
         if let Some(message) = &call.refused {
@@ -1348,7 +1361,7 @@ async fn run_call(
         }
         // A tool left out of the run's selection is as unknown as a made-up one.
         match tools.get(&call.name) {
-            Some(tool) => tool.call(ctx, &call.block["input"]).await,
+            Some(tool) => tool.call_output(ctx, &call.block["input"]).await,
             None => Err(anyhow!("unknown tool: {}", call.name)),
         }
     };
@@ -1373,17 +1386,17 @@ async fn finish_call(
     events: &Emitter,
     cancel: &CancellationToken,
     call: &Prepared<'_>,
-    result: Result<String>,
+    result: Result<ToolOutput>,
     took: Duration,
 ) -> Result<Value, AgentError> {
     let (id, name, input) = (call.id.as_str(), call.name.as_str(), &call.block["input"]);
-    let (mut output, is_error) = match result {
-        Ok(out) => (out, false),
+    let (mut output, image, is_error) = match result {
+        Ok(out) => (out.text, out.image, false),
         Err(e) if e.downcast_ref::<SandboxFatal>().is_some() => {
             return Err(AgentError::Failed(e.to_string()))
         }
         // Errors go back to the model so it can recover.
-        Err(e) => (format!("{e:#}"), true),
+        Err(e) => (format!("{e:#}"), None, true),
     };
     if call.refused.is_none() {
         breaker.record(name, is_error, &output);
@@ -1406,9 +1419,18 @@ async fn finish_call(
             for_model = numbered.output;
         }
     }
+    // The image itself stays out of the event log; it is in the conversation (`/messages`).
+    if image.is_some() {
+        data["image"] = Value::Bool(true);
+    }
     events.emit(event::TOOL_RESULT, data).await?;
 
-    let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": for_model });
+    // A result with an image (the `computer`'s screenshot) is the text and the image as parts.
+    let content = match &image {
+        Some(image) => json!([{ "type": "text", "text": for_model }, image.block()]),
+        None => Value::String(for_model),
+    };
+    let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": content });
     if is_error {
         block["is_error"] = Value::Bool(true);
     }

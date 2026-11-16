@@ -174,8 +174,9 @@ fn translate_tool(def: &Value) -> Value {
 }
 
 /// Append the chat-completions form of one stored message. A user message with `image` or
-/// `document` blocks is sent as content parts (`image_url` and `file` data URLs); any other
-/// message is sent as plain text. Block types the format has no place for are dropped.
+/// `document` blocks, or with an image in a tool result, is sent as content parts (`image_url`
+/// and `file` data URLs); any other message is sent as plain text. Block types the format has no
+/// place for are dropped.
 fn translate_message(msg: &Value, out: &mut Vec<Value>) {
     let role = msg["role"].as_str().unwrap_or_default();
     let blocks = match &msg["content"] {
@@ -228,22 +229,35 @@ fn translate_message(msg: &Value, out: &mut Vec<Value>) {
             json!({ "role": "tool", "tool_call_id": block["tool_use_id"], "content": content }),
         );
     }
-    if blocks.iter().any(|b| media_part(b).is_some()) {
-        let parts: Vec<Value> = blocks
-            .iter()
-            .filter_map(|b| match b["type"].as_str() {
-                Some("text") => b["text"]
-                    .as_str()
-                    .filter(|t| !t.is_empty())
-                    .map(|t| json!({ "type": "text", "text": t })),
-                _ => media_part(b),
-            })
-            .collect();
+    // A tool message is text only on most servers, so the images of tool results (a `computer`
+    // call's screenshot) follow them in a user message, ahead of anything else it carries.
+    let views: Vec<Value> = blocks
+        .iter()
+        .filter(|b| b["type"] == "tool_result")
+        .flat_map(|b| b["content"].as_array().into_iter().flatten())
+        .filter_map(media_part)
+        .collect();
+    if !views.is_empty() || blocks.iter().any(|b| media_part(b).is_some()) {
+        let mut parts = Vec::new();
+        if !views.is_empty() {
+            parts.push(json!({ "type": "text", "text": TOOL_IMAGES }));
+            parts.extend(views);
+        }
+        parts.extend(blocks.iter().filter_map(|b| match b["type"].as_str() {
+            Some("text") => b["text"]
+                .as_str()
+                .filter(|t| !t.is_empty())
+                .map(|t| json!({ "type": "text", "text": t })),
+            _ => media_part(b),
+        }));
         out.push(json!({ "role": role, "content": parts }));
     } else if !text.is_empty() {
         out.push(json!({ "role": role, "content": text }));
     }
 }
+
+/// What introduces the images of a message's tool results, sent after them.
+const TOOL_IMAGES: &str = "The image returned with each tool result above, in the same order:";
 
 /// The content part for an `image` or `document` block with a base64 source, if it is one.
 fn media_part(block: &Value) -> Option<Value> {
@@ -793,6 +807,28 @@ mod tests {
                     { "type": "file", "file": { "filename": "b.pdf", "file_data": "data:application/pdf;base64,cGRm" } },
                     { "type": "file", "file": { "filename": "document.pdf", "file_data": "data:application/pdf;base64,cGRm" } },
                     { "type": "text", "text": "what are these?" },
+                ] }),
+            ]
+        );
+    }
+
+    #[test]
+    fn images_of_tool_results_follow_the_tool_messages() {
+        let shot = |data: &str| json!({ "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": data } });
+        let body = request(&[json!({ "role": "user", "content": [
+            { "type": "tool_result", "tool_use_id": "t1", "content": [{ "type": "text", "text": "the screen" }, shot("YQ==")] },
+            { "type": "tool_result", "tool_use_id": "t2", "content": "plain" },
+            { "type": "text", "text": "little time is left" },
+        ] })]);
+        assert_eq!(
+            body["messages"].as_array().unwrap()[1..],
+            [
+                json!({ "role": "tool", "tool_call_id": "t1", "content": "the screen" }),
+                json!({ "role": "tool", "tool_call_id": "t2", "content": "plain" }),
+                json!({ "role": "user", "content": [
+                    { "type": "text", "text": TOOL_IMAGES },
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,YQ==" } },
+                    { "type": "text", "text": "little time is left" },
                 ] }),
             ]
         );
