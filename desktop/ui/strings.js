@@ -96,7 +96,7 @@ cedarI18n.add({
     'images.bytes': '{done} MB downloaded.',
     'images.ready': 'Ready.',
     'images.browserToggle': 'Browser tool (downloads a second, larger image with Chromium)',
-    'images.computerToggle': 'Let Cedar use this computer (it sees the screen and uses the mouse and keyboard, and asks first)',
+    'images.computerToggle': 'Let Cedar use this computer (it sees the screen and uses the mouse and keyboard, and asks first; also downloads a 1.4 GB image with a desktop in a container)',
     'images.computerNote': 'Only for models that read images. Screenshots of your screen go to the model server and are kept with the conversation.',
 
     'model.title': 'Model server',
@@ -317,7 +317,7 @@ cedarI18n.add({
     'images.bytes': '{done} MB heruntergeladen.',
     'images.ready': 'Bereit.',
     'images.browserToggle': 'Browser-Werkzeug (lädt ein zweites, größeres Image mit Chromium)',
-    'images.computerToggle': 'Cedar diesen Computer bedienen lassen (es sieht den Bildschirm, nutzt Maus und Tastatur und fragt vorher)',
+    'images.computerToggle': 'Cedar diesen Computer bedienen lassen (es sieht den Bildschirm, nutzt Maus und Tastatur und fragt vorher; lädt außerdem ein 1,4 GB großes Image mit einem Desktop im Container)',
     'images.computerNote': 'Nur für Modelle, die Bilder lesen. Bildschirmfotos gehen an den Modellserver und werden mit der Unterhaltung gespeichert.',
 
     'model.title': 'Modellserver',
@@ -538,7 +538,7 @@ cedarI18n.add({
     'images.bytes': '{done} Mo téléchargés.',
     'images.ready': 'Prête.',
     'images.browserToggle': 'Outil navigateur (télécharge une seconde image, plus volumineuse, avec Chromium)',
-    'images.computerToggle': 'Laisser Cedar utiliser cet ordinateur (il voit l’écran, utilise la souris et le clavier, et demande d’abord)',
+    'images.computerToggle': 'Laisser Cedar utiliser cet ordinateur (il voit l’écran, utilise la souris et le clavier, et demande d’abord ; télécharge aussi une image de 1,4 Go avec un bureau dans un conteneur)',
     'images.computerNote': 'Uniquement pour les modèles qui lisent les images. Les captures de votre écran sont envoyées au serveur du modèle et conservées avec la conversation.',
 
     'model.title': 'Serveur de modèles',
@@ -761,7 +761,7 @@ cedarI18n.add({
     'images.bytes': '{done} MB descargados.',
     'images.ready': 'Lista.',
     'images.browserToggle': 'Herramienta de navegador (descarga una segunda imagen, más grande, con Chromium)',
-    'images.computerToggle': 'Permitir que Cedar use este ordenador (ve la pantalla, usa el ratón y el teclado, y pregunta antes)',
+    'images.computerToggle': 'Permitir que Cedar use este ordenador (ve la pantalla, usa el ratón y el teclado, y pregunta antes; también descarga una imagen de 1,4 GB con un escritorio en un contenedor)',
     'images.computerNote': 'Solo para modelos que leen imágenes. Las capturas de tu pantalla se envían al servidor del modelo y se guardan con la conversación.',
 
     'model.title': 'Servidor de modelos',

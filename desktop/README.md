@@ -180,9 +180,9 @@ Running everything here, the setup window shows three steps:
   asks before every step (see
   [The user's own computer](../README.md#the-users-own-computer) and its safety notes). macOS
   asks for the Screen Recording and Accessibility permissions the first time it is used. The
-  app starts cedar with this computer as the default; the desktop in a container
-  (`cedar-computer`) can be chosen under Settings → Advanced in the chat once you have that
-  image, which the app does not download.
+  app starts cedar with this computer as the default, and also pulls `cedar-computer` (about
+  1.4 GB), so the desktop in a container can be chosen instead under Settings → Advanced in the
+  chat. If that pull fails, the app carries on without it and tries again at the next launch.
 - **Model server**: three options, each opening its form under it. The one in use is marked.
   - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
     (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out
@@ -606,6 +606,7 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "chat_port": 13000,
   "sandbox_image": "",
   "browser_image": "",
+  "computer_image": "",
   "browser": false,
   "computer": false,
   "tailscale_share": false,
@@ -623,7 +624,7 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
 
 `cedar_env` and `chat_env` are added to the servers' environment last, so any setting from the
 [README](../README.md#configuration) or [chat/README.md](../chat/README.md#configuration) can be
-set there. An empty `sandbox_image` or `browser_image` means the published image for this app
+set there. An empty `sandbox_image`, `browser_image` or `computer_image` means the published image for this app
 version; set them to use an image you built yourself (`docker build -t cedar-sandbox sandbox/`).
 
 `remote` is the chat server on another computer the app uses instead of its own, set by
@@ -804,7 +805,7 @@ One-time setup:
   Azure Trusted Signing; Tauri signs during `cargo tauri build` once `bundle.windows` in
   `tauri.windows.conf.json` names one.
 - **Package visibility.** The first push creates each GHCR package as private, linked to this
-  repository. Make `cedar-sandbox` and `cedar-browser` public once (the package's settings →
+  repository. Make `cedar-sandbox`, `cedar-browser` and `cedar-computer` public once (the package's settings →
   Danger Zone → Change visibility), or users' pulls fail with "denied".
 - **arm64 runners.** The images job uses `ubuntu-24.04-arm`, which GitHub provides for public
   repositories. For a private repository, replace the matrix with a single `ubuntu-24.04` runner
