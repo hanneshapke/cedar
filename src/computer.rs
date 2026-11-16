@@ -1,4 +1,4 @@
-//! A desktop per run, for the `computer` tool.
+//! A desktop per run, for the `computer` tool: in a container, or the user's own.
 //!
 //! The desktop (a virtual screen with a window manager and a few applications, the
 //! `cedar-computer` image, see `computer/`) runs in its own container, like the run's browser
@@ -6,6 +6,10 @@
 //! the run, and each call is a `docker exec` of `cedar-computer call <json>`. Unlike the browser
 //! it mounts the conversation's workspace, so a file the agent wrote can be opened in an
 //! application and what an application saves is there for the sandbox's tools.
+//!
+//! With `COMPUTER_RUNTIME=native` there is no container: the "desktop" is the screen, mouse and
+//! keyboard of the computer cedar runs on (see [`NativeComputerFactory`] and [`crate::native`]),
+//! which one run at a time may use, and only with the user's OK (see [`ComputerSession::native`]).
 
 use crate::config::ComputerConfig;
 use crate::sandbox::{
@@ -26,10 +30,24 @@ pub trait Computer: Send + Sync {
     /// carries the driver's explanation, meant for the model; [`ComputerLost`] means the desktop
     /// itself is stuck or gone.
     async fn call(&self, request: &Value, timeout: Duration) -> Result<Value>;
+    /// The size of its screen, in the units positions are given in.
+    fn screen(&self) -> (u32, u32);
 }
+
+/// Why a computer can't be started, in words meant for the model and the user (a permission that
+/// is missing, a screen another conversation is using). Any other failure to start is an
+/// operator's matter and reaches them as "could not be started".
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct ComputerUnavailable(pub String);
 
 #[async_trait]
 pub trait ComputerFactory: Send + Sync {
+    /// Whether its computers are the user's own rather than a sandbox: then a run must be
+    /// attended to use one, and its calls wait for the user's OK.
+    fn native(&self) -> bool {
+        false
+    }
     /// Start a desktop for `run_id` that works on the files of `workspace_id`.
     async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Computer>>;
     /// Remove `run_id`'s desktop, including one whose `create` was interrupted. Best effort and
@@ -56,6 +74,8 @@ pub struct ComputerSession {
     computer: tokio::sync::Mutex<Option<Arc<dyn Computer>>>,
     /// A desktop was (or may have been) created, so `destroy` has something to remove.
     started: AtomicBool,
+    /// The user allowed this run's calls on their own computer for the rest of the run.
+    allowed: AtomicBool,
 }
 
 impl ComputerSession {
@@ -66,39 +86,67 @@ impl ComputerSession {
             workspace_id,
             computer: tokio::sync::Mutex::new(None),
             started: AtomicBool::new(false),
+            allowed: AtomicBool::new(false),
         }
+    }
+
+    /// Whether this is the user's own computer (see [`ComputerFactory::native`]).
+    pub fn native(&self) -> bool {
+        self.factory.native()
+    }
+
+    /// Whether the user allowed the rest of this run's calls on their own computer.
+    pub fn allowed(&self) -> bool {
+        self.allowed.load(Ordering::SeqCst)
+    }
+
+    /// Remember that the user allowed the rest of this run's calls.
+    pub fn allow(&self) {
+        self.allowed.store(true, Ordering::SeqCst);
+    }
+
+    /// The run's desktop, started first if this is its first use.
+    async fn computer(&self) -> Result<Arc<dyn Computer>> {
+        let mut slot = self.computer.lock().await;
+        if let Some(computer) = slot.as_ref() {
+            return Ok(computer.clone());
+        }
+        self.started.store(true, Ordering::SeqCst);
+        match self.factory.create(self.run_id, self.workspace_id).await {
+            Ok(computer) => {
+                *slot = Some(computer.clone());
+                Ok(computer)
+            }
+            Err(e) if e.is::<ComputerUnavailable>() => Err(e),
+            Err(e) => {
+                // The detail (daemon socket paths, image names, ...) is for operators.
+                tracing::error!(run_id = %self.run_id, error = %format!("{e:#}"), "could not start the computer");
+                bail!("the computer could not be started");
+            }
+        }
+    }
+
+    /// The size of the desktop's screen, starting the desktop first if need be.
+    pub async fn screen(&self) -> Result<(u32, u32)> {
+        Ok(self.computer().await?.screen())
     }
 
     /// Send one request, starting the desktop first if this is the run's first call.
     pub async fn call(&self, request: &Value, timeout: Duration) -> Result<Value> {
-        let computer = {
-            let mut slot = self.computer.lock().await;
-            match slot.as_ref() {
-                Some(computer) => computer.clone(),
-                None => {
-                    self.started.store(true, Ordering::SeqCst);
-                    let created = self.factory.create(self.run_id, self.workspace_id).await;
-                    let computer = match created {
-                        Ok(computer) => computer,
-                        Err(e) => {
-                            // The detail (daemon socket paths, image names, ...) is for operators.
-                            tracing::error!(run_id = %self.run_id, error = %format!("{e:#}"), "could not start the computer");
-                            bail!("the computer could not be started");
-                        }
-                    };
-                    *slot = Some(computer.clone());
-                    computer
-                }
-            }
-        };
+        let computer = self.computer().await?;
         match computer.call(request, timeout).await {
             Err(e) if e.is::<ComputerLost>() => {
                 self.computer.lock().await.take();
                 self.factory.destroy(self.run_id).await;
-                Err(anyhow!(
-                    "{e}, so it was shut down; the next call starts a new one (its open windows \
-                     and unsaved work are gone, files saved in the workspace are still there)"
-                ))
+                Err(if self.native() {
+                    anyhow!("{e}; the next call tries again")
+                } else {
+                    anyhow!(
+                        "{e}, so it was shut down; the next call starts a new one (its open \
+                         windows and unsaved work are gone, files saved in the workspace are \
+                         still there)"
+                    )
+                })
             }
             other => other,
         }
@@ -181,10 +229,15 @@ pub fn call_args(container: &str, request: &Value) -> Vec<String> {
 pub struct DockerComputer {
     docker: String,
     container: String,
+    screen: (u32, u32),
 }
 
 #[async_trait]
 impl Computer for DockerComputer {
+    fn screen(&self) -> (u32, u32) {
+        self.screen
+    }
+
     async fn call(&self, request: &Value, timeout: Duration) -> Result<Value> {
         let args = call_args(&self.container, request);
         // docker_output's own limit is only a backstop; this one is the call's.
@@ -255,6 +308,7 @@ impl ComputerFactory for DockerComputerFactory {
         Ok(Arc::new(DockerComputer {
             docker: self.docker.clone(),
             container,
+            screen: (self.cfg.width, self.cfg.height),
         }))
     }
 
@@ -296,6 +350,138 @@ impl ComputerFactory for DockerComputerFactory {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The computer cedar runs on
+// ---------------------------------------------------------------------------------------------
+
+/// How long the driver may take to say what the screen is like.
+const INFO_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The user's own screen, mouse and keyboard, through a driver process per call (`cedar computer
+/// call <json>`, see [`crate::native`]). There is one screen, so one run at a time holds it.
+pub struct NativeComputerFactory {
+    /// The driver's command: a program and the arguments before `info` or `call`.
+    driver: Vec<String>,
+    /// The run that holds the screen.
+    holder: Arc<std::sync::Mutex<Option<Uuid>>>,
+}
+
+impl NativeComputerFactory {
+    /// With this cedar's own `computer` subcommand as the driver.
+    pub fn new() -> Result<Self> {
+        let exe = std::env::current_exe().context("finding cedar's own program")?;
+        Ok(Self::with_driver(vec![exe.to_string_lossy().into_owned(), "computer".into()]))
+    }
+
+    pub fn with_driver(driver: Vec<String>) -> Self {
+        Self { driver, holder: Arc::default() }
+    }
+}
+
+/// Run the driver with `args`; its reply, or as the error what it printed to explain itself.
+async fn drive(driver: &[String], args: &[&str], timeout: Duration) -> Result<Value> {
+    let mut command = tokio::process::Command::new(&driver[0]);
+    command
+        .args(&driver[1..])
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    let out = tokio::time::timeout(timeout, command.output())
+        .await
+        .map_err(|_| ComputerLost(format!("did not respond within {}s", timeout.as_secs())))?
+        .context("starting the computer driver")?;
+    if !out.status.success() {
+        let message = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        bail!(if message.is_empty() {
+            format!("the computer call failed ({})", out.status)
+        } else {
+            message
+        });
+    }
+    if out.stdout.len() > MAX_REPLY_BYTES {
+        bail!("the screenshot is too large");
+    }
+    serde_json::from_slice(&out.stdout).context("the computer sent an unreadable reply")
+}
+
+pub struct NativeComputer {
+    driver: Vec<String>,
+    screen: (u32, u32),
+}
+
+#[async_trait]
+impl Computer for NativeComputer {
+    fn screen(&self) -> (u32, u32) {
+        self.screen
+    }
+
+    async fn call(&self, request: &Value, timeout: Duration) -> Result<Value> {
+        drive(&self.driver, &["call", &request.to_string()], timeout).await
+    }
+}
+
+#[async_trait]
+impl ComputerFactory for NativeComputerFactory {
+    fn native(&self) -> bool {
+        true
+    }
+
+    async fn create(&self, run_id: Uuid, _workspace_id: Uuid) -> Result<Arc<dyn Computer>> {
+        {
+            let mut holder = self.holder.lock().unwrap();
+            if holder.is_some_and(|other| other != run_id) {
+                return Err(ComputerUnavailable(
+                    "another conversation is using this computer right now; try again when it \
+                     has finished"
+                        .into(),
+                )
+                .into());
+            }
+            *holder = Some(run_id);
+        }
+        // What the driver says when the screen can't be used (a permission that is missing) is
+        // for the user to act on.
+        let info = match drive(&self.driver, &["info"], INFO_TIMEOUT).await {
+            Ok(info) => info,
+            Err(e) => {
+                self.destroy(run_id).await;
+                return Err(ComputerUnavailable(format!("{e:#}")).into());
+            }
+        };
+        let side = |i: usize| info["screen"][i].as_u64().and_then(|n| u32::try_from(n).ok());
+        match (side(0), side(1)) {
+            (Some(width), Some(height)) if width >= 16 && height >= 16 => {
+                Ok(Arc::new(NativeComputer { driver: self.driver.clone(), screen: (width, height) }))
+            }
+            _ => {
+                self.destroy(run_id).await;
+                bail!("the computer driver did not say how large the screen is: {info}")
+            }
+        }
+    }
+
+    /// Give the screen back. Nothing on it is closed: it is the user's.
+    async fn destroy(&self, run_id: Uuid) {
+        let mut holder = self.holder.lock().unwrap();
+        if *holder == Some(run_id) {
+            *holder = None;
+        }
+    }
+
+    async fn cleanup_orphans(&self) -> Result<usize> {
+        Ok(0)
+    }
+
+    /// The driver is there. Whether the screen may be used is only known when a run asks: on a
+    /// Mac the check itself can put a permission dialog on the screen.
+    async fn health(&self) -> Result<()> {
+        if !std::path::Path::new(&self.driver[0]).exists() {
+            bail!("the computer driver {} is missing", self.driver[0]);
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,6 +493,7 @@ mod tests {
         ComputerConfig {
             enabled: true,
             docker_bin: "docker".into(),
+            runtime: crate::config::ComputerRuntime::Docker,
             image: "computer:1".into(),
             network: "bridge".into(),
             memory: "2g".into(),
@@ -354,6 +541,10 @@ mod tests {
 
     #[async_trait]
     impl Computer for FakeComputer {
+        fn screen(&self) -> (u32, u32) {
+            (1280, 800)
+        }
+
         async fn call(&self, request: &Value, timeout: Duration) -> Result<Value> {
             let n = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             match request["action"].as_str() {
@@ -453,6 +644,59 @@ mod tests {
         let again = session.call(&json!({ "action": "screenshot" }), T).await;
         assert_eq!(again.unwrap()["n"], 1, "a new desktop answers");
         assert_eq!(factory.created.lock().unwrap().len(), 2);
+    }
+
+    /// A driver that answers `info` with a 1440x900 screen and echoes a call's request, or
+    /// fails the way the real one does without a permission.
+    #[cfg(unix)]
+    fn fake_driver(dir: &std::path::Path, permitted: bool) -> Vec<String> {
+        use std::os::unix::fs::PermissionsExt;
+        let script = if permitted {
+            "#!/bin/sh\ncase \"$1\" in\n  info) echo '{\"screen\": [1440, 900]}' ;;\n  call) echo \"{\\\"echo\\\": $2}\" ;;\nesac\n"
+        } else {
+            "#!/bin/sh\necho 'Cedar may not see the screen yet: allow it under Screen Recording' >&2\nexit 1\n"
+        };
+        let path = dir.join(if permitted { "driver" } else { "driver-denied" });
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        vec![path.to_string_lossy().into_owned()]
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_users_own_computer_is_driven_through_a_process_per_call() {
+        let dir = std::env::temp_dir().join(format!("cedar-native-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let factory = Arc::new(NativeComputerFactory::with_driver(fake_driver(&dir, true)));
+        assert!(factory.native());
+        factory.health().await.unwrap();
+        let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
+        let session = ComputerSession::new(factory.clone(), first, Uuid::new_v4());
+        assert!(session.native() && !session.allowed());
+        session.allow();
+        assert!(session.allowed());
+
+        assert_eq!(session.screen().await.unwrap(), (1440, 900), "what the driver reports");
+        let request = json!({ "action": "type", "text": "a'b; $(rm -rf /)" });
+        let reply = session.call(&request, T).await.unwrap();
+        assert_eq!(reply["echo"], request, "the request is one argument, as it was");
+
+        // There is one screen: a second run waits for the first to be done with it.
+        let other = ComputerSession::new(factory.clone(), second, Uuid::new_v4());
+        let err = other.call(&json!({ "action": "screenshot" }), T).await.unwrap_err();
+        assert!(err.to_string().contains("another conversation is using this computer"), "{err}");
+        session.destroy().await;
+        other.call(&json!({ "action": "screenshot" }), T).await.unwrap();
+        other.destroy().await;
+
+        // What the driver says about a missing permission reaches the user as it is.
+        let denied = Arc::new(NativeComputerFactory::with_driver(fake_driver(&dir, false)));
+        let session = ComputerSession::new(denied.clone(), first, Uuid::new_v4());
+        let err = session.screen().await.unwrap_err();
+        assert!(err.to_string().contains("Screen Recording"), "{err}");
+        // And the screen is free again for the next try.
+        assert!(denied.holder.lock().unwrap().is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[tokio::test]

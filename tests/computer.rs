@@ -301,3 +301,137 @@ async fn readiness_includes_the_computer_image_when_it_is_on() {
     let (_, body) = off.json(Method::GET, "/readyz", None, None).await;
     assert!(body["checks"].get("computer").is_none(), "{body}");
 }
+
+// -- the user's own computer (COMPUTER_RUNTIME=native) ---------------------------------------
+
+/// Follow a run's events until the `n`-th `approval.required` (from 1) arrives.
+async fn approval(app: &TestApp, id: &str, n: usize) -> Value {
+    let mut stream = LiveStream::open(app, KEY_A, id, None).await;
+    let found = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let mut seen = 0;
+        while let Some(e) = stream.next_event().await {
+            if e.data["type"] == "approval.required" {
+                seen += 1;
+                if seen == n {
+                    return Some(e.data["data"].clone());
+                }
+            }
+        }
+        None
+    })
+    .await;
+    found.ok().flatten().unwrap_or_else(|| panic!("no approval #{n}"))
+}
+
+async fn decide(app: &TestApp, id: &str, approval: &Value, decision: &str) {
+    let uri = format!("/v1/runs/{id}/approvals/{}", approval["id"].as_str().unwrap());
+    let (status, _) = app
+        .json(Method::POST, &uri, Some(KEY_A), Some(json!({ "decision": decision })))
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+}
+
+/// An app whose computer stands in for the user's own.
+async fn native_app(calls: Vec<Value>, env: &[(&str, &str)]) -> TestApp {
+    let app = TestApp::with_env(script(calls), env).await;
+    app.computers.native.store(true, Ordering::SeqCst);
+    app
+}
+
+#[tokio::test]
+async fn the_users_own_computer_asks_before_every_call_until_always() {
+    let app = native_app(
+        vec![
+            json!({ "action": "screenshot" }),
+            json!({ "action": "click", "x": 200, "y": 150, "count": 2 }),
+            json!({ "action": "type", "text": "hello" }),
+            json!({ "action": "key", "keys": "ctrl+s" }),
+        ],
+        COMPUTER_ON,
+    )
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "rename the file", "interactive": true }))
+        .await;
+    let id = run["id"].as_str().unwrap().to_string();
+
+    // Looking is asked about too: the screenshot shows whatever is on the screen.
+    let first = approval(&app, &id, 1).await;
+    assert_eq!(first["tool"], "computer");
+    assert_eq!(first["rule"], "computer");
+    assert_eq!(first["scope"], "the rest of this reply");
+    let reason = first["reason"].as_str().unwrap();
+    assert!(reason.starts_with("Look at your screen on this computer."), "{reason}");
+    assert!(app.computers.created.lock().unwrap().is_empty(), "nothing before the OK");
+    decide(&app, &id, &first, "allow").await;
+
+    // Once is once.
+    let second = approval(&app, &id, 2).await;
+    let reason = second["reason"].as_str().unwrap();
+    assert!(reason.starts_with("Double-click at (200, 150) on this computer."), "{reason}");
+    decide(&app, &id, &second, "deny").await;
+
+    // "Always" covers the rest of this run: the last call runs without a card.
+    let third = approval(&app, &id, 3).await;
+    assert!(third["reason"].as_str().unwrap().starts_with("Type \"hello\""), "{third}");
+    decide(&app, &id, &third, "allow_always").await;
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let events = app.events(KEY_A, &id, None).await;
+    assert_eq!(events.iter().filter(|e| e.event == "approval.required").count(), 3);
+    assert_eq!(
+        *app.computers.computer(0).requests.lock().unwrap(),
+        [
+            json!({ "action": "screenshot" }),
+            json!({ "action": "type", "text": "hello" }),
+            json!({ "action": "key", "keys": "ctrl+s" }),
+        ],
+        "the declined click never reached the computer"
+    );
+    let declined = tool_result(&app, 2);
+    assert_eq!(declined["is_error"], true, "{declined}");
+    assert!(declined["content"].as_str().unwrap().contains("declined"), "{declined}");
+
+    // Nothing is remembered for the key: the next conversation is asked again.
+    let again = app
+        .create_run_with(KEY_A, json!({ "prompt": "look again", "interactive": true }))
+        .await;
+    assert!(app.state.store.grants(KEY_A, "computer").await.unwrap().is_empty());
+    let (status, _) = app
+        .json(Method::POST, &format!("/v1/runs/{}/cancel", again["id"].as_str().unwrap()), Some(KEY_A), None)
+        .await;
+    assert!(status == StatusCode::ACCEPTED || status == StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn a_run_nobody_answers_for_gets_no_computer_of_the_users_own() {
+    let app = native_app(vec![json!({ "action": "screenshot" })], COMPUTER_ON).await;
+    let created = app.create_run(KEY_A, "tidy my desktop").await;
+    app.wait_status(KEY_A, created["id"].as_str().unwrap(), "completed")
+        .await;
+    let request = &app.llm.requests()[0];
+    assert!(!offered(request).contains(&"computer"), "{:?}", offered(request));
+    assert_eq!(tool_result(&app, 1)["content"], "unknown tool: computer");
+    assert!(app.computers.created.lock().unwrap().is_empty());
+
+    // A container is a sandbox, so an unattended run may have one.
+    let (sandboxed, _) = run_calls(vec![json!({ "action": "screenshot" })], COMPUTER_ON).await;
+    assert!(offered(&sandboxed.llm.requests()[0]).contains(&"computer"));
+}
+
+#[tokio::test]
+async fn with_the_rule_off_the_users_own_computer_is_not_asked_about() {
+    let app = native_app(
+        vec![json!({ "action": "screenshot" })],
+        &[("COMPUTER", "on"), ("TOOL_APPROVALS", "deletes")],
+    )
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "look", "interactive": true }))
+        .await;
+    let id = run["id"].as_str().unwrap().to_string();
+    app.wait_status(KEY_A, &id, "completed").await;
+    let events = app.events(KEY_A, &id, None).await;
+    assert!(events.iter().all(|e| e.event != "approval.required"));
+    assert_eq!(app.computers.computer(0).requests.lock().unwrap().len(), 1);
+}

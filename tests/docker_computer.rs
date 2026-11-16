@@ -20,6 +20,7 @@ const T: Duration = Duration::from_secs(90);
 fn config() -> ComputerConfig {
     ComputerConfig {
         enabled: true,
+        runtime: cedar::config::ComputerRuntime::Docker,
         docker_bin: "docker".into(),
         image: std::env::var("CEDAR_TEST_COMPUTER_IMAGE")
             .unwrap_or_else(|_| "cedar-computer:latest".into()),

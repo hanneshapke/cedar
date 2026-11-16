@@ -328,6 +328,7 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 | `deletes` | `rm`, `rmdir`, `shred`, `unlink` and `find -delete` in `bash`; asked every time |
 | `network` | on Docker, any other `bash` or `run_python` call when the sandbox has a network; on OpenShell, a connection the policy refused, asked about afterwards (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)) |
 | `community` | every call of a [community tool](#community-tools); "Always" covers that release only |
+| `computer` | every `computer` call on the user's own computer (`COMPUTER_RUNTIME=native`), looking included; "Always" covers the rest of that run and is not remembered (see [The user's own computer](#the-users-own-computer)) |
 
 ## Being told when a run ends
 
@@ -664,7 +665,7 @@ Settings come from environment variables. The important ones:
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 (an admin can replace the run time limit with `run_timeout_secs` in `PUT /v1/admin/settings`, or Settings → Advanced settings → *Run time limit*) |
 | `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first, `tool` to let the model propose a plan when it judges a request needs one; see [Plans and approvals](#plans-and-approvals)) |
-| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `slack`, `downloads`, `installs`, `deletes`, `network`, `community`) |
+| `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `slack`, `downloads`, `installs`, `deletes`, `network`, `community`, `computer`) |
 | `APPROVAL_TIMEOUT_SECS` | 300 (how long an interactive run waits for its plan to be agreed or a call to be approved) |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
 | `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
@@ -725,6 +726,7 @@ Settings come from environment variables. The important ones:
 | `BROWSER_IMAGE` / `BROWSER_NETWORK` | `cedar-browser:latest` / `bridge` (the browser needs internet access, so `none` is refused) |
 | `BROWSER_MEMORY` / `BROWSER_CPUS` | `1g` / `1` |
 | `COMPUTER` | `off` (set `on` to enable the `computer` tool for models that read images; see [The computer](#the-computer)) |
+| `COMPUTER_RUNTIME` | `docker` (a desktop in a container per run), or `native` for the screen, mouse and keyboard of the computer cedar runs on; see [The user's own computer](#the-users-own-computer) |
 | `COMPUTER_IMAGE` / `COMPUTER_NETWORK` | `cedar-computer:latest` / `bridge` (`none` gives a desktop without internet access, which still works on the workspace's files) |
 | `COMPUTER_MEMORY` / `COMPUTER_CPUS` | `2g` / `2` |
 | `COMPUTER_SCREEN` | `1280x800` (the size of the desktop's screen in pixels, each side from 640 to 2560) |
@@ -926,6 +928,19 @@ docker rm -f cc
 ```
 
 The desktop always runs in Docker, also when the sandboxes run on OpenShell: no OpenShell policy applies to it. See [Safety](#safety) for what that means for its network.
+
+#### The user's own computer
+
+The container can't reach what only exists on the user's machine: their own applications, the sites they are signed in to, files outside the workspace. With `COMPUTER_RUNTIME=native` (and `COMPUTER=on`) the `computer` tool works the computer cedar itself runs on instead: its real screen, mouse and keyboard. The desktop app has a switch for it (*Let Cedar use this computer*); it is meant for cedar running on the computer you sit at, not for a server.
+
+- **Nothing happens without an OK.** Every `computer` call waits for the user's approval (the `computer` rule of [`TOOL_APPROVALS`](#plans-and-approvals)), looking included, since a screenshot shows the model whatever is on the screen. The card says what the call will do ("Double-click at (200, 150) on this computer"). *Always* allows the rest of that run and is not remembered: the next message asks again.
+- **Only attended runs.** A run whose client doesn't answer (`interactive` unset: cedar-chat's agents, schedules, API scripts) is not offered the tool at all.
+- **One run at a time.** There is one screen, so a second run that reaches for it is told it is in use until the first has finished. Nothing is closed or cleaned up when a run ends: the windows are the user's.
+- **No workspace.** The sandbox's files are not on that computer, so there is no `open` action, and the model is told its other tools can't see the computer's files. It is also told that this is the user's real computer, to do only what was asked, and to ask before anything that sends, buys, deletes or overwrites.
+- **Screenshots** are of the main display, as JPEG, scaled to the size positions are given in (points on a Mac, where a Retina screen has twice as many pixels) or to `max_image_side`. They go to the model server and are stored with the conversation like any other tool result, so think about what is on the screen, and where the model runs, before allowing a look.
+- **Keys** are named as in the container (`Return`, `ctrl+s`), plus `cmd`, `option` and the like.
+
+It needs a cedar built with the driver, `cargo build --features native-computer` (the desktop app's is; on Linux that links X11 libraries, which is why it is not the default). cedar then starts itself as `cedar computer call <json>` once per call, the same protocol the container's driver speaks; `cedar computer info` says how large the screen is, or why it can't be used. On a Mac the application cedar belongs to needs two permissions under System Settings → Privacy & Security: *Screen Recording*, to see the screen, and *Accessibility*, to use the mouse and keyboard. The first call asks for whichever is missing and tells the model, and so the user, what to allow. On Linux it works on X11.
 
 ### Gmail and Calendar
 
@@ -1407,6 +1422,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - Turning networking on for a Docker sandbox (`SANDBOX_NETWORK=bridge`, needed for `pip install`) lets the agent reach anything that container network can reach, including internal services. [OpenShell sandboxes](#openshell-sandboxes-opt-in) narrow that to the hosts their policy names, from the programs it names; turn them on in Settings → Advanced.
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
 - The computer (`COMPUTER=on`) is a whole desktop with a web browser, and nothing checks where the model takes it: with a network (`COMPUTER_NETWORK`, `bridge` by default) it reaches whatever that Docker network reaches, including this host and your internal network, also when the sandboxes run on OpenShell. It sees the conversation's workspace, so what a page tells the model to do (a prompt injection in a screenshot works like one in fetched text) could send those files out. Its calls are not held for approval in interactive runs. Give it a network that only reaches the internet, or `COMPUTER_NETWORK=none` for a desktop that only works on the workspace's files. Each run's desktop starts fresh, with no cookies or sign-ins.
+- `COMPUTER_RUNTIME=native` hands the model the computer cedar runs on: no sandbox, the user's own files, accounts and signed-in applications, and whatever is on the screen goes to the model server in screenshots. What stands between a wrong click (or a prompt injection read off a web page on that screen) and the user's data is the approval card before each call, so read the cards, be sparing with *Always*, and don't turn the `computer` rule off (`TOOL_APPROVALS=off` also turns it off). Keep it to a cedar that only you can reach: anyone with an API key can start an interactive run and answer its approval cards themselves, from wherever they are.
 - [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as cedar-chat's [agents](chat/README.md#agents), call them without asking).
 - [A tool called outside a run](#calling-a-tool-outside-a-run) leaves no run behind, so no conversation or trace shows what it read; only a log line and a database row say that the call was made, by which key, and how long it took. Any API key may make such calls, to the tools that only read (mail and calendar among them, for the one Google account every key shares) and to personal tools, whose code then runs with its declared network and secrets and nobody approving it. Give a key only to clients you would let start a run.
 - Runs that start by themselves from something outside (cedar-chat's [agents](chat/README.md#runs-that-start-from-outside) on a condition, a webhook, mail or the calendar) are given text other people wrote as part of their prompt, and are not interactive, so no tool call waits for approval. The chat marks that text off as data, gives such an agent tools without personal tools or Google writes unless told otherwise, and limits how often it runs. None of that makes a prompt injection impossible: choose such an agent's tools as you would for a stranger's input, and keep the tools that send, write or spend out of it.

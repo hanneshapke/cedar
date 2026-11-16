@@ -5,6 +5,10 @@
 //! Positions are the model's, in the screenshot it was shown: when the server's `max_image_side`
 //! is smaller than the screen, the screenshot is scaled down and positions are scaled back up
 //! here, so the model never has to know.
+//!
+//! With `COMPUTER_RUNTIME=native` the desktop is the user's own computer. The tool then says so,
+//! has no `open` (the workspace is not on that computer), and takes the size of the screen from
+//! the computer itself.
 
 use super::{Tool, ToolContext, ToolImage, ToolOutput};
 use crate::config::ComputerConfig;
@@ -17,22 +21,43 @@ use std::time::Duration;
 /// `wait`, a long text typed out), so a timeout means the desktop is stuck.
 const CALL_TIMEOUT: Duration = Duration::from_secs(90);
 const ACTIONS: &str = "screenshot, click, move, drag, type, key, scroll, wait, or open";
+const NATIVE_ACTIONS: &str = "screenshot, click, move, drag, type, key, scroll, or wait";
 
 pub struct ComputerTool {
-    /// The screen's size in pixels.
-    screen: (u32, u32),
+    /// The user's own computer rather than a desktop in a container.
+    native: bool,
+    /// The size of a container's screen in pixels; the user's own says its size when asked.
+    screen: Option<(u32, u32)>,
     description: String,
 }
 
+const NATIVE_DESCRIPTION: &str = "Work the user's own computer, the one they are sitting at, by \
+     looking at its screen and using its mouse and keyboard: for something in an application \
+     on their computer that no other tool can reach. This is their real computer with their \
+     real files, accounts and open windows, not a sandbox: what you do there can't be taken \
+     back, and the user is asked before your calls run. Do only what the user asked for. Don't \
+     close or change what they have open beyond the task, and before anything that sends, \
+     buys, deletes or overwrites, say what you are about to do and ask them first. If the \
+     screen shows something unrelated and private, leave it alone and don't repeat it. Every \
+     call returns a screenshot of the screen after the action. Positions are pixels in the \
+     latest screenshot, x from its left edge and y from its top. Look before you act: start \
+     with action \"screenshot\", aim at the middle of what you want to click, and check each \
+     screenshot to see whether the action did what you meant before going on. Your other tools \
+     (bash, the file tools) work in a separate sandbox and can't see this computer's files.";
+
 impl ComputerTool {
     pub fn new(cfg: &ComputerConfig) -> Self {
+        if cfg.native() {
+            return Self { native: true, screen: None, description: NATIVE_DESCRIPTION.to_string() };
+        }
         let net = if cfg.online() {
             "The desktop has internet access through its web browser."
         } else {
             "The desktop has no internet access."
         };
         Self {
-            screen: (cfg.width, cfg.height),
+            native: false,
+            screen: Some((cfg.width, cfg.height)),
             description: format!(
                 "Work a desktop computer by looking at its screen and using its mouse and \
                  keyboard: for applications with windows (a spreadsheet or document in an \
@@ -60,6 +85,51 @@ impl Tool for ComputerTool {
     }
 
     fn schema(&self) -> Value {
+        let mut schema = self.full_schema();
+        if self.native {
+            // No workspace on the user's computer to open a file from.
+            if let Some(properties) = schema["properties"].as_object_mut() {
+                properties.remove("path");
+            }
+            let action = &mut schema["properties"]["action"];
+            if let Some(actions) = action["enum"].as_array_mut() {
+                actions.retain(|a| a != "open");
+            }
+            let described = action["description"].as_str().unwrap_or_default();
+            let cut = described.find(" open:").unwrap_or(described.len());
+            action["description"] = json!(format!(
+                "{} key: also cmd+c and the like on a Mac.",
+                &described[..cut]
+            ));
+        }
+        schema
+    }
+
+    async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
+        Ok(self.call_output(ctx, input).await?.text)
+    }
+
+    async fn call_output(&self, ctx: &ToolContext, input: &Value) -> Result<ToolOutput> {
+        let session = ctx
+            .computer
+            .as_ref()
+            .ok_or_else(|| anyhow!("the computer is not available"))?;
+        if self.native && input["action"] == "open" {
+            bail!("unknown action \"open\"; use {NATIVE_ACTIONS}");
+        }
+        let screen = match self.screen {
+            Some(screen) => screen,
+            None => session.screen().await?,
+        };
+        let shown = shown_size(screen, ctx.max_image_side);
+        let request = request(input, screen, shown)?;
+        let reply = session.call(&request, CALL_TIMEOUT).await?;
+        output(&reply, screen, shown, self.native)
+    }
+}
+
+impl ComputerTool {
+    fn full_schema(&self) -> Value {
         json!({ "type": "object",
                 "properties": {
                     "action": { "type": "string",
@@ -81,20 +151,6 @@ impl Tool for ComputerTool {
                 "required": ["action"] })
     }
 
-    async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
-        Ok(self.call_output(ctx, input).await?.text)
-    }
-
-    async fn call_output(&self, ctx: &ToolContext, input: &Value) -> Result<ToolOutput> {
-        let session = ctx
-            .computer
-            .as_ref()
-            .ok_or_else(|| anyhow!("the computer is not available"))?;
-        let shown = shown_size(self.screen, ctx.max_image_side);
-        let request = request(input, self.screen, shown)?;
-        let reply = session.call(&request, CALL_TIMEOUT).await?;
-        output(&reply, self.screen, shown)
-    }
 }
 
 /// The size the screenshot is shown at: the screen's, scaled down to fit `max_side`.
@@ -217,7 +273,7 @@ fn request(input: &Value, screen: (u32, u32), shown: (u32, u32)) -> Result<Value
 }
 
 /// The tool result: the screenshot, and in words what a screenshot doesn't say outright.
-fn output(reply: &Value, screen: (u32, u32), shown: (u32, u32)) -> Result<ToolOutput> {
+fn output(reply: &Value, screen: (u32, u32), shown: (u32, u32), native: bool) -> Result<ToolOutput> {
     let data = reply["image"]
         .as_str()
         .filter(|d| !d.is_empty())
@@ -239,6 +295,8 @@ fn output(reply: &Value, screen: (u32, u32), shown: (u32, u32)) -> Result<ToolOu
             let title: String = window.chars().take(120).collect();
             text.push_str(&format!(" The window with the keyboard is {title:?}."));
         }
+        // The user's own computer doesn't say which window that is.
+        None if native => {}
         None => text.push_str(" No window has the keyboard."),
     }
     Ok(ToolOutput {
@@ -347,7 +405,7 @@ mod tests {
 
         // And the pointer is reported where the model sees it.
         let reply = json!({ "image": "aGk=", "pointer": [641, 401], "window": null });
-        let out = output(&reply, SCREEN, shown).unwrap();
+        let out = output(&reply, SCREEN, shown, false).unwrap();
         assert!(out.text.contains("(640x400 pixels)"), "{}", out.text);
         assert!(out.text.contains("The pointer is at (320, 200)."), "{}", out.text);
     }
@@ -358,7 +416,7 @@ mod tests {
             "image": "aGk=", "media_type": "image/png", "width": 1280, "height": 800,
             "screen": [1280, 800], "pointer": [640, 400], "window": "report.ods - LibreOffice Calc",
         });
-        let out = output(&reply, SCREEN, SCREEN).unwrap();
+        let out = output(&reply, SCREEN, SCREEN, false).unwrap();
         assert_eq!(
             out.text,
             "The screen after the action is in the screenshot (1280x800 pixels). The pointer is \
@@ -369,9 +427,9 @@ mod tests {
             Some(ToolImage { media_type: "image/png".into(), data: "aGk=".into() })
         );
 
-        let bare = output(&json!({ "image": "aGk=" }), SCREEN, SCREEN).unwrap();
+        let bare = output(&json!({ "image": "aGk=" }), SCREEN, SCREEN, false).unwrap();
         assert!(bare.text.ends_with("No window has the keyboard."), "{}", bare.text);
-        let err = output(&json!({ "pointer": [1, 1] }), SCREEN, SCREEN).unwrap_err();
+        let err = output(&json!({ "pointer": [1, 1] }), SCREEN, SCREEN, false).unwrap_err();
         assert_eq!(err.to_string(), "the computer sent no screenshot");
     }
 
@@ -379,6 +437,7 @@ mod tests {
     fn the_description_says_whether_the_desktop_is_online() {
         let mut cfg = ComputerConfig {
             enabled: true,
+            runtime: crate::config::ComputerRuntime::Docker,
             docker_bin: "docker".into(),
             image: "computer:1".into(),
             network: "bridge".into(),
@@ -390,5 +449,19 @@ mod tests {
         assert!(ComputerTool::new(&cfg).description().contains("has internet access"));
         cfg.network = "none".into();
         assert!(ComputerTool::new(&cfg).description().contains("has no internet access"));
+
+        // The user's own computer is described as what it is, and has no workspace to open from.
+        let docker = ComputerTool::new(&cfg).schema();
+        assert!(docker["properties"]["action"]["enum"].as_array().unwrap().contains(&json!("open")));
+        cfg.runtime = crate::config::ComputerRuntime::Native;
+        let native = ComputerTool::new(&cfg);
+        assert!(native.description().contains("their real computer"), "{}", native.description());
+        let schema = native.schema();
+        let action = &schema["properties"]["action"];
+        assert!(!action["enum"].as_array().unwrap().contains(&json!("open")));
+        assert!(!action["description"].as_str().unwrap().contains("open:"), "{action}");
+        assert!(schema["properties"].get("path").is_none());
+        let bare = output(&json!({ "image": "aGk=" }), SCREEN, SCREEN, true).unwrap();
+        assert!(bare.text.ends_with("pixels)."), "{}", bare.text);
     }
 }

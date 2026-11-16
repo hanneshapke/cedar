@@ -175,7 +175,12 @@ Running everything here, the setup window shows three steps:
   socket; when that can't be reached, or for a TCP or SSH context, `docker pull` does it and the
   bar counts layers). Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
-  tool.
+  tool. Tick *Let Cedar use this computer* to offer the `computer` tool on this computer itself:
+  a model that reads images may then look at your screen and use your mouse and keyboard, and
+  asks before every step (see
+  [The user's own computer](../README.md#the-users-own-computer) and its safety notes). macOS
+  asks for the Screen Recording and Accessibility permissions the first time it is used. The
+  desktop in a container (`cedar-computer`) is not offered by the app.
 - **Model server**: three options, each opening its form under it. The one in use is marked.
   - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
     (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out
@@ -600,6 +605,7 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "sandbox_image": "",
   "browser_image": "",
   "browser": false,
+  "computer": false,
   "tailscale_share": false,
   "tailscale_https_port": 443,
   "check_updates": true,

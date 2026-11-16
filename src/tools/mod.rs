@@ -482,7 +482,7 @@ impl ToolSet {
     /// The tools a run may use. `None` (or an entry `*`) means every tool; otherwise each entry
     /// names a group (see [`GROUPS`]) or a single tool, and the sandbox tools are always included.
     pub fn select<'a>(&'a self, allow: Option<&'a [String]>) -> ToolView<'a> {
-        ToolView { set: self, allow, text_only: false }
+        ToolView { set: self, allow, no_computer: false }
     }
 
     /// Check a run's tool selection. Groups are accepted whether or not this server offers them
@@ -738,21 +738,22 @@ pub fn writes(name: &str) -> bool {
 pub struct ToolView<'a> {
     set: &'a ToolSet,
     allow: Option<&'a [String]>,
-    /// The run's model reads no images, so tools that answer with one are left out.
-    text_only: bool,
+    /// The run gets no `computer`: its model reads no images, or the computer is the user's own
+    /// and nobody is there to answer for the run.
+    no_computer: bool,
 }
 
 impl<'a> ToolView<'a> {
-    /// The view for a model that reads no images: without the tools that work by showing one
-    /// (`computer`, whose every result is a screenshot).
-    pub fn text_only(mut self) -> Self {
-        self.text_only = true;
+    /// The view without the `computer` tool, whose every result is a screenshot: for a model
+    /// that reads no images, and for an unattended run when the computer is the user's own.
+    pub fn without_computer(mut self) -> Self {
+        self.no_computer = true;
         self
     }
 
     fn allows(&self, name: &str) -> bool {
         let group = self.set.group(name);
-        if self.text_only && group == "computer" {
+        if self.no_computer && group == "computer" {
             return false;
         }
         let Some(allow) = self.allow else {

@@ -96,6 +96,8 @@ cedarI18n.add({
     'images.bytes': '{done} MB downloaded.',
     'images.ready': 'Ready.',
     'images.browserToggle': 'Browser tool (downloads a second, larger image with Chromium)',
+    'images.computerToggle': 'Let Cedar use this computer (it sees the screen and uses the mouse and keyboard, and asks first)',
+    'images.computerNote': 'Only for models that read images. Screenshots of your screen go to the model server and are kept with the conversation.',
 
     'model.title': 'Model server',
     'model.notChosen': 'Not chosen yet.',
@@ -315,6 +317,8 @@ cedarI18n.add({
     'images.bytes': '{done} MB heruntergeladen.',
     'images.ready': 'Bereit.',
     'images.browserToggle': 'Browser-Werkzeug (lädt ein zweites, größeres Image mit Chromium)',
+    'images.computerToggle': 'Cedar diesen Computer bedienen lassen (es sieht den Bildschirm, nutzt Maus und Tastatur und fragt vorher)',
+    'images.computerNote': 'Nur für Modelle, die Bilder lesen. Bildschirmfotos gehen an den Modellserver und werden mit der Unterhaltung gespeichert.',
 
     'model.title': 'Modellserver',
     'model.notChosen': 'Noch nicht gewählt.',
@@ -534,6 +538,8 @@ cedarI18n.add({
     'images.bytes': '{done} Mo téléchargés.',
     'images.ready': 'Prête.',
     'images.browserToggle': 'Outil navigateur (télécharge une seconde image, plus volumineuse, avec Chromium)',
+    'images.computerToggle': 'Laisser Cedar utiliser cet ordinateur (il voit l’écran, utilise la souris et le clavier, et demande d’abord)',
+    'images.computerNote': 'Uniquement pour les modèles qui lisent les images. Les captures de votre écran sont envoyées au serveur du modèle et conservées avec la conversation.',
 
     'model.title': 'Serveur de modèles',
     'model.notChosen': 'Pas encore choisi.',
@@ -755,6 +761,8 @@ cedarI18n.add({
     'images.bytes': '{done} MB descargados.',
     'images.ready': 'Lista.',
     'images.browserToggle': 'Herramienta de navegador (descarga una segunda imagen, más grande, con Chromium)',
+    'images.computerToggle': 'Permitir que Cedar use este ordenador (ve la pantalla, usa el ratón y el teclado, y pregunta antes)',
+    'images.computerNote': 'Solo para modelos que leen imágenes. Las capturas de tu pantalla se envían al servidor del modelo y se guardan con la conversación.',
 
     'model.title': 'Servidor de modelos',
     'model.notChosen': 'Sin elegir todavía.',

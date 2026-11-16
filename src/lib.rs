@@ -25,6 +25,8 @@ pub mod memory;
 pub mod records;
 pub mod mcp;
 pub mod models;
+#[cfg(feature = "native-computer")]
+pub mod native;
 pub mod openshell;
 pub mod plan;
 pub mod policy;

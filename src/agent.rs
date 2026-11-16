@@ -189,7 +189,14 @@ pub async fn run_agent(
         .models()
         .iter()
         .any(|m| m.id == run.model_id && m.multimodal);
-    let tools = if reads_images { tools } else { tools.text_only() };
+    // The user's own computer is only for a run someone is there to answer for: its calls wait
+    // for their OK (see [`approve`]).
+    let own_computer = ctx.computer.as_ref().is_some_and(|c| c.native());
+    let tools = if reads_images && (run.interactive || !own_computer) {
+        tools
+    } else {
+        tools.without_computer()
+    };
     let mut tool_defs = tools.definitions();
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // In `tool` mode the model decides whether a request needs a plan.
@@ -1019,6 +1026,7 @@ async fn approve(
     env: &AgentEnv,
     tools: &ToolView<'_>,
     reach: &Reach,
+    ctx: &ToolContext,
     run: &Run,
     events: &Emitter,
     cancel: &CancellationToken,
@@ -1028,6 +1036,25 @@ async fn approve(
 ) -> Result<Option<&'static str>, AgentError> {
     if !run.interactive {
         return Ok(None);
+    }
+    // The user's own computer: asked every time, until they allow the rest of this run. That is
+    // kept with the run and never saved, unlike the other rules' "always".
+    if let Some(computer) = ctx.computer.as_ref().filter(|c| name == "computer" && c.native()) {
+        let Some(gate) = approvals::check_computer(&env.approvals, input) else {
+            return Ok(None);
+        };
+        if computer.allowed() {
+            return Ok(None);
+        }
+        return Ok(match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
+            Decision::Allow => None,
+            Decision::Always => {
+                computer.allow();
+                None
+            }
+            Decision::Timeout => Some(NOT_APPROVED),
+            Decision::Deny => Some(DECLINED),
+        });
     }
     let personal = tools
         .get(name)
@@ -1334,7 +1361,7 @@ async fn prepare_call<'b>(
     // A call to a tool the run doesn't have fails without running, so it needs no OK.
     if refused.is_none() && tools.get(&name).is_some() {
         let reach = Reach::of(ctx.sandbox.runtime(), &env.sandbox);
-        refused = approve(env, tools, &reach, run, events, cancel, &id, &name, input)
+        refused = approve(env, tools, &reach, ctx, run, events, cancel, &id, &name, input)
             .await?
             .map(String::from);
     }

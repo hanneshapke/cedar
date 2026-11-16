@@ -99,6 +99,9 @@ jobs:
       - run: cargo build --workspace --locked
       # Every test binary, so one run shows all that is Windows-specific, not just the first.
       - run: cargo test --workspace --locked --no-fail-fast
+      - name: cedar with the native computer driver compiles and lints clean
+        # The desktop app's cedar is built with it (see release.yml); nothing else builds it.
+        run: cargo clippy -p cedar --features native-computer --all-targets --locked -- -D warnings
       - name: The desktop app compiles and lints clean
         # tauri-build wants the sidecars to exist; their contents only matter for a bundle.
         run: |
@@ -107,6 +110,22 @@ jobs:
       # The PowerShell the Docker and Tailscale setups run (desktop/src/winsetup.rs, tssetup.rs)
       # parses on a real Windows.
       - run: cargo test --manifest-path desktop/Cargo.toml --locked setup
+
+  # The driver of the computer's own screen, mouse and keyboard (src/native.rs) on a Mac, where
+  # the desktop app's cedar is built with it and no other job compiles it.
+  native-computer-macos:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p cedar --features native-computer --all-targets --locked -- -D warnings
+      - run: cargo test -p cedar --features native-computer --locked --lib native
 
   # The community tool registry (registry/): every tool follows the rules and the index is up to
   # date. cedar's own checks run on the tools too, in `tests/registry.rs` under `test`.

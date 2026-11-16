@@ -634,6 +634,10 @@ pub const FAKE_SCREENSHOT: &str = "c2NyZWVu";
 
 #[async_trait]
 impl Computer for FakeComputer {
+    fn screen(&self) -> (u32, u32) {
+        (1280, 800)
+    }
+
     async fn call(&self, request: &Value, _timeout: Duration) -> Result<Value> {
         self.requests.lock().unwrap().push(request.clone());
         if request["x"] == 13 {
@@ -658,6 +662,8 @@ pub struct FakeComputerFactory {
     pub destroyed: Mutex<Vec<Uuid>>,
     pub cleanups: AtomicUsize,
     pub unhealthy: AtomicBool,
+    /// Stand in for the user's own computer (`COMPUTER_RUNTIME=native`).
+    pub native: AtomicBool,
 }
 
 impl FakeComputerFactory {
@@ -668,6 +674,10 @@ impl FakeComputerFactory {
 
 #[async_trait]
 impl ComputerFactory for FakeComputerFactory {
+    fn native(&self) -> bool {
+        self.native.load(Ordering::SeqCst)
+    }
+
     async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Computer>> {
         let computer = Arc::new(FakeComputer::default());
         self.created

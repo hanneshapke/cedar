@@ -27,6 +27,9 @@ pub struct Config {
     pub browser_image: String,
     /// Pull the browser image and offer the `browser` tool.
     pub browser: bool,
+    /// Offer the `computer` tool on this computer itself: with the user's OK, a model that reads
+    /// images may look at this screen and use the mouse and keyboard.
+    pub computer: bool,
     /// Serve the chat on the tailnet over HTTPS (`tailscale serve`), for the iOS and Android apps.
     pub tailscale_share: bool,
     /// The tailnet port it is served on; 443 gives an address without a port.
@@ -113,6 +116,7 @@ impl Default for Config {
             sandbox_image: String::new(),
             browser_image: String::new(),
             browser: false,
+            computer: false,
             tailscale_share: false,
             tailscale_https_port: 443,
             check_updates: true,

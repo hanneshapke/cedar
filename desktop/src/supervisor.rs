@@ -278,6 +278,9 @@ impl Runner {
             ("SANDBOX_IMAGE", cfg.sandbox_image()),
             ("BROWSER", if cfg.browser { "on" } else { "off" }.to_string()),
             ("BROWSER_IMAGE", cfg.browser_image()),
+            // The computer is this one, not a container (see "The computer" in cedar's README).
+            ("COMPUTER", if cfg.computer { "on" } else { "off" }.to_string()),
+            ("COMPUTER_RUNTIME", "native".to_string()),
             // Personal tools, and the community registry Settings installs them from.
             ("TOOLS_DIR", self.paths.tools.to_string_lossy().into_owned()),
             ("TOOLS_REGISTRY_URL", TOOLS_REGISTRY_URL.to_string()),

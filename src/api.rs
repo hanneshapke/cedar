@@ -3,7 +3,7 @@
 use crate::agent::AgentEnv;
 use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
-use crate::computer::{ComputerFactory, DockerComputerFactory};
+use crate::computer::{ComputerFactory, DockerComputerFactory, NativeComputerFactory};
 use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
@@ -114,7 +114,12 @@ impl AppState {
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Arc<dyn BrowserFactory>,
     ) -> Result<Self> {
-        let computers = Arc::new(DockerComputerFactory::new(cfg.computer.clone()));
+        // A container per run, or with `COMPUTER_RUNTIME=native` the computer cedar runs on.
+        let computers: Arc<dyn ComputerFactory> = if cfg.computer.native() {
+            Arc::new(NativeComputerFactory::new()?)
+        } else {
+            Arc::new(DockerComputerFactory::new(cfg.computer.clone()))
+        };
         Self::with_containers(cfg, store, llm, sandboxes, browsers, computers)
     }
 

@@ -1,7 +1,8 @@
 //! Which tool calls wait for the user's OK before they run, in runs whose client answers
 //! (`interactive`). The rules are a heuristic on the tool and its input: sending email, posting
 //! to Slack, saving files from the web, installing packages (when the sandbox reaches a network
-//! at all), deleting files, and every call of a community tool installed from the marketplace.
+//! at all), deleting files, every call of a community tool installed from the marketplace, and
+//! every `computer` call on the user's own computer (`COMPUTER_RUNTIME=native`).
 //! The `network` rule
 //! depends on the sandbox's runtime: a Docker sandbox with a network asks before running any code,
 //! since that code can reach anything; an OpenShell sandbox asks afterwards, when its policy
@@ -34,10 +35,13 @@ pub enum Rule {
     /// A community tool installed from the marketplace. "Always" covers that release only, so an
     /// update asks again.
     Community,
+    /// A `computer` call on the user's own computer. "Always" lasts for the rest of that run and
+    /// is not remembered.
+    Computer,
 }
 
 impl Rule {
-    pub const ALL: [Rule; 7] = [
+    pub const ALL: [Rule; 8] = [
         Rule::Email,
         Rule::Slack,
         Rule::Downloads,
@@ -45,6 +49,7 @@ impl Rule {
         Rule::Deletes,
         Rule::Network,
         Rule::Community,
+        Rule::Computer,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -56,6 +61,7 @@ impl Rule {
             Rule::Deletes => "deletes",
             Rule::Network => "network",
             Rule::Community => "community",
+            Rule::Computer => "computer",
         }
     }
 
@@ -290,6 +296,46 @@ pub fn check_personal(rules: &Rules, tool: &PythonTool) -> Option<Gate> {
         reason,
         scope: Some(format!("{name} {}", installed.version)),
         grants: vec![format!("{name}@{}", installed.digest)],
+    })
+}
+
+/// What "Always" covers on a [`Rule::Computer`] card.
+pub const COMPUTER_SCOPE: &str = "the rest of this reply";
+
+/// Whether a `computer` call on the user's own computer needs their OK under `rules`: every one
+/// does, looking included, since a screenshot shows the model whatever is on the screen.
+pub fn check_computer(rules: &Rules, input: &Value) -> Option<Gate> {
+    if !rules.has(Rule::Computer) {
+        return None;
+    }
+    let at = |x: &str, y: &str| format!("({}, {})", input[x], input[y]);
+    let what = match input["action"].as_str().unwrap_or_default() {
+        "screenshot" => "Look at your screen".to_string(),
+        "click" => {
+            let button = match input["button"].as_str() {
+                Some("right") => "Right-click",
+                Some("middle") => "Middle-click",
+                _ => match input["count"].as_u64() {
+                    Some(2) => "Double-click",
+                    Some(3) => "Triple-click",
+                    _ => "Click",
+                },
+            };
+            format!("{button} at {}", at("x", "y"))
+        }
+        "move" => format!("Move the pointer to {}", at("x", "y")),
+        "drag" => format!("Drag from {} to {}", at("x", "y"), at("to_x", "to_y")),
+        "type" => format!("Type \"{}\"", one_line(input["text"].as_str().unwrap_or_default())),
+        "key" => format!("Press {}", one_line(input["keys"].as_str().unwrap_or_default())),
+        "scroll" => format!("Scroll {}", input["direction"].as_str().unwrap_or("down")),
+        "wait" => "Wait, then look at your screen".to_string(),
+        other => format!("Do {other:?}"),
+    };
+    Some(Gate {
+        rule: Rule::Computer,
+        reason: format!("{what} on this computer. Cedar then sees a screenshot of your screen."),
+        scope: Some(COMPUTER_SCOPE.into()),
+        grants: vec![],
     })
 }
 

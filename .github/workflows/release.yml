@@ -338,7 +338,8 @@ jobs:
             desktop -> target
 
       - name: Build cedar and cedar-chat
-        run: cargo build --release --locked -p cedar -p cedar-chat --target ${{ matrix.target }}
+        # With the driver of this computer's own screen, for the app's "use this computer".
+        run: cargo build --release --locked -p cedar -p cedar-chat --features cedar/native-computer --target ${{ matrix.target }}
 
       - name: Put them where the bundler expects sidecars
         run: |
@@ -479,7 +480,7 @@ jobs:
       - name: Build cedar and cedar-chat
         env:
           RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --release --locked -p cedar -p cedar-chat --target $env:TARGET
+        run: cargo build --release --locked -p cedar -p cedar-chat --features cedar/native-computer --target $env:TARGET
 
       - name: Put them where the bundler expects sidecars
         run: |

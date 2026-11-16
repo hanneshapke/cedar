@@ -142,10 +142,20 @@ pub struct BrowserConfig {
     pub cpus: String,
 }
 
+/// What the `computer` tool works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputerRuntime {
+    /// A desktop in a container of its own per run (see `computer/`).
+    Docker,
+    /// The screen, mouse and keyboard of the computer cedar runs on: the user's own.
+    Native,
+}
+
 #[derive(Debug, Clone)]
 pub struct ComputerConfig {
     /// Offer the `computer` tool (off by default).
     pub enabled: bool,
+    pub runtime: ComputerRuntime,
     /// The `docker` command, as in [`SandboxConfig`].
     pub docker_bin: String,
     pub image: String,
@@ -162,7 +172,11 @@ pub struct ComputerConfig {
 impl ComputerConfig {
     /// Whether the desktop can reach a network at all.
     pub fn online(&self) -> bool {
-        self.network != "none"
+        self.runtime == ComputerRuntime::Native || self.network != "none"
+    }
+
+    pub fn native(&self) -> bool {
+        self.runtime == ComputerRuntime::Native
     }
 }
 
@@ -804,6 +818,11 @@ impl Config {
             },
             computer: ComputerConfig {
                 enabled: flag("COMPUTER", false)?,
+                runtime: match get("COMPUTER_RUNTIME").as_deref().map(str::trim) {
+                    None | Some("docker") => ComputerRuntime::Docker,
+                    Some("native") => ComputerRuntime::Native,
+                    Some(other) => bail!("COMPUTER_RUNTIME must be docker or native, not {other:?}"),
+                },
                 docker_bin,
                 image: get("COMPUTER_IMAGE").unwrap_or_else(|| "cedar-computer:latest".into()),
                 network: get("COMPUTER_NETWORK").unwrap_or_else(|| "bridge".into()),
@@ -854,6 +873,9 @@ impl Config {
         }
         crate::openshell::memory_quantity(&self.sandbox.memory)
             .map_err(|e| anyhow!("SANDBOX_MEMORY: {e}"))?;
+        if self.computer.enabled && self.computer.native() && !cfg!(feature = "native-computer") {
+            bail!("COMPUTER_RUNTIME=native needs a cedar built with the native computer driver (cargo build --features native-computer)");
+        }
         if self.browser.enabled && self.browser.network == "none" {
             bail!("BROWSER_NETWORK=none leaves the browser without internet access; use a network that has it");
         }
@@ -1202,6 +1224,21 @@ mod tests {
         assert!(!cfg.computer.online(), "a desktop may be kept offline");
         assert_eq!((cfg.computer.width, cfg.computer.height), (1024, 768));
         assert_eq!(cfg.computer.docker_bin, "/opt/homebrew/bin/docker");
+
+        assert_eq!(cfg.computer.runtime, ComputerRuntime::Docker);
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "vm")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("COMPUTER_RUNTIME"), "{err}");
+        // Naming the runtime turns nothing on; turning it on needs a build with the driver.
+        let named = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "native")]))
+            .unwrap();
+        assert!(named.computer.native() && !named.computer.enabled);
+        let on = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("COMPUTER", "on"),
+            ("COMPUTER_RUNTIME", "native"),
+        ]));
+        assert_eq!(on.is_ok(), cfg!(feature = "native-computer"));
 
         for bad in ["1280", "1280x", "axb", "100x100", "9000x800"] {
             let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_SCREEN", bad)]))
