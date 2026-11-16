@@ -183,6 +183,18 @@ impl AppState {
 }
 
 pub fn router(state: AppState) -> Router {
+    router_with(state, Router::new(), Router::new())
+}
+
+/// [`router`] plus routes a downstream build adds (see [`crate::server::Extensions`]).
+/// `extra_v1` is nested under `/v1` behind the same authentication as cedar's own routes;
+/// `extra_public` is mounted at the top level without it (health checks, SSO callbacks).
+/// A path that is already taken panics when the router is built, at startup.
+pub fn router_with(
+    state: AppState,
+    extra_v1: Router<AppState>,
+    extra_public: Router<AppState>,
+) -> Router {
     let v1 = Router::new()
         // Only this route takes attachments, so only it gets the room for them.
         .route(
@@ -271,6 +283,8 @@ pub fn router(state: AppState) -> Router {
             axum::routing::delete(uninstall_tool),
         )
         .route("/admin/marketplace/{name}/install", post(install_tool))
+        // Before `route_layer`, so the added routes need a key like the rest.
+        .merge(extra_v1)
         .route_layer(middleware::from_fn_with_state(
             state.auth.clone(),
             auth::require_auth,
@@ -280,6 +294,7 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .nest("/v1", v1)
+        .merge(extra_public)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(TraceLayer::new_for_http())
